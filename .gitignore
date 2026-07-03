@@ -1,0 +1,5 @@
+# Raw eval artifacts stay local; only summarized reports are committed.
+results/**/transcripts/
+results/**/*.jsonl
+__pycache__/
+*.pyc
