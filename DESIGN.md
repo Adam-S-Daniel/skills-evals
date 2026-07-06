@@ -82,12 +82,44 @@ Two modes:
 ## Open decisions (defaults proposed — confirm or override)
 
 - **Harness language:** Python — CHOSEN and implemented for the objective scorer.
-- **Agent under test:** Claude Code / Agent SDK; model matrix configurable,
-  default a current Claude model.
-- **Judge model:** a current Claude model, temperature 0, JSON-schema'd output.
-- **Cost capture:** from the SDK usage payload.
+- **Agent under test:** CHOSEN and implemented — the Claude Code CLI, invoked
+  headlessly per arm:
+  `claude -p <prompt> --output-format json --permission-mode bypassPermissions
+  --setting-sources project` (plus `--model <model>` if the fixture or CLI
+  flag sets one). The binary is `$CLAUDE_BIN` if set, else `claude` on `PATH`,
+  so tests can substitute a fake CLI. `--setting-sources project` scopes skill
+  discovery to the workspace's own `.claude/`, which is what makes the
+  with_skill/without_skill split possible in the same environment.
+- **Judge model:** CHOSEN and implemented — a second, independent headless
+  `claude -p ... --output-format json` call. Its prompt embeds the fixture's
+  rubric, the agent transcript, and the workspace diff (`git diff --cached`,
+  with `.claude/` excluded — see below), and demands a JSON-only response of
+  `{"dimensions": [...], "overall": ...}`. **Known limitation:** the Claude
+  Code CLI has no flag to set sampling temperature, so the judge runs at
+  whatever the CLI's default is — not the temperature-0 originally proposed
+  here. Flagging this rather than silently dropping the requirement.
+- **Cost capture:** CHOSEN and implemented — from the CLI's `--output-format
+  json` payload: `total_cost_usd`, `usage`, `num_turns`, `duration_ms`.
 - **What's committed:** fixtures + summarized reports; raw transcripts
   gitignored.
+
+### Skill install path (corrected)
+
+Claude Code auto-loads a skill from `.claude/skills/<name>/` only when
+`SKILL.md` sits directly at that path. In the `agentskills` registry, each
+skill ships as a *plugin*, with the actual skill content nested one level
+deeper:
+
+```
+plugins/<skill>/.claude-plugin/plugin.json
+plugins/<skill>/skills/<skill>/SKILL.md   <- this is what gets installed
+```
+
+So the `with_skill` arm copies `plugins/<skill>/skills/<skill>/` (the nested
+directory containing `SKILL.md`) to `<workspace>/.claude/skills/<skill>/` —
+copying the outer `plugins/<skill>/` directory instead would silently produce
+a workspace where the skill never loads. `run_agent` fails loudly, naming both
+paths, if the nested directory isn't found.
 
 ## Out of scope
 
