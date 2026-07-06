@@ -1,0 +1,46 @@
+# Eval fixture: pin-actions-to-sha
+# Measures whether the pin-actions-to-sha skill improves an agent's ability to
+# pin GitHub Actions `uses:` references correctly and completely.
+
+skill: pin-actions-to-sha
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+prompt: >
+  Pin all GitHub Actions in this repository's workflows to full commit SHAs.
+
+arms:
+  with_skill:
+    install: marketplace   # /plugin install pin-actions-to-sha@agentskills
+  without_skill:
+    install: none          # same prompt, no skill
+
+# Objective checks run by harness/scorers/objective.py against the resulting
+# workspace. Each check has an id, a description, and a type the scorer knows.
+objective_checks:
+  - id: all-actions-sha-pinned
+    description: Every remote-action `uses:` ref is a full 40-hex commit SHA
+    type: uses_refs_sha_pinned
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: version-comment-present
+    description: Every pinned ref carries a trailing version comment (e.g. "# v4.3.1")
+    type: pinned_refs_have_version_comment
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: workflows-still-parse
+    description: All workflow files still parse as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: local-and-docker-refs-untouched
+    description: Local (./) and docker:// `uses:` refs were not modified
+    type: non_remote_refs_unchanged
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Completeness — were ALL remote action refs pinned, across every workflow
+  file, including refs the agent had to discover rather than being pointed at?
+  (2) Correctness — does each SHA actually correspond to the tag it replaced
+  (spot-check), and is the original version preserved in a comment?
+  (3) Restraint — did the agent avoid modifying local actions, docker refs,
+  reusable-workflow refs it shouldn't touch, or unrelated files?
+  (4) Communication — did the agent explain what it pinned and how it verified
+  the SHAs?
