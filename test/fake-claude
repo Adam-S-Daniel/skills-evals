@@ -17,6 +17,20 @@ JSON string of judge-shaped dimensions/overall — that string is a perfectly
 valid transcript for the agent call, and it's exactly what judge.score's
 parser expects for the judge call, so one canned response satisfies both
 subprocess invocations inside a single run.
+
+`--version` is handled unconditionally (regardless of FAKE_CLAUDE_MODE) so
+that harness/run_canary.py's `claude --version` recording call succeeds even
+when a mode simulates a failure.
+
+Three modes simulate harness/run_canary.py's guidance-bridge canary:
+  - canary_loader: mimics Claude Code's real memory loader — expands an
+    `@AGENTS.md`-style import line in ./CLAUDE.md (outside fenced code
+    blocks) and replies with CLAUDE.md's content plus whatever it imported.
+  - canary_blind: always replies "NO-MAGIC-WORD", simulating a regressed
+    loader that injects nothing.
+  - canary_forager: replies with the concatenation of every *.md file in cwd
+    (sorted), simulating either read-tool foraging or native AGENTS.md
+    support — everything is visible regardless of layout.
 """
 
 from __future__ import annotations
@@ -25,6 +39,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 MODE = os.environ.get("FAKE_CLAUDE_MODE", "agent")
 
@@ -47,7 +62,33 @@ def emit(payload: dict) -> None:
     print(json.dumps(payload))
 
 
+def _load_claude_md() -> str:
+    """canary_loader: expand `@file` import lines outside fenced code blocks."""
+    claude_md = Path("CLAUDE.md")
+    if not claude_md.is_file():
+        return "NO-MAGIC-WORD"
+    content = claude_md.read_text(encoding="utf-8")
+    imported = []
+    in_fence = False
+    for line in content.splitlines():
+        if line.startswith("```"):
+            in_fence = not in_fence
+            continue
+        if not in_fence and line.startswith("@"):
+            tokens = line[1:].split()
+            if not tokens:
+                continue
+            imported_path = Path(tokens[0])
+            if imported_path.is_file():
+                imported.append(imported_path.read_text(encoding="utf-8"))
+    return content + "".join(imported)
+
+
 def main() -> int:
+    if "--version" in sys.argv:
+        print("fake-claude 0.0.0 (hermetic test stub)")
+        return 0
+
     if MODE == "error":
         print("fake-claude: simulated CLI failure", file=sys.stderr)
         return 1
@@ -99,6 +140,25 @@ def main() -> int:
             "duration_ms": 5000,
             "session_id": "fake-session",
         })
+        return 0
+
+    if MODE == "canary_loader":
+        emit({"result": _load_claude_md(), "is_error": False, "usage": USAGE,
+             "total_cost_usd": 0.01, "num_turns": 1, "duration_ms": 100,
+             "session_id": "fake-session"})
+        return 0
+
+    if MODE == "canary_blind":
+        emit({"result": "NO-MAGIC-WORD", "is_error": False, "usage": USAGE,
+             "total_cost_usd": 0.01, "num_turns": 1, "duration_ms": 100,
+             "session_id": "fake-session"})
+        return 0
+
+    if MODE == "canary_forager":
+        content = "".join(p.read_text(encoding="utf-8") for p in sorted(Path.cwd().glob("*.md")))
+        emit({"result": content, "is_error": False, "usage": USAGE,
+             "total_cost_usd": 0.01, "num_turns": 1, "duration_ms": 100,
+             "session_id": "fake-session"})
         return 0
 
     # default / "agent"
