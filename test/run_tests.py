@@ -25,6 +25,7 @@ HARNESS_DIR = REPO_ROOT / "harness"
 FAKE_CLAUDE = TEST_DIR / "fake-claude"
 FAKE_REGISTRY = TEST_DIR / "fixtures" / "fake_registry"
 EVAL_DIR = REPO_ROOT / "evals" / "pin-actions-to-sha"
+CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
@@ -224,6 +225,74 @@ class EndToEndTests(unittest.TestCase):
         self.assertEqual(payload["arm"], "objective-only")
         by_id = {c["id"]: c for c in payload["checks"]}
         self.assertFalse(by_id["all-actions-sha-pinned"]["passed"])
+
+
+class CanaryTests(unittest.TestCase):
+    """harness/run_canary.py exercised against test/fake-claude's canary_* modes."""
+
+    def _run(self, mode, extra_args=None):
+        results_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, results_dir, ignore_errors=True)
+        env = os.environ.copy()
+        env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
+        env["FAKE_CLAUDE_MODE"] = mode
+        cmd = [sys.executable, str(HARNESS_DIR / "run_canary.py"), str(CANARY_DIR),
+              "--results-dir", str(results_dir), "--timeout", "30"]
+        if extra_args:
+            cmd += extra_args
+        proc = subprocess.run(cmd, capture_output=True, text=True,
+                              env=env, cwd=str(REPO_ROOT))
+        return proc, results_dir
+
+    def _summary(self, results_dir):
+        fixture_dir = results_dir / "guidance-bridge-canary"
+        run_dirs = list(fixture_dir.iterdir())
+        self.assertEqual(len(run_dirs), 1)
+        run_dir = run_dirs[0]
+        report = (run_dir / "report.md").read_text(encoding="utf-8")
+        summary = json.loads((run_dir / "summary.json").read_text(encoding="utf-8"))
+        return report, summary
+
+    def test_canary_loader(self):
+        proc, results_dir = self._run("canary_loader")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("PASS bridge", proc.stdout)
+        self.assertIn("PASS no-bridge", proc.stdout)
+        self.assertIn("PASS fence", proc.stdout)
+        report, summary = self._summary(results_dir)
+        self.assertIn("fake-claude 0.0.0 (hermetic test stub)", report)
+        self.assertEqual(len(summary["legs"]), 3)
+        self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
+
+    def test_canary_blind(self):
+        proc, results_dir = self._run("canary_blind")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("FAIL bridge", proc.stdout)
+        self.assertIn("FLUMMOX-7291", proc.stdout)
+        self.assertIn("visible", proc.stdout)
+        self.assertIn("PASS no-bridge", proc.stdout)
+        self.assertIn("PASS fence", proc.stdout)
+
+    def test_canary_forager(self):
+        proc, results_dir = self._run("canary_forager")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertIn("FAIL no-bridge", proc.stdout)
+        self.assertIn("FAIL fence", proc.stdout)
+        self.assertIn("PASS bridge", proc.stdout)
+
+    def test_runner_level_error(self):
+        proc, results_dir = self._run("error")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("nonzero_exit", proc.stdout)
+
+    def test_canary_loader_with_subagent(self):
+        proc, results_dir = self._run("canary_loader", extra_args=["--subagent"])
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        _, summary = self._summary(results_dir)
+        self.assertEqual(len(summary["legs"]), 4)
+        names = {leg["name"] for leg in summary["legs"]}
+        self.assertIn("bridge-subagent", names)
+        self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
 if __name__ == "__main__":
