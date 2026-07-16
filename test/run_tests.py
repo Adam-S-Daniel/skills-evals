@@ -114,6 +114,25 @@ class WithSkillInstallTests(unittest.TestCase):
             # "aaa-bundle" sorts before "zzz-bundle" lexicographically.
             self.assertEqual(content, "from aaa-bundle\n")
 
+    def test_stray_file_at_match_path_errors_cleanly(self):
+        # A plain file sitting where a skill dir would be (not a real registry
+        # state, but not impossible either) must not reach shutil.copytree and
+        # crash — it should be filtered out just like a non-existent path.
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "registry"
+            skill_path = registry / "plugins" / "gha-tools" / "skills" / "pin-actions-to-sha"
+            skill_path.parent.mkdir(parents=True)
+            skill_path.write_text("not a directory\n", encoding="utf-8")
+
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            arm = {"name": "with_skill", "skill": "pin-actions-to-sha",
+                  "registry": registry, "timeout": 30}
+            # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
+            result = run_eval.run_agent(workspace, "pin things", arm)
+            self.assertIn("error", result)
+            self.assertEqual(result["error"], "skill_not_found")
+
     def test_missing_skill_errors_clearly(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "ws"

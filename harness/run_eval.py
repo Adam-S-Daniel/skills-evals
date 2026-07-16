@@ -68,7 +68,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         # bundles that group several skills under one plugin dir, so <bundle> !=
         # <skill> in general. Glob for it rather than hardcoding the bundle name,
         # so both layouts resolve. Sorted so multiple matches pick deterministically.
-        matches = sorted((registry / "plugins").glob(f"*/skills/{skill}"))
+        matches = sorted(p for p in (registry / "plugins").glob(f"*/skills/{skill}")
+                         if p.is_dir())
         if not matches:
             pattern = registry / "plugins" / "*" / "skills" / skill
             return {"error": "skill_not_found",
