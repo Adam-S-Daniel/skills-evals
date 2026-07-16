@@ -24,6 +24,7 @@ REPO_ROOT = TEST_DIR.parent
 HARNESS_DIR = REPO_ROOT / "harness"
 FAKE_CLAUDE = TEST_DIR / "fake-claude"
 FAKE_REGISTRY = TEST_DIR / "fixtures" / "fake_registry"
+FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
 EVAL_DIR = REPO_ROOT / "evals" / "pin-actions-to-sha"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
 
@@ -38,7 +39,13 @@ def _fake_sha(seed: int) -> str:
 
 
 class WithSkillInstallTests(unittest.TestCase):
-    def test_copies_nested_skill_dir(self):
+    """Skill-dir resolution must work against both registry layouts:
+    plugins/<bundle>/skills/<skill>/ where a bundle holds several skills
+    (FAKE_REGISTRY), and the legacy plugins/<skill>/skills/<skill>/ where the
+    plugin dir is named after its one skill (FAKE_REGISTRY_LEGACY).
+    """
+
+    def test_copies_skill_dir_bundle_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "ws"
             workspace.mkdir()
@@ -51,6 +58,62 @@ class WithSkillInstallTests(unittest.TestCase):
             skill_md = workspace / ".claude" / "skills" / "pin-actions-to-sha" / "SKILL.md"
             self.assertTrue(skill_md.is_file())
 
+    def test_copies_skill_dir_legacy_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            arm = {"name": "with_skill", "skill": "pin-actions-to-sha",
+                  "registry": FAKE_REGISTRY_LEGACY, "timeout": 30}
+            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                              "FAKE_CLAUDE_MODE": "agent"}):
+                result = run_eval.run_agent(workspace, "pin things", arm)
+            self.assertNotIn("error", result)
+            skill_md = workspace / ".claude" / "skills" / "pin-actions-to-sha" / "SKILL.md"
+            self.assertTrue(skill_md.is_file())
+
+    def test_selects_correct_skill_among_multiple_bundles(self):
+        # FAKE_REGISTRY has two bundles — gha-tools/skills/pin-actions-to-sha and
+        # misc-tools/skills/other-skill — proving the glob lands each skill name
+        # in its own bundle rather than grabbing whichever bundle sorts first.
+        for skill, bundle in (("pin-actions-to-sha", "gha-tools"),
+                              ("other-skill", "misc-tools")):
+            with tempfile.TemporaryDirectory() as tmp:
+                workspace = Path(tmp) / "ws"
+                workspace.mkdir()
+                arm = {"name": "with_skill", "skill": skill,
+                      "registry": FAKE_REGISTRY, "timeout": 30}
+                with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                                  "FAKE_CLAUDE_MODE": "agent"}):
+                    result = run_eval.run_agent(workspace, "pin things", arm)
+                self.assertNotIn("error", result)
+                skill_md = workspace / ".claude" / "skills" / skill / "SKILL.md"
+                self.assertTrue(skill_md.is_file())
+                self.assertIn(bundle, skill_md.read_text(encoding="utf-8"))
+
+    def test_multiple_matches_pick_first_sorted(self):
+        # Not a registry state that should ever occur (a skill name should be
+        # unique across bundles), but resolution must be deterministic if it
+        # ever did rather than depending on filesystem enumeration order.
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "registry"
+            for bundle in ("zzz-bundle", "aaa-bundle"):
+                skill_dir = registry / "plugins" / bundle / "skills" / "dup-skill"
+                skill_dir.mkdir(parents=True)
+                (skill_dir / "SKILL.md").write_text(f"from {bundle}\n", encoding="utf-8")
+
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            arm = {"name": "with_skill", "skill": "dup-skill",
+                  "registry": registry, "timeout": 30}
+            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                              "FAKE_CLAUDE_MODE": "agent"}):
+                result = run_eval.run_agent(workspace, "pin things", arm)
+            self.assertNotIn("error", result)
+            content = (workspace / ".claude" / "skills" / "dup-skill" / "SKILL.md").read_text(
+                encoding="utf-8")
+            # "aaa-bundle" sorts before "zzz-bundle" lexicographically.
+            self.assertEqual(content, "from aaa-bundle\n")
+
     def test_missing_skill_errors_clearly(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "ws"
@@ -62,7 +125,7 @@ class WithSkillInstallTests(unittest.TestCase):
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
             self.assertIn(str(FAKE_REGISTRY), result["detail"])
-            # Names both the nested expected path and the outer plugin path.
+            # Names the plugins/*/skills/<skill> glob pattern that was searched.
             self.assertIn("skills", result["detail"])
             self.assertIn("plugins", result["detail"])
 

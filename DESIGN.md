@@ -107,19 +107,33 @@ Two modes:
 
 Claude Code auto-loads a skill from `.claude/skills/<name>/` only when
 `SKILL.md` sits directly at that path. In the `agentskills` registry, each
-skill ships as a *plugin*, with the actual skill content nested one level
-deeper:
+skill ships as part of a *plugin*, with the actual skill content nested one
+level deeper:
 
 ```
-plugins/<skill>/.claude-plugin/plugin.json
-plugins/<skill>/skills/<skill>/SKILL.md   <- this is what gets installed
+plugins/<plugin>/.claude-plugin/plugin.json
+plugins/<plugin>/skills/<skill>/SKILL.md   <- this is what gets installed
 ```
 
-So the `with_skill` arm copies `plugins/<skill>/skills/<skill>/` (the nested
-directory containing `SKILL.md`) to `<workspace>/.claude/skills/<skill>/` —
-copying the outer `plugins/<skill>/` directory instead would silently produce
-a workspace where the skill never loads. `run_agent` fails loudly, naming both
-paths, if the nested directory isn't found.
+The registry has shipped (and, mid-migration, may still contain a mix of)
+two layouts for `<plugin>`:
+
+- **Legacy, one skill per plugin:** `<plugin> == <skill>` — a plugin dir
+  named after its single skill, e.g. `plugins/pin-actions-to-sha/skills/pin-actions-to-sha/`.
+- **Bundle, many skills per plugin:** `<plugin>` is a bundle name distinct
+  from any skill it contains, e.g. `plugins/gha-tools/skills/pin-actions-to-sha/`
+  alongside other skills under that same `gha-tools` bundle.
+
+Because the plugin/bundle directory name can't be assumed to equal the skill
+name, `run_agent` resolves it with a glob — `plugins/*/skills/<skill>` —
+rather than hardcoding `plugins/<skill>/skills/<skill>`. Matches are sorted
+and the first is used, so resolution is deterministic even if a skill name
+were ever (mistakenly) present under more than one plugin/bundle. The
+`with_skill` arm then copies that resolved nested directory (the one
+containing `SKILL.md`) to `<workspace>/.claude/skills/<skill>/` — copying the
+outer plugin/bundle directory instead would silently produce a workspace
+where the skill never loads. `run_agent` fails loudly, naming the glob
+pattern searched, if nothing matches.
 
 ## Out of scope
 

@@ -10,7 +10,12 @@ prompt: >
 
 arms:
   with_skill:
-    install: marketplace   # /plugin install pin-actions-to-sha@agentskills
+    # The harness copies the nested skill dir plugins/<bundle>/skills/pin-actions-to-sha/
+    # (wherever it's found under the registry's plugins/*/skills/ tree) into
+    # .claude/skills/pin-actions-to-sha/. Copying the outer plugin/bundle dir
+    # instead would bury SKILL.md a level deep and the skill would silently
+    # never load.
+    install: copy
   without_skill:
     install: none          # same prompt, no skill
 

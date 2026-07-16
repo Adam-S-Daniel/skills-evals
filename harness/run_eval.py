@@ -63,12 +63,17 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     if arm["name"] == "with_skill":
         skill = arm["skill"]
         registry = arm["registry"]
-        skill_src = registry / "plugins" / skill / "skills" / skill
-        if not skill_src.is_dir():
-            outer = registry / "plugins" / skill
+        # The registry lays out skills as plugins/<bundle>/skills/<skill>/SKILL.md.
+        # Historically <bundle> == <skill> (one skill per plugin); it's moving to
+        # bundles that group several skills under one plugin dir, so <bundle> !=
+        # <skill> in general. Glob for it rather than hardcoding the bundle name,
+        # so both layouts resolve. Sorted so multiple matches pick deterministically.
+        matches = sorted((registry / "plugins").glob(f"*/skills/{skill}"))
+        if not matches:
+            pattern = registry / "plugins" / "*" / "skills" / skill
             return {"error": "skill_not_found",
-                    "detail": f"nested skill dir not found: {skill_src} "
-                              f"(outer plugin path: {outer})"}
+                    "detail": f"no skill dir matched {pattern}"}
+        skill_src = matches[0]
         shutil.copytree(skill_src, workspace / ".claude" / "skills" / skill)
 
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
