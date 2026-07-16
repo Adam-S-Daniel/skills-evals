@@ -63,9 +63,13 @@ CLAUDE_BIN=/path/to/claude AGENTSKILLS_DIR=~/repos/agentskills \
 ```
 
 `--registry` (else `$AGENTSKILLS_DIR`, else `~/repos/agentskills`) must point
-at a checkout of the `agentskills` registry — the `with_skill` arm installs
-the skill by copying `plugins/<skill>/skills/<skill>/` (the directory
-containing `SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
+at a checkout of the `agentskills` registry — the `with_skill` arm resolves
+the skill dir by globbing `plugins/*/skills/<skill>` (the first sorted match
+wins), so it works whether the registry lays a skill out under a plugin
+named after that skill (`plugins/<skill>/skills/<skill>/`, legacy) or under a
+bundle plugin holding several skills (`plugins/<bundle>/skills/<skill>/`).
+It then copies that resolved directory (the one containing `SKILL.md`) into
+the workspace's `.claude/skills/<skill>/`.
 
 ## Guidance-bridge canary
 
