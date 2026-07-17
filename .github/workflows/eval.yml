@@ -128,6 +128,25 @@ jobs:
           jq -r .value <<<"$resp" > "$RUNNER_TEMP/anthropic-oidc.jwt"
           test -s "$RUNNER_TEMP/anthropic-oidc.jwt"
 
+      # Cheap auth canary before the real spend. Doubles as the JTI probe:
+      # this call consumes the OIDC token's single-use exchange, so if it
+      # succeeds and the arms then fail with auth errors, the fix is one
+      # exchange up front (ANTHROPIC_AUTH_TOKEN) or per-arm token minting.
+      - name: WIF auth preflight
+        env:
+          ANTHROPIC_FEDERATION_RULE_ID: fdrl_012TsUrCbGZKH17uCUpgqMxf
+          ANTHROPIC_ORGANIZATION_ID: 0905256d-aaf8-45ad-892b-9d2867c67c4e
+          ANTHROPIC_SERVICE_ACCOUNT_ID: svac_01DVDm1YuUembqV2LScAjsGz
+          ANTHROPIC_IDENTITY_TOKEN_FILE: ${{ runner.temp }}/anthropic-oidc.jwt
+        run: |
+          set +e
+          out=$(timeout 120 claude -p 'Reply with exactly: ok' \
+            --model claude-haiku-4-5 --output-format json 2>&1)
+          rc=$?
+          echo "preflight exit: $rc"
+          printf '%s\n' "$out" | tail -c 4000
+          exit $rc
+
       - name: Run the eval (both arms, judge, network checks)
         working-directory: skills-evals
         env:
@@ -138,6 +157,18 @@ jobs:
         run: |
           python3 harness/run_eval.py evals/pin-actions-to-sha \
             --arm both --registry ../agentskills --net-checks
+
+      # Failed runs never reach the commit step, so surface the per-arm error
+      # detail (summaries + reports, incl. gitignored raw transcripts) as an
+      # artifact instead of losing it with the runner.
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (2025-04-24)
+        with:
+          name: eval-results-debug
+          path: skills-evals/results/
+          if-no-files-found: ignore
+          include-hidden-files: true
 
       - name: Generate badge
         working-directory: skills-evals
