@@ -32,6 +32,9 @@ sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import make_badge  # noqa: E402
+
 
 def _fake_sha(seed: int) -> str:
     """A 40-hex-char string — valid per objective.SHA_RE, not a real commit."""
@@ -371,6 +374,111 @@ class PinnedShaTagCheckTests(unittest.TestCase):
         self.assertIn("pinned-shas-match-tags", by_id)
         self.assertTrue(by_id["pinned-shas-match-tags"]["passed"])
         self.assertIn("skipped", by_id["pinned-shas-match-tags"]["detail"])
+
+
+class MakeBadgeTests(unittest.TestCase):
+    """scripts/make_badge.py against hand-written run summaries, one per color."""
+
+    TS = "20260716T070000Z"
+    DATE = "2026-07-16"
+
+    def setUp(self):
+        self.results = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.results, ignore_errors=True)
+
+    @staticmethod
+    def _summary(passed: int, total: int, judge_overall=None, error=None) -> dict:
+        return {
+            "error": error,
+            "objective_checks": [{"id": f"c{i}", "passed": i < passed,
+                                  "detail": ""} for i in range(total)],
+            "judge": {"overall": judge_overall} if judge_overall is not None else None,
+        }
+
+    def _write_run(self, ts: str, with_summary: dict | None,
+                   without_summary: dict | None) -> None:
+        for arm, summary in (("with_skill", with_summary),
+                             ("without_skill", without_summary)):
+            if summary is None:
+                continue
+            arm_dir = self.results / "pin-actions-to-sha" / ts / arm
+            arm_dir.mkdir(parents=True)
+            (arm_dir / "summary.json").write_text(
+                json.dumps(summary), encoding="utf-8")
+
+    def _badge(self) -> dict:
+        return make_badge.build_badge(self.results, "pin-actions-to-sha")
+
+    def test_green_when_with_strictly_better(self):
+        self._write_run(self.TS, self._summary(5, 5, 8.5), self._summary(3, 5, 4.0))
+        badge = self._badge()
+        self.assertEqual(badge["schemaVersion"], 1)
+        self.assertEqual(badge["label"], "skill eval: pin-actions-to-sha")
+        self.assertEqual(badge["message"], f"with 5/5 vs without 3/5 · {self.DATE}")
+        self.assertEqual(badge["color"], "green")
+
+    def test_yellow_when_tied(self):
+        self._write_run(self.TS, self._summary(4, 5, 7.0), self._summary(4, 5, 7.0))
+        badge = self._badge()
+        self.assertEqual(badge["color"], "yellow")
+        self.assertIn(self.DATE, badge["message"])
+
+    def test_yellow_when_signals_mixed(self):
+        # Better objectively, worse per the judge: mixed, not green.
+        self._write_run(self.TS, self._summary(5, 5, 5.0), self._summary(4, 5, 8.0))
+        self.assertEqual(self._badge()["color"], "yellow")
+
+    def test_red_when_with_worse(self):
+        self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
+        badge = self._badge()
+        self.assertEqual(badge["color"], "red")
+        self.assertEqual(badge["message"], f"with 2/5 vs without 4/5 · {self.DATE}")
+
+    def test_judge_missing_falls_back_to_objective_only(self):
+        self._write_run(self.TS, self._summary(5, 5, None), self._summary(3, 5, 6.0))
+        self.assertEqual(self._badge()["color"], "green")
+
+    def test_grey_when_arm_summary_missing(self):
+        self._write_run(self.TS, self._summary(5, 5, 8.0), None)
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], f"no data · {self.DATE}")
+
+    def test_grey_when_arm_errored(self):
+        errored = self._summary(0, 5, None,
+                                error={"type": "timeout", "detail": "600s"})
+        errored["objective_checks"] = None
+        self._write_run(self.TS, self._summary(5, 5, 8.0), errored)
+        self.assertEqual(self._badge()["color"], "lightgrey")
+
+    def test_grey_when_no_runs(self):
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], "no runs yet")
+
+    def test_newest_run_wins(self):
+        self._write_run("20260101T000000Z", self._summary(5, 5, 9.0),
+                        self._summary(1, 5, 2.0))
+        self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
+        badge = self._badge()
+        self.assertEqual(badge["color"], "red")
+        self.assertIn(self.DATE, badge["message"])
+
+    def test_cli_writes_deterministic_badge_file(self):
+        self._write_run(self.TS, self._summary(5, 5, 8.0), self._summary(3, 5, 4.0))
+        out = self.results / "badge.json"
+        cmd = [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"),
+               "pin-actions-to-sha", "--results-dir", str(self.results),
+               "--out", str(out)]
+        first = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        bytes_one = out.read_bytes()
+        second = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(second.returncode, 0)
+        self.assertEqual(bytes_one, out.read_bytes())
+        badge = json.loads(bytes_one)
+        self.assertEqual(badge["schemaVersion"], 1)
+        self.assertEqual(badge["color"], "green")
 
 
 class EndToEndTests(unittest.TestCase):
