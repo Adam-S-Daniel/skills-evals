@@ -5,6 +5,18 @@
 skill: pin-actions-to-sha
 registry: https://github.com/Adam-S-Daniel/agentskills
 
+# Agent arms run on a pinned mid-tier model, deliberately NOT Opus-tier: an
+# Opus-class agent would likely ace this task even WITHOUT the skill (ceiling
+# effect), leaving the with/without comparison signal-free. Pinning also keeps
+# week-over-week badge comparisons meaningful — unpinned, the arms silently
+# track Claude Code's default model as it changes across CLI releases.
+model: claude-sonnet-5
+
+# The judge is pinned to a strong model: judgment consistency matters more
+# than agent-arm parity, and two short judge calls per run cost pennies.
+judge:
+  model: claude-opus-4-8
+
 prompt: >
   Pin all GitHub Actions in this repository's workflows to full commit SHAs.
 
