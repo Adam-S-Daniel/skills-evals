@@ -1,6 +1,6 @@
 # Real (non-hermetic) skill eval: runs the pin-actions-to-sha A/B eval against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
-# commits the badge + run summaries back to the default branch. The hermetic
+# pushes the badge + run summaries to the `eval-results` branch. The hermetic
 # suite stays in ci.yml — this workflow is the ONLY place real credentials or
 # the network-dependent objective checks appear.
 #
@@ -61,6 +61,16 @@
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run
 #   commits fresh results, so the schedule keeps itself alive.
+#
+# * Results + badge live on the `eval-results` branch, not main: main's
+#   branch-protection ruleset requires changes go through a pull request
+#   (this repo's fleet repo-settings baseline), so a bot direct-pushing
+#   straight to main would be rejected — as it was in run 29620223686. The
+#   commit step fetches/builds on `eval-results` (creating it on the first
+#   run) and pushes there directly; nobody hand-commits to that branch and
+#   the `real-eval` concurrency lane serializes runs, so a rejected push
+#   fails the job loudly rather than retrying. The README badge URL consumes
+#   raw content from `eval-results` accordingly.
 #
 # * All actions are SHA-pinned (# vX.Y.Z (release date)) — same pins as
 #   agentskills' ci.yml — and this repo's own eval seeds practice what we pin.
@@ -198,16 +208,27 @@ jobs:
       - name: Commit and push badge + run summaries
         working-directory: skills-evals
         env:
-          # Push auth lives only in this step. github.ref_name is the default
-          # branch on schedule runs; a manual dispatch from a branch commits
-          # to that branch instead of surprising main.
+          # Push auth lives only in this step.
           GITHUB_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           git config user.name "skills-evals real-eval bot"
           git config user.email "skills-evals@users.noreply.github.com"
-          # .gitignore keeps raw transcripts out; only summaries + report land.
+          # Snapshot generated outputs (badges/ is tracked+modified; results/ is new/untracked)
+          snap="$RUNNER_TEMP/eval-outputs"
+          rm -rf "$snap"; mkdir -p "$snap"
+          cp -r badges "$snap/badges"
+          [ -d results ] && cp -r results "$snap/results"
+          # Build on the accumulated results branch (create on first run)
+          git checkout -- .
+          git fetch origin eval-results || true
+          if git rev-parse -q --verify origin/eval-results >/dev/null; then
+            git checkout -B eval-results origin/eval-results
+          else
+            git checkout -B eval-results
+          fi
+          cp -r "$snap/badges/." badges/
+          [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
           git add badges results
           if git diff --cached --quiet; then
             echo "No changes to commit."
@@ -215,11 +236,4 @@ jobs:
           fi
           git commit -m "eval: pin-actions-to-sha run + badge [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          push() { git -c "http.https://github.com/.extraheader=$auth" push origin "HEAD:$BRANCH"; }
-          if ! push; then
-            # Push race (something landed on $BRANCH mid-run): rebase once,
-            # retry once; a second failure fails the job loudly.
-            git -c "http.https://github.com/.extraheader=$auth" fetch origin "$BRANCH"
-            git rebase "origin/$BRANCH"
-            push
-          fi
+          git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
