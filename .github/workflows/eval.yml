@@ -44,7 +44,9 @@
 # * Both checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
-#   only secret it could reach is the spend-capped API key it needs anyway.
+#   only credential in reach is the short-lived WIF-derived access token
+#   (and the single-use OIDC token file) scoped to the spend-capped
+#   workspace — no long-lived secret exists on the runner.
 #
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run
