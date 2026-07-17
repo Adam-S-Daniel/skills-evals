@@ -1,6 +1,6 @@
 # Real (non-hermetic) skill eval: runs the pin-actions-to-sha A/B eval against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
-# commits the badge + run summaries back to the default branch. The hermetic
+# pushes the badge + run summaries to the `eval-results` branch. The hermetic
 # suite stays in ci.yml — this workflow is the ONLY place real credentials or
 # the network-dependent objective checks appear.
 #
@@ -31,8 +31,11 @@
 #   https://api.anthropic.com, single-use JTI), then POSTs that assertion
 #   to https://api.anthropic.com/v1/oauth/token against federation rule
 #   fdrl_012TsUrCbGZKH17uCUpgqMxf / org 0905256d-aaf8-45ad-892b-9d2867c67c4e
-#   / service account svac_01DVDm1YuUembqV2LScAjsGz on the spend-capped
-#   skills-evals-ci workspace (~$10/mo). The resulting sk-ant-oat01 access
+#   / service account svac_01DVDm1YuUembqV2LScAjsGz, with the exchange body
+#   pinned to workspace_id wrkspc_017pHomopHiJ7nRzZJS6NhV4 (the spend-capped
+#   skills-evals-ci workspace) explicitly, so a rule-binding change can never
+#   silently rescope the token and binding failures surface as named errors
+#   instead of opaque 401s. The resulting sk-ant-oat01 access
 #   token (≤1h, workspace-scoped, spend-capped) is masked via
 #   ::add-mask::, stored only in $RUNNER_TEMP/anthropic-bearer, and
 #   exported step-locally as ANTHROPIC_AUTH_TOKEN in each step that calls
@@ -58,6 +61,16 @@
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run
 #   commits fresh results, so the schedule keeps itself alive.
+#
+# * Results + badge live on the `eval-results` branch, not main: main's
+#   branch-protection ruleset requires changes go through a pull request
+#   (this repo's fleet repo-settings baseline), so a bot direct-pushing
+#   straight to main would be rejected — as it was in run 29620223686. The
+#   commit step fetches/builds on `eval-results` (creating it on the first
+#   run) and pushes there directly; nobody hand-commits to that branch and
+#   the `real-eval` concurrency lane serializes runs, so a rejected push
+#   fails the job loudly rather than retrying. The README badge URL consumes
+#   raw content from `eval-results` accordingly.
 #
 # * All actions are SHA-pinned (# vX.Y.Z (release date)) — same pins as
 #   agentskills' ci.yml — and this repo's own eval seeds practice what we pin.
@@ -139,10 +152,19 @@ jobs:
             assertion: ($jwt | rtrimstr("\n")),
             federation_rule_id: "fdrl_012TsUrCbGZKH17uCUpgqMxf",
             organization_id: "0905256d-aaf8-45ad-892b-9d2867c67c4e",
-            service_account_id: "svac_01DVDm1YuUembqV2LScAjsGz"
+            service_account_id: "svac_01DVDm1YuUembqV2LScAjsGz",
+            workspace_id: "wrkspc_017pHomopHiJ7nRzZJS6NhV4"
           }')
-          tok=$(curl -sS --fail-with-body -X POST https://api.anthropic.com/v1/oauth/token \
-            -H "content-type: application/json" -d "$body" | jq -re .access_token)
+          xresp="$RUNNER_TEMP/exchange-resp.json"
+          code=$(curl -sS -o "$xresp" -w "%{http_code}" -X POST https://api.anthropic.com/v1/oauth/token \
+            -H "content-type: application/json" -d "$body")
+          if [ "$code" != "200" ]; then
+            echo "token exchange failed: HTTP $code"
+            cat "$xresp"
+            exit 1
+          fi
+          tok=$(jq -re .access_token < "$xresp")
+          rm -f "$xresp"
           echo "::add-mask::$tok"
           printf '%s' "$tok" > "$RUNNER_TEMP/anthropic-bearer"
 
@@ -167,9 +189,48 @@ jobs:
           python3 harness/run_eval.py evals/pin-actions-to-sha \
             --arm both --registry ../agentskills --net-checks
 
-      # Failed runs never reach the commit step, so surface the per-arm error
-      # detail (summaries + reports, incl. gitignored raw transcripts) as an
-      # artifact instead of losing it with the runner.
+      - name: Generate badge
+        working-directory: skills-evals
+        run: python3 scripts/make_badge.py pin-actions-to-sha
+
+      - name: Commit and push badge + run summaries
+        working-directory: skills-evals
+        env:
+          # Push auth lives only in this step.
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          git config user.name "skills-evals real-eval bot"
+          git config user.email "skills-evals@users.noreply.github.com"
+          # Snapshot generated outputs (badges/ is tracked+modified; results/ is new/untracked)
+          snap="$RUNNER_TEMP/eval-outputs"
+          rm -rf "$snap"; mkdir -p "$snap"
+          cp -r badges "$snap/badges"
+          [ -d results ] && cp -r results "$snap/results"
+          # Build on the accumulated results branch (create on first run)
+          git checkout -- .
+          git fetch origin eval-results || true
+          if git rev-parse -q --verify origin/eval-results >/dev/null; then
+            git checkout -B eval-results origin/eval-results
+          else
+            git checkout -B eval-results
+          fi
+          cp -r "$snap/badges/." badges/
+          [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
+          git add badges results
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "eval: pin-actions-to-sha run + badge [skip ci]"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
+
+      # LAST step in the job so `if: failure()` sees a failure from ANY
+      # earlier step — not just the eval run, but also "Generate badge" and
+      # this workflow's own commit/push step (e.g. a rejected push). Surfaces
+      # the per-arm error detail (summaries + reports, incl. gitignored raw
+      # transcripts) as an artifact instead of losing it with the runner.
       - name: Upload results on failure
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (2025-04-24)
@@ -178,36 +239,3 @@ jobs:
           path: skills-evals/results/
           if-no-files-found: ignore
           include-hidden-files: true
-
-      - name: Generate badge
-        working-directory: skills-evals
-        run: python3 scripts/make_badge.py pin-actions-to-sha
-
-      - name: Commit and push badge + run summaries
-        working-directory: skills-evals
-        env:
-          # Push auth lives only in this step. github.ref_name is the default
-          # branch on schedule runs; a manual dispatch from a branch commits
-          # to that branch instead of surprising main.
-          GITHUB_TOKEN: ${{ github.token }}
-          BRANCH: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          git config user.name "skills-evals real-eval bot"
-          git config user.email "skills-evals@users.noreply.github.com"
-          # .gitignore keeps raw transcripts out; only summaries + report land.
-          git add badges results
-          if git diff --cached --quiet; then
-            echo "No changes to commit."
-            exit 0
-          fi
-          git commit -m "eval: pin-actions-to-sha run + badge [skip ci]"
-          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          push() { git -c "http.https://github.com/.extraheader=$auth" push origin "HEAD:$BRANCH"; }
-          if ! push; then
-            # Push race (something landed on $BRANCH mid-run): rebase once,
-            # retry once; a second failure fails the job loudly.
-            git -c "http.https://github.com/.extraheader=$auth" fetch origin "$BRANCH"
-            git rebase "origin/$BRANCH"
-            push
-          fi

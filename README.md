@@ -1,6 +1,6 @@
 # skills-evals
 
-[![skill eval: pin-actions-to-sha](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fmain%2Fbadges%2Fpin-actions-to-sha.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
+[![skill eval: pin-actions-to-sha](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Fpin-actions-to-sha.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
 
 Evals for the [`agentskills`](https://github.com/Adam-S-Daniel/agentskills)
 registry: for each skill, measure agent quality **with vs. without** the skill
