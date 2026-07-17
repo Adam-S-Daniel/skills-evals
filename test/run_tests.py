@@ -256,6 +256,123 @@ class ObjectiveAsymmetryTests(unittest.TestCase):
             self.assertTrue(r["passed"], r["detail"])
 
 
+class PinnedShaTagCheckTests(unittest.TestCase):
+    """pinned_shas_match_tags: parsing/matching logic exercised with injected
+    ls-remote data — the network path itself is opt-in (--net-checks) and never
+    runs in this hermetic suite.
+    """
+
+    SHA = _fake_sha(0xA1)
+    OTHER = _fake_sha(0xB2)
+
+    def _ws(self, uses_lines: list[str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        wf = ws / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        body = "jobs:\n  x:\n    steps:\n" + "".join(
+            f"      - uses: {u}\n" for u in uses_lines)
+        (wf / "ci.yml").write_text(body, encoding="utf-8")
+        return ws
+
+    PATTERNS = [".github/workflows/*.yml"]
+
+    def test_skipped_without_network(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        passed, detail = objective.pinned_shas_match_tags(str(ws), self.PATTERNS)
+        self.assertTrue(passed)
+        self.assertIn("skipped", detail)
+        self.assertIn("1 pinned ref(s) unverified", detail)
+
+    def test_no_pinned_refs_vacuous_pass(self):
+        ws = self._ws(["actions/checkout@v4"])  # unpinned: nothing to verify
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS,
+            ls_remote=lambda url, ver: (self.fail("must not be called"), None))
+        self.assertTrue(passed)
+        self.assertIn("no SHA-pinned remote refs", detail)
+
+    def test_lightweight_tag_match(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0 (2025-11-20)"])
+        refs = {"refs/tags/v6.0.0": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertTrue(passed, detail)
+        self.assertIn("1 verified, 0 mismatched, 0 unverifiable", detail)
+
+    def test_annotated_tag_peel_match(self):
+        # Annotated tag: the ref names a tag object; the commit is on the peel.
+        ws = self._ws([f"actions/setup-python@{self.SHA} # v6.1.0"])
+        refs = {"refs/tags/v6.1.0": self.OTHER,
+                "refs/tags/v6.1.0^{}": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertTrue(passed, detail)
+
+    def test_bare_version_comment_matches_v_prefixed_tag(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # 6.0.0"])
+        refs = {"refs/tags/v6.0.0": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertTrue(passed, detail)
+
+    def test_mismatch_fails(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        refs = {"refs/tags/v6.0.0": self.OTHER,
+                "refs/tags/v6.0.0^{}": self.OTHER}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertFalse(passed)
+        self.assertIn("1 mismatched", detail)
+        self.assertIn("ci.yml", detail)
+
+    def test_claimed_tag_missing_upstream_fails(self):
+        # Wildcard hit a sibling tag but not the claimed one: the claim is wrong.
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        refs = {"refs/tags/v6.0.1": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertFalse(passed)
+        self.assertIn("1 mismatched", detail)
+
+    def test_ls_remote_failure_is_unverifiable_not_failure(self):
+        ws = self._ws([
+            f"actions/checkout@{self.SHA} # v6.0.0",
+            f"actions/setup-node@{self.OTHER} # v6.0.0",
+        ])
+        def flaky(url, ver):
+            if "setup-node" in url:
+                return None, "could not resolve host"
+            return {"refs/tags/v6.0.0": self.SHA}, None
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=flaky)
+        self.assertTrue(passed, detail)
+        self.assertIn("1 verified, 0 mismatched, 1 unverifiable", detail)
+        self.assertIn("could not resolve host", detail)
+
+    def test_repo_url_strips_action_subpath(self):
+        ws = self._ws([f"github/codeql-action/init@{self.SHA} # v3.28.0"])
+        seen = []
+        def capture(url, ver):
+            seen.append((url, ver))
+            return {"refs/tags/v3.28.0": self.SHA}, None
+        passed, _ = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=capture)
+        self.assertTrue(passed)
+        self.assertEqual(seen, [("https://github.com/github/codeql-action", "v3.28.0")])
+
+    def test_run_checks_stays_hermetic_by_default(self):
+        # The real fixture now carries the network-dependent check; without
+        # allow_network it must report as skipped-pass, never touch the network.
+        fixture = run_eval.load_fixture(EVAL_DIR)
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        results = objective.run_checks(fixture, str(ws), str(EVAL_DIR / "seed"))
+        by_id = {r["id"]: r for r in results}
+        self.assertIn("pinned-shas-match-tags", by_id)
+        self.assertTrue(by_id["pinned-shas-match-tags"]["passed"])
+        self.assertIn("skipped", by_id["pinned-shas-match-tags"]["detail"])
+
+
 class EndToEndTests(unittest.TestCase):
     def test_both_arms_produce_summary_and_report(self):
         with tempfile.TemporaryDirectory() as tmp:
