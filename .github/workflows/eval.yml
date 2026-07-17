@@ -20,23 +20,33 @@
 #   to that repo is equivalent to key access here. Both repos are
 #   maintainer-only; keep it that way or drop the key.
 #
-# * Secret: ANTHROPIC_API_KEY — a DEDICATED, SPEND-CAPPED key used nowhere
-#   else. Recommended setup: a dedicated Console workspace with a monthly
-#   spend limit of $10, and a key minted from that workspace, installed via:
-#       gh secret set ANTHROPIC_API_KEY -R Adam-S-Daniel/skills-evals
-#   It is injected only into the eval step's env (never top-level env), and
-#   run_eval.py passes it to `claude -p` via inherited process env — it is
-#   never written to disk. Cost: the fixture pins the agent arms to
-#   claude-sonnet-5 and the judge to claude-opus-4-8, so a full run
-#   (2 sonnet-5 arms + 2 opus-4-8 judge calls) is expected at ~$0.30–0.90,
-#   i.e. ~$1.50–4/month at weekly cadence. Per-dispatch spend is bounded by
-#   the harness timeouts (600s per arm, 120s per judge call); the workspace
-#   spend limit, not this workflow, is the hard ceiling.
+# * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
+#   secret exists. The "Mint GitHub OIDC token" step exchanges the
+#   runner's ACTIONS_ID_TOKEN_REQUEST_TOKEN for a GitHub-issued OIDC token
+#   (sub pinned to repo:Adam-S-Daniel/skills-evals:ref:refs/heads/main,
+#   audience https://api.anthropic.com, single-use JTI) and writes it to
+#   $RUNNER_TEMP/anthropic-oidc.jwt — scoped to this one ephemeral runner.
+#   The eval step points the Claude Code CLI at that file via
+#   ANTHROPIC_IDENTITY_TOKEN_FILE (injected only into the eval step's env,
+#   never top-level env); the CLI exchanges it against federation rule
+#   fdrl_012TsUrCbGZKH17uCUpgqMxf for a 1h access token scoped to service
+#   account svac_01DVDm1YuUembqV2LScAjsGz on the spend-capped
+#   skills-evals-ci workspace (~$10/mo). Dispatches from non-main refs get
+#   no credential — the rule's sub claim matches ref:refs/heads/main only
+#   — which also supersedes the old maintainer-branch trust widening
+#   caveat. Cost: the fixture pins the agent arms to claude-sonnet-5 and
+#   the judge to claude-opus-4-8, so a full run (2 sonnet-5 arms + 2
+#   opus-4-8 judge calls) is expected at ~$0.30–0.90, i.e. ~$1.50–4/month
+#   at weekly cadence. Per-dispatch spend is bounded by the harness
+#   timeouts (600s per arm, 120s per judge call); the workspace spend
+#   limit, not this workflow, is the hard ceiling.
 #
 # * Both checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
-#   only secret it could reach is the spend-capped API key it needs anyway.
+#   only credential in reach is the short-lived WIF-derived access token
+#   (and the single-use OIDC token file) scoped to the spend-capped
+#   workspace — no long-lived secret exists on the runner.
 #
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run
@@ -59,6 +69,7 @@ on:
 # gets no other scopes.
 permissions:
   contents: write
+  id-token: write
 
 # Never let two runs (e.g. a manual dispatch during the weekly run) race the
 # badge commit; queue instead of cancelling so results are never half-written.
@@ -109,11 +120,21 @@ jobs:
       - name: Install harness dependencies
         run: pip install pyyaml
 
+      - name: Mint GitHub OIDC token for Anthropic WIF
+        run: |
+          resp=$(curl -sS --fail-with-body \
+            -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https%3A%2F%2Fapi.anthropic.com")
+          jq -r .value <<<"$resp" > "$RUNNER_TEMP/anthropic-oidc.jwt"
+          test -s "$RUNNER_TEMP/anthropic-oidc.jwt"
+
       - name: Run the eval (both arms, judge, network checks)
         working-directory: skills-evals
         env:
-          # Step-scoped on purpose — no other step sees the key.
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_FEDERATION_RULE_ID: fdrl_012TsUrCbGZKH17uCUpgqMxf
+          ANTHROPIC_ORGANIZATION_ID: 0905256d-aaf8-45ad-892b-9d2867c67c4e
+          ANTHROPIC_SERVICE_ACCOUNT_ID: svac_01DVDm1YuUembqV2LScAjsGz
+          ANTHROPIC_IDENTITY_TOKEN_FILE: ${{ runner.temp }}/anthropic-oidc.jwt
         run: |
           python3 harness/run_eval.py evals/pin-actions-to-sha \
             --arm both --registry ../agentskills --net-checks
