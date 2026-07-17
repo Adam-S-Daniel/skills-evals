@@ -93,11 +93,12 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # Deliberately unpinned: the eval should measure skills against the
-        # CLI users actually run. The version is logged so any score shift can
-        # be tied to a CLI release.
+        # Pinned per the repo cooling-off convention: this step feeds the
+        # key-bearing eval step, so an unpinned install is a supply-chain
+        # vector straight into the API key. 2.1.211 is the version this
+        # harness was validated against locally; bump deliberately via PR.
         run: |
-          npm install -g @anthropic-ai/claude-code
+          npm install -g @anthropic-ai/claude-code@2.1.211
           claude --version
 
       - name: Set up Python

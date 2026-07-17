@@ -155,10 +155,12 @@ def pinned_shas_match_tags(workspace: str, patterns: list[str], *,
     parsing/matching logic by injecting `ls_remote` (same contract as
     _ls_remote_tags) instead of enabling the network.
 
-    Per-ref ls-remote failures count as "unverifiable" — reported in the
-    detail but never failing the check — so a network blip can't flap the
-    result. Only a genuine mismatch (or a claimed tag that doesn't exist
-    upstream) fails.
+    Per-ref ls-remote failures count as "unverifiable" — a network blip on
+    one ref can't flap the result while others verify. But if NOTHING could
+    be verified (0 verified, 0 mismatched, >=1 unverifiable) the check fails:
+    an all-unverifiable pass would let total network degradation masquerade
+    as a green result. A genuine mismatch (or a claimed tag that doesn't
+    exist upstream) always fails.
     """
     pinned = _pinned_refs(workspace, patterns)
     if not pinned:
@@ -188,11 +190,14 @@ def pinned_shas_match_tags(workspace: str, patterns: list[str], *,
 
     detail = (f"{verified} verified, {len(mismatched)} mismatched, "
               f"{len(unverifiable)} unverifiable")
+    all_unverifiable = not verified and not mismatched and unverifiable
+    if all_unverifiable:
+        detail += " — network degraded"
     if mismatched:
         detail += "; mismatched: " + "; ".join(mismatched)
     if unverifiable:
         detail += "; unverifiable: " + "; ".join(unverifiable)
-    return (not mismatched, detail)
+    return (not mismatched and not all_unverifiable, detail)
 
 
 CHECKS = {

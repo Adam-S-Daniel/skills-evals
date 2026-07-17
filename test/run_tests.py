@@ -339,6 +339,8 @@ class PinnedShaTagCheckTests(unittest.TestCase):
         self.assertIn("1 mismatched", detail)
 
     def test_ls_remote_failure_is_unverifiable_not_failure(self):
+        # Partial degradation: at least one ref verified, none mismatched —
+        # a per-ref network blip must not flap the check.
         ws = self._ws([
             f"actions/checkout@{self.SHA} # v6.0.0",
             f"actions/setup-node@{self.OTHER} # v6.0.0",
@@ -352,6 +354,20 @@ class PinnedShaTagCheckTests(unittest.TestCase):
         self.assertTrue(passed, detail)
         self.assertIn("1 verified, 0 mismatched, 1 unverifiable", detail)
         self.assertIn("could not resolve host", detail)
+
+    def test_all_unverifiable_fails(self):
+        # Total degradation: nothing verified at all must NOT pass — a dead
+        # network would otherwise masquerade as a green result.
+        ws = self._ws([
+            f"actions/checkout@{self.SHA} # v6.0.0",
+            f"actions/setup-node@{self.OTHER} # v6.0.0",
+        ])
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS,
+            ls_remote=lambda url, ver: (None, "could not resolve host"))
+        self.assertFalse(passed)
+        self.assertIn("0 verified, 0 mismatched, 2 unverifiable", detail)
+        self.assertIn("network degraded", detail)
 
     def test_repo_url_strips_action_subpath(self):
         ws = self._ws([f"github/codeql-action/init@{self.SHA} # v3.28.0"])
@@ -428,6 +444,17 @@ class MakeBadgeTests(unittest.TestCase):
         self._write_run(self.TS, self._summary(5, 5, 5.0), self._summary(4, 5, 8.0))
         self.assertEqual(self._badge()["color"], "yellow")
 
+    def test_yellow_when_objective_tied_judge_better(self):
+        # Green requires a strict objective win; a judge advantage on an
+        # objective tie caps at yellow, never promotes to green.
+        self._write_run(self.TS, self._summary(4, 5, 9.0), self._summary(4, 5, 3.0))
+        self.assertEqual(self._badge()["color"], "yellow")
+
+    def test_red_when_objective_tied_judge_worse(self):
+        # On an objective tie the judge may demote: worse judge -> red.
+        self._write_run(self.TS, self._summary(4, 5, 3.0), self._summary(4, 5, 8.0))
+        self.assertEqual(self._badge()["color"], "red")
+
     def test_red_when_with_worse(self):
         self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
         badge = self._badge()
@@ -450,6 +477,17 @@ class MakeBadgeTests(unittest.TestCase):
         errored["objective_checks"] = None
         self._write_run(self.TS, self._summary(5, 5, 8.0), errored)
         self.assertEqual(self._badge()["color"], "lightgrey")
+
+    def test_grey_when_summary_malformed(self):
+        # Non-list objective_checks / non-dict judge must read as missing
+        # data (lightgrey), never crash the badge job.
+        malformed = self._summary(5, 5, 8.0)
+        malformed["objective_checks"] = {"oops": "not a list"}
+        malformed["judge"] = "not a dict"
+        self._write_run(self.TS, self._summary(5, 5, 8.0), malformed)
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], f"no data · {self.DATE}")
 
     def test_grey_when_no_runs(self):
         badge = self._badge()
