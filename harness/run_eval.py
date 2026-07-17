@@ -220,7 +220,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
                 "duration_ms": result.get("duration_ms"),
                 "usage": result.get("usage"),
             }
-            objective_checks = objective.run_checks(fixture, str(workspace), str(seed))
+            objective_checks = objective.run_checks(fixture, str(workspace), str(seed),
+                                                    allow_network=args.net_checks)
 
             if not args.no_judge:
                 _git("add", "-A", cwd=workspace)
@@ -257,6 +258,10 @@ def main() -> int:
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
+    parser.add_argument("--net-checks", action="store_true",
+                        help="enable network-dependent objective checks "
+                             "(e.g. SHA<->tag verification via git ls-remote); "
+                             "off by default so tests stay hermetic")
     parser.add_argument("--timeout", type=int, default=None,
                         help="override the fixture's agent timeout (seconds)")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
@@ -269,12 +274,14 @@ def main() -> int:
     if args.arm == "objective-only":
         if args.workspace:
             workspace = args.workspace
-            results = objective.run_checks(fixture, str(workspace), str(seed))
+            results = objective.run_checks(fixture, str(workspace), str(seed),
+                                           allow_network=args.net_checks)
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 workspace = Path(tmp) / "ws"
                 shutil.copytree(seed, workspace)
-                results = objective.run_checks(fixture, str(workspace), str(seed))
+                results = objective.run_checks(fixture, str(workspace), str(seed),
+                                               allow_network=args.net_checks)
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
                           "checks": results}, indent=2))

@@ -73,9 +73,14 @@ Two modes:
 - **prompt** — "Pin all GitHub Actions to full commit SHAs."
 - **objective check** — every `uses:` becomes a 40-hex SHA followed by a
   `# vX.Y.Z` version comment; non-action `uses:` (local/Docker) left alone;
-  every workflow still parses.
-- **judge rubric** — did it pin *all* refs, preserve the version in a comment,
-  avoid touching things it shouldn't, and explain what it did?
+  every workflow still parses; each pinned SHA is the commit its version
+  comment claims (verified against the action repo's real tags via
+  `git ls-remote` — network-dependent, so it runs only under `--net-checks`
+  in the real-eval path, never in the hermetic tests).
+- **judge rubric** — did it pin *all* refs, avoid touching things it
+  shouldn't, and explain what it did? (SHA↔tag correspondence and
+  version-comment preservation are verified objectively, not judged — a
+  tool-less judge could only hallucinate that verification.)
 - **expected result** — the `with_skill` arm materially outperforms baseline on
   completeness/correctness.
 

@@ -1,0 +1,152 @@
+# Real (non-hermetic) skill eval: runs the pin-actions-to-sha A/B eval against
+# the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
+# commits the badge + run summaries back to the default branch. The hermetic
+# suite stays in ci.yml — this workflow is the ONLY place real credentials or
+# the network-dependent objective checks appear.
+#
+# SECURITY POSTURE — read this before changing anything:
+#
+# * Triggers are `schedule` + `workflow_dispatch` ONLY. NEVER add pull_request
+#   or pull_request_target: this workflow holds an API key, and the harness
+#   runs the agent under test with `--permission-mode bypassPermissions` (see
+#   harness/run_eval.py) inside a throwaway temp workspace. Key +
+#   bypassPermissions must never meet untrusted fixture content. The fixtures
+#   here are trusted because only maintainers can push to this repo; the only
+#   prompts ever run are this repo's committed fixtures. Never accept external
+#   fixture contributions into this path without dropping the key first.
+#   The trust boundary equally includes the agentskills registry checked out
+#   below: the with_skill arm installs skill content from its default branch
+#   and executes it under bypassPermissions with the key in env — write access
+#   to that repo is equivalent to key access here. Both repos are
+#   maintainer-only; keep it that way or drop the key.
+#
+# * Secret: ANTHROPIC_API_KEY — a DEDICATED, SPEND-CAPPED key used nowhere
+#   else. Recommended setup: a dedicated Console workspace with a monthly
+#   spend limit of $10, and a key minted from that workspace, installed via:
+#       gh secret set ANTHROPIC_API_KEY -R Adam-S-Daniel/skills-evals
+#   It is injected only into the eval step's env (never top-level env), and
+#   run_eval.py passes it to `claude -p` via inherited process env — it is
+#   never written to disk. Cost: the fixture pins the agent arms to
+#   claude-sonnet-5 and the judge to claude-opus-4-8, so a full run
+#   (2 sonnet-5 arms + 2 opus-4-8 judge calls) is expected at ~$0.30–0.90,
+#   i.e. ~$1.50–4/month at weekly cadence. Per-dispatch spend is bounded by
+#   the harness timeouts (600s per arm, 120s per judge call); the workspace
+#   spend limit, not this workflow, is the hard ceiling.
+#
+# * Both checkouts use `persist-credentials: false`; push auth is injected
+#   only in the final commit step's env. While the bypassPermissions agent is
+#   running, no GitHub write credential exists anywhere on the runner — the
+#   only secret it could reach is the spend-capped API key it needs anyway.
+#
+# * The weekly badge commit doubles as cron keep-alive: GitHub disables
+#   scheduled workflows after ~60 days without repo activity, and each run
+#   commits fresh results, so the schedule keeps itself alive.
+#
+# * All actions are SHA-pinned (# vX.Y.Z (release date)) — same pins as
+#   agentskills' ci.yml — and this repo's own eval seeds practice what we pin.
+
+name: Real eval
+
+on:
+  schedule:
+    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+  workflow_dispatch:
+
+# Single job, so contents:write is the whole workflow's privilege set. It is
+# required for the badge/results push; splitting eval and commit into separate
+# jobs would not shed it (the commit job still needs write + the results
+# artifact), it would only add an artifact hand-off surface. GITHUB_TOKEN here
+# gets no other scopes.
+permissions:
+  contents: write
+
+# Never let two runs (e.g. a manual dispatch during the weekly run) race the
+# badge commit; queue instead of cancelling so results are never half-written.
+concurrency:
+  group: real-eval
+  cancel-in-progress: false
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45 # 2 arms x 10 min agent budget + judges + setup
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        with:
+          path: skills-evals
+          # Full history so the push-race rebase below always has the commits
+          # it needs; this repo is small.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check out agentskills registry (side-by-side)
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        with:
+          repository: Adam-S-Daniel/agentskills
+          path: agentskills
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0 (2025-10-14)
+        with:
+          node-version: 22
+
+      - name: Install Claude Code CLI
+        # Pinned per the repo cooling-off convention: this step feeds the
+        # key-bearing eval step, so an unpinned install is a supply-chain
+        # vector straight into the API key. 2.1.211 is the version this
+        # harness was validated against locally; bump deliberately via PR.
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.211
+          claude --version
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0 (2025-11-24)
+        with:
+          python-version: "3.12"
+
+      - name: Install harness dependencies
+        run: pip install pyyaml
+
+      - name: Run the eval (both arms, judge, network checks)
+        working-directory: skills-evals
+        env:
+          # Step-scoped on purpose — no other step sees the key.
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          python3 harness/run_eval.py evals/pin-actions-to-sha \
+            --arm both --registry ../agentskills --net-checks
+
+      - name: Generate badge
+        working-directory: skills-evals
+        run: python3 scripts/make_badge.py pin-actions-to-sha
+
+      - name: Commit and push badge + run summaries
+        working-directory: skills-evals
+        env:
+          # Push auth lives only in this step. github.ref_name is the default
+          # branch on schedule runs; a manual dispatch from a branch commits
+          # to that branch instead of surprising main.
+          GITHUB_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          git config user.name "skills-evals real-eval bot"
+          git config user.email "skills-evals@users.noreply.github.com"
+          # .gitignore keeps raw transcripts out; only summaries + report land.
+          git add badges results
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "eval: pin-actions-to-sha run + badge [skip ci]"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          push() { git -c "http.https://github.com/.extraheader=$auth" push origin "HEAD:$BRANCH"; }
+          if ! push; then
+            # Push race (something landed on $BRANCH mid-run): rebase once,
+            # retry once; a second failure fails the job loudly.
+            git -c "http.https://github.com/.extraheader=$auth" fetch origin "$BRANCH"
+            git rebase "origin/$BRANCH"
+            push
+          fi

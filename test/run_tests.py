@@ -32,6 +32,9 @@ sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
+sys.path.insert(0, str(REPO_ROOT / "scripts"))
+import make_badge  # noqa: E402
+
 
 def _fake_sha(seed: int) -> str:
     """A 40-hex-char string — valid per objective.SHA_RE, not a real commit."""
@@ -254,6 +257,266 @@ class ObjectiveAsymmetryTests(unittest.TestCase):
             results = objective.run_checks(fixture, str(ws), str(seed))
         for r in results:
             self.assertTrue(r["passed"], r["detail"])
+
+
+class PinnedShaTagCheckTests(unittest.TestCase):
+    """pinned_shas_match_tags: parsing/matching logic exercised with injected
+    ls-remote data — the network path itself is opt-in (--net-checks) and never
+    runs in this hermetic suite.
+    """
+
+    SHA = _fake_sha(0xA1)
+    OTHER = _fake_sha(0xB2)
+
+    def _ws(self, uses_lines: list[str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        wf = ws / ".github" / "workflows"
+        wf.mkdir(parents=True)
+        body = "jobs:\n  x:\n    steps:\n" + "".join(
+            f"      - uses: {u}\n" for u in uses_lines)
+        (wf / "ci.yml").write_text(body, encoding="utf-8")
+        return ws
+
+    PATTERNS = [".github/workflows/*.yml"]
+
+    def test_skipped_without_network(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        passed, detail = objective.pinned_shas_match_tags(str(ws), self.PATTERNS)
+        self.assertTrue(passed)
+        self.assertIn("skipped", detail)
+        self.assertIn("1 pinned ref(s) unverified", detail)
+
+    def test_no_pinned_refs_vacuous_pass(self):
+        ws = self._ws(["actions/checkout@v4"])  # unpinned: nothing to verify
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS,
+            ls_remote=lambda url, ver: (self.fail("must not be called"), None))
+        self.assertTrue(passed)
+        self.assertIn("no SHA-pinned remote refs", detail)
+
+    def test_lightweight_tag_match(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0 (2025-11-20)"])
+        refs = {"refs/tags/v6.0.0": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertTrue(passed, detail)
+        self.assertIn("1 verified, 0 mismatched, 0 unverifiable", detail)
+
+    def test_annotated_tag_peel_match(self):
+        # Annotated tag: the ref names a tag object; the commit is on the peel.
+        ws = self._ws([f"actions/setup-python@{self.SHA} # v6.1.0"])
+        refs = {"refs/tags/v6.1.0": self.OTHER,
+                "refs/tags/v6.1.0^{}": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertTrue(passed, detail)
+
+    def test_bare_version_comment_matches_v_prefixed_tag(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # 6.0.0"])
+        refs = {"refs/tags/v6.0.0": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertTrue(passed, detail)
+
+    def test_mismatch_fails(self):
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        refs = {"refs/tags/v6.0.0": self.OTHER,
+                "refs/tags/v6.0.0^{}": self.OTHER}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertFalse(passed)
+        self.assertIn("1 mismatched", detail)
+        self.assertIn("ci.yml", detail)
+
+    def test_claimed_tag_missing_upstream_fails(self):
+        # Wildcard hit a sibling tag but not the claimed one: the claim is wrong.
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        refs = {"refs/tags/v6.0.1": self.SHA}
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=lambda url, ver: (refs, None))
+        self.assertFalse(passed)
+        self.assertIn("1 mismatched", detail)
+
+    def test_ls_remote_failure_is_unverifiable_not_failure(self):
+        # Partial degradation: at least one ref verified, none mismatched —
+        # a per-ref network blip must not flap the check.
+        ws = self._ws([
+            f"actions/checkout@{self.SHA} # v6.0.0",
+            f"actions/setup-node@{self.OTHER} # v6.0.0",
+        ])
+        def flaky(url, ver):
+            if "setup-node" in url:
+                return None, "could not resolve host"
+            return {"refs/tags/v6.0.0": self.SHA}, None
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=flaky)
+        self.assertTrue(passed, detail)
+        self.assertIn("1 verified, 0 mismatched, 1 unverifiable", detail)
+        self.assertIn("could not resolve host", detail)
+
+    def test_all_unverifiable_fails(self):
+        # Total degradation: nothing verified at all must NOT pass — a dead
+        # network would otherwise masquerade as a green result.
+        ws = self._ws([
+            f"actions/checkout@{self.SHA} # v6.0.0",
+            f"actions/setup-node@{self.OTHER} # v6.0.0",
+        ])
+        passed, detail = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS,
+            ls_remote=lambda url, ver: (None, "could not resolve host"))
+        self.assertFalse(passed)
+        self.assertIn("0 verified, 0 mismatched, 2 unverifiable", detail)
+        self.assertIn("network degraded", detail)
+
+    def test_repo_url_strips_action_subpath(self):
+        ws = self._ws([f"github/codeql-action/init@{self.SHA} # v3.28.0"])
+        seen = []
+        def capture(url, ver):
+            seen.append((url, ver))
+            return {"refs/tags/v3.28.0": self.SHA}, None
+        passed, _ = objective.pinned_shas_match_tags(
+            str(ws), self.PATTERNS, ls_remote=capture)
+        self.assertTrue(passed)
+        self.assertEqual(seen, [("https://github.com/github/codeql-action", "v3.28.0")])
+
+    def test_run_checks_stays_hermetic_by_default(self):
+        # The real fixture now carries the network-dependent check; without
+        # allow_network it must report as skipped-pass, never touch the network.
+        fixture = run_eval.load_fixture(EVAL_DIR)
+        ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
+        results = objective.run_checks(fixture, str(ws), str(EVAL_DIR / "seed"))
+        by_id = {r["id"]: r for r in results}
+        self.assertIn("pinned-shas-match-tags", by_id)
+        self.assertTrue(by_id["pinned-shas-match-tags"]["passed"])
+        self.assertIn("skipped", by_id["pinned-shas-match-tags"]["detail"])
+
+
+class MakeBadgeTests(unittest.TestCase):
+    """scripts/make_badge.py against hand-written run summaries, one per color."""
+
+    TS = "20260716T070000Z"
+    DATE = "2026-07-16"
+
+    def setUp(self):
+        self.results = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.results, ignore_errors=True)
+
+    @staticmethod
+    def _summary(passed: int, total: int, judge_overall=None, error=None) -> dict:
+        return {
+            "error": error,
+            "objective_checks": [{"id": f"c{i}", "passed": i < passed,
+                                  "detail": ""} for i in range(total)],
+            "judge": {"overall": judge_overall} if judge_overall is not None else None,
+        }
+
+    def _write_run(self, ts: str, with_summary: dict | None,
+                   without_summary: dict | None) -> None:
+        for arm, summary in (("with_skill", with_summary),
+                             ("without_skill", without_summary)):
+            if summary is None:
+                continue
+            arm_dir = self.results / "pin-actions-to-sha" / ts / arm
+            arm_dir.mkdir(parents=True)
+            (arm_dir / "summary.json").write_text(
+                json.dumps(summary), encoding="utf-8")
+
+    def _badge(self) -> dict:
+        return make_badge.build_badge(self.results, "pin-actions-to-sha")
+
+    def test_green_when_with_strictly_better(self):
+        self._write_run(self.TS, self._summary(5, 5, 8.5), self._summary(3, 5, 4.0))
+        badge = self._badge()
+        self.assertEqual(badge["schemaVersion"], 1)
+        self.assertEqual(badge["label"], "skill eval: pin-actions-to-sha")
+        self.assertEqual(badge["message"], f"with 5/5 vs without 3/5 · {self.DATE}")
+        self.assertEqual(badge["color"], "green")
+
+    def test_yellow_when_tied(self):
+        self._write_run(self.TS, self._summary(4, 5, 7.0), self._summary(4, 5, 7.0))
+        badge = self._badge()
+        self.assertEqual(badge["color"], "yellow")
+        self.assertIn(self.DATE, badge["message"])
+
+    def test_yellow_when_signals_mixed(self):
+        # Better objectively, worse per the judge: mixed, not green.
+        self._write_run(self.TS, self._summary(5, 5, 5.0), self._summary(4, 5, 8.0))
+        self.assertEqual(self._badge()["color"], "yellow")
+
+    def test_yellow_when_objective_tied_judge_better(self):
+        # Green requires a strict objective win; a judge advantage on an
+        # objective tie caps at yellow, never promotes to green.
+        self._write_run(self.TS, self._summary(4, 5, 9.0), self._summary(4, 5, 3.0))
+        self.assertEqual(self._badge()["color"], "yellow")
+
+    def test_red_when_objective_tied_judge_worse(self):
+        # On an objective tie the judge may demote: worse judge -> red.
+        self._write_run(self.TS, self._summary(4, 5, 3.0), self._summary(4, 5, 8.0))
+        self.assertEqual(self._badge()["color"], "red")
+
+    def test_red_when_with_worse(self):
+        self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
+        badge = self._badge()
+        self.assertEqual(badge["color"], "red")
+        self.assertEqual(badge["message"], f"with 2/5 vs without 4/5 · {self.DATE}")
+
+    def test_judge_missing_falls_back_to_objective_only(self):
+        self._write_run(self.TS, self._summary(5, 5, None), self._summary(3, 5, 6.0))
+        self.assertEqual(self._badge()["color"], "green")
+
+    def test_grey_when_arm_summary_missing(self):
+        self._write_run(self.TS, self._summary(5, 5, 8.0), None)
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], f"no data · {self.DATE}")
+
+    def test_grey_when_arm_errored(self):
+        errored = self._summary(0, 5, None,
+                                error={"type": "timeout", "detail": "600s"})
+        errored["objective_checks"] = None
+        self._write_run(self.TS, self._summary(5, 5, 8.0), errored)
+        self.assertEqual(self._badge()["color"], "lightgrey")
+
+    def test_grey_when_summary_malformed(self):
+        # Non-list objective_checks / non-dict judge must read as missing
+        # data (lightgrey), never crash the badge job.
+        malformed = self._summary(5, 5, 8.0)
+        malformed["objective_checks"] = {"oops": "not a list"}
+        malformed["judge"] = "not a dict"
+        self._write_run(self.TS, self._summary(5, 5, 8.0), malformed)
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], f"no data · {self.DATE}")
+
+    def test_grey_when_no_runs(self):
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], "no runs yet")
+
+    def test_newest_run_wins(self):
+        self._write_run("20260101T000000Z", self._summary(5, 5, 9.0),
+                        self._summary(1, 5, 2.0))
+        self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
+        badge = self._badge()
+        self.assertEqual(badge["color"], "red")
+        self.assertIn(self.DATE, badge["message"])
+
+    def test_cli_writes_deterministic_badge_file(self):
+        self._write_run(self.TS, self._summary(5, 5, 8.0), self._summary(3, 5, 4.0))
+        out = self.results / "badge.json"
+        cmd = [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"),
+               "pin-actions-to-sha", "--results-dir", str(self.results),
+               "--out", str(out)]
+        first = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
+        bytes_one = out.read_bytes()
+        second = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(second.returncode, 0)
+        self.assertEqual(bytes_one, out.read_bytes())
+        badge = json.loads(bytes_one)
+        self.assertEqual(badge["schemaVersion"], 1)
+        self.assertEqual(badge["color"], "green")
 
 
 class EndToEndTests(unittest.TestCase):

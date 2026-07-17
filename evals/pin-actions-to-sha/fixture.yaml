@@ -5,6 +5,18 @@
 skill: pin-actions-to-sha
 registry: https://github.com/Adam-S-Daniel/agentskills
 
+# Agent arms run on a pinned mid-tier model, deliberately NOT Opus-tier: an
+# Opus-class agent would likely ace this task even WITHOUT the skill (ceiling
+# effect), leaving the with/without comparison signal-free. Pinning also keeps
+# week-over-week badge comparisons meaningful — unpinned, the arms silently
+# track Claude Code's default model as it changes across CLI releases.
+model: claude-sonnet-5
+
+# The judge is pinned to a strong model: judgment consistency matters more
+# than agent-arm parity, and two short judge calls per run cost pennies.
+judge:
+  model: claude-opus-4-8
+
 prompt: >
   Pin all GitHub Actions in this repository's workflows to full commit SHAs.
 
@@ -38,14 +50,30 @@ objective_checks:
     description: Local (./) and docker:// `uses:` refs were not modified
     type: non_remote_refs_unchanged
     paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+  - id: pinned-shas-match-tags
+    description: >
+      Each pinned SHA is the commit its version comment claims, verified
+      against the action repo's real tags via `git ls-remote` (accepting the
+      tag ref or its ^{} peel). NETWORK-DEPENDENT — runs only when the harness
+      is invoked with --net-checks (the real-eval workflow does); skipped, and
+      reported as such, in the hermetic test suite. Per-ref ls-remote failures
+      count as "unverifiable", never as failures, so network blips can't flap
+      the result.
+    type: pinned_shas_match_tags
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
 
+# Judge scoring: 3 dimensions, 0-10 each. SHA<->tag correspondence used to be
+# a judge dimension ("spot-check that each SHA corresponds to the tag it
+# replaced") — but the judge has no tools, so it could only hallucinate that
+# verification. It is now the objective pinned-shas-match-tags check above;
+# version-comment preservation is likewise covered objectively
+# (version-comment-present). The judge keeps only what genuinely needs
+# judgment.
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
   (1) Completeness — were ALL remote action refs pinned, across every workflow
   file, including refs the agent had to discover rather than being pointed at?
-  (2) Correctness — does each SHA actually correspond to the tag it replaced
-  (spot-check), and is the original version preserved in a comment?
-  (3) Restraint — did the agent avoid modifying local actions, docker refs,
+  (2) Restraint — did the agent avoid modifying local actions, docker refs,
   reusable-workflow refs it shouldn't touch, or unrelated files?
-  (4) Communication — did the agent explain what it pinned and how it verified
+  (3) Communication — did the agent explain what it pinned and how it verified
   the SHAs?
