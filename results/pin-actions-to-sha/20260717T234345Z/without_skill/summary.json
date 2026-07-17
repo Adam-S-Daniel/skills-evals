@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "without_skill",
+  "timestamp": "20260717T234345Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.18937125,
+    "num_turns": 12,
+    "duration_ms": 43342,
+    "usage": {
+      "input_tokens": 20,
+      "cache_creation_input_tokens": 14133,
+      "cache_read_input_tokens": 316685,
+      "output_tokens": 2713,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 14133
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 9,
+        "rationale": "Every remote marketplace ref across both workflow files (ci.yml and the differently-named release.yaml) was pinned to a full commit SHA, including the second checkout instance in the lint job."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The agent correctly left the local action, the docker ref, and all unrelated content untouched, changing only the remote refs that needed pinning."
+      },
+      {
+        "name": "Communication",
+        "score": 5,
+        "rationale": "It clearly stated which refs it pinned and why it skipped the local/docker refs, but gave no account of how the SHAs were obtained or verified as authentic for each tag."
+      }
+    ],
+    "overall": 8.0
+  }
+}

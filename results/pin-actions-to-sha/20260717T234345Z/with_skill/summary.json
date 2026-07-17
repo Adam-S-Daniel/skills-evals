@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "with_skill",
+  "timestamp": "20260717T234345Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.30361455000000004,
+    "num_turns": 17,
+    "duration_ms": 66449,
+    "usage": {
+      "input_tokens": 25,
+      "cache_creation_input_tokens": 22113,
+      "cache_read_input_tokens": 481696,
+      "output_tokens": 5033,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 22113
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 10,
+        "rationale": "Every remote action ref across both workflow files was pinned \u2014 checkout (both occurrences in ci.yml plus release.yaml), setup-node, setup-python, and the third-party softprops/action-gh-release \u2014 with no remote ref left on a floating tag."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The local composite action (`./.github/actions/local-lint`) and the Docker ref (`docker://alpine:3.20`) were correctly left untouched, and no unrelated files or lines were modified."
+      },
+      {
+        "name": "Communication",
+        "score": 9,
+        "rationale": "The agent clearly listed each pin with resolved SHA, version tag, and release date, and explained the cooling-off-window rationale for skipped newer versions, though it asserts rather than shows the mechanism it used to resolve/verify the SHAs."
+      }
+    ],
+    "overall": 9.7
+  }
+}
