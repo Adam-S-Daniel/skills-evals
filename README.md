@@ -151,9 +151,10 @@ worse, grey missing data. Trust model: the badge reflects exactly what a
 scheduled or maintainer-dispatched run of this repo's **committed** fixtures
 produced — the workflow never runs on pull requests (it holds an API key and
 runs the agent with `bypassPermissions`, so it must never see untrusted
-fixture content; fixtures here are trusted because only maintainers can push),
-and the badge JSON is served raw from the default branch, so it can only
-change via a commit to this repo.
+fixture content; fixtures here — and the agentskills registry whose skill
+content the with-skill arm executes — are trusted because only maintainers
+can push to either repo), and the badge JSON is served raw from the default
+branch, so it can only change via a commit to this repo.
 
 ## Status
 

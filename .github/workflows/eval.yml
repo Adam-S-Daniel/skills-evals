@@ -14,15 +14,24 @@
 #   here are trusted because only maintainers can push to this repo; the only
 #   prompts ever run are this repo's committed fixtures. Never accept external
 #   fixture contributions into this path without dropping the key first.
+#   The trust boundary equally includes the agentskills registry checked out
+#   below: the with_skill arm installs skill content from its default branch
+#   and executes it under bypassPermissions with the key in env — write access
+#   to that repo is equivalent to key access here. Both repos are
+#   maintainer-only; keep it that way or drop the key.
 #
 # * Secret: ANTHROPIC_API_KEY — a DEDICATED, SPEND-CAPPED key used nowhere
-#   else, set manually:
+#   else. Recommended setup: a dedicated Console workspace with a monthly
+#   spend limit of $10, and a key minted from that workspace, installed via:
 #       gh secret set ANTHROPIC_API_KEY -R Adam-S-Daniel/skills-evals
 #   It is injected only into the eval step's env (never top-level env), and
 #   run_eval.py passes it to `claude -p` via inherited process env — it is
-#   never written to disk. Cost: 2 agent arms + 2 judge calls per run,
-#   ~$0.25–1.00; weekly cadence => well under $5/month even with retries. The
-#   spend cap on the key, not this workflow, is the hard ceiling.
+#   never written to disk. Cost: the fixture pins the agent arms to
+#   claude-sonnet-5 and the judge to claude-opus-4-8, so a full run
+#   (2 sonnet-5 arms + 2 opus-4-8 judge calls) is expected at ~$0.30–0.90,
+#   i.e. ~$1.50–4/month at weekly cadence. Per-dispatch spend is bounded by
+#   the harness timeouts (600s per arm, 120s per judge call); the workspace
+#   spend limit, not this workflow, is the hard ceiling.
 #
 # * Both checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
