@@ -189,18 +189,6 @@ jobs:
           python3 harness/run_eval.py evals/pin-actions-to-sha \
             --arm both --registry ../agentskills --net-checks
 
-      # Failed runs never reach the commit step, so surface the per-arm error
-      # detail (summaries + reports, incl. gitignored raw transcripts) as an
-      # artifact instead of losing it with the runner.
-      - name: Upload results on failure
-        if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (2025-04-24)
-        with:
-          name: eval-results-debug
-          path: skills-evals/results/
-          if-no-files-found: ignore
-          include-hidden-files: true
-
       - name: Generate badge
         working-directory: skills-evals
         run: python3 scripts/make_badge.py pin-actions-to-sha
@@ -237,3 +225,17 @@ jobs:
           git commit -m "eval: pin-actions-to-sha run + badge [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
+
+      # LAST step in the job so `if: failure()` sees a failure from ANY
+      # earlier step — not just the eval run, but also "Generate badge" and
+      # this workflow's own commit/push step (e.g. a rejected push). Surfaces
+      # the per-arm error detail (summaries + reports, incl. gitignored raw
+      # transcripts) as an artifact instead of losing it with the runner.
+      - name: Upload results on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (2025-04-24)
+        with:
+          name: eval-results-debug
+          path: skills-evals/results/
+          if-no-files-found: ignore
+          include-hidden-files: true
