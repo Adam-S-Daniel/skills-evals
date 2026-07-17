@@ -1,5 +1,7 @@
 # skills-evals
 
+[![skill eval: pin-actions-to-sha](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Fmain%2Fbadges%2Fpin-actions-to-sha.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
+
 Evals for the [`agentskills`](https://github.com/Adam-S-Daniel/agentskills)
 registry: for each skill, measure agent quality **with vs. without** the skill
 installed, so "this skill helps" is a number instead of an assertion.
@@ -26,7 +28,11 @@ evals/
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
-results/                   # run summaries (raw transcripts are gitignored)
+scripts/
+  make_badge.py            # shields.io endpoint badge from the newest run summary
+badges/                    # committed badge JSON, served raw to shields.io
+results/                   # run summaries, committed (raw transcripts are
+                           # gitignored); the weekly eval.yml run appends here
 test/
   run_tests.py             # harness's own test suite (hermetic, no real `claude`)
   fake-claude              # stand-in CLI used by the tests
@@ -60,6 +66,10 @@ python3 harness/run_eval.py evals/pin-actions-to-sha --arm both --no-judge
 # Point at a different agent binary, registry checkout, or output root:
 CLAUDE_BIN=/path/to/claude AGENTSKILLS_DIR=~/repos/agentskills \
   python3 harness/run_eval.py evals/pin-actions-to-sha --arm both --results-dir /tmp/eval-out
+
+# Also verify pinned SHAs against the action repos' real tags (needs network;
+# off by default so tests stay hermetic — the real-eval workflow passes it):
+python3 harness/run_eval.py evals/pin-actions-to-sha --arm both --net-checks
 ```
 
 `--registry` (else `$AGENTSKILLS_DIR`, else `~/repos/agentskills`) must point
@@ -128,6 +138,23 @@ python3 test/run_tests.py
 
 This is what CI (`.github/workflows/ci.yml`) runs.
 
+## Quality badge (real weekly run)
+
+`.github/workflows/eval.yml` runs the full `pin-actions-to-sha` A/B eval every
+Monday 07:00 UTC (and on manual dispatch) against the live Claude Code CLI and
+Anthropic API, commits the run's summaries and report under `results/`, and
+regenerates `badges/pin-actions-to-sha.json` with `scripts/make_badge.py` — a
+[shields.io endpoint badge](https://shields.io/badges/endpoint) whose message
+carries each arm's objective-check score and the run date. Green means the
+with-skill arm strictly beat baseline, yellow tied or mixed signals, red
+worse, grey missing data. Trust model: the badge reflects exactly what a
+scheduled or maintainer-dispatched run of this repo's **committed** fixtures
+produced — the workflow never runs on pull requests (it holds an API key and
+runs the agent with `bypassPermissions`, so it must never see untrusted
+fixture content; fixtures here are trusted because only maintainers can push),
+and the badge JSON is served raw from the default branch, so it can only
+change via a commit to this repo.
+
 ## Status
 
 - [x] Design (`DESIGN.md`)
@@ -137,4 +164,5 @@ This is what CI (`.github/workflows/ci.yml`) runs.
 - [x] LLM-as-judge scorer
 - [x] Report generation
 - [x] Guidance-bridge canary (`harness/run_canary.py`)
+- [x] Weekly real run + quality badge (`.github/workflows/eval.yml`, `scripts/make_badge.py`)
 - [ ] Regression tracking (compare a run against the previous one)
