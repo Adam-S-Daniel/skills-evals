@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "with_skill",
+  "timestamp": "20260720T095457Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.32835375,
+    "num_turns": 18,
+    "duration_ms": 68844,
+    "usage": {
+      "input_tokens": 29,
+      "cache_creation_input_tokens": 21147,
+      "cache_read_input_tokens": 553645,
+      "output_tokens": 5484,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 21147
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 10,
+        "rationale": "Every remote action ref across both workflow files was pinned \u2014 both checkout occurrences in ci.yml, setup-node, and all three refs in release.yaml \u2014 with the agent discovering them itself rather than being pointed at each."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The local action (`./.github/actions/local-lint`) and the `docker://alpine:3.20` ref were correctly left untouched, and no unrelated files or lines were modified."
+      },
+      {
+        "name": "Communication",
+        "score": 8,
+        "rationale": "The agent clearly reported each pin with its version, date, and cooling-off rationale, but its 'verification' amounts to a 40-char format check and YAML validation rather than an explicit demonstration that each SHA actually maps to the named tag."
+      }
+    ],
+    "overall": 9.3
+  }
+}

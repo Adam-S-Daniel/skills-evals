@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "without_skill",
+  "timestamp": "20260720T095457Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.14236425,
+    "num_turns": 9,
+    "duration_ms": 31336,
+    "usage": {
+      "input_tokens": 14,
+      "cache_creation_input_tokens": 11751,
+      "cache_read_input_tokens": 211280,
+      "output_tokens": 2284,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 11751
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 10,
+        "rationale": "Every remote GitHub-hosted action ref across both workflow files was pinned to a full commit SHA, including the second checkout in the lint job that had to be discovered rather than pointed at."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The agent correctly left the local action (`./.github/actions/local-lint`) and the Docker ref (`docker://alpine:3.20`) untouched, and made no unrelated changes."
+      },
+      {
+        "name": "Communication",
+        "score": 6,
+        "rationale": "It clearly listed what was pinned and preserved version comments, but it never explained how it verified that the SHAs actually correspond to the tagged releases."
+      }
+    ],
+    "overall": 8.7
+  }
+}
