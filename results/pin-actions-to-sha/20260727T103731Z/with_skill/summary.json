@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "with_skill",
+  "timestamp": "20260727T103731Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.32660734999999996,
+    "num_turns": 22,
+    "duration_ms": 76618,
+    "usage": {
+      "input_tokens": 25,
+      "cache_creation_input_tokens": 23071,
+      "cache_read_input_tokens": 483497,
+      "output_tokens": 6290,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 23071
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 10,
+        "rationale": "All four remote action refs were pinned across both workflow files \u2014 including the second, easily-missed `actions/checkout` in the lint job \u2014 each to a full 40-char SHA with a version+date comment."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The local composite action and the `docker://` reference were correctly left unpinned, and no unrelated files or lines were touched."
+      },
+      {
+        "name": "Communication",
+        "score": 8,
+        "rationale": "The agent clearly stated what it pinned and gave sound reasoning for the cooling-off downgrade of checkout, but it described version/date comments rather than explaining the concrete method used to confirm each SHA maps to its tag."
+      }
+    ],
+    "overall": 9.3
+  }
+}
