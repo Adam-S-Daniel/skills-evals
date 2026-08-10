@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "with_skill",
+  "timestamp": "20260810T082326Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.340299,
+    "num_turns": 17,
+    "duration_ms": 91810,
+    "usage": {
+      "input_tokens": 25,
+      "cache_creation_input_tokens": 23290,
+      "cache_read_input_tokens": 487065,
+      "output_tokens": 7077,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 23290
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 9,
+        "rationale": "All remote action refs across both workflow files were pinned \u2014 including the release.yaml file with a non-standard extension the agent had to discover, and both jobs in ci.yml \u2014 leaving only the correctly-excluded local and docker refs."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The agent correctly left the local action and docker reference unpinned, touched no unrelated files, and deliberately kept each action on its existing major version rather than bumping to new majors."
+      },
+      {
+        "name": "Communication",
+        "score": 9,
+        "rationale": "The agent clearly listed every ref changed, noted the SHAs are full 40-char dereferenced hashes satisfying the cooling-off period, and confirmed YAML validity, though it asserts rather than shows the concrete verification steps."
+      }
+    ],
+    "overall": 9.3
+  }
+}
