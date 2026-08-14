@@ -330,9 +330,15 @@ def freshness_verdict(summary: dict | None, *, now: datetime, max_age_days: int,
 
     age_days = (now - generated).total_seconds() / 86400
     if age_days > max_age_days:
+        # Two causes, and this function cannot tell them apart: the Routine
+        # stopped firing, or it fired and its result never landed. Naming only
+        # the first sends the reader to check a schedule that is healthy —
+        # 2026-08-14, when three runs measured correctly and every push was
+        # refused by the session's repository scope.
         return (False, "stale",
                 f"the account audit last ran {age_days:.1f} days ago "
-                f"(limit {max_age_days}) — the Routine has stopped firing")
+                f"(limit {max_age_days}) — the Routine has stopped firing, or "
+                "its result is no longer reaching eval-results")
     if status != "pass":
         skills = sorted({f.get("skill") for f in summary.get("findings") or []})
         return (False, "reported-failure",
