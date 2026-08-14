@@ -48,12 +48,23 @@ def registry_ref(registry: Path) -> str:
 
 
 def resolve_registry(cli_value: Path | None) -> Path:
+    """--registry, $AGENTSKILLS_DIR, ~/repos — ABSOLUTE on every branch.
+
+    Same class as run_propagation's copy, different mechanism: `git_tracked`
+    runs `git -C <registry> ls-files -- <skill dir>`, so the child reads that
+    pathspec inside the REGISTRY. A relative one lands outside it (measured:
+    rc=128, `is outside repository`), git_tracked returns None, and the audit
+    silently falls back to a raw filesystem walk — which counts git-ignored
+    working-tree files as payload the account copy is missing. Measured on one
+    fixture: the same tree audits PASS absolute and FAIL relative, and relative
+    is the `--registry ../agentskills` form ROUTINE.md prescribes.
+    """
     if cli_value:
-        return Path(cli_value).expanduser()
+        return Path(cli_value).expanduser().resolve()
     env = os.environ.get("AGENTSKILLS_DIR")
     if env:
-        return Path(env).expanduser()
-    return Path.home() / "repos" / "agentskills"
+        return Path(env).expanduser().resolve()
+    return (Path.home() / "repos" / "agentskills").resolve()
 
 
 def main(argv=None) -> int:

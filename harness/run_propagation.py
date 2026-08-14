@@ -50,13 +50,24 @@ def load_fixture(eval_dir: Path) -> dict:
 
 
 def resolve_registry(cli_value: Path | None) -> Path:
-    """Same convention as run_eval.py: --registry, $AGENTSKILLS_DIR, ~/repos."""
+    """Same convention as run_eval.py: --registry, $AGENTSKILLS_DIR, ~/repos.
+
+    ABSOLUTE on every branch, and that is load-bearing rather than tidiness:
+    the arms hand registry-derived paths to children they spawn with `cwd` set
+    to a scratch workspace — `arms._run_hook` runs `bash <hook>` there — so a
+    relative registry is read against a directory that does not contain it.
+    Measured in CI, where propagation.yml passes `--registry ../agentskills`:
+    both hook-running arms died with rc=127, `bash:
+    ../agentskills/.claude/hooks/skills-bootstrap.sh: No such file or
+    directory`. It never reproduced locally because every local invocation had
+    passed an absolute path — which is exactly how it reached CI.
+    """
     if cli_value:
-        return Path(cli_value).expanduser()
+        return Path(cli_value).expanduser().resolve()
     env = os.environ.get("AGENTSKILLS_DIR")
     if env:
-        return Path(env).expanduser()
-    return Path.home() / "repos" / "agentskills"
+        return Path(env).expanduser().resolve()
+    return (Path.home() / "repos" / "agentskills").resolve()
 
 
 def run_gate(fixture: dict, latest: Path | None, marker: Path | None,

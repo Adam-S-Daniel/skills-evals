@@ -742,6 +742,42 @@ class AccountAuditTests(unittest.TestCase):
             ["--registry", str(self.registry), "--home", str(self.root / "nowhere"),
              "--now", "2026-08-14T12:00:00Z"]), 2)
 
+    def test_a_relative_registry_does_not_fabricate_drift(self):
+        # The propagation hook bug's class at its second site. `git_tracked`
+        # runs `git -C <registry> ls-files -- <skill dir>`, so the CHILD reads
+        # that pathspec inside the registry: a relative one lands outside it
+        # (measured: rc=128, "is outside repository"), git_tracked returns None,
+        # and the comparison falls back to a raw filesystem walk — which counts
+        # git-ignored working-tree files as payload the account copy is missing.
+        # Relative is the `--registry ../agentskills` form ROUTINE.md
+        # prescribes, and the red it invents reds the next pull request through
+        # the freshness gate. The absolute leg is the control: it proves the
+        # ignored file is the only difference, so a green relative leg means
+        # "resolved like the absolute one", not "the file was harmless".
+        if shutil.which("git") is None:
+            self.skipTest("no git here, so the ls-files filter is moot anyway")
+        (self.registry / ".gitignore").write_text("*.log\n", encoding="utf-8")
+        for argv in (["init", "-q", str(self.registry)],
+                     ["-C", str(self.registry), "add", "-A"]):
+            self.assertEqual(subprocess.run(["git", *argv], capture_output=True,
+                                            timeout=60).returncode, 0, argv)
+        (self.registry / "plugins" / "adam" / "skills" / "fixture-alpha"
+         / "debug.log").write_text("never uploaded\n", encoding="utf-8")
+        workspace = self.root / "workspace"
+        workspace.mkdir()
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(workspace)
+
+        def audit(registry):
+            return run_account_audit.main(
+                ["--registry", str(registry), "--home", str(self.home),
+                 "--now", "2026-08-14T12:00:00Z"])
+
+        relative = Path("..") / self.registry.name
+        self.assertFalse(relative.is_absolute(), "the input must stay relative")
+        self.assertEqual(audit(self.registry), 0)
+        self.assertEqual(audit(relative), 0)
+
     def test_published_summary_is_deterministic_and_badge_reflects_it(self):
         out = self.root / "out"
         run_account_audit.main(["--registry", str(self.registry),
@@ -831,15 +867,17 @@ class RunnerTests(unittest.TestCase):
                             "collision_skill: fixture-alpha"),
             encoding="utf-8")
 
-    def run_cli(self, *extra):
+    def run_cli(self, *extra, registry: Path | None = None):
         # Deliberately does NOT set FAKE_INIT_MODE: a test that selects a
         # mutation must not have it overwritten here. setUp establishes the
-        # unmutated default.
+        # unmutated default. `registry` defaults to the absolute fixture path;
+        # only the relative-path regression below overrides it.
         with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE_INIT)}), \
                 mock.patch.object(init_probe, "EXTRA_PASSTHROUGH", STUB_VARS):
             return run_propagation.main([str(self.eval_dir), "--registry",
-                                         str(self.registry), "--timeout", "60",
-                                         *extra])
+                                         str(self.registry if registry is None
+                                             else registry),
+                                         "--timeout", "60", *extra])
 
     def test_all_arms_exit_zero_unmutated(self):
         self.assertEqual(self.run_cli("--no-gate"), 0)
@@ -857,6 +895,30 @@ class RunnerTests(unittest.TestCase):
         code = run_propagation.main([str(self.eval_dir), "--registry",
                                      str(self.root / "nowhere"), "--no-gate"])
         self.assertEqual(code, 2)
+
+    def test_a_relative_registry_still_finds_the_hook(self):
+        # The CI failure, as a mutation of the CALLER rather than the harness:
+        # propagation.yml passes `--registry ../agentskills`, and the arms run
+        # the hook with `cwd` set to a scratch workspace — so a registry left
+        # relative was read against THAT directory and bash could not find the
+        # hook (rc=127, "No such file or directory"). Both hook-running arms
+        # went INCONCLUSIVE; every local invocation had passed an absolute path,
+        # which is why nothing here saw it first.
+        #
+        # It drives the real runner from a DIFFERENT working directory on
+        # purpose. Asserting that resolve_registry() returns an absolute path
+        # would be weaker — it still passes if a later edit resolves the path
+        # somewhere the cwd has already moved, which is the whole bug.
+        workspace = self.root / "workspace"   # CI's layout: a sibling of the
+        workspace.mkdir()                     # registry, naming it `../<name>`
+        self.addCleanup(os.chdir, os.getcwd())
+        os.chdir(workspace)
+        relative = Path("..") / self.registry.name
+        self.assertFalse(relative.is_absolute(), "the input must stay relative")
+        for arm in ("bootstrap-hook", "collision-guard"):  # the two CI reds
+            with self.subTest(arm=arm):
+                self.assertEqual(
+                    self.run_cli("--no-gate", "--arm", arm, registry=relative), 0)
 
     def test_gate_only_needs_no_cli_at_all(self):
         latest = self.root / "latest.json"
