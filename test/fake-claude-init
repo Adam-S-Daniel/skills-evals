@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Fake `claude` for the propagation probes — a SIMULATOR, plus mutations.
+
+Same idea as `test/fake-claude`'s `canary_loader` mode, which really does
+expand `@import` lines rather than replaying a canned string: a stub that only
+echoed a fixed answer would let the probe's own logic go untested. So this one
+actually resolves a skill set the way the real CLI does, from the same places:
+
+  * `$HOME/.claude/skills/<name>/SKILL.md`            -> bare `<name>`
+  * `$CWD/.claude/skills/<name>/SKILL.md`             -> bare `<name>`
+  * every plugin in `$HOME/.claude/plugins/installed_plugins.json`
+    -> `<bundle>:<skill>` for each `<path>/skills/<skill>/SKILL.md`
+
+and it supports `plugin marketplace add` / `plugin install` so the marketplace
+arm exercises its real code path. Duplicates are NOT collapsed: the real CLI
+lists a name once per delivering channel (measured — the same skill seeded into
+both `~/.claude/skills` and a project's `.claude/skills` produced two entries),
+and a stub that deduplicated would hide a probe that assumed a set.
+
+`FAKE_INIT_MODE` selects a mutation. Every one of them exists to make a
+specific assertion fail, so that assertion is proven to be doing work:
+
+  simulate (default) — honest resolution, real prefix, init at index 4
+  index-zero         — honest, but the init event is the FIRST line (the real
+                       CLI does this under a scrubbed environment); a parser
+                       hardcoding index 4 would break here
+  no-init            — a full stream that never carries an init event
+  no-skills-key      — an init event with no `skills` key at all
+  skills-not-list    — `skills` present but a string
+  string-bait        — an unrelated event whose *string* field contains the
+                       literal `"skills": ["adam:fixture-alpha"]`, and an init
+                       carrying none; a regex over the stream would "find" the
+                       skill, a JSON parser cannot
+  garbage-lines      — non-JSON noise interleaved with an honest stream
+  crash              — exits non-zero without emitting anything
+  drop-one           — honest, minus $FAKE_INIT_DROP
+  bare-instead-of-ns — namespaced skills emitted bare (wrong channel)
+  extra-skill        — honest, plus $FAKE_INIT_EXTRA, untagged (what a stale
+                       plugin install or a stray project copy looks like)
+  account-leak       — honest, plus $FAKE_INIT_ACCOUNT as a synced skill,
+                       tagged with the ` (claude.ai sync)` suffix
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import sys
+from pathlib import Path
+
+MODE = os.environ.get("FAKE_INIT_MODE", "simulate")
+BUILTINS = ["fixture-builtin-a", "fixture-builtin-b"]
+ACCOUNT_SUFFIX = " (claude.ai sync)"
+
+
+def emit(payload: dict) -> None:
+    print(json.dumps(payload), flush=True)
+
+
+def skill_names(root: Path) -> list:
+    base = root / ".claude" / "skills"
+    if not base.is_dir():
+        return []
+    return sorted(p.name for p in base.iterdir()
+                  if (p / "SKILL.md").is_file())
+
+
+def plugin_skills(home: Path) -> tuple:
+    """([namespaced names], [init `plugins` entries]) from installed_plugins.json."""
+    path = home / ".claude" / "plugins" / "installed_plugins.json"
+    if not path.is_file():
+        return [], []
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return [], []
+    names, plugins = [], []
+    for key, records in sorted((payload.get("plugins") or {}).items()):
+        bundle = key.split("@", 1)[0]
+        for record in records:
+            install = Path(record.get("installPath", ""))
+            plugins.append({"name": bundle, "path": str(install),
+                            "source": key, "version": record.get("version", "1.0.0")})
+            skills = install / "skills"
+            if skills.is_dir():
+                names += [f"{bundle}:{p.name}" for p in sorted(skills.iterdir())
+                          if (p / "SKILL.md").is_file()]
+    return names, plugins
+
+
+def resolve() -> tuple:
+    home = Path(os.environ.get("HOME", "/nonexistent"))
+    cwd = Path.cwd()
+    namespaced, plugins = plugin_skills(home)
+    # Order mirrors the real event: delivered skills first, built-ins last.
+    skills = skill_names(home) + skill_names(cwd) + namespaced + list(BUILTINS)
+    commands = [{"name": n.split(":")[-1], "description": f"fixture {n}."}
+                for n in skills]
+    return skills, plugins, commands
+
+
+def handle_plugin_subcommand(argv: list) -> int:
+    """`plugin marketplace add <dir>` / `plugin install <bundle>@<market>`."""
+    home = Path(os.environ.get("HOME", "/nonexistent"))
+    state = home / ".claude" / "plugins"
+    state.mkdir(parents=True, exist_ok=True)
+    markets_path = state / "marketplaces.json"
+    markets = json.loads(markets_path.read_text(encoding="utf-8")) \
+        if markets_path.is_file() else {}
+
+    if argv[:2] == ["marketplace", "add"]:
+        source = Path(argv[2]).resolve()
+        if not source.is_dir():
+            print(f"fake-claude-init: no marketplace at {source}", file=sys.stderr)
+            return 1
+        markets[source.name] = str(source)
+        markets_path.write_text(json.dumps(markets, indent=2), encoding="utf-8")
+        print(f"Successfully added marketplace: {source.name}")
+        return 0
+
+    if argv[:1] == ["install"]:
+        bundle, _, market = argv[1].partition("@")
+        source = markets.get(market)
+        if source is None:
+            print(f"fake-claude-init: unknown marketplace {market!r}", file=sys.stderr)
+            return 1
+        path = Path(source) / "plugins" / bundle
+        if not path.is_dir():
+            print(f"fake-claude-init: no plugin {bundle!r} at {path}", file=sys.stderr)
+            return 1
+        installed_path = state / "installed_plugins.json"
+        installed = json.loads(installed_path.read_text(encoding="utf-8")) \
+            if installed_path.is_file() else {"version": 2, "plugins": {}}
+        installed["plugins"][f"{bundle}@{market}"] = [
+            {"scope": "user", "installPath": str(path), "version": "1.0.0",
+             "gitCommitSha": "0" * 40}]
+        installed_path.write_text(json.dumps(installed, indent=2), encoding="utf-8")
+        print(f"Successfully installed plugin: {bundle}@{market}")
+        return 0
+
+    print(f"fake-claude-init: unsupported plugin subcommand {argv}", file=sys.stderr)
+    return 1
+
+
+def main() -> int:
+    argv = sys.argv[1:]
+    if "--version" in argv:
+        print("fake-claude-init 0.0.0 (hermetic propagation stub)")
+        return 0
+    if argv and argv[0] == "plugin":
+        return handle_plugin_subcommand(argv[1:])
+
+    if MODE == "crash":
+        print("fake-claude-init: simulated CLI failure", file=sys.stderr)
+        return 1
+
+    skills, plugins, commands = resolve()
+
+    if MODE == "drop-one":
+        skills = [s for s in skills if s != os.environ["FAKE_INIT_DROP"]]
+    elif MODE == "bare-instead-of-ns":
+        skills = [s.split(":")[-1] for s in skills]
+    elif MODE == "extra-skill":
+        extra = os.environ["FAKE_INIT_EXTRA"]
+        skills = skills + [extra]
+        commands = commands + [{"name": extra, "description": f"fixture {extra}."}]
+    elif MODE == "account-leak":
+        leaked = os.environ["FAKE_INIT_ACCOUNT"]
+        skills = skills + [leaked]
+        commands = commands + [{"name": leaked,
+                                "description": f"fixture {leaked}.{ACCOUNT_SUFFIX}"}]
+
+    init = {"type": "system", "subtype": "init", "skills": skills,
+            "plugins": plugins, "slash_commands": [c["name"] for c in commands],
+            "claude_code_version": "0.0.0-fake", "apiKeySource": "none",
+            "cwd": str(Path.cwd()), "tools": ["Read", "Bash"]}
+    changed = {"type": "system", "subtype": "commands_changed", "commands": commands}
+
+    if MODE == "no-skills-key":
+        init.pop("skills")
+    elif MODE == "skills-not-list":
+        init["skills"] = "fixture-alpha"
+    elif MODE == "string-bait":
+        init["skills"] = list(BUILTINS)
+
+    if MODE == "index-zero":
+        # What the real CLI emits under a scrubbed environment: init FIRST.
+        emit(init)
+        emit({"type": "system", "subtype": "api_retry"})
+        return 0
+
+    emit({"type": "active_goal", "goal": None})
+    emit({"type": "autocompact_state", "state": "idle"})
+    if MODE == "string-bait":
+        # The bait sits in a STRING field of an unrelated event. A regex over
+        # the stream matches it; json.loads + a (type, subtype) select cannot.
+        emit({"type": "user", "message": {"role": "user", "content":
+              '{"type":"system","subtype":"init","skills": ["adam:fixture-alpha"]}'}})
+    if MODE == "garbage-lines":
+        print("fake-claude-init: warning, not JSON at all", flush=True)
+        print("", flush=True)
+    emit(changed)
+    emit(changed)   # the real stream carries two before init; index must not matter
+    if MODE != "no-init":
+        emit(init)
+    emit({"type": "system", "subtype": "api_retry"})
+    emit({"type": "result", "subtype": "error_during_execution", "is_error": True})
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
