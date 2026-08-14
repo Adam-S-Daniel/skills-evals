@@ -67,9 +67,16 @@ thing worth measuring.
    older than `account_audit_max_age_days` (3), or reports a failure. This is
    the layer that matters, because it catches the failure mode nothing else
    does: a Routine that **stops firing at all**. It is implemented and tested
-   (`FreshnessGateTests`), and it is the reason `propagation.yml` deliberately
-   carries no `schedule:` of its own — one scheduled surface, watched by a gate
-   that cannot be ignored, beats two silent ones.
+   (`FreshnessGateTests`), and the `gate` job carries no event filter, so it
+   runs on `propagation.yml`'s daily schedule as well — a dead Routine surfaces
+   within a day rather than whenever someone next opens a pull request. That
+   schedule and this gate cover different failures and neither subsumes the
+   other: only the gate sees a Routine that stopped firing, and only the Tier-2
+   arms see a delivery channel that broke with no commit here — their one
+   unpinned input is the agentskills registry at `main`. Both report themselves
+   rather than trusting anyone to read the Actions tab: the workflow files one
+   tracking issue (job `report`), the Routine its own marker-tagged issue plus
+   push/email notifications.
 2. **Routine `notifications: {push: true, email: true}`** — the only channel
    that reaches someone who never opens GitHub.
 3. **One marker-tagged issue**, edited in place (step 5), following the fleet's
