@@ -1,0 +1,34 @@
+# Tier-2 propagation probe fixture.
+#
+# Unlike the A/B fixtures there is no prompt and no rubric here: the probe
+# asserts set membership against agentskills' `skills.lock`, which is the
+# declared expectation every arm compares against. Everything below names a
+# path or a knob; the arms themselves live in harness/propagation/arms.py
+# because materialising a marketplace install or a SessionStart hook run is
+# code, not data.
+name: propagation
+
+# Resolved against the agentskills checkout (--registry / $AGENTSKILLS_DIR).
+lock_path: skills.lock
+hook_path: .claude/hooks/skills-bootstrap.sh
+
+# The cloud-safe bundle the lock pins. `adam:<skill>` is what a marketplace
+# install makes visible, and the namespace is the plugin-channel discriminator.
+bundle: adam
+
+# Seeded as a repo-owned `.claude/skills/<skill>/` copy in the collision arm,
+# which must make the hook decline to install its own copy and say so.
+collision_skill: pin-actions-to-sha
+
+arms:
+  - clean-room
+  - project-mirror
+  - plugin-marketplace
+  - bootstrap-hook
+  - collision-guard
+
+# How stale the Tier-3 account audit's published result may be before the
+# credential-free PR gate reds the pull request. The Routine fires daily, so
+# three days tolerates a missed run plus a weekend without crying wolf, and
+# still catches a schedule that has actually stopped.
+account_audit_max_age_days: 3
