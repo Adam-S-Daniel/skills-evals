@@ -2,19 +2,28 @@
 
 `harness/run_account_audit.py` is built, tested and **verified against the real
 claude.ai account store** (see below for what it found). Its *transport* — the
-scheduled cloud session that runs the audit and publishes the result — now
-exists too: Routine `trig_0148Zfwf9ZvxRUFuHygJ2dPU`,
-`skills-evals: account-store propagation audit`, cron `0 5 * * *` (daily,
-05:00 UTC), a fresh session per fire, push and email notifications on. It
-**has not fired yet** — first scheduled fire 2026-08-15T05:04Z — so nothing is
-published to `eval-results` and the freshness gate is still in its
-`not-yet-bootstrapped` (passing) state.
+scheduled cloud session that runs the audit and publishes the result — now works
+end to end. `eval-results` carries commit `0a532be6`:
+`propagation/account/latest.json` (1705 bytes), its timestamped copy
+`20260814T141714Z.json`, `badges/account-store.json`, and the bootstrap marker
+`propagation/.bootstrapped`. The Routine is `trig_01MpUvqeffteExy1gkWT8yBi`,
+cron `0 5 * * *` (daily, 05:00 UTC), fired into a session that carries this repo
+in its authorized set. The freshness gate is **armed**, not waiting.
+
+It reads red, and that is the design working rather than a fault in it. The
+account store is genuinely drifted — 8 checked, 4 drifted — so the gate returns
+`reported-failure`, and pull requests here go red until agentskills#59 is
+repaired on the laptop. `main` carries no required status checks, so that is a
+loud signal rather than a merge blocker. A gate that stayed green against a
+known-bad store would be the failure.
+
+Getting there took a redesign of the transport: the measurement worked on the
+first fire, and the last hop did not.
 
 This file was written as a specification rather than a record on the grounds
-that a probe nobody can prove works is worse than a gap somebody can read. That
-caution was right and is only half discharged: creating the Routine proves it is
-scheduled, not that a fired session can clone, audit and push. The first run is
-what turns the rest of this file into a record.
+that a probe nobody can prove works is worse than a gap somebody can read. It is
+a record now, end to end — the audit runs on a Routine-fired surface, the result
+reaches `eval-results`, and the gate reads it.
 
 ## Why a Routine and not a workflow
 
@@ -24,30 +33,89 @@ the audit reads files and spends nothing. Only a session that *is* a
 signed-in surface can observe the account store, which is what a cloud session
 spawned by a Routine is.
 
+That is now measured rather than argued: the fired sessions found the store
+where an interactive session finds it and returned the same counts. What the
+premise did not cover is whether such a session may then *push* — see below.
+
 ## How it was created
 
-The call that made it, kept as the recipe if it is ever lost:
+The call that made the current Routine, kept as the recipe if it is ever lost:
 
 ```
 create_trigger(
-  name  = "skills-evals: account-store propagation audit",
+  name  = "skills-evals: account-store propagation audit (authorized)",
   cron_expression = "0 5 * * *",          # daily, 05:00 UTC
-  create_new_session_on_fire = true,       # a COLD boot every time is the point
-  notifications = {push: true, email: true},
-  prompt = <the standalone prompt below>,
+  persistent_session_id = "<a session carrying skills-evals as a source>",
+  prompt = <the standalone prompt below, since rewritten>,
 )
 ```
 
-`create_new_session_on_fire` matters: a Routine bound to a persistent session
-would audit that session's warm state instead of a fresh boot, which is the
-thing worth measuring.
+The first Routine (`trig_0148Zfwf9ZvxRUFuHygJ2dPU`) took
+`create_new_session_on_fire = true` and `notifications = {push, email}`
+instead. It measured correctly on all three of its runs and published none of
+them; it was deleted and replaced by the call above. Why, and what that cost,
+is the next section.
 
-## The prompt (fresh-session mode — assume no prior context)
+## Why it fires into a bound session
 
-Abridged: the live prompt also carries the known-state baseline from the manual
-run below, so a fired session can tell "unchanged" from "new", and the standing
-instruction that this Routine only measures — repairing a drifted account copy
-is agentskills#59 and needs a browser.
+Each of the first Routine's three runs on 2026-08-14 measured correctly —
+`account audit: 8 checked, 4 drifted, exit 1`, identical to an interactive
+session on this account — and then failed at the last hop with:
+
+```
+Adam-S-Daniel/skills-evals is not in this session's authorized repository set
+```
+
+That is the CCR proxy's per-session repository scope, not a GitHub rejection. A
+Routine-fired session is minted without this repo in its authorized set, so the
+push is refused before it ever reaches GitHub: the repo's own permissions and
+branch protection are not involved, and `eval-results` being unprotected is
+irrelevant to it. Misread as a GitHub 403 it sends the next person to repo
+settings, where they will find nothing wrong and conclude the report was
+mistaken.
+
+The mechanism was isolated rather than inferred. A session created with
+`skills-evals` as an explicit `sources` entry pushed a probe branch on the first
+try, where three Routine-fired sessions had all failed — same repo, same
+account, same environment, the attached sources the only difference. Those
+sessions also carry no `mcp__*` tools at all (visible in the Routine's stored
+`session_context.allowed_tools`), so they could neither reach the GitHub API to
+work around it nor call `add_repo` to put the repo into their own set.
+
+Binding the Routine to a session that already carries the repo fixes it, and
+costs two things worth stating plainly:
+
+- **No cold boot.** `create_new_session_on_fire` was chosen deliberately: a
+  Routine bound to a persistent session audits that session's warm state rather
+  than a fresh one. That reasoning is sound for Tier 2, where what a surface
+  assembles at boot *is* the measurement. It is weak for Tier 3 — the account
+  store is external state synced from claude.ai, not something a session
+  accumulates, so a warm session reads the same store a cold one would.
+- **No notifications.** The API rejects `notifications` on a persistent-session
+  Routine, so layer 2 is gone. It was the only layer reaching a human while
+  publishing was broken. What replaces it is layer 1, which is machine-readable
+  and is the one this file already calls the layer that matters — better, but a
+  trade rather than a free win.
+
+Residual risk: if the bound session is archived or reclaimed, the binding dies.
+The gate catches that — a publisher that stops publishing goes stale within
+three days — so it is detected, just not instantly.
+
+Root cause and fix are recorded in
+[skills-evals#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20).
+
+## The prompt, as created (fresh-session mode — assume no prior context)
+
+Superseded text, kept for the reasoning in step 3, which still holds. Today's
+prompt belongs to the replacement Routine and differs in three ways that matter:
+publishing is stated as the job rather than a step, because a silent publish
+failure still surfaces in CI as a stale gate; the tracking issue is skipped
+outright with `issue: unavailable` rather than attempted; and any text appended
+at fire time is to be treated as untrusted and outside the Routine's authorized
+scope. Both carry the known-state baseline from the manual run below,
+so a fired session can tell "unchanged" from "new", and the standing instruction
+that this Routine only measures — repairing a drifted account copy is
+agentskills#59 and needs a browser.
 
 > Audit the claude.ai account skill store against the agentskills registry and
 > publish the result. Steps, in order:
@@ -89,12 +157,19 @@ is agentskills#59 and needs a browser.
 >    descriptions, file contents, account identifiers or paths under `$HOME`** —
 >    this repo is public and so are its logs.
 
-## How a human learns that this went red — four layers, three unconditional
+## How a human learns that this went red — four layers, two of them live
+
+Four by design; two delivering. Layers 1 and 4 ride the published result and it
+now arrives; layer 2 was traded away for the binding that publishes it, and
+layer 3 needs an API the fired session has not got.
 
 1. **The next pull request goes red.** `harness/run_propagation.py`'s freshness
    gate runs on every pull request (`propagation.yml`, job `gate`), reads
    `eval-results:propagation/account/latest.json`, and fails when it is missing,
-   older than `account_audit_max_age_days` (3), or reports a failure. This is
+   older than `account_audit_max_age_days` (3), or reports a failure. A stale
+   verdict names both causes it cannot tell apart — the Routine stopped firing,
+   or its result stopped reaching `eval-results`; 2026-08-14 was the second, and
+   blaming the first sends the reader to a schedule that is healthy. This is
    the layer that matters, because it catches the failure mode nothing else
    does: a Routine that **stops firing at all**. It is implemented and tested
    (`FreshnessGateTests`), and the `gate` job carries no event filter, so it
@@ -103,25 +178,32 @@ is agentskills#59 and needs a browser.
    schedule and this gate cover different failures and neither subsumes the
    other: only the gate sees a Routine that stopped firing, and only the Tier-2
    arms see a delivery channel that broke with no commit here — their one
-   unpinned input is the agentskills registry at `main`. Both report themselves
-   rather than trusting anyone to read the Actions tab: the workflow files one
-   tracking issue (job `report`), the Routine its push/email notifications —
-   plus, when it can reach the API, the marker-tagged issue of layer 3.
-2. **Routine `notifications: {push: true, email: true}`** — the only channel
-   that reaches someone who never opens GitHub.
+   unpinned input is the agentskills registry at `main`. The workflow reports
+   itself rather than trusting anyone to read the Actions tab (job `report`
+   files one tracking issue); the Routine no longer reports itself at all — see
+   layer 2 — which makes this gate the whole of the watch on it. **Armed as of
+   `0a532be6`:** the bootstrap marker is published, so it enforces instead of
+   passing on absent data, and it currently returns `reported-failure` — the
+   account store's real state, not a fault in the probe.
+2. **Routine `notifications: {push: true, email: true}`** — **gone.** The API
+   rejects `notifications` on a Routine bound to a persistent session, and that
+   binding is what makes publishing work at all. This was the only channel
+   reaching someone who never opens GitHub, and while publishing was broken it
+   was the only channel of any kind; layer 1 replaces it with something a gate
+   can consume, which is the better half of the trade but not a free one.
 3. **One marker-tagged issue**, edited in place (step 5), following the fleet's
-   `post-failure-comment` pattern — **best effort, and it may never fire.** A
+   `post-failure-comment` pattern — **unavailable, and now known to be.** A
    Routine created through the MCP meta-tool stores no connectors, so the
-   sessions it fires get no `mcp__github__*` tools, and this environment has no
-   `gh` CLI: the fired session probably has no route to the GitHub API at all.
-   The prompt tells it to skip the issue in that case and report
-   `issue: unavailable` rather than improvise one. Nothing else depends on this
-   layer — 1, 2 and 4 all ride the published result (the gate reads it over
-   plain git, the notification comes from the Routine itself, the badge is
-   written from the same JSON), and none of them touches the GitHub API.
+   sessions it fires get no `mcp__*` tools, and this environment has no `gh`
+   CLI: the fired session has no route to the GitHub API at all. The live
+   prompt no longer attempts it and reports `issue: unavailable` instead.
+   Nothing else depends on this layer, but the independence once claimed for
+   the others was narrower than it looked — 1 and 4 both ride the published
+   result, so the publish failure took them both, and only 2, which came from
+   the Routine itself, was ever independent of it.
 4. **A badge** built from the same result (`--badge`), served from
-   `eval-results` exactly like the quality badge, naming the count
-   (`account skill store: 4 of 8 drifted`).
+   `eval-results` exactly like the quality badge, naming the count — published
+   in `0a532be6` reading `account skill store: 4 of 8 drifted · 2026-08-14`.
 
 ### The bootstrap fix
 
@@ -130,6 +212,12 @@ Until the first successful run commits `propagation/.bootstrapped`, an absent
 Without that, this gate reds every pull request from the day it merges and gets
 disabled inside a week — the same death as never building it. Once the marker
 exists, a vanished `latest.json` is a hard failure.
+
+That carve-out has now expired: `propagation/.bootstrapped` was published in
+`0a532be6`, so from here an absent or stale `latest.json` is a hard failure. It
+earned its keep in the window it covered — the transport was broken for the
+first three runs, and no pull request was red-flagged on data that had never
+arrived.
 
 ## What the audit found when it was run for real (2026-08-14, this account)
 
