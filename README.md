@@ -18,9 +18,15 @@ DESIGN.md                  # eval method, harness shape, open decisions
 harness/
   run_eval.py              # runner: loads a fixture, runs both arms, scores, reports
   run_canary.py            # runner: probes the guidance-bridge canary against the real CLI
+  run_propagation.py       # runner: Tier-2 propagation arms + the Tier-3 freshness gate
+  run_account_audit.py     # runner: Tier-3 claude.ai account-store audit
   scorers/
     objective.py           # scriptable assertions on the output workspace
     judge.py               # LLM-as-judge rubric scoring
+  propagation/
+    init_probe.py          # the primitive: read a session's loaded skill set, free
+    arms.py                # one arm per delivery channel, each with a control leg
+    account_store.py       # account-store measurement + the freshness gate
 evals/
   pin-actions-to-sha/      # first reference eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
@@ -28,14 +34,19 @@ evals/
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
+  propagation/             # skill-delivery probes (issue #17)
+    fixture.yaml           # arms, bundle, collision skill, staleness budget
+    ROUTINE.md             # the Tier-3 scheduled session, specified
 scripts/
   make_badge.py            # shields.io endpoint badge from the newest run summary
 badges/                    # committed badge JSON, served raw to shields.io
 results/                   # run summaries, committed (raw transcripts are
                            # gitignored); the weekly eval.yml run appends here
 test/
-  run_tests.py             # harness's own test suite (hermetic, no real `claude`)
-  fake-claude              # stand-in CLI used by the tests
+  run_tests.py             # eval harness's test suite (hermetic, no real `claude`)
+  test_propagation.py      # propagation probes' mutation suite (hermetic)
+  fake-claude              # stand-in CLI used by the eval tests
+  fake-claude-init         # stand-in CLI for the propagation probes (a simulator)
 ```
 
 ## Running
@@ -127,16 +138,99 @@ regression can be tied to a specific CLI release.
   failure.
 - **`bridge-subagent` failed** — subagent memory passing regressed.
 
-## Tests
+## Propagation probes
 
-The harness has its own hermetic test suite — no real `claude` binary is ever
-invoked; a fake CLI (`test/fake-claude`) stands in for it:
+Every eval above asks whether a skill *helps*. These ask something more basic
+and, historically, more often wrong: **did the skill arrive at all?** Three of
+the fleet's four known skill-delivery incidents were invisible until a human
+went looking. Implements
+[skills-evals#17](https://github.com/Adam-S-Daniel/skills-evals/issues/17).
+
+The primitive is the `{"type":"system","subtype":"init"}` event that
+`claude -p … --output-format stream-json --verbose` emits, which carries the
+session's loaded skill set and its resolved plugins. The CLI computes it
+locally, **before its first API call** — so with `ANTHROPIC_BASE_URL` pointed at
+a black hole and the child killed the moment the event arrives, the whole
+assertion layer is credential-free, network-free and costs **$0.00**. That is
+what lets these run on every pull request *and* again on a daily schedule
+(`.github/workflows/propagation.yml`) rather than behind `eval.yml`'s OIDC.
 
 ```bash
-python3 test/run_tests.py
+# All five arms against a local agentskills checkout (~15s, no credential):
+python3 harness/run_propagation.py evals/propagation --registry ~/repos/agentskills --no-gate
+
+# One arm, plus the live self-test that proves the assertions can still fail:
+python3 harness/run_propagation.py evals/propagation --arm plugin-marketplace \
+  --registry ~/repos/agentskills --no-gate --self-test
+
+# The freshness gate alone — no CLI needed at all:
+python3 harness/run_propagation.py evals/propagation --gate-only \
+  --account-latest eval-results/propagation/account/latest.json
 ```
 
-This is what CI (`.github/workflows/ci.yml`) runs.
+| Arm | Asserts |
+| --- | --- |
+| `clean-room` | none of the lock's skills, and no `adam:` namespace, in an empty scratch surface |
+| `project-mirror` | a repo-committed `.claude/skills/` mirror loads, exactly the locked set |
+| `plugin-marketplace` | `claude plugin install` delivers all 9 as `adam:*`, and the resolved tree's content digests match `skills.lock` |
+| `bootstrap-hook` | the SessionStart hook installs 9/9 on an ephemeral surface — **and declines with the exact `skipped — durable session` sentence, writing nothing, on a durable one** |
+| `collision-guard` | a repo-owned copy wins: the hook says it skipped, and the file really was not written |
+
+Every arm probes twice — a control leg before the channel delivers anything,
+then the arm leg — and asserts **exact set equality** on the difference against
+`skills.lock`. Every leg also records a guard block (HOME isolation, the
+environment allowlist, bootstrap surface variables, account-store absence, a
+non-empty built-in floor, the init event's stream index). **Any guard that does
+not hold makes the arm INCONCLUSIVE (exit 2), never PASS and never FAIL** — an
+arm expecting to find nothing is the one most able to pass on a dead CLI.
+
+Two things worth knowing before editing any of it:
+
+- **An environment allowlist, not a scratch `HOME`.** Measured: same scratch
+  HOME, `env -i PATH HOME TMPDIR` loads 16 skills; inheriting the ambient
+  environment loads 35, because the CLI re-syncs 17 account-store skills into
+  it. Unsetting `CLAUDE_CODE_SYNC_SKILLS` alone does not stop it.
+- **The init event's position is not contractual.** Same CLI build: index 0
+  under a scrubbed environment, index 4 under the ambient one. Select on
+  `(type, subtype)`; selecting on `type == "system"` alone picks
+  `commands_changed`, which has no `skills` key.
+
+### Tier 3 — the account store
+
+The claude.ai account store lands at `~/.claude/skills/synced/`, which exists
+only on a signed-in surface, so CI cannot see it. `harness/run_account_audit.py`
+audits it (content digests CRLF-normalised, payload completeness, description of
+record, and whether the frontmatter parses at all), spends nothing, and
+publishes a JSON result. A scheduled Routine runs it — specified in
+[`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md), along with what
+it found when run for real.
+
+**A scheduled probe that fails notifies nobody, and one that stops firing
+notifies nobody twice over.** So the credential-free freshness gate reads that
+published result and goes red when it is missing, stale or failing — on every
+pull request and on `propagation.yml`'s own daily schedule, so a Routine that
+stopped firing surfaces within a day rather than whenever someone next opens a
+pull request. The Tier-2 probes answer the same objection for themselves: when
+a scheduled run of them fails, the workflow opens one tracking issue rather
+than leaving it to whoever next reads the Actions tab.
+
+## Tests
+
+Two hermetic suites — no real `claude` binary is ever invoked, no network, no
+wall-clock dependence:
+
+```bash
+python3 test/run_tests.py          # the eval harness (ci.yml)
+python3 test/test_propagation.py   # the propagation probes (propagation.yml)
+```
+
+The propagation suite is a **mutation** suite: every assertion has a test that
+breaks exactly one clause and requires the specific verdict and exit code that
+must result, plus `test_unmutated_run_passes_every_arm`, which catches the
+probe that fails on everything. Its stand-in CLI (`test/fake-claude-init`) is a
+simulator — it really resolves skills from `$HOME/.claude/skills`, the
+project's `.claude/skills` and `installed_plugins.json` — so the arms exercise
+their real code path rather than a canned answer.
 
 ## Quality badge (real weekly run)
 
@@ -166,4 +260,7 @@ branch, so it can only change via a commit to this repo.
 - [x] Report generation
 - [x] Guidance-bridge canary (`harness/run_canary.py`)
 - [x] Weekly real run + quality badge (`.github/workflows/eval.yml`, `scripts/make_badge.py`)
+- [x] Propagation probes, Tier 2 (`harness/run_propagation.py`, `.github/workflows/propagation.yml`)
+- [x] Propagation probes, Tier 3 measurement (`harness/run_account_audit.py`)
+- [ ] Propagation probes, Tier 3 transport (the Routine — specified in `evals/propagation/ROUTINE.md`, not yet created)
 - [ ] Regression tracking (compare a run against the previous one)

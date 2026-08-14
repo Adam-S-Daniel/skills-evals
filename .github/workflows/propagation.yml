@@ -1,0 +1,256 @@
+# Propagation probes — does every delivery channel still deliver the right
+# skills? Tier 2 of skills-evals#17.
+#
+# SECURITY / COST POSTURE — the whole point, read before changing anything:
+#
+# * NO credential, NO `id-token`, NO API call, NO spend. The probe reads the
+#   `system/init` event, which the Claude Code CLI computes locally before its
+#   first request, against `ANTHROPIC_BASE_URL=http://127.0.0.1:9`; the child
+#   is killed the moment that event arrives. `permissions: contents: read` is
+#   the whole privilege set. If this workflow ever needs a secret, the design
+#   has broken — do not add one, work out what changed.
+#
+# * That is exactly why this is NOT in eval.yml. eval.yml's OIDC subject is
+#   pinned to `refs/heads/main`, so a branch dispatch dies at token exchange
+#   and a red run tells you nothing about the probe. Here a red run means red.
+#   It follows that these assertions can be a pull-request gate rather than a
+#   scheduled job, which is what makes them iterable.
+#
+# * The `schedule:` REPORTS ITSELF. A scheduled run that fails notifies nobody,
+#   and this fleet has already lost a week to a daily audit running red
+#   unwatched — so the `report` job below opens one tracking issue rather
+#   than trusting someone to read the Actions tab, idempotently, because a
+#   steady-state red would otherwise file a fresh issue every morning. #17
+#   specifies Tier 2 as scheduled for a reason the arms make concrete: their
+#   one unpinned input is the agentskills registry at `main`, so real delivery
+#   can break with no commit in this repo, and pull requests here are too
+#   infrequent to find out. What a schedule here CANNOT do is run the Tier-3
+#   audit — that needs a signed-in account CI has not got — so `gate` reads
+#   the Routine's published result instead, on every pull request and on every
+#   scheduled run, and fails when it is missing, stale or red. A dead Routine
+#   and a broken channel are different failures; neither surface sees both.
+#   See evals/propagation/ROUTINE.md.
+#
+# * DELIBERATELY NO `paths:` filter, contrary to the fleet's usual rule. The
+#   `gate` job's entire job is to run on every pull request: filtering it to
+#   the propagation harness's own files would mean a Routine could stop firing
+#   for a month and nobody would learn of it until someone happened to touch
+#   this directory. The arms cost ~15s of runner time and no money, so the
+#   always-run half of "always-run + early-skip" is affordable here.
+
+name: Propagation
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # :41 rather than :00 because GitHub queues the whole platform's cron on the
+  # hour and delays it, and staggered off agentskills' 06:17 census so the
+  # fleet's daily audits do not all land at once.
+  schedule:
+    - cron: "41 5 * * *" # daily, 05:41 UTC
+
+permissions:
+  contents: read
+
+# The event name is in the group because a scheduled run and a push to main
+# share a ref: without it they cancel each other, and a cancelled run is not
+# failure(), so `report` would stay silent about a day's probe never having
+# run. Two pushes to the same pull request still share a group, which is what
+# keeps iteration cheap.
+concurrency:
+  group: propagation-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Hermetic: the mutation suite, plus the freshness gate that watches the
+  # Tier-3 schedule. Needs no Claude Code CLI at all, so it still reports even
+  # when a CLI release breaks the arms.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out agentskills registry (side-by-side)
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        with:
+          repository: Adam-S-Daniel/agentskills
+          path: agentskills
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0 (2025-11-24)
+        with:
+          python-version: "3.12"
+
+      - name: Install harness dependencies
+        run: pip install pyyaml
+
+      - name: Fetch the account audit's published result
+        # Anonymous clone of a public repo — no token, and the branch may not
+        # exist yet, which the gate reports as not-yet-bootstrapped rather than
+        # as a failure. A hard failure here would red every pull request from
+        # the day this merges, and the gate would be disabled in week one.
+        run: |
+          set -uo pipefail
+          if git clone --depth 1 --single-branch --branch eval-results \
+              "https://github.com/${GITHUB_REPOSITORY}" eval-results; then
+            echo "eval-results checked out"
+          else
+            echo "eval-results branch not present yet"
+            mkdir -p eval-results
+          fi
+
+      - name: Mutation suite (hermetic — no CLI, no network, no clock)
+        working-directory: skills-evals
+        # $AGENTSKILLS_DIR lets the one registry-dependent test actually run
+        # here (it binds this harness's digest to the registry's own
+        # generator) instead of skipping.
+        env:
+          AGENTSKILLS_DIR: ${{ github.workspace }}/agentskills
+        run: python3 test/test_propagation.py
+
+      - name: Freshness gate — is the Tier-3 account audit still running?
+        working-directory: skills-evals
+        run: |
+          python3 harness/run_propagation.py evals/propagation --gate-only \
+            --account-latest ../eval-results/propagation/account/latest.json \
+            --account-marker ../eval-results/propagation/.bootstrapped
+
+  # The live arms, one CI job each so a red arm names itself in the checks list
+  # and one broken channel never hides another.
+  arms:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [clean-room, project-mirror, plugin-marketplace, bootstrap-hook,
+              collision-guard]
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Check out agentskills registry (side-by-side)
+        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        with:
+          repository: Adam-S-Daniel/agentskills
+          # Full history: the bootstrap-hook arm clones this checkout at the
+          # commit skills.lock pins, which a shallow clone may not contain.
+          fetch-depth: 0
+          path: agentskills
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0 (2025-10-14)
+        with:
+          node-version: 22
+
+      - name: Install Claude Code CLI
+        # Pinned to the version this harness was validated against. The arms
+        # assert on the SHAPE of the stream-json init event, so a CLI bump is a
+        # deliberate, reviewed change here — and the --self-test below is what
+        # catches a bump that silently blinded the assertions.
+        run: |
+          npm install -g @anthropic-ai/claude-code@2.1.231
+          claude --version
+
+      - name: Set up Python
+        uses: actions/setup-python@83679a892e2d95755f2dac6acb0bfd1e9ac5d548 # v6.1.0 (2025-11-24)
+        with:
+          python-version: "3.12"
+
+      - name: Install harness dependencies
+        run: pip install pyyaml
+
+      - name: Probe the arm
+        working-directory: skills-evals
+        # The arm name arrives through the environment rather than being
+        # interpolated into the script — house habit, and it keeps the rendered
+        # command out of the log.
+        #
+        # --self-test proves, on the real binary, that the assertion layer can
+        # still FAIL: it re-runs the plugin arm against a lock naming a skill
+        # the registry does not ship and requires a red. Without it, a CLI that
+        # stopped emitting what this harness reads would look like five green
+        # arms. It rides the plugin job because that is the arm it exercises.
+        # --no-gate because the `gate` job owns that and needs no CLI.
+        env:
+          ARM: ${{ matrix.arm }}
+        run: |
+          set -euo pipefail
+          extra=()
+          if [ "$ARM" = "plugin-marketplace" ]; then extra=(--self-test); fi
+          python3 harness/run_propagation.py evals/propagation \
+            --arm "$ARM" --registry ../agentskills --no-gate \
+            --json "$RUNNER_TEMP/propagation.json" "${extra[@]+"${extra[@]}"}"
+
+      - name: Upload the run record on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2 (2025-04-24)
+        with:
+          name: propagation-${{ matrix.arm }}
+          path: ${{ runner.temp }}/propagation.json
+          if-no-files-found: ignore
+
+  # How the schedule reports itself. A job rather than a step in `arms`: that is
+  # a five-leg matrix, and a step there would file up to five issues for one bad
+  # run. `issues: write` is raised HERE AND NOWHERE ELSE, so the probes keep the
+  # read-only privilege set the posture note at the top depends on.
+  #
+  # `gh` is preinstalled on the runner, so this needs no new `uses:`, no
+  # third-party pin and no cooling-off period. It passes --repo rather than
+  # letting gh infer one from the workspace: this job checks nothing out, and
+  # failure() also fires when a CHECKOUT is what failed, so there may be no git
+  # repo to infer from — the step guarding against silent failure must not have
+  # a silent failure of its own.
+  #
+  # Everything the script reads arrives through env:, and the only workflow
+  # expressions are github.server_url/repository/run_id. Nothing off the event
+  # payload and nothing a probe printed is interpolated into the run: body,
+  # where it would be echoed into a public log and evaluated as shell.
+  report:
+    needs: [gate, arms]
+    if: failure() && github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: File a tracking issue when the scheduled probes fail
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: Scheduled propagation probes are failing
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          cat > "$RUNNER_TEMP/propagation-failure.md" <<EOF
+          The scheduled propagation probes failed: $RUN_URL
+
+          The arms' one unpinned input is the agentskills registry, which they
+          check out at main — so a red scheduled run most likely means a change
+          there rather than a change here, and that is where to look first. The
+          Claude Code CLI is version-pinned in this workflow and cannot have
+          moved on its own.
+          EOF
+          # --search is full text, so it can return near-misses; the title is
+          # re-checked EXACTLY before this concludes a duplicate already exists.
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$ISSUE_TITLE in:title" --json number,title \
+            --jq 'map(select(.title == env.ISSUE_TITLE)) | .[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
+              --body-file "$RUNNER_TEMP/propagation-failure.md"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$ISSUE_TITLE" \
+              --body-file "$RUNNER_TEMP/propagation-failure.md"
+          fi
