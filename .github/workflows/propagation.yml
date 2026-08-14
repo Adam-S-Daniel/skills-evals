@@ -53,8 +53,13 @@ on:
 permissions:
   contents: read
 
+# The event name is in the group because a scheduled run and a push to main
+# share a ref: without it they cancel each other, and a cancelled run is not
+# failure(), so `report` would stay silent about a day's probe never having
+# run. Two pushes to the same pull request still share a group, which is what
+# keeps iteration cheap.
 concurrency:
-  group: propagation-${{ github.ref }}
+  group: propagation-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:

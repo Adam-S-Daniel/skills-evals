@@ -152,8 +152,8 @@ session's loaded skill set and its resolved plugins. The CLI computes it
 locally, **before its first API call** — so with `ANTHROPIC_BASE_URL` pointed at
 a black hole and the child killed the moment the event arrives, the whole
 assertion layer is credential-free, network-free and costs **$0.00**. That is
-why these run on every pull request (`.github/workflows/propagation.yml`)
-rather than behind `eval.yml`'s OIDC.
+what lets these run on every pull request *and* again on a daily schedule
+(`.github/workflows/propagation.yml`) rather than behind `eval.yml`'s OIDC.
 
 ```bash
 # All five arms against a local agentskills checkout (~15s, no credential):
@@ -206,9 +206,13 @@ publishes a JSON result. A scheduled Routine runs it — specified in
 it found when run for real.
 
 **A scheduled probe that fails notifies nobody, and one that stops firing
-notifies nobody twice over.** So the credential-free pull-request gate reads
-that published result and reds the next pull request when it is missing, stale
-or failing. The schedule is watched by something that cannot be ignored.
+notifies nobody twice over.** So the credential-free freshness gate reads that
+published result and goes red when it is missing, stale or failing — on every
+pull request and on `propagation.yml`'s own daily schedule, so a Routine that
+stopped firing surfaces within a day rather than whenever someone next opens a
+pull request. The Tier-2 probes answer the same objection for themselves: when
+a scheduled run of them fails, the workflow opens one tracking issue rather
+than leaving it to whoever next reads the Actions tab.
 
 ## Tests
 
