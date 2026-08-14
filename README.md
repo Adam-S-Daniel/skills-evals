@@ -1,6 +1,7 @@
 # skills-evals
 
 [![skill eval: pin-actions-to-sha](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Fpin-actions-to-sha.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
+[![account skill store](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Faccount-store.json)](https://github.com/Adam-S-Daniel/skills-evals/blob/eval-results/propagation/account/latest.json)
 
 Evals for the [`agentskills`](https://github.com/Adam-S-Daniel/agentskills)
 registry: for each skill, measure agent quality **with vs. without** the skill
@@ -36,7 +37,7 @@ evals/
     layouts/               # bridge / no-bridge / fence probe workspaces
   propagation/             # skill-delivery probes (issue #17)
     fixture.yaml           # arms, bundle, collision skill, staleness budget
-    ROUTINE.md             # the Tier-3 scheduled session, as created
+    ROUTINE.md             # the Tier-3 scheduled session, and why it is session-bound
 scripts/
   make_badge.py            # shields.io endpoint badge from the newest run summary
 badges/                    # committed badge JSON, served raw to shields.io
@@ -201,16 +202,23 @@ The claude.ai account store lands at `~/.claude/skills/synced/`, which exists
 only on a signed-in surface, so CI cannot see it. `harness/run_account_audit.py`
 audits it (content digests CRLF-normalised, payload completeness, description of
 record, and whether the frontmatter parses at all), spends nothing, and
-publishes a JSON result. A Routine runs it daily at 05:00 UTC — recorded in
-[`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md), along with what
-it found when run for real and which of its reporting layers is best effort.
+publishes a JSON result to the `eval-results` branch. A Routine runs it daily at
+05:00 UTC, fired into a session that carries this repo in its authorized set —
+which a Routine's own freshly-minted sessions do not, and is why its first three
+runs measured correctly and published nothing
+([#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20)). What it found,
+and what that binding cost, is recorded in
+[`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md).
 
 **A scheduled probe that fails notifies nobody, and one that stops firing
 notifies nobody twice over.** So the credential-free freshness gate reads that
 published result and goes red when it is missing, stale or failing — on every
 pull request and on `propagation.yml`'s own daily schedule, so a Routine that
 stopped firing surfaces within a day rather than whenever someone next opens a
-pull request. The Tier-2 probes answer the same objection for themselves: when
+pull request. It is armed: the first published result carried the bootstrap
+marker, so the gate enforces rather than waiting, and it currently reports the
+account store's four drifted skills — the store's real state, not a fault in
+the probe. The Tier-2 probes answer the same objection for themselves: when
 a scheduled run of them fails, the workflow opens one tracking issue rather
 than leaving it to whoever next reads the Actions tab.
 
@@ -262,5 +270,5 @@ branch, so it can only change via a commit to this repo.
 - [x] Weekly real run + quality badge (`.github/workflows/eval.yml`, `scripts/make_badge.py`)
 - [x] Propagation probes, Tier 2 (`harness/run_propagation.py`, `.github/workflows/propagation.yml`)
 - [x] Propagation probes, Tier 3 measurement (`harness/run_account_audit.py`)
-- [ ] Propagation probes, Tier 3 transport (the Routine — created 2026-08-14, first fire 2026-08-15 05:04 UTC; ticked once a fired run publishes, see `evals/propagation/ROUTINE.md`)
+- [x] Propagation probes, Tier 3 transport (the Routine publishes to `eval-results`; bound to an authorized session after freshly-minted ones were refused the push — [#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20), see `evals/propagation/ROUTINE.md`)
 - [ ] Regression tracking (compare a run against the previous one)
