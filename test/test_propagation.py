@@ -749,11 +749,14 @@ class AccountAuditTests(unittest.TestCase):
         # (measured: rc=128, "is outside repository"), git_tracked returns None,
         # and the comparison falls back to a raw filesystem walk — which counts
         # git-ignored working-tree files as payload the account copy is missing.
-        # Relative is the `--registry ../agentskills` form ROUTINE.md
-        # prescribes, and the red it invents reds the next pull request through
-        # the freshness gate. The absolute leg is the control: it proves the
-        # ignored file is the only difference, so a green relative leg means
-        # "resolved like the absolute one", not "the file was harmless".
+        # A relative `--registry` is a legitimate thing for a caller to pass and
+        # this test is what guarantees the harness copes with it: the red it
+        # would otherwise invent reds the next pull request through the
+        # freshness gate. ROUTINE.md passes absolute as well, belt and braces,
+        # which is not a substitute for resolving it here. The absolute leg is
+        # the control: it proves the ignored file is the only difference, so a
+        # green relative leg means "resolved like the absolute one", not "the
+        # file was harmless".
         if shutil.which("git") is None:
             self.skipTest("no git here, so the ls-files filter is moot anyway")
         (self.registry / ".gitignore").write_text("*.log\n", encoding="utf-8")

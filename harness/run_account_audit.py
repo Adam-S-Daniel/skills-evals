@@ -56,8 +56,10 @@ def resolve_registry(cli_value: Path | None) -> Path:
     rc=128, `is outside repository`), git_tracked returns None, and the audit
     silently falls back to a raw filesystem walk — which counts git-ignored
     working-tree files as payload the account copy is missing. Measured on one
-    fixture: the same tree audits PASS absolute and FAIL relative, and relative
-    is the `--registry ../agentskills` form ROUTINE.md prescribes.
+    fixture: the same tree audits PASS absolute and FAIL relative. A relative
+    `--registry` is a legitimate thing for a caller to pass, so resolving it
+    here is what keeps it safe; ROUTINE.md passes absolute on top of that, so a
+    regression in this function cannot silently fabricate a finding there.
     """
     if cli_value:
         return Path(cli_value).expanduser().resolve()
