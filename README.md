@@ -36,7 +36,7 @@ evals/
     layouts/               # bridge / no-bridge / fence probe workspaces
   propagation/             # skill-delivery probes (issue #17)
     fixture.yaml           # arms, bundle, collision skill, staleness budget
-    ROUTINE.md             # the Tier-3 scheduled session, specified
+    ROUTINE.md             # the Tier-3 scheduled session, as created
 scripts/
   make_badge.py            # shields.io endpoint badge from the newest run summary
 badges/                    # committed badge JSON, served raw to shields.io
@@ -201,9 +201,9 @@ The claude.ai account store lands at `~/.claude/skills/synced/`, which exists
 only on a signed-in surface, so CI cannot see it. `harness/run_account_audit.py`
 audits it (content digests CRLF-normalised, payload completeness, description of
 record, and whether the frontmatter parses at all), spends nothing, and
-publishes a JSON result. A scheduled Routine runs it — specified in
+publishes a JSON result. A Routine runs it daily at 05:00 UTC — recorded in
 [`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md), along with what
-it found when run for real.
+it found when run for real and which of its reporting layers is best effort.
 
 **A scheduled probe that fails notifies nobody, and one that stops firing
 notifies nobody twice over.** So the credential-free freshness gate reads that
@@ -262,5 +262,5 @@ branch, so it can only change via a commit to this repo.
 - [x] Weekly real run + quality badge (`.github/workflows/eval.yml`, `scripts/make_badge.py`)
 - [x] Propagation probes, Tier 2 (`harness/run_propagation.py`, `.github/workflows/propagation.yml`)
 - [x] Propagation probes, Tier 3 measurement (`harness/run_account_audit.py`)
-- [ ] Propagation probes, Tier 3 transport (the Routine — specified in `evals/propagation/ROUTINE.md`, not yet created)
+- [ ] Propagation probes, Tier 3 transport (the Routine — created 2026-08-14, first fire 2026-08-15 05:04 UTC; ticked once a fired run publishes, see `evals/propagation/ROUTINE.md`)
 - [ ] Regression tracking (compare a run against the previous one)

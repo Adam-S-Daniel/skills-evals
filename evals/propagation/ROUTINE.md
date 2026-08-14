@@ -1,12 +1,20 @@
 # Tier 3 — the account-store Routine
 
 `harness/run_account_audit.py` is built, tested and **verified against the real
-claude.ai account store** (see below for what it found). What is specified here
-rather than shipped is its *transport*: the scheduled cloud session that runs it
-and publishes the result. That split is deliberate — the transport cannot be
-verified end to end from an authoring session (it needs this branch merged, a
-fired Routine, and a write to `eval-results`), and a probe nobody can prove
-works is worse than a gap somebody can read.
+claude.ai account store** (see below for what it found). Its *transport* — the
+scheduled cloud session that runs the audit and publishes the result — now
+exists too: Routine `trig_0148Zfwf9ZvxRUFuHygJ2dPU`,
+`skills-evals: account-store propagation audit`, cron `0 5 * * *` (daily,
+05:00 UTC), a fresh session per fire, push and email notifications on. It
+**has not fired yet** — first scheduled fire 2026-08-15T05:04Z — so nothing is
+published to `eval-results` and the freshness gate is still in its
+`not-yet-bootstrapped` (passing) state.
+
+This file was written as a specification rather than a record on the grounds
+that a probe nobody can prove works is worse than a gap somebody can read. That
+caution was right and is only half discharged: creating the Routine proves it is
+scheduled, not that a fired session can clone, audit and push. The first run is
+what turns the rest of this file into a record.
 
 ## Why a Routine and not a workflow
 
@@ -16,7 +24,9 @@ the audit reads files and spends nothing. Only a session that *is* a
 signed-in surface can observe the account store, which is what a cloud session
 spawned by a Routine is.
 
-## Create it
+## How it was created
+
+The call that made it, kept as the recipe if it is ever lost:
 
 ```
 create_trigger(
@@ -34,12 +44,27 @@ thing worth measuring.
 
 ## The prompt (fresh-session mode — assume no prior context)
 
+Abridged: the live prompt also carries the known-state baseline from the manual
+run below, so a fired session can tell "unchanged" from "new", and the standing
+instruction that this Routine only measures — repairing a drifted account copy
+is agentskills#59 and needs a browser.
+
 > Audit the claude.ai account skill store against the agentskills registry and
 > publish the result. Steps, in order:
 >
 > 1. `git clone --depth 1 https://github.com/Adam-S-Daniel/agentskills`
 > 2. `git clone --depth 1 https://github.com/Adam-S-Daniel/skills-evals`
-> 3. `cd skills-evals && python3 harness/run_account_audit.py --registry ../agentskills --out results/propagation/account --badge badges/account-store.json`
+> 3. `cd skills-evals && python3 harness/run_account_audit.py --registry "$(cd ../agentskills && pwd)" --out results/propagation/account --badge badges/account-store.json`
+>    The registry goes in **absolute**. The audit shells out to
+>    `git -C <registry> ls-files -- <pathspec>`; `-C` moves the child's
+>    directory, so a relative registry resolves the pathspec outside the repo,
+>    the git query fails, and the audit degrades to a raw filesystem walk that
+>    counts git-ignored working-tree files as missing payload. Measured on one
+>    tree, same content: absolute 5 findings, relative 6 — the extra a
+>    fabricated `missing-payload` naming `.pytest_cache` files.
+>    `resolve_registry()` now resolves to absolute in both runners (#18, with
+>    regression tests), so relative is safe today; passing it absolute means a
+>    future regression there can never silently manufacture a finding here.
 >    Exit 0 means in sync, 1 means drift, 2 means the audit could not run (no
 >    account store on this surface) — treat 2 as a failure to report, never as
 >    a pass.
@@ -49,17 +74,22 @@ thing worth measuring.
 >    `propagation/account/latest.json`. `main` is protected and will reject a
 >    direct push; `eval-results` is the unprotected results branch `eval.yml`
 >    already uses. Commit message: `propagation: account audit [skip ci]`.
-> 5. If the audit failed, open or update ONE GitHub issue on
+> 5. **Best effort.** If the audit failed, open or update ONE GitHub issue on
 >    `Adam-S-Daniel/skills-evals` whose body starts with the marker
 >    `<!-- propagation-account-audit -->`. Search for that marker first and
 >    **edit the existing issue in place** rather than filing a new one; close it
 >    when the audit passes again. Steady-state red must not produce a weekly
->    pile of issues, or it gets filtered and becomes silence.
-> 6. Print one non-identifying status line: the counts only. **Never print skill
+>    pile of issues, or it gets filtered and becomes silence. If this session
+>    cannot reach the GitHub API at all — the expected case, see layer 3 below —
+>    skip the issue, say `issue: unavailable` in the status line, and do **not**
+>    invent a workaround that writes issue-shaped content into the results
+>    branch. Step 4 has already published by then, which is why it runs first.
+> 6. Print one non-identifying status line: the counts, plus whether step 5 ran
+>    (`issue: updated` / `issue: unavailable`). **Never print skill
 >    descriptions, file contents, account identifiers or paths under `$HOME`** —
 >    this repo is public and so are its logs.
 
-## How a human learns that this went red — four layers
+## How a human learns that this went red — four layers, three unconditional
 
 1. **The next pull request goes red.** `harness/run_propagation.py`'s freshness
    gate runs on every pull request (`propagation.yml`, job `gate`), reads
@@ -75,12 +105,20 @@ thing worth measuring.
    arms see a delivery channel that broke with no commit here — their one
    unpinned input is the agentskills registry at `main`. Both report themselves
    rather than trusting anyone to read the Actions tab: the workflow files one
-   tracking issue (job `report`), the Routine its own marker-tagged issue plus
-   push/email notifications.
+   tracking issue (job `report`), the Routine its push/email notifications —
+   plus, when it can reach the API, the marker-tagged issue of layer 3.
 2. **Routine `notifications: {push: true, email: true}`** — the only channel
    that reaches someone who never opens GitHub.
 3. **One marker-tagged issue**, edited in place (step 5), following the fleet's
-   `post-failure-comment` pattern.
+   `post-failure-comment` pattern — **best effort, and it may never fire.** A
+   Routine created through the MCP meta-tool stores no connectors, so the
+   sessions it fires get no `mcp__github__*` tools, and this environment has no
+   `gh` CLI: the fired session probably has no route to the GitHub API at all.
+   The prompt tells it to skip the issue in that case and report
+   `issue: unavailable` rather than improvise one. Nothing else depends on this
+   layer — 1, 2 and 4 all ride the published result (the gate reads it over
+   plain git, the notification comes from the Routine itself, the badge is
+   written from the same JSON), and none of them touches the GitHub API.
 4. **A badge** built from the same result (`--badge`), served from
    `eval-results` exactly like the quality badge, naming the count
    (`account skill store: 4 of 8 drifted`).
