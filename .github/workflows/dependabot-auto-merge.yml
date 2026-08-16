@@ -55,7 +55,14 @@ jobs:
           fetch-depth: 0
 
       - name: Fetch base ref
-        run: git fetch origin "${{ github.event.pull_request.base.ref }}"
+        # Event data reaches the shell as an `env:` passthrough, never as a
+        # `${{ }}` interpolation inside the `run:` body — the rendered command
+        # is echoed to this public repo's run log, and the interpolated form
+        # also splices the value into the script text itself. Same reason the
+        # `PR_URL` steps below take that route.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: git fetch origin "$BASE_REF"
 
       - name: Get Dependabot metadata
         # Validates the PR genuinely came from Dependabot (defence in depth —
@@ -71,10 +78,16 @@ jobs:
         # branch — either way, refuse to auto-merge. Inline port of
         # cms-platform's scripts/check-dependabot-manifest-paths.sh; keep in
         # lockstep with the identical block in job `sweep` below.
+        #
+        # Event data arrives via `env:` rather than `${{ }}` inside the body —
+        # see the "Fetch base ref" step above for why.
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          BASE="origin/${{ github.event.pull_request.base.ref }}"
-          HEAD="${{ github.event.pull_request.head.sha }}"
+          BASE="origin/${BASE_REF}"
+          HEAD="$HEAD_SHA"
 
           mapfile -t CHANGED < <(git diff --name-only "$BASE"..."$HEAD")
           echo "Files changed (${BASE}...${HEAD}):"
