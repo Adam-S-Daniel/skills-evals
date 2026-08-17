@@ -18,7 +18,7 @@ bundle: adam
 
 # Seeded as a repo-owned `.claude/skills/<skill>/` copy in the collision arm,
 # which must make the hook decline to install its own copy and say so.
-collision_skill: pin-actions-to-sha
+collision_skill: workflow-path-audit
 
 arms:
   - clean-room
