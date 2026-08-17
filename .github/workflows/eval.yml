@@ -44,13 +44,13 @@
 #   calls share the token). Dispatches from non-main refs get no
 #   credential — the rule's sub claim matches ref:refs/heads/main only —
 #   which also supersedes the old maintainer-branch trust widening
-#   caveat. Cost: a full run is 2 agent arms + 2 judge calls. Under the
-#   predecessor fixture's model pins (a mid-tier agent, a strong judge) that
-#   was ~$0.30–0.90 per run, i.e. ~$1.50–4/month at weekly cadence. The
-#   current fixture carries NO pins, so all four calls take the CLI's
-#   default model and the per-run cost tracks whatever that is — restoring
-#   the pins (see evals/workflow-path-audit/fixture.yaml) restores the
-#   estimate too. Per-dispatch spend is bounded by the harness timeouts
+#   caveat. Cost: a full run is 2 agent arms + 2 judge calls. The fixture
+#   pins a mid-tier agent and a strong judge — carried over unchanged from
+#   the predecessor fixture — which puts a run at ~$0.30–0.90, i.e.
+#   ~$1.50–4/month at weekly cadence. Unpinning any of them would make the
+#   per-run cost track the CLI's default model instead, and would break
+#   week-over-week badge comparability with it. Per-dispatch spend is
+#   bounded by the harness timeouts
 #   (600s per arm, 120s per judge call); the workspace spend limit, not
 #   this workflow, is the hard ceiling.
 #

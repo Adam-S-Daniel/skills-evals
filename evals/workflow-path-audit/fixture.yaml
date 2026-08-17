@@ -8,21 +8,19 @@
 skill: workflow-path-audit
 registry: https://github.com/Adam-S-Daniel/agentskills
 
-# MODEL PINS ARE DELIBERATELY ABSENT AND SHOULD BE RESTORED BY A MAINTAINER.
-# The predecessor fixture pinned the agent arms to a mid-tier model (an
-# Opus-tier agent would likely ace the task WITHOUT the skill — a ceiling
-# effect that leaves the with/without comparison signal-free) and the judge to
-# a strong one (judgement consistency matters more than agent-arm parity, and
-# two short judge calls per run cost pennies). Pinning also keeps week-over-week
-# badge comparisons meaningful: unpinned, the arms silently track the Claude
-# Code CLI's default model as it changes across releases.
-#
-# Restore the pins by adding, here:
-#     model: <mid-tier agent model id>
-#     judge:
-#       model: <strong judge model id>
-# Until then run_eval.py passes no --model, so both arms and the judge run on
-# the CLI's default. `--model` on the command line overrides the agent arms.
+# Agent arms run on a pinned mid-tier model, deliberately NOT Opus-tier: an
+# Opus-tier agent would likely ace this task WITHOUT the skill, and a ceiling
+# effect leaves the with/without comparison signal-free. Pinning also stops the
+# arms silently tracking Claude Code's default model as it changes across CLI
+# releases, which is what makes week-over-week badge comparisons meaningful.
+# Carried forward unchanged from the predecessor fixture so the retargeted eval
+# stays calibrated the same way. `--model` on the command line overrides this.
+model: claude-sonnet-5
+
+# The judge is pinned to a strong model: judgment consistency matters more
+# than agent-arm parity, and two short judge calls per run cost pennies.
+judge:
+  model: claude-opus-4-8
 
 prompt: >
   Audit this repository's GitHub Actions workflows and make each one trigger
