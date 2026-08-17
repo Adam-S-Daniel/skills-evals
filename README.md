@@ -174,7 +174,7 @@ python3 harness/run_propagation.py evals/propagation --gate-only \
 | `clean-room` | none of the lock's skills, and no `adam:` namespace, in an empty scratch surface |
 | `project-mirror` | a repo-committed `.claude/skills/` mirror loads, exactly the locked set |
 | `plugin-marketplace` | `claude plugin install` delivers all 9 as `adam:*`, and the resolved tree's content digests match `skills.lock` |
-| `bootstrap-hook` | the SessionStart hook installs 9/9 on an ephemeral surface — **and declines with the exact `skipped — durable session` sentence, writing nothing, on a durable one** |
+| `bootstrap-hook` | the SessionStart hook installs 9/9 on an ephemeral surface — **and declines with a `skipped — durable session` verdict that names the marketplace install as authoritative, writing nothing, on a durable one** (an interpolated diagnostic clause in the middle is allowed and ignored) |
 | `collision-guard` | a repo-owned copy wins: the hook says it skipped, and the file really was not written |
 
 Every arm probes twice — a control leg before the channel delivers anything,

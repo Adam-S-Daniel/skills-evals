@@ -284,6 +284,27 @@ class LockAndDigestTests(unittest.TestCase):
         self.assertIsNotNone(arms.HOOK_OK_RE.match(
             "skills: 9/9 from file:///r@0abcdef — OK"))
 
+    def test_hook_skipped_matcher_is_structural_not_exact(self):
+        # agentskills 24977ed enriched the decline sentence with an
+        # interpolated diagnostic clause; the matcher must accept BOTH the
+        # pre-24977ed sentence and the current one, and must still reject
+        # anything that changes what the sentence actually asserts.
+        declined = arms.hook_declined_for_durable_session
+        self.assertTrue(declined(
+            "skills: skipped — durable session, "
+            "marketplace install is authoritative"))  # old, pre-24977ed
+        self.assertTrue(declined(
+            "skills: skipped — durable session (entrypoint=unset, no "
+            "remote session id), marketplace install is authoritative"))
+        self.assertFalse(declined(
+            "skills: 9/9 from file:///r@0abcdef — OK"))  # installed, not skipped
+        self.assertFalse(declined(
+            "skills: skipped — no skills.lock found, "
+            "marketplace install is authoritative"))  # a different reason
+        self.assertFalse(declined(
+            "skills: skipped — durable session (entrypoint=unset, no "
+            "remote session id)"))  # missing the marketplace clause
+
 
 class GuardTests(unittest.TestCase):
     """A guard that did not hold outranks every finding."""
