@@ -1,4 +1,4 @@
-# Real (non-hermetic) skill eval: runs the pin-actions-to-sha A/B eval against
+# Real (non-hermetic) skill eval: runs the workflow-path-audit A/B eval against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
 # pushes the badge + run summaries to the `eval-results` branch. The hermetic
 # suite stays in ci.yml — this workflow is the ONLY place real credentials or
@@ -44,12 +44,15 @@
 #   calls share the token). Dispatches from non-main refs get no
 #   credential — the rule's sub claim matches ref:refs/heads/main only —
 #   which also supersedes the old maintainer-branch trust widening
-#   caveat. Cost: the fixture pins the agent arms to claude-sonnet-5 and
-#   the judge to claude-opus-4-8, so a full run (2 sonnet-5 arms + 2
-#   opus-4-8 judge calls) is expected at ~$0.30–0.90, i.e. ~$1.50–4/month
-#   at weekly cadence. Per-dispatch spend is bounded by the harness
-#   timeouts (600s per arm, 120s per judge call); the workspace spend
-#   limit, not this workflow, is the hard ceiling.
+#   caveat. Cost: a full run is 2 agent arms + 2 judge calls. Under the
+#   predecessor fixture's model pins (a mid-tier agent, a strong judge) that
+#   was ~$0.30–0.90 per run, i.e. ~$1.50–4/month at weekly cadence. The
+#   current fixture carries NO pins, so all four calls take the CLI's
+#   default model and the per-run cost tracks whatever that is — restoring
+#   the pins (see evals/workflow-path-audit/fixture.yaml) restores the
+#   estimate too. Per-dispatch spend is bounded by the harness timeouts
+#   (600s per arm, 120s per judge call); the workspace spend limit, not
+#   this workflow, is the hard ceiling.
 #
 # * Both checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
@@ -186,12 +189,12 @@ jobs:
         run: |
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
-          python3 harness/run_eval.py evals/pin-actions-to-sha \
+          python3 harness/run_eval.py evals/workflow-path-audit \
             --arm both --registry ../agentskills --net-checks
 
       - name: Generate badge
         working-directory: skills-evals
-        run: python3 scripts/make_badge.py pin-actions-to-sha
+        run: python3 scripts/make_badge.py workflow-path-audit
 
       - name: Commit and push badge + run summaries
         working-directory: skills-evals
@@ -222,7 +225,7 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "eval: pin-actions-to-sha run + badge [skip ci]"
+          git commit -m "eval: workflow-path-audit run + badge [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
 

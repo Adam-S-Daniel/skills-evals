@@ -33,8 +33,8 @@ This is purpose-built for registry skills. Per the #18 caveat, `GHA-bench` is
   usage.
 - **Scorers**
   - *objective* — assertions on output files / exit state (e.g. for
-    `pin-actions-to-sha`: every `uses:` is a 40-hex SHA with a version comment
-    and the workflow still parses).
+    `workflow-path-audit`: replay a changeset through each workflow's `on:`
+    filters and assert exactly which workflows fire, and that they parse).
   - *judge* — an LLM grades the transcript/result against the fixture's rubric,
     emitting JSON (scores + reasons), temperature 0.
 - **Report** — per-skill table of with vs. without across success %, judge
@@ -66,23 +66,37 @@ Two modes:
 2. **Local path** — point at a `plugins/<name>/` checkout to eval a skill
    *before* it merges into the registry.
 
-## First reference eval (proposed): `pin-actions-to-sha`
+## Reference eval: `workflow-path-audit`
 
-- **seed** — a repo with `.github/workflows/*.yml` using tag refs
-  (`actions/checkout@v4`, etc.).
-- **prompt** — "Pin all GitHub Actions to full commit SHAs."
-- **objective check** — every `uses:` becomes a 40-hex SHA followed by a
-  `# vX.Y.Z` version comment; non-action `uses:` (local/Docker) left alone;
-  every workflow still parses; each pinned SHA is the commit its version
-  comment claims (verified against the action repo's real tags via
-  `git ls-remote` — network-dependent, so it runs only under `--net-checks`
-  in the real-eval path, never in the hermetic tests).
-- **judge rubric** — did it pin *all* refs, avoid touching things it
-  shouldn't, and explain what it did? (SHA↔tag correspondence and
-  version-comment preservation are verified objectively, not judged — a
-  tool-less judge could only hallucinate that verification.)
+The first reference eval targeted a different skill, one since retired from the
+registry — its rule moved into always-on managed guidance instead. The A/B
+instrument was retargeted rather than retired: same harness, same fixture
+schema, a surviving skill as the subject. `workflow-path-audit` was chosen
+because, like its predecessor, it acts on `.github/workflows/` and its outcome
+is objectively decidable from the resulting files alone.
+
+- **seed** — a service repo whose five workflows carry no path filters at all:
+  a required-check test workflow, a docs-site build, a deploy, a nightly
+  schedule-only sweep, and an issue-driven triage. Plus the branch-protection
+  ruleset (`.github/rulesets/main.json`) naming which check is required.
+- **prompt** — "Make each workflow trigger only when a file it actually
+  depends on has changed."
+- **objective check** — replay three changesets (docs-only, source-only,
+  prose-only) through each workflow's `on:` filters using GitHub's own
+  path-matching semantics, and assert exactly which workflows fire; the
+  workflow carrying a required status check must have no workflow-level
+  filter and must gate its real work on a computed salience output instead;
+  every workflow still parses; the schedule/issue-only workflows and the
+  ruleset are untouched.
+- **judge rubric** — were all workflows covered, are the listed paths the ones
+  each workflow's own steps actually consume, and did it leave alone what it
+  should have? (Routing is verified objectively rather than judged — the three
+  probe changesets sample it exactly, where a tool-less judge could only
+  guess.)
 - **expected result** — the `with_skill` arm materially outperforms baseline on
-  completeness/correctness.
+  completeness, and specifically on the required-check trap: a workflow-level
+  filter on a required check leaves it missing and deadlocks the merge, which
+  is the non-obvious thing the skill carries.
 
 ## Open decisions (defaults proposed — confirm or override)
 
@@ -124,10 +138,10 @@ The registry has shipped (and, mid-migration, may still contain a mix of)
 two layouts for `<plugin>`:
 
 - **Legacy, one skill per plugin:** `<plugin> == <skill>` — a plugin dir
-  named after its single skill, e.g. `plugins/pin-actions-to-sha/skills/pin-actions-to-sha/`.
+  named after its single skill, e.g. `plugins/writing-adrs/skills/writing-adrs/`.
 - **Bundle, many skills per plugin:** `<plugin>` is a bundle name distinct
-  from any skill it contains, e.g. `plugins/gha-tools/skills/pin-actions-to-sha/`
-  alongside other skills under that same `gha-tools` bundle.
+  from any skill it contains, e.g. `plugins/adam/skills/workflow-path-audit/`
+  alongside other skills under that same `adam` bundle.
 
 Because the plugin/bundle directory name can't be assumed to equal the skill
 name, `run_agent` resolves it with a glob — `plugins/*/skills/<skill>` —

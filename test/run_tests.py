@@ -25,7 +25,7 @@ HARNESS_DIR = REPO_ROOT / "harness"
 FAKE_CLAUDE = TEST_DIR / "fake-claude"
 FAKE_REGISTRY = TEST_DIR / "fixtures" / "fake_registry"
 FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
-EVAL_DIR = REPO_ROOT / "evals" / "pin-actions-to-sha"
+EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
 
 sys.path.insert(0, str(HARNESS_DIR))
@@ -52,33 +52,35 @@ class WithSkillInstallTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "ws"
             workspace.mkdir()
-            arm = {"name": "with_skill", "skill": "pin-actions-to-sha",
+            arm = {"name": "with_skill", "skill": "fixture-primary-skill",
                   "registry": FAKE_REGISTRY, "timeout": 30}
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "pin things", arm)
+                result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
-            skill_md = workspace / ".claude" / "skills" / "pin-actions-to-sha" / "SKILL.md"
+            skill_md = (workspace / ".claude" / "skills"
+                        / "fixture-primary-skill" / "SKILL.md")
             self.assertTrue(skill_md.is_file())
 
     def test_copies_skill_dir_legacy_layout(self):
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "ws"
             workspace.mkdir()
-            arm = {"name": "with_skill", "skill": "pin-actions-to-sha",
+            arm = {"name": "with_skill", "skill": "fixture-solo-skill",
                   "registry": FAKE_REGISTRY_LEGACY, "timeout": 30}
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "pin things", arm)
+                result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
-            skill_md = workspace / ".claude" / "skills" / "pin-actions-to-sha" / "SKILL.md"
+            skill_md = (workspace / ".claude" / "skills"
+                        / "fixture-solo-skill" / "SKILL.md")
             self.assertTrue(skill_md.is_file())
 
     def test_selects_correct_skill_among_multiple_bundles(self):
-        # FAKE_REGISTRY has two bundles — gha-tools/skills/pin-actions-to-sha and
-        # misc-tools/skills/other-skill — proving the glob lands each skill name
-        # in its own bundle rather than grabbing whichever bundle sorts first.
-        for skill, bundle in (("pin-actions-to-sha", "gha-tools"),
+        # FAKE_REGISTRY has two bundles — gha-tools/skills/fixture-primary-skill
+        # and misc-tools/skills/other-skill — proving the glob lands each skill
+        # name in its own bundle rather than grabbing whichever bundle sorts first.
+        for skill, bundle in (("fixture-primary-skill", "gha-tools"),
                               ("other-skill", "misc-tools")):
             with tempfile.TemporaryDirectory() as tmp:
                 workspace = Path(tmp) / "ws"
@@ -87,7 +89,7 @@ class WithSkillInstallTests(unittest.TestCase):
                       "registry": FAKE_REGISTRY, "timeout": 30}
                 with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                                   "FAKE_CLAUDE_MODE": "agent"}):
-                    result = run_eval.run_agent(workspace, "pin things", arm)
+                    result = run_eval.run_agent(workspace, "audit the workflows", arm)
                 self.assertNotIn("error", result)
                 skill_md = workspace / ".claude" / "skills" / skill / "SKILL.md"
                 self.assertTrue(skill_md.is_file())
@@ -110,7 +112,7 @@ class WithSkillInstallTests(unittest.TestCase):
                   "registry": registry, "timeout": 30}
             with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                               "FAKE_CLAUDE_MODE": "agent"}):
-                result = run_eval.run_agent(workspace, "pin things", arm)
+                result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertNotIn("error", result)
             content = (workspace / ".claude" / "skills" / "dup-skill" / "SKILL.md").read_text(
                 encoding="utf-8")
@@ -123,16 +125,16 @@ class WithSkillInstallTests(unittest.TestCase):
         # crash — it should be filtered out just like a non-existent path.
         with tempfile.TemporaryDirectory() as tmp:
             registry = Path(tmp) / "registry"
-            skill_path = registry / "plugins" / "gha-tools" / "skills" / "pin-actions-to-sha"
+            skill_path = registry / "plugins" / "gha-tools" / "skills" / "fixture-primary-skill"
             skill_path.parent.mkdir(parents=True)
             skill_path.write_text("not a directory\n", encoding="utf-8")
 
             workspace = Path(tmp) / "ws"
             workspace.mkdir()
-            arm = {"name": "with_skill", "skill": "pin-actions-to-sha",
+            arm = {"name": "with_skill", "skill": "fixture-primary-skill",
                   "registry": registry, "timeout": 30}
             # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
-            result = run_eval.run_agent(workspace, "pin things", arm)
+            result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_not_found")
 
@@ -143,7 +145,7 @@ class WithSkillInstallTests(unittest.TestCase):
             arm = {"name": "with_skill", "skill": "does-not-exist",
                   "registry": FAKE_REGISTRY, "timeout": 30}
             # No CLAUDE_BIN mock needed: run_agent must fail before any subprocess call.
-            result = run_eval.run_agent(workspace, "pin things", arm)
+            result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
             self.assertIn(str(FAKE_REGISTRY), result["detail"])
@@ -161,12 +163,12 @@ class RunAgentModesTests(unittest.TestCase):
             workspace = Path(tmp)
             arm = {"name": "without_skill", "timeout": timeout}
             with mock.patch.dict(os.environ, env):
-                return run_eval.run_agent(workspace, "pin things", arm)
+                return run_eval.run_agent(workspace, "audit the workflows", arm)
 
     def test_agent_success(self):
         result = self._run("agent")
         self.assertNotIn("error", result)
-        self.assertIn("Pinned all GitHub Actions", result["transcript"])
+        self.assertIn("Filtered every pull_request/push workflow", result["transcript"])
         self.assertEqual(result["num_turns"], 3)
         self.assertEqual(result["cost_usd"], 0.04)
         self.assertIn("usage", result)
@@ -221,42 +223,298 @@ class JudgeScoreTests(unittest.TestCase):
 
 
 class ObjectiveAsymmetryTests(unittest.TestCase):
-    """Guards the README-documented asymmetry: pristine seed fails; pinned copy passes."""
+    """Guards the README-documented asymmetry: the pristine seed fails; a
+    correctly audited copy passes every check.
 
-    _REPLACEMENTS = {
-        "actions/checkout@v4": f"actions/checkout@{_fake_sha(1)} # v4.3.1",
-        "actions/setup-node@v4": f"actions/setup-node@{_fake_sha(2)} # v4.0.3",
-        "actions/setup-python@v5": f"actions/setup-python@{_fake_sha(3)} # v5.1.1",
-        "softprops/action-gh-release@v2": f"softprops/action-gh-release@{_fake_sha(4)} # v2.0.8",
-    }
+    The "correct" edits below are applied by anchored replacement, and each
+    anchor is asserted present first — so if the seed's workflows drift, this
+    test fails loudly instead of quietly measuring nothing.
+    """
 
-    def _pin_all(self, ws: Path) -> None:
-        for path in (ws / ".github" / "workflows").glob("*.y*ml"):
-            text = path.read_text(encoding="utf-8")
-            for old, new in self._REPLACEMENTS.items():
-                text = text.replace(f"uses: {old}", f"uses: {new}")
-            path.write_text(text, encoding="utf-8")
+    # docs-site.yml consumes mkdocs.yml + docs/ and nothing else. Written with
+    # a YAML anchor/alias on purpose: an agent may legitimately share one list
+    # between two events, and the scorer parses YAML rather than scanning lines.
+    _DOCS_ON = ("on:\n  pull_request:\n  push:\n    branches: [main]\n",
+                "on:\n"
+                "  pull_request:\n"
+                "    paths: &docs-paths\n"
+                "      - docs/**\n"
+                "      - mkdocs.yml\n"
+                "      - .github/workflows/docs-site.yml\n"
+                "  push:\n"
+                "    branches: [main]\n"
+                "    paths: *docs-paths\n")
 
-    def test_pristine_seed_fails_pinning_check(self):
+    # deploy.yml ships src/ plus the runtime dependency set.
+    _DEPLOY_ON = ("on:\n  push:\n    branches: [main]\n  workflow_dispatch:\n",
+                  "on:\n"
+                  "  push:\n"
+                  "    branches: [main]\n"
+                  "    paths:\n"
+                  "      - src/**\n"
+                  "      - package.json\n"
+                  "      - package-lock.json\n"
+                  "      - scripts/deploy.sh\n"
+                  "      - .github/workflows/deploy.yml\n"
+                  "  workflow_dispatch:\n")
+
+    # tests.yml carries a REQUIRED check, so it keeps firing on every event and
+    # moves the salience decision inside itself instead.
+    _TESTS_STEPS = ("      - run: npm ci\n      - run: npm test\n",
+                    "      - name: Detect salient changes\n"
+                    "        id: salient\n"
+                    '        run: echo "run=true" >> "$GITHUB_OUTPUT"\n'
+                    "      - if: steps.salient.outputs.run == 'true'\n"
+                    "        run: npm ci\n"
+                    "      - if: steps.salient.outputs.run == 'true'\n"
+                    "        run: npm test\n")
+
+    def _replace(self, path: Path, old: str, new: str) -> None:
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text, f"{path.name}: anchor drifted out of the seed")
+        path.write_text(text.replace(old, new), encoding="utf-8")
+
+    def _audit_all(self, ws: Path) -> None:
+        workflows = ws / ".github" / "workflows"
+        self._replace(workflows / "docs-site.yml", *self._DOCS_ON)
+        self._replace(workflows / "deploy.yml", *self._DEPLOY_ON)
+        self._replace(workflows / "tests.yml", *self._TESTS_STEPS)
+
+    def _run(self, audited: bool) -> dict:
         fixture = run_eval.load_fixture(EVAL_DIR)
         seed = EVAL_DIR / "seed"
         with tempfile.TemporaryDirectory() as tmp:
             ws = Path(tmp) / "ws"
             shutil.copytree(seed, ws)
+            if audited:
+                self._audit_all(ws)
             results = objective.run_checks(fixture, str(ws), str(seed))
-        by_id = {r["id"]: r for r in results}
-        self.assertFalse(by_id["all-actions-sha-pinned"]["passed"])
+        return {r["id"]: r for r in results}
 
-    def test_pinned_copy_passes_all_checks(self):
-        fixture = run_eval.load_fixture(EVAL_DIR)
-        seed = EVAL_DIR / "seed"
-        with tempfile.TemporaryDirectory() as tmp:
-            ws = Path(tmp) / "ws"
-            shutil.copytree(seed, ws)
-            self._pin_all(ws)
-            results = objective.run_checks(fixture, str(ws), str(seed))
-        for r in results:
-            self.assertTrue(r["passed"], r["detail"])
+    def test_pristine_seed_fails_the_routing_checks(self):
+        by_id = self._run(audited=False)
+        for check_id in ("docs-change-routes-correctly",
+                         "source-change-routes-correctly",
+                         "prose-change-runs-nothing-but-the-required-check",
+                         "required-check-always-fires-and-gates-internally"):
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_pristine_seed_passes_the_restraint_checks(self):
+        # The restraint checks can only be broken by a careless agent, so they
+        # must start out green — otherwise a failure says nothing about the arm.
+        by_id = self._run(audited=False)
+        for check_id in ("workflows-still-parse", "event-only-workflows-unfiltered",
+                         "ruleset-unchanged"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_audited_copy_passes_all_checks(self):
+        for check_id, result in self._run(audited=True).items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+
+class WorkflowPathFilterTests(unittest.TestCase):
+    """The path-filter primitives, exercised directly against tiny workspaces."""
+
+    PATTERNS = [".github/workflows/*.yml"]
+
+    def _ws(self, files: dict[str, str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, body in files.items():
+            path = ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return ws
+
+    DEFAULT_JOB = ("jobs:\n  build:\n    runs-on: ubuntu-latest\n"
+                   "    steps:\n      - run: true\n")
+
+    def _wf(self, on_block: str, jobs: str | None = None) -> str:
+        return on_block + (jobs or self.DEFAULT_JOB)
+
+    # -- glob semantics ----------------------------------------------------
+
+    def test_single_star_does_not_cross_a_slash(self):
+        self.assertTrue(objective._glob_to_regex("docs/*.md").match("docs/a.md"))
+        self.assertFalse(objective._glob_to_regex("docs/*.md").match("docs/sub/a.md"))
+
+    def test_double_star_crosses_slashes(self):
+        self.assertTrue(objective._glob_to_regex("docs/**").match("docs/sub/a.md"))
+
+    def test_question_mark_matches_one_non_slash_character(self):
+        self.assertTrue(objective._glob_to_regex("v?.md").match("v1.md"))
+        self.assertFalse(objective._glob_to_regex("v?.md").match("v11.md"))
+
+    def test_bare_directory_name_does_not_match_its_contents(self):
+        # Faithful to GitHub: `docs` matches a file literally named `docs`, so a
+        # filter written that way genuinely does not filter and must not pass.
+        self.assertFalse(objective._glob_to_regex("docs").match("docs/a.md"))
+
+    def test_negation_is_order_sensitive(self):
+        self.assertFalse(objective._pattern_matches(["docs/**", "!docs/draft/**"],
+                                                    "docs/draft/a.md"))
+        self.assertTrue(objective._pattern_matches(["docs/**", "!docs/draft/**",
+                                                    "docs/draft/keep.md"],
+                                                   "docs/draft/keep.md"))
+
+    # -- `on:` block shapes ------------------------------------------------
+
+    def test_on_key_parsed_as_yaml_boolean_is_still_found(self):
+        # PyYAML resolves the bare key `on` to True (YAML 1.1); a scorer that
+        # only looked up the string key would see every workflow as untriggered.
+        import yaml
+        doc = yaml.safe_load("on:\n  push:\n    paths: [src/**]\n")
+        self.assertNotIn("on", doc)
+        self.assertEqual(set(objective._on_events(doc)), {"push"})
+
+    def test_scalar_and_list_on_blocks(self):
+        import yaml
+        self.assertEqual(set(objective._on_events(yaml.safe_load("on: push\n"))),
+                         {"push"})
+        self.assertEqual(
+            set(objective._on_events(yaml.safe_load("on: [push, pull_request]\n"))),
+            {"push", "pull_request"})
+
+    # -- trigger decisions -------------------------------------------------
+
+    def _routes(self, on_block: str, changeset: list[str], expect: bool):
+        ws = self._ws({".github/workflows/w.yml": self._wf(on_block)})
+        key = "expect_triggered" if expect else "expect_skipped"
+        passed, detail = objective.changeset_triggers(
+            str(ws), self.PATTERNS, changeset=changeset,
+            **{key: [".github/workflows/w.yml"]})
+        self.assertTrue(passed, detail)
+
+    def test_unfiltered_workflow_always_triggers(self):
+        self._routes("on:\n  pull_request:\n", ["README.md"], True)
+
+    def test_positive_paths_filter_skips_a_non_matching_change(self):
+        self._routes("on:\n  pull_request:\n    paths: [src/**]\n", ["README.md"], False)
+        self._routes("on:\n  pull_request:\n    paths: [src/**]\n", ["src/a.js"], True)
+
+    def test_paths_ignore_skips_only_when_every_file_matches(self):
+        on = "on:\n  push:\n    paths-ignore: ['**.md']\n"
+        self._routes(on, ["README.md", "docs/a.md"], False)
+        self._routes(on, ["README.md", "src/a.js"], True)
+
+    def test_catch_all_filter_still_triggers_on_prose(self):
+        # The gaming path a presence-only check would let through.
+        self._routes("on:\n  pull_request:\n    paths: ['**']\n", ["README.md"], True)
+
+    def test_filter_on_a_non_path_event_does_not_gate_anything(self):
+        # A filter under `schedule:` is inert on GitHub; the workflow has no
+        # path-filtered event at all, so it never fires on a code change.
+        self._routes("on:\n  schedule:\n    - cron: '0 3 * * *'\n", ["src/a.js"], False)
+
+    def test_a_named_workflow_that_is_missing_fails(self):
+        ws = self._ws({".github/workflows/other.yml": self._wf("on:\n  push:\n")})
+        passed, detail = objective.changeset_triggers(
+            str(ws), self.PATTERNS, changeset=["src/a.js"],
+            expect_triggered=[".github/workflows/w.yml"])
+        self.assertFalse(passed)
+        self.assertIn("not found", detail)
+
+    def test_an_unnamed_extra_workflow_is_ignored(self):
+        ws = self._ws({".github/workflows/w.yml": self._wf("on:\n  push:\n"),
+                       ".github/workflows/extra.yml": self._wf("on:\n  push:\n")})
+        passed, _ = objective.changeset_triggers(
+            str(ws), self.PATTERNS, changeset=["src/a.js"],
+            expect_triggered=[".github/workflows/w.yml"])
+        self.assertTrue(passed)
+
+    # -- required checks ---------------------------------------------------
+
+    RULESET = json.dumps({"rules": [
+        {"type": "required_status_checks",
+         "parameters": {"required_status_checks": [{"context": "unit-tests"}]}}]})
+
+    GATED_JOB = ("jobs:\n  unit-tests:\n    runs-on: ubuntu-latest\n    steps:\n"
+                 "      - id: salient\n        run: echo run=true >> $GITHUB_OUTPUT\n"
+                 "      - if: steps.salient.outputs.run == 'true'\n"
+                 "        run: npm test\n")
+    UNGATED_JOB = ("jobs:\n  unit-tests:\n    runs-on: ubuntu-latest\n    steps:\n"
+                   "      - run: npm test\n")
+
+    def _required_ws(self, on_block: str, jobs: str) -> Path:
+        return self._ws({".github/rulesets/main.json": self.RULESET,
+                         ".github/workflows/tests.yml": on_block + jobs})
+
+    def test_required_check_unfiltered_and_gated_passes(self):
+        ws = self._required_ws("on:\n  pull_request:\n", self.GATED_JOB)
+        passed, detail = objective.required_checks_early_skip(str(ws), self.PATTERNS)
+        self.assertTrue(passed, detail)
+
+    def test_required_check_with_a_workflow_level_filter_fails(self):
+        ws = self._required_ws("on:\n  pull_request:\n    paths: [src/**]\n",
+                               self.GATED_JOB)
+        passed, detail = objective.required_checks_early_skip(str(ws), self.PATTERNS)
+        self.assertFalse(passed)
+        self.assertIn("can go missing", detail)
+
+    def test_required_check_without_a_gate_fails(self):
+        ws = self._required_ws("on:\n  pull_request:\n", self.UNGATED_JOB)
+        passed, detail = objective.required_checks_early_skip(str(ws), self.PATTERNS)
+        self.assertFalse(passed)
+        self.assertIn("no early-skip gate", detail)
+
+    def test_required_context_matched_by_job_name_not_just_job_id(self):
+        jobs = self.GATED_JOB.replace(
+            "  unit-tests:\n    runs-on",
+            "  test:\n    name: unit-tests\n    runs-on")
+        ws = self._required_ws("on:\n  pull_request:\n", jobs)
+        passed, detail = objective.required_checks_early_skip(str(ws), self.PATTERNS)
+        self.assertTrue(passed, detail)
+
+    def test_a_deleted_required_workflow_fails(self):
+        ws = self._ws({".github/rulesets/main.json": self.RULESET,
+                       ".github/workflows/other.yml": self._wf("on:\n  push:\n")})
+        passed, detail = objective.required_checks_early_skip(str(ws), self.PATTERNS)
+        self.assertFalse(passed)
+        self.assertIn("unit-tests", detail)
+
+    def test_no_ruleset_means_nothing_to_assert(self):
+        ws = self._ws({".github/workflows/w.yml": self._wf("on:\n  push:\n")})
+        passed, detail = objective.required_checks_early_skip(str(ws), self.PATTERNS)
+        self.assertTrue(passed)
+        self.assertIn("no required status checks", detail)
+
+    # -- restraint ---------------------------------------------------------
+
+    def test_event_only_workflow_with_a_filter_fails(self):
+        ws = self._ws({".github/workflows/cron.yml": self._wf(
+            "on:\n  schedule:\n    - cron: '0 3 * * *'\n")})
+        self.assertTrue(objective.event_only_workflows_unfiltered(
+            str(ws), self.PATTERNS)[0])
+        ws = self._ws({".github/workflows/cron.yml": self._wf(
+            "on:\n  workflow_dispatch:\n    paths: [src/**]\n")})
+        passed, detail = objective.event_only_workflows_unfiltered(str(ws), self.PATTERNS)
+        self.assertFalse(passed)
+        self.assertIn("GitHub ignores", detail)
+
+    def test_files_unchanged_detects_edit_removal_and_addition(self):
+        seed = self._ws({".github/rulesets/main.json": "{}\n"})
+        patterns = [".github/rulesets/main.json"]
+
+        same = self._ws({".github/rulesets/main.json": "{}\n"})
+        self.assertTrue(objective.files_unchanged(str(same), patterns, seed=str(seed))[0])
+
+        edited = self._ws({".github/rulesets/main.json": "{ }\n"})
+        passed, detail = objective.files_unchanged(str(edited), patterns, seed=str(seed))
+        self.assertFalse(passed)
+        self.assertIn("modified", detail)
+
+        removed = self._ws({"README.md": "x\n"})
+        passed, detail = objective.files_unchanged(str(removed), patterns, seed=str(seed))
+        self.assertFalse(passed)
+        self.assertIn("removed", detail)
+
+    def test_unparseable_workflow_fails_a_named_expectation(self):
+        ws = self._ws({".github/workflows/w.yml": "on: [\n  bad yaml\n"})
+        passed, detail = objective.changeset_triggers(
+            str(ws), self.PATTERNS, changeset=["src/a.js"],
+            expect_triggered=[".github/workflows/w.yml"])
+        self.assertFalse(passed)
+        self.assertIn("does not parse", detail)
 
 
 class PinnedShaTagCheckTests(unittest.TestCase):
@@ -381,11 +639,13 @@ class PinnedShaTagCheckTests(unittest.TestCase):
         self.assertEqual(seen, [("https://github.com/github/codeql-action", "v3.28.0")])
 
     def test_run_checks_stays_hermetic_by_default(self):
-        # The real fixture now carries the network-dependent check; without
-        # allow_network it must report as skipped-pass, never touch the network.
-        fixture = run_eval.load_fixture(EVAL_DIR)
+        # Any fixture carrying the network-dependent check must, without
+        # allow_network, report it as skipped-pass and never touch the network.
+        fixture = {"objective_checks": [
+            {"id": "pinned-shas-match-tags", "type": "pinned_shas_match_tags",
+             "paths": self.PATTERNS}]}
         ws = self._ws([f"actions/checkout@{self.SHA} # v6.0.0"])
-        results = objective.run_checks(fixture, str(ws), str(EVAL_DIR / "seed"))
+        results = objective.run_checks(fixture, str(ws), str(ws))
         by_id = {r["id"]: r for r in results}
         self.assertIn("pinned-shas-match-tags", by_id)
         self.assertTrue(by_id["pinned-shas-match-tags"]["passed"])
@@ -417,19 +677,19 @@ class MakeBadgeTests(unittest.TestCase):
                              ("without_skill", without_summary)):
             if summary is None:
                 continue
-            arm_dir = self.results / "pin-actions-to-sha" / ts / arm
+            arm_dir = self.results / "workflow-path-audit" / ts / arm
             arm_dir.mkdir(parents=True)
             (arm_dir / "summary.json").write_text(
                 json.dumps(summary), encoding="utf-8")
 
     def _badge(self) -> dict:
-        return make_badge.build_badge(self.results, "pin-actions-to-sha")
+        return make_badge.build_badge(self.results, "workflow-path-audit")
 
     def test_green_when_with_strictly_better(self):
         self._write_run(self.TS, self._summary(5, 5, 8.5), self._summary(3, 5, 4.0))
         badge = self._badge()
         self.assertEqual(badge["schemaVersion"], 1)
-        self.assertEqual(badge["label"], "skill eval: pin-actions-to-sha")
+        self.assertEqual(badge["label"], "skill eval: workflow-path-audit")
         self.assertEqual(badge["message"], f"with 5/5 vs without 3/5 · {self.DATE}")
         self.assertEqual(badge["color"], "green")
 
@@ -506,7 +766,7 @@ class MakeBadgeTests(unittest.TestCase):
         self._write_run(self.TS, self._summary(5, 5, 8.0), self._summary(3, 5, 4.0))
         out = self.results / "badge.json"
         cmd = [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"),
-               "pin-actions-to-sha", "--results-dir", str(self.results),
+               "workflow-path-audit", "--results-dir", str(self.results),
                "--out", str(out)]
         first = subprocess.run(cmd, capture_output=True, text=True)
         self.assertEqual(first.returncode, 0, first.stdout + first.stderr)
@@ -520,13 +780,31 @@ class MakeBadgeTests(unittest.TestCase):
 
 
 class EndToEndTests(unittest.TestCase):
+    @staticmethod
+    def _registry_for(tmp: Path, skill: str) -> Path:
+        """A throwaway registry carrying the fixture's own skill.
+
+        The shared fake registries use synthetic skill names on purpose, so
+        they can never shadow a real one; the with_skill arm still needs the
+        name the fixture actually asks for, and taking it from the fixture
+        keeps this in step if the eval subject ever changes again.
+        """
+        registry = tmp / "registry"
+        skill_dir = registry / "plugins" / "a-bundle" / "skills" / skill
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text(
+            f"---\nname: {skill}\ndescription: end-to-end test stand-in.\n---\n",
+            encoding="utf-8")
+        return registry
+
     def test_both_arms_produce_summary_and_report(self):
         with tempfile.TemporaryDirectory() as tmp:
             results_dir = Path(tmp) / "results"
+            skill = run_eval.load_fixture(EVAL_DIR)["skill"]
             env = os.environ.copy()
             env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
             env["FAKE_CLAUDE_MODE"] = "agent_and_judge"
-            env["AGENTSKILLS_DIR"] = str(FAKE_REGISTRY)
+            env["AGENTSKILLS_DIR"] = str(self._registry_for(Path(tmp), skill))
             cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(EVAL_DIR),
                   "--arm", "both", "--results-dir", str(results_dir),
                   "--timeout", "30"]
@@ -534,14 +812,14 @@ class EndToEndTests(unittest.TestCase):
                                   env=env, cwd=str(REPO_ROOT))
             self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
-            skill_dir = results_dir / "pin-actions-to-sha"
+            skill_dir = results_dir / "workflow-path-audit"
             self.assertTrue(skill_dir.is_dir())
             run_dirs = list(skill_dir.iterdir())
             self.assertEqual(len(run_dirs), 1)
             run_dir = run_dirs[0]
 
             report = (run_dir / "report.md").read_text(encoding="utf-8")
-            self.assertIn("pin-actions-to-sha", report)
+            self.assertIn("workflow-path-audit", report)
             self.assertIn("with_skill", report)
             self.assertIn("without_skill", report)
 
@@ -558,7 +836,7 @@ class EndToEndTests(unittest.TestCase):
                 self.assertTrue(raw_path.is_file())
 
             # Never pollutes the real repo results/ dir.
-            self.assertFalse((REPO_ROOT / "results" / "pin-actions-to-sha").exists())
+            self.assertFalse((REPO_ROOT / "results" / "workflow-path-audit").exists())
 
     def test_objective_only_unchanged_against_pristine_seed(self):
         cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(EVAL_DIR),
@@ -566,10 +844,12 @@ class EndToEndTests(unittest.TestCase):
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 1)
         payload = json.loads(proc.stdout)
-        self.assertEqual(payload["skill"], "pin-actions-to-sha")
+        self.assertEqual(payload["skill"], "workflow-path-audit")
         self.assertEqual(payload["arm"], "objective-only")
         by_id = {c["id"]: c for c in payload["checks"]}
-        self.assertFalse(by_id["all-actions-sha-pinned"]["passed"])
+        self.assertFalse(by_id["docs-change-routes-correctly"]["passed"])
+        self.assertFalse(
+            by_id["required-check-always-fires-and-gates-internally"]["passed"])
 
 
 class CanaryTests(unittest.TestCase):
