@@ -66,6 +66,12 @@ sys.stdout.write("".join(k + "\n" for k in lock["skills"]))' "$PROJECT_DIR")
 }
 
 # --- surface guard: ephemeral sessions only ---------------------------------
+# The "honest"/skip-but-install decline below deliberately emits the
+# pre-agentskills-24977ed sentence, with no interpolated diagnostic clause.
+# That is a live regression fixture, not staleness: arms.HOOK_SKIPPED_RE
+# matches structurally now specifically so both the old sentence and the
+# current enriched one pass, and this fixture is what keeps the old shape
+# under test.
 if [ -z "${CLAUDE_CODE_REMOTE_SESSION_ID:-}" ] && [ "${CLAUDE_CODE_ENTRYPOINT:-}" != "remote" ] \
    && [ -z "${SKILLS_BOOTSTRAP_FORCE:-}" ]; then
   case "$MODE" in

@@ -21,11 +21,12 @@ Anti-vacuity is structural, not a convention:
   arm INCONCLUSIVE (exit 2), never PASS and never FAIL. The arm that expects
   to find NOTHING is the one most able to pass on a dead CLI, so it is the one
   that most needs a floor.
-* **Negative controls with a literal expectation.** The bootstrap hook's
+* **Negative controls with a structural expectation.** The bootstrap hook's
   control leg does not merely assert "the skills are not visible" — that also
   holds if the hook crashed, if the lock were missing, or if the clone 404'd.
-  It asserts the exact `skipped — durable session…` sentence AND an empty
-  `$HOME/.claude/skills`.
+  It asserts the `skipped — durable session…, marketplace install is
+  authoritative` shape (an interpolated diagnostic clause in the middle is
+  allowed — see `HOOK_SKIPPED_RE`) AND an empty `$HOME/.claude/skills`.
 """
 
 from __future__ import annotations
@@ -56,8 +57,30 @@ SURFACE_VARS = ("CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUDE_CODE_ENTRYPOINT",
 # `skills: 9/9 from file:///…/agentskills@9d024c3 — OK`. The two counts must be
 # the SAME number (backreference), so "8/9 — OK" can never match.
 HOOK_OK_RE = re.compile(r"^skills: (\d+)/\1 from \S+@[0-9a-f]{7,40} — OK$")
-HOOK_SKIPPED = ("skills: skipped — durable session, "
-                "marketplace install is authoritative")
+
+# `skills: skipped — durable session, marketplace install is authoritative` —
+# structural, not exact-equality, on purpose. agentskills 24977ed
+# ("Make the skip verdict name the values it decided from") inserted an
+# interpolated diagnostic between the reason and the marketplace clause:
+# `skills: skipped — durable session (entrypoint=unset, no remote session
+# id), marketplace install is authoritative`. That diagnostic is
+# informational and must be allowed to vary or grow further; what has to
+# hold is the two clauses either side of it — WHY the hook declined (a
+# durable session, not some other reason) and WHAT is authoritative instead
+# (the marketplace install, still named, still present). A parenthesised
+# `(...)` block with no nested parens is accepted between the two literal
+# clauses; nothing else is.
+HOOK_SKIPPED_RE = re.compile(
+    r"^skills: skipped — durable session(?: \([^()]*\))?, "
+    r"marketplace install is authoritative$")
+
+
+def hook_declined_for_durable_session(verdict: str) -> bool:
+    """True iff `verdict` is a durable-session skip naming the marketplace
+    install as authoritative, with any single interpolated diagnostic
+    clause in between tolerated. See `HOOK_SKIPPED_RE`.
+    """
+    return HOOK_SKIPPED_RE.match(verdict) is not None
 
 
 class ArmError(RuntimeError):
@@ -496,10 +519,13 @@ def arm_bootstrap_hook(ctx) -> ArmResult:
                                            else f" (expected N/N — OK with "
                                                 f"N={len(ctx.lock['skills'])})")),
         _delivery_finding(expected, _delivered(before, facts), "local"),
-        Finding("hook/control-verdict", control_verdict == HOOK_SKIPPED,
+        Finding("hook/control-verdict",
+                hook_declined_for_durable_session(control_verdict),
                 f"control verdict: {control_verdict!r}"
-                + ("" if control_verdict == HOOK_SKIPPED
-                   else f" (expected exactly {HOOK_SKIPPED!r})")),
+                + ("" if hook_declined_for_durable_session(control_verdict)
+                   else " (expected a durable-session skip naming the "
+                        "marketplace install as authoritative, matching "
+                        f"{HOOK_SKIPPED_RE.pattern!r})")),
         Finding("hook/control-installed-nothing", not control_installed,
                 "the declining hook wrote no skills into $HOME/.claude/skills"
                 if not control_installed
