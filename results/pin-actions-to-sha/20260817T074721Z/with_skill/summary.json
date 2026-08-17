@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "with_skill",
+  "timestamp": "20260817T074721Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.33289105,
+    "num_turns": 13,
+    "duration_ms": 62046,
+    "usage": {
+      "input_tokens": 19,
+      "cache_creation_input_tokens": 42381,
+      "cache_read_input_tokens": 333411,
+      "output_tokens": 4884,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 42381
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 10,
+        "rationale": "Every remote action ref was pinned to a full 40-char SHA \u2014 both checkout occurrences and setup-node in ci.yml, and checkout, setup-python, and action-gh-release in release.yaml \u2014 with none left as tags."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The agent correctly left the local composite action (`./.github/actions/local-lint`) and the Docker ref (`docker://alpine:3.20`) untouched and modified no unrelated files."
+      },
+      {
+        "name": "Communication",
+        "score": 8,
+        "rationale": "The summary clearly lists each pin with version and release date and notes the latest-in-major and 7-day cooldown reasoning, but it doesn't spell out the mechanism used to look up and confirm each SHA against its source."
+      }
+    ],
+    "overall": 9.3
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "skill": "pin-actions-to-sha",
+  "arm": "without_skill",
+  "timestamp": "20260817T074721Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.17839789999999997,
+    "num_turns": 10,
+    "duration_ms": 51684,
+    "usage": {
+      "input_tokens": 18,
+      "cache_creation_input_tokens": 13726,
+      "cache_read_input_tokens": 283698,
+      "output_tokens": 2743,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 13726
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "all-actions-sha-pinned",
+      "passed": true,
+      "detail": "all remote refs SHA-pinned"
+    },
+    {
+      "id": "version-comment-present",
+      "passed": true,
+      "detail": "all pinned refs carry version comments"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "local-and-docker-refs-untouched",
+      "passed": true,
+      "detail": "local/docker refs unchanged"
+    },
+    {
+      "id": "pinned-shas-match-tags",
+      "passed": true,
+      "detail": "6 verified, 0 mismatched, 0 unverifiable"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 9,
+        "rationale": "All four distinct remote action refs (checkout, setup-node, setup-python, action-gh-release) across both ci.yml and release.yaml were pinned to full commit SHAs, with the duplicate checkout uses caught too."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The local action (`./.github/actions/local-lint`) and the `docker://` reference were correctly left unpinned per their inline notes, and no unrelated files or lines were touched."
+      },
+      {
+        "name": "Communication",
+        "score": 8,
+        "rationale": "The agent stated exactly what it pinned and that SHAs were verified against upstream tags via `git ls-remote`, though it kept only a bare `# v4`/`# v5` comment rather than exact patch versions and didn't show the verification output."
+      }
+    ],
+    "overall": 9.0
+  }
+}
