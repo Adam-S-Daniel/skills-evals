@@ -735,8 +735,8 @@ class MakeBadgeTests(unittest.TestCase):
             (arm_dir / "summary.json").write_text(
                 json.dumps(summary), encoding="utf-8")
 
-    def _badge(self) -> dict:
-        return make_badge.build_badge(self.results, "workflow-path-audit")
+    def _badge(self, window: int = make_badge.DEFAULT_WINDOW) -> dict:
+        return make_badge.build_badge(self.results, "workflow-path-audit", window)
 
     def test_green_when_with_strictly_better(self):
         self._write_run(self.TS, self._summary(5, 5, 8.5), self._summary(3, 5, 4.0))
@@ -807,13 +807,114 @@ class MakeBadgeTests(unittest.TestCase):
         self.assertEqual(badge["color"], "lightgrey")
         self.assertEqual(badge["message"], "no runs yet")
 
-    def test_newest_run_wins(self):
+    def test_window_1_reads_newest_run_only(self):
+        # The pre-window behaviour, still reachable: with --window 1 the older
+        # (opposite-signal) run must not influence the badge at all, and the
+        # message must be byte-identical to what the single-run badge emitted.
         self._write_run("20260101T000000Z", self._summary(5, 5, 9.0),
                         self._summary(1, 5, 2.0))
         self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
-        badge = self._badge()
+        badge = self._badge(window=1)
         self.assertEqual(badge["color"], "red")
-        self.assertIn(self.DATE, badge["message"])
+        self.assertEqual(badge["message"], f"with 2/5 vs without 4/5 · {self.DATE}")
+        self.assertNotIn("n=", badge["message"])
+
+    def test_window_averages_across_runs(self):
+        # Three runs whose newest one alone would read red; averaged, the
+        # with_skill arm is clearly ahead. This is the whole point of the
+        # window — one run is scheduling luck, not a measurement.
+        self._write_run("20260714T070000Z", self._summary(7, 7, 8.0),
+                        self._summary(6, 7, 7.0))
+        self._write_run("20260715T070000Z", self._summary(7, 7, 8.0),
+                        self._summary(4, 7, 6.0))
+        self._write_run(self.TS, self._summary(6, 7, 7.0), self._summary(7, 7, 8.0))
+        badge = self._badge()
+        # with: (7+7+6)/3 = 6.666… -> 6.7 ; without: (6+4+7)/3 = 5.666… -> 5.7
+        self.assertEqual(badge["message"],
+                         f"with 6.7/7 vs without 5.7/7 · n=3 · {self.DATE}")
+        self.assertEqual(badge["color"], "green")
+
+    def test_integral_means_render_without_a_decimal_point(self):
+        self._write_run("20260715T070000Z", self._summary(7, 7, 8.0),
+                        self._summary(4, 7, 6.0))
+        self._write_run(self.TS, self._summary(7, 7, 8.0), self._summary(6, 7, 6.0))
+        # with averages to exactly 7 -> "7/7", never "7.0/7".
+        self.assertEqual(self._badge()["message"],
+                         f"with 7/7 vs without 5/7 · n=2 · {self.DATE}")
+
+    def test_window_bound_ignores_runs_older_than_n(self):
+        # Five runs, window of 2: only the two newest count, so the three old
+        # with_skill wins must not rescue the average.
+        for ts in ("20260710T070000Z", "20260711T070000Z", "20260712T070000Z"):
+            self._write_run(ts, self._summary(7, 7, 9.0), self._summary(1, 7, 2.0))
+        self._write_run("20260715T070000Z", self._summary(3, 7, 4.0),
+                        self._summary(5, 7, 8.0))
+        self._write_run(self.TS, self._summary(3, 7, 4.0), self._summary(5, 7, 8.0))
+        badge = self._badge(window=2)
+        self.assertEqual(badge["message"],
+                         f"with 3/7 vs without 5/7 · n=2 · {self.DATE}")
+        self.assertEqual(badge["color"], "red")
+
+    def test_unusable_run_is_skipped_not_fatal(self):
+        # The newest run errored on one arm. It drops out of the average
+        # instead of blanking the badge, the sample size says so, and the
+        # date follows the newest run that actually contributed.
+        contributing = "20260715T070000Z"
+        self._write_run("20260714T070000Z", self._summary(7, 7, 8.0),
+                        self._summary(3, 7, 5.0))
+        self._write_run(contributing, self._summary(6, 7, 7.0),
+                        self._summary(4, 7, 5.0))
+        self._write_run(self.TS, self._summary(5, 7, 8.0), None)
+        badge = self._badge()
+        self.assertEqual(badge["message"],
+                         "with 6.5/7 vs without 3.5/7 · n=2 · 2026-07-15")
+        self.assertEqual(badge["color"], "green")
+
+    def test_grey_when_no_run_in_the_window_is_usable(self):
+        # An older run IS usable, but it sits outside the window: the badge
+        # must go lightgrey rather than reach back past the window for data.
+        self._write_run("20260101T000000Z", self._summary(5, 5, 9.0),
+                        self._summary(1, 5, 2.0))
+        self._write_run(self.TS, self._summary(5, 5, 8.0), None)
+        badge = self._badge(window=1)
+        self.assertEqual(badge["color"], "lightgrey")
+        self.assertEqual(badge["message"], f"no data · {self.DATE}")
+
+    def test_grey_when_every_run_in_the_window_is_unusable(self):
+        self._write_run("20260715T070000Z", None, self._summary(4, 7, 5.0))
+        self._write_run(self.TS, self._summary(5, 7, 8.0), None)
+        badge = self._badge()
+        self.assertEqual(badge["color"], "lightgrey")
+        # Dated from the newest run dir, so the reader still sees the staleness.
+        self.assertEqual(badge["message"], f"no data · {self.DATE}")
+
+    def test_cli_window_flag_changes_the_aggregate(self):
+        self._write_run("20260715T070000Z", self._summary(5, 5, 9.0),
+                        self._summary(1, 5, 2.0))
+        self._write_run(self.TS, self._summary(2, 5, 3.0), self._summary(4, 5, 7.0))
+        out = self.results / "badge.json"
+
+        def run(*extra):
+            cmd = [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"),
+                   "workflow-path-audit", "--results-dir", str(self.results),
+                   "--out", str(out), *extra]
+            proc = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            return json.loads(out.read_text(encoding="utf-8"))
+
+        self.assertEqual(run("--window", "1")["message"],
+                         f"with 2/5 vs without 4/5 · {self.DATE}")
+        self.assertEqual(run("--window", "2")["message"],
+                         f"with 3.5/5 vs without 2.5/5 · n=2 · {self.DATE}")
+
+    def test_cli_rejects_a_window_below_one(self):
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"),
+             "workflow-path-audit", "--results-dir", str(self.results),
+             "--out", str(self.results / "badge.json"), "--window", "0"],
+            capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("must be >= 1", proc.stderr)
 
     def test_cli_writes_deterministic_badge_file(self):
         self._write_run(self.TS, self._summary(5, 5, 8.0), self._summary(3, 5, 4.0))
