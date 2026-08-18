@@ -232,6 +232,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
                         fixture["judge_rubric"], result.get("transcript") or "", diff,
                         model=judge_cfg.get("model"),
                         timeout=judge_cfg.get("timeout_s", 120),
+                        weights=judge_cfg.get("weights"),
                     )
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}

@@ -45,8 +45,43 @@ def _extract_json(text: str) -> dict:
     raise ValueError(f"could not parse judge output as JSON: {text!r}")
 
 
+def _weighted_overall(dimensions: list, weights: dict) -> float:
+    """Weighted mean of the judge's per-dimension scores, on the 0-10 scale.
+
+    Dimension names are matched case-insensitively and whitespace-trimmed, so
+    a fixture writing `completeness` lines up with a judge answering
+    "Completeness". A dimension the weights dict does not mention keeps weight
+    1.0 — it is never silently dropped, because a judge that invents a fourth
+    dimension should still count for something rather than vanish.
+
+    A weight that isn't a non-negative real number (a fixture typo, `null`,
+    a string) falls back to 1.0 rather than raising: the caller records a
+    judge error on any exception, so raising here would blank the judge for
+    the whole run over a YAML slip. If the applied weights sum to zero, the
+    result degrades to the plain unweighted mean rather than reporting a
+    misleading 0.0.
+    """
+    lookup = {str(name).strip().casefold(): w for name, w in weights.items()}
+
+    weighted_sum, applied = 0.0, 0.0
+    scores = []
+    for dim in dimensions:
+        score_value = dim["score"]
+        scores.append(score_value)
+        weight = lookup.get(str(dim.get("name", "")).strip().casefold(), 1.0)
+        if isinstance(weight, bool) or not isinstance(weight, (int, float)) or weight < 0:
+            weight = 1.0
+        weighted_sum += score_value * weight
+        applied += weight
+
+    if applied > 0:
+        return weighted_sum / applied
+    return sum(scores) / len(scores) if scores else 0.0
+
+
 def score(rubric: str, transcript: str, workspace_diff: str, *,
-         model: str | None = None, timeout: int = 120) -> dict:
+         model: str | None = None, timeout: int = 120,
+         weights: dict[str, float] | None = None) -> dict:
     """Return {"dimensions": [{"name", "score", "rationale"}], "overall": float}.
 
     Runs a second headless `claude -p` call whose prompt embeds the rubric,
@@ -55,6 +90,14 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
     nonzero exit, invalid JSON) — this is NOT caught here; callers must catch
     it and record a judge error rather than crash the run. Raises ValueError
     if the judge's own response doesn't match the required shape.
+
+    `weights` maps dimension name -> weight. When a non-empty mapping is
+    given, `overall` is recomputed as the weighted mean of the returned
+    dimension scores and the judge's OWN `overall` is ignored — the model is
+    trusted to score dimensions, not to do the arithmetic, and letting it
+    self-report would silently defeat the weighting. Without weights (None or
+    empty) the historical behaviour is unchanged: the judge's `overall` if it
+    is numeric, else the unweighted mean.
     """
     judge_prompt = _build_prompt(rubric, transcript, workspace_diff)
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", judge_prompt,
@@ -92,7 +135,9 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
             raise ValueError(f"judge dimension malformed: {dim!r}")
         scores.append(dim["score"])
 
-    if not isinstance(parsed.get("overall"), (int, float)):
+    if weights:
+        parsed["overall"] = _weighted_overall(parsed["dimensions"], weights)
+    elif not isinstance(parsed.get("overall"), (int, float)):
         parsed["overall"] = sum(scores) / len(scores) if scores else 0.0
 
     return parsed
