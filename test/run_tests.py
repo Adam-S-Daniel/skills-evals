@@ -933,6 +933,75 @@ class MakeBadgeTests(unittest.TestCase):
         self.assertEqual(badge["color"], "green")
 
 
+class BadgeWorkflowOrderingTests(unittest.TestCase):
+    """The real-eval workflow must build the badge AFTER checking out eval-results.
+
+    make_badge.py averages the `--window N` newest runs under results/, but the
+    only place that run history exists is the `eval-results` branch — a fresh
+    CI workspace holds nothing but the run that just finished. eval.yml used to
+    generate the badge in a step of its own, ahead of the commit step that
+    fetches and checks `eval-results` out, so the window could never contain
+    more than one run: the averaging was structurally inert and every published
+    badge silently reported a single run while looking perfectly healthy. The
+    only outward symptom was a missing `n=` marker, which make_badge.py emits
+    only above one run, so the defect survived in production unnoticed.
+
+    Nothing inside the badge script can enforce this — it is purely a question
+    of step ordering in the workflow — so the invariant is pinned here: exactly
+    one step may invoke make_badge.py, and it must do so after that same
+    script's `git checkout -B eval-results`. The regression this guards against
+    is someone re-introducing a separate, earlier badge step alongside the
+    merged one.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    @staticmethod
+    def _invocation_lines(script: str) -> list[int]:
+        """Line indices where `script` actually RUNS make_badge.py.
+
+        Merely naming the file is not running it: the step also copies the
+        script into $RUNNER_TEMP before the branch switch (the eval-results
+        branch carries no scripts/ dir), and that copy legitimately precedes
+        the checkout. An invocation is a mention with an interpreter ahead of
+        it on the same line.
+        """
+        return [i for i, line in enumerate(script.splitlines())
+                if "make_badge.py" in line
+                and "python" in line.split("make_badge.py")[0]]
+
+    def _steps(self) -> list[dict]:
+        # Structured formats go through a real parser, never a line scanner.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def test_badge_is_built_after_the_eval_results_checkout(self):
+        steps = self._steps()
+        building = [s for s in steps
+                    if self._invocation_lines(s.get("run") or "")]
+        self.assertEqual(
+            len(building), 1,
+            "exactly one step may invoke make_badge.py — a second, earlier "
+            "invocation puts the badge back in the pre-checkout workspace, "
+            "where its window can only ever see one run. Invoking steps: "
+            f"{[s.get('name') for s in building]}")
+
+        script = building[0]["run"]
+        self.assertIn("git checkout -B eval-results", script,
+                      "the badge must be built on the eval-results branch, so "
+                      "that checkout has to live in this same step")
+        lines = script.splitlines()
+        checkout = next(i for i, line in enumerate(lines)
+                        if "git checkout -B eval-results" in line)
+        for invocation in self._invocation_lines(script):
+            self.assertGreater(
+                invocation, checkout,
+                "make_badge.py must run after `git checkout -B eval-results` "
+                "and after the results/ restore, or its window sees only the "
+                "run that just finished and the badge always reports n=1")
+
+
 class EndToEndTests(unittest.TestCase):
     @staticmethod
     def _registry_for(tmp: Path, skill: str) -> Path:
