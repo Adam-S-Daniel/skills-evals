@@ -81,16 +81,16 @@ is objectively decidable from the resulting files alone.
   ruleset (`.github/rulesets/main.json`) naming which check is required.
 - **prompt** — "Make each workflow trigger only when a file it actually
   depends on has changed."
-- **objective check** — replay three changesets (docs-only, source-only,
-  prose-only) through each workflow's `on:` filters using GitHub's own
-  path-matching semantics, and assert exactly which workflows fire; the
-  workflow carrying a required status check must have no workflow-level
-  filter and must gate its real work on a computed salience output instead;
-  every workflow still parses; the schedule/issue-only workflows and the
-  ruleset are untouched.
+- **objective check** — replay four changesets (docs-only, source-only,
+  lockfile-only, prose-only) through each workflow's `on:` filters using
+  GitHub's own path-matching semantics, and assert exactly which workflows
+  fire; the workflow carrying a required status check must have no
+  workflow-level filter and must gate its real work on a computed salience
+  output instead; every workflow still parses; the schedule/issue-only
+  workflows and the ruleset are untouched.
 - **judge rubric** — were all workflows covered, are the listed paths the ones
   each workflow's own steps actually consume, and did it leave alone what it
-  should have? (Routing is verified objectively rather than judged — the three
+  should have? (Routing is verified objectively rather than judged — the four
   probe changesets sample it exactly, where a tool-less judge could only
   guess.)
 - **expected result** — the `with_skill` arm materially outperforms baseline on

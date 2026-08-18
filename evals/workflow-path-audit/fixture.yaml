@@ -40,7 +40,7 @@ arms:
 # Objective checks run by harness/scorers/objective.py against the resulting
 # workspace. Each check has an id, a description, and a type the scorer knows.
 #
-# The first three are the behavioural spec: they replay a changeset through
+# The first four are the behavioural spec: they replay a changeset through
 # each workflow's `on:` filters using GitHub's own path-matching semantics and
 # assert exactly which workflows fire. That is decidable from the workflow
 # files alone, and it defeats both failure modes a presence-only check would
@@ -63,6 +63,29 @@ objective_checks:
     type: changeset_triggers
     paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
     changeset: ["src/index.js"]
+    expect_triggered:
+      - ".github/workflows/tests.yml"
+      - ".github/workflows/deploy.yml"
+    expect_skipped:
+      - ".github/workflows/docs-site.yml"
+
+  # A lockfile-only change is the classic Dependabot bump, and it is the case a
+  # `paths: [package.json]` filter silently drops: the scorer's glob translation
+  # makes `package.json` a literal, so it does NOT match `package-lock.json`
+  # (only a wider spelling like `package*.json` does). Two honest limits on what
+  # this check proves:
+  #   - tests.yml is in expect_triggered but fires TRIVIALLY — it carries the
+  #     required status check and so by construction has no workflow-level
+  #     filter at all. The real assertion here is deploy.yml.
+  #   - whether tests.yml's INTERNAL salience gate treats the lockfile as
+  #     salient is NOT verified: changeset_triggers replays `on:` filters only,
+  #     never the in-workflow `if:`. That half is left to the judge's Salience
+  #     dimension.
+  - id: lockfile-change-routes-to-installers
+    description: A lockfile-only change still reaches every workflow that installs from it
+    type: changeset_triggers
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    changeset: ["package-lock.json"]
     expect_triggered:
       - ".github/workflows/tests.yml"
       - ".github/workflows/deploy.yml"
@@ -117,7 +140,7 @@ objective_checks:
 # Judge scoring: 3 dimensions, 0-10 each. Routing behaviour is verified
 # objectively above (the changeset replays), so the judge is left the things
 # that genuinely need judgement: whether the path lists correspond to what each
-# workflow's steps really consume — which the three probe changesets sample but
+# workflow's steps really consume — which the four probe changesets sample but
 # cannot exhaust — and whether the agent kept its hands off everything else.
 # The predecessor's "Communication" dimension gives way to Salience: with the
 # routing now measured directly, salience is the higher-value judgement of the

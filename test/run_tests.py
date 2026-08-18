@@ -295,6 +295,7 @@ class ObjectiveAsymmetryTests(unittest.TestCase):
         by_id = self._run(audited=False)
         for check_id in ("docs-change-routes-correctly",
                          "source-change-routes-correctly",
+                         "lockfile-change-routes-to-installers",
                          "prose-change-runs-nothing-but-the-required-check",
                          "required-check-always-fires-and-gates-internally"):
             self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
