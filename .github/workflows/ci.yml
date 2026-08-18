@@ -1,14 +1,56 @@
 name: CI
 
+# The salient list is DERIVED, not guessed: this workflow runs exactly one
+# thing — `python3 test/run_tests.py` — so it is the set of files that suite
+# actually reads, taken from tracing a real run. harness/ (run_eval,
+# run_canary, the scorers it imports), scripts/ (make_badge.py, both imported
+# and shelled out to), test/ (the suite, its fake-claude stub, fixtures/),
+# evals/ (the fixture YAML and seed trees the eval and canary dirs load), and
+# eval.yml — which BadgeWorkflowOrderingTests parses to assert the badge is
+# built after the eval-results checkout. Plus this file itself, so a change to
+# the filter is always exercised by the filter. README/DESIGN/AGENTS/CLAUDE and
+# badges/ are deliberately absent: the suite never opens them, so a docs-only
+# pull request has nothing to prove here and should not pay for a runner.
+#
+# `push:` is pinned to main because without a branch filter every push to a
+# pull-request branch ran `test` TWICE — once for the push, once for the
+# pull_request. Observed on 82596ff: same commit, same job, finishing 03:38:30
+# and 03:39:14. Both events carry the same list; keep the two in step.
+#
+# A plain workflow-level filter is the right tool here, not always-run +
+# early-skip. That shape exists to keep a REQUIRED check present on every pull
+# request, and repo-settings' fleet.yml sets `required_status_checks: []` for
+# this fleet — nothing here gates a merge, so a filtered-out run cannot
+# deadlock one.
 on:
-  push:
   pull_request:
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/eval.yml
+      - evals/**
+      - harness/**
+      - scripts/**
+      - test/**
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/ci.yml
+      - .github/workflows/eval.yml
+      - evals/**
+      - harness/**
+      - scripts/**
+      - test/**
+
+# Least privilege: the suite is hermetic — no network, no pushes — so a read
+# token is all it needs. propagation.yml declares the same at workflow level.
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1 (2025-11-17)
       - name: Install dependencies
         run: pip install pyyaml
       - name: Run tests
