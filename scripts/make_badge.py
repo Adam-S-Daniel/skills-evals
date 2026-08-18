@@ -25,7 +25,7 @@ timestamp, NOT the wall clock) so a stale badge is self-evident. Output is
 deterministic for the same inputs. Stdlib only.
 
 Usage:
-    python3 scripts/make_badge.py pin-actions-to-sha
+    python3 scripts/make_badge.py workflow-path-audit
     python3 scripts/make_badge.py <skill> [--results-dir results] [--out PATH]
 """
 
@@ -129,7 +129,7 @@ def build_badge(results_dir: Path, skill: str) -> dict:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("skill", help="skill name, e.g. pin-actions-to-sha")
+    parser.add_argument("skill", help="skill name, e.g. workflow-path-audit")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root of committed run summaries (default: results)")
     parser.add_argument("--out", type=Path, default=None,

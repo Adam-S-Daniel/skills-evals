@@ -51,9 +51,9 @@ USAGE = {
 }
 
 JUDGE_DIMENSIONS = [
-    {"name": "Completeness", "score": 8, "rationale": "Pinned all remote refs found."},
-    {"name": "Correctness", "score": 9, "rationale": "SHAs matched the replaced tags."},
-    {"name": "Restraint", "score": 7, "rationale": "Left local/docker refs untouched."},
+    {"name": "Completeness", "score": 8, "rationale": "Filtered every workflow found."},
+    {"name": "Correctness", "score": 9, "rationale": "Required check still always fires."},
+    {"name": "Restraint", "score": 7, "rationale": "Left schedule-only workflows alone."},
     {"name": "Communication", "score": 6, "rationale": "Explained changes briefly."},
 ]
 
@@ -102,7 +102,7 @@ def main() -> int:
 
     if MODE == "agent_error":
         emit({
-            "result": "Failed to pin actions: could not resolve tag to a commit SHA.",
+            "result": "Failed to audit the workflows: could not read .github/workflows.",
             "is_error": True,
             "usage": USAGE,
             "total_cost_usd": 0.02,
@@ -163,7 +163,7 @@ def main() -> int:
 
     # default / "agent"
     emit({
-        "result": "Pinned all GitHub Actions uses: refs to full commit SHAs with version comments.",
+        "result": "Filtered every pull_request/push workflow on its salient paths.",
         "is_error": False,
         "usage": USAGE,
         "total_cost_usd": 0.04,

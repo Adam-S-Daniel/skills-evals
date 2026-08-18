@@ -175,7 +175,7 @@ class ProbeFacts:
 def attribute(facts: ProbeFacts) -> dict:
     """name -> channel, for every skill the init event carries.
 
-    - `"plugin"`  — namespaced (`adam:pin-actions-to-sha`), i.e. marketplace.
+    - `"plugin"`  — namespaced (`adam:workflow-path-audit`), i.e. marketplace.
     - `"account"` — carries the ` (claude.ai sync)` suffix in `commands_changed`.
     - `"local"`   — everything else: `~/.claude/skills`, the project's
       `.claude/skills`, or a CLI built-in. The init event genuinely cannot

@@ -6,10 +6,10 @@ Usage:
     python3 harness/run_eval.py evals/<skill> --arm both [--registry PATH] [--no-judge]
 
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
-pristine seed should FAIL the pinning checks; a correctly pinned copy should
-PASS. `--arm with_skill|without_skill|both` runs the agent under test (the
-Claude Code CLI, headless) on a fresh copy of the seed, scores it with the
-objective checks and the LLM judge, and writes a summary + report under
+pristine seed should FAIL the fixture's checks; a correctly reworked copy
+should PASS. `--arm with_skill|without_skill|both` runs the agent under test
+(the Claude Code CLI, headless) on a fresh copy of the seed, scores it with
+the objective checks and the LLM judge, and writes a summary + report under
 `--results-dir` (default `results/`).
 """
 

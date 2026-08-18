@@ -896,7 +896,7 @@ class RunnerTests(unittest.TestCase):
         (self.eval_dir / "fixture.yaml").write_text(
             fixture.replace("hook_path: .claude/hooks/skills-bootstrap.sh",
                             "hook_path: hook.sh")
-                   .replace("collision_skill: pin-actions-to-sha",
+                   .replace("collision_skill: workflow-path-audit",
                             "collision_skill: fixture-alpha"),
             encoding="utf-8")
 
