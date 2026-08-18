@@ -221,6 +221,58 @@ class JudgeScoreTests(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 judge.score("rubric", "transcript", "diff", timeout=30)
 
+    # fake-claude's canned judge response, for the weighting arithmetic below:
+    #   Completeness 8, Correctness 9, Restraint 7, Communication 6
+    # and a self-reported "overall" of 7.5 (which is NOT the mean of those —
+    # that is the point: the model is not trusted to do the arithmetic).
+
+    def _score_weighted(self, weights, mode="judge"):
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": mode}):
+            return judge.score("rubric text", "transcript text", "diff text",
+                               timeout=30, weights=weights)
+
+    def test_weights_recompute_overall_and_ignore_self_report(self):
+        # Keys are matched case-insensitively and whitespace-trimmed.
+        # (8*0.5 + 9*0.3 + 7*0.2 + 6*1.0) / (0.5+0.3+0.2+1.0)
+        #   = (4 + 2.7 + 1.4 + 6) / 2.0 = 7.05
+        result = self._score_weighted({"COMPLETENESS": 0.5, "correctness": 0.3,
+                                       "  restraint  ": 0.2, "communication": 1.0})
+        self.assertAlmostEqual(result["overall"], 7.05)
+        self.assertNotEqual(result["overall"], 7.5)  # the judge's own number
+
+    def test_unmentioned_dimension_keeps_weight_one(self):
+        # Only Completeness is weighted; the other three keep 1.0 rather than
+        # being dropped. (8*0.5 + 9 + 7 + 6) / (0.5 + 3) = 26 / 3.5
+        result = self._score_weighted({"completeness": 0.5})
+        self.assertAlmostEqual(result["overall"], 26 / 3.5)
+        # Silently dropping the unmentioned dimensions would give 8.0.
+        self.assertNotAlmostEqual(result["overall"], 8.0)
+
+    def test_weights_apply_when_judge_omitted_its_own_overall(self):
+        result = self._score_weighted({"completeness": 0.5},
+                                      mode="judge_no_overall")
+        self.assertAlmostEqual(result["overall"], 26 / 3.5)
+
+    def test_weights_none_preserves_self_reported_overall(self):
+        # The historical path: an explicit weights=None must behave exactly
+        # like omitting the argument, self-reported `overall` and all.
+        self.assertEqual(self._score_weighted(None)["overall"], 7.5)
+        self.assertEqual(self._score_weighted({})["overall"], 7.5)
+
+    def test_zero_sum_weights_fall_back_to_unweighted_mean(self):
+        # Guards the divide-by-zero: all-zero weights degrade to the plain
+        # mean (7.5) rather than reporting a misleading 0.0.
+        result = self._score_weighted({"completeness": 0, "correctness": 0,
+                                       "restraint": 0, "communication": 0})
+        self.assertAlmostEqual(result["overall"], (8 + 9 + 7 + 6) / 4)
+
+    def test_unusable_weight_value_falls_back_to_one(self):
+        # A YAML slip must not blank the judge for the whole run.
+        result = self._score_weighted({"completeness": "half", "correctness": None,
+                                       "restraint": -3, "communication": 1.0})
+        self.assertAlmostEqual(result["overall"], (8 + 9 + 7 + 6) / 4)
+
 
 class ObjectiveAsymmetryTests(unittest.TestCase):
     """Guards the README-documented asymmetry: the pristine seed fails; a
@@ -833,6 +885,11 @@ class EndToEndTests(unittest.TestCase):
                 self.assertIsNotNone(summary["objective_checks"])
                 self.assertIsNotNone(summary["judge"])
                 self.assertNotIn("error", summary["judge"])
+                # The fixture carries judge.weights, so run_eval must forward
+                # them and the overall must be RECOMPUTED — fake-claude
+                # self-reports 7.5, which is what an unwired weights kwarg
+                # would leave behind.
+                self.assertNotEqual(summary["judge"]["overall"], 7.5)
                 raw_path = run_dir / arm / "transcripts" / "raw.json"
                 self.assertTrue(raw_path.is_file())
 

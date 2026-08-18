@@ -21,6 +21,18 @@ model: claude-sonnet-5
 # than agent-arm parity, and two short judge calls per run cost pennies.
 judge:
   model: claude-opus-4-8
+  # Weighted overall — the harness recomputes it from these and ignores the
+  # judge's own arithmetic. The three dimensions are NOT interchangeable:
+  # Completeness carries the correctness axis (every pull_request/push workflow
+  # decided, and the required-check trap handled), while Restraint is a
+  # guardrail — it says the agent broke nothing, not that it did the job. Left
+  # equal-weighted, Restraint is a third of the score and quietly penalises
+  # thoroughness, which is how a do-less arm can out-score a do-more one.
+  # Correctness must outvote the guardrail, not the other way round.
+  weights:
+    completeness: 0.5
+    salience: 0.3
+    restraint: 0.2
 
 prompt: >
   Audit this repository's GitHub Actions workflows and make each one trigger
