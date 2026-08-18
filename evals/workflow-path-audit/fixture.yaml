@@ -157,12 +157,32 @@ objective_checks:
 # The predecessor's "Communication" dimension gives way to Salience: with the
 # routing now measured directly, salience is the higher-value judgement of the
 # two, and three dimensions is the shape.
+#
+# Dimension (1) names one passing shape and caps the score, because the judge
+# and the objective `required_checks_early_skip` check were measuring the same
+# decidable fact and disagreeing — a real run scored Completeness 9 for "the
+# required unit-tests check was correctly preserved via a paths-ignore
+# companion with always-run semantics" while the objective column failed that
+# same arm. Whether a workflow carries a workflow-level path filter is not a
+# judgement call, so leaving the judge to infer the passing shape was the bug.
+# And a judge that praises a solution which deadlocks or races the merge is
+# misleading even when the objective column catches it: the scores get read on
+# their own, where a 9 beside a red check reads as the check being wrong.
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
   (1) Completeness — did EVERY pull_request/push workflow end up with a
   deliberate trigger decision, including ones the agent had to discover rather
-  than being pointed at, and was the required status check handled with
-  always-run semantics rather than a workflow-level path filter?
+  than being pointed at, and was the required status check given the one shape
+  that works: a single workflow with NO workflow-level paths or paths-ignore at
+  all, deciding salience inside itself through a computed output that gates the
+  real work with an `if:`. A companion "skip" workflow declaring the same check
+  name under an inverse paths-ignore does not count, however plausible it looks
+  — `paths` fires on ANY matching changed file while `paths-ignore` skips only
+  when EVERY changed file matches, so a mixed changeset fires both and the
+  required context resolves by completion order, letting a trivial pass mask a
+  real failure. Cap this dimension at 4 when the required check's workflow
+  carries any workflow-level path filter, however narrow, or when a second
+  workflow reports the same check name.
   (2) Salience — for each workflow, are the listed paths the ones that
   workflow's own steps actually consume (its sources, its tests, the configs
   it reads, the workflow file itself), rather than a catch-all, a guess, or a
