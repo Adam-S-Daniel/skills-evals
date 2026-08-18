@@ -1,0 +1,86 @@
+{
+  "skill": "workflow-path-audit",
+  "arm": "with_skill",
+  "timestamp": "20260818T002703Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.4845755500000001,
+    "num_turns": 33,
+    "duration_ms": 76454,
+    "usage": {
+      "input_tokens": 529,
+      "cache_creation_input_tokens": 47909,
+      "cache_read_input_tokens": 667216,
+      "output_tokens": 6837,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 47909
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "docs-change-routes-correctly",
+      "passed": true,
+      "detail": "changing docs/guide.md routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "source-change-routes-correctly",
+      "passed": true,
+      "detail": "changing src/index.js routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "prose-change-runs-nothing-but-the-required-check",
+      "passed": true,
+      "detail": "changing README.md, LICENSE routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "required-check-always-fires-and-gates-internally",
+      "passed": true,
+      "detail": "required check(s) always fire and gate internally (.github/workflows/tests.yml)"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "event-only-workflows-unfiltered",
+      "passed": true,
+      "detail": "event-only workflows carry no path filters (.github/workflows/nightly-sweep.yml, .github/workflows/triage.yml)"
+    },
+    {
+      "id": "ruleset-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/rulesets/main.json)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 9,
+        "rationale": "The agent discovered all five workflows on its own and gave every pull_request/push workflow a deliberate trigger decision, correctly handling the required `unit-tests` check via always-run + internal early-skip rather than a workflow-level `paths:` that would strand the required status."
+      },
+      {
+        "name": "Salience",
+        "score": 7,
+        "rationale": "The listed paths are specific and plausibly match each workflow's own inputs (docs/mkdocs for the docs build, src/tests/package.json for tests) rather than catch-alls, but the tests.yml salience grep omits `package-lock.json` even though the job runs `npm ci`, so a lockfile-only change would wrongly skip the suite."
+      },
+      {
+        "name": "Restraint",
+        "score": 6,
+        "rationale": "It correctly left the schedule-only, issue-driven, and ruleset files untouched, but it edited README.md to add a Workflows table and slipped in a `workflow_dispatch` trigger on tests.yml \u2014 both beyond what the trigger audit called for."
+      }
+    ],
+    "overall": 7.3
+  }
+}
