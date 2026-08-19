@@ -10,20 +10,27 @@ end to end. `eval-results` carries commit `0a532be6`:
 cron `0 5 * * *` (daily, 05:00 UTC), fired into a session that carries this repo
 in its authorized set. The freshness gate is **armed**, not waiting.
 
-It reads red, and that is the design working rather than a fault in it. The
-account store is genuinely drifted, so the gate returns `reported-failure` and
-will keep returning it until agentskills#59 is repaired on the laptop. A gate
-that stayed green against a known-bad store would be the failure.
+It read red for a while, and that was the design working rather than a fault in
+it: the account store was genuinely drifted (8 checked, 4 drifted), so the gate
+returned `reported-failure`. A gate that stayed green against a known-bad store
+would have been the failure. **That episode is over** — the audit published at
+`2026-08-18T22:01:13Z` reads `pass`, 10 checked, 0 findings, so agentskills#59
+is repaired and the gate now returns `fresh`.
 
-**That verdict is advisory on a pull request and fatal on the schedule.** It was
-originally fatal on both, on the reasoning that `main` carries no required
-status checks so a red check is a loud signal rather than a merge blocker. What
-that missed is how long the red lasts: the drift lives in the claude.ai account
-store, no commit in this repo caused it and none can clear it, so every pull
-request opened here wears someone else's red for as long as the repair takes.
-A check that is red for reasons the reader cannot act on is one people learn to
-scroll past — and a gate that has been mentally filed under "always red" has
-stopped being a gate, which is the same death as never building it.
+The red ran from 2026-08-14 to 2026-08-18, and writing the duration down matters,
+because the duration is what changed the design.
+
+**The audit's verdict is now advisory on a pull request and fatal on the
+schedule.** It was originally fatal on both, on the reasoning that `main` carries
+no required status checks so a red check is a loud signal rather than a merge
+blocker. What that missed is how long the red lasts. The drift lives in the
+claude.ai account store: no commit in this repo caused it and none can clear it,
+so for those four days every pull request opened here wore someone else's red. A
+check that is red for reasons its reader cannot act on is one people learn to
+scroll past — and a gate mentally filed under "always red" has stopped being a
+gate, which is the same death as never building it. The change was made while
+the gate happened to be green again, which is the right time to make it: the
+policy question is about the next episode, not this one.
 
 So the pull-request run prints `WARN freshness-gate [reported-failure]` with the
 drifted skills named, and passes. The scheduled run still fails, and `report`
