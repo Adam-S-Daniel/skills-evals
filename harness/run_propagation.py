@@ -10,9 +10,17 @@ $0.00, so this belongs on `pull_request` rather than behind `eval.yml`'s OIDC �
 where a branch dispatch would die at token exchange and tell you nothing.
 
 The same run also carries the FRESHNESS GATE: it reads the Tier-3 account
-audit's last published result and fails when it is missing, stale or red. That
-is how a scheduled probe that quietly stops firing reaches a human — the next
-pull request goes red.
+audit's last published result and fails when that result is missing, stale or
+unreadable. That is how a scheduled probe that quietly stops firing reaches a
+human — the next pull request goes red.
+
+What the gate does NOT do on a pull request is relay the audit's own verdict.
+A red Tier-3 result means the ACCOUNT store has drifted; no commit in this repo
+caused it and no commit here can clear it, so blocking every pull request on it
+only teaches people to ignore the gate while the drift outlives their patience.
+It is reported as WARN on a pull request and stays fatal on the schedule, where
+`report` files the tracking issue. Liveness is this gate's job; the verdict is
+the schedule's. See --account-verdict-advisory.
 
 Usage:
     python3 harness/run_propagation.py evals/propagation
@@ -70,10 +78,23 @@ def resolve_registry(cli_value: Path | None) -> Path:
     return (Path.home() / "repos" / "agentskills").resolve()
 
 
+# The one status that says "the audit ran, on time, and did not like what it
+# saw". Every other unhappy status says the audit itself is not reaching us,
+# which is the thing this gate exists to detect and is never advisory.
+ADVISORY_STATUSES = frozenset({"reported-failure"})
+
+
 def run_gate(fixture: dict, latest: Path | None, marker: Path | None,
-             now: datetime) -> tuple:
+             now: datetime, advisory: frozenset = frozenset()) -> tuple:
     """(ok, rendered) for the freshness gate. Pure: no network, no wall clock
-    unless the caller passes one."""
+    unless the caller passes one.
+
+    `advisory` names statuses to REPORT without failing. The verdict itself is
+    computed identically either way -- `freshness_verdict` states what is true
+    and this decides what blocks -- so a downgraded status still prints its full
+    message, including which skills drifted. A caller that silently dropped the
+    line instead would leave a pull request with no trace of the drift at all.
+    """
     summary = None
     if latest and latest.is_file():
         try:
@@ -86,6 +107,13 @@ def run_gate(fixture: dict, latest: Path | None, marker: Path | None,
     ok, status, message = account_store.freshness_verdict(
         summary, now=now, max_age_days=int(fixture["account_audit_max_age_days"]),
         bootstrapped=bool(marker and marker.exists()))
+    if not ok and status in advisory:
+        # WARN, not PASS: the run is green, and the log still says plainly that
+        # something is wrong somewhere this pull request cannot reach.
+        return True, (f"WARN freshness-gate [{status}]: {message} — advisory "
+                      "here because no change in this repo can cause or clear "
+                      "it; the scheduled run treats it as a failure and files "
+                      "the tracking issue")
     label = "PASS" if ok else "FAIL"
     return ok, f"{label} freshness-gate [{status}]: {message}"
 
@@ -159,6 +187,12 @@ def main(argv=None) -> int:
                         help="run the freshness gate and nothing else (no CLI)")
     parser.add_argument("--no-gate", action="store_true",
                         help="skip the freshness gate (arms only)")
+    parser.add_argument("--account-verdict-advisory", action="store_true",
+                        help="report a RED account audit without failing — for "
+                             "pull requests, which can neither cause nor clear "
+                             "it. Liveness failures (missing, stale, "
+                             "unreadable) still fail: those mean the audit is "
+                             "not reaching us, which is what this gate is for")
     parser.add_argument("--self-test", action="store_true",
                         help="also prove, against the real binary, that the "
                              "plugin arm still FAILS on a deliberately wrong lock")
@@ -177,8 +211,10 @@ def main(argv=None) -> int:
 
     gate_ok, gate_line = True, None
     if not args.no_gate:
-        gate_ok, gate_line = run_gate(fixture, args.account_latest,
-                                      args.account_marker, now)
+        gate_ok, gate_line = run_gate(
+            fixture, args.account_latest, args.account_marker, now,
+            advisory=(ADVISORY_STATUSES if args.account_verdict_advisory
+                      else frozenset()))
 
     results = []
     self_test_line = None

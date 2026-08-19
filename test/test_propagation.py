@@ -19,6 +19,8 @@ Run: python3 test/test_propagation.py
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -991,6 +993,93 @@ class RunnerTests(unittest.TestCase):
                                      "--account-latest", str(latest),
                                      "--now", "2026-08-14T12:00:00Z"])
         self.assertEqual(code, 1)
+
+    # ---- the account audit's VERDICT is advisory on a pull request ----
+    #
+    # A red Tier-3 result says the claude.ai account store has drifted. No
+    # commit in this repo caused it and none can clear it, so blocking every
+    # pull request on it only trains people to ignore the gate while the drift
+    # outlives their patience. What must NOT go advisory with it is liveness:
+    # a missing, stale or unreadable result means the audit is not reaching us,
+    # and catching a Routine that quietly stopped is this gate's whole purpose.
+
+    def _red_audit(self, days_ago=0.5):
+        latest = self.root / "latest.json"
+        generated = datetime.fromtimestamp(
+            datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc).timestamp()
+            - days_ago * 86400, timezone.utc)
+        latest.write_text(json.dumps({
+            "status": "fail",
+            "generated_at": generated.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "checked": ["a"],
+            "findings": [{"skill": "drifted-skill", "kind": "content-drift"}],
+        }), encoding="utf-8")
+        marker = self.root / ".bootstrapped"
+        marker.write_text("", encoding="utf-8")
+        return latest, marker
+
+    def _gate(self, latest, marker, *extra):
+        return run_propagation.main([str(self.eval_dir), "--gate-only",
+                                     "--account-latest", str(latest),
+                                     "--account-marker", str(marker),
+                                     "--now", "2026-08-14T12:00:00Z", *extra])
+
+    def test_a_red_audit_still_fails_the_gate_by_default(self):
+        # The schedule's path, unchanged: without the flag a red verdict is
+        # fatal, which is what makes `report` file the tracking issue.
+        latest, marker = self._red_audit()
+        self.assertEqual(self._gate(latest, marker), 1)
+
+    def test_a_red_audit_is_advisory_when_asked(self):
+        latest, marker = self._red_audit()
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = self._gate(latest, marker, "--account-verdict-advisory")
+        self.assertEqual(code, 0)
+        out = buf.getvalue()
+        # Reported, not swallowed. A downgrade that dropped the line would
+        # leave the pull request with no trace of the drift at all.
+        self.assertIn("WARN freshness-gate", out)
+        self.assertIn("reported-failure", out)
+        self.assertIn("drifted-skill", out)
+
+    def test_advisory_does_not_cover_a_routine_that_stopped_firing(self):
+        # The one that matters: the flag must not turn the gate off. A stale
+        # result is the failure this whole gate exists to surface.
+        latest, marker = self._red_audit(days_ago=11)
+        self.assertEqual(self._gate(latest, marker), 1)
+        self.assertEqual(self._gate(latest, marker,
+                                    "--account-verdict-advisory"), 1)
+
+    def test_advisory_does_not_cover_a_vanished_result(self):
+        marker = self.root / ".bootstrapped"
+        marker.write_text("", encoding="utf-8")
+        self.assertEqual(self._gate(self.root / "absent.json", marker,
+                                    "--account-verdict-advisory"), 1)
+
+    def test_advisory_does_not_cover_an_unreadable_timestamp(self):
+        # Deliberately a READABLE object with an unusable `generated_at`, so
+        # this reaches the `unreadable` STATUS. Unparseable JSON returns before
+        # the verdict is computed and so cannot exercise the advisory set at
+        # all -- writing "not json" here made the test pass no matter what the
+        # set contained, which is not a test.
+        latest = self.root / "latest.json"
+        latest.write_text(json.dumps({"status": "pass", "generated_at": "soon"}),
+                          encoding="utf-8")
+        marker = self.root / ".bootstrapped"
+        marker.write_text("", encoding="utf-8")
+        self.assertEqual(self._gate(latest, marker,
+                                    "--account-verdict-advisory"), 1)
+
+    def test_advisory_does_not_cover_a_lock_that_is_not_json(self):
+        # The earlier return, before any verdict exists. Separate test because
+        # it proves a different line.
+        latest = self.root / "latest.json"
+        latest.write_text("not json", encoding="utf-8")
+        marker = self.root / ".bootstrapped"
+        marker.write_text("", encoding="utf-8")
+        self.assertEqual(self._gate(latest, marker,
+                                    "--account-verdict-advisory"), 1)
 
     def test_run_record_is_written_when_asked(self):
         record = self.root / "record.json"

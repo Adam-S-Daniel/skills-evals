@@ -304,7 +304,15 @@ def freshness_verdict(summary: dict | None, *, now: datetime, max_age_days: int,
     job that fails notifies nobody, and one that simply STOPS FIRING notifies
     nobody twice over. So the credential-free PR gate reads the audit's last
     published result and reds the next pull request when it is missing, stale,
-    or itself red. The schedule is watched by something that cannot be ignored.
+    or unreadable. The schedule is watched by something that cannot be ignored.
+
+    This function reports what is TRUE and does not decide what blocks. The
+    caller does: `run_propagation.run_gate` downgrades `reported-failure` to a
+    WARN on pull requests, because a red verdict is the ACCOUNT store drifting
+    and no commit in this repo can cause or clear it — a gate that blocks every
+    pull request on it gets ignored, then disabled, which is the same death as
+    never building it. The liveness statuses above are never downgraded: those
+    say the audit is not reaching us, which is the whole point of the gate.
 
     `bootstrapped` is the bootstrap fix: until the first successful audit
     commits its marker, an absent result is NOT a failure — otherwise this gate
