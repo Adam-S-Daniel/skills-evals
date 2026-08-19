@@ -140,6 +140,30 @@ def digest_skill_dir(path: Path) -> str:
     return hashlib.sha256(manifest.encode("utf-8")).hexdigest()
 
 
+# agentskills#87 relabelled every lock digest `sha256:<hex>` where it used to
+# write bare `<hex>`. This arm compares a digest it computes itself against the
+# one the lock records, so that serialization change broke the comparison for
+# all 8 skills at once — `got a6f71e6d… want sha256:a6f71e6d…` — while the
+# CONTENT was identical. The lock and this file are two of the three
+# independent copies of the same digest (see digest_skill_dir above); the third
+# moved and this one did not.
+#
+# Accept BOTH shapes rather than requiring the label, because both are
+# currently correct: a lock re-pinned since that change carries the prefix, and
+# one that has not been re-pinned yet still carries bare hex (measured
+# 2026-08-19: adamdaniel.ai and jodidaniel.com labelled, cms-platform,
+# GHA-bench and _agent-guidance not). Requiring the prefix would just move the
+# false failure onto the repos that have not been re-pinned.
+#
+# Deliberately NOT a general "strip anything before a colon": only the exact
+# algorithm label this generator writes is stripped, so a genuinely malformed
+# digest still fails the comparison instead of being normalised into agreement.
+def unlabelled_digest(recorded: str) -> str:
+    """The bare hex of a lock digest, with or without its `sha256:` label."""
+    prefix = "sha256:"
+    return recorded[len(prefix):] if recorded.startswith(prefix) else recorded
+
+
 # ---------------------------------------------------------------------------
 # guards + findings
 
@@ -455,7 +479,7 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
     else:
         drift = []
         for bundle, skill in lock_pairs(ctx.lock):
-            want = ctx.lock["skills"][f"{bundle}/{skill}"]
+            want = unlabelled_digest(ctx.lock["skills"][f"{bundle}/{skill}"])
             path = root / "skills" / skill
             got = digest_skill_dir(path) if path.is_dir() else "ABSENT"
             if got != want:
