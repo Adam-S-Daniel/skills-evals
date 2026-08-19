@@ -263,6 +263,21 @@ class LockAndDigestTests(unittest.TestCase):
             (skill / "SKILL.md").read_text(encoding="utf-8") + "x", encoding="utf-8")
         self.assertNotEqual(before, arms.digest_skill_dir(skill))
 
+    def test_unlabelled_digest_accepts_both_lock_shapes(self):
+        # agentskills#87 relabelled lock digests `sha256:<hex>`. Both shapes are
+        # live right now — a re-pinned lock carries the label, one that has not
+        # been re-pinned yet does not — so the reader must take either.
+        bare = "a" * 64
+        self.assertEqual(arms.unlabelled_digest("sha256:" + bare), bare)
+        self.assertEqual(arms.unlabelled_digest(bare), bare)
+
+    def test_unlabelled_digest_strips_only_the_sha256_label(self):
+        # Not a general "drop everything before a colon": a digest labelled with
+        # some OTHER algorithm is not silently normalised into agreement with a
+        # sha256 one, and the ABSENT sentinel must survive untouched.
+        self.assertEqual(arms.unlabelled_digest("md5:" + "a" * 32), "md5:" + "a" * 32)
+        self.assertEqual(arms.unlabelled_digest("ABSENT"), "ABSENT")
+
     def test_digest_matches_the_registry_generator(self):
         # Binds this third copy of the algorithm to agentskills' own. Skipped
         # where no registry is checked out; propagation.yml runs this suite
@@ -520,6 +535,29 @@ class ArmMutationTests(unittest.TestCase):
     def test_plugin_arm_fails_when_content_drifts_from_the_lock(self):
         lock = arms.load_lock(self.registry / "skills.lock")
         lock["skills"]["adam/fixture-alpha"] = "f" * 64
+        result = self.run_arm("plugin-marketplace", lock=lock)
+        self.assertEqual(result.status, arms.FAIL, result.render())
+        self.assertIn("adam/fixture-alpha", self.findings(result)["plugin/digest"].detail)
+
+    def test_plugin_arm_passes_against_a_sha256_labelled_lock(self):
+        # THE REGRESSION (2026-08-19). agentskills#87 relabelled every lock
+        # digest `sha256:<hex>`; this arm compared its own bare-hex computation
+        # against the recorded value and all 8 skills failed at once —
+        # `got a6f71e6d… want sha256:a6f71e6d…` — with the CONTENT identical.
+        # It was red on skills-evals' main, and the suite stayed green because
+        # make_registry() writes the lock in the BARE shape only, so no test
+        # ever fed this arm the shape production had moved to.
+        lock = arms.load_lock(self.registry / "skills.lock")
+        lock["skills"] = {k: "sha256:" + v for k, v in lock["skills"].items()}
+        result = self.run_arm("plugin-marketplace", lock=lock)
+        self.assertEqual(result.status, arms.PASS, result.render())
+
+    def test_plugin_arm_still_catches_drift_under_a_labelled_lock(self):
+        # The negative control for the test above: tolerating the label must not
+        # tolerate a wrong digest that happens to carry one.
+        lock = arms.load_lock(self.registry / "skills.lock")
+        lock["skills"] = {k: "sha256:" + v for k, v in lock["skills"].items()}
+        lock["skills"]["adam/fixture-alpha"] = "sha256:" + "f" * 64
         result = self.run_arm("plugin-marketplace", lock=lock)
         self.assertEqual(result.status, arms.FAIL, result.render())
         self.assertIn("adam/fixture-alpha", self.findings(result)["plugin/digest"].detail)
