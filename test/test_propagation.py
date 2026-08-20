@@ -1654,8 +1654,22 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
         one is the silent never-fires failure the whole guard exists to catch.
         """
         # A bare `on:` key parses as the YAML 1.1 boolean True, not "on".
-        triggers = doc.get("on", doc.get(True))
-        if not isinstance(triggers, dict) or "push" not in triggers:
+        triggers = doc.get("on", doc.get(True)) if isinstance(doc, dict) else None
+        # `on: push` and `on: [push]` are the two shorthand spellings, and both
+        # mean EVERY push on EVERY branch — `eval-results` included. Neither
+        # parses to a mapping (`{True: 'push'}` and `{True: ['push']}`
+        # respectively), so a mapping-only reader returns False on the exact
+        # shapes this guard exists to catch, which is the silent never-fires
+        # failure one level up.
+        if isinstance(triggers, str):
+            return triggers == "push"
+        if isinstance(triggers, list):
+            return any(str(event) == "push" for event in triggers)
+        if not isinstance(triggers, dict):
+            # No `on:` at all, or a shape this cannot read. Unresolvable, so
+            # say yes and send someone to look — per the docstring above.
+            return True
+        if "push" not in triggers:
             return False
         push = triggers["push"]
         if not isinstance(push, dict):
@@ -1670,7 +1684,10 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
 
     def _listeners(self) -> list[str]:
         import yaml
-        paths = sorted(self.WORKFLOWS.glob("*.yml"))
+        # GitHub Actions reads BOTH extensions, so a `.yaml` workflow is a real
+        # workflow that a `*.yml`-only glob never opens.
+        paths = sorted(set(self.WORKFLOWS.glob("*.yml"))
+                       | set(self.WORKFLOWS.glob("*.yaml")))
         self.assertTrue(
             paths,
             f"no workflows parsed out of {self.WORKFLOWS} — this guard would "
@@ -1692,6 +1709,98 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
         self.assertFalse(
             self._listens_on(negative, self.RESULTS_BRANCH),
             "a push pinned to main is not a listener on the results branch")
+
+    def test_the_detector_sees_the_bare_list_shorthand(self):
+        """`on: [push]` means every push on every branch, this one included."""
+        import yaml
+        positive = yaml.safe_load("on: [push]\n")
+        self.assertEqual(
+            positive, {True: ["push"]},
+            "this spelling parses to a LIST under the boolean-True key, not a "
+            "mapping — that is why a mapping-only reader misses it")
+        self.assertTrue(
+            self._listens_on(positive, self.RESULTS_BRANCH),
+            "`on: [push]` is an unfiltered push trigger, so it fires on "
+            f"{self.RESULTS_BRANCH!r} like every other branch; a reader that "
+            "returns False here would let the `[skip ci]` trap through in the "
+            "one shape nothing else catches")
+        # Negative control: same shorthand, no push event. Without this a
+        # detector hard-wired to `return True` would satisfy the assertion
+        # above and detect nothing at all.
+        negative = yaml.safe_load("on: [pull_request, workflow_dispatch]\n")
+        self.assertEqual(negative, {True: ["pull_request", "workflow_dispatch"]})
+        self.assertFalse(
+            self._listens_on(negative, self.RESULTS_BRANCH),
+            "the list shorthand without `push` is not a push listener — this "
+            "control is what proves the case above discriminates")
+
+    def test_the_detector_sees_the_bare_scalar_shorthand(self):
+        """`on: push` is the same trap one step smaller."""
+        import yaml
+        positive = yaml.safe_load("on: push\n")
+        self.assertEqual(
+            positive, {True: "push"},
+            "this spelling parses to a STRING under the boolean-True key")
+        self.assertTrue(
+            self._listens_on(positive, self.RESULTS_BRANCH),
+            "`on: push` is an unfiltered push trigger and fires on "
+            f"{self.RESULTS_BRANCH!r}")
+        negative = yaml.safe_load("on: workflow_dispatch\n")
+        self.assertEqual(negative, {True: "workflow_dispatch"})
+        self.assertFalse(
+            self._listens_on(negative, self.RESULTS_BRANCH),
+            "a scalar naming some other event is not a push listener — the "
+            "control that keeps the case above from passing vacuously")
+
+    def test_an_unreadable_trigger_block_errs_toward_yes(self):
+        """The docstring's promise, asserted rather than described.
+
+        A shape this cannot resolve must red the guard and send someone to
+        look. The alternative — quietly answering "not a listener" — is the
+        same silent miss as the two shorthands above.
+        """
+        self.assertTrue(
+            self._listens_on({"jobs": {}}, self.RESULTS_BRANCH),
+            "a document with no `on:` key at all is unresolvable, not a "
+            "resolved no")
+        self.assertTrue(
+            self._listens_on(None, self.RESULTS_BRANCH),
+            "an empty workflow file parses to None; that is unresolvable too")
+        # Negative control: a trigger block this CAN resolve must still resolve
+        # to no, or "errs toward yes" has degenerated into "always yes".
+        self.assertFalse(
+            self._listens_on({True: {"schedule": [{"cron": "0 5 * * *"}]}},
+                             self.RESULTS_BRANCH),
+            "a readable mapping with no `push` key is a resolved no, and must "
+            "not be swept up by the unresolvable fallback")
+
+    def test_a_dot_yaml_workflow_is_read_too(self):
+        """`.yaml` is a workflow extension GitHub honours; the glob must too.
+
+        A listener written `.yaml` evaded the guard entirely — not by parsing
+        wrong but by never being opened, which leaves no trace at all.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            workflows = Path(tmp)
+            (workflows / "listener.yaml").write_text(
+                "on:\n  push:\n    branches: [eval-results]\njobs: {}\n",
+                encoding="utf-8")
+            with mock.patch.object(type(self), "WORKFLOWS", workflows):
+                self.assertEqual(
+                    self._listeners(), ["listener.yaml"],
+                    "a `.yaml` workflow that listens on the results branch "
+                    "must be found; a `*.yml`-only glob reports an empty list "
+                    "and the guard passes for the wrong reason")
+            # Negative control: same extension, pinned to main. Proves the case
+            # above found a LISTENER rather than merely finding a file.
+            (workflows / "listener.yaml").write_text(
+                "on:\n  push:\n    branches: [main]\njobs: {}\n",
+                encoding="utf-8")
+            with mock.patch.object(type(self), "WORKFLOWS", workflows):
+                self.assertEqual(
+                    self._listeners(), [],
+                    "a `.yaml` workflow pinned to main is not a listener on "
+                    f"{self.RESULTS_BRANCH!r}")
 
     def test_no_push_listener_while_the_publish_message_skips_ci(self):
         message = self._mandated_message()

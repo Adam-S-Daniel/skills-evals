@@ -370,6 +370,10 @@ dated `2026-08-18T22:01:13Z`, so the gate turns red after
 sketched above is worth, it would be built on a credential path that is not
 currently delivering — establish that it delivers before building on it.
 
+That gap is tracked as [#47][i47], with the evidence and the deadline, so it
+does not live only in this paragraph: a note in a design document expires
+quietly, and this one has a date on it.
+
 It has not been tried. Two things stand between it and working, and the first
 is not a risk to check but a certainty to design around.
 
@@ -377,10 +381,26 @@ is not a risk to check but a certainty to design around.
 Step 4 above fixes the publish message as `propagation: account audit
 [skip ci]`; the live Routine prompt repeats it verbatim; and every publish on
 the branch carries it. Measured 2026-08-20 by parsing `git log` over all 52
-commits on `origin/eval-results`: 14 are publishes — 8 from this Routine, 6
-from `eval.yml`'s badge step — and **14 of 14** carry a CI-skip token. (The
-other 38 are inherited `main` history and merges from before the branch became
-a results branch; they are not publishes and do not bear on this.)
+commits on `origin/eval-results`: **20** are publishes — 8 from this Routine
+(`propagation: account audit`) and **12** from `eval.yml`'s badge step, which
+is one publisher under two names, 6 as `eval: workflow-path-audit run + badge`
+(the message hard-coded at `.github/workflows/eval.yml:246` today) and 6 as
+`eval: pin-actions-to-sha run + badge`, the same step before `29c6e95`
+retargeted the fixture. **20 of 20** carry a CI-skip token, so blocker 1 holds
+over the whole set and not just the part of it that was counted.
+
+The remaining **32** are not publishes, and *inherited history* describes 31 of
+them rather than all: `git merge-base --is-ancestor <sha> origin/main` over all
+52 puts **31 on `main`** — the pre-results-branch history and its merges — and
+**21 on `eval-results` only**. The 32nd non-publish, `42bb36b` ("Stop
+mirroring source onto the results branch"), is a hand-made branch-hygiene
+commit that never existed on `main`. Ancestry and publisher are separate
+questions and this file previously conflated them: **all 20 publishes are in
+the eval-results-only set**, so no publish has ever been an ancestor of `main`,
+and an earlier draft of this paragraph put six of them (`bd3dabd`, `99eab53`,
+`2dcf4d5`, `0335166`, `dad38ea`, `0feedfb`) into a residue it called inherited
+`main` history — a claim that something does not exist, made about six commits
+that do.
 
 `[skip ci]` is GitHub's documented instruction to **not create a workflow
 run** for a `push` or `pull_request` event, so the workflow above would not
@@ -412,11 +432,18 @@ is genuinely untested and needs a live push to settle.
 
 Blocker 1 is locked by an assertion:
 `PublishMessageAndPushTriggerTests` in `test/test_propagation.py` parses the
-workflow set and step 4's mandated message, and fails if a
-`push: branches: [eval-results]` listener is ever added while that message
-still carries a CI-skip token. Blocker 2 is not lockable from here.
+workflow set and step 4's mandated message, and fails if a listener on a push
+to `eval-results` is ever added while that message still carries a CI-skip
+token. "Listener" there covers the unfiltered spellings too — `on: push` and
+`on: [push]` both mean every push on every branch, and both parse to a scalar
+or a list under the YAML 1.1 boolean-`True` key rather than to a mapping, so a
+mapping-only reader misses precisely the shapes with no `branches:` filter to
+inspect. The detector reads `.yaml` as well as `.yml`, since GitHub honours
+both and a file that is never opened leaves no trace. Blocker 2 is not lockable
+from here.
 
 [i34]: https://github.com/Adam-S-Daniel/skills-evals/issues/34
+[i47]: https://github.com/Adam-S-Daniel/skills-evals/issues/47
 
 ### The bootstrap fix
 
