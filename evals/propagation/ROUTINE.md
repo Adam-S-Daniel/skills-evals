@@ -375,11 +375,16 @@ is not a risk to check but a certainty to design around.
 
 **Blocker 1 — the commit message this file mandates suppresses the trigger.**
 Step 4 above fixes the publish message as `propagation: account audit
-[skip ci]`; the live Routine prompt repeats it verbatim; and every commit on
-the branch carries it (`git log --oneline -8 origin/eval-results` → 8 of 8,
-checked 2026-08-20). `[skip ci]` is GitHub's documented instruction to **not
-create a workflow run** for a `push` or `pull_request` event, so the workflow
-above would not fire on a single one of the Routine's publishes. Nothing about
+[skip ci]`; the live Routine prompt repeats it verbatim; and every publish on
+the branch carries it. Measured 2026-08-20 by parsing `git log` over all 52
+commits on `origin/eval-results`: 14 are publishes — 8 from this Routine, 6
+from `eval.yml`'s badge step — and **14 of 14** carry a CI-skip token. (The
+other 38 are inherited `main` history and merges from before the branch became
+a results branch; they are not publishes and do not bear on this.)
+
+`[skip ci]` is GitHub's documented instruction to **not create a workflow
+run** for a `push` or `pull_request` event, so the workflow above would not
+fire on a single one of the Routine's publishes. Nothing about
 that is conditional — though it is documented behaviour rather than something
 observed here, because no workflow in this repo listens on a push to
 `eval-results` at all (parsed 2026-08-20: of five workflows, two declare
