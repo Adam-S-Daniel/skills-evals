@@ -52,6 +52,41 @@ on:
   # fleet's daily audits do not all land at once.
   schedule:
     - cron: "41 5 * * *" # daily, 05:41 UTC
+  # A probe you cannot run on demand is a probe you cannot VERIFY on demand. A
+  # fix to the arms merged and there was no way to confirm it: a dispatch came
+  # back `422 Workflow does not have 'workflow_dispatch' trigger`, so checking
+  # it meant waiting for the next push or the 05:41 cron. That is the worst
+  # property to leave on the workflow whose whole job is detecting drift.
+  #
+  # Safe to add only because the concurrency group above keys on
+  # github.event_name: a manual run lands in its own group, so it can neither
+  # cancel the scheduled run nor be cancelled by it. Two dispatches on one ref
+  # do share a group and the older is cancelled — the cheap-iteration half of
+  # that same rule — and a cancelled run here cannot deadlock a merge, because
+  # repo-settings' fleet.yml gives this repo no required_status_checks
+  # override and so leaves it on the fleet default `[]` (parsed 2026-08-20):
+  # nothing this workflow publishes is a required context.
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Run the probes but leave the tracking issue alone — print what would
+          have been opened or commented instead of writing it.
+        # DEFAULT TRUE, unlike the schedule. A dispatch exists to verify a
+        # change; a verification run that files a real tracking issue leaves a
+        # human tidying up after the tool they reached for to save work. The
+        # schedule keeps the write path unconditionally — a dispatch has to
+        # ask for it.
+        #
+        # A real `boolean`, NOT the `string` + fromJSON shape
+        # scheduled-run-health.yml uses. That workaround exists solely because
+        # a typed boolean dispatch input is handed to a REUSABLE's `with:` as
+        # a string, which the reusable's boolean input rejects, startup-failing
+        # the run before any job. Nothing here crosses a workflow_call
+        # boundary, so the plain type is the correct one — do not "fix" it in
+        # either direction.
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -242,18 +277,40 @@ jobs:
   # where it would be echoed into a public log and evaluated as shell.
   report:
     needs: [gate, arms]
-    if: failure() && github.event_name == 'schedule'
+    # workflow_dispatch is named here so `dry_run` is wired to something.
+    # Without it a manual run could never reach the write path and the input
+    # would be a knob connected to nothing — which reads as coverage and is
+    # not. A dispatch left at the default now exercises this job all the way
+    # through the dedupe lookup and stops one line short of the write.
+    if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       issues: write
     steps:
-      - name: File a tracking issue when the scheduled probes fail
+      - name: File a tracking issue when the probes fail (a dry run prints instead)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_TITLE: Scheduled propagation probes are failing
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # A BARE input reference, and the flag is built from it in SHELL
+          # below — never inline as `${{ inputs.dry_run && 'x' || 'y' }}`.
+          # That form is not a ternary, it is two operators: GitHub returns
+          # the `||` branch whenever the `&&` branch is falsy, and an EMPTY
+          # STRING is falsy. cms-platform wrote a push-scan opt-out that way
+          # with the empty string on the truthy side, so the opt-out fired
+          # UNCONDITIONALLY: run 32280743541 was dispatched with the scan on,
+          # skipped it entirely, and still printed "0 failing push run(s)"
+          # from a static default rather than from any API call. A silent
+          # no-op that reports healthy is worse than a crash — nothing goes
+          # red, so nothing draws attention.
+          #
+          # `inputs` is empty on every event but workflow_dispatch, so this
+          # renders as '' on the schedule. That is deliberate and is what
+          # keeps the scheduled run on the write path with no second
+          # condition: only the literal string "true" withholds the write.
+          PROBE_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
           cat > "$RUNNER_TEMP/propagation-failure.md" <<EOF
@@ -270,6 +327,22 @@ jobs:
           number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
             --search "$ISSUE_TITLE in:title" --json number,title \
             --jq 'map(select(.title == env.ISSUE_TITLE)) | .[0].number // empty')
+          # The dedupe LOOKUP above runs in a dry run too, deliberately. A dry
+          # run that bailed before it would prove only that the flag works —
+          # never that the full-text search still recognises an existing issue,
+          # which is the half of this step that has ever been wrong. Detection
+          # runs; only the WRITE is withheld, and everything below this block is
+          # a write, so this is the one line that has to stay above them.
+          if [ "$PROBE_DRY_RUN" = "true" ]; then
+            if [ -n "$number" ]; then
+              echo "DRY RUN: would comment on open issue #$number"
+            else
+              echo "DRY RUN: would open a new issue titled: $ISSUE_TITLE"
+            fi
+            echo "--- body it would have posted ---"
+            cat "$RUNNER_TEMP/propagation-failure.md"
+            exit 0
+          fi
           if [ -n "$number" ]; then
             gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
               --body-file "$RUNNER_TEMP/propagation-failure.md"
