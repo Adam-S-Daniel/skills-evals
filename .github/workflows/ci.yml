@@ -40,6 +40,18 @@ on:
       - harness/**
       - scripts/**
       - test/**
+  # Bare — no inputs, and deliberately no `paths:`, which GitHub ignores on a
+  # dispatch anyway. That is the point rather than an omission: the filters
+  # above are what make a docs-only pull request cheap, and they are therefore
+  # also what leaves running this suite against such a commit with no button at
+  # all. Added for the same reason as propagation.yml's: a fix merged and
+  # confirming it was impossible — `422 Workflow does not have
+  # 'workflow_dispatch' trigger` — so verification waited on the next
+  # qualifying push. Nothing to guard against here, unlike propagation.yml:
+  # this workflow declares no `concurrency` group at any level, so a manual run
+  # cancels nothing, and fleet.yml leaves the repo on the default
+  # `required_status_checks: []` regardless.
+  workflow_dispatch:
 
 # Least privilege: the suite is hermetic — no network, no pushes — so a read
 # token is all it needs. propagation.yml declares the same at workflow level.

@@ -1002,6 +1002,67 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
                 "run that just finished and the badge always reports n=1")
 
 
+class CiDispatchTests(unittest.TestCase):
+    """ci.yml must stay runnable by hand, WITHOUT losing its paths filters.
+
+    The two properties fight each other, which is why they are pinned
+    together. The filters above the trigger are what keep a docs-only pull
+    request off a runner — and they are equally what leaves a docs-only commit
+    with no way to run this suite at all. `workflow_dispatch` is that way; it
+    takes no `paths:` (GitHub ignores one there), so adding it cannot dilute
+    the filters, and a future edit that "simplifies" the triggers by dropping
+    them would.
+
+    Losing the dispatch again is silent — no red run, just a missing button on
+    the day someone needs it. That is how it was lost the first time: a fix
+    merged and confirming it returned `422 Workflow does not have
+    'workflow_dispatch' trigger`, so verification waited for the next
+    qualifying push.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+    # Both events carry this list and the workflow's own header requires them
+    # kept in step; spelling it out here is what makes "in step" checkable.
+    SALIENT = [".github/workflows/ci.yml", ".github/workflows/eval.yml",
+               "evals/**", "harness/**", "scripts/**", "test/**"]
+
+    def _triggers(self) -> dict:
+        # A real parser, never a line scan: a bare `on:` key is the YAML 1.1
+        # boolean True once parsed, which is exactly the sort of thing a
+        # regex reads straight past.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc.get("on", doc.get(True))
+
+    def test_ci_is_dispatchable(self):
+        triggers = self._triggers()
+        self.assertIn("workflow_dispatch", triggers,
+                      "ci.yml must stay manually runnable — the paths filters "
+                      "below mean a docs-only commit has no other way to run "
+                      f"this suite; triggers are {sorted(triggers)}")
+        self.assertIsNone(
+            triggers["workflow_dispatch"],
+            "the dispatch is deliberately bare: this suite takes no arguments, "
+            "and a `paths:` under workflow_dispatch is ignored by GitHub while "
+            "reading like a filter that works")
+
+    def test_both_filtered_events_keep_the_same_salient_paths(self):
+        triggers = self._triggers()
+        for event in ("pull_request", "push"):
+            self.assertEqual(
+                triggers[event]["paths"], self.SALIENT,
+                f"{event}'s paths drifted from the derived salient list — the "
+                "two events must stay in step, or the same commit runs this "
+                "suite on one and skips it on the other")
+        # .get, not []: a dropped branch pin should report itself, not raise
+        # a KeyError that says only that some key is missing.
+        self.assertEqual(triggers["push"].get("branches"), ["main"],
+                         "push is pinned to main: without the branch filter "
+                         "every push to a pull-request branch ran `test` twice "
+                         "(observed on 82596ff, 03:38:30 and 03:39:14)")
+
+
 class EndToEndTests(unittest.TestCase):
     @staticmethod
     def _registry_for(tmp: Path, skill: str) -> Path:

@@ -1154,5 +1154,133 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(sorted(fixture["arms"]), sorted(arms.ARMS))
 
 
+class DispatchAndDryRunTests(unittest.TestCase):
+    """propagation.yml stays runnable by hand, and its dry run never writes.
+
+    A probe you cannot run on demand is a probe you cannot VERIFY on demand. A
+    fix to the arms merged and confirming it meant waiting for a push or the
+    05:41 cron, because the dispatch came back `422 Workflow does not have
+    'workflow_dispatch' trigger`. Losing the trigger again would be silent —
+    nothing red, just a button that is not there on the day someone needs it —
+    so it is pinned here rather than left to review.
+
+    The dry run is the other half. `report` is the only place in this repo that
+    WRITES anything (gh issue create / comment, the sole `issues: write` grant
+    in the workflow); the runner it invokes, `harness/run_propagation.py`, has
+    no write path at all. So "dry run" can only mean: run the detection, run
+    the dedupe lookup, and stop one line short of the two gh write calls. Two
+    ways that silently stops being true — the flag getting built inline as
+    `${{ inputs.dry_run && 'x' || 'y' }}`, which is not a ternary and fires its
+    `||` branch on any falsy `&&` branch (cms-platform run 32280743541 skipped
+    a whole scan that way while printing a healthy result), and a later edit
+    moving a write above the bail-out — are what the last two tests exist for.
+
+    Everything here goes through a real YAML parser. A line scan cannot see
+    which job an `if:` belongs to, and this suite is the one that would have to
+    catch that.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+
+    def setUp(self):
+        import yaml
+        # Read outside any try/except: a missing or unparseable workflow must
+        # blow up here, not degrade into a test that quietly asserts nothing.
+        self.doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        # A bare `on:` key is the YAML 1.1 boolean True once parsed.
+        self.triggers = self.doc.get("on", self.doc.get(True))
+        self.report = self.doc["jobs"]["report"]
+        steps = [s for s in self.report["steps"] if s.get("run")]
+        self.assertEqual(len(steps), 1,
+                         "the report job is expected to be one scripted step; "
+                         f"found {[s.get('name') for s in steps]}")
+        self.step = steps[0]
+
+    def _dry_run_env_var(self) -> str:
+        """The env name carrying the dispatch input, taken from the workflow.
+
+        Derived rather than hard-coded so a rename cannot leave the shell
+        testing one variable while the workflow sets another — which would
+        make the dry run a no-op that still passes every other test here.
+        """
+        wired = {k: v for k, v in (self.step.get("env") or {}).items()
+                 if "inputs.dry_run" in str(v)}
+        self.assertEqual(len(wired), 1,
+                         "exactly one env entry may carry the dry_run input "
+                         f"into the step; found {sorted(wired)}")
+        return next(iter(wired))
+
+    def test_the_workflow_can_be_dispatched_with_a_dry_run_input(self):
+        self.assertIn("workflow_dispatch", self.triggers,
+                      "without workflow_dispatch a probe fix cannot be "
+                      "verified until the next push or the daily cron")
+        inputs = (self.triggers["workflow_dispatch"] or {}).get("inputs") or {}
+        self.assertIn("dry_run", inputs,
+                      "a dispatch with no dry_run input can only run the probes "
+                      "by also arming the tracking-issue write")
+        self.assertIs(inputs["dry_run"]["default"], True,
+                      "the dispatch defaults to dry — a verification run that "
+                      "files a real tracking issue leaves a human tidying up "
+                      "after the tool they reached for to save work")
+
+    def test_the_report_job_is_reachable_on_a_dispatch(self):
+        # Otherwise dry_run is a knob wired to nothing: the only job it governs
+        # could never run by hand, and the input would read as coverage it is
+        # not providing.
+        self.assertIn("workflow_dispatch", self.report["if"],
+                      "the report job's `if:` must admit workflow_dispatch, or "
+                      f"the dry_run input governs nothing: {self.report['if']!r}")
+
+    def test_the_flag_reaches_the_shell_as_a_bare_input_reference(self):
+        expr = str(self.step["env"][self._dry_run_env_var()])
+        for operator in ("&&", "||"):
+            self.assertNotIn(
+                operator, expr,
+                f"{expr!r} must stay a bare `${{{{ inputs.dry_run }}}}` and the "
+                "flag be built in shell. `a && b || c` is not a ternary: GitHub "
+                "returns c whenever b is falsy, and an empty string is falsy, "
+                "which is how cms-platform shipped an opt-out that fired "
+                "unconditionally while reporting a healthy result")
+
+    def test_the_issue_writes_sit_below_the_dry_run_bail_out(self):
+        lines = self.step["run"].splitlines()
+        var = self._dry_run_env_var()
+
+        def first(predicate, what, after=-1):
+            """Index of the first matching line after `after`, or a failure.
+
+            Never returns a sentinel: a missing landmark has to fail loudly
+            here, because every ordering assertion below is trivially true
+            against an index nobody found.
+            """
+            hits = [i for i, line in enumerate(lines)
+                    if i > after and predicate(line)]
+            self.assertTrue(hits, f"no {what} in the report step's script")
+            return hits[0]
+
+        # Detection first: the dedupe lookup must run in a dry run too, or the
+        # dry run proves the flag works and nothing about the search that
+        # decides create-vs-comment.
+        lookup = first(lambda l: "gh issue list" in l, "`gh issue list`")
+        guard = first(lambda l: l.lstrip().startswith("if ") and f'"${var}"' in l,
+                      f"shell test on ${var}")
+        bail = first(lambda l: l.strip() == "exit 0", "`exit 0`", after=guard)
+        self.assertLess(lookup, guard,
+                        "the dedupe lookup must run before the dry-run bail-out")
+
+        writes = [i for i, line in enumerate(lines)
+                  if "gh issue create" in line or "gh issue comment" in line]
+        self.assertEqual(len(writes), 2,
+                         "expected exactly the create and comment write calls; "
+                         f"found {len(writes)} — if a third write path was "
+                         "added it needs the same guard")
+        for write in writes:
+            self.assertGreater(
+                write, bail,
+                f"line {write + 1} writes to the tracking issue above the "
+                f"dry-run bail-out, so a dry run would write after all: "
+                f"{lines[write].strip()!r}")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
