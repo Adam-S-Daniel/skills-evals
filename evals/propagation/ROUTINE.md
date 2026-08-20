@@ -404,12 +404,32 @@ that do.
 
 `[skip ci]` is GitHub's documented instruction to **not create a workflow
 run** for a `push` or `pull_request` event, so the workflow above would not
-fire on a single one of the Routine's publishes. Nothing about
-that is conditional — though it is documented behaviour rather than something
-observed here, because no workflow in this repo listens on a push to
-`eval-results` at all (parsed 2026-08-20: of five workflows, two declare
-`push` and both pin `branches: [main]`), so there has never been a run whose
-absence could be measured.
+fire on a single one of the Routine's publishes. Nothing about that is
+conditional — and it is no longer only documented behaviour. It was measured
+here on 2026-08-20, by accident, on the commit that corrected this very
+paragraph.
+
+Commit `e4c291b` carries a skip token in its message *body* — not as an
+instruction but as a quotation, inside a sentence about the token — and GitHub
+suppressed every workflow run for it. Each earlier push to this branch created
+three runs (`CI`, `Propagation`, and the PR-title lint); `e4c291b` created
+**zero**, twenty-five minutes after the push, while the pull request went on
+reporting `mergeable_state: clean`. The token does not have to sit on the
+subject line, and it does not have to be meant.
+
+That is the entire failure mode in one commit: nothing red, nothing slow,
+nothing logged, and a pull request that looked ready to merge with no run
+behind it. What is still *not* observable here is the `eval-results` case
+specifically — no workflow in this repo listens on a push to that branch
+(parsed 2026-08-20: of five workflows, two declare `push` and both pin
+`branches: [main]`), so the absence of *that* particular run cannot be
+measured. The mechanism, though, is now witnessed rather than cited.
+
+**So, for anyone editing this file: never put a literal skip token in a commit
+message.** Name it in prose ("a CI-skip token"), and check before pushing —
+`git log -1 --format=%B | grep -icE '\[(skip ci|ci skip|no ci)\]'` must print
+`0`. The one place the literal belongs is step 4's mandated publish message,
+where it is doing its job.
 
 Removing the token is a real cost, not a typo fix. `[skip ci]` is what stops a
 results-branch publish feeding CI back into itself, and both publishers lean
