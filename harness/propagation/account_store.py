@@ -14,6 +14,22 @@ several months behind the registry — and only the **description** reaches the
 model's context, so a stale description means a skill that quietly stops
 triggering while still appearing to be installed.
 
+Scope of that harm, measured 2026-08-20 in agentskills
+`docs/experiments/E5-account-store-vs-hook-precedence.md`: **where a skill is
+delivered by both channels, the SessionStart hook's copy wins** — two cloud
+sessions, the Skill tool naming `~/.claude/skills/<name>/` as its base
+directory, the name listed once rather than twice. So a stale account copy is
+shadowed wherever the hook runs, and live everywhere it does not: chat, Cowork,
+Claude in Chrome, mobile, and any multi-repo Claude Code session (agentskills
+#84). That is the inverse of where the verification is — the drifting channel
+serves the surfaces nothing checks — and it is why this audit is not made
+redundant by a green bootstrap verdict.
+
+The same experiment found the drift concentrated where nothing could have
+caught it: of ten account copies exactly one had drifted, and it was in
+`adam-local`, the one bundle no `skills.lock` ships and therefore no digest
+ever re-verifies.
+
 Two traps this module is built around:
 
 * **CRLF.** Account copies arrive with CRLF line endings; the registry is LF.
