@@ -273,10 +273,13 @@ Neither call persisted anything. `list_triggers` afterwards showed no new
 Routine, and the live Tier-3 Routine `trig_01MpUvqeffteExy1gkWT8yBi` was
 untouched — still enabled, still cron `0 5 * * *`.
 
-**Corroborating, and worth recording on its own.** Read straight out of
-`list_triggers`, all three of this account's Routines expose
-`session_context.allowed_tools`, and every one of them carries **zero**
-`mcp__*` entries — the live Tier-3 Routine included. The list is:
+**Corroborating, and worth recording on its own — but count the sample
+carefully.** Every Routine exposes its tool surface at
+`job_config.ccr.session_context.allowed_tools`, and that surface is uniform.
+Of the **first 100** returned by `list_triggers(limit=100,
+include_completed=true)` on 2026-08-20, **100 of 100** carry the identical
+20-entry list below, and **zero** carry any `mcp__*` entry — the live Tier-3
+Routine `trig_01MpUvqeffteExy1gkWT8yBi` among them.
 
 ```
 preset:default, Task, Bash, Glob, Grep, Read, Edit, MultiEdit, Write,
@@ -284,9 +287,28 @@ NotebookEdit, WebFetch, TodoWrite, WebSearch, BashOutput, KillBash, Skill,
 Tmux, Monitor, SendUserFile, REPL
 ```
 
+That is a **sample, not a census**, and is deliberately described as one: the
+response came back `has_more: true` carrying a `next_cursor`, and 100 is the
+tool's documented maximum `limit`, so the account holds **at least** 100
+Routines and the remainder were not read. The right claim is "100 examined,
+zero with any `mcp__*` tool", never "all of them".
+
+**The default `list_triggers` view is misleading for exactly this question,
+which is a finding in its own right.** Called with no arguments it returns
+**three** entries here, and an earlier draft of this section reported "all
+three of this account's Routines" on that basis. Three is not the account's
+Routine count; it is what survives the tool's default `include_completed:
+false`, which by its own contract hides one-shot Routines that have already
+fired — and this account generates those constantly (`send_later` reminders,
+one-shot session handoffs). A census taken from the default view is wrong by
+more than an order of magnitude while looking complete, because nothing in the
+response says anything is missing. Pass `include_completed: true`, read
+`has_more`/`next_cursor`, and state which of the two you did.
+
 So layer 3's operative claim — the fired session has no route to the GitHub
-API at all — is confirmed for the Routines that exist, and confirmed
-independently of the connectors question.
+API at all — is confirmed directly for the live Tier-3 Routine, holds for 99
+further Routines besides, and is confirmed independently of the connectors
+question.
 
 **What was NOT established, stated plainly.** The downstream hypothesis —
 *would* a connector-carrying Routine fire sessions that carry
@@ -300,13 +322,13 @@ its own tool surface, then delete it — and replace this paragraph with the
 result. Until then, treat the split #34 wanted as blocked upstream of this
 repo, not as refuted.
 
-**A second route the issue does not consider — UNTESTED design, not a
-measurement.** #34 assumes the only path from a fired session to CI is a
-GitHub API call, which is what makes a connector load-bearing. It is not the
-only path: **a git push is a separate credential path from the API**, and the
-fired session already pushes to `eval-results` successfully today — that is
-how publishing works at all since the binding fix above. A workflow triggered
-on that push,
+### A second route the issue does not consider — UNTESTED design, two blockers
+
+#34 assumes the only path from a fired session to CI is a GitHub API call,
+which is what makes a connector load-bearing. It is not the only path: **a git
+push is a separate credential path from the API**, and the fired session has
+published to `eval-results` under its own credential — that is how publishing
+works at all since the binding fix above. A workflow triggered on that push,
 
 ```yaml
 on:
@@ -314,15 +336,80 @@ on:
     branches: [eval-results]
 ```
 
-would let CI own the badge, the marker issue and the gate with **no**
-connector, **no** `mcp__*` tool and **no** `gh` CLI in the fired session,
-recovering most of what #34's split wanted while the Routine keeps only the
-~10 lines it alone can execute. This has **not** been tried, and one thing
-must be checked before it is designed around: that a push made by *that
-session's* credential actually triggers workflows rather than being
-suppressed — pushes from some automation identities do not raise
-`push` events. Confirm that first; the rest of the shape is worthless if it
-does not hold.
+would in principle let CI own the badge, the marker issue and the gate with
+**no** connector, **no** `mcp__*` tool and **no** `gh` CLI in the fired
+session, recovering most of what #34's split wanted while the Routine keeps
+only the ~10 lines it alone can execute.
+
+**First, correct the premise it rests on.** An earlier draft of this section
+said the fired session "already pushes to `eval-results` successfully today",
+in the present tense, as established fact. It is not true as of writing.
+Measured 2026-08-20: the Routine's `last_fired_at` is `2026-08-20T05:09:02Z`,
+but `origin/eval-results` is still at `190e4a1`, committed `2026-08-18
+22:01:36 +0000`, whose `propagation/account/latest.json` reads
+`"generated_at": "2026-08-18T22:01:13Z"`. The timestamped copies run
+`20260814T141714Z` → `20260818T220113Z` with no `20260819*` and no
+`20260820*` file, so the most recent firing published **nothing** — 31.1 h
+between the last artifact and the last fire — and the daily `0 5 * * *` slot
+on 08-19 falls inside the same gap. What is true is the weaker, past-tense
+claim: that credential *has* pushed here, which is why the route is worth
+recording at all.
+
+**That gap is the exact silent failure this repo's freshness gate exists to
+catch, and it should be named rather than stepped over.** A Routine that fires
+and publishes nothing is invisible from every other angle: its run reports to
+nobody, and layers 1 and 4 both ride the published result, so they go quiet
+together — the narrow independence noted under layer 3 above. Only
+`account_store.freshness_verdict` sees it, and its `stale` message already
+names the two causes it cannot tell apart — "the Routine has stopped firing,
+or its result is no longer reaching `eval-results`" — which is the second
+again, as on 2026-08-14. It has not gone red yet only because the gap is still
+inside the limit: `account_audit_max_age_days` is 3 and the last result is
+dated `2026-08-18T22:01:13Z`, so the gate turns red after
+`2026-08-21T22:01:13Z` unless a publish lands first. Whatever the design
+sketched above is worth, it would be built on a credential path that is not
+currently delivering — establish that it delivers before building on it.
+
+It has not been tried. Two things stand between it and working, and the first
+is not a risk to check but a certainty to design around.
+
+**Blocker 1 — the commit message this file mandates suppresses the trigger.**
+Step 4 above fixes the publish message as `propagation: account audit
+[skip ci]`; the live Routine prompt repeats it verbatim; and every commit on
+the branch carries it (`git log --oneline -8 origin/eval-results` → 8 of 8,
+checked 2026-08-20). `[skip ci]` is GitHub's documented instruction to **not
+create a workflow run** for a `push` or `pull_request` event, so the workflow
+above would not fire on a single one of the Routine's publishes. Nothing about
+that is conditional — though it is documented behaviour rather than something
+observed here, because no workflow in this repo listens on a push to
+`eval-results` at all (parsed 2026-08-20: of five workflows, two declare
+`push` and both pin `branches: [main]`), so there has never been a run whose
+absence could be measured.
+
+Removing the token is a real cost, not a typo fix. `[skip ci]` is what stops a
+results-branch publish feeding CI back into itself, and both publishers lean
+on it — this Routine and `eval.yml`'s badge commit. Drop it and the push route
+opens, but so does every future `eval-results` push into whatever else ever
+listens there, including the publish loop's own output. The narrower move is
+to leave the message alone and trigger on something `[skip ci]` does not gate
+— a `schedule`, a `repository_dispatch`, or simply reading the branch from an
+already-running job — which is probably where this goes if it is picked up.
+Whichever is chosen, choose it: do not read this section as one precondition
+away from shippable.
+
+**Blocker 2 — the push must actually raise a `push` event.** Even with the
+message settled, a push made by *that session's* credential has to create a
+workflow run rather than being suppressed; pushes from some automation
+identities do not. `eval.yml`'s own publish is the case in reverse — it pushes
+with `GITHUB_TOKEN`, which GitHub documents as not creating workflow runs at
+all — so the two publishers would not necessarily behave alike here. This one
+is genuinely untested and needs a live push to settle.
+
+Blocker 1 is locked by an assertion:
+`PublishMessageAndPushTriggerTests` in `test/test_propagation.py` parses the
+workflow set and step 4's mandated message, and fails if a
+`push: branches: [eval-results]` listener is ever added while that message
+still carries a CI-skip token. Blocker 2 is not lockable from here.
 
 [i34]: https://github.com/Adam-S-Daniel/skills-evals/issues/34
 

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import collections
 import contextlib
+import fnmatch
 import io
 import json
 import os
@@ -1582,6 +1583,132 @@ class DispatchAndDryRunTests(unittest.TestCase):
                     "— a write chained on with `;`, substituted in with `$( )` or "
                     "piped through `>( )` reaches the tracking issue exactly like "
                     "the calls below the bail-out do.")
+
+
+class PublishMessageAndPushTriggerTests(unittest.TestCase):
+    """ROUTINE.md's publish message and the workflow set must not contradict.
+
+    Step 4 of the Routine prompt mandates the commit message
+    `propagation: account audit [skip ci]`, and `[skip ci]` is GitHub's
+    documented instruction NOT to create a workflow run for a `push` event. So
+    a workflow that tries to react to the Routine's publish with
+
+        on:
+          push:
+            branches: [eval-results]
+
+    cannot fire on a single one of those pushes. It is not red, not slow, and
+    not logged anywhere — it simply never runs, which is the worst shape a CI
+    dependency can take. That trap is exactly what a design note in ROUTINE.md
+    ("A second route the issue does not consider") records, and prose is not an
+    assertion: this pins the pair so the two halves cannot be edited apart.
+
+    The coupling is DERIVED at both ends rather than hard-coded. The message is
+    read out of ROUTINE.md's own step 4 (so rewording it is followed, not
+    broken) and the listeners are read by parsing every workflow with a real
+    YAML parser (never a line scan — a bare `on:` is the YAML 1.1 boolean True,
+    which a regex reads straight past). What is asserted is the implication:
+    if any workflow listens for a push on `eval-results`, the mandated message
+    may not carry a CI-skip token. Removing the token is a legitimate decision
+    — it is what stops a results-branch publish feeding CI back into itself, so
+    it has consequences of its own — and this test does not forbid it; it
+    forbids having it both ways silently.
+
+    `test_the_detector_sees_a_listener_when_there_is_one` is the reason the
+    implication is not vacuous today. No workflow here listens on
+    `eval-results`, so the guard would pass against a detector that finds
+    nothing ever; the positive control runs the same function over a synthetic
+    document that does listen, and requires it to be found.
+    """
+
+    ROUTINE = EVAL_DIR / "ROUTINE.md"
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    RESULTS_BRANCH = "eval-results"
+    # GitHub's documented commit-message skip tokens. `skip-checks: true` is a
+    # trailer rather than a message token and is deliberately not modelled.
+    SKIP_TOKENS = ("[skip ci]", "[ci skip]", "[no ci]", "[skip actions]",
+                   "[actions skip]")
+    # Lexical on purpose, and legitimately so: this extracts the CONTENT of one
+    # leaf token — the inline-code span on the "Commit message:" line — not the
+    # structure of anything. The structural half of this test (which events a
+    # workflow declares) goes through yaml.safe_load below.
+    MESSAGE_RE = re.compile(r"Commit message:\s*`([^`]+)`")
+
+    def _mandated_message(self) -> str:
+        found = self.MESSAGE_RE.findall(
+            self.ROUTINE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            len(found), 1,
+            "ROUTINE.md must declare the publish commit message exactly once, "
+            "as an inline-code span on a `Commit message:` line — that "
+            "declaration is what this guard reads. Found: "
+            f"{found!r}")
+        return found[0]
+
+    @classmethod
+    def _listens_on(cls, doc: dict, branch: str) -> bool:
+        """Does this parsed workflow raise a run on a push to `branch`?
+
+        Errs toward YES on anything it cannot resolve exactly: an unmatched
+        pattern here reds this test and sends someone to look, whereas a missed
+        one is the silent never-fires failure the whole guard exists to catch.
+        """
+        # A bare `on:` key parses as the YAML 1.1 boolean True, not "on".
+        triggers = doc.get("on", doc.get(True))
+        if not isinstance(triggers, dict) or "push" not in triggers:
+            return False
+        push = triggers["push"]
+        if not isinstance(push, dict):
+            return True  # bare `push:` — every branch, this one included
+        if "branches" in push:
+            return any(fnmatch.fnmatch(branch, str(pattern))
+                       for pattern in push["branches"] or [])
+        if "branches-ignore" in push:
+            return not any(fnmatch.fnmatch(branch, str(pattern))
+                           for pattern in push["branches-ignore"] or [])
+        return True  # `push:` with only `paths:` — still every branch
+
+    def _listeners(self) -> list[str]:
+        import yaml
+        paths = sorted(self.WORKFLOWS.glob("*.yml"))
+        self.assertTrue(
+            paths,
+            f"no workflows parsed out of {self.WORKFLOWS} — this guard would "
+            "pass by finding nothing, which is not the same as agreeing")
+        return [path.name for path in paths
+                if self._listens_on(
+                    yaml.safe_load(path.read_text(encoding="utf-8")),
+                    self.RESULTS_BRANCH)]
+
+    def test_the_detector_sees_a_listener_when_there_is_one(self):
+        import yaml
+        positive = yaml.safe_load(
+            "on:\n  push:\n    branches: [eval-results]\n")
+        self.assertTrue(
+            self._listens_on(positive, self.RESULTS_BRANCH),
+            "the listener detector must find the shape the design note warns "
+            "about, or the guard below passes for the wrong reason")
+        negative = yaml.safe_load("on:\n  push:\n    branches: [main]\n")
+        self.assertFalse(
+            self._listens_on(negative, self.RESULTS_BRANCH),
+            "a push pinned to main is not a listener on the results branch")
+
+    def test_no_push_listener_while_the_publish_message_skips_ci(self):
+        message = self._mandated_message()
+        tokens = [token for token in self.SKIP_TOKENS
+                  if token in message.lower()]
+        listeners = self._listeners()
+        self.assertFalse(
+            tokens and listeners,
+            f"{listeners} listen for a push on {self.RESULTS_BRANCH!r}, but "
+            f"ROUTINE.md step 4 mandates the commit message {message!r}, which "
+            f"carries {tokens} — GitHub will not create a workflow run for "
+            "such a push, so those workflows never fire on a Routine publish "
+            "and say nothing about it. Either drop the token from step 4 and "
+            "the live Routine prompt together (it is what keeps a "
+            "results-branch publish from feeding CI back into itself, so read "
+            "the design note in ROUTINE.md first), or trigger on something "
+            "`[skip ci]` does not gate.")
 
 
 if __name__ == "__main__":
