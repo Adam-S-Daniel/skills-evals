@@ -106,7 +106,7 @@ jobs:
     timeout-minutes: 45 # 2 arms x 10 min agent budget + judges + setup
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (2026-07-17)
         with:
           path: skills-evals
           # Full history so the push-race rebase below always has the commits
@@ -115,7 +115,7 @@ jobs:
           persist-credentials: false
 
       - name: Check out agentskills registry (side-by-side)
-        uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0 (2025-11-20)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (2026-07-17)
         with:
           repository: Adam-S-Daniel/agentskills
           path: agentskills
