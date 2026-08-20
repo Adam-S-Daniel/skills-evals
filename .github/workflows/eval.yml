@@ -1,8 +1,8 @@
 # Real (non-hermetic) skill eval: runs the workflow-path-audit A/B eval against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
 # pushes the badge + run summaries to the `eval-results` branch. The hermetic
-# suite stays in ci.yml — this workflow is the ONLY place real credentials or
-# the network-dependent objective checks appear.
+# suite stays in ci.yml — this workflow is the ONLY place real credentials
+# appear. The objective checks are hermetic everywhere, here included.
 #
 # SECURITY POSTURE — read this before changing anything:
 #
@@ -75,8 +75,11 @@
 #   fails the job loudly rather than retrying. The README badge URL consumes
 #   raw content from `eval-results` accordingly.
 #
-# * All actions are SHA-pinned (# vX.Y.Z (release date)) — same pins as
-#   agentskills' ci.yml — and this repo's own eval seeds practice what we pin.
+# * All actions are SHA-pinned, bare — no trailing version/date comment. The
+#   comment went stale silently and then lied (Dependabot rewrites it only
+#   sometimes), so the SHA is the only claim made; resolve a version with
+#   `git ls-remote <url> | grep <sha>` when you need one. Same pins as
+#   agentskills' ci.yml, and this repo's own eval seeds practice what we pin.
 
 name: Real eval
 
@@ -106,7 +109,7 @@ jobs:
     timeout-minutes: 45 # 2 arms x 10 min agent budget + judges + setup
     steps:
       - name: Check out skills-evals
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (2026-07-17)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           path: skills-evals
           # Full history so the push-race rebase below always has the commits
@@ -115,14 +118,14 @@ jobs:
           persist-credentials: false
 
       - name: Check out agentskills registry (side-by-side)
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1 (2026-07-17)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Adam-S-Daniel/agentskills
           path: agentskills
           persist-credentials: false
 
       - name: Set up Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v6.0.0 (2025-10-14)
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
           node-version: 22
 
@@ -136,7 +139,7 @@ jobs:
           claude --version
 
       - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0 (2026-07-19)
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
 
@@ -184,13 +187,13 @@ jobs:
           printf '%s\n' "$out" | tail -c 4000
           exit $rc
 
-      - name: Run the eval (both arms, judge, network checks)
+      - name: Run the eval (both arms, judge)
         working-directory: skills-evals
         run: |
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           python3 harness/run_eval.py evals/workflow-path-audit \
-            --arm both --registry ../agentskills --net-checks
+            --arm both --registry ../agentskills
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
@@ -251,7 +254,7 @@ jobs:
       # transcripts) as an artifact instead of losing it with the runner.
       - name: Upload results on failure
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1 (2026-04-10)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: eval-results-debug
           path: skills-evals/results/
