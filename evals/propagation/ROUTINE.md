@@ -216,18 +216,115 @@ layer 3 needs an API the fired session has not got.
    was the only channel of any kind; layer 1 replaces it with something a gate
    can consume, which is the better half of the trade but not a free one.
 3. **One marker-tagged issue**, edited in place (step 5), following the fleet's
-   `post-failure-comment` pattern — **unavailable, and now known to be.** A
-   Routine created through the MCP meta-tool stores no connectors, so the
-   sessions it fires get no `mcp__*` tools, and this environment has no `gh`
-   CLI: the fired session has no route to the GitHub API at all. The live
-   prompt no longer attempts it and reports `issue: unavailable` instead.
-   Nothing else depends on this layer, but the independence once claimed for
-   the others was narrower than it looked — 1 and 4 both ride the published
-   result, so the publish failure took them both, and only 2, which came from
-   the Routine itself, was ever independent of it.
+   `post-failure-comment` pattern — **unavailable, and now known to be.** The
+   sessions this Routine fires carry no `mcp__*` tools, and this environment
+   has no `gh` CLI: the fired session has no route to the GitHub API at all.
+   That much is measured, in `session_context.allowed_tools` — see the
+   subsection below, which also separates it from the *reason* it was long
+   attributed to, a Routine created through the MCP meta-tool storing no
+   connectors. The live prompt no longer attempts the issue and reports
+   `issue: unavailable` instead. Nothing else depends on this layer, but the
+   independence once claimed for the others was narrower than it looked — 1
+   and 4 both ride the published result, so the publish failure took them
+   both, and only 2, which came from the Routine itself, was ever independent
+   of it.
 4. **A badge** built from the same result (`--badge`), served from
    `eval-results` exactly like the quality badge, naming the count — published
    in `0a532be6` reading `account skill store: 4 of 8 drifted · 2026-08-14`.
+
+### Can a Routine carry a connector? Tested 2026-08-20 — refused a layer earlier
+
+Layer 3 was dead by inference before it was dead by measurement, and the two
+are not the same claim. What was measured was the *symptom* — no `mcp__*`
+tools in a fired session. The *cause* written next to it — that the Routine
+stores no connectors, and that one created **with** a connector would fire
+sessions that carry `mcp__github__*` — was a reasonable reading of
+`session_context.allowed_tools`, never a test. [#34][i34] proposed the test.
+It was run on 2026-08-20 and stopped at step 1, one layer earlier than the
+issue anticipated. Recorded here so the next person does not re-derive it.
+
+**The risk #34 named first did not apply.** The issue's cheap pre-check was
+whether MCP GitHub tools count as a *connector* in the claude.ai sense at all,
+as opposed to a session-injected toolset — because `create_trigger`'s contract
+says a CCR session can only narrow the connector set it already holds, never
+widen it. They do count, and the creating session does hold one:
+`ListConnectors` returns `github-mcp` with `installState: connected`,
+`connected: true`, `enabledInChat: true`. This is the org connector, distinct
+from the session-provisioned `mcp__github__` server, which does not appear in
+`ListConnectors` at all — the two-connector split the fleet `AGENTS.md`
+already documents. So the experiment was not blocked by the thing expected to
+block it.
+
+**It was blocked by the parameter itself.** `create_trigger` refuses
+`connectors` outright, for this organization:
+
+```
+create_trigger: the connectors parameter is not available for this organization.
+Omit the connectors parameter.
+```
+
+**That is an org gate on the parameter, not a name that failed to resolve.**
+The call was made twice — once with `connectors: ["github-mcp"]` and once with
+`connectors: []` — and returned the **identical** error both times. The tool
+contract documents `[]` as "store no connectors", i.e. a request that resolves
+no names at all, so a refusal of `[]` cannot be a resolution failure and is
+not the documented narrowing either: narrowing an empty set is a no-op.
+Neither call persisted anything. `list_triggers` afterwards showed no new
+Routine, and the live Tier-3 Routine `trig_01MpUvqeffteExy1gkWT8yBi` was
+untouched — still enabled, still cron `0 5 * * *`.
+
+**Corroborating, and worth recording on its own.** Read straight out of
+`list_triggers`, all three of this account's Routines expose
+`session_context.allowed_tools`, and every one of them carries **zero**
+`mcp__*` entries — the live Tier-3 Routine included. The list is:
+
+```
+preset:default, Task, Bash, Glob, Grep, Read, Edit, MultiEdit, Write,
+NotebookEdit, WebFetch, TodoWrite, WebSearch, BashOutput, KillBash, Skill,
+Tmux, Monitor, SendUserFile, REPL
+```
+
+So layer 3's operative claim — the fired session has no route to the GitHub
+API at all — is confirmed for the Routines that exist, and confirmed
+independently of the connectors question.
+
+**What was NOT established, stated plainly.** The downstream hypothesis —
+*would* a connector-carrying Routine fire sessions that carry
+`mcp__github__*`? — is **untested and, from this account, currently
+untestable**. It is not a measured "no". No Routine created here can carry a
+connector grant at all, so the hypothesis was never reached, and nothing above
+disproves it. The one thing that would change that is the org gate lifting: if
+`create_trigger` ever accepts `connectors`, run #34's step 2 as written — a
+throwaway Routine with a near-future `run_once_at` whose prompt reports only
+its own tool surface, then delete it — and replace this paragraph with the
+result. Until then, treat the split #34 wanted as blocked upstream of this
+repo, not as refuted.
+
+**A second route the issue does not consider — UNTESTED design, not a
+measurement.** #34 assumes the only path from a fired session to CI is a
+GitHub API call, which is what makes a connector load-bearing. It is not the
+only path: **a git push is a separate credential path from the API**, and the
+fired session already pushes to `eval-results` successfully today — that is
+how publishing works at all since the binding fix above. A workflow triggered
+on that push,
+
+```yaml
+on:
+  push:
+    branches: [eval-results]
+```
+
+would let CI own the badge, the marker issue and the gate with **no**
+connector, **no** `mcp__*` tool and **no** `gh` CLI in the fired session,
+recovering most of what #34's split wanted while the Routine keeps only the
+~10 lines it alone can execute. This has **not** been tried, and one thing
+must be checked before it is designed around: that a push made by *that
+session's* credential actually triggers workflows rather than being
+suppressed — pushes from some automation identities do not raise
+`push` events. Confirm that first; the rest of the shape is worthless if it
+does not hold.
+
+[i34]: https://github.com/Adam-S-Daniel/skills-evals/issues/34
 
 ### The bootstrap fix
 
