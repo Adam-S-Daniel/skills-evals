@@ -405,17 +405,15 @@ CHECKS = {
 }
 
 
-def run_checks(fixture: dict, workspace: str, seed: str, *,
-               allow_network: bool = False) -> list[dict]:
+def run_checks(fixture: dict, workspace: str, seed: str) -> list[dict]:
     """Run every objective check in the fixture; return result dicts.
 
-    `allow_network` opts network-dependent checks in (real-eval runs); the
-    default keeps every caller — most importantly the hermetic tests — offline.
-    No check consumes it today — the only one that ever did was
-    `pinned_shas_match_tags`, retired with the version-comment convention —
-    but the opt-in stays plumbed (run_eval.py `--net-checks`) so the next
-    network check inherits an offline-by-default posture rather than
-    re-deciding it.
+    Every check here is hermetic — no network, no credentials, no wall clock.
+    The one that was not, `pinned_shas_match_tags`, resolved a SHA to a tag
+    over `git ls-remote`; it retired with the version-comment convention and
+    took the network opt-in that existed only for it. Offline is therefore not
+    a mode here, it is the only behaviour. A future network-dependent check
+    reintroduces an opt-in deliberately, and defaults it off.
     """
     results = []
     for check in fixture.get("objective_checks", []):

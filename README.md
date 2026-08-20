@@ -80,10 +80,6 @@ python3 harness/run_eval.py evals/workflow-path-audit --arm both --no-judge
 # Point at a different agent binary, registry checkout, or output root:
 CLAUDE_BIN=/path/to/claude AGENTSKILLS_DIR=~/repos/agentskills \
   python3 harness/run_eval.py evals/workflow-path-audit --arm both --results-dir /tmp/eval-out
-
-# Opt network-dependent objective checks in (off by default so tests stay
-# hermetic — the real-eval workflow passes it):
-python3 harness/run_eval.py evals/workflow-path-audit --arm both --net-checks
 ```
 
 `--registry` (else `$AGENTSKILLS_DIR`, else `~/repos/agentskills`) must point

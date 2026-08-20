@@ -1,8 +1,8 @@
 # Real (non-hermetic) skill eval: runs the workflow-path-audit A/B eval against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
 # pushes the badge + run summaries to the `eval-results` branch. The hermetic
-# suite stays in ci.yml — this workflow is the ONLY place real credentials or
-# the network-dependent objective checks appear.
+# suite stays in ci.yml — this workflow is the ONLY place real credentials
+# appear. The objective checks are hermetic everywhere, here included.
 #
 # SECURITY POSTURE — read this before changing anything:
 #
@@ -187,13 +187,13 @@ jobs:
           printf '%s\n' "$out" | tail -c 4000
           exit $rc
 
-      - name: Run the eval (both arms, judge, network checks)
+      - name: Run the eval (both arms, judge)
         working-directory: skills-evals
         run: |
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           python3 harness/run_eval.py evals/workflow-path-audit \
-            --arm both --registry ../agentskills --net-checks
+            --arm both --registry ../agentskills
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
