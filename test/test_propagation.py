@@ -19,10 +19,12 @@ Run: python3 test/test_propagation.py
 
 from __future__ import annotations
 
+import collections
 import contextlib
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -1173,7 +1175,17 @@ class DispatchAndDryRunTests(unittest.TestCase):
     `${{ inputs.dry_run && 'x' || 'y' }}`, which is not a ternary and fires its
     `||` branch on any falsy `&&` branch (cms-platform run 32280743541 skipped
     a whole scan that way while printing a healthy result), and a later edit
-    moving a write above the bail-out — are what the last two tests exist for.
+    moving a write above the bail-out — are what the last three tests exist
+    for.
+
+    That last one is guarded twice over, and deliberately from opposite
+    directions. The narrow test names the two `gh issue` calls and pins them
+    below the bail-out; the allowlist test names nothing that writes at all and
+    instead requires every statement ABOVE the bail-out to be a shape known to
+    be harmless. The narrow one alone was not enough — a review hoisted
+    `gh api -X POST …/issues`, then `curl -X POST`, and it stayed green both
+    times, because a denylist of spellings can only catch the spellings
+    somebody already listed.
 
     Everything here goes through a real YAML parser. A line scan cannot see
     which job an `if:` belongs to, and this suite is the one that would have to
@@ -1181,6 +1193,56 @@ class DispatchAndDryRunTests(unittest.TestCase):
     """
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+
+    # The one statement above the bail-out that may run a command inside
+    # `$( )`, named so the allowlist below and the test can agree on which it
+    # is without either of them counting entries.
+    DEDUPE_LOOKUP = "the dedupe lookup"
+
+    # Every sequence that can put a SECOND command into one statement. Counted
+    # on EVERY prologue statement against the budget its allowlist entry
+    # declares, because matching a whole-line pattern is not enough on its own:
+    # a pattern ending in `.*` swallows a separator happily, so
+    # `echo hi; gh api -X POST …/issues` fullmatches `echo .*` and an
+    # adversarial review walked exactly that past an earlier version of this
+    # guard. Longest-first so `&&` is not counted as two `&`.
+    COMMAND_SEPARATORS = (r"\$\(", r">\(", r"<\(", r"&&", r"\|\|", ";", r"\|", "&", "`")
+    SEPARATOR_RE = re.compile("|".join(COMMAND_SEPARATORS))
+
+    # (what it is, WHOLE-LINE pattern, separator budget) for every statement
+    # shape permitted above the dry-run bail-out. The budget is `{sequence:
+    # exact count}` and defaults to none at all: a shape that needs a separator
+    # has to say which and how many, so an extra one is a failure even inside a
+    # statement whose pattern still matches. Nothing here names a write — that
+    # is the entire design; see the test's docstring.
+    PROLOGUE_ALLOWLIST = (
+        ("shell options", r"set -euo pipefail", {}),
+        ("a heredoc into the runner's own temp dir, which is not GitHub",
+         r"""cat > "\$RUNNER_TEMP/[\w.-]+" <<(?:'EOF'|EOF)""", {}),
+        ("reading that temp file back into the log",
+         r'''cat "\$RUNNER_TEMP/[\w.-]+"''', {}),
+        # One `$( )` for the substitution itself and one `|` for the jq filter
+        # inside it. That budget is what rejects `; gh issue create` chained on
+        # the end, and `| tee >(gh api …)` piped into the middle.
+        (DEDUPE_LOOKUP, r"number=\$\(gh issue list .*\)", {"$(": 1, "|": 1}),
+        # `if gh api …; then` is deliberately NOT this shape: the pattern is
+        # anchored on `[` … `]`, and the budget then allows only the one `;`
+        # that `]; then` needs.
+        ("a `[` test", r"if \[ .* \]; then", {";": 1}),
+        ("a shell keyword", r"else", {}),
+        ("a shell keyword", r"fi", {}),
+        ("a print", r"echo .*", {}),
+        ("the bail-out itself", r"exit 0", {}),
+    )
+    # And the honest boundary, because a guard that claims more than it does is
+    # how the test below got written in the first place. This governs the
+    # report job's ONE step — `setUp` fails loudly if that job grows a second
+    # step of ANY kind, scripted or `uses:`, because a `uses:` step needs no
+    # shell to file an issue and would otherwise sit above this script entirely
+    # unexamined. It says nothing about any OTHER job: `issues: write` is
+    # granted to `report` alone today, but nothing here pins that grant, so a
+    # write added under a different job that declared its own is outside this
+    # test's reach.
 
     def setUp(self):
         import yaml
@@ -1190,10 +1252,22 @@ class DispatchAndDryRunTests(unittest.TestCase):
         # A bare `on:` key is the YAML 1.1 boolean True once parsed.
         self.triggers = self.doc.get("on", self.doc.get(True))
         self.report = self.doc["jobs"]["report"]
-        steps = [s for s in self.report["steps"] if s.get("run")]
-        self.assertEqual(len(steps), 1,
-                         "the report job is expected to be one scripted step; "
-                         f"found {[s.get('name') for s in steps]}")
+        # EVERY step, not just the scripted ones. Filtering to `run:` steps left
+        # a `uses: peter-evans/create-issue-from-file` step able to sit above
+        # this script and file the issue with no shell at all — invisible to a
+        # guard that only ever reads the script. The report job is one step; if
+        # it legitimately needs another, the prologue guard below has to be
+        # re-scoped before that lands, which is what this failure says.
+        steps = self.report["steps"]
+        self.assertEqual(
+            len(steps), 1,
+            "the report job is expected to be exactly one step; found "
+            f"{[s.get('name') or s.get('uses') for s in steps]}. Every step in "
+            "this job runs under its `issues: write` grant, and only the "
+            "scripted one is checked against the dry-run bail-out.")
+        self.assertIn("run", steps[0],
+                      "the report job's only step must be the script this suite "
+                      f"lints; found {steps[0].get('uses')!r}")
         self.step = steps[0]
 
     def _dry_run_env_var(self) -> str:
@@ -1242,44 +1316,272 @@ class DispatchAndDryRunTests(unittest.TestCase):
                 "which is how cms-platform shipped an opt-out that fired "
                 "unconditionally while reporting a healthy result")
 
+    def _first(self, lines, predicate, what, after=-1):
+        """Index of the first matching line after `after`, or a failure.
+
+        Never returns a sentinel: a missing landmark has to fail loudly here,
+        because every ordering assertion built on one is trivially true
+        against an index nobody found.
+        """
+        hits = [i for i, line in enumerate(lines) if i > after and predicate(line)]
+        self.assertTrue(hits, f"no {what} in the report step's script")
+        return hits[0]
+
+    def _bail_out(self, lines):
+        """(index of the `if` guarding the dry run, index of its `exit 0`)."""
+        var = self._dry_run_env_var()
+        guard = self._first(
+            lines, lambda l: l.lstrip().startswith("if ") and f'"${var}"' in l,
+            f"shell test on ${var}")
+        return guard, self._first(lines, lambda l: l.strip() == "exit 0",
+                                  "`exit 0`", after=guard)
+
+    @staticmethod
+    def _heredoc_delimiter(text):
+        """(delimiter, is the body EXPANDED?) for a heredoc `text` opens, else None.
+
+        Quoting the delimiter is what makes a heredoc body inert. `<<'EOF'`
+        is literal; bare `<<EOF` is expanded by the shell, so a `$( )` in the
+        body RUNS — which is a command above the dry-run bail-out that the
+        body is not obviously carrying. This workflow uses the bare form, so
+        the distinction is live and not theoretical, and it is why the
+        delimiter's quoting is returned rather than discarded.
+
+        `<<` only opens a heredoc where the SHELL sees it as an operator.
+        Inside a quoted string it is ordinary prose, and a scanner that cannot
+        tell the difference stops reading the script at the first line that
+        merely mentions it. An adversarial review walked a write past this
+        guard exactly that way — `echo "if it recurs see << ESCALATION in the
+        runbook"` took ESCALATION for a delimiter, every statement after it
+        including a bare `gh api -X POST …/issues` became heredoc body, and
+        none of them was ever checked. So quoting is tracked here rather than
+        approximated: this walks the text, keeps single/double-quote state, and
+        only considers a `<<` found outside both.
+        """
+        in_single = in_double = False
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            if ch == "\\" and not in_single:
+                i += 2                      # escaped character, quote or not
+                continue
+            if ch == "'" and not in_double:
+                in_single = not in_single
+            elif ch == '"' and not in_single:
+                in_double = not in_double
+            elif ch == "<" and not in_single and not in_double \
+                    and text.startswith("<<", i):
+                # The quotes around a delimiter must MATCH (`<<'EOF'`, not
+                # `<<'EOF`), hence the backreference. `<<<` is a here-string,
+                # not a heredoc, and fails this match — keep scanning rather
+                # than concluding there is no heredoc on the line.
+                found = re.match(r"<<-?\s*([\"']?)([A-Za-z_]\w*)\1", text[i:])
+                if found:
+                    return found.group(2), not found.group(1)
+                i += 2
+                continue
+            i += 1
+        return None
+
+    def _statements(self, lines):
+        """[(line index, text, "command" | "heredoc")] for everything the shell EVALUATES.
+
+        Three things stop a line from meaning what it looks like it means, and
+        all three are handled here rather than in each assertion. A heredoc
+        body is data the shell never executes — `cat > … <<EOF` writes a file
+        on the runner — so its prose would otherwise be judged as commands.
+        Comments and blanks are not statements. And a backslash continuation
+        splits one statement over several lines: the dedupe lookup is three
+        lines long, so anything reasoning per-line reads two thirds of it as
+        bare fragments.
+
+        Both ways this parse can quietly stop covering the script — ending
+        mid-continuation, or ending inside a heredoc that never closed — are
+        assertions, not silent truncations. Everything downstream is an
+        allowlist, and an allowlist over the statements a broken parse happened
+        to reach passes without having checked the ones it did not.
+        """
+        statements, heredoc, expands, pending = [], None, False, None
+        for i, raw in enumerate(lines):
+            if heredoc is not None:
+                if raw.strip() == heredoc:
+                    heredoc, expands = None, False
+                elif expands:
+                    # Not inert: the delimiter was unquoted, so the shell
+                    # expands this line before `cat` ever sees it.
+                    statements.append((i, raw.strip(), "heredoc"))
+                continue
+            line = raw.strip()
+            if pending is None:
+                if not line or line.startswith("#"):
+                    continue
+                start, text = i, line
+            else:
+                start, text = pending[0], f"{pending[1]} {line}"
+            if text.endswith("\\"):
+                pending = (start, text[:-1].rstrip())
+                continue
+            pending = None
+            opened = self._heredoc_delimiter(text)
+            heredoc, expands = opened if opened else (None, False)
+            statements.append((start, text, "command"))
+        self.assertIsNone(pending,
+                          "the report step's script ends inside a backslash "
+                          "continuation, so it does not parse — and nothing "
+                          "built on that parse can be trusted")
+        self.assertIsNone(
+            heredoc,
+            f"the report step's script opens a heredoc delimited by {heredoc!r} "
+            "and never closes it, so everything after that point was read as "
+            "data and never checked as a command")
+        return statements
+
     def test_the_issue_writes_sit_below_the_dry_run_bail_out(self):
         lines = self.step["run"].splitlines()
-        var = self._dry_run_env_var()
-
-        def first(predicate, what, after=-1):
-            """Index of the first matching line after `after`, or a failure.
-
-            Never returns a sentinel: a missing landmark has to fail loudly
-            here, because every ordering assertion below is trivially true
-            against an index nobody found.
-            """
-            hits = [i for i, line in enumerate(lines)
-                    if i > after and predicate(line)]
-            self.assertTrue(hits, f"no {what} in the report step's script")
-            return hits[0]
+        guard, bail = self._bail_out(lines)
 
         # Detection first: the dedupe lookup must run in a dry run too, or the
         # dry run proves the flag works and nothing about the search that
         # decides create-vs-comment.
-        lookup = first(lambda l: "gh issue list" in l, "`gh issue list`")
-        guard = first(lambda l: l.lstrip().startswith("if ") and f'"${var}"' in l,
-                      f"shell test on ${var}")
-        bail = first(lambda l: l.strip() == "exit 0", "`exit 0`", after=guard)
+        lookup = self._first(lines, lambda l: "gh issue list" in l, "`gh issue list`")
         self.assertLess(lookup, guard,
                         "the dedupe lookup must run before the dry-run bail-out")
 
         writes = [i for i, line in enumerate(lines)
                   if "gh issue create" in line or "gh issue comment" in line]
-        self.assertEqual(len(writes), 2,
-                         "expected exactly the create and comment write calls; "
-                         f"found {len(writes)} — if a third write path was "
-                         "added it needs the same guard")
+        self.assertEqual(
+            len(writes), 2,
+            "expected exactly the create and comment write calls; found "
+            f"{len(writes)}. This counts the two literal `gh issue` spellings "
+            "and nothing else: a write spelled `gh api`, `curl` or anything "
+            "the GitHub CLI grows next is INVISIBLE here. Catching an "
+            "arbitrary write is "
+            "test_nothing_above_the_dry_run_bail_out_can_write's job — this "
+            "test only pins these two known calls to their side of the line.")
         for write in writes:
             self.assertGreater(
                 write, bail,
-                f"line {write + 1} writes to the tracking issue above the "
+                f"script line {write + 1} writes to the tracking issue above the "
                 f"dry-run bail-out, so a dry run would write after all: "
                 f"{lines[write].strip()!r}")
+
+    def test_nothing_above_the_dry_run_bail_out_can_write(self):
+        """The prologue is an ALLOWLIST of readers, not a denylist of writes.
+
+        Its sibling above finds writes by matching the two literal spellings
+        `gh issue create` and `gh issue comment`, and an adversarial review
+        proved that is the wrong direction — twice. It hoisted
+        `gh api -X POST "/repos/$GITHUB_REPOSITORY/issues"` above the bail-out
+        and the suite stayed green; it did it again with `curl -X POST` and
+        the suite stayed green again. Both are real issue writes; neither is
+        spelled "gh issue". A denylist can only ever name the writes somebody
+        already thought of, and the write nobody thought of is the whole
+        reason this guard exists.
+
+        So this inverts it. Every statement up to and including the dry-run
+        `exit 0` must match one of PROLOGUE_ALLOWLIST — a short, stable list
+        of shapes that demonstrably cannot reach the tracking issue. Nothing
+        in that list names a write, so nothing in it has to be kept in step
+        with the vocabulary of the GitHub CLI: `gh api`, `curl`, `wget`,
+        `python3 -c`, a third `gh issue create`, all fail identically.
+
+        Two rounds of review then showed that inverting the direction is
+        necessary and not sufficient, because BOTH remaining gaps let a write
+        reach the tracking issue without ever being compared to the list:
+
+        * A whole-line pattern that ends in `.*` matches a statement with a
+          second command bolted onto it, so `echo hi; gh api -X POST …/issues`
+          fullmatched `echo .*` and passed. Hence COMMAND_SEPARATORS: what a
+          statement may CONTAIN is budgeted per entry, separately from what it
+          looks like.
+        * A statement that merely mentioned `<<` inside a quoted string made
+          the parser treat the rest of the script as heredoc body, so the
+          statements after it — a bare `gh api` write among them — were never
+          checked at all. Hence the quote-aware `_heredoc_delimiter`, and the
+          assertion that a heredoc actually closes.
+        * And a heredoc body is only inert when its DELIMITER is quoted. This
+          workflow opens `<<EOF` bare, so the shell expands the body: a
+          `$(gh api -X POST …/issues)` sitting in the middle of the issue
+          prose runs, above the bail-out, while looking like text. Skipping
+          bodies wholesale therefore skipped a live command, so an expanded
+          body is now read for substitutions and nothing else.
+
+        Both are the same failure in different clothes: the guard examined
+        fewer things and said nothing about it. The dedupe-lookup landmark
+        below exists for that reason and is asserted before the list is
+        applied.
+
+        The cost is a red test the day this step is legitimately rewritten.
+        That is the direction the failure should point: widening the allowlist
+        is a deliberate line in a diff somebody reads, whereas failing to
+        anticipate a spelling is nothing at all.
+        """
+        lines = self.step["run"].splitlines()
+        _, bail = self._bail_out(lines)
+        prologue = [entry for entry in self._statements(lines) if entry[0] <= bail]
+
+        # Vacuity control, asserted BEFORE the allowlist is applied: an
+        # allowlist run over zero statements passes on every input it never
+        # saw, which is precisely the shape of failure this test exists to
+        # close. The dedupe lookup is the landmark that proves the parse
+        # reached the real script — it is the only statement up here that is
+        # neither a shell keyword nor a print, so if the parse collapsed to
+        # nothing, or the heredoc scanner swallowed the rest of the file, it
+        # is the first thing to go missing.
+        lookup_pattern = next(pattern for what, pattern, _ in self.PROLOGUE_ALLOWLIST
+                              if what == self.DEDUPE_LOOKUP)
+        lookups = [text for _, text, source in prologue
+                   if source == "command" and re.fullmatch(lookup_pattern, text)]
+        self.assertEqual(
+            len(lookups), 1,
+            "expected exactly one dedupe lookup above the dry-run bail-out; found "
+            f"{len(lookups)} among {len(prologue)} statement(s). Either the script "
+            "changed shape or this test parsed something other than it — and an "
+            "allowlist with nothing to check passes without checking anything.")
+
+        for start, text, source in prologue:
+            where = f"script line {start + 1}"  # of the step's `run:` block, not the file
+            if source == "heredoc":
+                # The body of a heredoc whose delimiter was NOT quoted. It is
+                # not a command, so the allowlist has nothing to say about its
+                # shape — but the shell expands it before `cat` receives it,
+                # so a substitution in it runs exactly where a command would.
+                # Only that is checked; the prose is free to say anything.
+                for form in ("$(", "`"):
+                    self.assertNotIn(
+                        form, text,
+                        f"{where} sits in the body of a heredoc opened with an "
+                        f"UNQUOTED delimiter, above the dry-run bail-out: {text!r}. "
+                        "The shell EXPANDS such a body, so this substitution runs "
+                        "on a dry run like any other command. Quote the delimiter "
+                        "(`<<\'EOF\'`) if the body is meant to be literal, or move "
+                        "the substitution below the bail-out.")
+                continue
+            allowed = [(what, budget) for what, pattern, budget
+                       in self.PROLOGUE_ALLOWLIST if re.fullmatch(pattern, text)]
+            self.assertTrue(
+                allowed,
+                f"{where} runs above the dry-run bail-out and is not one of "
+                f"the shapes known not to write: {text!r}. Nothing may run up there "
+                "that PROLOGUE_ALLOWLIST does not vouch for — if it genuinely cannot "
+                "reach the tracking issue, add it there and say why; if it can, it "
+                "belongs below the bail-out with the other writes.")
+            what, budget = allowed[0]
+            # Matching a shape is necessary and not sufficient. Every allowlist
+            # pattern that ends in `.*` will match a statement with a second
+            # command bolted onto it, so what a statement is ALLOWED to contain
+            # is counted separately from what it looks like: anything over the
+            # declared budget is a command this guard never examined.
+            found = collections.Counter(self.SEPARATOR_RE.findall(text))
+            for sequence, count in sorted(found.items()):
+                self.assertLessEqual(
+                    count, budget.get(sequence, 0),
+                    f"{where} puts {count} {sequence!r} into {what}, above the "
+                    f"dry-run bail-out, where {budget.get(sequence, 0)} are "
+                    f"accounted for: {text!r}. That is room for a second command "
+                    "— a write chained on with `;`, substituted in with `$( )` or "
+                    "piped through `>( )` reaches the tracking issue exactly like "
+                    "the calls below the bail-out do.")
 
 
 if __name__ == "__main__":
