@@ -349,6 +349,38 @@ so leaving both in place makes the issue flip between two layouts daily, and
 makes "what does the issue say" a question with two answers depending on the
 hour.
 
+**And the live prompt still says the old thing, because it cannot be edited
+from anywhere but its own session.** Attempted 2026-08-21 from a different
+session:
+
+```
+update_trigger: editing the prompt of a routine whose fires deliver into a
+session that is not your own is not available via this tool.
+```
+
+That is a hard block, not a permission that can be raised, and it is worth
+writing down because it makes the rule above unenforceable by the person most
+likely to read it. Three things follow. First, the prompt's conditional clause
+— "Skip the tracking issue unless you actually have GitHub API tools" — reads
+as permission the moment the session discovers it *does* have them, which is
+what happened on 2026-08-21. Second, the prompt still points repair at
+agentskills#59, which closed on 2026-08-19. Third, neither can be corrected by
+a session that merely owns the account: the edit has to come from
+`session_01GJAYVjFux2xte99afwoFJB` itself, or the Routine has to be replaced —
+and replacing it means minting a session with this repo as an explicit
+`source_url` first (see "Why it fires into a bound session"; a fresh-session
+Routine measures correctly and can never publish).
+
+Until one of those happens the daily flip is the live behaviour, and it is
+CHURN rather than corruption: the reactor's lookup matches on title *or*
+marker, so whatever layout the session leaves at ~05:04 is found and rewritten
+at ~06:38, and the day converges on the CI renderer's shape. Two edits and two
+notifications a day, one of them pointless. Worth fixing, not worth panicking
+about — and worth checking, when it is fixed, that the fix was actually applied
+rather than merely intended, because nothing in CI can observe a Routine's
+prompt.
+
+
 ## How a human learns that this went red — four layers, three of them live
 
 Four by design; three delivering. Layers 1 and 4 ride the published result and
