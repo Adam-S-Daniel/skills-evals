@@ -354,15 +354,19 @@ def freshness_verdict(summary: dict | None, *, now: datetime, max_age_days: int,
 
     age_days = (now - generated).total_seconds() / 86400
     if age_days > max_age_days:
-        # Two causes, and this function cannot tell them apart: the Routine
-        # stopped firing, or it fired and its result never landed. Naming only
-        # the first sends the reader to check a schedule that is healthy —
+        # Three causes, and this function cannot tell them apart: the Routine
+        # stopped firing; it fired and its result never landed; or its bound
+        # session was silently replaced by one with no repository sources, so
+        # it fires and measures but can never push (#47, 2026-08-19). Naming
+        # only the first sends the reader to check a schedule that is healthy —
         # 2026-08-14, when three runs measured correctly and every push was
         # refused by the session's repository scope.
         return (False, "stale",
                 f"the account audit last ran {age_days:.1f} days ago "
-                f"(limit {max_age_days}) — the Routine has stopped firing, or "
-                "its result is no longer reaching eval-results")
+                f"(limit {max_age_days}) — the Routine has stopped firing, "
+                "its result is no longer reaching eval-results, or its bound "
+                "session was replaced by one with no repository sources "
+                "(check session_context.sources; see evals/propagation/ROUTINE.md)")
     if status != "pass":
         skills = sorted({f.get("skill") for f in summary.get("findings") or []})
         return (False, "reported-failure",
