@@ -45,6 +45,7 @@ EVAL_DIR = REPO_ROOT / "evals" / "propagation"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_account_audit  # noqa: E402
+import run_account_drift_issue  # noqa: E402
 import run_propagation  # noqa: E402
 from propagation import account_store, arms, init_probe  # noqa: E402
 
@@ -1163,8 +1164,24 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(sorted(fixture["arms"]), sorted(arms.ARMS))
 
 
-class DispatchAndDryRunTests(unittest.TestCase):
-    """propagation.yml stays runnable by hand, and its dry run never writes.
+class _DryRunStepContract:
+    """The shared contract for a scheduled step that files a tracking issue.
+
+    Two workflows here have one — propagation.yml's `report` (the probes are
+    failing) and account-store-drift.yml's `react` (the account store has
+    drifted). They report different facts to different readers, but the SHAPE
+    of the step is the same one, and the shape is what keeps being got wrong.
+
+    A MIXIN rather than a base TestCase, so unittest never collects it on its
+    own: a contract class with no workflow bound to it passes by checking
+    nothing, which is the failure every guard below is written against. Each
+    subclass binds WORKFLOW, JOB, WRITE_SPELLINGS, PROLOGUE_ALLOWLIST and
+    `select_step`, and adds whatever its own workflow needs on top.
+
+    It was written for propagation.yml first, and everything below is the
+    reason why.
+
+    propagation.yml stays runnable by hand, and its dry run never writes.
 
     A probe you cannot run on demand is a probe you cannot VERIFY on demand. A
     fix to the arms merged and confirming it meant waiting for a push or the
@@ -1199,8 +1216,6 @@ class DispatchAndDryRunTests(unittest.TestCase):
     catch that.
     """
 
-    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
-
     # The one statement above the bail-out that may run a command inside
     # `$( )`, named so the allowlist below and the test can agree on which it
     # is without either of them counting entries.
@@ -1216,41 +1231,6 @@ class DispatchAndDryRunTests(unittest.TestCase):
     COMMAND_SEPARATORS = (r"\$\(", r">\(", r"<\(", r"&&", r"\|\|", ";", r"\|", "&", "`")
     SEPARATOR_RE = re.compile("|".join(COMMAND_SEPARATORS))
 
-    # (what it is, WHOLE-LINE pattern, separator budget) for every statement
-    # shape permitted above the dry-run bail-out. The budget is `{sequence:
-    # exact count}` and defaults to none at all: a shape that needs a separator
-    # has to say which and how many, so an extra one is a failure even inside a
-    # statement whose pattern still matches. Nothing here names a write — that
-    # is the entire design; see the test's docstring.
-    PROLOGUE_ALLOWLIST = (
-        ("shell options", r"set -euo pipefail", {}),
-        ("a heredoc into the runner's own temp dir, which is not GitHub",
-         r"""cat > "\$RUNNER_TEMP/[\w.-]+" <<(?:'EOF'|EOF)""", {}),
-        ("reading that temp file back into the log",
-         r'''cat "\$RUNNER_TEMP/[\w.-]+"''', {}),
-        # One `$( )` for the substitution itself and one `|` for the jq filter
-        # inside it. That budget is what rejects `; gh issue create` chained on
-        # the end, and `| tee >(gh api …)` piped into the middle.
-        (DEDUPE_LOOKUP, r"number=\$\(gh issue list .*\)", {"$(": 1, "|": 1}),
-        # `if gh api …; then` is deliberately NOT this shape: the pattern is
-        # anchored on `[` … `]`, and the budget then allows only the one `;`
-        # that `]; then` needs.
-        ("a `[` test", r"if \[ .* \]; then", {";": 1}),
-        ("a shell keyword", r"else", {}),
-        ("a shell keyword", r"fi", {}),
-        ("a print", r"echo .*", {}),
-        ("the bail-out itself", r"exit 0", {}),
-    )
-    # And the honest boundary, because a guard that claims more than it does is
-    # how the test below got written in the first place. This governs the
-    # report job's ONE step — `setUp` fails loudly if that job grows a second
-    # step of ANY kind, scripted or `uses:`, because a `uses:` step needs no
-    # shell to file an issue and would otherwise sit above this script entirely
-    # unexamined. It says nothing about any OTHER job: `issues: write` is
-    # granted to `report` alone today, but nothing here pins that grant, so a
-    # write added under a different job that declared its own is outside this
-    # test's reach.
-
     def setUp(self):
         import yaml
         # Read outside any try/except: a missing or unparseable workflow must
@@ -1258,24 +1238,16 @@ class DispatchAndDryRunTests(unittest.TestCase):
         self.doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
         # A bare `on:` key is the YAML 1.1 boolean True once parsed.
         self.triggers = self.doc.get("on", self.doc.get(True))
-        self.report = self.doc["jobs"]["report"]
-        # EVERY step, not just the scripted ones. Filtering to `run:` steps left
-        # a `uses: peter-evans/create-issue-from-file` step able to sit above
-        # this script and file the issue with no shell at all — invisible to a
-        # guard that only ever reads the script. The report job is one step; if
-        # it legitimately needs another, the prologue guard below has to be
-        # re-scoped before that lands, which is what this failure says.
-        steps = self.report["steps"]
-        self.assertEqual(
-            len(steps), 1,
-            "the report job is expected to be exactly one step; found "
-            f"{[s.get('name') or s.get('uses') for s in steps]}. Every step in "
-            "this job runs under its `issues: write` grant, and only the "
-            "scripted one is checked against the dry-run bail-out.")
-        self.assertIn("run", steps[0],
-                      "the report job's only step must be the script this suite "
-                      f"lints; found {steps[0].get('uses')!r}")
-        self.step = steps[0]
+        self.job = self.doc["jobs"][self.JOB]
+        # WHICH step gets linted is the subclass's call, and it is an assertion
+        # rather than an index. Every step in a job runs under that job's
+        # `issues: write` grant, so a job that grows a step this suite does not
+        # know about has grown a write path nothing checks — each subclass says
+        # below how it rules that out for its own workflow.
+        self.step = self.select_step()
+        self.assertIn("run", self.step,
+                      "the step this suite lints must be the scripted one; "
+                      f"found {self.step.get('uses')!r}")
 
     def _dry_run_env_var(self) -> str:
         """The env name carrying the dispatch input, taken from the workflow.
@@ -1303,14 +1275,6 @@ class DispatchAndDryRunTests(unittest.TestCase):
                       "the dispatch defaults to dry — a verification run that "
                       "files a real tracking issue leaves a human tidying up "
                       "after the tool they reached for to save work")
-
-    def test_the_report_job_is_reachable_on_a_dispatch(self):
-        # Otherwise dry_run is a knob wired to nothing: the only job it governs
-        # could never run by hand, and the input would read as coverage it is
-        # not providing.
-        self.assertIn("workflow_dispatch", self.report["if"],
-                      "the report job's `if:` must admit workflow_dispatch, or "
-                      f"the dry_run input governs nothing: {self.report['if']!r}")
 
     def test_the_flag_reaches_the_shell_as_a_bare_input_reference(self):
         expr = str(self.step["env"][self._dry_run_env_var()])
@@ -1455,16 +1419,16 @@ class DispatchAndDryRunTests(unittest.TestCase):
                         "the dedupe lookup must run before the dry-run bail-out")
 
         writes = [i for i, line in enumerate(lines)
-                  if "gh issue create" in line or "gh issue comment" in line]
+                  if any(call in line for call in self.WRITE_SPELLINGS)]
         self.assertEqual(
-            len(writes), 2,
-            "expected exactly the create and comment write calls; found "
-            f"{len(writes)}. This counts the two literal `gh issue` spellings "
+            len(writes), len(self.WRITE_SPELLINGS),
+            f"expected exactly {list(self.WRITE_SPELLINGS)}, one line each; "
+            f"found {len(writes)}. This counts literal `gh issue` spellings "
             "and nothing else: a write spelled `gh api`, `curl` or anything "
             "the GitHub CLI grows next is INVISIBLE here. Catching an "
             "arbitrary write is "
             "test_nothing_above_the_dry_run_bail_out_can_write's job — this "
-            "test only pins these two known calls to their side of the line.")
+            "test only pins these known calls to their side of the line.")
         for write in writes:
             self.assertGreater(
                 write, bail,
@@ -1589,6 +1553,225 @@ class DispatchAndDryRunTests(unittest.TestCase):
                     "— a write chained on with `;`, substituted in with `$( )` or "
                     "piped through `>( )` reaches the tracking issue exactly like "
                     "the calls below the bail-out do.")
+
+
+class DispatchAndDryRunTests(_DryRunStepContract, unittest.TestCase):
+    """The contract above, bound to propagation.yml's `report` job."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+    JOB = "report"
+    # One line each, below the bail-out. `gh issue comment` rather than an
+    # edit: this issue is a running log of failing probe runs, unlike the
+    # account-drift one, which is a single edited-in-place statement of state.
+    WRITE_SPELLINGS = ("gh issue create", "gh issue comment")
+
+    # (what it is, WHOLE-LINE pattern, separator budget) for every statement
+    # shape permitted above the dry-run bail-out. The budget is `{sequence:
+    # exact count}` and defaults to none at all: a shape that needs a separator
+    # has to say which and how many, so an extra one is a failure even inside a
+    # statement whose pattern still matches. Nothing here names a write — that
+    # is the entire design; see the test's docstring.
+    PROLOGUE_ALLOWLIST = (
+        ("shell options", r"set -euo pipefail", {}),
+        ("a heredoc into the runner's own temp dir, which is not GitHub",
+         r"""cat > "\$RUNNER_TEMP/[\w.-]+" <<(?:'EOF'|EOF)""", {}),
+        ("reading that temp file back into the log",
+         r'''cat "\$RUNNER_TEMP/[\w.-]+"''', {}),
+        # One `$( )` for the substitution itself and one `|` for the jq filter
+        # inside it. That budget is what rejects `; gh issue create` chained on
+        # the end, and `| tee >(gh api …)` piped into the middle.
+        (_DryRunStepContract.DEDUPE_LOOKUP,
+         r"number=\$\(gh issue list .*\)", {"$(": 1, "|": 1}),
+        # `if gh api …; then` is deliberately NOT this shape: the pattern is
+        # anchored on `[` … `]`, and the budget then allows only the one `;`
+        # that `]; then` needs.
+        ("a `[` test", r"if \[ .* \]; then", {";": 1}),
+        ("a shell keyword", r"else", {}),
+        ("a shell keyword", r"fi", {}),
+        ("a print", r"echo .*", {}),
+        ("the bail-out itself", r"exit 0", {}),
+    )
+    # And the honest boundary, because a guard that claims more than it does is
+    # how the test below got written in the first place. This governs the
+    # report job's ONE step — `setUp` fails loudly if that job grows a second
+    # step of ANY kind, scripted or `uses:`, because a `uses:` step needs no
+    # shell to file an issue and would otherwise sit above this script entirely
+    # unexamined. It says nothing about any OTHER job: `issues: write` is
+    # granted to `report` alone today, but nothing here pins that grant, so a
+    # write added under a different job that declared its own is outside this
+    # test's reach.
+
+    def select_step(self):
+        # EVERY step, not just the scripted ones. Filtering to `run:` steps left
+        # a `uses: peter-evans/create-issue-from-file` step able to sit above
+        # this script and file the issue with no shell at all — invisible to a
+        # guard that only ever reads the script. The report job is one step; if
+        # it legitimately needs another, the prologue guard below has to be
+        # re-scoped before that lands, which is what this failure says.
+        steps = self.job["steps"]
+        self.assertEqual(
+            len(steps), 1,
+            "the report job is expected to be exactly one step; found "
+            f"{[s.get('name') or s.get('uses') for s in steps]}. Every step in "
+            "this job runs under its `issues: write` grant, and only the "
+            "scripted one is checked against the dry-run bail-out.")
+        return steps[0]
+
+    def test_the_report_job_is_reachable_on_a_dispatch(self):
+        # Otherwise dry_run is a knob wired to nothing: the only job it governs
+        # could never run by hand, and the input would read as coverage it is
+        # not providing.
+        self.assertIn("workflow_dispatch", self.job["if"],
+                      "the report job's `if:` must admit workflow_dispatch, or "
+                      f"the dry_run input governs nothing: {self.job['if']!r}")
+
+
+class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
+    """The contract above, bound to account-store-drift.yml's `react` job.
+
+    This workflow reacts to the Tier-3 audit's PUBLISHED result rather than to
+    a run of its own, so two of its properties are load-bearing in ways
+    propagation.yml's are not, and both are asserted here.
+
+    It must not listen for a push on the results branch. ROUTINE.md step 4
+    mandates a publish message carrying a CI-skip token, so GitHub creates no
+    workflow run for those pushes at all: a listener would never fire, and
+    would leave no trace of not firing. `PublishMessageAndPushTriggerTests`
+    catches that across the whole workflow set; the assertion here is the
+    narrow one that this file, whose entire reason to be scheduled is that
+    trap, never grows the trigger.
+
+    And its `issues: write` grant covers a six-step job rather than a one-step
+    one, because the decision needs a checkout, a Python and a clone of
+    `eval-results` before it can be made. The contract's usual "the job is one
+    step" guarantee is therefore unavailable, and something has to replace it:
+    `test_only_the_write_step_is_handed_a_privileged_environment` does, by
+    requiring every other step in the job to run with no credential at all —
+    `gh` with no token in its environment refuses to call the API, so a write
+    smuggled into one of those steps fails rather than lands.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "account-store-drift.yml"
+    JOB = "react"
+    WRITE_STEP = "Create, update or close the tracking issue (a dry run prints instead)"
+    DECIDE_STEP = "Decide whether the drift issue should exist"
+    # Three, not two: this issue is EDITED in place while a drift episode
+    # lasts, and CLOSED when the next audit reads pass. A `gh issue comment`
+    # here would be the daily-pile failure the reactor exists to avoid.
+    WRITE_SPELLINGS = ("gh issue create", "gh issue edit", "gh issue close")
+    # Any workflow expression that hands a step a credential. Read as a
+    # denylist it would be weak; read as this test uses it — "the write step is
+    # the ONLY step carrying one" — it is a whitelist of one, and the shapes it
+    # names are the only two ways a GitHub token reaches a step at all.
+    PRIVILEGED_ENV_RE = re.compile(r"secrets\.|github\.token")
+
+    PROLOGUE_ALLOWLIST = (
+        ("shell options", r"set -euo pipefail", {}),
+        # `if gh api …; then` is deliberately NOT this shape: the pattern is
+        # anchored on `[` … `]`, and the budget then allows only the one `;`
+        # that `]; then` needs.
+        ("a `[` test", r"if \[ .* \]; then", {";": 1}),
+        ("a shell keyword", r"else", {}),
+        ("a shell keyword", r"fi", {}),
+        ("a print", r"echo .*", {}),
+        # The body the decider rendered, printed back into the log so a dry run
+        # shows what it would have posted. `cat` of a file this job wrote is a
+        # read; it reaches nothing.
+        ("printing the rendered body", r'cat "\$BODY_FILE"', {}),
+        # One `$( )` for the substitution itself, and TWO `|` — the jq filter's
+        # own pipe, plus the one inside the marker predicate `(.body // "") |
+        # contains(...)`. Spelling the budget out is what rejects
+        # `; gh issue create` chained on the end and `| tee >(gh api …)` piped
+        # into the middle, both of which fullmatch the pattern otherwise.
+        (_DryRunStepContract.DEDUPE_LOOKUP,
+         r"number=\$\(gh issue list .*\)", {"$(": 1, "|": 2}),
+        ("the bail-out itself", r"exit 0", {}),
+    )
+
+    def select_step(self):
+        named = [s for s in self.job["steps"]
+                 if (s.get("name") or "") == self.WRITE_STEP]
+        self.assertEqual(
+            len(named), 1,
+            f"expected exactly one step named {self.WRITE_STEP!r} in the "
+            f"{self.JOB!r} job; found "
+            f"{[s.get('name') or s.get('uses') for s in self.job['steps']]}. "
+            "This suite lints that step by name, so a rename silently moves "
+            "the dry-run guard out from under every assertion below.")
+        return named[0]
+
+    def test_the_workflow_declares_no_push_trigger(self):
+        self.assertEqual(
+            sorted(self.triggers), ["schedule", "workflow_dispatch"],
+            "this workflow reads the Routine's PUBLISHED result on a schedule. "
+            "A `push:` trigger on the results branch cannot work — the "
+            "mandated publish message carries a CI-skip token, so GitHub "
+            "creates no run for it — and a `push:` on main would file an "
+            "account-drift issue for a code change that cannot cause one.")
+
+    def test_exactly_one_job_holds_the_issue_write_grant(self):
+        self.assertEqual(
+            self.doc["permissions"], {"contents": "read"},
+            "the workflow-level grant stays read-only so a job added later "
+            "inherits nothing that can write")
+        granted = sorted(name for name, job in self.doc["jobs"].items()
+                         if (job.get("permissions") or {}).get("issues") == "write")
+        self.assertEqual(
+            granted, [self.JOB],
+            f"exactly one job may raise `issues: write`; found {granted}")
+
+    def test_only_the_write_step_is_handed_a_privileged_environment(self):
+        """What replaces "the job is exactly one step" — see the class docstring.
+
+        `gh` with no token in its environment refuses to reach the API, so a
+        step with no credential cannot write to the tracking issue however it
+        is spelled. That makes "one step carries a credential" a structural
+        claim rather than a census of command names, which is the same reason
+        the prologue guard is an allowlist and not a denylist.
+        """
+        carriers = []
+        for step in self.job["steps"]:
+            values = " ".join(str(v) for v in (step.get("env") or {}).values())
+            if self.PRIVILEGED_ENV_RE.search(values):
+                carriers.append(step.get("name") or step.get("uses"))
+        self.assertEqual(
+            carriers, [self.WRITE_STEP],
+            "exactly one step in this job may be handed a credential, and it "
+            f"is the write step; found {carriers}. Every step here runs under "
+            "the job's `issues: write` grant, so this is the whole of what "
+            "stops another step reaching the issue.")
+
+    def test_every_checkout_in_the_job_declines_to_persist_a_credential(self):
+        # A checkout that persists its credential leaves one in .git/config for
+        # every later step in the job, which would quietly undo the test above.
+        checkouts = [s for s in self.job["steps"]
+                     if str(s.get("uses") or "").startswith("actions/checkout@")]
+        self.assertTrue(checkouts, "expected at least one checkout step")
+        for step in checkouts:
+            self.assertIs(
+                (step.get("with") or {}).get("persist-credentials"), False,
+                f"{step.get('name')!r} must set persist-credentials: false")
+
+    def test_the_decision_is_made_before_the_write_step(self):
+        # The write step reads `steps.decide.outputs.*`. If the decider ran
+        # after it — or stopped being a step at all — those expressions render
+        # as empty strings, `$ISSUE_ACTION` is neither "none" nor a known
+        # action, and the `case` falls through silently: a daily green run that
+        # never writes anything.
+        names = [s.get("name") or s.get("uses") for s in self.job["steps"]]
+        self.assertIn(self.DECIDE_STEP, names)
+        self.assertLess(names.index(self.DECIDE_STEP), names.index(self.WRITE_STEP))
+        decide = self.job["steps"][names.index(self.DECIDE_STEP)]
+        self.assertEqual(decide.get("id"), "decide",
+                         "the write step reads steps.decide.outputs.*, so the "
+                         "decider's `id:` is part of the wiring")
+        for output in ("title", "marker", "action", "body_file"):
+            self.assertIn(
+                f"steps.decide.outputs.{output}",
+                " ".join(str(v) for v in (self.step.get("env") or {}).values()),
+                f"the write step must read {output} from the decider rather "
+                "than restating it — two copies of one identifier is one copy "
+                "that eventually disagrees")
 
 
 class PublishMessageAndPushTriggerTests(unittest.TestCase):
@@ -1824,6 +2007,283 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
             "results-branch publish from feeding CI back into itself, so read "
             "the design note in ROUTINE.md first), or trigger on something "
             "`[skip ci]` does not gate.")
+
+
+class AccountDriftIssueDecisionTests(unittest.TestCase):
+    """The reactor: published verdict -> one tracking issue, and its body.
+
+    `harness/run_account_drift_issue.py` is the half of account-store-drift.yml
+    that decides anything, and it is deliberately credential-free so it can be
+    driven from here rather than from a live run. Every case below writes a
+    `latest.json` by hand, passes a fixed `--now`, and asserts the exact action
+    — no clock, no network, no GitHub.
+
+    The two things worth stating about WHY these are the cases:
+
+    * The status table is checked in FULL, including the four liveness statuses
+      that must do nothing. Those are the ones a later edit will want to make
+      helpful: closing the issue on `stale` looks like tidying up and is really
+      retracting a live finding on the strength of no measurement, and opening
+      one on `missing` files an account-drift report for what is a broken
+      Routine binding. Each case therefore asserts the STATUS it produced as
+      well as the action, so a fixture that quietly stopped producing `stale`
+      cannot leave the row passing against something else.
+    * The body is checked for what it must NOT contain. Both repos are public
+      and so is every issue on them; the finding details are free text built by
+      interpolating real directories, and on the surface that publishes this
+      result those directories sit under `$HOME`.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.latest = self.root / "propagation" / "account" / "latest.json"
+        self.latest.parent.mkdir(parents=True)
+        self.marker = self.root / "propagation" / ".bootstrapped"
+        self.body = self.root / "body.md"
+        self.outputs = self.root / "step-outputs.txt"
+
+    def publish(self, *, status="pass", days_ago=0.5, generated=None,
+                findings=(), checked=("fixture-alpha",), skipped=()):
+        """Write a result in the exact shape the Routine publishes."""
+        if generated is None:
+            generated = datetime.fromtimestamp(
+                NOW.timestamp() - days_ago * 86400,
+                timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        self.latest.write_text(json.dumps({
+            "schema": 1, "probe": "propagation/account", "status": status,
+            "generated_at": generated, "registry_ref": "0" * 40,
+            "checked": list(checked), "skipped": list(skipped),
+            "findings": [dict(f) for f in findings]}), encoding="utf-8")
+
+    def react(self, *, existing="", marker=True, eval_dir=None):
+        """(outputs, body, status line) for one run of the decider."""
+        if self.outputs.exists():
+            self.outputs.unlink()
+        if marker:
+            self.marker.touch()
+        argv = [str(eval_dir or EVAL_DIR),
+                "--account-latest", str(self.latest),
+                "--account-marker", str(self.marker),
+                "--existing-issue-number", existing,
+                "--body-out", str(self.body),
+                "--now", NOW.strftime("%Y-%m-%dT%H:%M:%SZ")]
+        printed = io.StringIO()
+        with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(self.outputs)}), \
+                contextlib.redirect_stdout(printed):
+            code = run_account_drift_issue.main(argv)
+        self.assertEqual(code, 0, "a verdict is a finding, never an exit code")
+        outputs = dict(line.split("=", 1) for line
+                       in self.outputs.read_text(encoding="utf-8").splitlines()
+                       if line)
+        return outputs, self.body.read_text(encoding="utf-8"), printed.getvalue()
+
+    # (freshness status, how to produce it, action with no open issue,
+    #  action with one open). Every status `freshness_verdict` can return.
+    TABLE = (
+        ("not-yet-bootstrapped", dict(marker=False), "none", "none"),
+        ("missing", dict(), "none", "none"),
+        ("unreadable", dict(publish=dict(generated="the other day")),
+         "none", "none"),
+        ("stale", dict(publish=dict(status="fail", days_ago=11)), "none", "none"),
+        # The row the whole carve-out is for: a PASS nobody has seen for eleven
+        # days is not evidence the drift is over, so it must not close.
+        ("stale", dict(publish=dict(status="pass", days_ago=11)), "none", "none"),
+        ("reported-failure", dict(publish=dict(status="fail")), "create", "update"),
+        ("fresh", dict(publish=dict(status="pass")), "none", "close"),
+    )
+
+    def test_every_freshness_status_maps_to_the_documented_action(self):
+        for status, setup, alone, with_issue in self.TABLE:
+            for existing, expected in (("", alone), ("48", with_issue)):
+                with self.subTest(status=status, existing=existing):
+                    self.latest.unlink(missing_ok=True)
+                    if "publish" in setup:
+                        self.publish(**setup["publish"])
+                    self.marker.unlink(missing_ok=True)
+                    outputs, _, line = self.react(
+                        existing=existing, marker=setup.get("marker", True))
+                    self.assertIn(
+                        f"[{status}]", line,
+                        f"this row means to exercise {status!r}; the fixture "
+                        f"produced {line.strip()!r} instead, so the action "
+                        "below would be asserted against the wrong branch")
+                    self.assertEqual(outputs["action"], expected)
+
+    def test_the_liveness_statuses_are_left_to_the_freshness_gate(self):
+        """A restatement of four table rows, as the place the reason lives.
+
+        `stale`, `missing`, `unreadable` and `not-yet-bootstrapped` all say the
+        audit is not reaching us and say nothing about the account store.
+        `propagation.yml`'s freshness gate fails on exactly those, on every
+        pull request and on its own schedule. Two mechanisms answering one
+        fault in two vocabularies is how they end up contradicting each other.
+        """
+        for status in ("stale", "missing", "unreadable", "not-yet-bootstrapped"):
+            with self.subTest(status=status):
+                self.assertEqual(
+                    run_account_drift_issue.decide(status, existing_issue=48),
+                    "none")
+                self.assertEqual(
+                    run_account_drift_issue.decide(status, existing_issue=None),
+                    "none")
+
+    def test_an_open_issue_turns_create_into_update(self):
+        # The edit-in-place rule. A drift episode ran four days the last time
+        # one happened (ROUTINE.md); a daily job that files a fresh issue for a
+        # steady-state red produces a pile that gets filtered, and a filtered
+        # channel is silence with extra steps.
+        self.publish(status="fail",
+                     findings=[{"skill": "fixture-alpha", "kind": "content-drift",
+                                "detail": "SKILL.md differs"}])
+        self.assertEqual(self.react(existing="")[0]["action"], "create")
+        self.assertEqual(self.react(existing="48")[0]["action"], "update")
+        self.assertEqual(self.react(existing="#48")[0]["action"], "update",
+                         "a `#`-prefixed number is the same number")
+
+    def test_a_non_numeric_issue_number_is_a_broken_invocation(self):
+        # Reading it as "none" would file a duplicate issue every morning while
+        # the run stayed green — the shape of failure this whole file avoids.
+        self.publish(status="fail")
+        with contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as caught:
+            self.react(existing="forty-eight")
+        self.assertEqual(caught.exception.code, 2)
+
+    def test_a_missing_fixture_is_a_usage_error_and_not_a_verdict(self):
+        self.publish(status="fail")
+        printed = io.StringIO()
+        with contextlib.redirect_stdout(printed):
+            code = run_account_drift_issue.main(
+                [str(self.root / "nowhere"), "--account-latest", str(self.latest),
+                 "--body-out", str(self.body), "--now", "2026-08-14T12:00:00Z"])
+        self.assertEqual(code, 2)
+        self.assertIn("INCONCLUSIVE", printed.getvalue())
+
+    def test_the_step_outputs_carry_what_the_workflow_reads(self):
+        self.publish(status="fail")
+        outputs, body, _ = self.react()
+        self.assertEqual(sorted(outputs),
+                         ["action", "body_file", "marker", "title"])
+        self.assertEqual(outputs["title"], run_account_drift_issue.TITLE)
+        self.assertEqual(outputs["marker"], run_account_drift_issue.MARKER)
+        self.assertEqual(outputs["body_file"], str(self.body))
+        self.assertIn(outputs["marker"], body)
+
+    def test_the_marker_is_the_one_routine_md_mandates(self):
+        # ROUTINE.md step 5 fixes this string, and the workflow's dedupe lookup
+        # matches on it. CI took the lifecycle over from the fired session; if
+        # the two identifiers ever diverge, the lookup stops recognising the
+        # issue it wrote yesterday and quietly files a second one.
+        self.assertIn(run_account_drift_issue.MARKER,
+                      (EVAL_DIR / "ROUTINE.md").read_text(encoding="utf-8"))
+
+    def test_every_body_starts_with_the_marker(self):
+        for status, setup, _, _ in self.TABLE:
+            for existing in ("", "48"):
+                with self.subTest(status=status, existing=existing):
+                    self.latest.unlink(missing_ok=True)
+                    if "publish" in setup:
+                        self.publish(**setup["publish"])
+                    self.marker.unlink(missing_ok=True)
+                    _, body, _ = self.react(
+                        existing=existing, marker=setup.get("marker", True))
+                    self.assertTrue(
+                        body.startswith(run_account_drift_issue.MARKER),
+                        f"{status}/{existing or 'no issue'} rendered a body "
+                        "that does not open with the marker, so the workflow's "
+                        "lookup would never match it again")
+
+    def test_the_body_names_every_drifted_skill(self):
+        self.publish(status="fail", checked=("a", "b", "c"), skipped=("d",),
+                     findings=[
+                         {"skill": "a", "kind": "content-drift", "detail": "x"},
+                         {"skill": "a", "kind": "description-drift", "detail": "y"},
+                         {"skill": "c", "kind": "no-skill-md", "detail": "z"}])
+        _, body, line = self.react()
+        for skill in ("a", "c"):
+            self.assertIn(f"`{skill}`", body)
+        self.assertIn("| drifted | 2 |", body,
+                      "two SKILLS drifted across three findings; counting "
+                      "findings would overstate the episode every time one "
+                      "skill trips two assertions")
+        # And the status line stays counts-only: the log is public and the
+        # artifact already names the skills.
+        self.assertNotIn("`a`", line)
+
+    def test_a_pipe_in_a_detail_cannot_break_the_findings_table_open(self):
+        self.publish(status="fail", findings=[
+            {"skill": "a", "kind": "content-drift",
+             "detail": "differs in ['pipe|name.md']"}])
+        _, body, _ = self.react()
+        self.assertIn(r"pipe\|name.md", body,
+                      "an unescaped `|` splits the row into extra columns, so "
+                      "the finding is still 'present' and reads as garbage")
+
+    def test_a_detail_carrying_an_address_or_an_absolute_path_is_scrubbed(self):
+        self.publish(status="fail", findings=[
+            {"skill": "a", "kind": "account-copy-missing",
+             "detail": "mailed relay@example.net about "
+                       "/home/someone/.claude/skills/synced/a"}])
+        _, body, _ = self.react()
+        self.assertNotIn("relay@example.net", body)
+        self.assertNotIn("/home/someone", body)
+        # Vacuity controls: the finding must still land, and both scrubbers
+        # must be shown to have fired rather than the detail having gone
+        # missing altogether.
+        self.assertIn("`a`", body)
+        self.assertIn("<address>", body)
+        self.assertIn("<path>", body)
+
+    def test_a_real_audit_result_publishes_no_path_no_address_no_description(self):
+        """End to end over `account_store.audit`, not a hand-written finding.
+
+        The hand-written cases above prove the scrubbers work on the shapes
+        somebody thought of. This one runs the real audit against a real fake
+        store, so the details are the ones `account_store` actually builds —
+        which is where the `$HOME` path comes from in production.
+        """
+        registry = make_registry(self.root, skills=("fixture-alpha", "fixture-ghost"))
+        home = self.root / "home"
+        store = home / account_store.MANIFEST_RELPATH.parent
+        store.mkdir(parents=True)
+        # Reserved domain, per the fleet rule on fixtures. The description is
+        # the thing that must not be republished: it is not in the artifact,
+        # and it is the only field that decides whether a skill triggers.
+        description = ("Ping relay@example.com whenever the quarterly "
+                       "reconciliation deck needs rebuilding.")
+        write_skill(store / "fixture-alpha", "fixture-alpha", description)
+        store.joinpath("manifest.json").write_text(json.dumps({
+            "lastUpdated": 0,
+            "skills": [{"skillId": name, "name": name, "source": "custom",
+                        "description": description,
+                        "updatedAt": "2026-05-11T22:23:38.972889Z"}
+                       for name in ("fixture-alpha", "fixture-ghost")]}),
+            encoding="utf-8")
+
+        result = account_store.audit(home, registry)
+        summary = account_store.summarise(
+            result, generated_at=NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            registry_ref="0" * 40)
+        self.assertEqual(summary["status"], "fail")
+        self.latest.write_text(json.dumps(summary), encoding="utf-8")
+
+        _, body, line = self.react()
+        kinds = {f["kind"] for f in summary["findings"]}
+        self.assertIn("account-copy-missing", kinds,
+                      "this fixture exists to produce the finding whose detail "
+                      "interpolates an absolute directory; without it the "
+                      "path assertion below passes vacuously")
+        self.assertIn("<path>", body)
+        for forbidden in (str(home), "relay@example.com", "reconciliation",
+                          description):
+            self.assertNotIn(forbidden, body)
+        self.assertIsNone(
+            re.search(r"[\w.+-]+@[\w-]+\.[A-Za-z]{2,}", body),
+            "no address-shaped string may reach a public issue body")
+        for skill in ("fixture-alpha", "fixture-ghost"):
+            self.assertIn(f"`{skill}`", body)
+        self.assertNotIn(str(home), line)
 
 
 if __name__ == "__main__":

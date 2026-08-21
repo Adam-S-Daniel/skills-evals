@@ -1,0 +1,221 @@
+# The account-store drift issue's LIFECYCLE — opened, edited in place, closed.
+#
+# WHY THIS EXISTS AT ALL
+# `evals/propagation/ROUTINE.md` step 5 asks the Routine-fired session to keep
+# one marker-tagged issue in step with the Tier-3 audit. It never has: those
+# sessions carry no `mcp__*` tool and this environment has no `gh` CLI, so the
+# fired session has no route to the GitHub API — measured, ROUTINE.md layer 3.
+# Nothing else in this repo files, edits or closes that issue either, so today
+# a drifted account store is reported only by a red check nobody is obliged to
+# read. ROUTINE.md's design note ("A second route the issue does not consider")
+# concludes that CI should own the issue and names the trigger to use, which is
+# the next paragraph.
+#
+# WHY A `schedule:` AND EMPHATICALLY NOT A PUSH ON `eval-results`
+# Reacting to the Routine's publish is the obvious design and it cannot work.
+# ROUTINE.md step 4 mandates the publish commit message
+# `propagation: account audit` plus a CI-skip token, and that token is GitHub's
+# documented instruction NOT to create a workflow run for the push. A listener
+# on that branch would therefore never fire: not red, not slow, not logged —
+# the worst shape a CI dependency can take. `PublishMessageAndPushTriggerTests`
+# in test/test_propagation.py fails the build if such a listener is added while
+# the mandated message still carries the token, so this is an assertion and not
+# a comment. A `schedule` is gated by none of that, and reads the same
+# published artifact one hop later.
+#
+# WHY IT DOES NOT LIVE IN propagation.yml
+# That workflow's `report` job files "the scheduled propagation probes are
+# failing" — a CI fault. This one reports that the claude.ai ACCOUNT STORE has
+# drifted, which no run in either repo can cause or repair. Two different
+# facts, two different audiences, two different lifetimes: propagation's issue
+# is closed by fixing CI, this one by uploading a ZIP from a phone. Folding
+# them together is how the readable one starts getting scrolled past.
+#
+# NO `concurrency:` BLOCK, DELIBERATELY. It publishes no status context anyone
+# waits on, and grouping would let one dispatch cancel another's pending run.
+# See AGENTS.md, "A required status check gets no `concurrency` group".
+name: Account store drift issue
+
+# Named for the EVENT rather than the actor, unlike scheduled-run-health.yml:
+# an actor login is an account identifier and this log is public, whereas
+# `dry_run` is the thing a reader of the Actions list actually wants to know
+# about a manual run — whether it could have written anything.
+run-name: >-
+  ${{ github.event_name == 'schedule'
+        && format('scheduled — {0}', github.event.schedule)
+     || format('manual — dry_run={0}', inputs.dry_run) }}
+
+on:
+  # :38 past the hour rather than :00 because GitHub queues the whole
+  # platform's cron on the hour and delays it. 06:38 UTC sits after the Tier-3
+  # Routine's 05:00 publish and after propagation.yml's 05:41 gate, so a run
+  # here reads the day's result rather than yesterday's.
+  schedule:
+    - cron: '38 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: >-
+          Decide and print what would have been written, without creating,
+          editing or closing anything.
+        # DEFAULT TRUE, exactly as propagation.yml's dispatch is, and for the
+        # same reason: a dispatch exists to verify a change, and a verification
+        # run that files a real tracking issue leaves a human tidying up after
+        # the tool they reached for to save work. The schedule keeps the write
+        # path unconditionally — a dispatch has to ask for it.
+        #
+        # A real `boolean`, NOT the `string` + fromJSON shape
+        # scheduled-run-health.yml uses. That workaround exists solely because
+        # a typed boolean is handed to a REUSABLE's `with:` as a string, which
+        # the reusable's boolean input rejects, startup-failing the run before
+        # any job. Nothing here crosses a workflow_call boundary, so the plain
+        # type is correct — do not "fix" it in either direction.
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ONE job, and it is the only place in this repo besides propagation.yml's
+  # `report` that can write to an issue. `issues: write` is granted here rather
+  # than at workflow level so the grant is visible next to the steps it covers.
+  react:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Check out skills-evals
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+
+      - name: Install harness dependencies
+        run: pip install pyyaml
+
+      - name: Fetch the account audit's published result
+        # Anonymous clone of a public repo — no credential, and the branch may
+        # not exist yet. Absence is NOT a failure here: it resolves to
+        # `not-yet-bootstrapped` or `missing`, both of which this workflow
+        # deliberately does nothing about (propagation.yml's freshness gate
+        # owns liveness). Failing hard here would instead red a daily run for
+        # a condition another workflow is already reporting.
+        run: |
+          set -uo pipefail
+          if git clone --depth 1 --single-branch --branch eval-results \
+              "https://github.com/${GITHUB_REPOSITORY}" eval-results; then
+            echo "eval-results checked out"
+          else
+            echo "eval-results branch not present yet"
+            mkdir -p eval-results
+          fi
+
+      - name: Decide whether the drift issue should exist
+        id: decide
+        working-directory: skills-evals
+        # `--existing-issue-number ""` is not a placeholder: the lookup belongs
+        # to the `gh` step below, which is the only step holding a credential
+        # that can see an issue. Passing it explicitly says so at the call
+        # site. What the flag buys is that the create-vs-update rule stays a
+        # pure function with tests on it, rather than a shell branch nobody
+        # can exercise without a token.
+        run: |
+          set -euo pipefail
+          python3 harness/run_account_drift_issue.py evals/propagation \
+            --account-latest ../eval-results/propagation/account/latest.json \
+            --account-marker ../eval-results/propagation/.bootstrapped \
+            --existing-issue-number "" \
+            --body-out "$RUNNER_TEMP/account-drift-issue.md"
+
+      - name: Create, update or close the tracking issue (a dry run prints instead)
+        # Everything this script reads arrives through env:. Nothing off the
+        # event payload and nothing the decider printed is interpolated into
+        # the `run:` body, where it would be echoed into a public log and
+        # evaluated as shell. It passes --repo rather than letting gh infer
+        # one: the checkout lands in a subdirectory, so there is no repo to
+        # infer from at the workspace root.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_TITLE: ${{ steps.decide.outputs.title }}
+          # The marker comes from the decider too, rather than being repeated
+          # here. Two copies of an identifier that must match is one copy that
+          # eventually does not, and the failure would be silent: the lookup
+          # stops recognising the issue it wrote yesterday and files another.
+          ISSUE_MARKER: ${{ steps.decide.outputs.marker }}
+          ISSUE_ACTION: ${{ steps.decide.outputs.action }}
+          BODY_FILE: ${{ steps.decide.outputs.body_file }}
+          # A BARE input reference, and the flag is built from it in SHELL
+          # below — never inline as `${{ inputs.dry_run && 'x' || 'y' }}`.
+          # That form is not a ternary, it is two operators: GitHub returns
+          # the `||` branch whenever the `&&` branch is falsy, and an EMPTY
+          # STRING is falsy. cms-platform wrote a push-scan opt-out that way
+          # and it fired UNCONDITIONALLY while still printing a healthy
+          # result. `inputs` is empty on a schedule, so this renders as '' and
+          # only the literal string "true" withholds the write.
+          DRIFT_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          if [ "$ISSUE_ACTION" = "none" ]; then
+            echo "the freshness verdict calls for no issue write - nothing to do"
+            exit 0
+          fi
+          # No `|| number=""` on this substitution, deliberately, and it is the
+          # one place in this repo where swallowing an error would be actively
+          # harmful: an empty result means "no issue is open", so a failed
+          # lookup read as empty files a NEW issue every morning while looking
+          # healthy. Under `set -e` a failed gh call kills the step instead,
+          # which is the loud failure this wants.
+          #
+          # Matched on the exact title AND on the marker being present in the
+          # body: --search is full text and returns near-misses, and the marker
+          # is what survives someone rewording the title by hand.
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
+            --search "$ISSUE_TITLE in:title" --json number,title,body \
+            --jq 'map(select(.title == env.ISSUE_TITLE and ((.body // "") | contains(env.ISSUE_MARKER)))) | .[0].number // empty')
+          # The dedupe LOOKUP above runs in a dry run too, deliberately. A dry
+          # run that bailed before it would prove only that the flag works —
+          # never that the search still recognises an existing issue, which is
+          # the half of this step that has ever been wrong. Detection runs;
+          # only the WRITE is withheld, and everything below this block is a
+          # write, so this is the one line that has to stay above them.
+          if [ "$DRIFT_DRY_RUN" = "true" ]; then
+            echo "DRY RUN: action=$ISSUE_ACTION against open issue ${number:-<none>}"
+            echo "--- body it would have posted ---"
+            cat "$BODY_FILE"
+            exit 0
+          fi
+          case "$ISSUE_ACTION" in
+            create|update)
+              # EDIT IN PLACE, never a comment and never a second issue. A
+              # drift episode ran four days the last time one happened, and a
+              # daily job that appends to a thread turns a real finding into a
+              # notification stream people filter — which is silence.
+              if [ -n "$number" ]; then
+                gh issue edit "$number" --repo "$GITHUB_REPOSITORY" \
+                  --body-file "$BODY_FILE"
+              else
+                gh issue create --repo "$GITHUB_REPOSITORY" \
+                  --title "$ISSUE_TITLE" --body-file "$BODY_FILE"
+              fi
+              ;;
+            close)
+              # `--state open` above means a closed issue is never found, which
+              # is the behaviour wanted: a store that drifts again after being
+              # repaired gets a fresh issue rather than a reopened one with a
+              # month of stale history above it.
+              if [ -n "$number" ]; then
+                gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
+                  --reason completed --comment "$(cat "$BODY_FILE")"
+              else
+                echo "the audit passed and no tracking issue is open"
+              fi
+              ;;
+          esac
