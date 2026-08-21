@@ -885,9 +885,10 @@ class FreshnessGateTests(unittest.TestCase):
         # The single most important line of the design: a scheduled job that
         # silently stops running is otherwise invisible forever.
         #
-        # The message must name BOTH causes of staleness, because the verdict
-        # cannot distinguish them: the Routine stopped, or it ran and its
-        # result never reached eval-results. Blaming the schedule alone sends
+        # The message must name ALL THREE causes of staleness, because the
+        # verdict cannot distinguish them: the Routine stopped; it ran and its
+        # result never reached eval-results; or its bound session was replaced
+        # by one that cannot push. Blaming the schedule alone sends
         # the reader to check a trigger that is perfectly healthy — 2026-08-14,
         # when three runs fired, measured correctly, and had every push refused.
         ok, status, message = self.verdict(self._summary(days_ago=11))
@@ -895,6 +896,11 @@ class FreshnessGateTests(unittest.TestCase):
         self.assertEqual(status, "stale")
         self.assertIn("stopped firing", message)
         self.assertIn("no longer reaching eval-results", message)
+        # Third cause, added after #47: the bound session was silently
+        # replaced by a sourceless one, so the Routine fires and measures
+        # but can never push. Without this the reader checks a healthy
+        # schedule and a healthy branch and finds nothing.
+        self.assertIn("no repository sources", message)
         self.assertIn("11.0 days ago", message)
         self.assertIn("limit 3", message)
 

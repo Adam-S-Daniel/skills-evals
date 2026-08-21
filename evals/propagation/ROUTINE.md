@@ -121,12 +121,76 @@ costs two things worth stating plainly:
   and is the one this file already calls the layer that matters — better, but a
   trade rather than a free win.
 
-Residual risk: if the bound session is archived or reclaimed, the binding dies.
-The gate catches that — a publisher that stops publishing goes stale within
-three days — so it is detected, just not instantly.
+Residual risk, as originally written: *if the bound session is archived or
+reclaimed, the binding dies.* That happened on 2026-08-19, and the wording above
+was wrong in the way that mattered — **the binding does not die, it silently
+degrades**, which is strictly harder to see. See the next section.
 
 Root cause and fix are recorded in
 [skills-evals#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20).
+
+### The binding degrades silently — it does not die (2026-08-19, #47)
+
+The residual risk above was real and it fired within five days. What it got
+wrong is the failure *shape*, and the shape is the whole diagnostic problem.
+
+The bound session was reclaimed some time after its last successful publish at
+`2026-08-18T22:01:13Z`. The Routine did **not** stop, and it did **not** disable
+itself. At `2026-08-19T05:10:06Z` a replacement session was minted and the
+trigger was re-pointed at it one second later (`updated_at 05:10:07`). The
+Routine then fired on the 19th, the 20th and the 21st, measured correctly every
+time, and published nothing — because the replacement session is exactly the
+kind of session #20 is about.
+
+Read from the outside, nothing looks wrong. The trigger is `enabled: true`, has
+a `persistent_session_id`, has a recent `last_fired_at`, and carries no
+`ended_reason`. Compare a sibling Routine in the same account whose session went
+away and which reads `ended_reason: auto_disabled_session_gone` — *that* is the
+visible form of this failure, and it is the form this file anticipated. The
+invisible form is a live trigger bound to a live session that cannot push.
+
+**The one field that tells them apart is `session_context.sources`.** A session
+that can publish carries the repo explicitly; the auto-minted replacement had no
+`sources` key at all:
+
+| | publishes | does not publish |
+|---|---|---|
+| `session_context.sources` | `[{git_repository: …/skills-evals}]` | **absent** |
+| `origin` | `claude_code_mcp_seed` (or a user session) | `scheduled_trigger` |
+| `tags` | — | `config:routine-lineage-none` |
+
+So the 30-second diagnosis, when the gate next reports `stale`, is:
+
+1. `list_triggers` → read the Routine's `persistent_session_id`.
+2. `get_session` on that id → read `session_context.sources`.
+3. No `sources` → the binding has been silently re-minted. Nothing is broken in
+   the repo, in branch protection, or in the audit; re-bind and move on.
+
+That third cause now belongs in the `stale` message's list alongside the two it
+already names ("the Routine has stopped firing, or its result is no longer
+reaching `eval-results`"). It is neither: the Routine is firing *and* the result
+is not reaching us, because the publisher was replaced underneath it.
+
+The repair is the same recipe as before — create a session with `skills-evals`
+as an explicit source, bind a new Routine to it, delete the old one — and it was
+verified by effect rather than by reading a transcript, which is not available
+across sessions: the new session published `c2be7c77` to `eval-results`
+**75 seconds** after it was created, where the sourced-less one had published
+nothing in three days. Same repo, same account, same environment, same prompt;
+`sources` the only difference. That is the #20 mechanism isolated a second time,
+now as an A/B rather than an inference.
+
+The current Routine is `trig_01JvTC9GXa824XKMYNZNWFGL`
+(`trig_01MpUvqeffteExy1gkWT8yBi` deleted), same `0 5 * * *`, bound to a session
+created with the repo as an explicit source.
+
+**What this does not fix.** Nothing stops the next reclamation, and the
+detection latency is still up to three days. This is the second occurrence under
+the same design, which strengthens rather than weakens the #34 argument that
+publishing should belong to a workflow rather than to a fired session's
+credential. What changed here is only that the failure is now *diagnosable in
+one call* instead of being a three-day mystery that reads like a healthy
+schedule.
 
 ## The prompt, as created (fresh-session mode — assume no prior context)
 
