@@ -30,8 +30,8 @@
 #   scheduled run, and fails when it is missing, stale or unreadable. A dead
 #   Routine and a broken channel are different failures; neither surface sees
 #   both. The audit's own VERDICT is a third thing again: red there is the
-#   ACCOUNT store drifting, so it is advisory on a pull request and fatal on
-#   the schedule — see the gate step.
+#   ACCOUNT store drifting, so it is advisory on every event EXCEPT the
+#   schedule, which is the one surface that acts on it — see the gate step.
 #   See evals/propagation/ROUTINE.md.
 #
 # * DELIBERATELY NO `paths:` filter, contrary to the fleet's usual rule. The
@@ -155,15 +155,29 @@ jobs:
 
       - name: Freshness gate — is the Tier-3 account audit still running?
         working-directory: skills-evals
-        # On a pull request the account audit's own VERDICT is advisory: a red
-        # Tier-3 result means the claude.ai account store has drifted, which no
-        # commit here caused and none can clear, so blocking every pull request
-        # on it only trains people to ignore the gate while the drift outlives
-        # their patience. Liveness — missing, stale, unreadable — still fails
-        # everywhere, because that means the audit is not reaching us at all,
-        # and catching a Routine that quietly stopped is this gate's whole
-        # purpose. On the schedule the verdict stays fatal and `report` files
-        # the tracking issue.
+        # The account audit's own VERDICT is advisory on every event EXCEPT
+        # the schedule. A red Tier-3 result means the claude.ai account store
+        # has drifted: no commit in this repo caused it, none can clear it, and
+        # no runner here can even see that store. On a pull request that made
+        # every open branch wear someone else's red. On a push to `main` it is
+        # worse than useless — a post-merge push has nothing left to block, so
+        # the red blocks no merge, names no actionable change, and is then
+        # re-reported as a CI fault by scheduled-run-health.yml. Measured: runs
+        # 32444343915 and 32445416856 (2026-08-21) were both pushes to `main`
+        # that went red on `FAIL freshness-gate [reported-failure]`, and the
+        # health audit then filed both into issue #33 — two CI-fault reports
+        # for one account drift that neither run could cause or repair.
+        #
+        # The schedule is the DESIGNATED fatal surface because it is the only
+        # one that does anything with the verdict: `report` files the tracking
+        # issue there. See evals/propagation/ROUTINE.md.
+        #
+        # Liveness — missing, stale, unreadable — stays fatal on every event,
+        # because those mean the audit is not reaching us at all and catching a
+        # Routine that quietly stopped is this gate's whole purpose. That is
+        # guaranteed by ADVISORY_STATUSES in the runner, which names
+        # `reported-failure` and nothing else, and NOT by the flag built below
+        # — passing the flag can never downgrade a liveness failure.
         #
         # Read from env rather than interpolated into the script: the fleet
         # rule is that `${{ }}` does not go in a `run:` body.
@@ -171,9 +185,17 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          advisory=()
-          if [ "$EVENT_NAME" = "pull_request" ]; then
-            advisory=(--account-verdict-advisory)
+          # Advisory by DEFAULT and subtracted on the schedule, rather than
+          # fatal by default and added to on one named event. The old shape
+          # listed `pull_request` as the sole advisory event, so every trigger
+          # added afterwards — the push to `main` above, and a
+          # workflow_dispatch or merge_group next — inherited the fatal side
+          # silently. Defaulting the other way means a new trigger arrives on
+          # the side that blocks nothing, and making one fatal is a deliberate
+          # line in a diff.
+          advisory=(--account-verdict-advisory)
+          if [ "$EVENT_NAME" = "schedule" ]; then
+            advisory=()
           fi
           python3 harness/run_propagation.py evals/propagation --gate-only \
             --account-latest ../eval-results/propagation/account/latest.json \
@@ -259,41 +281,69 @@ jobs:
           path: ${{ runner.temp }}/propagation.json
           if-no-files-found: ignore
 
-  # How the schedule reports itself. A job rather than a step in `arms`: that is
-  # a five-leg matrix, and a step there would file up to five issues for one bad
-  # run. `issues: write` is raised HERE AND NOWHERE ELSE, so the probes keep the
-  # read-only privilege set the posture note at the top depends on.
+  # How the schedule reports itself — and how it stops reporting. A job rather
+  # than a step in `arms`: that is a five-leg matrix, and a step there would file
+  # up to five issues for one bad run. `issues: write` is raised HERE AND NOWHERE
+  # ELSE, so the probes keep the read-only privilege set the posture note at the
+  # top depends on.
   #
   # `gh` is preinstalled on the runner, so this needs no new `uses:`, no
   # third-party pin and no cooling-off period. It passes --repo rather than
-  # letting gh infer one from the workspace: this job checks nothing out, and
-  # failure() also fires when a CHECKOUT is what failed, so there may be no git
-  # repo to infer from — the step guarding against silent failure must not have
-  # a silent failure of its own.
+  # letting gh infer one from the workspace: this job checks nothing out, and it
+  # also runs when a CHECKOUT is what failed, so there may be no git repo to
+  # infer from — the step guarding against silent failure must not have a silent
+  # failure of its own.
   #
   # Everything the script reads arrives through env:, and the only workflow
-  # expressions are github.server_url/repository/run_id. Nothing off the event
-  # payload and nothing a probe printed is interpolated into the run: body,
-  # where it would be echoed into a public log and evaluated as shell.
+  # expressions are github.server_url/repository/run_id and the two
+  # needs.*.result words. Nothing off the event payload and nothing a probe
+  # printed is interpolated into the run: body, where it would be echoed into a
+  # public log and evaluated as shell.
   report:
     needs: [gate, arms]
+    # THIS RUNS ON GREEN TOO, and that is a close path rather than a widening of
+    # the report. With `failure()` alone nothing in this repo ever closed the
+    # tracking issue: a repaired probe left it open until a human noticed, so the
+    # issue's existence stopped meaning "broken now" and came to mean "broke
+    # once" — which is the same death as never filing it. `success() ||
+    # failure()` rather than `always()`, because a CANCELLED upstream job
+    # measured nothing at all, and closing a live finding on the strength of a
+    # run that never completed is the one write here that cannot be taken back
+    # by the next morning's run.
+    #
     # workflow_dispatch is named here so `dry_run` is wired to something.
     # Without it a manual run could never reach the write path and the input
     # would be a knob connected to nothing — which reads as coverage and is
     # not. A dispatch left at the default now exercises this job all the way
     # through the dedupe lookup and stops one line short of the write.
-    if: failure() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: >-
+      (success() || failure())
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
       contents: read
       issues: write
     steps:
-      - name: File a tracking issue when the probes fail (a dry run prints instead)
+      - name: Open, update or close the tracking issue (a dry run prints instead)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ISSUE_TITLE: Scheduled propagation probes are failing
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          # WHICH HALF FAILED, carried in as DATA so the body can state it
+          # without a shell branch. The body used to assert a cause — "the arms'
+          # one unpinned input is the agentskills registry, so look there first"
+          # — and it has been wrong every time it was posted: all five scheduled
+          # failures this workflow has ever had were the `gate` job on a
+          # `[reported-failure]` verdict with all five arms green, run
+          # 32452792300 among them. A body that names the wrong repository sends
+          # the reader to audit a registry that never moved, and the drift it
+          # was actually reporting outlives their patience. These two words are
+          # printed verbatim and the prose below describes both halves, so it
+          # cannot be wrong in that way and costs no statement above the
+          # dry-run bail-out.
+          GATE_RESULT: ${{ needs.gate.result }}
+          ARMS_RESULT: ${{ needs.arms.result }}
           # A BARE input reference, and the flag is built from it in SHELL
           # below — never inline as `${{ inputs.dry_run && 'x' || 'y' }}`.
           # That form is not a ternary, it is two operators: GitHub returns
@@ -316,11 +366,35 @@ jobs:
           cat > "$RUNNER_TEMP/propagation-failure.md" <<EOF
           The scheduled propagation probes failed: $RUN_URL
 
-          The arms' one unpinned input is the agentskills registry, which they
-          check out at main — so a red scheduled run most likely means a change
-          there rather than a change here, and that is where to look first. The
-          Claude Code CLI is version-pinned in this workflow and cannot have
-          moved on its own.
+          Job results — **gate: $GATE_RESULT**, **arms: $ARMS_RESULT**. Read those
+          two before looking anywhere else: they fail for reasons that live in
+          different repositories, and only one of them is a fault in CI.
+
+          A failing **gate** is usually not a CI fault at all. Its freshness step
+          relays the daily Tier-3 account audit, and a red verdict there means the
+          claude.ai account skill store has drifted from the registry — which no
+          run in either repository can cause or repair, because only a signed-in
+          surface can see that store. Drift has its own tracking issue, titled
+          "Account skill store drifted from registry (automated Tier-3 audit)",
+          which .github/workflows/account-store-drift.yml opens, edits in place
+          and closes on its own schedule; the repair steps live in its body, and
+          none of them is a change to this repository. The gate
+          also fails when the published audit result is missing, stale or
+          unreadable — that says the Routine publishing it has stopped, not that
+          anything drifted, and the gate's own message says which it saw.
+
+          A failing **arm** is the CI-side fault. The arms' one unpinned input is
+          the agentskills registry, which they check out at main, so a red arm
+          most likely means a change there rather than a change here. The Claude
+          Code CLI is version-pinned in this workflow and cannot have moved on
+          its own.
+          EOF
+          cat > "$RUNNER_TEMP/propagation-recovered.md" <<EOF
+          The scheduled propagation probes are green again — gate: $GATE_RESULT,
+          arms: $ARMS_RESULT — so this tracking issue closes itself: $RUN_URL
+
+          A new episode gets a new issue rather than a reopened one carrying weeks
+          of stale run links above the live finding.
           EOF
           # --search is full text, so it can return near-misses; the title is
           # re-checked EXACTLY before this concludes a duplicate already exists.
@@ -333,17 +407,39 @@ jobs:
           # which is the half of this step that has ever been wrong. Detection
           # runs; only the WRITE is withheld, and everything below this block is
           # a write, so this is the one line that has to stay above them.
+          #
+          # It prints the raw facts — both job results and whether an issue is
+          # open — rather than a sentence naming one action. Now that a green
+          # run closes and a red one files, a single "would comment / would
+          # open" line has to guess which of three outcomes applies, and a dry
+          # run that guesses wrong is worse than one that shows its inputs.
+          # Both bodies are printed for the same reason: whichever way the real
+          # run would go, the text it would have posted has been seen.
           if [ "$PROBE_DRY_RUN" = "true" ]; then
-            if [ -n "$number" ]; then
-              echo "DRY RUN: would comment on open issue #$number"
-            else
-              echo "DRY RUN: would open a new issue titled: $ISSUE_TITLE"
-            fi
-            echo "--- body it would have posted ---"
+            echo "DRY RUN: gate=$GATE_RESULT arms=$ARMS_RESULT open-issue=${number:-<none>}"
+            echo "--- body it would have posted had the probes failed ---"
             cat "$RUNNER_TEMP/propagation-failure.md"
+            echo "--- comment it would have posted closing on a green run ---"
+            cat "$RUNNER_TEMP/propagation-recovered.md"
             exit 0
           fi
-          if [ -n "$number" ]; then
+          if [ "$GATE_RESULT" = "success" ] && [ "$ARMS_RESULT" = "success" ]; then
+            # Closed, never commented-and-left-open. `--state open` in the lookup
+            # means a closed issue is never found again, so the next failure
+            # files a fresh issue instead of reopening one under a month of
+            # resolved history — and an issue list that only holds live findings
+            # is the only kind anyone keeps reading.
+            if [ -n "$number" ]; then
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
+                --reason completed \
+                --comment "$(cat "$RUNNER_TEMP/propagation-recovered.md")"
+            else
+              echo "the probes passed and no tracking issue is open"
+            fi
+          elif [ -n "$number" ]; then
+            # A comment rather than an edit in place, unlike the account-drift
+            # issue: this one is a running log of which scheduled runs failed,
+            # and each run URL is a distinct fact worth keeping.
             gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
               --body-file "$RUNNER_TEMP/propagation-failure.md"
           else

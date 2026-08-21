@@ -20,26 +20,43 @@ is repaired and the gate now returns `fresh`.
 The red ran from 2026-08-14 to 2026-08-18, and writing the duration down matters,
 because the duration is what changed the design.
 
-**The audit's verdict is now advisory on a pull request and fatal on the
-schedule.** It was originally fatal on both, on the reasoning that `main` carries
-no required status checks so a red check is a loud signal rather than a merge
-blocker. What that missed is how long the red lasts. The drift lives in the
-claude.ai account store: no commit in this repo caused it and none can clear it,
-so for those four days every pull request opened here wore someone else's red. A
-check that is red for reasons its reader cannot act on is one people learn to
-scroll past — and a gate mentally filed under "always red" has stopped being a
-gate, which is the same death as never building it. The change was made while
-the gate happened to be green again, which is the right time to make it: the
-policy question is about the next episode, not this one.
+**The audit's verdict is advisory on every event EXCEPT the schedule.** It was
+originally fatal on all of them, on the reasoning that `main` carries no required
+status checks so a red check is a loud signal rather than a merge blocker. What
+that missed is how long the red lasts. The drift lives in the claude.ai account
+store: no commit in this repo caused it and none can clear it, so for those four
+days every pull request opened here wore someone else's red. A check that is red
+for reasons its reader cannot act on is one people learn to scroll past — and a
+gate mentally filed under "always red" has stopped being a gate, which is the
+same death as never building it. The change was made while the gate happened to
+be green again, which is the right time to make it: the policy question is about
+the next episode, not this one.
 
-So the pull-request run prints `WARN freshness-gate [reported-failure]` with the
-drifted skills named, and passes. The scheduled run still fails, and `report`
+The first cut of that change named `pull_request` as the *one* advisory event and
+left every other trigger fatal, which kept the same problem on the other half of
+the traffic. **A push to `main` is a worse surface for this red than a pull
+request, not a better one:** the merge has already happened, so the check blocks
+nothing, and it still names no change anyone could make. Measured 2026-08-21 —
+runs `32444343915` and `32445416856` were both post-merge pushes that failed on
+`FAIL freshness-gate [reported-failure]`, and `scheduled-run-health.yml` then
+reported both into issue #33 as failing runs. One account drift, two CI-fault
+reports, no repair. The condition is now written the other way round — advisory
+by default, subtracted on `schedule` alone — so a trigger added later (a
+dispatch, a merge group) arrives on the side that blocks nothing, and making one
+fatal is a deliberate line in a diff.
+
+So every non-scheduled run prints `WARN freshness-gate [reported-failure]` with
+the drifted skills named, and passes. The scheduled run still fails, and `report`
 still files the tracking issue — that is the surface where a stale verdict was
-always supposed to be answered. What stays fatal EVERYWHERE is liveness: a
-`missing`, `stale` or `unreadable` result means the audit is not reaching us at
-all, and catching a Routine that quietly stopped firing is this gate's entire
-reason to exist. The split is between "the audit told us something bad" and
-"the audit is not talking to us" — only the second is this repo's to answer.
+always supposed to be answered, and the only one that acts on it. What stays
+fatal EVERYWHERE is liveness: a `missing`, `stale` or `unreadable` result means
+the audit is not reaching us at all, and catching a Routine that quietly stopped
+firing is this gate's entire reason to exist. That is guaranteed by
+`ADVISORY_STATUSES` in `harness/run_propagation.py`, which names
+`reported-failure` and nothing else — not by which events pass the flag, so no
+future trigger can downgrade a dead Routine. The split is between "the audit told
+us something bad" and "the audit is not talking to us" — only the second is this
+repo's to answer.
 
 Getting there took a redesign of the transport: the measurement worked on the
 first fire, and the last hop did not.
@@ -254,7 +271,8 @@ layer 3 needs an API the fired session has not got.
 1. **The next pull request goes red.** `harness/run_propagation.py`'s freshness
    gate runs on every pull request (`propagation.yml`, job `gate`), reads
    `eval-results:propagation/account/latest.json`, and fails when it is missing,
-   older than `account_audit_max_age_days` (3), or reports a failure. A stale
+   older than `account_audit_max_age_days` (3), or — on the scheduled run only,
+   per the policy above — reports a failure. A stale
    verdict names both causes it cannot tell apart — the Routine stopped firing,
    or its result stopped reaching `eval-results`; 2026-08-14 was the second, and
    blaming the first sends the reader to a schedule that is healthy. This is
@@ -268,7 +286,9 @@ layer 3 needs an API the fired session has not got.
    arms see a delivery channel that broke with no commit here — their one
    unpinned input is the agentskills registry at `main`. The workflow reports
    itself rather than trusting anyone to read the Actions tab (job `report`
-   files one tracking issue); the Routine no longer reports itself at all — see
+   files one tracking issue, and closes it again on the first green scheduled
+   run, so an open issue means "broken now" rather than "broke once"); the
+   Routine no longer reports itself at all — see
    layer 2 — which makes this gate the whole of the watch on it. **Armed as of
    `0a532be6`:** the bootstrap marker is published, so it enforces instead of
    passing on absent data, and it currently returns `reported-failure` — the

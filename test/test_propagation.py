@@ -1072,6 +1072,42 @@ class RunnerTests(unittest.TestCase):
                                      "--account-marker", str(marker),
                                      "--now", "2026-08-14T12:00:00Z", *extra])
 
+    def test_the_advisory_set_carries_the_verdict_and_no_liveness_status(self):
+        """`run_gate` called directly, because the FLAG only selects this set.
+
+        propagation.yml now asks for the downgrade on every event except the
+        schedule, which puts far more traffic through it than the old
+        pull-request-only shape did. What keeps that safe is not the workflow:
+        it is that `ADVISORY_STATUSES` names `reported-failure` and nothing
+        else, so no amount of passing the flag can turn a Routine that stopped
+        firing green. Asserted against the set itself rather than only through
+        the CLI, so widening it is a red test rather than a quiet policy change
+        four events wide.
+        """
+        self.assertEqual(set(run_propagation.ADVISORY_STATUSES),
+                         {"reported-failure"},
+                         "only the audit's own verdict may ever be downgraded; "
+                         "a liveness status in this set means a dead Routine "
+                         "reports green on every surface but the schedule")
+        fixture = run_propagation.load_fixture(self.eval_dir)
+
+        latest, marker = self._red_audit()
+        ok, line = run_propagation.run_gate(
+            fixture, latest, marker, NOW,
+            advisory=run_propagation.ADVISORY_STATUSES)
+        self.assertTrue(ok)
+        # Downgraded, never dropped: the drifted skill is still named, or the
+        # run that passes leaves no trace of the drift at all.
+        self.assertIn("WARN freshness-gate [reported-failure]", line)
+        self.assertIn("drifted-skill", line)
+
+        stale_latest, stale_marker = self._red_audit(days_ago=11)
+        ok, line = run_propagation.run_gate(
+            fixture, stale_latest, stale_marker, NOW,
+            advisory=run_propagation.ADVISORY_STATUSES)
+        self.assertFalse(ok)
+        self.assertIn("FAIL freshness-gate [stale]", line)
+
     def test_a_red_audit_still_fails_the_gate_by_default(self):
         # The schedule's path, unchanged: without the flag a red verdict is
         # fatal, which is what makes `report` file the tracking issue.
@@ -1563,7 +1599,12 @@ class DispatchAndDryRunTests(_DryRunStepContract, unittest.TestCase):
     # One line each, below the bail-out. `gh issue comment` rather than an
     # edit: this issue is a running log of failing probe runs, unlike the
     # account-drift one, which is a single edited-in-place statement of state.
-    WRITE_SPELLINGS = ("gh issue create", "gh issue comment")
+    # The close call joined them when the job gained a green path. It is a write
+    # like the other two, and a write this tuple does not name is one this test
+    # never pins to its side of the bail-out — the sibling allowlist test would
+    # still refuse to let it sit above there, but nothing would notice it
+    # QUIETLY MOVING, which is the failure this narrow test is for.
+    WRITE_SPELLINGS = ("gh issue create", "gh issue comment", "gh issue close")
 
     # (what it is, WHOLE-LINE pattern, separator budget) for every statement
     # shape permitted above the dry-run bail-out. The budget is `{sequence:
@@ -1624,6 +1665,356 @@ class DispatchAndDryRunTests(_DryRunStepContract, unittest.TestCase):
         self.assertIn("workflow_dispatch", self.job["if"],
                       "the report job's `if:` must admit workflow_dispatch, or "
                       f"the dry_run input governs nothing: {self.job['if']!r}")
+
+    def test_the_report_job_is_scheduled_on_a_green_run_as_well(self):
+        """The close path's precondition, and it is the `if:` and not the shell.
+
+        `failure()` alone is why nothing in this repo ever closed this issue:
+        the only job that can write was not scheduled on the run that PROVED
+        the probes were healthy again, so a repaired probe left its issue open
+        until a person happened to notice. An issue whose presence means "broke
+        once" rather than "is broken" is one people stop reading, which is the
+        same death as never filing it.
+
+        `always()` is the wrong fix and is refused here: it also fires on a
+        CANCELLED upstream job, which measured nothing at all. Closing a live
+        finding on the strength of a run that never completed is the one write
+        in this step that the next morning's run cannot take back.
+        """
+        condition = self.job["if"]
+        self.assertIn(
+            "success()", condition,
+            "a green scheduled run must reach the report job or nothing ever "
+            f"closes the tracking issue: {condition!r}")
+        self.assertIn(
+            "failure()", condition,
+            f"a red run must still reach it: {condition!r}")
+        self.assertNotIn(
+            "always()", condition,
+            "always() also fires on a cancelled run, which measured nothing: "
+            f"closing on it retracts a live finding on no evidence: {condition!r}")
+
+
+class _StubbedShellStep:
+    """Run a workflow step's real `run:` body with the commands it calls stubbed.
+
+    Everything else in this file that reads a workflow reads its SHAPE. That is
+    the right instrument for "no write sits above the bail-out", and the wrong
+    one for "which flag does this event get" — a script can build an array
+    correctly and then never expand it, and a shape test passes on it while
+    every event silently takes the same branch. So the two questions that are
+    about BEHAVIOUR execute the script instead, with a stub first on `PATH`
+    standing in for the one binary it invokes.
+
+    Deterministic in the sense this suite means it: bash, one shell script and
+    one file per run. No clock, no network, no CLI, nothing that varies between
+    a laptop and a runner.
+    """
+
+    @staticmethod
+    def _stub(directory: Path, name: str, body: str) -> None:
+        path = directory / name
+        path.write_text(f"#!/bin/sh\n{body}", encoding="utf-8")
+        path.chmod(0o755)
+
+    def _bash(self, script: str, env: dict, stub_dir: Path):
+        # A CLOSED environment, not os.environ plus overrides: an ambient
+        # GITHUB_* or GH_TOKEN leaking in from the session running the tests
+        # would make a `set -u` failure look like a pass, and on a real runner
+        # it would be a live credential. PATH is the one thing inherited, and
+        # the stub dir goes in front of it.
+        proc = subprocess.run(
+            ["bash", "-c", script],
+            env={"PATH": f"{stub_dir}:{os.environ.get('PATH', '')}", **env},
+            capture_output=True, text=True)
+        self.assertEqual(
+            proc.returncode, 0,
+            f"the step's script exited {proc.returncode}: {proc.stderr.strip()}")
+        return proc
+
+
+class FreshnessGateEventPolicyTests(_StubbedShellStep, unittest.TestCase):
+    """On WHICH events the account audit's verdict is allowed to fail the run.
+
+    Two separate decisions guard the same downgrade and it is easy to conflate
+    them. `ADVISORY_STATUSES` in the runner decides which STATUS may ever be
+    downgraded — `reported-failure` and nothing else, so liveness stays fatal
+    however this workflow is invoked. What is asserted here is the other half:
+    on which EVENT the workflow asks for the downgrade at all. That half lives
+    in four lines of shell inside propagation.yml and in no Python this suite
+    can import, so those four lines are executed, once per trigger the workflow
+    declares.
+
+    The policy changed because the old one was measurably wrong. The flag used
+    to be added only on `pull_request`, which left a push to `main` carrying
+    the fatal verdict — and a post-merge push has nothing left to block, while
+    no commit in this repo can cause or clear claude.ai account-store drift. So
+    the red named no action any reader could take, and scheduled-run-health.yml
+    then re-reported it as a CI fault: runs 32444343915 and 32445416856
+    (2026-08-21) were both such pushes, and both were filed into issue #33. The
+    schedule stays fatal because it is the only surface that DOES anything with
+    the verdict — `report` files the tracking issue there.
+
+    Iterating the workflow's own trigger list rather than a copy of it is the
+    part that keeps working: a trigger added later is tested the day it is
+    added, and lands advisory, which is the side that blocks nothing.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+    FLAG = "--account-verdict-advisory"
+    # The only event on which the audit's own verdict may fail the run.
+    FATAL_EVENTS = ("schedule",)
+
+    def setUp(self):
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        self.triggers = doc.get("on", doc.get(True))
+        steps = [step for step in doc["jobs"]["gate"]["steps"]
+                 if self.FLAG in str(step.get("run") or "")]
+        self.assertEqual(
+            len(steps), 1,
+            "exactly one step in the `gate` job may build the advisory flag; "
+            f"found {len(steps)}. A second one is a second policy, and this "
+            "test would be linting whichever of them it happened to pick.")
+        self.step = steps[0]
+
+    def test_the_event_name_reaches_the_script_through_the_environment(self):
+        wired = sorted(name for name, value in (self.step.get("env") or {}).items()
+                       if str(value).strip() == "${{ github.event_name }}")
+        self.assertEqual(
+            wired, ["EVENT_NAME"],
+            "the event name must arrive through `env:` under exactly that "
+            f"name; found {wired}. The fleet rule is that `${{{{ }}}}` never "
+            "goes in a `run:` body, and the test below sets EVENT_NAME to "
+            "drive the script — a rename would leave it driving nothing.")
+        self.assertNotIn(
+            "${{", self.step["run"],
+            "no workflow expression may be interpolated into this script: the "
+            "rendered command is echoed into a public log and evaluated as "
+            "shell")
+
+    def _argv(self, event: str) -> list:
+        """The argv this step really hands the runner when `event` fired."""
+        stub_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, stub_dir, ignore_errors=True)
+        argv_out = stub_dir / "argv"
+        # The `\n` is ESCAPED: the stub must be `printf "%s\n" "$@"`. A bare
+        # newline inside the format string happens to work in sh and reads like
+        # a typo the next person straightens out into something that does not.
+        self._stub(stub_dir, "python3",
+                   'printf "%s\\n" "$@" > "$ARGV_OUT"\n')
+        self._bash(self.step["run"],
+                   {"EVENT_NAME": event, "ARGV_OUT": str(argv_out)}, stub_dir)
+        # Vacuity control, and it is not theoretical: if the script never
+        # reached the runner — a typo, an early `set -e` exit, a stub that did
+        # not run — there is no argv, and every "the flag is NOT passed"
+        # assertion below would pass without having measured anything at all.
+        self.assertTrue(
+            argv_out.is_file(),
+            f"the gate step's script never invoked python3 on {event!r}, so "
+            "there is no invocation to inspect")
+        argv = argv_out.read_text(encoding="utf-8").splitlines()
+        self.assertIn(
+            "--gate-only", argv,
+            f"the stub recorded something other than the freshness gate: {argv}")
+        return argv
+
+    def test_the_verdict_is_fatal_on_the_schedule_and_advisory_on_every_other_event(self):
+        declared = sorted(self.triggers)
+        # Named explicitly rather than left to the loop: `push` is the
+        # regression this test was written for, and a workflow that quietly
+        # lost the trigger would otherwise make its own case vacuous.
+        for required in ("pull_request", "push", "schedule"):
+            self.assertIn(required, declared,
+                          f"propagation.yml no longer declares {required!r}, "
+                          "so this policy is being asserted against a workflow "
+                          "that cannot exercise it")
+        for event in declared:
+            with self.subTest(event=event):
+                argv = self._argv(event)
+                if event in self.FATAL_EVENTS:
+                    self.assertNotIn(
+                        self.FLAG, argv,
+                        f"on {event!r} the audit's verdict must stay FATAL — it "
+                        "is the surface where `report` files the tracking "
+                        "issue, so a downgrade here means a drifted account "
+                        "store is reported to nobody")
+                else:
+                    self.assertIn(
+                        self.FLAG, argv,
+                        f"on {event!r} the audit's verdict must be advisory. No "
+                        "commit in this repo can cause or clear account-store "
+                        "drift, so a red here blocks nothing and names no "
+                        "action — runs 32444343915 and 32445416856 were "
+                        "exactly that, on `push`, and were re-reported as CI "
+                        "faults into issue #33")
+
+
+class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
+    """What the report step DOES with each pair of job results.
+
+    `DispatchAndDryRunTests` pins where the writes may sit; nothing there says
+    which one happens. Both defects this class was written for are behavioural
+    and both were invisible to a shape test:
+
+    * the body diagnosed a cause it could not know. It told the reader the
+      agentskills registry was the likely culprit, and every scheduled failure
+      this workflow has ever had — five of them, run 32452792300 included — was
+      the `gate` job on a `[reported-failure]` verdict with all five arms
+      green. The body now prints the two job results and describes both halves,
+      so the assertions are that the results really reach it and that the
+      pointer it offers for a red gate is the drift issue's REAL title.
+    * nothing ever closed the issue. A green run reaching the job is one half
+      (`test_the_report_job_is_scheduled_on_a_green_run_as_well`); this is the
+      other — the script, run with both results green, has to reach the close
+      call and not the create one.
+
+    `gh` is stubbed rather than the whole script paraphrased, so the branch
+    under test is the real one, including the dedupe substitution feeding it.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
+    DRIFT_WORKFLOW = ".github/workflows/account-store-drift.yml"
+
+    def setUp(self):
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        steps = doc["jobs"]["report"]["steps"]
+        self.assertEqual(len(steps), 1)
+        self.step = steps[0]
+        self.temp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.temp, ignore_errors=True)
+
+    def run_step(self, *, gate, arms_result, open_issue="", dry_run=""):
+        """(gh calls, stdout, the failure body, the recovery body).
+
+        The stub answers `gh issue list` with `open_issue` — the dedupe lookup
+        is a command substitution, so answering it is what selects the
+        create-vs-comment branch — and records the first three arguments of
+        every other call. Three arguments, not all of them: the close call
+        carries a whole issue body in `--comment`, and a log that swallowed it
+        would be asserting on prose rather than on which write happened.
+        """
+        stub_dir = self.temp / f"stub-{gate}-{arms_result}-{open_issue or 'none'}-{dry_run or 'live'}"
+        stub_dir.mkdir(parents=True)
+        runner_temp = stub_dir / "runner-temp"
+        runner_temp.mkdir()
+        gh_log = stub_dir / "gh.log"
+        self._stub(stub_dir, "gh",
+                   'if [ "$1" = "issue" ] && [ "$2" = "list" ]; then\n'
+                   '  printf "%s" "$GH_OPEN_ISSUE"\n'
+                   '  exit 0\n'
+                   'fi\n'
+                   'printf "%s %s %s\\n" "$1" "$2" "$3" >> "$GH_LOG"\n')
+        proc = self._bash(self.step["run"], {
+            "RUNNER_TEMP": str(runner_temp),
+            "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals",
+            "ISSUE_TITLE": "Scheduled propagation probes are failing",
+            "RUN_URL": "https://example.com/run/1",
+            "GATE_RESULT": gate,
+            "ARMS_RESULT": arms_result,
+            "PROBE_DRY_RUN": dry_run,
+            "GH_OPEN_ISSUE": open_issue,
+            "GH_LOG": str(gh_log),
+        }, stub_dir)
+        calls = (gh_log.read_text(encoding="utf-8").splitlines()
+                 if gh_log.is_file() else [])
+        failure = runner_temp / "propagation-failure.md"
+        recovered = runner_temp / "propagation-recovered.md"
+        # Vacuity control: the bodies are written by the first two statements
+        # of the script, so their absence means the run under test stopped
+        # before it decided anything and every assertion below is about nothing.
+        self.assertTrue(failure.is_file() and recovered.is_file(),
+                        "the step's script wrote no body files, so it did not "
+                        "run far enough to have taken any branch")
+        return (calls, proc.stdout,
+                failure.read_text(encoding="utf-8"),
+                recovered.read_text(encoding="utf-8"))
+
+    # ---- B1: the body reports which half failed, and diagnoses neither ----
+
+    def test_the_body_carries_both_job_results(self):
+        _, _, body, _ = self.run_step(gate="failure", arms_result="success")
+        self.assertIn("gate: failure", body)
+        self.assertIn("arms: success", body)
+        # The other way round too, so this cannot pass on a body that hard-codes
+        # the pair the first case happened to use.
+        _, _, body, _ = self.run_step(gate="success", arms_result="failure",
+                                      open_issue="7")
+        self.assertIn("gate: success", body)
+        self.assertIn("arms: failure", body)
+
+    def test_a_red_gate_is_pointed_at_the_drift_issue_and_not_at_the_registry(self):
+        """The misdiagnosis, as an assertion.
+
+        The title is compared against `run_account_drift_issue.TITLE` rather
+        than spelled out again here: that constant is what the drift reactor
+        actually files under, and a body naming a title nothing files is a
+        reader sent to search for an issue that does not exist. Two copies of
+        one identifier is one copy that eventually disagrees, and this is the
+        cheap place to find out.
+        """
+        _, _, body, _ = self.run_step(gate="failure", arms_result="success")
+        self.assertIn(run_account_drift_issue.TITLE, body)
+        self.assertIn(self.DRIFT_WORKFLOW, body)
+        self.assertTrue((REPO_ROOT / self.DRIFT_WORKFLOW).is_file(),
+                        "the body points at a workflow that is not in the repo")
+        # The registry still gets named — it is the right answer for a red ARM.
+        # What must not survive is the old body's claim that it is where to
+        # look FIRST regardless of which job went red.
+        self.assertIn("agentskills registry", body)
+
+    # ---- B2: which write each pair of results reaches ----
+
+    def test_a_red_run_with_no_open_issue_opens_one(self):
+        calls, _, _, _ = self.run_step(gate="failure", arms_result="success")
+        self.assertEqual(calls, ["issue create --repo"])
+
+    def test_a_red_run_comments_on_the_issue_already_open(self):
+        calls, _, _, _ = self.run_step(gate="failure", arms_result="failure",
+                                       open_issue="41")
+        self.assertEqual(calls, ["issue comment 41"])
+
+    def test_a_green_run_closes_the_issue_that_is_open(self):
+        # The defect this whole path exists for: before it, a repaired probe
+        # left its tracking issue open until a human noticed.
+        calls, _, _, recovered = self.run_step(gate="success",
+                                               arms_result="success",
+                                               open_issue="41")
+        self.assertEqual(calls, ["issue close 41"])
+        self.assertIn("green again", recovered)
+
+    def test_a_green_run_with_nothing_open_writes_nothing(self):
+        calls, out, _, _ = self.run_step(gate="success", arms_result="success")
+        self.assertEqual(calls, [])
+        self.assertIn("no tracking issue is open", out)
+
+    def test_a_half_green_run_is_not_a_close(self):
+        # `success() || failure()` schedules this job whenever ANY need failed,
+        # so both results have to be green before the close call is reached.
+        # Testing only the both-green case would pass against a script that
+        # closed on `gate` alone and threw away every red arm's report.
+        for gate, arms_result in (("success", "failure"), ("failure", "success")):
+            with self.subTest(gate=gate, arms=arms_result):
+                calls, _, _, _ = self.run_step(gate=gate, arms_result=arms_result,
+                                               open_issue="41")
+                self.assertEqual(calls, ["issue comment 41"])
+
+    def test_a_dry_run_reaches_the_lookup_and_writes_nothing(self):
+        """The dry-run bail-out from the behavioural side.
+
+        Its sibling in `DispatchAndDryRunTests` proves no write STATEMENT sits
+        above the bail-out. This proves the flag is actually consulted: a
+        script that built the guard correctly and compared the wrong variable
+        would satisfy the shape test and write on every dispatch.
+        """
+        calls, out, _, _ = self.run_step(gate="failure", arms_result="success",
+                                         open_issue="41", dry_run="true")
+        self.assertEqual(calls, [])
+        # Detection still ran — the dry run prints what the lookup found, which
+        # is the half of this step that has ever been wrong.
+        self.assertIn("open-issue=41", out)
+        self.assertIn("gate=failure", out)
 
 
 class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
