@@ -340,10 +340,13 @@ jobs:
           # WHICH HALF FAILED, carried in as DATA so the body can state it
           # without a shell branch. The body used to assert a cause — "the arms'
           # one unpinned input is the agentskills registry, so look there first"
-          # — and it has been wrong every time it was posted: all five scheduled
-          # failures this workflow has ever had were the `gate` job on a
-          # `[reported-failure]` verdict with all five arms green, run
-          # 32452792300 among them. A body that names the wrong repository sends
+          # — and it has been wrong on four of the five runs it was posted on:
+          # all five scheduled failures this workflow has ever had were the
+          # `gate` job on a `[reported-failure]` verdict, and on four of them
+          # every arm was green (run 32452792300 among those). The fifth,
+          # 32000114291 on 2026-08-17, had `arms (bootstrap-hook)` red
+          # alongside — which is exactly why the body reports the two results
+          # rather than picking one of them to blame. A body that names the wrong repository sends
           # the reader to audit a registry that never moved, and the drift it
           # was actually reporting outlives their patience. These two words are
           # printed verbatim and the prose below describes both halves, so it

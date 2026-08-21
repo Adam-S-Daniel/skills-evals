@@ -1663,6 +1663,23 @@ class DispatchAndDryRunTests(_DryRunStepContract, unittest.TestCase):
     # granted to `report` alone today, but nothing here pins that grant, so a
     # write added under a different job that declared its own is outside this
     # test's reach.
+    #
+    # NO CREDENTIAL CENSUS HERE, and that is the one-step rule doing the work
+    # rather than an omission. The sibling class needs
+    # `AccountDriftWorkflowTests._privilege_findings` because its job is six
+    # steps under one `issues: write` grant, so "which of them holds a token"
+    # is a real question — and its third part refuses a credential declared at
+    # `jobs.<id>.env:` or workflow scope, since an inherited `env:` arms every
+    # step at once. Neither scope can widen anything HERE: `env:` is inherited
+    # by the steps in scope, `report` has exactly one, and that step is the
+    # write step, which already declares `GH_TOKEN` legitimately. Measured
+    # rather than reasoned about: both splices were run against every test in
+    # this class and all 7 stayed OK, which is the correct result and not a
+    # gap. What a workflow-level `env:` WOULD reach is `gate` and `arms` — the
+    # other jobs, already declared out of scope above, and bounded in fact by
+    # the workflow-level `permissions: contents: read` that neither overrides.
+    # If `report` ever legitimately needs a second step, the census the
+    # sibling class already owns is what has to come with it.
 
     def select_step(self):
         # EVERY step, not just the scripted ones. Filtering to `run:` steps left
@@ -2134,9 +2151,9 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     `eval-results` before it can be made. The contract's usual "the job is one
     step" guarantee is therefore unavailable, and something has to replace it:
     `test_only_the_write_step_is_handed_a_privileged_environment` does, in the
-    two halves `_privilege_findings` applies.
+    three parts `_privilege_findings` applies.
 
-    Both halves are needed, and the first was shipped alone. It scans for a
+    All three are needed, and the first was shipped alone. It scans for a
     credential handed to a step — but only through `env:`, which is one of the
     three ways an action gets one. `uses: peter-evans/create-issue-from-file`
     takes its token through `with:`, and `uses: actions/github-script` takes
@@ -2144,12 +2161,27 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     `${{ github.token }}`, so a step carrying nothing but a `script:` writes
     the issue under this job's grant with no shell and no visible credential
     at all. Both were inserted into this workflow while the audit read `env:`
-    alone and the whole suite stayed green — which is why the second half is
+    alone and the whole suite stayed green — which is why the second part is
     not another pattern but a closed set: every step here is a `run:` step, or
     one of the two actions this suite has read, or a failure. An action nobody
     examined cannot be argued about from its `env:`.
 
-    Under those two, the structural claim finally holds: a step reaching the
+    The third part is about WHERE a credential is declared rather than which
+    step holds it, and it is the one route on which the first two report a
+    clean job while every step in it is armed. A step census is handed
+    `job["steps"]`, so it can only ever read step-level keys — but `env:` is
+    INHERITED, and a `jobs.react.env:` or a workflow-level `env:` carrying
+    `GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` hands one to all six steps in a
+    single line. The census then still reports exactly one carrier, because
+    the write step goes on declaring its own, and the audit says nothing at
+    all. So a credential at either scope is REFUSED rather than counted:
+    exactly one step here may write and it declares its own `env:`, which
+    leaves a broader declaration nothing to do except widen the blast radius.
+    Structural rather than live — no such block exists in this workflow today,
+    which is the difference between this part and the two above it: they were
+    written after an insertion walked past the audit, this one before.
+
+    Under those three, the structural claim finally holds: a step reaching the
     tracking issue needs a credential, `gh` and `curl` get one only from the
     environment, and every action that could be handed one implicitly is named
     here. A `run:` step spelling `gh issue create` with no token in its `env:`
@@ -2171,7 +2203,10 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     # step is the ONLY step carrying one" — it is a whitelist of one. It is
     # matched against `env:` AND `with:` values, because an action takes its
     # token through `with:` (`peter-evans/create-issue-from-file`'s `token:`)
-    # and never needs an `env:` entry to hold one.
+    # and never needs an `env:` entry to hold one. And it is matched at three
+    # SCOPES, not one: the same expression under `jobs.react.env:` or the
+    # workflow's own `env:` arms every step at once, and a census reading
+    # step-level keys cannot see either — see the class docstring's third part.
     PRIVILEGED_ENV_RE = re.compile(r"secrets\.|github\.token")
     # And the route no regex over the workflow can see: an action whose token
     # input is DEFAULTED for it. `actions/github-script` defaults
@@ -2199,17 +2234,29 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     # red instead of writing. That is the structural claim in the docstring,
     # not a gap — see it there for why naming the spelling would be worse.
     #
-    # Each route also names WHICH half has to catch it, because the two halves
-    # do not cover the same ground and "something complained" cannot tell them
+    # Each route also names WHICH part has to catch it, because the parts do
+    # not cover the same ground and "something complained" cannot tell them
     # apart. Both insertions are `uses:` steps, so the closed-set census names
     # both — which means the `with:` scan could be deleted outright and a
     # control that only asked whether the list was non-empty would stay green
-    # on the very route the scan was added for. Measured while writing this:
-    # reverting the scan to `("env",)` left all 17 tests in this class OK. So
-    # the halves are pinned one route each, and a revert of either is a red
-    # test rather than a silent loss of coverage.
+    # on the very route the scan was added for. That measurement is of the
+    # WEAKER control, taken while it was still the one standing here:
+    # reverting the scan to `("env",)` left all 17 tests in this class OK. It
+    # is NOT a property of the code as it stands, and reading it as one is the
+    # mistake the number invites — re-measured 2026-08-21 against the control
+    # below, the same revert reds the `with:` subTest and nothing else, out of
+    # 18. Which is the entire reason the complaint match was added. So the
+    # parts are pinned one route each, and a revert of any one is a red test
+    # rather than a silent loss of coverage.
     CREDENTIAL_COMPLAINT = "steps handed a credential explicitly"
     UNEXAMINED_COMPLAINT = "steps running an action this suite has not read"
+    # The third part's complaint, and it names the scope it fired on so the
+    # control below can hold the job route and the workflow route apart. They
+    # are two entries in one loop, not one check: deleting either entry has to
+    # red exactly one route. Two checks that can only be reverted together are
+    # one check wearing two names, which is the failure the comment above
+    # describes, a level down.
+    SCOPE_COMPLAINT = "a credential declared above step scope"
     WRITE_ROUTES_THAT_WALKED_PAST_THE_ENV_SCAN = (
         ("an action handed a token through `with:`",
          {"uses": "peter-evans/create-issue-from-file@" + "0" * 40,
@@ -2220,6 +2267,25 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
          {"uses": "actions/github-script@" + "0" * 40,
           "with": {"script": "github.rest.issues.create({...})"}},
          UNEXAMINED_COMPLAINT),
+    )
+
+    # The third part's routes: the SCOPE a credential is declared at, spliced
+    # into the mapping that owns it rather than into the step list. Neither is
+    # a `uses:` step, so the closed-set census cannot reach either, and the
+    # step census reads step-level keys only — which the control asserts
+    # directly by requiring it to stay SILENT on both. That is what makes this
+    # part load-bearing rather than a second opinion: delete it and the audit
+    # finds nothing at all on a job whose every step holds a token.
+    #
+    # (scope, what a reader would see in the diff). The value spliced in is
+    # the real spelling — `${{ secrets.GITHUB_TOKEN }}` is what a reviewer
+    # adding "just an env var" would reach for, and it is indistinguishable at
+    # a glance from the write step's own legitimate line.
+    SMUGGLED_CREDENTIAL = {"GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"}
+    SCOPE_ROUTES_THE_STEP_CENSUS_CANNOT_SEE = (
+        ("job", "an `env:` on jobs.react, inherited by all six steps"),
+        ("workflow", "a workflow-level `env:`, inherited by every job in the "
+                     "file — including the one holding `issues: write`"),
     )
 
     PROLOGUE_ALLOWLIST = (
@@ -2277,16 +2343,50 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
             granted, [self.JOB],
             f"exactly one job may raise `issues: write`; found {granted}")
 
-    def _privilege_findings(self, steps) -> list[str]:
-        """Every way `steps` breaks "only the write step can reach the issue".
+    def _privilege_findings(self, job, workflow) -> list[str]:
+        """Every way `job` breaks "only the write step can reach the issue".
+
+        Takes the JOB and WORKFLOW mappings rather than a list of steps,
+        because a credential does not have to be declared on a step to reach
+        one. `env:` is inherited, so `jobs.react.env:` and the workflow's own
+        `env:` each arm every step in scope — and an audit handed `job["steps"]`
+        is looking at the only place such a declaration is NOT. That is the
+        third part below, and it reports on mappings the earlier two never see.
 
         A list of complaints rather than a bare assertion, so the negative
-        control below can drive the SAME audit the real job is measured
+        controls below can drive the SAME audit the real job is measured
         against. A guard reimplemented in its own test proves the copy works.
         """
         findings = []
+        # ---- the scopes above the step ----
+        # Refused outright rather than counted as carriers, because there is
+        # no legitimate reading of one: exactly one step here may write and it
+        # declares its own `env:`, so a broader declaration cannot narrow
+        # anything and can only hand a token to the five steps that must not
+        # have one. Counting instead would also read strangely — a job-level
+        # entry is not "a step carrying a credential", it is every step at
+        # once, and a complaint listing all six names hides which line did it.
+        #
+        # `env:` alone at these scopes, deliberately. `with:` and `secrets:`
+        # are keys of a REUSABLE-WORKFLOW call (`jobs.<id>.uses:`), and a
+        # `react` job written that way carries no `steps:` at all — so
+        # `setUp`'s `self.doc["jobs"][self.JOB]["steps"]` raises before any of
+        # this runs, which is the loud failure that shape deserves. The
+        # `secrets: inherit` route needs a `workflow_call` trigger, and
+        # `test_the_workflow_declares_no_push_trigger` pins the trigger list
+        # to exactly ["schedule", "workflow_dispatch"] by equality.
+        for scope, mapping in (("job", job), ("workflow", workflow)):
+            declared = sorted(
+                name for name, value in (mapping.get("env") or {}).items()
+                if self.PRIVILEGED_ENV_RE.search(str(value)))
+            if declared:
+                findings.append(
+                    f"{self.SCOPE_COMPLAINT} ({scope} scope): {declared} — "
+                    "an `env:` here is inherited by every step in scope, so "
+                    "this arms the whole job in one line while the step "
+                    f"census below still reports [{self.WRITE_STEP!r}]")
         carriers = []
-        for step in steps:
+        for step in job["steps"]:
             # `env:` AND `with:`: an action takes its token through `with:`,
             # and reading only `env:` is how the routes named above walked
             # past this audit while the suite stayed green.
@@ -2304,7 +2404,8 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
         # which the scan above accounts for; an ACTION can be handed one
         # invisibly, so an action this suite has not read is a finding on
         # sight rather than something to reason about from its inputs.
-        unexamined = [step.get("name") or step.get("uses") for step in steps
+        unexamined = [step.get("name") or step.get("uses")
+                      for step in job["steps"]
                       if "run" not in step
                       and not str(step.get("uses") or "").startswith(
                           self.EXAMINED_ACTIONS)]
@@ -2322,11 +2423,15 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
         is spelled. That makes "one step carries a credential" a structural
         claim rather than a census of command names, which is the same reason
         the prologue guard is an allowlist and not a denylist — but the claim
-        only holds once "carries a credential" covers `with:` and once every
-        action that could be handed one implicitly has been named.
+        only holds once "carries a credential" covers `with:`, once every
+        action that could be handed one implicitly has been named, and once
+        the two scopes ABOVE the step — the job's `env:` and the workflow's —
+        are refused outright. A credential at either of those is handed to
+        every step in scope, so it is the one way "only the write step carries
+        one" can be false while a census of the steps says it is true.
         """
         self.assertEqual(
-            self._privilege_findings(self.job["steps"]), [],
+            self._privilege_findings(self.job, self.doc), [],
             "every step in this job runs under its `issues: write` grant, and "
             "this audit is the whole of what stops one of them reaching the "
             "tracking issue. A new step belongs in the examined set with a "
@@ -2343,13 +2448,13 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
         around. So each route is spliced into the REAL job here and the audit
         has to name it.
 
-        And each route is checked against the half that has to catch it, not
-        merely against the list being non-empty. The halves overlap on these
+        And each route is checked against the part that has to catch it, not
+        merely against the list being non-empty. Those parts overlap on these
         two insertions — both are `uses:` steps, so the closed-set census
         names both — and a control that accepted any complaint would therefore
         stay green with the `with:` scan deleted, on the route that scan
-        exists for. Asking WHICH guard fired is what makes the two halves
-        independently revertible-and-red.
+        exists for. Asking WHICH guard fired is what makes them independently
+        revertible-and-red.
 
         Hermetic and deterministic: the splice is a dict appended to a parsed
         document in memory. Nothing is written to the workflow file, so a
@@ -2357,7 +2462,8 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
         """
         for route, step, complaint in self.WRITE_ROUTES_THAT_WALKED_PAST_THE_ENV_SCAN:
             with self.subTest(route=route):
-                findings = self._privilege_findings(self.job["steps"] + [step])
+                spliced = dict(self.job, steps=self.job["steps"] + [step])
+                findings = self._privilege_findings(spliced, self.doc)
                 self.assertTrue(
                     findings,
                     f"{route} was spliced into the {self.JOB!r} job and the "
@@ -2368,11 +2474,68 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
                 self.assertTrue(
                     [f for f in findings if f.startswith(complaint)],
                     f"{route} was caught, but not by the guard that owns it: "
-                    f"expected a {complaint!r} finding and got {findings}. The "
-                    "other half happens to cover this route today, so the "
+                    f"expected a {complaint!r} finding and got {findings}. "
+                    "Another part happens to cover this route today, so the "
                     "guard named here could be deleted with the suite still "
                     "green — which is the coverage this control exists to "
                     "deny.")
+
+    def test_the_privilege_audit_refuses_a_credential_above_step_scope(self):
+        """The third part's control: a token nobody put on a step.
+
+        The two routes above are steps, and a step census can at least SEE
+        them. This one it cannot: `jobs.react.env:` and the workflow's own
+        `env:` are inherited by every step in scope, so one line arms all six
+        while the write step goes on declaring its own — and `carriers` comes
+        back as exactly `[WRITE_STEP]`, the value that means everything is
+        fine. That is asserted here directly rather than assumed: each subTest
+        requires the step census to stay SILENT on its splice. Delete the
+        scope refusal and this control does not fall back on another part, it
+        finds nothing at all, which is the point of writing it that way.
+
+        The job route and the workflow route are two entries in one loop and
+        are pinned one subTest each, for the same reason the control above
+        names its guards: two checks that can only be reverted together are
+        one check wearing two names.
+
+        Hermetic and deterministic, like the control above: `dict(mapping,
+        env=...)` builds a shallow copy of the parsed document and the
+        original is never touched, so nothing can leave a credential
+        declaration in the workflow file.
+        """
+        for scope, route in self.SCOPE_ROUTES_THE_STEP_CENSUS_CANNOT_SEE:
+            with self.subTest(scope=scope):
+                armed = {"job": self.job, "workflow": self.doc}[scope]
+                armed = dict(armed, env=dict(self.SMUGGLED_CREDENTIAL))
+                job = armed if scope == "job" else self.job
+                workflow = armed if scope == "workflow" else self.doc
+                findings = self._privilege_findings(job, workflow)
+                self.assertTrue(
+                    findings,
+                    f"{route} was spliced into the parsed workflow and the "
+                    f"audit found nothing. Every step in the {self.JOB!r} job "
+                    "then holds a credential under its `issues: write` grant "
+                    "— including the five that run before the write step, and "
+                    "so before the dry-run bail-out exists to withhold "
+                    f"anything: {self.SMUGGLED_CREDENTIAL!r}")
+                expected = f"{self.SCOPE_COMPLAINT} ({scope} scope)"
+                self.assertTrue(
+                    [f for f in findings if f.startswith(expected)],
+                    f"{route} was caught, but not by the guard that owns it: "
+                    f"expected an {expected!r} finding and got {findings}. A "
+                    "job-scope and a workflow-scope declaration are separate "
+                    "lines in separate mappings, and a control that accepted "
+                    "either complaint would stay green with one of them "
+                    "unread.")
+                self.assertEqual(
+                    [f for f in findings
+                     if f.startswith(self.CREDENTIAL_COMPLAINT)], [],
+                    "the step census was expected to report NOTHING on this "
+                    "splice — it reads step-level keys, and this credential "
+                    "is not on a step. If it starts complaining, the two "
+                    "parts have begun to overlap and the scope refusal could "
+                    "be deleted with this control still green: "
+                    f"{findings}")
 
     def test_every_checkout_in_the_job_declines_to_persist_a_credential(self):
         # A checkout that persists its credential leaves one in .git/config for

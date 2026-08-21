@@ -218,10 +218,15 @@ jobs:
           # second predicate is needed either way — but requiring BOTH an
           # exact title and the marker finds only issues this workflow has
           # already written, and on its first run there are none of those. The
-          # issue open right now was filed by hand, before the marker existed:
-          # its title is byte-equal and its body carries no marker, so the
-          # intersection missed it and the run would have filed a duplicate
-          # for the same drift — exactly the pile the marker exists to prevent.
+          # issue open right now was filed by hand, and for the window that
+          # mattered its body carried no marker at all: title byte-equal,
+          # marker absent, so the intersection missed it and the first run
+          # would have filed a duplicate for the same drift — exactly the pile
+          # the marker exists to prevent. (It has since acquired the marker,
+          # written into it by the Routine's own fired session on
+          # 2026-08-21T05:04:53Z. That closes this particular window and
+          # changes nothing about the rule: the NEXT hand-filed issue, and any
+          # issue predating a marker change, lands in the same state.)
           #
           # The two halves cover each other's blind spot. Title-equality ADOPTS
           # a hand-filed issue; the marker is what survives someone rewording
