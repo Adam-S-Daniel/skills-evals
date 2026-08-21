@@ -21,6 +21,7 @@ harness/
   run_canary.py            # runner: probes the guidance-bridge canary against the real CLI
   run_propagation.py       # runner: Tier-2 propagation arms + the Tier-3 freshness gate
   run_account_audit.py     # runner: Tier-3 claude.ai account-store audit
+  run_account_drift_issue.py  # open/close/none for the Tier-3 tracking issue
   scorers/
     objective.py           # scriptable assertions on the output workspace
     judge.py               # LLM-as-judge rubric scoring
@@ -210,15 +211,34 @@ and what that binding cost, is recorded in
 
 **A scheduled probe that fails notifies nobody, and one that stops firing
 notifies nobody twice over.** So the credential-free freshness gate reads that
-published result and goes red when it is missing, stale or failing — on every
-pull request and on `propagation.yml`'s own daily schedule, so a Routine that
-stopped firing surfaces within a day rather than whenever someone next opens a
-pull request. It is armed: the first published result carried the bootstrap
-marker, so the gate enforces rather than waiting, and it currently reports the
-account store's four drifted skills — the store's real state, not a fault in
-the probe. The Tier-2 probes answer the same objection for themselves: when
-a scheduled run of them fails, the workflow opens one tracking issue rather
-than leaving it to whoever next reads the Actions tab.
+published result on every pull request and on `propagation.yml`'s own daily
+schedule — a Routine that stopped firing surfaces within a day rather than
+whenever someone next opens a pull request. What it does with what it finds is
+split in two, and the split is deliberate. **Liveness is fatal everywhere:** a
+result that is missing, stale or unreadable means the audit is not reaching us
+at all, and catching that is the gate's whole reason to exist. **The audit's own
+verdict is advisory everywhere except the schedule:** a red verdict means the
+claude.ai account store has drifted, which no commit in this repo caused and
+none can clear, so reddening every pull request and every post-merge push on it
+only teaches people to scroll past a check that names no action they can take.
+The schedule stays fatal because it is the one surface that acts on the verdict
+— `evals/propagation/ROUTINE.md` carries the measurements behind both halves.
+
+Acting on it is `.github/workflows/account-store-drift.yml`, which reads the
+same published artifact on its own daily schedule, calls the same freshness
+verdict the gate calls, and keeps **one** tracking issue in step with it: opened
+when the store drifts, edited in place for as long as the episode lasts, and
+closed automatically by the first audit that reads `pass`. Repair still needs a
+person with a browser — only a signed-in surface can write that store — so the
+issue body carries the route rather than a runbook nobody can execute here. The
+gate is armed: the first published result carried the bootstrap marker, so it
+enforces rather than waiting, and as of 2026-08-21 it reports one drifted skill
+out of ten checked — the store's real state, not a fault in the probe. The
+Tier-2 probes answer the same objection for themselves: when a scheduled run of
+them fails, the workflow opens one tracking issue rather than leaving it to
+whoever next reads the Actions tab, and closes that issue again when a later
+scheduled run comes back green, so an open issue means "broken now" rather than
+"broke once".
 
 ## Tests
 

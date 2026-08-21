@@ -316,6 +316,13 @@ jobs:
     # would be a knob connected to nothing — which reads as coverage and is
     # not. A dispatch left at the default now exercises this job all the way
     # through the dedupe lookup and stops one line short of the write.
+    #
+    # Admitting the dispatch here does NOT admit it to the CLOSE call: the
+    # shell below fences that to `schedule`, because the `gate` job measures
+    # the account verdict under a weaker policy on every other event and a
+    # dispatch would otherwise retract a finding the schedule filed. The
+    # asymmetry belongs in the shell rather than in this `if:` — a dispatch
+    # still has to reach the job to file, to comment, and to dry-run.
     if: >-
       (success() || failure())
       && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -416,10 +423,10 @@ jobs:
           # Both bodies are printed for the same reason: whichever way the real
           # run would go, the text it would have posted has been seen.
           if [ "$PROBE_DRY_RUN" = "true" ]; then
-            echo "DRY RUN: gate=$GATE_RESULT arms=$ARMS_RESULT open-issue=${number:-<none>}"
+            echo "DRY RUN: event=$GITHUB_EVENT_NAME gate=$GATE_RESULT arms=$ARMS_RESULT open-issue=${number:-<none>}"
             echo "--- body it would have posted had the probes failed ---"
             cat "$RUNNER_TEMP/propagation-failure.md"
-            echo "--- comment it would have posted closing on a green run ---"
+            echo "--- comment a green SCHEDULED run would have posted, closing it ---"
             cat "$RUNNER_TEMP/propagation-recovered.md"
             exit 0
           fi
@@ -429,7 +436,29 @@ jobs:
             # files a fresh issue instead of reopening one under a month of
             # resolved history — and an issue list that only holds live findings
             # is the only kind anyone keeps reading.
-            if [ -n "$number" ]; then
+            #
+            # AND THE CLOSE IS SCHEDULE-ONLY, because the issue is OPENED under
+            # one policy and would otherwise be CLOSED under a weaker one. The
+            # `gate` job hands the account audit's verdict `--account-verdict-
+            # advisory` on every event EXCEPT the schedule, so a
+            # `[reported-failure]` that reds the 05:41 run and files this issue
+            # comes back green on a dispatch having measured nothing new — the
+            # dispatch downgraded the very verdict the issue reports. Closing
+            # there retracts a live finding on the strength of a run that never
+            # tested it, and the next morning's schedule is fatal again, finds
+            # no OPEN issue, and files a fresh one: the comment history this
+            # close path exists to keep is stranded on the issue it just shut.
+            # Filing stays allowed on every event this job runs on — a red
+            # under the weaker policy is red under the stricter one too — so
+            # only the retraction is fenced. `GITHUB_EVENT_NAME` is a default
+            # runner variable, like the `GITHUB_REPOSITORY` the lookup above
+            # already reads, so consulting it puts no workflow expression in
+            # this script — not even in a comment, which GitHub expands like
+            # any other text here — and `set -u` turns a misspelling into a
+            # loud failure rather than a silently skipped guard.
+            if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
+              echo "the probes passed, but only a scheduled run may close the tracking issue"
+            elif [ -n "$number" ]; then
               gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
                 --reason completed \
                 --comment "$(cat "$RUNNER_TEMP/propagation-recovered.md")"

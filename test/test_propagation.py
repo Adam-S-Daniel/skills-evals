@@ -1324,6 +1324,27 @@ class _DryRunStepContract:
                 "which is how cms-platform shipped an opt-out that fired "
                 "unconditionally while reporting a healthy result")
 
+    def test_no_workflow_expression_is_interpolated_into_the_script(self):
+        """The fleet rule, and it is not only about the obvious spelling.
+
+        `${{ }}` is substituted into a `run:` body BEFORE the shell sees any of
+        it, so the rendered command is echoed into a public log and evaluated
+        as shell — which is why every value these steps read arrives through
+        `env:` instead. `FreshnessGateEventPolicyTests` already pins that for
+        the gate step; the two steps that hold `issues: write` had no such
+        assertion, and the gap is not theoretical: a comment added here while
+        fixing an unrelated defect explained the rule by QUOTING it, and an
+        empty expression in a shell comment is a workflow-level syntax error
+        that no test, no shell parse and no reading of the diff caught. GitHub
+        does not know `#` starts a comment — it expands the whole block.
+        """
+        self.assertNotIn(
+            "${{", self.step["run"],
+            f"the {self.JOB!r} job's scripted step interpolates a workflow "
+            "expression into its `run:` body. Values reach the script through "
+            "`env:` — including inside comments, which are expanded like every "
+            "other line here.")
+
     def _first(self, lines, predicate, what, after=-1):
         """Index of the first matching line after `after`, or a failure.
 
@@ -1869,6 +1890,12 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
       (`test_the_report_job_is_scheduled_on_a_green_run_as_well`); this is the
       other — the script, run with both results green, has to reach the close
       call and not the create one.
+    * and then the close reached too far. The `gate` job downgrades the account
+      audit's verdict to advisory on every event but the schedule, so the issue
+      was opened under a fatal policy and closed under a weaker one: a dispatch
+      turned the verdict off, read green, and retracted the finding the 05:41
+      run had filed. Which EVENT the step is running under is therefore an
+      input to this suite, not ambient context — hence `run_step(event=…)`.
 
     `gh` is stubbed rather than the whole script paraphrased, so the branch
     under test is the real one, including the dedupe substitution feeding it.
@@ -1886,7 +1913,8 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         self.temp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.temp, ignore_errors=True)
 
-    def run_step(self, *, gate, arms_result, open_issue="", dry_run=""):
+    def run_step(self, *, gate, arms_result, open_issue="", dry_run="",
+                 event="schedule"):
         """(gh calls, stdout, the failure body, the recovery body).
 
         The stub answers `gh issue list` with `open_issue` — the dedupe lookup
@@ -1895,8 +1923,19 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         every other call. Three arguments, not all of them: the close call
         carries a whole issue body in `--comment`, and a log that swallowed it
         would be asserting on prose rather than on which write happened.
+
+        `event` DEFAULTS TO THE SCHEDULE rather than to the empty string, and
+        the default is doing work: the schedule is the surface every write here
+        is designed for, so the cases below keep meaning what they meant before
+        the event became an input. It is a real parameter because the step's
+        outcome now depends on it — `_bash` builds a CLOSED environment, so a
+        case that forgot to pass one would die on `set -u` rather than quietly
+        measuring whichever event the ambient session happened to be running
+        under.
         """
-        stub_dir = self.temp / f"stub-{gate}-{arms_result}-{open_issue or 'none'}-{dry_run or 'live'}"
+        stub_dir = (self.temp /
+                    f"stub-{event}-{gate}-{arms_result}-"
+                    f"{open_issue or 'none'}-{dry_run or 'live'}")
         stub_dir.mkdir(parents=True)
         runner_temp = stub_dir / "runner-temp"
         runner_temp.mkdir()
@@ -1914,6 +1953,7 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
             "RUN_URL": "https://example.com/run/1",
             "GATE_RESULT": gate,
             "ARMS_RESULT": arms_result,
+            "GITHUB_EVENT_NAME": event,
             "PROBE_DRY_RUN": dry_run,
             "GH_OPEN_ISSUE": open_issue,
             "GH_LOG": str(gh_log),
@@ -1990,6 +2030,54 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         self.assertEqual(calls, [])
         self.assertIn("no tracking issue is open", out)
 
+    def test_a_green_dispatch_never_closes_the_issue_the_schedule_filed(self):
+        """The close is fenced to the event whose verdict is FATAL.
+
+        `gate` passes `--account-verdict-advisory` on every event except the
+        schedule, so the two halves of this issue's lifecycle were measured
+        under different policies: the 05:41 run reads a `[reported-failure]`
+        account verdict, goes red and files the issue, while a dispatch of the
+        same commit downgrades that same verdict, comes back green and — before
+        this guard — reached `gh issue close`. The dispatch retracted a finding
+        it had switched off rather than one it had disproved, and because the
+        dedupe lookup is `--state open`, the next morning's schedule filed a
+        BRAND-NEW issue instead of finding the closed one: the comment history
+        the close path was added to preserve, stranded.
+
+        Driven through the real script rather than read off its shape, because
+        a guard can be written correctly and compare the wrong variable —
+        which is the same reason `test_a_dry_run_reaches_the_lookup_and_writes_
+        nothing` executes rather than greps.
+        """
+        calls, out, _, _ = self.run_step(gate="success", arms_result="success",
+                                         open_issue="51",
+                                         event="workflow_dispatch")
+        self.assertEqual(
+            calls, [],
+            "a green workflow_dispatch must write NOTHING: it measured the "
+            "account verdict under the advisory policy, so it has not shown "
+            "the drift that opened the issue is gone")
+        self.assertIn("only a scheduled run may close", out)
+        # And the schedule still does close, so the guard cannot pass by
+        # fencing the close off from every event including its own.
+        calls, _, _, _ = self.run_step(gate="success", arms_result="success",
+                                       open_issue="51", event="schedule")
+        self.assertEqual(calls, ["issue close 51"])
+
+    def test_a_red_dispatch_still_files_and_still_comments(self):
+        # The fence is on the RETRACTION only. A red under the dispatch's
+        # weaker policy is red under the schedule's stricter one too, so a
+        # dispatch that goes red has found something real and must still be
+        # able to say so — fencing the whole job to `schedule` would be the
+        # over-correction that makes `dry_run=false` a knob wired to nothing.
+        calls, _, _, _ = self.run_step(gate="failure", arms_result="success",
+                                       event="workflow_dispatch")
+        self.assertEqual(calls, ["issue create --repo"])
+        calls, _, _, _ = self.run_step(gate="failure", arms_result="success",
+                                       open_issue="51",
+                                       event="workflow_dispatch")
+        self.assertEqual(calls, ["issue comment 51"])
+
     def test_a_half_green_run_is_not_a_close(self):
         # `success() || failure()` schedules this job whenever ANY need failed,
         # so both results have to be green before the close call is reached.
@@ -2009,13 +2097,21 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         script that built the guard correctly and compared the wrong variable
         would satisfy the shape test and write on every dispatch.
         """
+        # On the dispatch, because that is the only event a dry run can happen
+        # on: `inputs` is empty everywhere else, so PROBE_DRY_RUN renders as ''
+        # on the schedule and the literal "true" can only come from the button.
         calls, out, _, _ = self.run_step(gate="failure", arms_result="success",
-                                         open_issue="41", dry_run="true")
+                                         open_issue="41", dry_run="true",
+                                         event="workflow_dispatch")
         self.assertEqual(calls, [])
         # Detection still ran — the dry run prints what the lookup found, which
-        # is the half of this step that has ever been wrong.
+        # is the half of this step that has ever been wrong. The event is in
+        # that line too, now that it is one of the facts deciding the outcome:
+        # a reader of a dry run should not have to know the close is
+        # schedule-only to work out that this one would not have closed.
         self.assertIn("open-issue=41", out)
         self.assertIn("gate=failure", out)
+        self.assertIn("event=workflow_dispatch", out)
 
 
 class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
@@ -2037,10 +2133,29 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     one, because the decision needs a checkout, a Python and a clone of
     `eval-results` before it can be made. The contract's usual "the job is one
     step" guarantee is therefore unavailable, and something has to replace it:
-    `test_only_the_write_step_is_handed_a_privileged_environment` does, by
-    requiring every other step in the job to run with no credential at all —
-    `gh` with no token in its environment refuses to call the API, so a write
-    smuggled into one of those steps fails rather than lands.
+    `test_only_the_write_step_is_handed_a_privileged_environment` does, in the
+    two halves `_privilege_findings` applies.
+
+    Both halves are needed, and the first was shipped alone. It scans for a
+    credential handed to a step — but only through `env:`, which is one of the
+    three ways an action gets one. `uses: peter-evans/create-issue-from-file`
+    takes its token through `with:`, and `uses: actions/github-script` takes
+    one through neither: its `github-token` input DEFAULTS to
+    `${{ github.token }}`, so a step carrying nothing but a `script:` writes
+    the issue under this job's grant with no shell and no visible credential
+    at all. Both were inserted into this workflow while the audit read `env:`
+    alone and the whole suite stayed green — which is why the second half is
+    not another pattern but a closed set: every step here is a `run:` step, or
+    one of the two actions this suite has read, or a failure. An action nobody
+    examined cannot be argued about from its `env:`.
+
+    Under those two, the structural claim finally holds: a step reaching the
+    tracking issue needs a credential, `gh` and `curl` get one only from the
+    environment, and every action that could be handed one implicitly is named
+    here. A `run:` step spelling `gh issue create` with no token in its `env:`
+    is deliberately NOT a finding — `gh` refuses to call the API without one,
+    so it reds the run rather than writing, and pinning it would be the
+    denylist-of-spellings this suite argues against everywhere else.
     """
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "account-store-drift.yml"
@@ -2051,11 +2166,61 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     # lasts, and CLOSED when the next audit reads pass. A `gh issue comment`
     # here would be the daily-pile failure the reactor exists to avoid.
     WRITE_SPELLINGS = ("gh issue create", "gh issue edit", "gh issue close")
-    # Any workflow expression that hands a step a credential. Read as a
-    # denylist it would be weak; read as this test uses it — "the write step is
-    # the ONLY step carrying one" — it is a whitelist of one, and the shapes it
-    # names are the only two ways a GitHub token reaches a step at all.
+    # Any workflow expression that hands a step a credential EXPLICITLY. Read
+    # as a denylist it would be weak; read as this test uses it — "the write
+    # step is the ONLY step carrying one" — it is a whitelist of one. It is
+    # matched against `env:` AND `with:` values, because an action takes its
+    # token through `with:` (`peter-evans/create-issue-from-file`'s `token:`)
+    # and never needs an `env:` entry to hold one.
     PRIVILEGED_ENV_RE = re.compile(r"secrets\.|github\.token")
+    # And the route no regex over the workflow can see: an action whose token
+    # input is DEFAULTED for it. `actions/github-script` defaults
+    # `github-token` to `${{ github.token }}`, so a step consisting of nothing
+    # but `script:` writes an issue under this job's grant. The only defence
+    # against that is knowing which actions run here, so this is a closed set
+    # rather than a pattern — an unrecognised `uses:` is a finding.
+    #
+    # Matched by `owner/name@` so a pin bump stays green while a swap to a
+    # different action does not. Neither entry is claimed to be token-free:
+    # `actions/checkout`'s own `token` input defaults to `github.token` too,
+    # which is exactly what
+    # `test_every_checkout_in_the_job_declines_to_persist_a_credential` covers
+    # by requiring `persist-credentials: false`. The claim is narrower and
+    # checkable — these two are read, and nothing else is.
+    EXAMINED_ACTIONS = ("actions/checkout@", "actions/setup-python@")
+    # Insertions that really reach the tracking issue, each one placed in this
+    # job during review while the audit read `env:` alone — and the whole suite
+    # stayed OK on every one of them. `_privilege_findings` has to name each,
+    # and the negative control below is what proves it still does; an audit
+    # nobody has watched refuse anything is not an audit.
+    #
+    # A bare `run: gh issue create …` with no `env:` is deliberately absent:
+    # it carries no credential, so `gh` refuses the API call and the run goes
+    # red instead of writing. That is the structural claim in the docstring,
+    # not a gap — see it there for why naming the spelling would be worse.
+    #
+    # Each route also names WHICH half has to catch it, because the two halves
+    # do not cover the same ground and "something complained" cannot tell them
+    # apart. Both insertions are `uses:` steps, so the closed-set census names
+    # both — which means the `with:` scan could be deleted outright and a
+    # control that only asked whether the list was non-empty would stay green
+    # on the very route the scan was added for. Measured while writing this:
+    # reverting the scan to `("env",)` left all 17 tests in this class OK. So
+    # the halves are pinned one route each, and a revert of either is a red
+    # test rather than a silent loss of coverage.
+    CREDENTIAL_COMPLAINT = "steps handed a credential explicitly"
+    UNEXAMINED_COMPLAINT = "steps running an action this suite has not read"
+    WRITE_ROUTES_THAT_WALKED_PAST_THE_ENV_SCAN = (
+        ("an action handed a token through `with:`",
+         {"uses": "peter-evans/create-issue-from-file@" + "0" * 40,
+          "with": {"token": "${{ secrets.GITHUB_TOKEN }}",
+                   "title": "x", "content-filepath": "body.md"}},
+         CREDENTIAL_COMPLAINT),
+        ("an action whose token input is defaulted for it",
+         {"uses": "actions/github-script@" + "0" * 40,
+          "with": {"script": "github.rest.issues.create({...})"}},
+         UNEXAMINED_COMPLAINT),
+    )
 
     PROLOGUE_ALLOWLIST = (
         ("shell options", r"set -euo pipefail", {}),
@@ -2112,6 +2277,43 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
             granted, [self.JOB],
             f"exactly one job may raise `issues: write`; found {granted}")
 
+    def _privilege_findings(self, steps) -> list[str]:
+        """Every way `steps` breaks "only the write step can reach the issue".
+
+        A list of complaints rather than a bare assertion, so the negative
+        control below can drive the SAME audit the real job is measured
+        against. A guard reimplemented in its own test proves the copy works.
+        """
+        findings = []
+        carriers = []
+        for step in steps:
+            # `env:` AND `with:`: an action takes its token through `with:`,
+            # and reading only `env:` is how the routes named above walked
+            # past this audit while the suite stayed green.
+            values = " ".join(
+                str(value)
+                for source in ("env", "with")
+                for value in (step.get(source) or {}).values())
+            if self.PRIVILEGED_ENV_RE.search(values):
+                carriers.append(step.get("name") or step.get("uses"))
+        if carriers != [self.WRITE_STEP]:
+            findings.append(
+                f"{self.CREDENTIAL_COMPLAINT}: {carriers} — expected "
+                f"exactly [{self.WRITE_STEP!r}]")
+        # The closed set. A `run:` step reaches the API only with a credential,
+        # which the scan above accounts for; an ACTION can be handed one
+        # invisibly, so an action this suite has not read is a finding on
+        # sight rather than something to reason about from its inputs.
+        unexamined = [step.get("name") or step.get("uses") for step in steps
+                      if "run" not in step
+                      and not str(step.get("uses") or "").startswith(
+                          self.EXAMINED_ACTIONS)]
+        if unexamined:
+            findings.append(
+                f"{self.UNEXAMINED_COMPLAINT}: {unexamined}"
+                f" — the examined set is {list(self.EXAMINED_ACTIONS)}")
+        return findings
+
     def test_only_the_write_step_is_handed_a_privileged_environment(self):
         """What replaces "the job is exactly one step" — see the class docstring.
 
@@ -2119,19 +2321,58 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
         step with no credential cannot write to the tracking issue however it
         is spelled. That makes "one step carries a credential" a structural
         claim rather than a census of command names, which is the same reason
-        the prologue guard is an allowlist and not a denylist.
+        the prologue guard is an allowlist and not a denylist — but the claim
+        only holds once "carries a credential" covers `with:` and once every
+        action that could be handed one implicitly has been named.
         """
-        carriers = []
-        for step in self.job["steps"]:
-            values = " ".join(str(v) for v in (step.get("env") or {}).values())
-            if self.PRIVILEGED_ENV_RE.search(values):
-                carriers.append(step.get("name") or step.get("uses"))
         self.assertEqual(
-            carriers, [self.WRITE_STEP],
-            "exactly one step in this job may be handed a credential, and it "
-            f"is the write step; found {carriers}. Every step here runs under "
-            "the job's `issues: write` grant, so this is the whole of what "
-            "stops another step reaching the issue.")
+            self._privilege_findings(self.job["steps"]), [],
+            "every step in this job runs under its `issues: write` grant, and "
+            "this audit is the whole of what stops one of them reaching the "
+            "tracking issue. A new step belongs in the examined set with a "
+            "reason, or it does not belong in this job.")
+
+    def test_the_privilege_audit_refuses_each_route_that_once_walked_past_it(self):
+        """The negative control: watch the audit refuse, one route each.
+
+        `test_only_the_write_step_is_handed_a_privileged_environment` passes on
+        a clean job — and it also passed on a job carrying either insertion
+        below, for as long as it read `env:` alone. A guard measured only
+        against input it accepts cannot tell "nothing is wrong" from "nothing
+        is being checked", which is the failure this whole suite is built
+        around. So each route is spliced into the REAL job here and the audit
+        has to name it.
+
+        And each route is checked against the half that has to catch it, not
+        merely against the list being non-empty. The halves overlap on these
+        two insertions — both are `uses:` steps, so the closed-set census
+        names both — and a control that accepted any complaint would therefore
+        stay green with the `with:` scan deleted, on the route that scan
+        exists for. Asking WHICH guard fired is what makes the two halves
+        independently revertible-and-red.
+
+        Hermetic and deterministic: the splice is a dict appended to a parsed
+        document in memory. Nothing is written to the workflow file, so a
+        crashed run cannot leave an attack step in the repo.
+        """
+        for route, step, complaint in self.WRITE_ROUTES_THAT_WALKED_PAST_THE_ENV_SCAN:
+            with self.subTest(route=route):
+                findings = self._privilege_findings(self.job["steps"] + [step])
+                self.assertTrue(
+                    findings,
+                    f"{route} was spliced into the {self.JOB!r} job and the "
+                    "audit found nothing. It runs under the job's `issues: "
+                    "write` grant, needs no shell, and sits entirely outside "
+                    "the dry-run bail-out — so even a dry dispatch would "
+                    f"write: {step!r}")
+                self.assertTrue(
+                    [f for f in findings if f.startswith(complaint)],
+                    f"{route} was caught, but not by the guard that owns it: "
+                    f"expected a {complaint!r} finding and got {findings}. The "
+                    "other half happens to cover this route today, so the "
+                    "guard named here could be deleted with the suite still "
+                    "green — which is the coverage this control exists to "
+                    "deny.")
 
     def test_every_checkout_in_the_job_declines_to_persist_a_credential(self):
         # A checkout that persists its credential leaves one in .git/config for
