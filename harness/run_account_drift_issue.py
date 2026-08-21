@@ -2,15 +2,16 @@
 """Turn the Tier-3 account audit's published verdict into ONE tracking issue.
 
 `evals/propagation/ROUTINE.md` step 5 asks the Routine-fired session to open,
-edit and close this issue. It never has and it never can: those sessions carry
-no `mcp__*` tool and this environment has no `gh` CLI, so the fired session has
-no route to the GitHub API at all (measured — see ROUTINE.md, layer 3). The
-issue lifecycle therefore has to belong to something that CAN reach the API,
-which is CI. ROUTINE.md's own design note ("A second route the issue does not
-consider") reaches the same conclusion and names the one trigger that a
-CI-skip token in the publish message does not suppress: a `schedule`. That is
-what `.github/workflows/account-store-drift.yml` runs, and this is the part of
-it that decides anything.
+edit and close this issue. It never has, and CI owns the lifecycle instead —
+but NOT because the fired session cannot reach GitHub. That reason was written
+here first and it does not survive measurement; the workflow's header carries
+the measurement and the reasons that do hold, which are about keeping the thing
+that measures separate from the thing that reports, and about a decision being
+diffable and testable rather than living in a prompt. Read it there rather than
+restating it here, and do not restore the old sentence.
+
+This is the part of `.github/workflows/account-store-drift.yml` that decides
+anything.
 
 The whole file is a PURE function of three published inputs plus a clock:
 `latest.json`, the `.bootstrapped` marker, and `evals/propagation/fixture.yaml`.
@@ -20,6 +21,12 @@ only thing that can reach the issue is a single scripted step below a dry-run
 bail-out. That split is deliberate: the interesting logic is the one that has
 to be testable, and a decision that needs a token to exercise is a decision
 nobody exercises.
+
+Which is also why what this file returns is a POLICY (`open` / `close` /
+`none`) and not a `gh` subcommand. Whether an issue is already open is not
+knowable without a credential, so `create`-vs-`edit` was never a decision this
+side of the split could make; an earlier cut that tried anyway is what left the
+close path unreachable — see `decide`.
 
 It keys every branch on `account_store.freshness_verdict`, which is also what
 `run_propagation.py`'s freshness gate keys on. Duplicating the status rules
@@ -32,13 +39,12 @@ Usage:
     python3 harness/run_account_drift_issue.py evals/propagation \\
         --account-latest ../eval-results/propagation/account/latest.json \\
         --account-marker ../eval-results/propagation/.bootstrapped \\
-        --existing-issue-number "" --body-out "$RUNNER_TEMP/drift.md"
+        --body-out "$RUNNER_TEMP/drift.md"
 
 Exit codes: 0 always for a decision — "no issue is called for" is a finding,
 not an error, and a runner that reds on it teaches people to ignore the run.
-2 only for an invocation that could not be understood at all (no fixture, a
-non-numeric issue number), because that is a broken caller rather than a
-verdict.
+2 only for an invocation that could not be understood at all (no fixture),
+because that is a broken caller rather than a verdict.
 """
 
 from __future__ import annotations
@@ -118,16 +124,29 @@ def read_summary(latest: Path | None) -> dict | None:
     return summary if isinstance(summary, dict) else None
 
 
-def decide(status: str, *, existing_issue: int | None) -> str:
-    """freshness status -> what to do with the ONE tracking issue.
+def decide(status: str) -> str:
+    """freshness status -> the POLICY for the ONE tracking issue.
 
-    `update` rather than `create` whenever an issue is already open, and the
-    workflow EDITS THAT BODY IN PLACE rather than commenting on it. A drift
-    episode lasted four days the last time one happened (ROUTINE.md), and a
-    daily job that files a fresh issue — or even a fresh comment — for a
-    steady-state red produces a pile nobody reads. The failure mode is not
-    noise for its own sake: a notification stream that is 90% the same fact
-    gets filtered, and a filtered channel is silence with extra steps.
+    Three words and deliberately not five: `open` (the store has drifted, so
+    an issue should exist and say so), `close` (it is repaired, so no issue
+    should be open), `none` (say nothing at all). Which `gh` call satisfies
+    `open` — create a new issue, or edit the one already open — depends on a
+    number that only a credentialed caller can look up, so the workflow's
+    single privileged step maps policy x number onto the call.
+
+    THAT SPLIT IS THE FIX FOR A REAL DEFECT, and the shape it replaced looks
+    more helpful, so here is why it is not. This function used to take the
+    open issue's number and return `create` / `update` / `close` / `none`.
+    Nothing upstream of the credentialed step can know that number, so the
+    workflow passed the empty string on every run — and `fresh` with no number
+    returned `none`, which the write step reads as "nothing to do" and exits
+    on before it ever looks the issue up. The close half of the lifecycle was
+    therefore unreachable in every run that would ever happen: the issue
+    opened on the first red, was edited daily while the drift lasted, and then
+    stayed open forever, under a body promising "the next audit that reads
+    `pass` closes it". Returning a policy is what makes that sentence true —
+    the part that can be decided without a credential is decided here, where
+    it is tested, and the part that cannot is not pretended about.
 
     The four liveness statuses do NOTHING here, which is the least obvious
     line in this file and the one most likely to be "fixed" later:
@@ -145,12 +164,14 @@ def decide(status: str, *, existing_issue: int | None) -> str:
       other; one owner each is why this returns "none".
     """
     if status == "reported-failure":
-        return "update" if existing_issue else "create"
+        return "open"
     if status == "fresh":
-        # Nothing open means nothing to close. Reporting `close` here would
-        # hand the workflow a write it cannot perform and make every green
-        # day look, in the log, like a day something was cleaned up.
-        return "close" if existing_issue else "none"
+        # `close` on every green day, including the ones where nothing is
+        # open. That is not a write on a quiet day: the write step's `close`
+        # arm finds no open issue and prints that it found none. Suppressing
+        # the policy here instead is what made this branch unreachable before
+        # — the suppression needs a fact this side of the split cannot have.
+        return "close"
     return "none"
 
 
@@ -175,7 +196,7 @@ def drifted_skills(summary: dict | None) -> list:
 
 
 def render_body(status: str, message: str, summary: dict | None,
-                *, action: str) -> str:
+                *, policy: str) -> str:
     """The issue body. ALWAYS starts with the marker — see MARKER.
 
     Everything rendered here is already inside the published artifact on the
@@ -193,19 +214,23 @@ def render_body(status: str, message: str, summary: dict | None,
     drifted = drifted_skills(summary)
 
     lines = [MARKER, ""]
-    if action == "close":
+    if policy == "close":
+        # Posted as the closing comment, and only when an issue was actually
+        # open — on a green day with nothing open the workflow prints that it
+        # found none and this body goes nowhere. Rendering it either way keeps
+        # the renderer free of a branch that only one of the two ever reaches.
         lines += [
             "The Tier-3 account-store audit reads **pass** again: the account "
             "copies claude.ai serves match the registry, so this tracking "
             "issue is closed automatically.",
             "",
         ]
-    elif action == "none":
+    elif policy == "none":
         # Never posted by the workflow — `none` means it writes nothing at all.
         # Rendered anyway so a dry run prints a body for every verdict and the
         # renderer has no branch that only production ever reaches.
         lines += [
-            f"No issue action is called for: the freshness verdict is "
+            f"No issue write is called for: the freshness verdict is "
             f"`{status}`, which says the audit is not reaching us rather than "
             "anything about the account store. `propagation.yml`'s freshness "
             "gate owns that failure.",
@@ -245,7 +270,7 @@ def render_body(status: str, message: str, summary: dict | None,
                   f"{cell(f.get('detail'))} |" for f in findings]
         lines.append("")
 
-    if action in ("create", "update"):
+    if policy == "open":
         lines += [
             "### How to repair it",
             "",
@@ -288,22 +313,6 @@ def write_outputs(values: dict) -> None:
             handle.write(f"{name}={value}\n")
 
 
-def parse_issue_number(raw: str, parser: argparse.ArgumentParser) -> int | None:
-    """"" means no issue is open. Anything else must be a number.
-
-    The empty string is the workflow's normal case, not an error: the lookup
-    runs in the `gh` step because that is the only step holding a credential.
-    A non-numeric value is a broken caller — silently reading it as "none"
-    would file a duplicate issue every morning while looking healthy.
-    """
-    text = (raw or "").strip().lstrip("#")
-    if not text:
-        return None
-    if not text.isdigit():
-        parser.error(f"--existing-issue-number must be a number or empty, got {raw!r}")
-    return int(text)
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("eval_dir", type=Path,
@@ -313,8 +322,10 @@ def main(argv=None) -> int:
     parser.add_argument("--account-marker", type=Path, default=None,
                         help="propagation/.bootstrapped — absent means the "
                              "audit has never published, which is not a fault")
-    parser.add_argument("--existing-issue-number", default="",
-                        help="number of the open tracking issue, or empty")
+    # No `--existing-issue-number` flag, deliberately, and it is not an
+    # oversight to be restored: an earlier version took one, no caller could
+    # supply it, and the decision it fed silently lost its `close` branch. The
+    # issue number belongs to the one step that can look it up.
     parser.add_argument("--body-out", type=Path, default=None,
                         help="where to render the issue body (default: "
                              "$RUNNER_TEMP, else the system temp dir)")
@@ -323,7 +334,6 @@ def main(argv=None) -> int:
                              "so the freshness arithmetic is deterministic")
     args = parser.parse_args(argv)
 
-    existing = parse_issue_number(args.existing_issue_number, parser)
     try:
         fixture = load_fixture(args.eval_dir)
     except (OSError, yaml.YAMLError) as exc:
@@ -340,25 +350,24 @@ def main(argv=None) -> int:
         max_age_days=int(fixture["account_audit_max_age_days"]),
         bootstrapped=bool(args.account_marker and args.account_marker.exists()))
 
-    action = decide(status, existing_issue=existing)
-    body = render_body(status, message, summary, action=action)
+    policy = decide(status)
+    body = render_body(status, message, summary, policy=policy)
     body_out = args.body_out or (
         Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
         / "account-drift-issue.md")
     body_out.parent.mkdir(parents=True, exist_ok=True)
     body_out.write_text(body, encoding="utf-8")
 
-    write_outputs({"action": action, "title": TITLE, "marker": MARKER,
+    write_outputs({"policy": policy, "title": TITLE, "marker": MARKER,
                    "body_file": str(body_out)})
 
     # Counts and a verdict word only. No skill names, no detail strings, no
     # paths under $HOME: the workflow's log is public, and this line exists to
     # say whether the reactor did anything, not to restate the artifact.
-    print(f"account-drift-issue [{status}]: action={action} "
+    print(f"account-drift-issue [{status}]: policy={policy} "
           f"checked={len((summary or {}).get('checked') or [])} "
           f"skipped={len((summary or {}).get('skipped') or [])} "
-          f"drifted={len(drifted_skills(summary))} "
-          f"open-issue={existing if existing else 'none'}")
+          f"drifted={len(drifted_skills(summary))}")
     return EXIT_OK
 
 

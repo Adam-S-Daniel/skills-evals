@@ -26,6 +26,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -2146,8 +2147,8 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
     def test_the_decision_is_made_before_the_write_step(self):
         # The write step reads `steps.decide.outputs.*`. If the decider ran
         # after it — or stopped being a step at all — those expressions render
-        # as empty strings, `$ISSUE_ACTION` is neither "none" nor a known
-        # action, and the `case` falls through silently: a daily green run that
+        # as empty strings, the policy variable is neither "none" nor a known
+        # policy, and the `case` falls through silently: a daily green run that
         # never writes anything.
         names = [s.get("name") or s.get("uses") for s in self.job["steps"]]
         self.assertIn(self.DECIDE_STEP, names)
@@ -2156,13 +2157,393 @@ class AccountDriftWorkflowTests(_DryRunStepContract, unittest.TestCase):
         self.assertEqual(decide.get("id"), "decide",
                          "the write step reads steps.decide.outputs.*, so the "
                          "decider's `id:` is part of the wiring")
-        for output in ("title", "marker", "action", "body_file"):
+        for output in ("title", "marker", "policy", "body_file"):
             self.assertIn(
                 f"steps.decide.outputs.{output}",
                 " ".join(str(v) for v in (self.step.get("env") or {}).values()),
                 f"the write step must read {output} from the decider rather "
                 "than restating it — two copies of one identifier is one copy "
                 "that eventually disagrees")
+
+    # ---- the header's one measurable claim ----
+    #
+    # The claim, lowercased: a fired session cannot reach the GitHub API. The
+    # first draft of this workflow's header gave that as the reason CI owns
+    # the issue lifecycle, and called it measured. What was measured was the
+    # premises — a fired session carries no `mcp__*` tool, and that
+    # environment has no `gh` binary — and the conclusion does not follow from
+    # them: `Bash` is in every Routine's allowlist and the agent proxy
+    # attaches a credential to outbound HTTPS, so a plain curl with no
+    # Authorization header of its own answered 200 for this repository on
+    # 2026-08-21. The reasons that survive are about ownership.
+    REFUTED_CLAIM = "no route to the github api"
+
+    def _header_paragraphs(self):
+        """The leading `#` block, as paragraphs split on blank comment lines."""
+        paragraphs, current = [], []
+        for raw in self.WORKFLOW.read_text(encoding="utf-8").splitlines():
+            if not raw.startswith("#"):
+                break
+            text = raw.lstrip("#").strip()
+            if text:
+                current.append(text)
+            elif current:
+                paragraphs.append(" ".join(current))
+                current = []
+        if current:
+            paragraphs.append(" ".join(current))
+        self.assertGreater(
+            len(paragraphs), 3,
+            "this workflow's header carries the whole argument for its own "
+            "existence; a parse that found almost none of it would let the "
+            "assertion below pass without reading anything")
+        return paragraphs
+
+    def test_the_header_never_repeats_the_refuted_claim_without_its_refutation(self):
+        """A false sentence in a header is the one the next person quotes.
+
+        Not a ban on the words — the header is allowed, and expected, to name
+        the claim in order to say it was tried and does not hold. What it may
+        not do is state it and leave it standing. So any paragraph that says
+        the fired session cannot reach the API must carry the measurement that
+        refuted it, in the same paragraph, where nobody can quote one without
+        the other.
+        """
+        paragraphs = self._header_paragraphs()
+        for paragraph in paragraphs:
+            if self.REFUTED_CLAIM not in paragraph.lower():
+                continue
+            self.assertIn(
+                "200", paragraph,
+                "the paragraph above states that the fired session has no "
+                "route to the GitHub API, and does not say that the claim was "
+                "measured false. Its premises hold and its conclusion does "
+                "not — `Bash` is in the Routine allowlist and the agent "
+                "proxy credentials outbound HTTPS, so an unauthenticated curl "
+                "answered 200 for this repository. State it with its "
+                "refutation, or not at all.")
+        self.assertTrue(
+            any("published artifact" in p.lower() or "reviewable" in p.lower()
+                for p in paragraphs),
+            "the header must still say WHY CI owns this lifecycle. The reasons "
+            "that survive measurement are about ownership — the thing that "
+            "measures must not also be the thing that reports, and a prompt is "
+            "not reviewable, diffable or testable — not about what a fired "
+            "session is capable of.")
+
+    # ---- the policy the decider emits, and what the `case` does with it ----
+    #
+    # Everything below reads the WIRING out of the workflow rather than
+    # restating it: which variable the `case` switches on, which step output
+    # feeds that variable, and which flags the decide step passes. That is not
+    # ceremony. The defect these were written for was invisible to every test
+    # that named the pieces itself — `decide` had a `close` branch and the
+    # `case` had a `close)` arm, both correct in isolation, and the workflow
+    # invoked the decider in the one way that could never produce `close`.
+    # Only something that follows the wire from one end to the other sees it.
+
+    CASE_RE = re.compile(r'^\s*case\s+"\$(\w+)"\s+in\s*$')
+    ARM_RE = re.compile(r"^([^()#;]+)\)$")
+
+    def _case_arms(self):
+        """(variable the `case` switches on, {arm pattern: [command lines]}).
+
+        COMMENTS ARE DROPPED from every arm body, which is the point of
+        parsing at all: an arm whose only mention of `gh issue close` is in a
+        comment explaining what it would do closes nothing, and "the word
+        appears in the step" is the check that let a dead close path ship.
+        """
+        lines = self.step["run"].splitlines()
+        variable, arms, arm = None, {}, None
+        for raw in lines:
+            line = raw.strip()
+            if variable is None:
+                found = self.CASE_RE.match(raw)
+                if found:
+                    variable = found.group(1)
+                continue
+            if line == "esac":
+                break
+            if not line or line.startswith("#"):
+                continue
+            if arm is None:
+                found = self.ARM_RE.match(line)
+                self.assertIsNotNone(
+                    found, f"unparsed line between `case` arms: {line!r}. This "
+                    "parse is what every assertion below stands on, so it "
+                    "fails rather than skipping what it did not understand.")
+                arm = found.group(1).strip()
+                self.assertNotIn(arm, arms, f"two `{arm})` arms; the second is dead")
+                arms[arm] = []
+                continue
+            if line == ";;":
+                arm = None
+                continue
+            arms[arm].append(line)
+        self.assertIsNotNone(
+            variable, "the write step must map the policy onto a `gh` call in "
+            'a `case "$VAR" in` — nothing else here is parseable, and an '
+            "unparseable step is one this suite cannot check at all")
+        self.assertIsNone(arm, f"the `{arm})` arm is never closed with `;;`")
+        self.assertTrue(arms, "a `case` with no arms handles no policy")
+        return variable, arms
+
+    def _bail_out_value(self):
+        """The one policy the step handles by exiting instead of by an arm."""
+        variable, _ = self._case_arms()
+        pattern = re.compile(r'if \[ "\$%s" = "(\w+)" \]; then' % variable)
+        found = [pattern.search(line) for line in self.step["run"].splitlines()]
+        hits = [m.group(1) for m in found if m]
+        self.assertEqual(
+            len(hits), 1,
+            f"expected exactly one `${variable}` bail-out test; found {hits}")
+        return hits[0]
+
+    def _policy_output_name(self):
+        """Which decider output feeds the variable the `case` switches on."""
+        variable, _ = self._case_arms()
+        expression = str((self.step.get("env") or {}).get(variable, ""))
+        found = re.search(r"steps\.decide\.outputs\.(\w+)", expression)
+        self.assertIsNotNone(
+            found,
+            f"the `case` switches on ${variable}, which the step's env must "
+            f"take from a decider output; it is {expression!r}")
+        return found.group(1)
+
+    def _run_the_decider_as_the_workflow_does(self, summary):
+        """The decider's step outputs, invoked with the workflow's own flags.
+
+        The argv is READ OUT of the decide step — only the three paths and a
+        fixed `--now` are substituted, every flag is copied verbatim — so a
+        flag that changes what the decider can conclude is exercised here
+        rather than described. `--existing-issue-number ""` was such a flag:
+        harmless-looking, impossible for any caller to fill in, and it
+        collapsed the `fresh` verdict to "do nothing" on every run.
+        """
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        latest = root / "propagation" / "account" / "latest.json"
+        latest.parent.mkdir(parents=True)
+        latest.write_text(json.dumps(summary), encoding="utf-8")
+        marker = root / "propagation" / ".bootstrapped"
+        marker.touch()
+        body, outputs = root / "body.md", root / "step-outputs.txt"
+
+        names = [s.get("name") or s.get("uses") for s in self.job["steps"]]
+        decide = self.job["steps"][names.index(self.DECIDE_STEP)]
+        script = re.sub(r"\\\n\s*", " ", decide["run"])
+        calls = [line.strip() for line in script.splitlines()
+                 if "run_account_drift_issue.py" in line
+                 and not line.strip().startswith("#")]
+        self.assertEqual(len(calls), 1,
+                         f"expected one decider invocation; found {calls}")
+        tokens = shlex.split(calls[0])
+        self.assertTrue(
+            tokens[1].endswith("run_account_drift_issue.py"),
+            f"expected `python3 harness/run_account_drift_issue.py …`; got {tokens[:2]}")
+        substitutions = {"--account-latest": str(latest),
+                         "--account-marker": str(marker),
+                         "--body-out": str(body)}
+        argv, rest, positionals = [], tokens[2:], 0
+        while rest:
+            token, rest = rest[0], rest[1:]
+            if token in substitutions:
+                argv += [token, substitutions[token]]
+                rest = rest[1:]
+            elif token.startswith("--"):
+                argv.append(token)
+                if rest and not rest[0].startswith("--"):
+                    argv.append(rest[0])
+                    rest = rest[1:]
+            else:
+                positionals += 1
+                argv.append(str(EVAL_DIR))
+        self.assertEqual(positionals, 1,
+                         "the decider takes exactly one positional, the eval dir")
+        # `--now` is the suite's, not the workflow's: this file runs on no
+        # clock. Everything else above came out of the workflow.
+        argv += ["--now", NOW.strftime("%Y-%m-%dT%H:%M:%SZ")]
+
+        with mock.patch.dict(os.environ, {"GITHUB_OUTPUT": str(outputs)}), \
+                contextlib.redirect_stdout(io.StringIO()):
+            code = run_account_drift_issue.main(argv)
+        self.assertEqual(code, 0, "a verdict is a finding, never an exit code")
+        return dict(line.split("=", 1) for line
+                    in outputs.read_text(encoding="utf-8").splitlines() if line)
+
+    def _published(self, status):
+        return {"schema": 1, "probe": "propagation/account", "status": status,
+                "generated_at": datetime.fromtimestamp(
+                    NOW.timestamp() - 0.5 * 86400,
+                    timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "registry_ref": "0" * 40, "checked": ["fixture-alpha"],
+                "skipped": [], "findings": []}
+
+    def test_the_close_policy_reaches_gh_issue_close(self):
+        """A repaired store must arrive at `gh issue close`, through the wire.
+
+        THE REGRESSION TEST FOR A LIFECYCLE WITH NO CLOSE IN IT. `decide` used
+        to be handed the open issue's number and return `close` only when one
+        was supplied. Nothing upstream of the credentialed step can supply
+        one, so the workflow passed `--existing-issue-number ""` on every run;
+        a `fresh` verdict therefore returned `none`, and the write step's
+        first line exits on `none`. The issue opened on the first red and
+        would have stayed open through every green day afterwards, below a
+        body that promises "the next audit that reads `pass` closes it".
+
+        Everything the decider is told here comes out of the decide step, and
+        the arm is found by parsing the `case` — because both halves were
+        individually correct while the whole was dead, and only running one
+        into the other shows it.
+        """
+        outputs = self._run_the_decider_as_the_workflow_does(
+            self._published("pass"))
+        output_name = self._policy_output_name()
+        self.assertIn(
+            output_name, outputs,
+            f"the write step reads `steps.decide.outputs.{output_name}`, which "
+            f"the decider never writes; it writes {sorted(outputs)}")
+        policy = outputs[output_name]
+
+        _, arms = self._case_arms()
+        closing = [pattern for pattern, commands in arms.items()
+                   if policy in [alt.strip() for alt in pattern.split("|")]
+                   and any("gh issue close" in command for command in commands)]
+        self.assertEqual(
+            len(closing), 1,
+            f"a store that reads `pass` produced policy {policy!r} from the "
+            "decide step's own invocation, and no `case` arm matching "
+            f"{policy!r} runs `gh issue close` — arms: {sorted(arms)}, "
+            f"bail-out: {self._bail_out_value()!r}. Nothing closes the "
+            "tracking issue, so it outlives the drift it reports while its "
+            "body promises the next passing audit will close it.")
+
+    def test_every_policy_the_decider_emits_is_handled_by_the_write_step(self):
+        """No policy without an arm, and no arm without a policy.
+
+        Both directions, because both are silent. A policy with no arm falls
+        through the `case` and the run goes green having written nothing; an
+        arm no policy can produce is dead shell that reads as coverage.
+        """
+        variable, arms = self._case_arms()
+        alternatives = {alt.strip() for pattern in arms
+                        for alt in pattern.split("|")}
+        emitted = {run_account_drift_issue.decide(status) for status, _, _
+                   in AccountDriftIssueDecisionTests.TABLE}
+        self.assertTrue(emitted, "the status table produced no policy at all")
+        bail_out = self._bail_out_value()
+        self.assertIn(
+            bail_out, emitted,
+            f"the step exits early on ${variable} == {bail_out!r}, which the "
+            "decider never emits — so the early exit is unreachable and every "
+            "policy falls through to the `case`")
+        self.assertEqual(
+            emitted - {bail_out}, alternatives,
+            f"the decider emits {sorted(emitted)} and the `case` handles "
+            f"{sorted(alternatives)} beside the {bail_out!r} bail-out. A "
+            "policy with no arm is a green run that writes nothing; an arm no "
+            "policy reaches is dead shell that looks like coverage.")
+
+    # ---- the dedupe lookup's jq filter, RUN rather than read ----
+
+    def _dedupe_jq_filter(self):
+        script = re.sub(r"\\\n\s*", " ", self.step["run"])
+        lookups = [line.strip() for line in script.splitlines()
+                   if "gh issue list" in line and not line.strip().startswith("#")]
+        self.assertEqual(len(lookups), 1,
+                         f"expected one dedupe lookup; found {lookups}")
+        # Single-quoted by shell convention and containing no `'` of its own,
+        # so this is exact rather than approximate.
+        found = re.findall(r"--jq\s+'([^']*)'", lookups[0])
+        self.assertEqual(
+            len(found), 1,
+            "the dedupe lookup must pass exactly one single-quoted `--jq` "
+            f"program, which is what the tests below execute; found {found}")
+        return found[0]
+
+    def _dedupe_match(self, issues):
+        """What the workflow's own jq filter returns for `issues`.
+
+        RUN, not matched as text. The filter shipped with `and` where it needed
+        `or` — a perfectly well-formed program that finds only issues this
+        workflow has already written — and every string assertion anyone would
+        write about it passes on both versions. `jq` is on the runner and in
+        the dev container, so its absence is a failure rather than a skip:
+        skipping would leave the one assertion that has ever caught anything
+        here unperformed, which is how the `and` shipped.
+        """
+        jq = shutil.which("jq")
+        self.assertIsNotNone(
+            jq, "`jq` is required to execute the workflow's dedupe filter; a "
+                "text comparison passes on a filter that finds the wrong "
+                "issues, which is the defect these tests exist for")
+        proc = subprocess.run(
+            [jq, "-r", self._dedupe_jq_filter()],
+            input=json.dumps(issues), text=True, capture_output=True,
+            # The identifiers the workflow puts in this environment are the
+            # decider's constants, so the fixture is matched against the same
+            # two strings production matches against.
+            env={"PATH": os.environ.get("PATH", ""),
+                 "ISSUE_TITLE": run_account_drift_issue.TITLE,
+                 "ISSUE_MARKER": run_account_drift_issue.MARKER})
+        self.assertEqual(proc.returncode, 0,
+                         f"the dedupe filter is not valid jq: {proc.stderr.strip()}")
+        return proc.stdout.strip()
+
+    def test_the_dedupe_filter_adopts_an_issue_filed_before_the_marker_existed(self):
+        """The regression test for a filter that would file a duplicate.
+
+        The tracking issue open on this repo right now was filed by hand
+        before the marker was invented: its title is byte-equal to the
+        decider's and its body carries no marker at all. Requiring BOTH — the
+        filter as first written — finds nothing in that shape, so the very
+        first real run takes the create branch and files a SECOND issue for
+        the same drift, which is precisely the pile the marker exists to
+        prevent. Either half alone must be enough to adopt it.
+        """
+        self.assertEqual(
+            self._dedupe_match([{"title": run_account_drift_issue.TITLE,
+                                 "body": "filed by hand, no marker in here",
+                                 "number": 48}]),
+            "48",
+            "an open issue whose title matches exactly must be adopted even "
+            "with no marker in its body — the first edit rewrites that body "
+            "and the issue acquires the marker, which is how the two halves "
+            "converge")
+
+    def test_the_dedupe_filter_still_matches_a_marker_under_a_reworded_title(self):
+        # The other half, and the reason the marker exists: a title someone
+        # edits by hand stops matching, and the marker is what survives it.
+        self.assertEqual(
+            self._dedupe_match([{
+                "title": "Account store drift — needs a ZIP upload (reworded)",
+                "body": f"{run_account_drift_issue.MARKER}\n\nsome body",
+                "number": 61}]),
+            "61")
+
+    def test_the_dedupe_filter_matches_neither_an_unrelated_issue_nor_nothing(self):
+        """The vacuity control for both tests above.
+
+        A filter that returned every issue would pass them and adopt whatever
+        the title search happened to return first — `--search` is full text,
+        so near-misses do come back. And a filter that returned nothing at all
+        would look like "no issue is open", which the step reads as "file a
+        new one".
+        """
+        self.assertEqual(
+            self._dedupe_match([{"title": "Account skill store: add a probe",
+                                 "body": "unrelated request", "number": 7}]),
+            "",
+            "a near-miss the title search returned must not be adopted; the "
+            "step would then edit somebody else's issue every morning")
+        self.assertEqual(self._dedupe_match([]), "",
+                         "no open issue must read as empty, not as an error")
+        # A body key absent or null is the shape gh returns for an empty body;
+        # `.body // ""` is what keeps that from erroring the whole lookup out.
+        self.assertEqual(
+            self._dedupe_match([{"title": run_account_drift_issue.TITLE,
+                                 "body": None, "number": 12}]),
+            "12")
 
 
 class PublishMessageAndPushTriggerTests(unittest.TestCase):
@@ -2447,8 +2828,12 @@ class AccountDriftIssueDecisionTests(unittest.TestCase):
             "checked": list(checked), "skipped": list(skipped),
             "findings": [dict(f) for f in findings]}), encoding="utf-8")
 
-    def react(self, *, existing="", marker=True, eval_dir=None):
-        """(outputs, body, status line) for one run of the decider."""
+    def react(self, *, marker=True, eval_dir=None):
+        """(outputs, body, status line) for one run of the decider.
+
+        No issue number goes in, because the decider takes none — see
+        `test_the_decider_refuses_to_be_told_an_issue_number`.
+        """
         if self.outputs.exists():
             self.outputs.unlink()
         if marker:
@@ -2456,7 +2841,6 @@ class AccountDriftIssueDecisionTests(unittest.TestCase):
         argv = [str(eval_dir or EVAL_DIR),
                 "--account-latest", str(self.latest),
                 "--account-marker", str(self.marker),
-                "--existing-issue-number", existing,
                 "--body-out", str(self.body),
                 "--now", NOW.strftime("%Y-%m-%dT%H:%M:%SZ")]
         printed = io.StringIO()
@@ -2469,37 +2853,87 @@ class AccountDriftIssueDecisionTests(unittest.TestCase):
                        if line)
         return outputs, self.body.read_text(encoding="utf-8"), printed.getvalue()
 
-    # (freshness status, how to produce it, action with no open issue,
-    #  action with one open). Every status `freshness_verdict` can return.
+    # (freshness status, how to produce it, the POLICY it must produce). Every
+    # status `freshness_verdict` can return, and the policy vocabulary is the
+    # whole of it: `open`, `close`, `none`. There is no second column any more
+    # — the old table had one action for "an issue is open" and another for
+    # "none is", which is a fact this side of the split cannot have and the
+    # reason `close` was unreachable in production. What satisfies each policy
+    # is the workflow's business, asserted in `AccountDriftWorkflowTests`.
     TABLE = (
-        ("not-yet-bootstrapped", dict(marker=False), "none", "none"),
-        ("missing", dict(), "none", "none"),
-        ("unreadable", dict(publish=dict(generated="the other day")),
-         "none", "none"),
-        ("stale", dict(publish=dict(status="fail", days_ago=11)), "none", "none"),
+        ("not-yet-bootstrapped", dict(marker=False), "none"),
+        ("missing", dict(), "none"),
+        ("unreadable", dict(publish=dict(generated="the other day")), "none"),
+        ("stale", dict(publish=dict(status="fail", days_ago=11)), "none"),
         # The row the whole carve-out is for: a PASS nobody has seen for eleven
         # days is not evidence the drift is over, so it must not close.
-        ("stale", dict(publish=dict(status="pass", days_ago=11)), "none", "none"),
-        ("reported-failure", dict(publish=dict(status="fail")), "create", "update"),
-        ("fresh", dict(publish=dict(status="pass")), "none", "close"),
+        ("stale", dict(publish=dict(status="pass", days_ago=11)), "none"),
+        ("reported-failure", dict(publish=dict(status="fail")), "open"),
+        ("fresh", dict(publish=dict(status="pass")), "close"),
     )
 
-    def test_every_freshness_status_maps_to_the_documented_action(self):
-        for status, setup, alone, with_issue in self.TABLE:
-            for existing, expected in (("", alone), ("48", with_issue)):
-                with self.subTest(status=status, existing=existing):
-                    self.latest.unlink(missing_ok=True)
-                    if "publish" in setup:
-                        self.publish(**setup["publish"])
-                    self.marker.unlink(missing_ok=True)
-                    outputs, _, line = self.react(
-                        existing=existing, marker=setup.get("marker", True))
-                    self.assertIn(
-                        f"[{status}]", line,
-                        f"this row means to exercise {status!r}; the fixture "
-                        f"produced {line.strip()!r} instead, so the action "
-                        "below would be asserted against the wrong branch")
-                    self.assertEqual(outputs["action"], expected)
+    def test_every_freshness_status_maps_to_the_documented_policy(self):
+        for status, setup, expected in self.TABLE:
+            with self.subTest(status=status):
+                self.latest.unlink(missing_ok=True)
+                if "publish" in setup:
+                    self.publish(**setup["publish"])
+                self.marker.unlink(missing_ok=True)
+                outputs, _, line = self.react(marker=setup.get("marker", True))
+                self.assertIn(
+                    f"[{status}]", line,
+                    f"this row means to exercise {status!r}; the fixture "
+                    f"produced {line.strip()!r} instead, so the policy "
+                    "below would be asserted against the wrong branch")
+                self.assertEqual(outputs["policy"], expected)
+
+    def test_a_repaired_store_asks_for_the_issue_to_be_closed(self):
+        """The regression test for a close path nothing could ever reach.
+
+        `decide` used to take the open issue's number and return
+        `close` only when one was passed. No caller could pass one — the
+        lookup needs a credential and lives a step later — so the workflow
+        passed the empty string on every run, `fresh` returned `none`, and the
+        write step exited at its first line every green day. The issue that
+        opened on the first red would have stayed open forever, under a body
+        promising that the next passing audit closes it.
+
+        So: a fresh `pass`, nothing else supplied, must ask for a close. The
+        companion assertion — that the policy this returns actually reaches
+        `gh issue close` in the workflow — is
+        `AccountDriftWorkflowTests.test_the_close_policy_reaches_gh_issue_close`,
+        because a policy no arm handles is the same silence in a new place.
+        """
+        self.publish(status="pass")
+        outputs, body, line = self.react()
+        self.assertIn("[fresh]", line)
+        self.assertEqual(
+            outputs["policy"], "close",
+            "a repaired store must ask for the tracking issue to be closed "
+            "whether or not one is open — whether one is open is not knowable "
+            "here, and pretending it was is what stranded this branch")
+        self.assertIn("closed automatically", body,
+                      "the closing comment is what the reader sees; a `close` "
+                      "that renders the drift body would close the issue with "
+                      "the text saying it is still broken")
+
+    def test_the_decider_refuses_to_be_told_an_issue_number(self):
+        """The flag whose only possible value was the empty string.
+
+        Pinned as a rejection rather than left to review. Reintroducing it is
+        the natural "improvement" — it looks like it moves create-vs-update
+        into tested code — and it is what silently removed the close branch
+        last time, because the number it asks for cannot exist before the
+        credentialed step that looks it up.
+        """
+        self.publish(status="pass")
+        with contextlib.redirect_stderr(io.StringIO()), \
+                self.assertRaises(SystemExit) as caught:
+            run_account_drift_issue.main(
+                [str(EVAL_DIR), "--account-latest", str(self.latest),
+                 "--existing-issue-number", "48",
+                 "--body-out", str(self.body), "--now", "2026-08-14T12:00:00Z"])
+        self.assertEqual(caught.exception.code, 2)
 
     def test_the_liveness_statuses_are_left_to_the_freshness_gate(self):
         """A restatement of four table rows, as the place the reason lives.
@@ -2512,34 +2946,25 @@ class AccountDriftIssueDecisionTests(unittest.TestCase):
         """
         for status in ("stale", "missing", "unreadable", "not-yet-bootstrapped"):
             with self.subTest(status=status):
-                self.assertEqual(
-                    run_account_drift_issue.decide(status, existing_issue=48),
-                    "none")
-                self.assertEqual(
-                    run_account_drift_issue.decide(status, existing_issue=None),
-                    "none")
+                self.assertEqual(run_account_drift_issue.decide(status), "none")
 
-    def test_an_open_issue_turns_create_into_update(self):
-        # The edit-in-place rule. A drift episode ran four days the last time
-        # one happened (ROUTINE.md); a daily job that files a fresh issue for a
-        # steady-state red produces a pile that gets filtered, and a filtered
-        # channel is silence with extra steps.
+    def test_a_drifted_store_asks_for_the_issue_to_be_open(self):
+        # The edit-in-place rule lives in the workflow's `open` arm, because
+        # only that step knows whether an issue is already there. What this
+        # side owes it is the policy: a red audit means an issue should exist
+        # and say so. A drift episode ran four days the last time one happened
+        # (ROUTINE.md); the arm edits rather than comments so a steady-state
+        # red does not become a notification stream people filter.
         self.publish(status="fail",
                      findings=[{"skill": "fixture-alpha", "kind": "content-drift",
                                 "detail": "SKILL.md differs"}])
-        self.assertEqual(self.react(existing="")[0]["action"], "create")
-        self.assertEqual(self.react(existing="48")[0]["action"], "update")
-        self.assertEqual(self.react(existing="#48")[0]["action"], "update",
-                         "a `#`-prefixed number is the same number")
-
-    def test_a_non_numeric_issue_number_is_a_broken_invocation(self):
-        # Reading it as "none" would file a duplicate issue every morning while
-        # the run stayed green — the shape of failure this whole file avoids.
-        self.publish(status="fail")
-        with contextlib.redirect_stderr(io.StringIO()), \
-                self.assertRaises(SystemExit) as caught:
-            self.react(existing="forty-eight")
-        self.assertEqual(caught.exception.code, 2)
+        outputs, body, _ = self.react()
+        self.assertEqual(outputs["policy"], "open")
+        self.assertIn("has drifted from the registry", body)
+        self.assertIn("The next audit that reads `pass` closes it", body,
+                      "the body promises self-closure; that promise is only "
+                      "true while `fresh` maps to `close` and the workflow's "
+                      "`close` arm reaches `gh issue close`")
 
     def test_a_missing_fixture_is_a_usage_error_and_not_a_verdict(self):
         self.publish(status="fail")
@@ -2555,7 +2980,7 @@ class AccountDriftIssueDecisionTests(unittest.TestCase):
         self.publish(status="fail")
         outputs, body, _ = self.react()
         self.assertEqual(sorted(outputs),
-                         ["action", "body_file", "marker", "title"])
+                         ["body_file", "marker", "policy", "title"])
         self.assertEqual(outputs["title"], run_account_drift_issue.TITLE)
         self.assertEqual(outputs["marker"], run_account_drift_issue.MARKER)
         self.assertEqual(outputs["body_file"], str(self.body))
@@ -2570,20 +2995,18 @@ class AccountDriftIssueDecisionTests(unittest.TestCase):
                       (EVAL_DIR / "ROUTINE.md").read_text(encoding="utf-8"))
 
     def test_every_body_starts_with_the_marker(self):
-        for status, setup, _, _ in self.TABLE:
-            for existing in ("", "48"):
-                with self.subTest(status=status, existing=existing):
-                    self.latest.unlink(missing_ok=True)
-                    if "publish" in setup:
-                        self.publish(**setup["publish"])
-                    self.marker.unlink(missing_ok=True)
-                    _, body, _ = self.react(
-                        existing=existing, marker=setup.get("marker", True))
-                    self.assertTrue(
-                        body.startswith(run_account_drift_issue.MARKER),
-                        f"{status}/{existing or 'no issue'} rendered a body "
-                        "that does not open with the marker, so the workflow's "
-                        "lookup would never match it again")
+        for status, setup, policy in self.TABLE:
+            with self.subTest(status=status, policy=policy):
+                self.latest.unlink(missing_ok=True)
+                if "publish" in setup:
+                    self.publish(**setup["publish"])
+                self.marker.unlink(missing_ok=True)
+                _, body, _ = self.react(marker=setup.get("marker", True))
+                self.assertTrue(
+                    body.startswith(run_account_drift_issue.MARKER),
+                    f"{status}/{policy} rendered a body that does not open "
+                    "with the marker, so the workflow's lookup would never "
+                    "match it again")
 
     def test_the_body_names_every_drifted_skill(self):
         self.publish(status="fail", checked=("a", "b", "c"), skipped=("d",),

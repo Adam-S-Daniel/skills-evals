@@ -1,15 +1,44 @@
 # The account-store drift issue's LIFECYCLE — opened, edited in place, closed.
 #
-# WHY THIS EXISTS AT ALL
+# WHY THIS EXISTS AT ALL — AND NOT FOR THE REASON FIRST WRITTEN HERE
 # `evals/propagation/ROUTINE.md` step 5 asks the Routine-fired session to keep
-# one marker-tagged issue in step with the Tier-3 audit. It never has: those
-# sessions carry no `mcp__*` tool and this environment has no `gh` CLI, so the
-# fired session has no route to the GitHub API — measured, ROUTINE.md layer 3.
-# Nothing else in this repo files, edits or closes that issue either, so today
-# a drifted account store is reported only by a red check nobody is obliged to
-# read. ROUTINE.md's design note ("A second route the issue does not consider")
-# concludes that CI should own the issue and names the trigger to use, which is
-# the next paragraph.
+# one marker-tagged issue in step with the Tier-3 audit. It never has, and
+# nothing else in this repo files, edits or closes that issue either, so a
+# drifted account store is today reported only by a red check nobody is obliged
+# to read. That gap is what this workflow closes.
+#
+# The first version of this header justified the move with "the fired session
+# has no route to the GitHub API — measured". Do NOT restore that sentence. Its
+# premises are true and its conclusion is not: a fired session carries no
+# `mcp__*` tool and that environment has no `gh` binary, but `Bash` is in every
+# Routine's allowlist and the agent proxy attaches a credential to outbound
+# HTTPS — so a plain `curl https://api.github.com/...` carrying no
+# Authorization header of its own answered 200 for this repository when it was
+# tried from a fired session on 2026-08-21. Access is scoped to the session's
+# authorised repositories rather than to everything the account can reach, and
+# this repo is inside that set. A fired session COULD file the issue. What
+# follows is why it should not be the thing that does.
+#
+#   1. THE MEASURER MUST NOT ALSO BE THE REPORTER. A session that both audits
+#      the account store and reports on the audit goes quiet in ONE move when
+#      it breaks, taking its own alarm with it. That is exactly what happened:
+#      the Routine ran, published nothing, and nothing said so for four days.
+#      CI reads the published artifact from outside, so the same failure
+#      surfaces as a `stale` verdict on a schedule somebody watches instead of
+#      as silence. Giving the issue back to the session would rebuild the
+#      single point of failure that split removed.
+#   2. A PROMPT IS NOT REVIEWABLE, DIFFABLE OR TESTABLE. The lifecycle here is
+#      a status -> policy table in `harness/run_account_drift_issue.py` with a
+#      test per row, and a `gh` step whose shape this repo's suite asserts —
+#      including that the `close` policy really does reach `gh issue close`,
+#      which is a defect this workflow shipped with and a test now pins. A
+#      sentence in a Routine prompt has no version, no review, and no way to
+#      fail loudly on the day it silently stops being followed.
+#
+# ROUTINE.md's design note ("A second route the issue does not consider")
+# reaches the same conclusion by a third path — a git push is a separate
+# credential path from the API — and names the trigger to use, which is the
+# next paragraph.
 #
 # WHY A `schedule:` AND EMPHATICALLY NOT A PUSH ON `eval-results`
 # Reacting to the Routine's publish is the obvious design and it cannot work.
@@ -121,18 +150,24 @@ jobs:
       - name: Decide whether the drift issue should exist
         id: decide
         working-directory: skills-evals
-        # `--existing-issue-number ""` is not a placeholder: the lookup belongs
-        # to the `gh` step below, which is the only step holding a credential
-        # that can see an issue. Passing it explicitly says so at the call
-        # site. What the flag buys is that the create-vs-update rule stays a
-        # pure function with tests on it, rather than a shell branch nobody
-        # can exercise without a token.
+        # This step decides a POLICY — `open`, `close` or `none` — from the
+        # published verdict alone, and nothing else. It is handed no issue
+        # number because there is nowhere up here to get one: seeing an issue
+        # needs a credential, and this step deliberately holds none.
+        #
+        # An earlier cut passed `--existing-issue-number ""` on every run to
+        # keep create-vs-update inside the tested function. The flag had no
+        # other possible value, and `fresh` plus no number returned "do
+        # nothing" — so the write step bailed out at its first line on every
+        # green day and the issue was never closed by anything, while its own
+        # rendered body promised the next passing audit would close it. The
+        # decision that needs a token now lives with the token; the decision
+        # that does not stays here, under test.
         run: |
           set -euo pipefail
           python3 harness/run_account_drift_issue.py evals/propagation \
             --account-latest ../eval-results/propagation/account/latest.json \
             --account-marker ../eval-results/propagation/.bootstrapped \
-            --existing-issue-number "" \
             --body-out "$RUNNER_TEMP/account-drift-issue.md"
 
       - name: Create, update or close the tracking issue (a dry run prints instead)
@@ -150,7 +185,11 @@ jobs:
           # eventually does not, and the failure would be silent: the lookup
           # stops recognising the issue it wrote yesterday and files another.
           ISSUE_MARKER: ${{ steps.decide.outputs.marker }}
-          ISSUE_ACTION: ${{ steps.decide.outputs.action }}
+          # A POLICY (`open` / `close` / `none`), not a `gh` subcommand. The
+          # `case` below is the only place that turns it into one, because the
+          # issue number it needs to do that is looked up two lines above and
+          # cannot exist any earlier.
+          ISSUE_POLICY: ${{ steps.decide.outputs.policy }}
           BODY_FILE: ${{ steps.decide.outputs.body_file }}
           # A BARE input reference, and the flag is built from it in SHELL
           # below — never inline as `${{ inputs.dry_run && 'x' || 'y' }}`.
@@ -163,7 +202,7 @@ jobs:
           DRIFT_DRY_RUN: ${{ inputs.dry_run }}
         run: |
           set -euo pipefail
-          if [ "$ISSUE_ACTION" = "none" ]; then
+          if [ "$ISSUE_POLICY" = "none" ]; then
             echo "the freshness verdict calls for no issue write - nothing to do"
             exit 0
           fi
@@ -174,12 +213,26 @@ jobs:
           # healthy. Under `set -e` a failed gh call kills the step instead,
           # which is the loud failure this wants.
           #
-          # Matched on the exact title AND on the marker being present in the
-          # body: --search is full text and returns near-misses, and the marker
-          # is what survives someone rewording the title by hand.
+          # `or`, NOT `and`, and the difference is the whole value of the
+          # lookup. `--search` is full text and returns near-misses, so a
+          # second predicate is needed either way — but requiring BOTH an
+          # exact title and the marker finds only issues this workflow has
+          # already written, and on its first run there are none of those. The
+          # issue open right now was filed by hand, before the marker existed:
+          # its title is byte-equal and its body carries no marker, so the
+          # intersection missed it and the run would have filed a duplicate
+          # for the same drift — exactly the pile the marker exists to prevent.
+          #
+          # The two halves cover each other's blind spot. Title-equality ADOPTS
+          # a hand-filed issue; the marker is what survives someone rewording
+          # the title later. They converge on the first write: an adopted issue
+          # gets its body replaced, which puts the marker in it, so from then
+          # on either half alone finds it. (The `--search` is still
+          # title-scoped, so a title reworded past recognition escapes both and
+          # degrades to filing a fresh issue — loud, and not silent breakage.)
           number=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open \
             --search "$ISSUE_TITLE in:title" --json number,title,body \
-            --jq 'map(select(.title == env.ISSUE_TITLE and ((.body // "") | contains(env.ISSUE_MARKER)))) | .[0].number // empty')
+            --jq 'map(select(.title == env.ISSUE_TITLE or ((.body // "") | contains(env.ISSUE_MARKER)))) | .[0].number // empty')
           # The dedupe LOOKUP above runs in a dry run too, deliberately. A dry
           # run that bailed before it would prove only that the flag works —
           # never that the search still recognises an existing issue, which is
@@ -187,13 +240,17 @@ jobs:
           # only the WRITE is withheld, and everything below this block is a
           # write, so this is the one line that has to stay above them.
           if [ "$DRIFT_DRY_RUN" = "true" ]; then
-            echo "DRY RUN: action=$ISSUE_ACTION against open issue ${number:-<none>}"
+            echo "DRY RUN: policy=$ISSUE_POLICY against open issue ${number:-<none>}"
             echo "--- body it would have posted ---"
             cat "$BODY_FILE"
             exit 0
           fi
-          case "$ISSUE_ACTION" in
-            create|update)
+          # POLICY x NUMBER -> the call. This is the half of the decision that
+          # could not be made in the decider, because only this step can know
+          # whether an issue is open. Every arm therefore branches on
+          # `$number`, and no arm may assume it.
+          case "$ISSUE_POLICY" in
+            open)
               # EDIT IN PLACE, never a comment and never a second issue. A
               # drift episode ran four days the last time one happened, and a
               # daily job that appends to a thread turns a real finding into a
