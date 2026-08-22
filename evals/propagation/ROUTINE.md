@@ -451,6 +451,44 @@ about — and worth checking, when it is fixed, that the fix was actually applie
 rather than merely intended, because nothing in CI can observe a Routine's
 prompt.
 
+### Corrected 2026-08-22, and the replacement cost nothing
+
+Both clauses are gone. The Routine is now `trig_01AK5s6efLSzdHBSZhkx6KW1`
+(`trig_017ZtLUkJNydSTEcdoVCioL6` deleted, itself a same-day replacement of
+`trig_01JvTC9GXa824XKMYNZNWFGL`), same `0 5 * * *`, same bound session. Its
+prompt states the issue rule unconditionally — *"Do not create, edit, comment
+on or close any GitHub issue — not even if you have GitHub API tools, and not
+even if an obviously relevant issue is open"* — with the reactor named as the
+owner and the 05:04/06:38 double-write of 2026-08-21 quoted as the measured
+reason. The `agentskills#59` pointer is replaced by the repair route that is
+actually live: agentskills' **Account skill ZIPs** workflow.
+
+**The `update_trigger` block above is confirmed, verbatim.** It was tried
+first, on a Routine this session had itself created minutes earlier, and
+refused with exactly the message quoted. Being the Routine's author does not
+help; the binding's session is what the tool checks.
+
+**But the replacement is cheaper than this section assumed.** The text above
+says replacing the Routine "means minting a session with this repo as an
+explicit `source_url` first". It does not — and on 2026-08-22 it could not,
+because `create_session` was unavailable all afternoon (see the third-occurrence
+section above). A Routine's `persistent_session_id` can name a session that
+already exists, so `create_trigger` + `delete_trigger` against the SAME sourced
+session re-points it with no new session at all. Create first, delete second,
+so there is never a window with no Routine.
+
+So the correct reading of the block is narrower than "the prompt cannot be
+fixed from here": the prompt cannot be EDITED from here, and it can always be
+REPLACED from here as long as one sourced session survives anywhere. The thing
+to protect is that session, not the trigger.
+
+**Checked rather than intended, as the paragraph above asks.** `list_triggers`
+after the swap returns exactly one Tier-3 Routine, enabled, cron `0 5 * * *`,
+next fire `2026-08-23T05:03:12Z`, bound to `session_01GJAYVjFux2xte99afwoFJB`,
+and its stored prompt contains neither `issue: unavailable` nor `agentskills#59`.
+The churn is therefore fixed BEFORE the next drift episode rather than during
+one, which was the point of doing it while the store is in sync.
+
 
 ## How a human learns that this went red — four layers, three of them live
 
