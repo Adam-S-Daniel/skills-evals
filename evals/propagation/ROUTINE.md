@@ -257,6 +257,77 @@ credential. What changed here is only that the failure is now *diagnosable in
 one call* instead of being a three-day mystery that reads like a healthy
 schedule.
 
+
+### Third occurrence, and the repair when `create_session` will not answer (2026-08-22)
+
+It recurred on 2026-08-22, eleven days after the design that was meant to
+survive it. Three things are new, and only the last one is good news.
+
+**The re-mint is triggered by the FIRE, and a manual fire triggers it too.**
+The bound session `session_01GJAYVjFux2xte99afwoFJB` published normally at
+`05:07:47Z` and was archived some time after `05:08:34Z`. At `14:54:57Z` a
+`fire_trigger` — a deliberate one, to shorten the wait on a repair — re-minted
+`session_01FRSAv2GHZX7gVzB51yYKb8` and re-pointed the trigger at it in the same
+call. That session ran the audit correctly and published nothing, exactly as
+the table above predicts: no `sources` key, `origin: force_run_trigger`, tags
+carrying `config:routine-lineage-none`. So the scheduled fire is not the only
+way to lose the binding. Any fire will do it, and the one you make to *check*
+on the Routine is enough.
+
+**There is a cheaper check than `sources`, and it is predictive rather than
+post-hoc.** The three-step diagnosis above reads `session_context.sources`
+*after* the binding has already been replaced. `get_session` on the bound id
+also returns `session_status`, and `SESSION_STATUS_ARCHIVED` on a live trigger
+is the doomed state *before* the next fire consumes it — the reclamation has
+happened, the re-mint has not. That is the reading to take, because it is the
+only one that leaves the sourced session still recoverable:
+
+| `session_status` of the bound session | what the next fire will do |
+|---|---|
+| `IDLE` / `RUNNING` | fire into it; publishing works |
+| `ARCHIVED` | silently re-mint a source-less replacement |
+
+**`create_session` was unavailable again — and this time the status page was
+green.** The recipe below ("Verifying a repair on demand") is the documented
+repair, and it could not be run: three calls at `15:05–15:07Z`, including a
+bare title-only one with no `source_url` and no `environment_id`, all returned
+`the service is temporarily unavailable — try again`, while
+<https://status.claude.com> reported all systems operational with no active
+incident. That is a second independent day after the ten attempts of
+2026-08-21. The 08-21 note said to "simply try it rather than plan around it";
+that advice stands, but try it *expecting* it to fail, and know the fallback
+before you need it.
+
+**The fallback, and it is better than the recipe it replaces:
+`unarchive_session`.** An archived session keeps its `session_context`, so the
+sourced publisher does not have to be rebuilt — it has to be woken. Measured:
+
+1. `unarchive_session(<the archived publisher id>)` → returns
+   `SESSION_STATUS_PENDING` with `sources` still naming this repo and
+   `origin: claude_code_mcp_seed` — the publishing column, not the re-mint one.
+2. `create_trigger(..., persistent_session_id = <that id>)`, then
+   `delete_trigger(<the old one>)`. **`update_trigger` cannot do this**: it
+   takes `cron_expression`, `enabled`, `model`, `name`, `prompt` and
+   `run_once_at`, and no `persistent_session_id`, so re-pointing a Routine is
+   always delete-and-recreate. Create first and delete second, so there is
+   never a window with no Routine at all.
+3. Fire it once and **verify by effect**, never by reading the trigger back.
+
+Verified by effect on 2026-08-22: the new trigger fired at `15:29:56Z` and
+`eval-results` moved from `162101b` to `aea74ef` **90 seconds later** — the
+same A/B shape as the 08-21 repair (75 seconds), against a source-less session
+that had published nothing. The fire also returned the *same*
+`persistent_session_id` it was given, where the fire against the archived
+session had returned a new one; that echo is the cheapest confirmation that a
+binding survived a fire.
+
+**What this still does not fix.** Everything the previous section says, and one
+thing more: the repair now depends on the reclaimed session still being
+*unarchivable*, which is not a property anyone has promised. Three occurrences
+in nine days is the argument for #34 — publishing owned by a workflow rather
+than by a fired session's credential — restated a third time, and this time the
+documented repair itself was unavailable for the better part of an hour.
+
 ## The prompt, as created (fresh-session mode — assume no prior context)
 
 Superseded text, kept for the reasoning in step 3, which still holds. Today's
@@ -379,6 +450,44 @@ notifications a day, one of them pointless. Worth fixing, not worth panicking
 about — and worth checking, when it is fixed, that the fix was actually applied
 rather than merely intended, because nothing in CI can observe a Routine's
 prompt.
+
+### Corrected 2026-08-22, and the replacement cost nothing
+
+Both clauses are gone. The Routine is now `trig_01AK5s6efLSzdHBSZhkx6KW1`
+(`trig_017ZtLUkJNydSTEcdoVCioL6` deleted, itself a same-day replacement of
+`trig_01JvTC9GXa824XKMYNZNWFGL`), same `0 5 * * *`, same bound session. Its
+prompt states the issue rule unconditionally — *"Do not create, edit, comment
+on or close any GitHub issue — not even if you have GitHub API tools, and not
+even if an obviously relevant issue is open"* — with the reactor named as the
+owner and the 05:04/06:38 double-write of 2026-08-21 quoted as the measured
+reason. The `agentskills#59` pointer is replaced by the repair route that is
+actually live: agentskills' **Account skill ZIPs** workflow.
+
+**The `update_trigger` block above is confirmed, verbatim.** It was tried
+first, on a Routine this session had itself created minutes earlier, and
+refused with exactly the message quoted. Being the Routine's author does not
+help; the binding's session is what the tool checks.
+
+**But the replacement is cheaper than this section assumed.** The text above
+says replacing the Routine "means minting a session with this repo as an
+explicit `source_url` first". It does not — and on 2026-08-22 it could not,
+because `create_session` was unavailable all afternoon (see the third-occurrence
+section above). A Routine's `persistent_session_id` can name a session that
+already exists, so `create_trigger` + `delete_trigger` against the SAME sourced
+session re-points it with no new session at all. Create first, delete second,
+so there is never a window with no Routine.
+
+So the correct reading of the block is narrower than "the prompt cannot be
+fixed from here": the prompt cannot be EDITED from here, and it can always be
+REPLACED from here as long as one sourced session survives anywhere. The thing
+to protect is that session, not the trigger.
+
+**Checked rather than intended, as the paragraph above asks.** `list_triggers`
+after the swap returns exactly one Tier-3 Routine, enabled, cron `0 5 * * *`,
+next fire `2026-08-23T05:03:12Z`, bound to `session_01GJAYVjFux2xte99afwoFJB`,
+and its stored prompt contains neither `issue: unavailable` nor `agentskills#59`.
+The churn is therefore fixed BEFORE the next drift episode rather than during
+one, which was the point of doing it while the store is in sync.
 
 
 ## How a human learns that this went red — four layers, three of them live
