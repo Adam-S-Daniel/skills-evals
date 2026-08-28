@@ -864,6 +864,137 @@ class AccountAuditTests(unittest.TestCase):
         self.assertEqual(json.loads((out / "badge.json").read_text())["color"], "green")
 
 
+class AccountStoreLayoutTests(unittest.TestCase):
+    """Where the store IS — the resolution that runs before any comparison.
+
+    The regression these lock: on 2026-08-28 the daily Routine reported
+    `INCONCLUSIVE account-audit: no account store` on a surface whose account
+    store was fully present — 22 synced skill directories and a 15KB
+    manifest — because the store was bucketed per workspace
+    (`synced/<bucket-id>/manifest.json`) and `MANIFEST_RELPATH` named only the
+    flat path. Exit 2 is correctly not a pass, so nothing was fabricated and
+    nothing was published; but the wording it borrows ("this surface has no
+    signed-in account") describes the honest case, so the failure was
+    indistinguishable from a surface that genuinely cannot do the job — and it
+    would have recurred every day until someone read the directory by hand.
+    """
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
+        self.registry = make_registry(self.root, skills=("fixture-alpha",))
+        self.home = self.root / "home"
+        self.synced = self.home / account_store.STORE_RELPATH
+        self.synced.mkdir(parents=True)
+        self.description = "fixture skill fixture-alpha."
+
+    def populate(self, store, *, description=None, body="body\n"):
+        """A store directory holding one skill and a manifest describing it."""
+        description = self.description if description is None else description
+        store.mkdir(parents=True, exist_ok=True)
+        write_skill(store / "fixture-alpha", "fixture-alpha", description,
+                    body=body)
+        (store / account_store.MANIFEST_NAME).write_text(json.dumps({
+            "lastUpdated": 0,
+            "skills": [{"skillId": "fixture-alpha", "name": "fixture-alpha",
+                        "source": "custom", "description": description,
+                        "updatedAt": "2026-05-11T22:23:38.972889Z"}]}),
+            encoding="utf-8")
+        return store
+
+    def mark(self, bucket):
+        (self.synced / f"{account_store.BUCKET_MARKER_PREFIX}{bucket}").touch()
+
+    def audit(self):
+        return account_store.audit(self.home, self.registry)
+
+    def test_a_bucketed_store_is_audited_not_reported_missing(self):
+        # The production failure, exactly: one bucket, its marker beside it.
+        self.populate(self.synced / "ws-1")
+        self.mark("ws-1")
+        result = self.audit()
+        self.assertEqual(result.status, "pass", [vars(f) for f in result.findings])
+        self.assertEqual(result.checked, ["fixture-alpha"],
+                         "finding the bucket is worth nothing if the audit "
+                         "then checks an empty set and calls it a pass")
+
+    def test_a_bucketed_store_is_really_compared_not_merely_located(self):
+        # Vacuity control for the test above. Resolving the directory and
+        # AUDITING it are different claims; a resolver that returned the right
+        # path to a comparison that never ran would pass that test and this is
+        # what catches it.
+        self.populate(self.synced / "ws-1", body="drifted\n")
+        self.mark("ws-1")
+        result = self.audit()
+        self.assertEqual([f.kind for f in result.findings], ["content-drift"])
+
+    def test_an_unmarked_single_bucket_still_resolves(self):
+        # The marker's naming convention belongs to the surface, not to us. One
+        # candidate is unambiguous without it, so the audit must not depend on
+        # a format that could change under it.
+        self.populate(self.synced / "ws-1")
+        self.assertEqual(self.audit().checked, ["fixture-alpha"])
+
+    def test_the_marker_picks_the_active_bucket_out_of_several(self):
+        self.populate(self.synced / "ws-live")
+        self.populate(self.synced / "ws-other", body="drifted\n")
+        self.mark("ws-live")
+        self.assertEqual(self.audit().status, "pass",
+                         "the marked bucket is clean; the drift belongs to a "
+                         "workspace nobody asked about")
+
+    def test_the_manifest_and_the_payload_come_from_ONE_bucket(self):
+        # The trap the read_manifest(store) signature exists to close: resolve
+        # in two places and a later edit reads one bucket's manifest against
+        # another bucket's files, which renders as wholesale drift. Here the
+        # marked bucket is internally consistent and the other one describes a
+        # different description entirely — crossing them cannot be silent.
+        self.populate(self.synced / "ws-live")
+        self.populate(self.synced / "ws-other", description="Something else.",
+                      body="drifted\n")
+        self.mark("ws-live")
+        result = self.audit()
+        self.assertEqual(result.findings, [], [vars(f) for f in result.findings])
+
+    def test_several_buckets_and_no_marker_is_a_fault_never_a_guess(self):
+        # Picking by mtime or entry count would answer every time and be wrong
+        # some of the time — and a finding about the wrong workspace's store is
+        # fiction stated with the same confidence as a real one.
+        self.populate(self.synced / "ws-1")
+        self.populate(self.synced / "ws-2")
+        with self.assertRaises(account_store.AuditError) as caught:
+            self.audit()
+        self.assertIn("ambiguous account store", str(caught.exception))
+
+    def test_the_flat_layout_wins_when_both_are_present(self):
+        # Back-compat is not a preference here: a surface that has the flat
+        # store must measure exactly what it measured before, whatever else is
+        # lying around beside it.
+        self.populate(self.synced)
+        self.populate(self.synced / "ws-stale", body="drifted\n")
+        self.assertEqual(self.audit().status, "pass")
+
+    def test_an_empty_synced_directory_is_still_a_fault(self):
+        # The honest "no account here" case must keep reporting exit 2. The fix
+        # widens where the audit LOOKS; it must not soften what it concludes
+        # when there is genuinely nothing to read.
+        with self.assertRaises(account_store.AuditError) as caught:
+            self.audit()
+        self.assertIn("no account store", str(caught.exception))
+
+    def test_the_cli_maps_a_bucketed_store_to_exit_0_and_ambiguity_to_exit_2(self):
+        def run():
+            return run_account_audit.main(
+                ["--registry", str(self.registry), "--home", str(self.home),
+                 "--now", "2026-08-14T12:00:00Z"])
+
+        self.populate(self.synced / "ws-1")
+        self.assertEqual(run(), 0)
+        self.populate(self.synced / "ws-2")
+        self.assertEqual(run(), 2, "ambiguity is a fault the CLI reports as "
+                                   "such — never drift, never a pass")
+
+
 class FreshnessGateTests(unittest.TestCase):
     """How a human learns that the scheduled Tier-3 probe went red — or died."""
 

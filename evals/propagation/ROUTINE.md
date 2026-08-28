@@ -116,6 +116,59 @@ That is now measured rather than argued: the fired sessions found the store
 where an interactive session finds it and returned the same counts. What the
 premise did not cover is whether such a session may then *push* — see below.
 
+## The store has TWO layouts, and the second one reads as "no account"
+
+**Fixed 2026-08-28.** The store is not always at `synced/manifest.json`. Some
+surfaces bucket it per workspace — `synced/<bucket-id>/manifest.json`, with an
+empty `synced/.bucket-<bucket-id>` marker file beside the bucket directories
+naming the active one. `account_store.MANIFEST_RELPATH` named only the flat
+path, so on a bucketed surface the audit found nothing and exited 2.
+
+What makes this worth a section rather than a line in a changelog is the
+**wording it failed in**, not the miss itself:
+
+```
+INCONCLUSIVE account-audit: no account store at ~/.claude/skills/synced/manifest.json
+ — this surface has no signed-in account, so the account channel cannot be
+audited from here. That is a surface limitation, not a clean result.
+```
+
+Every clause of that is the honest message for a surface that genuinely has no
+account, and it is the message a fully-populated store got. The session that
+hit it did everything right — it ran the documented invocation with an absolute
+`--registry`, it reported exit 2 as a failure rather than a pass, it published
+nothing, it touched no issue, and it declined to work around the harness by
+pointing `--home` at the bucket. So the design held: **nothing was fabricated
+and no false green reached the gate.** What it could not do was tell the
+operator the difference between "this surface cannot do the job" and "this
+surface can, and the harness is looking in the wrong place" — and the freshness
+gate would have gone `stale` three days later, blaming a Routine that was firing
+perfectly.
+
+The measured shape on the failing surface: 22 synced skill directories, a 15KB
+manifest, one bucket, one marker — and `0 checked`.
+
+`account_store.resolve_store` now resolves the store instead of assuming it:
+flat first (so nothing changes for a surface that has it), then a single
+candidate bucket, then the `.bucket-<id>` marker when several buckets carry a
+manifest. **It refuses to guess.** Several buckets with nothing naming the
+active one is an `AuditError` → exit 2, because a finding about a different
+workspace's store is fiction stated in the same confident voice as a real one,
+and so is a pass. `AccountStoreLayoutTests` in `test/test_propagation.py` holds
+all of it, including the vacuity control that separates "found the bucket" from
+"actually compared it" — and the mutation that restores the flat-only lookup
+reproduces the exit 2 above.
+
+Two consequences worth carrying forward:
+
+- **`0 checked` is the number to distrust.** A pass over an empty set and a
+  pass over ten skills print the same word. The audit already refuses to emit
+  one (it faults instead), which is why this cost a day rather than a quarter —
+  but any future reader of a `pass` should look at the count before the status.
+- **The store's layout is not ours and can change again.** The marker's naming
+  convention especially. The resolver therefore leans on it only to break a tie
+  it cannot otherwise break, and a single unmarked bucket resolves without it.
+
 ## How it was created
 
 The call that made the current Routine, kept as the recipe if it is ever lost:
@@ -1031,9 +1084,12 @@ it looks like the repair failed.
 > publish the result. Assume no prior context. Steps, in order:
 >
 > 1. **Report this session's own surface first, in four lines, before anything
->    else.** How many entries `~/.claude/skills/synced/` holds and whether it
->    has a `manifest.json`; whether any `mcp__*` tool is present; whether `gh`
->    exists (`command -v gh`); and the HTTP status a bare
+>    else.** How many entries `~/.claude/skills/synced/` holds and whether a
+>    `manifest.json` is reachable — **either at `synced/manifest.json` or one
+>    level down in a per-workspace bucket directory**, so
+>    `find ~/.claude/skills/synced -maxdepth 2 -name manifest.json` rather than
+>    a test of the flat path alone; whether any `mcp__*` tool is present;
+>    whether `gh` exists (`command -v gh`); and the HTTP status a bare
 >    `curl -sS -o /dev/null -w '%{http_code}' https://api.github.com/user`
 >    returns with no Authorization header of its own. **Counts and yes/no
 >    only.** If the account store is absent this surface cannot do the job at
