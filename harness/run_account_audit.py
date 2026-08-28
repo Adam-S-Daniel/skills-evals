@@ -7,6 +7,12 @@ registry checkout, and publishes a JSON result. It spawns no CLI, calls no API
 and spends nothing; the only thing it needs that CI has not got is the account
 store itself.
 
+The store has two layouts — the flat `synced/manifest.json` and a per-workspace
+`synced/<bucket-id>/manifest.json` — and `account_store.resolve_store` handles
+both. Do NOT work around a "no account store" exit 2 by pointing `--home` at a
+bucket directory: that is the harness failing to resolve, and the fix belongs in
+the resolver where every future run gets it.
+
 The result is not for this run's reader — it is for the NEXT pull request. The
 credential-free Tier-2 gate (`run_propagation.py`) reads it and reds the pull
 request when it is missing, stale or failing, which is what makes a scheduled

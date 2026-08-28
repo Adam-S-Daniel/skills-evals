@@ -30,7 +30,7 @@ caught it: of ten account copies exactly one had drifted, and it was in
 `adam-local`, the one bundle no `skills.lock` ships and therefore no digest
 ever re-verifies.
 
-Two traps this module is built around:
+Three traps this module is built around:
 
 * **CRLF.** Account copies arrive with CRLF line endings; the registry is LF.
   Without normalisation the content comparison false-positives on files whose
@@ -41,6 +41,21 @@ Two traps this module is built around:
   touching this directory" reports a skill as months stale when the only
   intervening commit moved the directory without changing a byte. The digest
   is the assertion; the timestamp is reported only as human-readable colour.
+* **The store has two layouts, and the newer one is INVISIBLE to a fixed
+  path.** `synced/manifest.json` is the flat layout. Some surfaces bucket the
+  store per workspace instead — `synced/<bucket-id>/manifest.json`, with an
+  empty `synced/.bucket-<bucket-id>` marker file naming the active one. A
+  hardcoded relative path finds nothing there and the audit reports exit 2,
+  "no account store — this surface has no signed-in account", on a surface
+  whose account store is sitting right there fully populated. Measured
+  2026-08-28 on a CCR cloud session: 22 synced skill directories and a
+  15KB manifest, and the audit could not see any of it. That failure mode is
+  the expensive one, because it is indistinguishable from the honest
+  "no account here" it borrows its wording from, and it recurs every single
+  day the Routine fires. `resolve_store` is what closes it, and it refuses to
+  GUESS: more than one candidate bucket with nothing naming the active one is
+  a fault, not a coin toss, because auditing another workspace's store would
+  fabricate findings just as confidently as it would fabricate a pass.
 """
 
 from __future__ import annotations
@@ -54,7 +69,14 @@ from pathlib import Path
 
 import yaml
 
-MANIFEST_RELPATH = Path(".claude") / "skills" / "synced" / "manifest.json"
+MANIFEST_NAME = "manifest.json"
+STORE_RELPATH = Path(".claude") / "skills" / "synced"
+# The flat layout's full path. `resolve_store` is what code should call, but
+# the constant stays because it is the name every reader and test already has.
+MANIFEST_RELPATH = STORE_RELPATH / MANIFEST_NAME
+# A bucketed store names its active workspace with an empty marker FILE sitting
+# beside the bucket directories: `.bucket-<id>` next to `<id>/manifest.json`.
+BUCKET_MARKER_PREFIX = ".bucket-"
 # Never compared: build detritus that no upload would ever carry.
 IGNORED_NAMES = ("__pycache__", ".git", ".DS_Store")
 
@@ -157,8 +179,71 @@ def frontmatter(text: str) -> dict:
     return parsed
 
 
-def read_manifest(home: Path) -> list:
-    path = home / MANIFEST_RELPATH
+def resolve_store(home: Path) -> Path:
+    """The directory holding `manifest.json` — flat layout or bucketed.
+
+    Order, and each step is load-bearing:
+
+    1. `synced/manifest.json` — the flat layout. Checked first so a surface
+       that has it is read exactly as before; nothing about the bucketed
+       surfaces is allowed to change what the flat ones measure.
+    2. Otherwise every immediate subdirectory carrying a `manifest.json` is a
+       candidate. Exactly one and it is the store — the ordinary bucketed
+       surface, and it resolves without depending on the marker file, whose
+       naming convention is not ours and could change.
+    3. More than one, and the `.bucket-<id>` marker decides. It is how the
+       surface itself names the active workspace, so it beats any heuristic we
+       could invent (newest mtime, most entries) — both of which would answer
+       confidently and sometimes wrongly.
+    4. Still ambiguous, or nothing found at all: AuditError, which the CLI maps
+       to exit 2. Never a pass, and never a guess: the wrong bucket is not a
+       degraded reading of the right one, it is a different workspace's store,
+       and every finding it produced would be fiction.
+    """
+    root = home / STORE_RELPATH
+    if (root / MANIFEST_NAME).is_file():
+        return root
+    if not root.is_dir():
+        raise AuditError(
+            f"no account store at {root / MANIFEST_NAME} — this surface has "
+            "no signed-in account, so the account channel cannot be audited "
+            "from here. That is a surface limitation, not a clean result.")
+
+    candidates = sorted(child for child in root.iterdir()
+                        if child.is_dir() and (child / MANIFEST_NAME).is_file())
+    if not candidates:
+        raise AuditError(
+            f"no account store: {root} exists but carries no {MANIFEST_NAME}, "
+            "flat or under a per-workspace bucket directory. The account "
+            "channel cannot be audited from here — a surface limitation, not "
+            "a clean result.")
+    if len(candidates) == 1:
+        return candidates[0]
+
+    marked = {child.name[len(BUCKET_MARKER_PREFIX):] for child in root.iterdir()
+              if child.is_file() and child.name.startswith(BUCKET_MARKER_PREFIX)}
+    chosen = [child for child in candidates if child.name in marked]
+    if len(chosen) == 1:
+        return chosen[0]
+    raise AuditError(
+        f"ambiguous account store: {len(candidates)} bucket directories under "
+        f"{root} carry a {MANIFEST_NAME} "
+        f"({', '.join(child.name for child in candidates)}) and "
+        f"{len(chosen)} of them are named by a {BUCKET_MARKER_PREFIX}* marker. "
+        "Refusing to pick one — auditing the wrong workspace's store would "
+        "report findings, or a pass, about a store nobody asked about.")
+
+
+def read_manifest(store: Path) -> list:
+    """The manifest's `skills` list, from an ALREADY-RESOLVED store directory.
+
+    Takes the store rather than `$HOME` so that this and `audit` cannot
+    disagree about which store they read. On a bucketed surface there is more
+    than one candidate, and resolving separately in two places is exactly how
+    a later edit ends up comparing one bucket's manifest against another
+    bucket's payload — which reads as wholesale drift.
+    """
+    path = store / MANIFEST_NAME
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as exc:
@@ -187,8 +272,8 @@ def audit(home: Path, registry: Path) -> AuditResult:
         raise AuditError(f"{registry} does not look like an agentskills checkout "
                          "(no plugins/ directory)")
     result = AuditResult()
-    store = home / MANIFEST_RELPATH.parent
-    for record in read_manifest(home):
+    store = resolve_store(home)
+    for record in read_manifest(store):
         name = record["name"]
         source = registry_skill_dir(registry, name)
         if source is None:

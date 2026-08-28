@@ -198,7 +198,11 @@ Two things worth knowing before editing any of it:
 ### Tier 3 — the account store
 
 The claude.ai account store lands at `~/.claude/skills/synced/`, which exists
-only on a signed-in surface, so CI cannot see it. `harness/run_account_audit.py`
+only on a signed-in surface, so CI cannot see it. The manifest sits either
+directly there or one level down in a per-workspace bucket directory — the
+harness resolves both, and refuses to guess when several buckets are candidates
+(see [`ROUTINE.md`](evals/propagation/ROUTINE.md), "The store has TWO
+layouts"). `harness/run_account_audit.py`
 audits it (content digests CRLF-normalised, payload completeness, description of
 record, and whether the frontmatter parses at all), spends nothing, and
 publishes a JSON result to the `eval-results` branch. A Routine runs it daily at
