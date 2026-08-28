@@ -157,4 +157,3 @@ pattern searched, if nothing matches.
 ## Out of scope
 
 - `GHA-bench` as the harness (#18 caveat) — this is a dedicated harness.
-- `civic-platform-agents` (#18 caveat).
