@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# fleet-memory.sh — deliver the fleet's managed guidance ONCE per session.
+#
+# WHY THIS EXISTS
+# ---------------
+# The managed guidance used to be inlined into every repo's AGENTS.md, which
+# Claude Code imports from that repo's CLAUDE.md. A session with N repos
+# attached therefore loaded N identical copies. Measured 2026-08-29 on a hosted
+# multi-repo session: 37 memory files, 332.3k tokens — a third of a 1M window —
+# almost all of it ONE ~52 kB managed block repeated 19 times.
+#
+# User-level memory (~/.claude/CLAUDE.md) is read ONCE per session no matter how
+# many repos are attached. That is where the fleet-wide block belongs; each repo
+# keeps only what is genuinely its own, plus a small stub.
+#
+# THE THREE MEASUREMENTS THIS DESIGN RESTS ON
+# -------------------------------------------
+# Local CLI 2.1.251, tool-free single-turn probes, baseline context 34.5k:
+#
+#   1. An `@import` inlines ONLY when the target resolves INSIDE the project
+#      tree. A nested in-tree import works (53,441 tokens, canary retrieved);
+#      `@~/.claude/...` and out-of-tree absolute paths silently load NOTHING
+#      (34,4xx, canary absent) — no error, no warning. So "one shared file that
+#      every repo imports" is NOT available, which is why the content is
+#      delivered to USER memory instead of imported from a shared path.
+#   2. A SessionStart hook runs BEFORE memory is assembled. With no
+#      ~/.claude/CLAUDE.md at launch, this hook wrote one and the SAME session
+#      read it (53,439 tokens, canary retrieved). That is what makes the first
+#      session in a fresh container correct rather than one session late.
+#   3. The hosted harness does the same. Verified in a cloud session on
+#      _agent-guidance@claude/agents-md-redundancy-uvw9am: the canary was in
+#      context at session start, attributed to
+#      "Contents of /root/.claude/CLAUDE.md (user's private global instructions
+#      for all projects)". Local-only evidence would not have settled this,
+#      because the hosted harness assembles memory itself.
+#
+# WHAT IT WRITES
+# --------------
+# A MARKED BLOCK, never the whole file. A developer's own ~/.claude/CLAUDE.md is
+# theirs; everything outside the markers is preserved byte-for-byte.
+#
+# It always exits 0. A guidance delivery that breaks the session is worse than
+# one that degrades, and the repo stub is the floor: every repo still carries
+# the load-bearing rules inline, so a DEGRADED session is diminished, not blind.
+# The verdict line below is what keeps that degradation VISIBLE rather than
+# silent — the failure mode this hook most needs to avoid is working quietly
+# until the day it doesn't.
+set -uo pipefail
+
+BEGIN_MARK='<!-- BEGIN FLEET GUIDANCE (managed by _agent-guidance) — DO NOT EDIT -->'
+END_MARK='<!-- END FLEET GUIDANCE -->'
+
+# Payload ships beside this hook, deliberately OUTSIDE any memory-file path
+# (only CLAUDE.md / AGENTS.md are auto-loaded), so it costs zero always-on
+# context in the repo that carries it.
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || HOOK_DIR=""
+PAYLOAD="${FLEET_GUIDANCE_PAYLOAD:-$HOOK_DIR/fleet-guidance.md}"
+
+degraded() {
+    echo "fleet-guidance: DEGRADED — $1. Repo stub only; read the fleet guidance in _agent-guidance/agents-md/base.md before non-trivial work."
+    exit 0
+}
+
+[ -n "$HOOK_DIR" ] || degraded "cannot resolve hook directory"
+[ -r "$PAYLOAD" ]  || degraded "no readable payload at $PAYLOAD"
+[ -s "$PAYLOAD" ]  || degraded "payload at $PAYLOAD is empty"
+
+DEST_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+DEST="$DEST_DIR/CLAUDE.md"
+mkdir -p "$DEST_DIR" 2>/dev/null || degraded "cannot create $DEST_DIR"
+
+# Short content id, so the verdict names WHICH guidance landed. Any of these
+# three digest tools may be absent; a missing one is cosmetic, never fatal.
+version="$( { sha256sum "$PAYLOAD" 2>/dev/null || shasum -a 256 "$PAYLOAD" 2>/dev/null || openssl dgst -sha256 "$PAYLOAD" 2>/dev/null; } \
+            | tr ' ' '\n' | grep -oE '^[0-9a-f]{64}$' | head -1 )"
+version="${version:0:8}"
+[ -n "$version" ] || version="unknown"
+
+tmp="$(mktemp 2>/dev/null)" || degraded "mktemp failed"
+trap 'rm -f "$tmp" "$tmp.strip"' EXIT
+
+# Strip any previous managed block, keeping everything else verbatim.
+if [ -f "$DEST" ]; then
+    BEGIN_MARK="$BEGIN_MARK" END_MARK="$END_MARK" awk '
+        BEGIN { b = ENVIRON["BEGIN_MARK"]; e = ENVIRON["END_MARK"]; skip = 0 }
+        index($0, b) == 1 { skip = 1; next }
+        index($0, e) == 1 { skip = 0; next }
+        !skip { print }
+    ' "$DEST" > "$tmp.strip" 2>/dev/null || : > "$tmp.strip"
+
+    # Drop trailing blank lines so repeated runs cannot grow the file, and so a
+    # file whose ONLY content was the managed block collapses to empty rather
+    # than accumulating a blank line per run. `$(cat)` strips trailing newlines
+    # already; the guard is what stops an empty result becoming a blank line.
+    stripped="$(cat "$tmp.strip" 2>/dev/null)"
+    if [ -n "$stripped" ]; then
+        printf '%s\n\n' "$stripped" > "$tmp"
+    else
+        : > "$tmp"
+    fi
+else
+    : > "$tmp"
+fi
+
+{
+    printf '%s\n' "$BEGIN_MARK"
+    printf '<!-- fleet-guidance-version: %s -->\n' "$version"
+    cat "$PAYLOAD"
+    printf '%s\n' "$END_MARK"
+} >> "$tmp" 2>/dev/null || degraded "could not assemble the guidance block"
+
+bytes="$(wc -c < "$PAYLOAD" 2>/dev/null | tr -d ' ')"
+
+if cmp -s "$tmp" "$DEST" 2>/dev/null; then
+    echo "fleet-guidance: current (v$version, ${bytes} bytes) — ~/.claude/CLAUDE.md"
+    exit 0
+fi
+
+if cp "$tmp" "$DEST" 2>/dev/null; then
+    echo "fleet-guidance: installed (v$version, ${bytes} bytes) -> ~/.claude/CLAUDE.md"
+else
+    degraded "could not write $DEST"
+fi
+exit 0
