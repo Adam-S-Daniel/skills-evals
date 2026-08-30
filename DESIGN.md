@@ -154,6 +154,144 @@ outer plugin/bundle directory instead would silently produce a workspace
 where the skill never loads. `run_agent` fails loudly, naming the glob
 pattern searched, if nothing matches.
 
+## Scaling to the registry (2026-08-30)
+
+One eval exists; the other ~30 registry skills have none. This section is the
+method for closing that gap without a big-bang project: classify each skill to
+the right instrument, mine fixtures from the incident record instead of
+inventing tasks, and let process gates accrue coverage where the churn is.
+The scale target is deliberately small — validation-gated skill iteration
+(WikiSkill, arXiv:2608.27454) ran on 10–40-task validation splits, so per
+skill here a handful of fixtures is in-spec, not a compromise.
+
+### Four instruments, one harness
+
+Not every skill takes the same eval, and some take none. Classify first:
+
+- **A. Workspace transforms** — correctness is decidable from the resulting
+  files alone. The `workflow-path-audit` shape applies unchanged: seed +
+  objective checks + thin judge. Candidates: `github-actions-sha-pinning`,
+  `review-bash-ci-reliability`, `code-quality`, `post-failure-comment`,
+  `admin-config-render`, `writing-adrs` (the format half), `rename-pdfs`,
+  `pdf-ocr-audit`.
+- **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
+  The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
+  canned JSON captured from the real incident (the same substitution move as
+  `$CLAUDE_BIN`/`test/fake-claude`, applied to the tool the skill consults).
+  The verdict is scored objectively against the postmortem; the judge grades
+  reasoning quality only. Candidates: `cms-stuck-pr-triage`,
+  `debug-github-workflows`, `ci-watcher-loops`, `editorial-label-audit`,
+  `skills-doctor`, `consumer-repo-provisioning` (the
+  which-secret-is-missing half).
+- **C. Judgment/style** — the judge carries the load; keep the few decidable
+  bits objective (banned buzzwords absent, required sections present), and
+  prefer pairwise preference against committed reference samples over
+  absolute rubric scores. Expect noise; run more trials. Candidates:
+  `adam-writing-style`, `finding-unknowns`.
+- **D. Wrong instrument entirely** — record the decision in the
+  non-coverage table below instead of leaving a silent gap.
+
+Reference-heavy skills (`aws-bootstrap`, `preview-environments`, and
+`consumer-repo-provisioning`'s tables) fail by going stale, not by teaching a
+bad procedure. Their instrument is a **freshness lint in the registry's own
+CI** — every file, workflow, and secret name a SKILL.md cites still exists
+where it points — not an A/B rollout here.
+
+### Fixtures are mined, not invented
+
+The fleet's incident record is a pre-scored task set: every dated incident in
+the fleet guidance, every root-cause writeup in cms-platform's
+`docs/VERSION-HISTORY.md`, every postmortem issue. Per fixture:
+
+1. **Seed** — reconstruct the minimal pre-incident workspace. Scrub it:
+   `example.com`/`example.net` only, no real addresses — this repo is public
+   and fixtures are committed.
+2. **Prompt** — what the operator actually asked at the time.
+3. **Objective check** — the recorded root cause or fix shape.
+
+The expected A/B delta comes free: a real agent already missed this once, so
+the ceiling-effect risk is pre-tested, and `with_skill` catching what the
+baseline plausibly misses is exactly the delta the skill exists to buy.
+
+### Harness-wide rules (promoted from the first fixture)
+
+The `workflow-path-audit` fixture learned these the hard way; they are policy
+for every fixture, not folklore in one file's comments:
+
+- **Arms on a pinned mid-tier model, judge pinned strong.** A ceiling-effect
+  arm is signal-free.
+- **Anything a script can decide is never left to the judge**, and the
+  rubric caps a dimension when a decidable fact fails (the judge once scored
+  a 9 on an arm the objective column failed).
+- **Correctness outweighs guardrails** in judge weights — equal-weighted
+  restraint quietly rewards the do-nothing arm.
+- **3–8 small fixtures per skill beat one big one.** Coverage definition:
+  every claim in the skill's body has at least one fixture that would fail
+  without it.
+- **N≥3 trials per arm before believing a delta**, and reports carry the
+  trial count. The CLI has no temperature flag (see Open decisions), so
+  trials are the mitigation.
+- **Hermetic, always** — no network, no wall-clock; canned payloads and fake
+  binaries.
+
+### Coverage accrues by process, not by project
+
+- **Graduation gate:** a skill enters the registry with at least one fixture
+  here, and the graduation PR's definition of done includes a green
+  `with_skill` run.
+- **Touch gate:** a PR that edits an existing SKILL.md either runs that
+  skill's eval or adds its first fixture.
+
+Both gates belong in the registry's own contributor guidance (agentskills'
+`AGENTS.md` repo-specific additions and the skill-creator flow); this file is
+the reference they point at.
+
+Backfill order, by usage × decidability × incident material:
+`review-bash-ci-reliability` (the incident record practically is its fixture
+set), `github-actions-sha-pinning` (fully decidable, including the
+cms-platform tag carve-out), `cms-stuck-pr-triage` (builds the fake-`gh`
+machinery every Class B eval reuses), `debug-github-workflows`, then
+`adam-writing-style` as the Class C pilot.
+
+### Deliberate non-coverage
+
+A row here is a decision with a reason; an absent eval without a row is a
+gap. (Mirrors the fleet convention that "deliberately out" and "not adopted
+yet" must stay distinguishable.)
+
+| Skill | Decision | Reason |
+|---|---|---|
+| `test-canary` | no A/B | delivery probe; covered by the propagation arms |
+| `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
+| `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
+| `launch-wsl-claude-session`, `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
+| `fastmail` bundle | defer | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own |
+| `aws-bootstrap`, `preview-environments` | freshness lint | staleness is the failure mode, not procedure quality |
+
+### Budget
+
+Do not grow the weekly matrix linearly with coverage. Evals run on-touch (PR
+path filters over `evals/<skill>/**` and the skill's own registry path); the
+scheduled lane runs a rotating subset weekly or the full sweep monthly.
+`eval.yml` itself gets salient-path filters — the `workflow-path-audit`
+doctrine applies to the harness's own CI.
+
+### `claude plugin eval` (assessed 2026-08-30)
+
+The CLI's native eval harness was assessed against this design. It has
+first-class with/without-baseline arms and a stable `aggregate-result.json`
+report, but: it is early-access and gated for this account (probing prints
+"currently in early access"); its graders are regex / tool-use / file-exists
+/ LLM-judge / baseline only, with **no scriptable grader**, so it cannot host
+`scorers/objective.py`'s changeset replays — which would force decidable
+facts back onto regex or the judge, the exact anti-pattern the rules above
+forbid; and its case layout is per-plugin where this harness is centralized.
+
+Decision: **monitor, don't wrap.** Re-evaluate when it is both un-gated for
+this account and has grown a run-a-script grader; until then this harness
+stays the system of record. If `results/` is ever restructured, mirror its
+report schema to keep a future migration cheap.
+
 ## Out of scope
 
 - `GHA-bench` as the harness (#18 caveat) — this is a dedicated harness.
