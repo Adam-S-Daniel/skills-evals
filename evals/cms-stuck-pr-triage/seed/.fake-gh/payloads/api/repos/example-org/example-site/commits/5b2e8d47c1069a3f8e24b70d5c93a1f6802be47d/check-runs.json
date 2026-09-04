@@ -198,7 +198,7 @@
       "status": "completed",
       "conclusion": "skipped",
       "started_at": "2026-09-01T04:12:03Z",
-      "completed_at": "2026-09-01T04:38:51Z",
+      "completed_at": "2026-09-01T04:12:09Z",
       "head_sha": "5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d",
       "check_suite": {
         "id": 20715,

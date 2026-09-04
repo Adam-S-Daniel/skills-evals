@@ -34,7 +34,7 @@
     "isDraft": false,
     "createdAt": "2026-09-02T06:09:41Z",
     "updatedAt": "2026-09-02T06:10:02Z",
-    "author": { "login": "cms-bot", "is_bot": false },
+    "author": { "login": "editor-rowan", "is_bot": false },
     "labels": [{ "name": "decap-cms/pending_publish" }],
     "url": "https://github.com/example-org/example-site/pull/421"
   }

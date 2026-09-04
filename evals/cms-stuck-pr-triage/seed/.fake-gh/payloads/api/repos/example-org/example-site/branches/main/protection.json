@@ -1,0 +1,43 @@
+{
+  "url": "https://api.github.com/repos/example-org/example-site/branches/main/protection",
+  "required_status_checks": {
+    "url": "https://api.github.com/repos/example-org/example-site/branches/main/protection/required_status_checks",
+    "strict": false,
+    "contexts": [
+      "validate-content",
+      "e2e / e2e",
+      "content-schema / parity"
+    ],
+    "checks": [
+      {
+        "context": "validate-content",
+        "app_id": null
+      },
+      {
+        "context": "e2e / e2e",
+        "app_id": null
+      },
+      {
+        "context": "content-schema / parity",
+        "app_id": null
+      }
+    ]
+  },
+  "required_pull_request_reviews": {
+    "dismiss_stale_reviews": false,
+    "require_code_owner_reviews": false,
+    "required_approving_review_count": 0
+  },
+  "enforce_admins": {
+    "enabled": false
+  },
+  "required_linear_history": {
+    "enabled": true
+  },
+  "allow_force_pushes": {
+    "enabled": false
+  },
+  "allow_deletions": {
+    "enabled": false
+  }
+}

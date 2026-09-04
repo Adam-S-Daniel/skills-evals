@@ -26,7 +26,7 @@ fixture reuses it.)
 # evals/<skill>/fixture.yaml
 env:
   PATH: "$WORKSPACE/bin:$PATH"          # the fake shadows any real gh
-  FAKE_GH_PAYLOADS: "$WORKSPACE/payloads"
+  FAKE_GH_PAYLOADS: "$WORKSPACE/.fake-gh/payloads"   # a dot-dir: see below
   FAKE_GH_REPO: "example-org/example-site"   # only shapes the 403's URL
 ```
 
@@ -39,6 +39,12 @@ ln -s ../../../../harness/fakes/gh evals/<skill>/seed/bin/gh
 `harness/run_eval.py`'s `agent_env`), and `shutil.copytree` resolves the
 symlink into a real executable there, so the arm gets a self-contained copy
 and the repo keeps one source of truth.
+
+**Keep the payloads in a dot-directory.** A payload tree beside the seed's own
+files is part of the workspace the agent reads: it can `cat` the recorded run
+log straight off disk, reach the root cause without asking `gh`, and then fail
+the very check that was meant to tell those two apart. A `.fake-gh/` sibling
+keeps them out of plain view, and the seed's README says nothing about them.
 
 ### The keying rule
 
