@@ -141,21 +141,33 @@ def census_counts(projects_dir: Path, now: datetime,
     wanted = set(window_weeks(now, weeks))
     oldest = window_start(now, weeks)
     counts: dict[str, dict[str, int]] = {}
+    #: (st_dev, st_ino) of every transcript already processed. A symlink or a
+    #: hard-linked copy is the SAME underlying file reachable via a second
+    #: path in the walk — reading it twice double-counts every turn in it.
+    #: This is deliberately NOT the same thing as deduping turns globally:
+    #: `seen_turns` below still resets per (unique) file, because two
+    #: genuinely different transcripts can legitimately share a message id
+    #: (a resumed session) and both must still count.
+    seen_files: set[tuple[int, int]] = set()
     projects_dir = Path(projects_dir)
     if not projects_dir.is_dir():
         return counts
 
     for transcript in sorted(projects_dir.rglob("*.jsonl")):
         try:
-            # A transcript last written before the window cannot hold an entry
-            # inside it; skipping it unread is the difference between reading
-            # eight weeks of transcripts and reading every one ever made. The
-            # bound carries a whole extra week of slack (window_start), so a
-            # file being appended to across a week boundary is never dropped.
-            if datetime.fromtimestamp(transcript.stat().st_mtime,
-                                      timezone.utc) < oldest:
-                continue
+            stat = transcript.stat()
         except OSError:
+            continue
+        file_id = (stat.st_dev, stat.st_ino)
+        if file_id in seen_files:
+            continue
+        seen_files.add(file_id)
+        # A transcript last written before the window cannot hold an entry
+        # inside it; skipping it unread is the difference between reading
+        # eight weeks of transcripts and reading every one ever made. The
+        # bound carries a whole extra week of slack (window_start), so a
+        # file being appended to across a week boundary is never dropped.
+        if datetime.fromtimestamp(stat.st_mtime, timezone.utc) < oldest:
             continue
         seen_turns: set[str] = set()
         try:

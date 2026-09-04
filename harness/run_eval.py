@@ -134,8 +134,10 @@ def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
     nobody chose and makes every week-over-week comparison a comparison
     against a different model. An unpinned fixture with no usable roster is a
     runner-level error naming the path it looked for, and it leaves through
-    the normal exit-2 path. A PINNED fixture never needs the roster and is
-    unaffected: it still runs with no roster at all.
+    the normal exit-2 path. A fixture that pins BOTH `model:` and
+    `judge.model:` never needs the roster and is unaffected: it still runs
+    with no roster at all. Pinning only one still reads the roster for the
+    other.
 
     The roster's arms are ordered cheapest tier first, so `arms[0]` is the
     WEAKEST model in the set. That is deliberate for a single-arm run — a

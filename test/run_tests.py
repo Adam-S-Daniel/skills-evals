@@ -2995,6 +2995,8 @@ class TestIssue67Review2(unittest.TestCase):
     #: TestIssue67Review, reused rather than duplicated.
     _run_roster_step = TestIssue67Review._run_roster_step
     _roster_file = TestIssue67Review._roster_file
+    _write_transcript = staticmethod(TestIssue67Review._write_transcript)
+    _assistant = TestIssue67Review._assistant
 
     # --- item 1: usage_share's denominator excludes `other`/unranked, and
     #             _census_verdict must agree, not read RAW counts -----------
@@ -3475,6 +3477,39 @@ exit 0
                     Path("/nonexistent-registry"), args, "20260904T120000Z")
         self.assertIsNotNone(summary["error"])
         fake_mkdtemp.assert_not_called()
+
+    # --- item 16: select_models' docstring says a pinned fixture never
+    #              needs the roster — true only when it pins BOTH ----------
+
+    def test_select_models_docstring_says_a_fixture_must_pin_both_to_skip_the_roster(self):
+        doc = run_eval.select_models.__doc__
+        self.assertNotIn("A PINNED fixture never needs the roster", doc,
+                         "a fixture pinning only `model:` (not `judge.model:`) "
+                         "still reads the roster for the judge")
+        self.assertIn("both", doc.lower())
+
+    # --- item 17: seen_turns resets per transcript, so the SAME file
+    #              reachable twice in the walk (a symlink, a hard-linked
+    #              copy) double-counts every turn in it -------------------
+
+    def test_a_duplicate_or_symlinked_transcript_is_not_double_counted(self):
+        """The same underlying file reachable via two paths must count once.
+        This is deliberately NOT the same thing test_dedupe_is_per_transcript
+        _not_global guards: that test has two genuinely DIFFERENT files
+        (different inodes) that happen to share a message id, and both must
+        still count — dedup here is by FILE IDENTITY, never by turn id
+        across distinct files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            original = self._write_transcript(
+                projects / "-x" / "a.jsonl",
+                [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z",
+                                 message_extra={"id": "msg_01ONLY"})],
+                mtime=self.NOW)
+            duplicate = projects / "-x" / "b.jsonl"
+            os.link(original, duplicate)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1}})
 
 
 if __name__ == "__main__":
