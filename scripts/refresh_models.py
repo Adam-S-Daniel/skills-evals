@@ -114,11 +114,21 @@ def build_models_document(fetch, now: datetime, headers: dict | None = None,
                 continue
             seen.add(model_id)
             models.append({field: entry.get(field) for field in MODEL_FIELDS})
-        if not page.get("has_more") or not entries:
+        if not page.get("has_more"):
             break
-        next_after = page.get("last_id") or entries[-1].get("id")
+        # `has_more` is true: the API promises another page exists. Any
+        # reason we cannot actually reach it — an empty page with nothing to
+        # read a cursor from, no `last_id` and no entry carrying an `id`, or
+        # a cursor that has not advanced (a stuck cursor, page returns the
+        # same last_id() forever) — is the SAME failure as running out of
+        # MAX_PAGES: a partial read that is indistinguishable from some
+        # models retiring. It must never be a silent `break`.
+        next_after = page.get("last_id") or (entries[-1].get("id") if entries else None)
         if not next_after or next_after == after:
-            break
+            raise RuntimeError(
+                "the Models API reports more pages but returned no usable "
+                "cursor to continue from; refusing to publish a truncated "
+                "catalogue")
         after = next_after
     else:
         raise RuntimeError(

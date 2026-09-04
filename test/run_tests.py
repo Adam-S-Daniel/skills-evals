@@ -3044,6 +3044,50 @@ exec {GIT} "$@"
                          "no roster is published on a correlated outage")
         self.assertNotIn("EVAL_ROSTER=", got["env"])
 
+    # --- item 3: `has_more: true` must never exit the paging loop via a
+    #             plain `break` — every such exit is a truncated catalogue --
+
+    def test_a_stuck_cursor_is_refused_not_silently_truncated(self):
+        """`has_more: true` with the SAME `last_id` every page — exactly what
+        MAX_PAGES exists to catch. The `next_after == after` break used to
+        fire after the SECOND identical page, exiting with rc 0 long before
+        MAX_PAGES and defeating the bound entirely."""
+        page = {"data": [{"id": "claude-sonnet-5",
+                          "created_at": "2026-01-01T00:00:00Z"}],
+                "has_more": True, "last_id": "claude-sonnet-5"}
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(lambda url, headers: page,
+                                                  now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_has_more_with_no_usable_cursor_is_refused(self):
+        """`has_more: true`, no `last_id`, and no entry in `data` carries an
+        `id` either — there is nothing to page from, but the old code read
+        that as "done" rather than "cannot continue"."""
+        page = {"data": [{"created_at": "2026-01-01T00:00:00Z"}],
+                "has_more": True}
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(lambda url, headers: page,
+                                                  now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_an_empty_page_that_still_claims_more_is_refused(self):
+        """A real page, then `{"data": [], "has_more": true}` — the API says
+        there is more, but the empty page carries no cursor to reach it.
+        `not entries` used to break the loop silently regardless of
+        `has_more`, publishing everything read so far as the whole
+        catalogue."""
+        pages = iter([
+            {"data": [{"id": "claude-sonnet-5",
+                      "created_at": "2026-01-01T00:00:00Z"}],
+             "has_more": True, "last_id": "claude-sonnet-5"},
+            {"data": [], "has_more": True},
+        ])
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(
+                lambda url, headers: next(pages), now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
 
 if __name__ == "__main__":
     unittest.main()
