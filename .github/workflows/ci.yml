@@ -62,8 +62,26 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: Check out skills-evals
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: skills-evals
+          persist-credentials: false
+
+      # Side-by-side, same convention as eval.yml and propagation.yml: this
+      # is what makes the harness's sibling-directory default (`../agentskills`
+      # next to a skills-evals checkout) resolve to something real here, which
+      # is what lets TestIssue63::test_registries_agree_with_agentskills_own_file
+      # actually run in CI instead of skipping every time.
+      - name: Check out agentskills registry (side-by-side)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/agentskills
+          path: agentskills
+          persist-credentials: false
+
       - name: Install dependencies
         run: pip install pyyaml
       - name: Run tests
+        working-directory: skills-evals
         run: python3 test/run_tests.py

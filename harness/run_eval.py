@@ -3,7 +3,7 @@
 
 Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
-    python3 harness/run_eval.py evals/<skill> --arm both [--registry PATH] [--no-judge]
+    python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...] [--no-judge]
 
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
 pristine seed should FAIL the fixture's checks; a correctly reworked copy
@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -38,35 +39,91 @@ def load_fixture(eval_dir: Path) -> dict:
 
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"
 
+_REQUIRED_REGISTRY_FIELDS = ("name", "url", "layout")
 
-def _load_registries_config() -> list[dict]:
+
+def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
     """harness/registries.yml: [{name, url, layout}, ...] — this harness's own
     record of registry name/URL/layout, kept in step by hand with agentskills'
     scripts/skills_registries.yml (see test/run_tests.py::TestIssue63) rather
     than importing that file at run time: this harness must resolve using
     only its own checkout plus the registry under test.
+
+    Shape-validated on load with one clear message per problem — a bare
+    KeyError/TypeError from a malformed file is not something a contributor
+    editing registries.yml by hand should have to decode.
     """
-    with open(REGISTRIES_YML, encoding="utf-8") as f:
-        return yaml.safe_load(f)["registries"]
+    if not path.is_file():
+        raise ValueError(f"{path} not found")
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict) or not doc.get("registries"):
+        raise ValueError(f"{path} is empty or missing a top-level 'registries:' key")
+    entries = doc["registries"]
+    if not isinstance(entries, list):
+        raise ValueError(f"{path}'s 'registries:' must be a list")
+
+    seen_names: set[str] = set()
+    seen_urls: set[str] = set()
+    for i, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise ValueError(f"{path} registries[{i}] must be a mapping")
+        missing = [f for f in _REQUIRED_REGISTRY_FIELDS if not entry.get(f)]
+        if missing:
+            raise ValueError(
+                f"{path} registries[{i}] is missing required field(s): "
+                f"{', '.join(missing)}")
+        name, url, layout = entry["name"], entry["url"], entry["layout"]
+        if name in seen_names:
+            raise ValueError(f"{path} has a duplicate registry name {name!r}")
+        seen_names.add(name)
+        norm_url = url.rstrip("/")
+        if norm_url in seen_urls:
+            raise ValueError(f"{path} has a duplicate registry url {url!r}")
+        seen_urls.add(norm_url)
+        if not layout.endswith("*/SKILL.md"):
+            raise ValueError(
+                f"{path} entry {name!r} has layout {layout!r} — must end in "
+                "'*/SKILL.md'")
+        if Path(layout).is_absolute():
+            raise ValueError(
+                f"{path} entry {name!r} has an absolute layout {layout!r} — "
+                "layouts are globbed relative to the registry checkout")
+    return entries
 
 
 def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
     """Repeatable --registry NAME=PATH entries. A bare PATH (no "=") is the
     pre-#63 single-path form and is taken as the agentskills entry, so the
     legacy invocation (`--registry ../agentskills`) keeps working unchanged.
+    An empty PATH (`--registry agentskills=`, or a bare empty string) is
+    rejected here rather than silently resolving to the current directory.
     """
     out: dict[str, str] = {}
     for value in values or []:
         name, sep, path = value.partition("=")
         if sep:
+            if not path:
+                raise ValueError(
+                    f"--registry {value!r}: empty PATH after '=' for "
+                    f"registry {name!r}")
             out[name] = path
         else:
+            if not value:
+                raise ValueError(
+                    "--registry '': empty value — expected NAME=PATH, or a "
+                    "bare PATH (legacy, taken as the agentskills entry)")
             out["agentskills"] = value
     return out
 
 
 def _parse_registry_env(value: str | None) -> dict[str, str]:
-    """$SKILLS_EVALS_REGISTRIES: the same NAME=PATH shape, comma-separated."""
+    """$SKILLS_EVALS_REGISTRIES: the same NAME=PATH shape, comma-separated. A
+    bare entry (no "=") is taken as the agentskills entry too, the same as
+    the --registry flag's legacy bare-PATH form (see _parse_registry_flags)
+    — previously this silently dropped a bare entry instead, which was the
+    one shape the CLI flag treats as meaningful.
+    """
     out: dict[str, str] = {}
     for item in (value or "").split(","):
         item = item.strip()
@@ -74,33 +131,96 @@ def _parse_registry_env(value: str | None) -> dict[str, str]:
             continue
         name, sep, path = item.partition("=")
         if sep:
+            if not path:
+                raise ValueError(
+                    f"$SKILLS_EVALS_REGISTRIES entry {item!r}: empty PATH "
+                    f"after '=' for registry {name!r}")
             out[name] = path
+        else:
+            out["agentskills"] = item
     return out
 
 
 def resolve_registries(cli_values: list[str] | None, env_value: str | None,
-                       base_dir: Path) -> dict[str, dict]:
+                       base_dir: Path, agentskills_dir: str | None = None) -> dict[str, dict]:
     """Map every registry named in harness/registries.yml to a local checkout.
 
     Sources, in order: a --registry NAME=PATH flag (repeatable; a bare PATH
-    means agentskills), then $SKILLS_EVALS_REGISTRIES (same shape), then
-    $AGENTSKILLS_DIR for the agentskills entry specifically (the harness's
-    pre-#63 override), then a sibling-directory default `../<name>` next to
-    `base_dir` — the same convention agentskills' own skills_registries.yml
-    uses for the registries it doesn't live in.
+    means agentskills) merged BY NAME with $SKILLS_EVALS_REGISTRIES (same
+    shape; a flag wins over an env entry naming the same registry, but an env
+    entry for a DIFFERENT registry still applies even when a flag is also
+    given), then `agentskills_dir` for the agentskills entry specifically
+    (the harness's pre-#63 override — callers pass $AGENTSKILLS_DIR), then a
+    sibling-directory default `../<name>` next to `base_dir` — the same
+    convention agentskills' own skills_registries.yml uses for the registries
+    it doesn't live in.
+
+    An override naming a registry not listed in harness/registries.yml
+    (a typo'd `--registry cms_platform=...`, say) is rejected here rather
+    than silently discarded — the pre-fix behavior fell back to that
+    registry's sibling default instead, which can "work" by accident and
+    makes a bad override unverifiable from the exit code alone.
     """
-    overrides = {**_parse_registry_env(env_value), **_parse_registry_flags(cli_values)}
+    overrides_cli = _parse_registry_flags(cli_values)
+    overrides_env = _parse_registry_env(env_value)
+    config = _load_registries_config()
+    known = {entry["name"] for entry in config}
+    unknown = sorted((set(overrides_cli) | set(overrides_env)) - known)
+    if unknown:
+        names = ", ".join(repr(n) for n in unknown)
+        raise ValueError(
+            f"unknown registry name(s) {names} in --registry / "
+            "$SKILLS_EVALS_REGISTRIES — not listed in harness/registries.yml "
+            f"(known registries: {', '.join(sorted(known))})")
+
     resolved = {}
-    for entry in _load_registries_config():
+    for entry in config:
         name = entry["name"]
-        if name in overrides:
-            path = Path(overrides[name]).expanduser()
-        elif name == "agentskills" and os.environ.get("AGENTSKILLS_DIR"):
-            path = Path(os.environ["AGENTSKILLS_DIR"]).expanduser()
+        if name in overrides_cli:
+            path = Path(overrides_cli[name]).expanduser().resolve()
+            source = "--registry flag"
+        elif name in overrides_env:
+            path = Path(overrides_env[name]).expanduser().resolve()
+            source = "$SKILLS_EVALS_REGISTRIES"
+        elif name == "agentskills" and agentskills_dir:
+            path = Path(agentskills_dir).expanduser().resolve()
+            source = "$AGENTSKILLS_DIR"
         else:
             path = (base_dir / ".." / name).resolve()
-        resolved[name] = {"path": path, "layout": entry["layout"], "url": entry["url"]}
+            source = "sibling default"
+        resolved[name] = {"path": path, "layout": entry["layout"], "url": entry["url"],
+                          "source": source}
     return resolved
+
+
+def _validate_registry_paths(registries: dict[str, dict]) -> None:
+    """Fail fast on any EXPLICITLY overridden registry (a --registry flag,
+    $SKILLS_EVALS_REGISTRIES entry, or $AGENTSKILLS_DIR) whose resolved path
+    is not a directory — a typo'd override is a config mistake worth catching
+    before any arm spends agent budget, not several minutes later as a
+    confusing skill_not_found. Sibling-default entries are left alone here:
+    most of registries.yml (e.g. agentskills-private) is never checked out
+    locally and is fine to stay unresolved unless a fixture actually needs
+    it — that path is checked lazily, per-arm, in _run_arm instead.
+    """
+    for name, entry in registries.items():
+        if entry["source"] == "sibling default":
+            continue
+        if not entry["path"].is_dir():
+            raise ValueError(
+                f"registry {name!r} ({entry['source']}) resolves to "
+                f"{entry['path']}, which is not a directory")
+
+
+def _normalize_registry_url(url: str) -> str:
+    """Case-insensitive, trailing-slash- and .git-suffix-insensitive form of
+    a registry URL, so `https://github.com/Org/repo/`, `...repo.git`, and a
+    differently-cased host or path all match the same registries.yml entry.
+    """
+    url = url.strip().rstrip("/")
+    if url.lower().endswith(".git"):
+        url = url[:-4]
+    return url.lower()
 
 
 def registry_for_url(registries: dict[str, dict], url: str) -> dict:
@@ -109,8 +229,9 @@ def registry_for_url(registries: dict[str, dict], url: str) -> dict:
     the file to edit — rather than failing silently or crashing deep inside
     a glob.
     """
+    target = _normalize_registry_url(url)
     for entry in registries.values():
-        if entry["url"].rstrip("/") == url.rstrip("/"):
+        if _normalize_registry_url(entry["url"]) == target:
             return entry
     known = ", ".join(sorted(registries)) or "(none configured)"
     raise ValueError(
@@ -118,17 +239,36 @@ def registry_for_url(registries: dict[str, dict], url: str) -> dict:
         f"(known registries: {known})")
 
 
-def _skill_dir_glob(layout: str, skill: str) -> str:
+def _skill_md_glob(layout: str, skill: str) -> str:
     """Substitute `skill` for the skill-name placeholder in a registries.yml
-    `layout` glob (its final path segment, immediately before `SKILL.md`),
-    leaving any earlier `*` (a bundle/plugin wildcard) untouched.
+    `layout` glob (the segment immediately before `SKILL.md`), leaving any
+    earlier `*` (a bundle/plugin wildcard) untouched. Returns the FULL glob
+    ending in `/SKILL.md` — callers must glob for FILES and take `.parent`,
+    never glob for a directory: a skill dir with no SKILL.md (a stub left by
+    a rename, a bundle mid-migration) must fail closed as skill_not_found
+    rather than "installing" whatever happens to sit in that directory.
     """
     parts = layout.split("/")
     if len(parts) < 2 or parts[-1] != "SKILL.md" or parts[-2] != "*":
         raise ValueError(f"registries.yml layout {layout!r} must end in '*/SKILL.md'")
-    parts = parts[:-1]
-    parts[-1] = skill
+    parts[-2] = skill
     return "/".join(parts)
+
+
+_SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_skill_name(skill: str) -> None:
+    """A skill name must be a single, non-empty path segment with no path or
+    glob metacharacters. It flows unvalidated into both a registry glob and a
+    shutil.copytree destination: `../../x` would escape the registry on read
+    and the workspace on write, `*` would install whichever skill happens to
+    glob-match first, and `""` would install the whole registry container.
+    """
+    if not _SKILL_NAME_RE.match(skill) or skill in (".", ".."):
+        raise ValueError(
+            f"invalid skill name {skill!r}: must be a single non-empty path "
+            "segment with no path or glob metacharacters")
 
 
 def agent_env(workspace: Path, env_spec: dict | None) -> dict:
@@ -160,27 +300,36 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
     duration_ms/raw. Error dicts always have an "error" key — one of
-    "skill_not_found", "timeout", "nonzero_exit", "invalid_json",
-    "agent_error" — plus a "detail". Callers MUST check `"error" in result`
-    rather than relying on exceptions; only skill installation and process
-    invocation failures are turned into error dicts here, nothing is raised.
+    "invalid_skill_name", "skill_not_found", "timeout", "nonzero_exit",
+    "invalid_json", "agent_error" — plus a "detail". Callers MUST check
+    `"error" in result` rather than relying on exceptions; only skill
+    installation and process invocation failures are turned into error dicts
+    here, nothing is raised.
     """
     if arm["name"] == "with_skill":
         skill = arm["skill"]
+        try:
+            _validate_skill_name(skill)
+        except ValueError as exc:
+            return {"error": "invalid_skill_name", "detail": str(exc)}
         registry = arm["registry"]
         # Registry layouts vary (agentskills' plugins/<bundle>/skills/<skill>/,
         # cms-platform's flat skills/<skill>/, adamdaniel.ai's
         # .claude/skills/<skill>/ — see harness/registries.yml). `layout`
         # carries the glob for the registry under test, defaulting to
-        # agentskills' shape for callers that predate #63. Sorted so multiple
+        # agentskills' shape for callers that predate #63. Globs for the
+        # SKILL.md FILE (not the containing directory) and takes its parent,
+        # so a skill directory with no SKILL.md — a stub left by a rename, a
+        # bundle mid-migration — fails closed as skill_not_found instead of
+        # "installing" whatever's actually in there. Sorted so multiple
         # matches pick deterministically.
         layout = arm.get("layout", "plugins/*/skills/*/SKILL.md")
-        skill_glob = _skill_dir_glob(layout, skill)
-        matches = sorted(p for p in registry.glob(skill_glob) if p.is_dir())
+        skill_md_glob = _skill_md_glob(layout, skill)
+        matches = sorted(p.parent for p in registry.glob(skill_md_glob) if p.is_file())
         if not matches:
-            pattern = registry / skill_glob
+            pattern = registry / skill_md_glob
             return {"error": "skill_not_found",
-                    "detail": f"no skill dir matched {pattern}"}
+                    "detail": f"no SKILL.md matched {pattern}"}
         skill_src = matches[0]
         shutil.copytree(skill_src, workspace / ".claude" / "skills" / skill)
 
@@ -308,13 +457,40 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
         }
+        # A bad `registry:` (missing field, unknown URL, or a resolved path
+        # that doesn't exist) becomes an error dict here — the same shape
+        # run_agent returns for skill_not_found — rather than an uncaught
+        # KeyError/ValueError. _run_arm's only exception handling is the
+        # `finally:` below, so anything raised here used to kill the WHOLE
+        # run (including --arm both's other arm) with a bare traceback: no
+        # report.md, no summary.json, and main() never reached its
+        # documented `return 2`.
+        registry_error = None
         if arm_name == "with_skill":
-            arm_config["skill"] = fixture["skill"]
-            entry = registry_for_url(registries, fixture["registry"])
-            arm_config["registry"] = entry["path"]
-            arm_config["layout"] = entry["layout"]
+            if "registry" not in fixture:
+                registry_error = {
+                    "error": "missing_registry_field",
+                    "detail": f"fixture for skill {fixture.get('skill')!r} has "
+                              "no 'registry:' field"}
+            else:
+                try:
+                    entry = registry_for_url(registries, fixture["registry"])
+                except ValueError as exc:
+                    registry_error = {"error": "unknown_registry", "detail": str(exc)}
+                else:
+                    if not entry["path"].is_dir():
+                        registry_error = {
+                            "error": "registry_not_found",
+                            "detail": f"registry {fixture['registry']!r} resolves "
+                                      f"to {entry['path']}, which is not a "
+                                      "directory"}
+                    else:
+                        arm_config["skill"] = fixture["skill"]
+                        arm_config["registry"] = entry["path"]
+                        arm_config["layout"] = entry["layout"]
 
-        result = run_agent(workspace, fixture["prompt"], arm_config)
+        result = registry_error if registry_error is not None else run_agent(
+            workspace, fixture["prompt"], arm_config)
 
         error = None
         agent_summary = None
@@ -367,10 +543,13 @@ def main() -> int:
     parser.add_argument("--registry", action="append", default=None,
                         help="registry checkout, repeatable: NAME=PATH (name from "
                              "harness/registries.yml), or a bare PATH (legacy) taken "
-                             "as the agentskills entry; else $SKILLS_EVALS_REGISTRIES "
-                             "(same NAME=PATH,NAME=PATH shape), else $AGENTSKILLS_DIR "
-                             "for agentskills specifically, else a sibling checkout "
-                             "../<name> next to this repo")
+                             "as the agentskills entry; unknown names and empty "
+                             "paths are rejected. Merges by name with "
+                             "$SKILLS_EVALS_REGISTRIES (same NAME=PATH,NAME=PATH "
+                             "shape; a bare entry there is also taken as "
+                             "agentskills), then $AGENTSKILLS_DIR for agentskills "
+                             "specifically, then a sibling checkout ../<name> next "
+                             "to this repo for any name still unresolved")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
@@ -399,8 +578,14 @@ def main() -> int:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
-    registries = resolve_registries(args.registry, os.environ.get("SKILLS_EVALS_REGISTRIES"),
-                                    Path(__file__).resolve().parent.parent)
+    try:
+        registries = resolve_registries(
+            args.registry, os.environ.get("SKILLS_EVALS_REGISTRIES"),
+            Path(__file__).resolve().parent.parent, os.environ.get("AGENTSKILLS_DIR"))
+        _validate_registry_paths(registries)
+    except ValueError as exc:
+        print(f"registry configuration error: {exc}")
+        return 2
 
     arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
                      for name in arm_names]
