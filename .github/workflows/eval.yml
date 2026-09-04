@@ -14,11 +14,19 @@
 #   here are trusted because only maintainers can push to this repo; the only
 #   prompts ever run are this repo's committed fixtures. Never accept external
 #   fixture contributions into this path without dropping the key first.
-#   The trust boundary equally includes the agentskills registry checked out
-#   below: the with_skill arm installs skill content from its default branch
-#   and executes it under bypassPermissions with the key in env — write access
-#   to that repo is equivalent to key access here. Both repos are
-#   maintainer-only; keep it that way or drop the key.
+#   The trust boundary equally includes the three registries checked out
+#   below (agentskills, cms-platform, adamdaniel.ai): the with_skill arm
+#   installs skill content from whichever registry the fixture names, from
+#   that registry's default branch, and executes it under bypassPermissions
+#   with the key in env — write access to any of the three checked-out
+#   registries is equivalent to key access here. All four repos (this one
+#   included) are maintainer-only; keep it that way or drop the key.
+#   cms-platform and adamdaniel.ai also land commits on their default
+#   branches through automated lanes — Decap CMS editorial publish loops,
+#   auto-merge nudges, dependabot auto-merge — not only direct maintainer
+#   pushes. A commit landed by one of those lanes is inside this trust
+#   boundary just the same as a maintainer's own push: treat it as trusted,
+#   or drop the key.
 #
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
 #   secret exists. The Claude Code CLI does not resolve the
@@ -81,7 +89,7 @@
 #   ::warning:: carries an HTTP status code or an exception class name, and
 #   refresh_models.py is written to produce nothing else.
 #
-# * Both checkouts use `persist-credentials: false`; push auth is injected
+# * All four checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
 #   only credential in reach is the short-lived WIF-derived access token
@@ -149,6 +157,20 @@ jobs:
         with:
           repository: Adam-S-Daniel/agentskills
           path: agentskills
+          persist-credentials: false
+
+      - name: Check out cms-platform registry (side-by-side)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/cms-platform
+          path: cms-platform
+          persist-credentials: false
+
+      - name: Check out adamdaniel.ai registry (side-by-side)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/adamdaniel.ai
+          path: adamdaniel.ai
           persist-credentials: false
 
       - name: Set up Node
@@ -393,7 +415,10 @@ jobs:
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
           python3 harness/run_eval.py evals/workflow-path-audit \
-            --arm both --registry ../agentskills
+            --arm both \
+            --registry agentskills=../agentskills \
+            --registry cms-platform=../cms-platform \
+            --registry adamdaniel.ai=../adamdaniel.ai
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
