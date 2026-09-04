@@ -269,6 +269,34 @@ jobs:
           work="$RUNNER_TEMP/roster-inputs"
           rm -rf "$pub" "$work"; mkdir -p "$pub" "$work"
           reason=""
+          # The reason a failed script's stderr becomes a ::warning::/step-
+          # summary line. Prefers the FIRST non-empty line that is neither a
+          # `roster: `-prefixed warn() line (compute_roster's own warnings,
+          # chronologically first) nor an indented line (a roster.py
+          # "  <id>: <reason>" per-model detail, or an indented traceback
+          # frame) nor the traceback's own header — the single least useful
+          # line a traceback has. That headline is what roster.py's fatal
+          # "refusing to publish a roster with no arms" path prints FIRST,
+          # ahead of one indented line per excluded/unranked model, so the
+          # old `tail -n 1` here surfaced a random model's detail instead of
+          # the headline. Falls back to the plain last non-empty line only
+          # when nothing clears that bar (an uncaught exception, where the
+          # exception's own message is the last line and the traceback's
+          # header and frames are the only other candidates).
+          extract_reason() {
+            local line
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              case "$line" in
+                'roster: '*) continue ;;
+                ' '*|$'\t'*) continue ;;
+                'Traceback (most recent call last):') continue ;;
+              esac
+              printf '%s\n' "$line"
+              return 0
+            done < "$1"
+            grep -v '^$' "$1" | tail -n 1
+          }
           refresh() {
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
@@ -302,14 +330,14 @@ jobs:
               git show origin/eval-results:usage/latest.json > "$work/census.json" 2>/dev/null || true
             fi
             # stderr is captured, not swallowed: it is echoed back to the log
-            # either way, and on failure its first non-warning line becomes the
+            # either way, and on failure extract_reason picks the
             # ::warning::. Both scripts are written to keep that line to a
             # status code or an exception class — never a response body.
             if ! python3 scripts/refresh_models.py \
                  --out "$work/models.json" \
                  --admin-report "$RUNNER_TEMP/admin-usage.json" 2> "$work/refresh.err"; then
               cat "$work/refresh.err" >&2
-              reason="$(grep -v '^$' "$work/refresh.err" | tail -n 1)"
+              reason="$(extract_reason "$work/refresh.err")"
               return 1
             fi
             cat "$work/refresh.err" >&2
@@ -321,15 +349,7 @@ jobs:
                  --previous "$work/previous.json" \
                  --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
               cat "$work/roster.err" >&2
-              # The LAST non-empty line, matching the refresh.err extractor
-              # above — not the first. `roster: `-prefixed warn() lines are
-              # NOT filtered out here any more: they are chronologically
-              # first (compute_roster's own warnings), so on the fatal
-              # "refusing to publish" path this still lands on that
-              # informative last line; on an uncaught exception it lands on
-              # the exception's own message rather than the traceback's
-              # useless first line ("Traceback (most recent call last):").
-              reason="$(grep -v '^$' "$work/roster.err" | tail -n 1)"
+              reason="$(extract_reason "$work/roster.err")"
               return 1
             fi
             cat "$work/roster.err" >&2

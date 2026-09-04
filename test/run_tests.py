@@ -4839,6 +4839,142 @@ class TestIssue67Review3(unittest.TestCase):
     """Round 3 fixes for #67, one test per fix. See run_tests.py's
     class-per-review-round convention (TestIssue67Review, TestIssue67Review2)."""
 
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+    # --- shared with TestIssue67Review: same step, same stub shape. Kept as
+    # its own copy rather than inherited, per this file's existing
+    # per-review-round class convention (see e.g. the two _fixture_dir
+    # definitions on TestIssue67/TestIssue67Review) — inheriting a TestCase
+    # subclass would re-collect and re-run its whole test suite here too.
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
+                         roster_fail_stderr=None):
+        """Run eval.yml's roster step for real, against stubs.
+
+        Hermetic: the two python scripts it calls are replaced by stubs, `git`
+        by an optional shim, and there is no network and no credential. What is
+        under test is the STEP — its failure handling — not the scripts.
+
+        `roster_fail_stderr`, if given, makes the roster.py stub write that
+        exact text to stderr and exit 1 (instead of succeeding) — for
+        exercising the step's own reason-extraction and step-summary logic
+        against a controlled roster.err.
+        """
+        script = self._step_named("roster")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "scripts").mkdir()
+        (tmp / "harness").mkdir()
+        (tmp / "evals").mkdir()
+        (tmp / "evals" / "roster-policy.yml").write_text("tiers: []\n", encoding="utf-8")
+        stub_args = ("import sys, json, argparse\n"
+                     "p = argparse.ArgumentParser()\n"
+                     "for f in ('--models','--policy','--census',"
+                     "'--admin-report','--previous','--out'):\n"
+                     "    p.add_argument(f)\n"
+                     "a = p.parse_args()\n")
+        (tmp / "scripts" / "refresh_models.py").write_text(
+            stub_args + (
+                "print('Models API read failed: HTTP 503', file=sys.stderr)\n"
+                "sys.exit(1)\n" if refresh_rc else
+                "open(a.out, 'w').write(json.dumps({'models': []}))\n"
+                "open(a.admin_report, 'w').write('{}')\n"),
+            encoding="utf-8")
+        if roster_fail_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_fail_stderr!r})\n"
+                           f"sys.exit(1)\n")
+        else:
+            roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
+                                       "print('### Model roster')\n")
+        (tmp / "harness" / "roster.py").write_text(roster_stub, encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+        bare_origin = tmp / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare_origin)], check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(bare_origin)],
+                       cwd=tmp, check=True)
+
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        env = dict(os.environ)
+        env.update({"RUNNER_TEMP": str(runner),
+                    "GITHUB_ENV": str(tmp / "github_env"),
+                    "GITHUB_STEP_SUMMARY": str(tmp / "summary.md")})
+        (tmp / "github_env").write_text("", encoding="utf-8")
+        (tmp / "summary.md").write_text("", encoding="utf-8")
+        if git_shim:
+            bindir = tmp / "bin"
+            bindir.mkdir()
+            shim = bindir / "git"
+            shim.write_text(git_shim.replace("{GIT}", shutil.which("git")),
+                            encoding="utf-8")
+            shim.chmod(0o755)
+            env["PATH"] = f"{bindir}:{env['PATH']}"
+        script_file = tmp / "roster_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=120)
+        return {
+            "rc": proc.returncode,
+            "out": proc.stdout + proc.stderr,
+            "roster": runner / "roster" / "latest.json",
+            "env": (tmp / "github_env").read_text(encoding="utf-8"),
+            "summary": (tmp / "summary.md").read_text(encoding="utf-8"),
+        }
+
+    # --- item 2: the roster-failure reason extractor must prefer the
+    # no-arms headline over an indented per-model detail line ------------
+
+    def test_roster_failure_reason_prefers_the_no_arms_headline_over_a_model_detail_line(self):
+        """roster.py's fatal "refusing to publish a roster with no arms" path
+        prints the headline FIRST, then one indented "  <id>: <reason>" line
+        per excluded/unranked model — production-shaped, built by actually
+        running roster.py on a no-arms input (every ranked model inside the
+        cooling-off), not hand-written. The old `tail -n 1` extractor picked
+        the LAST line — a model's detail, not the headline — and the comment
+        claimed otherwise.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps({
+                "fetched_at": "2026-09-04T11:00:00Z",
+                "models": [TestIssue67._model("claude-haiku-9",
+                                              "2026-09-02T00:00:00Z")],
+            }), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            proc = subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "roster.py"),
+                 "--models", str(models), "--policy", str(self.POLICY),
+                 "--out", str(out)],
+                capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("refusing to publish a roster with no arms", proc.stderr)
+        self.assertTrue(
+            any(ln.startswith("  ") for ln in proc.stderr.splitlines()),
+            "fixture must carry at least one indented per-model detail line "
+            "— the production shape the old extractor got wrong")
+
+        got = self._run_roster_step(roster_fail_stderr=proc.stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        warning_line = next(ln for ln in got["out"].splitlines()
+                            if ln.startswith("::warning::"))
+        self.assertIn("refusing to publish a roster with no arms", warning_line)
+        self.assertNotIn("claude-haiku-9:", warning_line,
+                         "the per-model detail line leaked into the warning "
+                         "instead of the headline")
+        self.assertIn("refusing to publish a roster with no arms",
+                      got["summary"])
+
     # --- item 1: model_usage_census.py must not need PyYAML just to import
     # or to fail an argument, only to actually build a census ---
 
