@@ -1785,6 +1785,127 @@ class TestIssue63(unittest.TestCase):
                yaml.safe_load(self.REGISTRIES_YML.read_text(encoding="utf-8"))["registries"]}
         self.assertEqual(ours, theirs)
 
+    # --- Review round 3, item B: a TRUTHY non-string skill:/prompt:/
+    # registry: must never reach re/subprocess/.strip() and crash with an
+    # uncaught TypeError/AttributeError. Round 2 closed only the falsy case
+    # (None/""); this closes the class for any wrong-typed value. ---
+
+    def test_fixture_non_string_skill_or_prompt_exits_2_not_a_traceback(self):
+        cases = {"skill": [123, ["a"]], "prompt": [123, ["a"]]}
+        for field, bad_values in cases.items():
+            for bad in bad_values:
+                with self.subTest(field=field, value=bad):
+                    with tempfile.TemporaryDirectory() as tmp:
+                        eval_dir = Path(tmp) / "eval"
+                        seed_dir = eval_dir / "seed"
+                        seed_dir.mkdir(parents=True)
+                        (seed_dir / "placeholder.txt").write_text(
+                            "x\n", encoding="utf-8")
+                        fixture = {"skill": "some-skill", "prompt": "do the thing"}
+                        fixture[field] = bad
+                        import yaml
+                        (eval_dir / "fixture.yaml").write_text(
+                            yaml.safe_dump(fixture), encoding="utf-8")
+
+                        results_dir = Path(tmp) / "results"
+                        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                              str(eval_dir), "--arm", "without_skill",
+                              "--results-dir", str(results_dir),
+                              "--timeout", "30", "--no-judge"]
+                        proc = subprocess.run(cmd, capture_output=True, text=True,
+                                              cwd=str(REPO_ROOT))
+                        self.assertEqual(proc.returncode, 2,
+                                         proc.stdout + proc.stderr)
+                        self.assertNotIn("Traceback", proc.stderr)
+                        self.assertIn(field, proc.stdout + proc.stderr)
+                        self.assertIn("string",
+                                      (proc.stdout + proc.stderr).lower())
+                        self.assertFalse(results_dir.exists())
+
+    def test_non_string_registry_field_is_an_error_dict_other_arm_still_runs(self):
+        # A truthy non-string registry: (a list, an int, a mapping, a bool)
+        # used to reach _normalize_registry_url's .strip() (or re, inside
+        # registry_for_url) with the raw value and raise an uncaught
+        # AttributeError/TypeError — killing the WHOLE run, including
+        # --arm both's without_skill arm, with a bare traceback.
+        bad_values = [["https://example.com/x"], 123,
+                     {"url": "https://example.com/x"}, True]
+        for bad in bad_values:
+            with self.subTest(value=bad):
+                with tempfile.TemporaryDirectory() as tmp:
+                    eval_dir = Path(tmp) / "eval"
+                    seed_dir = eval_dir / "seed"
+                    seed_dir.mkdir(parents=True)
+                    (seed_dir / "placeholder.txt").write_text(
+                        "x\n", encoding="utf-8")
+                    fixture = {"skill": "some-skill", "registry": bad,
+                              "prompt": "do the thing"}
+                    import yaml
+                    (eval_dir / "fixture.yaml").write_text(
+                        yaml.safe_dump(fixture), encoding="utf-8")
+
+                    results_dir = Path(tmp) / "results"
+                    env = os.environ.copy()
+                    env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
+                    env["FAKE_CLAUDE_MODE"] = "agent"
+                    cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                          str(eval_dir), "--arm", "both",
+                          "--results-dir", str(results_dir),
+                          "--timeout", "30", "--no-judge"]
+                    proc = subprocess.run(cmd, capture_output=True, text=True,
+                                          env=env, cwd=str(REPO_ROOT))
+                    self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+                    self.assertNotIn("Traceback", proc.stderr)
+
+                    run_dirs = list((results_dir / "some-skill").iterdir())
+                    self.assertEqual(len(run_dirs), 1)
+                    run_dir = run_dirs[0]
+                    self.assertTrue((run_dir / "report.md").is_file())
+
+                    with_skill_summary = json.loads(
+                        (run_dir / "with_skill" / "summary.json")
+                        .read_text(encoding="utf-8"))
+                    self.assertEqual(with_skill_summary["error"]["type"],
+                                     "invalid_registry_field")
+
+                    without_skill_summary = json.loads(
+                        (run_dir / "without_skill" / "summary.json")
+                        .read_text(encoding="utf-8"))
+                    self.assertIsNone(without_skill_summary["error"])
+
+    # --- Review round 3, item E: a repeated $SKILLS_EVALS_REGISTRIES name
+    # (bare or explicit) must raise, not silently last-win — the twin of
+    # _parse_registry_flags' own guard (TestIssue63Round2's
+    # test_repeated_cli_flag_for_same_name_raises). ---
+
+    def test_repeated_env_var_entry_for_same_name_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            run_eval.resolve_registries(
+                None, "cms-platform=/a,cms-platform=/b", REPO_ROOT)
+        self.assertIn("cms-platform", str(ctx.exception))
+
+    def test_repeated_bare_env_entry_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            run_eval.resolve_registries(None, "/a,/b", REPO_ROOT)
+        self.assertIn("agentskills", str(ctx.exception))
+
+    # --- Review round 3, item G: a `**` layout segment passes the
+    # "ends in '*/SKILL.md'" load-time check but lets a recursive glob at
+    # arm time pick up a stale copy under e.g. a checkout's .git/ as the
+    # sorted-first match. Reject it at load time instead. ---
+
+    def test_registries_yml_layout_with_double_star_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "registries.yml"
+            bad.write_text(
+                "registries:\n  - name: agentskills\n"
+                "    url: https://example.com/a\n"
+                "    layout: '**/*/SKILL.md'\n",
+                encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                run_eval._load_registries_config(bad)
+            self.assertIn("**", str(ctx.exception))
+
 
 class TestIssue63Review(unittest.TestCase):
     """Review round 1 on PR #128 (issue #63): should-fix items from two opus
@@ -2262,6 +2383,9 @@ class TestIssue63Round2(unittest.TestCase):
                 "---\nname: some-skill\ndescription: fixture stand-in.\n---\n",
                 encoding="utf-8")
 
+            # Case 1: the destination directory itself already exists (a
+            # duplicate with_skill install, or a seed that pre-ships the
+            # skill) — shutil.copytree raises FileExistsError.
             workspace = Path(tmp) / "ws"
             preexisting = workspace / ".claude" / "skills" / "some-skill"
             preexisting.mkdir(parents=True)
@@ -2275,6 +2399,21 @@ class TestIssue63Round2(unittest.TestCase):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_install_failed")
+
+            # Case 2: a seed shipping `.claude/skills` itself as a regular
+            # FILE (not a directory) — os.makedirs (inside shutil.copytree)
+            # raises NotADirectoryError here, a DIFFERENT OSError subclass
+            # than FileExistsError. run_agent's "nothing is raised" contract
+            # must hold for this case too, not just the FileExistsError one.
+            workspace2 = Path(tmp) / "ws2"
+            (workspace2 / ".claude").mkdir(parents=True)
+            (workspace2 / ".claude" / "skills").write_text(
+                "not a directory\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                              "FAKE_CLAUDE_MODE": "agent"}):
+                result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
+            self.assertIn("error", result2)
+            self.assertEqual(result2["error"], "skill_install_failed")
 
     # --- N4: a repeated --registry NAME= for the same name must raise, not
     # silently last-win ---

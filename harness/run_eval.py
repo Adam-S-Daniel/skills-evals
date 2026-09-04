@@ -65,6 +65,11 @@ def _layout_parts(layout: str) -> list[str]:
     parts = layout.split("/")
     if len(parts) < 2 or parts[-1] != "SKILL.md" or parts[-2] != "*":
         raise ValueError(f"layout {layout!r} must end in '*/SKILL.md'")
+    if any("**" in part for part in parts):
+        raise ValueError(
+            f"layout {layout!r} contains a '**' segment — recursive globs "
+            "are rejected: against a registry with a stale copy under, "
+            "say, .git/, the sorted-first match could come from there")
     return parts
 
 
@@ -125,8 +130,7 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
             _layout_parts(layout)
         except ValueError as exc:
             raise ValueError(
-                f"{path} entry {name!r} has layout {layout!r} — must end in "
-                "'*/SKILL.md'") from exc
+                f"{path} entry {name!r} has layout {layout!r}: {exc}") from exc
         if Path(layout).is_absolute():
             raise ValueError(
                 f"{path} entry {name!r} has an absolute layout {layout!r} — "
@@ -178,7 +182,11 @@ def _parse_registry_env(value: str | None) -> dict[str, str]:
     bare entry (no "=") is taken as the agentskills entry too, the same as
     the --registry flag's legacy bare-PATH form (see _parse_registry_flags)
     — previously this silently dropped a bare entry instead, which was the
-    one shape the CLI flag treats as meaningful.
+    one shape the CLI flag treats as meaningful. A NAME repeated across two
+    entries (bare or explicit) is rejected too, the same as
+    _parse_registry_flags — silently taking the last one made a re-ordered
+    or copy-pasted env value "work" while quietly dropping the first entry's
+    registry.
     """
     out: dict[str, str] = {}
     for item in (value or "").split(","):
@@ -191,9 +199,16 @@ def _parse_registry_env(value: str | None) -> dict[str, str]:
                 raise ValueError(
                     f"$SKILLS_EVALS_REGISTRIES entry {item!r}: empty PATH "
                     f"after '=' for registry {name!r}")
-            out[name] = path
+            key = name
         else:
-            out["agentskills"] = item
+            key = "agentskills"
+            path = item
+        if key in out:
+            raise ValueError(
+                f"$SKILLS_EVALS_REGISTRIES entry {item!r}: registry {key!r} "
+                f"given more than once (already {out[key]!r}) — repeated "
+                "entries for the same name silently last-won; pass it once")
+        out[key] = path
     return out
 
 
@@ -377,7 +392,12 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         skill_dest = workspace / ".claude" / "skills" / skill
         try:
             shutil.copytree(skill_src, skill_dest)
-        except FileExistsError as exc:
+        except OSError as exc:
+            # FileExistsError (the destination dir already exists) and
+            # NotADirectoryError (a seed shipping .claude/skills itself as a
+            # regular FILE, so os.makedirs can't create skill_dest under it)
+            # both land here — both are a seed/workspace layout problem, not
+            # something to raise out of run_agent's "nothing is raised" contract.
             return {"error": "skill_install_failed",
                     "detail": f"{skill_dest} already exists in the seed: {exc}"}
 
@@ -505,24 +525,36 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
         }
-        # A bad `registry:` (missing field, unknown URL, or a resolved path
-        # that doesn't exist) becomes an error dict here — the same shape
-        # run_agent returns for skill_not_found — rather than an uncaught
-        # KeyError/ValueError. _run_arm's only exception handling is the
-        # `finally:` below, so anything raised here used to kill the WHOLE
-        # run (including --arm both's other arm) with a bare traceback: no
-        # report.md, no summary.json, and main() never reached its
-        # documented `return 2`.
+        # A bad `registry:` (missing field, wrong type, unknown URL, or a
+        # resolved path that doesn't exist) becomes an error dict here — the
+        # same shape run_agent returns for skill_not_found — rather than an
+        # uncaught KeyError/ValueError. _run_arm's only exception handling is
+        # the `finally:` below, so anything raised here used to kill the
+        # WHOLE run (including --arm both's other arm) with a bare
+        # traceback: no report.md, no summary.json, and main() never reached
+        # its documented `return 2`. A TRUTHY non-string `registry:` (a
+        # list, an int, a mapping, a bool — YAML will happily hand over any
+        # of these) used to reach _normalize_registry_url's `.strip()` with
+        # the raw value and raise an uncaught AttributeError/TypeError;
+        # `invalid_registry_field` closes that alongside the missing/blank
+        # case above.
         registry_error = None
         if arm_name == "with_skill":
-            if not fixture.get("registry"):
+            registry_value = fixture.get("registry")
+            if not registry_value:
                 registry_error = {
                     "error": "missing_registry_field",
                     "detail": f"fixture for skill {fixture.get('skill')!r} has "
                               "no (or a blank) 'registry:' field"}
+            elif not isinstance(registry_value, str):
+                registry_error = {
+                    "error": "invalid_registry_field",
+                    "detail": f"fixture for skill {fixture.get('skill')!r} has "
+                              "a 'registry:' field that must be a string, "
+                              f"not {type(registry_value).__name__}"}
             else:
                 try:
-                    entry = registry_for_url(registries, fixture["registry"])
+                    entry = registry_for_url(registries, registry_value)
                 except ValueError as exc:
                     registry_error = {"error": "unknown_registry", "detail": str(exc)}
                 else:
@@ -617,12 +649,23 @@ def main() -> int:
     # inside _run_arm/_render_report, and a `skill:` containing `../` was
     # never rejected before those paths were built (run_agent's own check
     # only fires for the with_skill arm, by which point _write_summary has
-    # already used the raw name for with_skill AND without_skill).
+    # already used the raw name for with_skill AND without_skill). Presence
+    # first (a genuinely absent or blank field, same as
+    # _load_registries_config's own missing check), then type — a TRUTHY
+    # non-string `skill:`/`prompt:` (a list, an int) used to sail past a
+    # bare `not fixture.get(f)` check and die later with an uncaught
+    # TypeError from re.fullmatch or subprocess.run.
     required = ["skill"] if args.arm == "objective-only" else ["skill", "prompt"]
-    missing = [f for f in required if not fixture.get(f)]
+    missing = [f for f in required
+              if fixture.get(f) is None or fixture.get(f) == ""]
     if missing:
         print(f"{args.eval_dir / 'fixture.yaml'} is missing required "
               f"field(s): {', '.join(missing)}")
+        return 2
+    bad_type = [f for f in required if not isinstance(fixture.get(f), str)]
+    if bad_type:
+        print(f"{args.eval_dir / 'fixture.yaml'} field(s) must be strings: " +
+              ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
         return 2
 
     # Resolved and validated before ANY arm starts, including objective-only:
