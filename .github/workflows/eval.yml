@@ -256,8 +256,21 @@ jobs:
             # run (no branch, no files) just leaves empty files behind and
             # roster.py treats those as absent.
             if ! git fetch origin eval-results 2>/dev/null; then
-              if git ls-remote --heads origin eval-results 2>/dev/null \
-                 | grep -q 'refs/heads/eval-results'; then
+              # `git ls-remote | grep -q` discards ls-remote's OWN exit status
+              # under `pipefail`: on a correlated outage (fetch AND ls-remote
+              # both unreachable) grep sees empty stdin, "no match" is exit 1,
+              # and pipefail reports the pipeline's status as grep's 1 rather
+              # than ls-remote's 128 — reading a network outage as a genuine
+              # first run. Capture ls-remote's own output and exit status via
+              # command substitution instead, and match on the captured text
+              # with a here-string so nothing is piped into grep (the fleet's
+              # SIGPIPE rule) and ls-remote's failure cannot be swallowed by
+              # what comes after it.
+              ls_out=$(git ls-remote --heads origin eval-results 2>/dev/null) || {
+                reason="roster inputs unavailable: could not reach origin"
+                return 1
+              }
+              if grep -qF -- 'refs/heads/eval-results' <<<"$ls_out"; then
                 reason="roster inputs unavailable: eval-results exists but could not be fetched"
                 return 1
               fi

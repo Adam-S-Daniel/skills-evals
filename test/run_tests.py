@@ -2772,6 +2772,18 @@ class TestIssue67Review(unittest.TestCase):
                         "print('### Model roster')\n",
             encoding="utf-8")
         subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+        # A real (empty) bare "origin" — actions/checkout always configures
+        # one in production, and item 2's fix makes the step's behavior
+        # depend on whether `origin` is genuinely reachable vs. genuinely
+        # missing the branch. An unconfigured origin used to read the same
+        # as "reachable, branch absent" purely by accident of both failing
+        # the same commands; that coincidence is gone now that ls-remote's
+        # own exit status is checked, so the fixture needs a real remote to
+        # stay a genuine first-run case without a git_shim.
+        bare_origin = tmp / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare_origin)], check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(bare_origin)],
+                       cwd=tmp, check=True)
 
         runner = tmp / "runner"
         runner.mkdir()
@@ -2790,7 +2802,14 @@ class TestIssue67Review(unittest.TestCase):
                             encoding="utf-8")
             shim.chmod(0o755)
             env["PATH"] = f"{bindir}:{env['PATH']}"
-        proc = subprocess.run(["bash", "-c", script], cwd=tmp, env=env,
+        # Actions runs a `run:` block as `bash -e {file}`, not `bash -c`
+        # (its default shell is `bash --noprofile --norc -eo pipefail {0}`)
+        # — a command that fails outside an if/&&/||/! context aborts the
+        # whole step there. `bash -c` without `-e` let a step that would
+        # actually die partway through read as fully successful here.
+        script_file = tmp / "roster_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
                               capture_output=True, text=True, timeout=120)
         return {
             "rc": proc.returncode,
@@ -2946,6 +2965,10 @@ class TestIssue67Review2(unittest.TestCase):
         return next(s for s in self._steps()
                     if needle.lower() in (s.get("name") or "").lower())
 
+    #: The roster step, actually executed against stubs — same harness as
+    #: TestIssue67Review, reused rather than duplicated.
+    _run_roster_step = TestIssue67Review._run_roster_step
+
     # --- item 1: usage_share's denominator excludes `other`/unranked, and
     #             _census_verdict must agree, not read RAW counts -----------
 
@@ -2993,6 +3016,33 @@ class TestIssue67Review2(unittest.TestCase):
             self._policy(), self.NOW)
         self.assertEqual(empty_code, "empty")
         self.assertIn("empty over the window", empty_note)
+
+    # --- item 2: `git ls-remote | grep -q` discards ls-remote's own exit
+    #             status under `pipefail` -----------------------------------
+
+    #: Both `fetch` AND `ls-remote` fail — a correlated outage (DNS, proxy,
+    #: GitHub down), not a first run. `grep -q` on ls-remote's empty stdout
+    #: exits 1 (no match); under `pipefail` that becomes the PIPELINE's exit
+    #: status, discarding ls-remote's own 128 — so `if ... | grep -q ...`
+    #: reads false and the step falls through as though the branch never
+    #: existed.
+    GIT_SHIM_BOTH_FAIL = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
+    ls-remote) echo "fatal: unable to access origin" >&2; exit 128 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    def test_a_correlated_outage_is_not_read_as_a_first_run(self):
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_BOTH_FAIL)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists(),
+                         "no roster is published on a correlated outage")
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
 
 
 if __name__ == "__main__":
