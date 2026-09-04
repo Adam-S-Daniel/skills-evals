@@ -75,9 +75,9 @@ ATTACHED_VALUE_FLAGS = ("-X", "-f", "-F", "-R", "-H", "-q", "-b", "-t", "-L")
 API_BODY_FLAGS = {"-f", "--raw-field", "-F", "--field", "--input"}
 WRITE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
 
-# Verbs that mutate REMOTE state. A pair not listed in either group below is
-# treated as a read, so a fixture that needs a new write refused adds it here
-# rather than in its own copy of this file.
+# Verbs that mutate REMOTE state. A pair in neither this set nor the one
+# added just below is treated as a read, so a fixture that needs a new write
+# refused adds it here rather than in its own copy of this file.
 WRITE_SUBCOMMANDS = {
     ("pr", "merge"), ("pr", "close"), ("pr", "create"), ("pr", "edit"),
     ("pr", "comment"), ("pr", "reopen"), ("pr", "ready"), ("pr", "review"),

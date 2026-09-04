@@ -2374,6 +2374,39 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.assertLess(time.perf_counter() - started, 5.0)
         self.assertIn("pr-c-left-alone", by_id)
 
+    # ------------------------------------------------------ part 5: the nits
+
+    def test_the_two_spellings_of_the_ruleset_carry_the_same_bytes(self):
+        """`gh ruleset view` and `gh api …/rulesets/<id>` are one fact.
+
+        The fixture ships both because either is a reasonable thing for an
+        agent to reach for; two copies of a fact drift, so they are asserted
+        equal rather than merely both present.
+        """
+        pairs = ((("ruleset-list.json",),
+                  ("api", "repos", *self.REPO.split("/"), "rulesets.json")),
+                 (("ruleset-view-1837402.json",),
+                  ("api", "repos", *self.REPO.split("/"), "rulesets",
+                   "1837402.json")))
+        for cli, api in pairs:
+            with self.subTest(payload=cli[0]):
+                self.assertEqual(self._payload(*cli), self._payload(*api))
+
+    def test_the_shared_fake_itself_is_scanned_for_credentials(self):
+        """Both scrub scans skip symlinks, so `seed/bin/gh` was scanned by
+        neither: the fixture's copy IS a symlink, and the source lives outside
+        the fixture. Scan the source directly."""
+        import re
+        banned = re.compile(TestIssue84.CREDENTIALS + "|"
+                            + TestIssue84.REAL_IDENTIFIERS)
+        for path in (self.FAKE_GH, self.FAKES_README):
+            with self.subTest(path=path.name):
+                hit = banned.search(path.read_text(encoding="utf-8"))
+                self.assertIsNone(hit, f"unscrubbed: {hit.group(0) if hit else ''}")
+        # …and the seed's own `gh` is that file, not a fork of it.
+        self.assertEqual((self.STUCK_DIR / "seed" / "bin" / "gh").resolve(),
+                         self.FAKE_GH.resolve())
+
 
 if __name__ == "__main__":
     unittest.main()
