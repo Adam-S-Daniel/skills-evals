@@ -57,15 +57,37 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: E402
+# tier_words()/load_policy() ONLY — never the network or file-writing parts
+# of roster.py. This is the one place model_usage_census.py stops being
+# stdlib-only: roster.py imports PyYAML to read the tier ladder. The
+# alternative — hand-rolling family words here — is exactly what NO MODEL
+# IDS/FAMILY WORDS LIVE OUTSIDE roster-policy.yml exists to prevent.
+import roster  # noqa: E402
 
 DEFAULT_PROJECTS = Path.home() / ".claude" / "projects"
 DEFAULT_WEEKS = 8
+POLICY_PATH = Path(__file__).resolve().parent.parent / "evals" / "roster-policy.yml"
 
-#: The shape of a model id, and the ONLY shape that becomes a published key.
-#: Deliberately tight: lowercase, starts with `claude`, and nothing but the
-#: characters a model id has ever used. An ARN, a `projects/<gcp-id>/...`
-#: path, a filesystem path and free prose all fail it, which is the point.
-MODEL_ID_RE = re.compile(r"^claude[a-z0-9.\-]{0,63}$")
+
+def _model_id_re() -> re.Pattern:
+    """The shape of a model id, and the ONLY shape that becomes a published
+    key. Being lowercase-and-dashes is necessary but not sufficient — a
+    proxy alias or a path-shaped value can be shaped exactly like an id
+    (measured: `claude-home-user-secret-client-northrop-merger`). It must
+    also carry, as one of its dash-separated tokens, a family word from the
+    tier ladder in evals/roster-policy.yml (read via `roster.tier_words`,
+    never hardcoded here), and it is capped at the length a real id needs —
+    about 40 — so a long adjacent string cannot ride in just because it
+    happens to contain a family word somewhere in it.
+    """
+    words = "|".join(re.escape(w) for w in
+                     roster.tier_words(roster.load_policy(POLICY_PATH)))
+    return re.compile(
+        rf"^(?=.{{1,40}}$)claude(?:-[a-z0-9.]{{1,20}})*-(?:{words})"
+        rf"(?:-[a-z0-9.]{{1,20}})*$")
+
+
+MODEL_ID_RE = _model_id_re()
 
 #: Where everything else is counted. One key, no detail — the count is the
 #: only part of a non-conforming value that is safe to publish.

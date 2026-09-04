@@ -2016,7 +2016,29 @@ class TestIssue67Review(unittest.TestCase):
                         "publishers/anthropic/models/claude-opus-5"),
         "fs_path": "/home/example/repos/example-private-client/model.json",
         "prose": "the model I used for the merger memo",
+        # These four ARE lowercase-and-dashes — the exact shape `MODEL_ID_RE`
+        # accepts — so a regex weakened in one specific way lets each one
+        # straight through as its own published key:
+        "dashed_no_family_word": "claude-home-user-secret-client-northrop-merger",
+        "dashed_too_long": "claude-" + "x" * 80,
+        # only the length-40 cap keeps this one out — it carries a real
+        # family word (`opus`) and every dash-token is well under the
+        # per-token 20-char sub-cap, so widening the overall cap (e.g. to
+        # 2000) is the ONLY thing that would admit it.
+        "dashed_long_with_family_word": ("claude-" +
+                                         "-".join(["pad12345678"] * 4) + "-opus"),
+        # only the `claude` prefix requirement keeps this one out — it is
+        # otherwise a well-formed, short, family-word-bearing id shape.
+        "family_word_without_claude_prefix": "internal-proxy-opus-route",
     }
+
+    #: The only key this test's transcript can honestly earn — an
+    #: independent oracle, not `MODEL_ID_RE` checking itself. Item 7 (#129
+    #: review round 2): the old assertion just re-ran the production regex
+    #: against its own output, so a mutation weakening the regex (dropping
+    #: the anchor, widening the length cap) stayed green — every hostile
+    #: value it let through still "matched MODEL_ID_RE" by definition.
+    GOOD_KEYS = {"claude-opus-5"}
 
     def test_census_publishes_only_model_id_shaped_keys(self):
         """B1: `message.model` is attacker-adjacent data — it is whatever the
@@ -2038,11 +2060,11 @@ class TestIssue67Review(unittest.TestCase):
         for key in counts:
             with self.subTest(key=key):
                 self.assertTrue(
-                    model_usage_census.MODEL_ID_RE.match(key)
-                    or key == model_usage_census.OTHER_KEY,
+                    key in self.GOOD_KEYS or key == model_usage_census.OTHER_KEY,
                     f"census published {key!r} as a key on a public branch")
-        # Totals stay truthful: seven non-conforming values, all bucketed.
-        self.assertEqual(counts[model_usage_census.OTHER_KEY]["2026-W36"], 7)
+        non_conforming = len(values) - 1  # every value but the one honest id
+        self.assertEqual(counts[model_usage_census.OTHER_KEY]["2026-W36"],
+                         non_conforming)
         self.assertEqual(counts["claude-opus-5"]["2026-W36"], 1)
 
     def test_census_never_stringifies_a_non_string_model(self):
