@@ -18,6 +18,9 @@ valid transcript for the agent call, and it's exactly what judge.score's
 parser expects for the judge call, so one canned response satisfies both
 subprocess invocations inside a single run.
 
+Mode "agent_env" replies with a JSON snapshot of the probe variables the
+harness's agent_env() is expected to have set (SKILLS_EVALS_PROBE, PATH).
+
 `--version` is handled unconditionally (regardless of FAKE_CLAUDE_MODE) so
 that harness/run_canary.py's `claude --version` recording call succeeds even
 when a mode simulates a failure.
@@ -128,6 +131,17 @@ def main() -> int:
             "duration_ms": 800,
             "session_id": "fake-session",
         })
+        return 0
+
+    if MODE == "agent_env":
+        # Reply with the probe variables the harness was asked to set, so a
+        # test can see the fixture's `env:` block reached the subprocess with
+        # $WORKSPACE expanded — and that PATH was prepended, not replaced.
+        emit({"result": json.dumps({"probe": os.environ.get("SKILLS_EVALS_PROBE"),
+                                    "path": os.environ.get("PATH"),
+                                    "cwd": os.getcwd()}),
+              "is_error": False, "usage": USAGE, "total_cost_usd": 0.01,
+              "num_turns": 1, "duration_ms": 100, "session_id": "fake-session"})
         return 0
 
     if MODE == "agent_and_judge":

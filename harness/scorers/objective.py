@@ -394,6 +394,64 @@ def files_unchanged(workspace: str, patterns: list[str],
             if not problems else "; ".join(problems))
 
 
+def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
+    """Concatenate every file the patterns match; return (text, relative paths)."""
+    chunks, names = [], []
+    for pattern in patterns:
+        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
+            names.append(os.path.relpath(path, workspace).replace(os.sep, "/"))
+            with open(path, encoding="utf-8", errors="replace") as f:
+                chunks.append(f.read())
+    return "\n".join(chunks), names
+
+
+def _text_matches(text: str, must_match: list[str], must_not_match: list[str],
+                  subject: str) -> tuple[bool, str]:
+    """Shared body of file_matches / transcript_matches.
+
+    Every `must_match` regex has to hit somewhere in `text`, and no
+    `must_not_match` regex may. Patterns are compiled with MULTILINE so `^`
+    and `$` mean line boundaries; a pattern that needs to span lines says so
+    itself with `(?s)`.
+    """
+    missing = [pat for pat in must_match if not re.search(pat, text, re.MULTILINE)]
+    present = [pat for pat in must_not_match if re.search(pat, text, re.MULTILINE)]
+    problems = [f"{subject} lacks /{pat}/" for pat in missing]
+    problems += [f"{subject} contains /{pat}/" for pat in present]
+    return (not problems, f"{subject} matches" if not problems else "; ".join(problems))
+
+
+def file_matches(workspace: str, patterns: list[str], must_match=None,
+                 must_not_match=None) -> tuple[bool, str]:
+    """Regex assertions over the concatenated content of the matched files.
+
+    A file that does not exist contributes nothing: `must_match` then fails
+    (the thing it looks for is absent) and `must_not_match` passes (nothing
+    forbidden was written). That asymmetry is deliberate — it lets one check
+    say "the agent never did X" without first asserting that a log exists.
+    """
+    text, names = _read_matched(workspace, patterns)
+    subject = ", ".join(names) if names else f"no file matched {patterns}"
+    return _text_matches(text, must_match or [], must_not_match or [], subject)
+
+
+def transcript_matches(workspace: str, patterns: list[str], must_match=None,
+                       must_not_match=None, transcript=None) -> tuple[bool, str]:
+    """Regex assertions over the agent's final reply.
+
+    The transcript is what the agent handed the operator, so it is where a
+    "say it needs elevation, and give the exact line" rule is decidable. In
+    objective-only mode there is no transcript and the check fails saying so
+    — a missing transcript is not a passing one. `patterns` is accepted for
+    signature parity with every other check and ignored.
+    """
+    if transcript is None:
+        return (False, "no transcript (objective-only run, or the agent produced none)")
+    return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
+
+
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "yaml_parses": yaml_parses,
@@ -402,10 +460,13 @@ CHECKS = {
     "required_checks_early_skip": required_checks_early_skip,
     "event_only_workflows_unfiltered": event_only_workflows_unfiltered,
     "files_unchanged": files_unchanged,
+    "file_matches": file_matches,
+    "transcript_matches": transcript_matches,
 }
 
 
-def run_checks(fixture: dict, workspace: str, seed: str) -> list[dict]:
+def run_checks(fixture: dict, workspace: str, seed: str,
+               transcript: str | None = None) -> list[dict]:
     """Run every objective check in the fixture; return result dicts.
 
     Every check here is hermetic — no network, no credentials, no wall clock.
@@ -429,6 +490,11 @@ def run_checks(fixture: dict, workspace: str, seed: str) -> list[dict]:
             kwargs["changeset"] = check.get("changeset", [])
             kwargs["expect_triggered"] = check.get("expect_triggered", [])
             kwargs["expect_skipped"] = check.get("expect_skipped", [])
+        elif check["type"] in ("file_matches", "transcript_matches"):
+            kwargs["must_match"] = check.get("must_match", [])
+            kwargs["must_not_match"] = check.get("must_not_match", [])
+            if check["type"] == "transcript_matches":
+                kwargs["transcript"] = transcript
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
