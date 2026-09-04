@@ -1,21 +1,44 @@
 """LLM-as-judge scoring.
 
-The judge receives the fixture's rubric, the agent transcript, and the diff of
-the workspace, and returns per-dimension scores with rationales as JSON.
+Two modes, selected by a fixture's `judge.mode:`:
 
-Implementation: a second headless `claude -p ... --output-format json` call
-whose prompt embeds the rubric/transcript/diff and demands JSON-only output.
+- **absolute** (the default, and what every fixture before #81 uses): the
+  judge receives the fixture's rubric, the agent transcript, and the diff of
+  the workspace, and returns per-dimension scores with rationales as JSON.
+- **pairwise** (`judge.mode: pairwise`): the judge receives the writing under
+  test together with the fixture's committed reference samples, blind and in
+  an order shuffled per trial, ranks them, and the score IS the rank. Class C
+  skills — `adam-writing-style` (#81), `finding-unknowns` (#78) — are the
+  ones where DESIGN.md prefers "pairwise preference against committed
+  reference samples over absolute rubric scores".
+
+Implementation, both modes: a second headless `claude -p ... --output-format
+json` call whose prompt embeds the rubric and demands JSON-only output.
 See DESIGN.md — "Open decisions".
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import subprocess
+from pathlib import Path
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
+
+# The identity of the draft under test among the pairwise candidates. The
+# judge never sees it — every draft is reduced to an opaque label — but the
+# caller needs it back to find that draft's rank in the returned ranking.
+AGENT_IDENTITY = "agent"
+_REFERENCE_PREFIX = "reference:"
+
+# The dimensions the pairwise judge scores beside the rank (#81). They are
+# not weighted into anything: in pairwise mode the score is the rank, and
+# these are the "why" a reader needs when a rank looks wrong.
+PAIRWISE_DIMENSIONS = ("specificity", "register match",
+                       "absence of corporate filler")
 
 
 def _build_prompt(rubric: str, transcript: str, workspace_diff: str) -> str:
@@ -79,28 +102,15 @@ def _weighted_overall(dimensions: list, weights: dict) -> float:
     return sum(scores) / len(scores) if scores else 0.0
 
 
-def score(rubric: str, transcript: str, workspace_diff: str, *,
-         model: str | None = None, timeout: int = 120,
-         weights: dict[str, float] | None = None) -> dict:
-    """Return {"dimensions": [{"name", "score", "rationale"}], "overall": float}.
+def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
+    """Run the judge CLI on `prompt` and return its `result` text.
 
-    Runs a second headless `claude -p` call whose prompt embeds the rubric,
-    transcript, and diff, and demands JSON-only output. Raises RuntimeError if
-    the CLI call itself fails or produces unparseable outer JSON (timeout,
-    nonzero exit, invalid JSON) — this is NOT caught here; callers must catch
-    it and record a judge error rather than crash the run. Raises ValueError
-    if the judge's own response doesn't match the required shape.
-
-    `weights` maps dimension name -> weight. When a non-empty mapping is
-    given, `overall` is recomputed as the weighted mean of the returned
-    dimension scores and the judge's OWN `overall` is ignored — the model is
-    trusted to score dimensions, not to do the arithmetic, and letting it
-    self-report would silently defeat the weighting. Without weights (None or
-    empty) the historical behaviour is unchanged: the judge's `overall` if it
-    is numeric, else the unweighted mean.
+    Shared by both modes, so a judge invocation is spelled exactly once.
+    Raises RuntimeError for anything that is the CLI's fault — timeout,
+    nonzero exit, unparseable outer JSON. That is NOT caught here; callers
+    must catch it and record a judge error rather than crash the run.
     """
-    judge_prompt = _build_prompt(rubric, transcript, workspace_diff)
-    cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", judge_prompt,
+    cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
           "--output-format", "json", "--permission-mode", "bypassPermissions"]
     if model:
         cmd += ["--model", model]
@@ -123,7 +133,63 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
             f"judge CLI produced invalid JSON: {result.stdout[:500]!r}: {e}"
         ) from e
 
-    judge_text = data.get("result", "")
+    return data.get("result", "")
+
+
+def score(rubric: str, transcript: str, workspace_diff: str, *,
+         model: str | None = None, timeout: int = 120,
+         weights: dict[str, float] | None = None,
+         mode: str | None = "absolute",
+         references: list | None = None,
+         trial_index: int = 0) -> dict:
+    """Score one arm. `mode` picks the instrument; absolute is the default.
+
+    ## absolute (the historical behaviour, unchanged)
+
+    Returns {"dimensions": [{"name", "score", "rationale"}], "overall": float}.
+    Runs a headless `claude -p` call whose prompt embeds the rubric,
+    transcript, and diff, and demands JSON-only output. Raises RuntimeError if
+    the CLI call itself fails or produces unparseable outer JSON (timeout,
+    nonzero exit, invalid JSON) — this is NOT caught here; callers must catch
+    it and record a judge error rather than crash the run. Raises ValueError
+    if the judge's own response doesn't match the required shape.
+
+    `weights` maps dimension name -> weight. When a non-empty mapping is
+    given, `overall` is recomputed as the weighted mean of the returned
+    dimension scores and the judge's OWN `overall` is ignored — the model is
+    trusted to score dimensions, not to do the arithmetic, and letting it
+    self-report would silently defeat the weighting. Without weights (None or
+    empty) the historical behaviour is unchanged: the judge's `overall` if it
+    is numeric, else the unweighted mean.
+
+    ## pairwise (#81)
+
+    `mode="pairwise"` ranks `transcript` against `references` blind and
+    returns the shape `score_pairwise` documents; `workspace_diff` is unused
+    (Class C fixtures transform no workspace) and `trial_index` seeds the
+    shuffle. `weights` is rejected rather than ignored: dimension weights are
+    absolute-mode arithmetic, and a fixture carrying both is a config mistake
+    that would otherwise be half-honoured in silence.
+
+    An unrecognised mode raises ValueError instead of falling back to
+    absolute — a fixture typo must not produce a plausible number from the
+    wrong instrument.
+    """
+    if mode == "pairwise":
+        if weights:
+            raise ValueError(
+                "judge mode 'pairwise' does not take dimension weights: the "
+                "score is the rank. Drop `judge.weights` or use the absolute "
+                "mode.")
+        return score_pairwise(rubric, transcript, references or [],
+                              trial_index=trial_index, model=model,
+                              timeout=timeout)
+    if mode not in (None, "", "absolute"):
+        raise ValueError(
+            f"unknown judge mode {mode!r} — known modes: absolute, pairwise")
+
+    judge_prompt = _build_prompt(rubric, transcript, workspace_diff)
+    judge_text = _run_judge_cli(judge_prompt, model=model, timeout=timeout)
     parsed = _extract_json(judge_text)
 
     if not isinstance(parsed, dict) or not isinstance(parsed.get("dimensions"), list):
@@ -141,3 +207,234 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
         parsed["overall"] = sum(scores) / len(scores) if scores else 0.0
 
     return parsed
+
+
+# --------------------------------------------------------------------------
+# pairwise mode
+# --------------------------------------------------------------------------
+
+
+def _normalize_references(references) -> list[dict]:
+    """The reference samples as [{"name", "text"}].
+
+    Accepts mappings ({"name", "text"}) and bare strings (auto-named
+    `reference-1`, `reference-2`, ...). Names must be present and unique:
+    a name is how a caller reads one reference's dimension scores back out,
+    and two references sharing a name would silently collapse into one.
+    """
+    out: list[dict] = []
+    seen: set[str] = set()
+    for i, reference in enumerate(references or [], start=1):
+        if isinstance(reference, str):
+            name, text = f"reference-{i}", reference
+        elif isinstance(reference, dict):
+            name = str(reference.get("name") or f"reference-{i}").strip()
+            text = reference.get("text")
+        else:
+            raise ValueError(
+                f"reference {i} must be a string or a mapping, not "
+                f"{type(reference).__name__}")
+        if not name:
+            raise ValueError(f"reference {i} has a blank name")
+        if not isinstance(text, str) or not text.strip():
+            raise ValueError(f"reference {name!r} has no text")
+        if name in seen:
+            raise ValueError(f"duplicate reference name {name!r}")
+        seen.add(name)
+        out.append({"name": name, "text": text})
+    if not out:
+        raise ValueError(
+            "pairwise judging needs at least one reference to rank against")
+    return out
+
+
+def _blind_label(index: int) -> str:
+    if index >= 26:
+        raise ValueError("pairwise judging supports at most 26 drafts")
+    return chr(ord("A") + index)
+
+
+def _order_key(trial_index: int, identity: str) -> str:
+    """The sort key that shuffles the drafts for one trial.
+
+    A hash rather than `random.shuffle`: the permutation has to be
+    reproducible from the trial index alone — across processes, across
+    machines, and across Python versions — and `random`'s shuffle is an
+    implementation detail no test should pin.
+    """
+    payload = f"skills-evals/pairwise/{int(trial_index)}/{identity}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def blind_order(candidate_text: str, references: list,
+                trial_index: int = 0) -> list[dict]:
+    """The drafts as the judge will see them: [{"label", "identity", "text"}].
+
+    The draft under test and every reference get an opaque label (A, B, C
+    ...) in an order derived from `trial_index`. Two properties matter and
+    are tested: one trial replays identically (so a run is reproducible),
+    and the draft under test does not sit in the same slot every trial (so a
+    judge cannot learn the slot instead of the writing).
+    """
+    candidates = [{"identity": AGENT_IDENTITY, "text": candidate_text or ""}]
+    for reference in _normalize_references(references):
+        candidates.append({"identity": _REFERENCE_PREFIX + reference["name"],
+                           "text": reference["text"]})
+    ordered = sorted(candidates,
+                     key=lambda c: _order_key(trial_index, c["identity"]))
+    return [{"label": _blind_label(i), **c} for i, c in enumerate(ordered)]
+
+
+def _build_pairwise_prompt(rubric: str, ordered: list[dict],
+                           dimensions=PAIRWISE_DIMENSIONS) -> str:
+    """The blind ranking prompt.
+
+    Nothing in here says which draft is which, or that one of them came from
+    a model: the drafts are labelled and shuffled, and the shape of the
+    required JSON is described with placeholders rather than a worked
+    example, so the example itself cannot anchor the ranking.
+    """
+    labels = [c["label"] for c in ordered]
+    drafts = "\n\n".join(f"### Draft {c['label']}\n{c['text'].strip()}"
+                         for c in ordered)
+    return (
+        f"Below are {len(ordered)} drafts of the same piece of writing, by "
+        "different authors, in no particular order. You do not know who "
+        "wrote which; judge nothing but the writing in front of you.\n\n"
+        "## Rubric\n" + rubric.strip() + "\n\n"
+        "## Drafts\n" + drafts + "\n\n"
+        "Rank the drafts best to worst against the rubric. Then score every "
+        "draft 0-10 on each of these dimensions, with a one-sentence "
+        "rationale each: " + ", ".join(f'"{d}"' for d in dimensions) + ".\n"
+        "The draft labels are " + ", ".join(labels) + ".\n"
+        "Respond with ONLY a JSON object, no other text, no Markdown code "
+        "fences, in exactly this shape — `ranking` lists every draft label "
+        "exactly once, best first, and `dimensions` carries one entry per "
+        "draft label:\n"
+        '{"ranking": ["<best label>", "<next label>", "..."], '
+        '"dimensions": {"<label>": [{"name": "...", "score": 0, '
+        '"rationale": "..."}]}}'
+    )
+
+
+def score_pairwise(rubric: str, candidate_text: str, references: list, *,
+                   trial_index: int = 0, model: str | None = None,
+                   timeout: int = 120,
+                   dimensions=PAIRWISE_DIMENSIONS) -> dict:
+    """Rank the writing under test against the fixture's references, blind.
+
+    Returns:
+
+        {"mode": "pairwise",
+         "rank": 1-based rank of the draft under test, 1 = best,
+         "score": the same number — #81's "score = rank",
+         "n_candidates": how many drafts were ranked,
+         "order": [{"label", "identity"}] — what each blind label was,
+         "blind_ranking": the judge's ranking, in labels,
+         "ranking": the same ranking, in identities,
+         "dimensions": the dimension scores for the draft under test,
+         "reference_dimensions": {reference name: dimension scores},
+         "dimensions_mean": unweighted mean of the scores under test}
+
+    There is deliberately no "overall": `run_eval._render_report` formats
+    `overall` as a 0-10 judge score, and a rank of 1 — the BEST outcome —
+    would render there as the worst-looking number in the column.
+
+    Raises RuntimeError if the judge CLI call fails (callers record a judge
+    error), and ValueError if the judge's reply is not a complete ranking of
+    exactly the labels it was given, with dimension scores for each.
+    """
+    ordered = blind_order(candidate_text, references, trial_index)
+    prompt = _build_pairwise_prompt(rubric, ordered, dimensions)
+    parsed = _extract_json(_run_judge_cli(prompt, model=model, timeout=timeout))
+    if not isinstance(parsed, dict):
+        raise ValueError(f"judge output is not a JSON object: {parsed!r}")
+
+    labels = [c["label"] for c in ordered]
+    ranking = parsed.get("ranking")
+    # A ranking that drops, duplicates or invents a label leaves the rank
+    # undefined for somebody; recording it anyway would average a guess in
+    # with real trials.
+    if (not isinstance(ranking, list)
+            or sorted(str(label) for label in ranking) != sorted(labels)):
+        raise ValueError(
+            f"judge 'ranking' must list every draft label {labels} exactly "
+            f"once, best first; got {ranking!r}")
+    ranking = [str(label) for label in ranking]
+
+    raw_dimensions = parsed.get("dimensions")
+    if not isinstance(raw_dimensions, dict):
+        raise ValueError(
+            f"judge output missing/malformed 'dimensions': {raw_dimensions!r}")
+    by_label: dict[str, list] = {}
+    for label in labels:
+        dims = raw_dimensions.get(label)
+        if not isinstance(dims, list) or not dims:
+            raise ValueError(f"judge scored no dimensions for draft {label!r}")
+        for dim in dims:
+            if not isinstance(dim, dict) or not all(k in dim for k in _REQUIRED_DIM_KEYS):
+                raise ValueError(
+                    f"judge dimension malformed for draft {label!r}: {dim!r}")
+            if isinstance(dim["score"], bool) or not isinstance(dim["score"], (int, float)):
+                raise ValueError(
+                    f"judge dimension score for draft {label!r} is not a "
+                    f"number: {dim!r}")
+        by_label[label] = dims
+
+    identity_of = {c["label"]: c["identity"] for c in ordered}
+    label_of = {c["identity"]: c["label"] for c in ordered}
+    agent_label = label_of[AGENT_IDENTITY]
+    agent_dimensions = by_label[agent_label]
+    agent_scores = [d["score"] for d in agent_dimensions]
+
+    return {
+        "mode": "pairwise",
+        "rank": ranking.index(agent_label) + 1,
+        "score": ranking.index(agent_label) + 1,
+        "n_candidates": len(ordered),
+        "order": [{"label": c["label"], "identity": c["identity"]}
+                  for c in ordered],
+        "blind_ranking": ranking,
+        "ranking": [identity_of[label] for label in ranking],
+        "dimensions": agent_dimensions,
+        "reference_dimensions": {
+            identity_of[label][len(_REFERENCE_PREFIX):]: dims
+            for label, dims in by_label.items() if label != agent_label},
+        "dimensions_mean": (sum(agent_scores) / len(agent_scores)
+                            if agent_scores else 0.0),
+    }
+
+
+def load_references(eval_dir, judge_cfg: dict) -> list[dict]:
+    """A fixture's committed reference samples, as [{"name", "text"}].
+
+    `judge_cfg` is the fixture's `judge:` block; its `references:` list
+    carries {name, path} entries whose paths are relative to the fixture
+    directory. A path that leaves that directory — absolute, or climbing out
+    with `..` — is rejected: a reference is committed material the fixture
+    owns and a reviewer can read, and a yardstick pulled from elsewhere on
+    the machine is neither reviewable nor reproducible.
+    """
+    eval_dir = Path(eval_dir).resolve()
+    loaded = []
+    for i, entry in enumerate(judge_cfg.get("references") or [], start=1):
+        if not isinstance(entry, dict):
+            raise ValueError(
+                f"judge.references[{i - 1}] must be a mapping with name/path")
+        rel = entry.get("path")
+        if not isinstance(rel, str) or not rel:
+            raise ValueError(f"judge.references[{i - 1}] has no 'path'")
+        if Path(rel).is_absolute():
+            raise ValueError(
+                f"reference path {rel!r} must be relative to the fixture "
+                "directory")
+        resolved = (eval_dir / rel).resolve()
+        if not resolved.is_relative_to(eval_dir):
+            raise ValueError(
+                f"reference path {rel!r} resolves outside the fixture "
+                f"directory {eval_dir}")
+        if not resolved.is_file():
+            raise ValueError(f"reference file {resolved} not found")
+        loaded.append({"name": str(entry.get("name") or f"reference-{i}"),
+                       "text": resolved.read_text(encoding="utf-8")})
+    return _normalize_references(loaded)
