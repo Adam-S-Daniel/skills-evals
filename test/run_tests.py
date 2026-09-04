@@ -2391,28 +2391,57 @@ class TestIssue63Round2(unittest.TestCase):
     # default doesn't exist) ---
 
     def test_registry_not_found_ends_via_exit_2_with_message_naming_path(self):
+        # Review round 3, item D: the original version of this test asserted
+        # the SIBLING DEFAULT for "agentskills-private" specifically
+        # (../agentskills-private next to THIS repo's own checkout) does not
+        # resolve to a directory — which fails on entirely correct code for
+        # any maintainer who has that real fleet repo cloned beside
+        # skills-evals (`with_skill` then resolves it and hits
+        # skill_not_found instead of registry_not_found; verified locally by
+        # creating a sibling `agentskills-private/` next to this checkout).
+        #
+        # Hermetic fix: run a COPY of the harness rooted inside a fresh tmp
+        # directory, with its own scratch registries.yml naming a registry
+        # ("scratch-registry") that no real repo carries. `base_dir` inside
+        # run_eval.py's main() is `Path(__file__).resolve().parent.parent`
+        # — i.e. always the copy's own root, never REPO_ROOT — so the
+        # sibling-default path this test exercises resolves INSIDE the tmp
+        # root, never beside the real skills-evals checkout, regardless of
+        # what any real machine happens to have checked out next to it.
         with tempfile.TemporaryDirectory() as tmp:
-            eval_dir = Path(tmp) / "eval"
+            tmp_root = Path(tmp)
+            skills_evals_root = tmp_root / "skills-evals"
+            harness_dir = skills_evals_root / "harness"
+            shutil.copytree(HARNESS_DIR, harness_dir,
+                            ignore=shutil.ignore_patterns("__pycache__"))
+            (harness_dir / "registries.yml").write_text(
+                "registries:\n"
+                "  - name: scratch-registry\n"
+                "    url: https://example.com/scratch-registry\n"
+                "    layout: 'skills/*/SKILL.md'\n",
+                encoding="utf-8")
+
+            eval_dir = tmp_root / "evals" / "scratch-eval"
             seed_dir = eval_dir / "seed"
             seed_dir.mkdir(parents=True)
             (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
             fixture = {
                 "skill": "some-skill",
-                "registry": "https://github.com/Adam-S-Daniel/agentskills-private",
+                "registry": "https://example.com/scratch-registry",
                 "prompt": "do the thing",
             }
             import yaml
             (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
 
-            results_dir = Path(tmp) / "results"
+            results_dir = tmp_root / "results"
             env = os.environ.copy()
             env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
             env["FAKE_CLAUDE_MODE"] = "agent"
-            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+            cmd = [sys.executable, str(harness_dir / "run_eval.py"), str(eval_dir),
                   "--arm", "both", "--results-dir", str(results_dir),
                   "--timeout", "30", "--no-judge"]
             proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  env=env, cwd=str(REPO_ROOT))
+                                  env=env, cwd=str(tmp_root))
             self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
 
             run_dirs = list((results_dir / "some-skill").iterdir())
@@ -2421,7 +2450,11 @@ class TestIssue63Round2(unittest.TestCase):
             with_skill_summary = json.loads(
                 (run_dir / "with_skill" / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(with_skill_summary["error"]["type"], "registry_not_found")
-            expected_path = str((REPO_ROOT.parent / "agentskills-private").resolve())
+            # base_dir = harness_dir.parent = skills_evals_root, so the
+            # sibling default is (skills_evals_root / ".." / name).resolve()
+            # = tmp_root / "scratch-registry" — inside the disposable tmp
+            # root, never beside the real skills-evals checkout.
+            expected_path = str((tmp_root / "scratch-registry").resolve())
             self.assertIn(expected_path, with_skill_summary["error"]["detail"])
 
             without_skill_summary = json.loads(
