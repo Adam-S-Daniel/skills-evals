@@ -1,0 +1,286 @@
+#!/usr/bin/env python3
+"""Hermetic stand-in for the `gh` CLI, shared by every Class B eval fixture.
+
+DESIGN.md's Class B instrument is "a fake `gh` on the seed workspace's PATH
+serving canned JSON captured from the real incident" — the same substitution
+move as `$CLAUDE_BIN`/`test/fake-claude`, and as
+`windows-elevation-from-wsl`'s fake `powershell.exe`, applied to the tool the
+skill under test consults. This is that fake. It is deliberately generic: a
+fixture supplies payloads, not code.
+
+Three behaviours, and nothing else:
+
+  * READS are answered from `$FAKE_GH_PAYLOADS`, keyed by the NORMALIZED
+    argv (see `payload_key`), and classed `read`.
+  * WRITES — `pr merge`, `pr close`, `workflow run`, `gh api -X POST` and
+    friends — are refused with a real-shaped HTTP 403 and classed `write`.
+    Triage recommends; it does not act. Nothing here can mutate anything.
+  * An UNKNOWN read is answered with a `gh`-shaped 404 and classed
+    `unknown`, never a Python traceback: an agent that guesses an endpoint
+    must see what `gh` would have shown it, not this file's internals.
+
+Every invocation is appended to `$WORKSPACE/.gh-invocations.log` with its
+class, its resolved payload key and its exit code, so a fixture's objective
+checks can decide what the agent did from the log alone.
+
+Not implemented, on purpose: `--jq`, `-q`, `--json` field selection and
+`--template` are accepted and IGNORED — the whole payload is returned. A
+fixture must therefore stay readable as raw JSON, and must not depend on a
+system `jq`. See harness/fakes/README.md.
+"""
+
+from __future__ import annotations
+
+import os
+import sys
+
+# Flags that take no value. Everything else that looks like a flag consumes
+# the next token unless that token is itself a flag — which is why this set
+# has to be explicit: without it `run view --log 4471182930` would read the
+# run id as `--log`'s value and key to a different payload than
+# `run view 4471182930 --log`.
+BOOLEAN_FLAGS = {
+    "-h", "--help", "--version", "--verbose", "-y", "--yes",
+    "--log", "--log-failed", "--failed", "--exit-status", "--web", "-w",
+    "--auto", "--disable-auto", "--admin", "--merge", "--squash", "--rebase",
+    "--delete-branch", "--delete-local", "--comments", "--draft",
+    "--paginate", "--include", "-i", "--silent", "--slurp", "--force",
+    "--fill", "--no-maintainer-edit", "--dry-run", "--preview",
+}
+
+# Flags whose presence makes a `gh api` call a write even without -X.
+API_BODY_FLAGS = {"-f", "--raw-field", "-F", "--field", "--input"}
+WRITE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
+
+# (command, subcommand) pairs that mutate. A pair not listed here is treated
+# as a read, so a fixture that needs a new write refused adds it here rather
+# than in its own copy of this file.
+WRITE_SUBCOMMANDS = {
+    ("pr", "merge"), ("pr", "close"), ("pr", "create"), ("pr", "edit"),
+    ("pr", "comment"), ("pr", "reopen"), ("pr", "ready"), ("pr", "review"),
+    ("pr", "lock"), ("pr", "unlock"), ("pr", "update-branch"),
+    ("issue", "close"), ("issue", "create"), ("issue", "comment"),
+    ("issue", "edit"), ("issue", "reopen"), ("issue", "delete"),
+    ("issue", "pin"), ("issue", "unpin"), ("issue", "transfer"),
+    ("issue", "lock"), ("issue", "unlock"),
+    ("workflow", "run"), ("workflow", "enable"), ("workflow", "disable"),
+    ("run", "rerun"), ("run", "cancel"), ("run", "delete"),
+    ("release", "create"), ("release", "delete"), ("release", "edit"),
+    ("release", "upload"), ("release", "download"),
+    ("repo", "create"), ("repo", "delete"), ("repo", "edit"),
+    ("repo", "rename"), ("repo", "archive"), ("repo", "unarchive"),
+    ("repo", "sync"), ("repo", "fork"), ("repo", "deploy-key"),
+    ("label", "create"), ("label", "delete"), ("label", "edit"),
+    ("label", "clone"),
+    ("secret", "set"), ("secret", "delete"),
+    ("variable", "set"), ("variable", "delete"),
+    ("cache", "delete"), ("gist", "create"), ("gist", "delete"),
+    ("gist", "edit"), ("gist", "rename"),
+    ("auth", "login"), ("auth", "logout"), ("auth", "refresh"),
+    ("auth", "setup-git"), ("config", "set"), ("alias", "set"),
+    ("alias", "delete"), ("extension", "install"), ("extension", "remove"),
+    ("ssh-key", "add"), ("ssh-key", "delete"), ("gpg-key", "add"),
+    ("gpg-key", "delete"), ("ruleset", "create"),
+}
+
+# The endpoint each refused write would have hit, so the 403 names a real
+# URL the way `gh` does. `{repo}` is the --repo flag, else $FAKE_GH_REPO.
+WRITE_ENDPOINTS = {
+    ("pr", "merge"): "repos/{repo}/pulls/{arg}/merge",
+    ("pr", "close"): "repos/{repo}/pulls/{arg}",
+    ("pr", "reopen"): "repos/{repo}/pulls/{arg}",
+    ("pr", "edit"): "repos/{repo}/pulls/{arg}",
+    ("pr", "comment"): "repos/{repo}/issues/{arg}/comments",
+    ("pr", "create"): "repos/{repo}/pulls",
+    ("issue", "comment"): "repos/{repo}/issues/{arg}/comments",
+    ("issue", "close"): "repos/{repo}/issues/{arg}",
+    ("workflow", "run"): "repos/{repo}/actions/workflows/{arg}/dispatches",
+    ("run", "rerun"): "repos/{repo}/actions/runs/{arg}/rerun",
+    ("run", "cancel"): "repos/{repo}/actions/runs/{arg}/cancel",
+    ("label", "create"): "repos/{repo}/labels",
+}
+
+
+def parse_argv(argv: list[str]) -> tuple[list[str], dict[str, list]]:
+    """Split argv into positionals and flags.
+
+    Flags are dropped from the payload key entirely, which is what makes
+    argv ORDER irrelevant: `pr list --repo X --state open` and
+    `pr list --state open --repo X` normalize to the same positionals.
+    `--flag=value` is one token; a boolean flag never eats a positional.
+    """
+    positionals: list[str] = []
+    flags: dict[str, list] = {}
+    i = 0
+    while i < len(argv):
+        arg = argv[i]
+        if arg == "--":
+            positionals.extend(argv[i + 1:])
+            break
+        if arg.startswith("-") and arg != "-":
+            name, eq, value = arg.partition("=")
+            if eq:
+                flags.setdefault(name, []).append(value)
+            elif name in BOOLEAN_FLAGS:
+                flags.setdefault(name, []).append(True)
+            elif i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+                flags.setdefault(name, []).append(argv[i + 1])
+                i += 1
+            else:
+                flags.setdefault(name, []).append(True)
+        else:
+            positionals.append(arg)
+        i += 1
+    return positionals, flags
+
+
+def first(flags: dict[str, list], *names: str) -> str | None:
+    """The first value given for any of `names`, or None."""
+    for name in names:
+        for value in flags.get(name, []):
+            if value is not True:
+                return str(value)
+    return None
+
+
+def payload_key(positionals: list[str], flags: dict[str, list]) -> str | None:
+    """The payload file the normalized argv names, relative to the payload dir.
+
+    Two rules, and they are the fake's whole contract with a fixture:
+
+      * `api <endpoint>`   -> `api/<endpoint>.json`
+        (`repos/o/r/pulls/7` -> `api/repos/o/r/pulls/7.json`; a leading
+        slash and a `?query` are stripped first)
+      * anything else      -> the positionals joined with `-`, plus `.json`
+        (`pr list ...` -> `pr-list.json`; `pr view 418 ...` ->
+        `pr-view-418.json`; `run view 12 --log` -> `run-view-12.log`)
+
+    `--log` / `--log-failed` are the only flags that reach the key, and only
+    by choosing the extension: a run's log is a different artifact from its
+    JSON summary, not a different command.
+    """
+    if not positionals:
+        return None
+    if positionals[0] == "api":
+        if len(positionals) < 2:
+            return None
+        endpoint = positionals[1].split("?", 1)[0].strip("/")
+        if not endpoint:
+            return None
+        return f"api/{endpoint}.json"
+    suffix = ".log" if ("--log" in flags or "--log-failed" in flags) else ".json"
+    return "-".join(positionals) + suffix
+
+
+def resolve_payload(payload_dir: str, key: str) -> str | None:
+    """The absolute path `key` names, or None if it escapes or is absent.
+
+    A key is built from agent-supplied argv, so `api ../../etc/passwd` has to
+    resolve to nothing rather than to a file outside the payload directory.
+    """
+    root = os.path.realpath(payload_dir)
+    candidate = os.path.realpath(os.path.join(root, key))
+    if candidate != root and not candidate.startswith(root + os.sep):
+        return None
+    return candidate if os.path.isfile(candidate) else None
+
+
+def classify(positionals: list[str], flags: dict[str, list]) -> str:
+    """`write` if this invocation would mutate anything, else `read`."""
+    if not positionals:
+        return "read"
+    if positionals[0] == "api":
+        method = (first(flags, "-X", "--method") or "GET").upper()
+        if method in WRITE_METHODS:
+            return "write"
+        if any(name in flags for name in API_BODY_FLAGS):
+            return "write"
+        return "read"
+    pair = (positionals[0], positionals[1] if len(positionals) > 1 else "")
+    return "write" if pair in WRITE_SUBCOMMANDS else "read"
+
+
+def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
+    """The API URL path a refused write would have hit."""
+    repo = first(flags, "--repo", "-R") or os.environ.get("FAKE_GH_REPO", "OWNER/REPO")
+    if positionals and positionals[0] == "api":
+        return positionals[1].split("?", 1)[0].strip("/") if len(positionals) > 1 else "graphql"
+    pair = (positionals[0], positionals[1] if len(positionals) > 1 else "")
+    template = WRITE_ENDPOINTS.get(pair, "repos/{repo}")
+    arg = positionals[2] if len(positionals) > 2 else ""
+    return template.format(repo=repo, arg=arg)
+
+
+def log_invocation(argv: list[str], klass: str, key: str | None, code: int) -> None:
+    """Append one record to `$WORKSPACE/.gh-invocations.log`.
+
+    The workspace is the arm's temp dir, which run_eval.py exports as
+    `$WORKSPACE` (see agent_env); outside a real arm it falls back to the
+    working directory, so the fake is usable straight from a test.
+    """
+    workspace = os.environ.get("WORKSPACE") or os.getcwd()
+    line = " ".join(argv)
+    record = (f"--- invocation (class={klass} key={key or '-'} exit={code}) ---\n"
+              f"{line}\n")
+    try:
+        with open(os.path.join(workspace, ".gh-invocations.log"), "a",
+                  encoding="utf-8") as handle:
+            handle.write(record)
+    except OSError:
+        # A log we cannot write must not change what the agent sees.
+        pass
+
+
+def refuse_write(positionals: list[str], flags: dict[str, list]) -> int:
+    """The 403 a read-only token gets. Realistic wording; no side effect."""
+    endpoint = write_endpoint(positionals, flags)
+    verb = " ".join(positionals[:2])
+    sys.stderr.write(
+        f'failed to run "gh {verb}": HTTP 403: Resource not accessible by '
+        f"personal access token (https://api.github.com/{endpoint})\n"
+        "gh: the token available here has read-only scopes.\n"
+    )
+    return 1
+
+
+def not_found(key: str | None) -> int:
+    """`gh`'s own 404, for a read this fixture has no payload for."""
+    sys.stderr.write("gh: Not Found (HTTP 404)\n")
+    if key:
+        sys.stderr.write(f"gh: no canned response for {key}\n")
+    return 1
+
+
+def main(argv: list[str]) -> int:
+    payload_dir = os.environ.get("FAKE_GH_PAYLOADS")
+    positionals, flags = parse_argv(argv)
+    key = payload_key(positionals, flags)
+    klass = classify(positionals, flags)
+
+    if klass == "write":
+        code = refuse_write(positionals, flags)
+        log_invocation(argv, "write", None, code)
+        return code
+
+    path = resolve_payload(payload_dir, key) if (payload_dir and key) else None
+    if path is None:
+        code = not_found(key)
+        log_invocation(argv, "unknown", key, code)
+        return code
+
+    with open(path, encoding="utf-8") as handle:
+        sys.stdout.write(handle.read())
+    log_invocation(argv, "read", key, 0)
+    return 0
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main(sys.argv[1:]))
+    except SystemExit:
+        raise
+    except BaseException as exc:  # noqa: BLE001
+        # An agent must never see this file's internals: a stand-in that
+        # tracebacks teaches the agent about the harness, not about `gh`.
+        sys.stderr.write(f"gh: unexpected error: {type(exc).__name__}: {exc}\n")
+        raise SystemExit(1)
