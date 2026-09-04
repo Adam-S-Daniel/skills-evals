@@ -1533,6 +1533,27 @@ class TestIssue84(unittest.TestCase):
                 self.assertIn("404", r.stderr)
         self.assertEqual(self._classes(ws), ["unknown"] * 4)
 
+    def test_version_and_help_are_answered_without_a_payload(self):
+        """A 404 on `gh --version` would read as "the tool is broken"."""
+        ws = self._ws()
+        r = self._gh(ws, "--version")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertRegex(r.stdout, r"^gh version \d+\.\d+")
+        self.assertEqual(self._gh(ws, "--help").returncode, 0)
+        # Only as the whole invocation: a subcommand still keys to a payload.
+        self.assertEqual(self._gh(ws, "pr", "list", "--help").returncode, 0)
+        self.assertIn("key=pr-list.json", self._log(ws))
+
+    def test_a_json_key_falls_back_to_a_txt_payload(self):
+        """Commands whose real output is text get a payload named for it."""
+        ws = self._ws()
+        self.assertTrue((ws / "payloads" / "auth-status.txt").is_file())
+        r = self._gh(ws, "auth", "status")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Token scopes", r.stdout)
+        # The key is unchanged; only the file backing it differs.
+        self.assertIn("key=auth-status.json", self._log(ws))
+
     def test_a_payload_directory_escape_is_refused(self):
         ws = self._ws()
         r = self._gh(ws, "api", "../../../../etc/passwd")
@@ -1645,19 +1666,39 @@ class TestIssue84(unittest.TestCase):
         by_id = self._score(edit_payload, transcript=self.CORRECT)
         self.assertFalse(by_id["instrument-unchanged"]["passed"])
 
-    def test_the_fixture_is_hermetic_and_scrubbed(self):
-        """No credential, no real host, no real login anywhere in the fixture."""
+    # Credentials are banned everywhere; a real owner, host or login is banned
+    # from the SEED, which is the tree handed to the agent. `fixture.yaml`'s
+    # `registry:` names this account's own repository on purpose, the way every
+    # other fixture here does, so it is scanned for credentials only.
+    CREDENTIALS = r"(?i)\b(?:ghp_|gho_|ghs_|github_pat_|AKIA[0-9A-Z]{12,})"
+    REAL_IDENTIFIERS = (
+        r"adamdaniel\.ai|jodidaniel|Adam-S-Daniel"
+        r"|\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|net)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+
+    def test_the_fixture_carries_no_credential(self):
         import re
-        banned = re.compile(
-            r"(?i)\b(?:ghp_|gho_|ghs_|github_pat_)"
-            r"|adamdaniel\.ai|jodidaniel|Adam-S-Daniel"
-            r"|\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|net)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+        banned = re.compile(self.CREDENTIALS)
         for path in sorted(self.STUCK_DIR.rglob("*")):
             if not path.is_file() or path.is_symlink():
                 continue
             with self.subTest(path=str(path.relative_to(REPO_ROOT))):
+                self.assertIsNone(banned.search(path.read_text(encoding="utf-8",
+                                                               errors="replace")))
+
+    def test_the_seed_is_scrubbed(self):
+        """No real host, owner or login in anything the agent is handed."""
+        import re
+        banned = re.compile(self.CREDENTIALS + "|" + self.REAL_IDENTIFIERS)
+        seed = self.STUCK_DIR / "seed"
+        scanned = 0
+        for path in sorted(seed.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            scanned += 1
+            with self.subTest(path=str(path.relative_to(REPO_ROOT))):
                 hit = banned.search(path.read_text(encoding="utf-8", errors="replace"))
                 self.assertIsNone(hit, f"unscrubbed: {hit.group(0) if hit else ''}")
+        self.assertGreater(scanned, 15, "the seed should carry a payload set")
 
     def test_the_fixture_pins_its_arms_and_weights_correctness_over_restraint(self):
         fixture = run_eval.load_fixture(self.STUCK_DIR)

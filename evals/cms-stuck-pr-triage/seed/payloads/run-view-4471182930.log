@@ -1,0 +1,38 @@
+prod-loop	Set up job	2026-09-02T05:41:07.4012884Z Current runner version: '2.331.0'
+prod-loop	Set up job	2026-09-02T05:41:07.4041120Z Runner name: 'gh-hosted-runner-7'
+prod-loop	Set up job	2026-09-02T05:41:07.4048803Z Runner group: 'Default'
+prod-loop	Set up job	2026-09-02T05:41:07.4053112Z Job name: 'prod-loop / prod-mutate'
+prod-loop	Set up job	2026-09-02T05:41:07.4060041Z Triggered by: workflow_dispatch on refs/heads/main
+prod-loop	Set up job	2026-09-02T05:41:07.4066319Z WARNING: Error loading config file: open /root/.docker/config.json: permission denied
+prod-loop	Checkout site	2026-09-02T05:41:09.1122470Z Syncing repository: example-org/example-site
+prod-loop	Checkout site	2026-09-02T05:41:10.7788015Z HEAD is now at 9e41b7c fix(e2e): discover content fixtures dynamically instead of hardcoding slugs
+prod-loop	Checkout cms-platform	2026-09-02T05:41:12.3391004Z Syncing repository: example-org/cms-platform
+prod-loop	Checkout cms-platform	2026-09-02T05:41:13.9903117Z Note: switching to 'v0.1.104'.
+prod-loop	Install Playwright browsers	2026-09-02T05:41:15.0028841Z apt lock timeout configured: DPkg::Lock::Timeout "300";
+prod-loop	Install Playwright browsers	2026-09-02T05:42:41.5560932Z Playwright 1.58.2 browsers installed (chromium)
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:43:02.1004776Z cms-platform harness v0.1.104 (platform_ref=v0.1.104)
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:43:02.1093318Z PROD_PLAYGROUND_MODE=on  CMS_PROD_URL=https://www.example.com
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:43:02.2210904Z Running 1 test using 1 worker
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:43:41.8830127Z [prod-mutate] signed in to /admin as the CMS service identity
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:43:58.4471200Z [prod-mutate] edited entry e2e/canary-post, marker=canary-2026-09-02T05-43-58Z
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:44:19.7710338Z [prod-mutate] Decap pushed onto the existing branch cms/e2e/canary-post
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:44:20.0028113Z [prod-mutate] tracking pull request #418
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:44:20.0104417Z [prod-mutate] Status: Ready — publish armed, waiting for auto-merge
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:49:20.1180043Z [deploy-queue] deploy-production lane idle (in-flight: 0, queued: 0); extending 300s (extension 1/6)
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:54:20.2231986Z [deploy-queue] deploy-production lane idle (in-flight: 0, queued: 0); extending 300s (extension 2/6)
+prod-loop	Run prod-mutate playground loop	2026-09-02T05:59:20.3390417Z [deploy-queue] deploy-production lane idle (in-flight: 0, queued: 0); extending 300s (extension 3/6)
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:04:20.4402219Z [deploy-queue] deploy-production lane idle (in-flight: 0, queued: 0); extending 300s (extension 4/6)
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:09:20.5518830Z [deploy-queue] deploy-production lane idle (in-flight: 0, queued: 0); extending 300s (extension 5/6)
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7734120Z   1) [chromium-desktop-1080] › e2e/cms-prod-mutate.spec.js:71:3 › prod playground publish reaches the live URL
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7736611Z
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7739004Z     Error: Timed out waiting for the URL to reflect the change. Waited 1806s, but the cms PR #418 had NOT MERGED yet — PR #418 has not merged although all 13 check-run(s) on its head sha are green — it is awaiting the merge mechanism (auto-merge / nudge). An unmerged PR cannot have a deploy, so the deploy chain is NOT the failing leg here (#215). Check the pill state for in-flight clues.
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7741330Z
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7743918Z     verdict: pr-awaiting-required-check  pr=418  autoMerge=true  labels=[automated-test, cms/ready]
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7746201Z
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7748844Z       at e2e/deploy-pill.js:277
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:59.0021157Z   1 failed
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:59.0033741Z     [chromium-desktop-1080] › e2e/cms-prod-mutate.spec.js:71:3 › prod playground publish reaches the live URL
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:14:00.1140228Z ##[error]Process completed with exit code 1.
+prod-loop	Post failure summary	2026-09-02T06:14:08.3308119Z posting comment with marker prod-mutate-failure-summary on pull request #418
+prod-loop	Post failure summary	2026-09-02T06:14:09.9912004Z comment updated: https://github.com/example-org/example-site/pull/418#issuecomment-30044118
+prod-loop	Complete job	2026-09-02T06:14:11.2201093Z Cleaning up orphan processes

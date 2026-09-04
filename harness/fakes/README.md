@@ -55,6 +55,7 @@ same file.
 | `gh run view 4471182930` | `run-view-4471182930.json` |
 | `gh api repos/X/pulls/418` | `api/repos/X/pulls/418.json` |
 | `gh api /repos/X/pulls/418?per_page=1` | `api/repos/X/pulls/418.json` |
+| `gh auth status` | `auth-status.json`, falling back to `auth-status.txt` |
 
 - `api <endpoint>` keys to `api/<endpoint>.json`; a leading `/` and any
   `?query` are stripped. A key that would escape the payload directory
@@ -66,6 +67,13 @@ same file.
 - A flag that takes a value must be either in the fake's `BOOLEAN_FLAGS` set
   or written as `--flag value` / `--flag=value`. Boolean flags are listed
   explicitly so `run view --log 12` cannot swallow the run id.
+- A `.json` key falls back to a `.txt` payload, so a command whose real output
+  is plain text (`gh auth status`, `gh pr diff`) gets a file named for what it
+  holds. The key does not change — only which file backs it.
+- `gh --version` and `gh --help`, as the WHOLE invocation, are answered by the
+  fake itself and need no payload: a 404 there reads as "the tool is broken"
+  and can derail a run before it reaches the fixture's own surface.
+  `gh pr list --help` is still an ordinary `pr-list.json` read.
 
 ### Classes, and what each one does
 

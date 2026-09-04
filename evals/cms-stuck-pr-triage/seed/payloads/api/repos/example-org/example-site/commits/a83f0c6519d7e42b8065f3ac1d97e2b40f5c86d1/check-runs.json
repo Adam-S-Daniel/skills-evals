@@ -1,0 +1,69 @@
+{
+  "total_count": 4,
+  "check_runs": [
+    {
+      "name": "validate-content",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-09-02T06:10:12Z",
+      "completed_at": "2026-09-02T06:11:39Z",
+      "head_sha": "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1",
+      "check_suite": {
+        "id": 20802,
+        "head_branch": "cms/posts/autumn-hours"
+      },
+      "output": {
+        "title": "9 entries validated",
+        "summary": "Merged into base main@9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35 before running."
+      }
+    },
+    {
+      "name": "e2e / project (chromium-desktop-1080)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-09-02T06:10:14Z",
+      "completed_at": null,
+      "head_sha": "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1",
+      "check_suite": {
+        "id": 20803,
+        "head_branch": "cms/posts/autumn-hours"
+      },
+      "output": {
+        "title": "running",
+        "summary": "Merged into base main@9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35 before running."
+      }
+    },
+    {
+      "name": "e2e / project (webkit-iphone16)",
+      "status": "in_progress",
+      "conclusion": null,
+      "started_at": "2026-09-02T06:10:14Z",
+      "completed_at": null,
+      "head_sha": "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1",
+      "check_suite": {
+        "id": 20803,
+        "head_branch": "cms/posts/autumn-hours"
+      },
+      "output": {
+        "title": "running",
+        "summary": "Merged into base main@9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35 before running."
+      }
+    },
+    {
+      "name": "e2e / e2e",
+      "status": "queued",
+      "conclusion": null,
+      "started_at": null,
+      "completed_at": null,
+      "head_sha": "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1",
+      "check_suite": {
+        "id": 20803,
+        "head_branch": "cms/posts/autumn-hours"
+      },
+      "output": {
+        "title": "waiting for the project matrix",
+        "summary": "Merged into base main@9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35 before running."
+      }
+    }
+  ]
+}

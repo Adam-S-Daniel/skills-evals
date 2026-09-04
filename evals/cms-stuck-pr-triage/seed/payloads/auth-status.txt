@@ -1,0 +1,6 @@
+github.com
+  ✓ Logged in to github.com account cms-bot (GH_TOKEN)
+  - Active account: true
+  - Git operations protocol: https
+  - Token: ****************************************
+  - Token scopes: 'read:org', 'repo:status', 'public_repo'

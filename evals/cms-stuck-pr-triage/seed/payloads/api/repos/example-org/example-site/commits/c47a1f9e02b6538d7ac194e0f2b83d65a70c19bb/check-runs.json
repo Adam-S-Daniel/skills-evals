@@ -1,0 +1,57 @@
+{
+  "total_count": 4,
+  "check_runs": [
+    {
+      "name": "validate-content",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-08-30T09:15:11Z",
+      "completed_at": "2026-08-30T09:16:44Z",
+      "head_sha": "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
+      "check_suite": { "id": 20551, "head_branch": "cms/posts/spring-release-notes" },
+      "output": {
+        "title": "8 entries validated",
+        "summary": "Merged into base main@0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04 before running."
+      }
+    },
+    {
+      "name": "e2e / project (chromium-desktop-1080)",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-08-30T09:15:12Z",
+      "completed_at": "2026-08-30T09:40:58Z",
+      "head_sha": "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
+      "check_suite": { "id": 20552, "head_branch": "cms/posts/spring-release-notes" },
+      "output": {
+        "title": "1 failed, 46 passed",
+        "summary": "Merged into base main@0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04 before running.\ne2e/content-fixtures.spec.js:34 - Error: no entry found for slug \"winter-hours\" in collection \"posts\"."
+      }
+    },
+    {
+      "name": "e2e / project (webkit-iphone16)",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-08-30T09:15:12Z",
+      "completed_at": "2026-08-30T09:39:02Z",
+      "head_sha": "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
+      "check_suite": { "id": 20552, "head_branch": "cms/posts/spring-release-notes" },
+      "output": {
+        "title": "47 passed",
+        "summary": "Merged into base main@0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04 before running."
+      }
+    },
+    {
+      "name": "e2e / e2e",
+      "status": "completed",
+      "conclusion": "failure",
+      "started_at": "2026-08-30T09:41:00Z",
+      "completed_at": "2026-08-30T09:41:07Z",
+      "head_sha": "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
+      "check_suite": { "id": 20552, "head_branch": "cms/posts/spring-release-notes" },
+      "output": {
+        "title": "1 of 10 project jobs failed",
+        "summary": "Merged into base main@0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04 before running."
+      }
+    }
+  ]
+}

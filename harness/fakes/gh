@@ -179,10 +179,17 @@ def resolve_payload(payload_dir: str, key: str) -> str | None:
     resolve to nothing rather than to a file outside the payload directory.
     """
     root = os.path.realpath(payload_dir)
-    candidate = os.path.realpath(os.path.join(root, key))
-    if candidate != root and not candidate.startswith(root + os.sep):
-        return None
-    return candidate if os.path.isfile(candidate) else None
+    # A `.json` key falls back to `.txt`, so a command whose real output is
+    # plain text (`gh auth status`, `gh pr diff`) gets a payload named for
+    # what it holds. The key is unchanged either way — only the file is.
+    names = [key, key[: -len(".json")] + ".txt"] if key.endswith(".json") else [key]
+    for name in names:
+        candidate = os.path.realpath(os.path.join(root, name))
+        if candidate != root and not candidate.startswith(root + os.sep):
+            return None
+        if os.path.isfile(candidate):
+            return candidate
+    return None
 
 
 def classify(positionals: list[str], flags: dict[str, list]) -> str:
@@ -251,9 +258,28 @@ def not_found(key: str | None) -> int:
     return 1
 
 
+# What `gh --version` reports. Fixture-independent: every `gh` answers this,
+# and a 404 here would read as "the tool is broken" and derail a run before
+# the fixture's own surface is even touched.
+GH_VERSION = "gh version 2.81.0 (2026-08-19)\nhttps://github.com/cli/cli/releases/latest\n"
+GH_USAGE = (
+    "Work seamlessly with GitHub from the command line.\n"
+    "\nUSAGE\n  gh <command> <subcommand> [flags]\n"
+    "\nCORE COMMANDS\n  api, issue, pr, release, repo, run, ruleset, workflow\n"
+)
+
+
 def main(argv: list[str]) -> int:
     payload_dir = os.environ.get("FAKE_GH_PAYLOADS")
     positionals, flags = parse_argv(argv)
+
+    # Answered before any payload lookup, and only when they are the whole
+    # invocation — `gh pr view --help` still keys to a payload.
+    if not positionals and ("--version" in flags or "--help" in flags or "-h" in flags):
+        sys.stdout.write(GH_VERSION if "--version" in flags else GH_USAGE)
+        log_invocation(argv, "read", None, 0)
+        return 0
+
     key = payload_key(positionals, flags)
     klass = classify(positionals, flags)
 

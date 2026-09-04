@@ -1,0 +1,21 @@
+{
+  "number": 412,
+  "state": "open",
+  "title": "Create Post “Spring release notes”",
+  "created_at": "2026-08-30T09:14:22Z",
+  "updated_at": "2026-08-30T09:41:07Z",
+  "merged": false,
+  "merged_at": null,
+  "mergeable": true,
+  "mergeable_state": "blocked",
+  "auto_merge": { "merge_method": "squash", "enabled_by": { "login": "cms-bot" } },
+  "labels": [{ "name": "automated-test" }, { "name": "cms/draft" }],
+  "head": {
+    "ref": "cms/posts/spring-release-notes",
+    "sha": "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04"
+  }
+}
