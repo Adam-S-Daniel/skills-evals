@@ -36,14 +36,99 @@ def load_fixture(eval_dir: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def _resolve_registry(cli_value: Path | None) -> Path:
-    """agentskills checkout: --registry, else $AGENTSKILLS_DIR, else ~/repos/agentskills."""
-    if cli_value:
-        return Path(cli_value).expanduser()
-    env = os.environ.get("AGENTSKILLS_DIR")
-    if env:
-        return Path(env).expanduser()
-    return Path.home() / "repos" / "agentskills"
+REGISTRIES_YML = Path(__file__).parent / "registries.yml"
+
+
+def _load_registries_config() -> list[dict]:
+    """harness/registries.yml: [{name, url, layout}, ...] — this harness's own
+    record of registry name/URL/layout, kept in step by hand with agentskills'
+    scripts/skills_registries.yml (see test/run_tests.py::TestIssue63) rather
+    than importing that file at run time: this harness must resolve using
+    only its own checkout plus the registry under test.
+    """
+    with open(REGISTRIES_YML, encoding="utf-8") as f:
+        return yaml.safe_load(f)["registries"]
+
+
+def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
+    """Repeatable --registry NAME=PATH entries. A bare PATH (no "=") is the
+    pre-#63 single-path form and is taken as the agentskills entry, so the
+    legacy invocation (`--registry ../agentskills`) keeps working unchanged.
+    """
+    out: dict[str, str] = {}
+    for value in values or []:
+        name, sep, path = value.partition("=")
+        if sep:
+            out[name] = path
+        else:
+            out["agentskills"] = value
+    return out
+
+
+def _parse_registry_env(value: str | None) -> dict[str, str]:
+    """$SKILLS_EVALS_REGISTRIES: the same NAME=PATH shape, comma-separated."""
+    out: dict[str, str] = {}
+    for item in (value or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        name, sep, path = item.partition("=")
+        if sep:
+            out[name] = path
+    return out
+
+
+def resolve_registries(cli_values: list[str] | None, env_value: str | None,
+                       base_dir: Path) -> dict[str, dict]:
+    """Map every registry named in harness/registries.yml to a local checkout.
+
+    Sources, in order: a --registry NAME=PATH flag (repeatable; a bare PATH
+    means agentskills), then $SKILLS_EVALS_REGISTRIES (same shape), then
+    $AGENTSKILLS_DIR for the agentskills entry specifically (the harness's
+    pre-#63 override), then a sibling-directory default `../<name>` next to
+    `base_dir` — the same convention agentskills' own skills_registries.yml
+    uses for the registries it doesn't live in.
+    """
+    overrides = {**_parse_registry_env(env_value), **_parse_registry_flags(cli_values)}
+    resolved = {}
+    for entry in _load_registries_config():
+        name = entry["name"]
+        if name in overrides:
+            path = Path(overrides[name]).expanduser()
+        elif name == "agentskills" and os.environ.get("AGENTSKILLS_DIR"):
+            path = Path(os.environ["AGENTSKILLS_DIR"]).expanduser()
+        else:
+            path = (base_dir / ".." / name).resolve()
+        resolved[name] = {"path": path, "layout": entry["layout"], "url": entry["url"]}
+    return resolved
+
+
+def registry_for_url(registries: dict[str, dict], url: str) -> dict:
+    """The registries.yml entry (path + layout) whose url matches a fixture's
+    `registry:` field. Raises with a message naming harness/registries.yml —
+    the file to edit — rather than failing silently or crashing deep inside
+    a glob.
+    """
+    for entry in registries.values():
+        if entry["url"].rstrip("/") == url.rstrip("/"):
+            return entry
+    known = ", ".join(sorted(registries)) or "(none configured)"
+    raise ValueError(
+        f"unknown registry {url!r} — not listed in harness/registries.yml "
+        f"(known registries: {known})")
+
+
+def _skill_dir_glob(layout: str, skill: str) -> str:
+    """Substitute `skill` for the skill-name placeholder in a registries.yml
+    `layout` glob (its final path segment, immediately before `SKILL.md`),
+    leaving any earlier `*` (a bundle/plugin wildcard) untouched.
+    """
+    parts = layout.split("/")
+    if len(parts) < 2 or parts[-1] != "SKILL.md" or parts[-2] != "*":
+        raise ValueError(f"registries.yml layout {layout!r} must end in '*/SKILL.md'")
+    parts = parts[:-1]
+    parts[-1] = skill
+    return "/".join(parts)
 
 
 def agent_env(workspace: Path, env_spec: dict | None) -> dict:
@@ -83,15 +168,17 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     if arm["name"] == "with_skill":
         skill = arm["skill"]
         registry = arm["registry"]
-        # The registry lays out skills as plugins/<bundle>/skills/<skill>/SKILL.md.
-        # Historically <bundle> == <skill> (one skill per plugin); it's moving to
-        # bundles that group several skills under one plugin dir, so <bundle> !=
-        # <skill> in general. Glob for it rather than hardcoding the bundle name,
-        # so both layouts resolve. Sorted so multiple matches pick deterministically.
-        matches = sorted(p for p in (registry / "plugins").glob(f"*/skills/{skill}")
-                         if p.is_dir())
+        # Registry layouts vary (agentskills' plugins/<bundle>/skills/<skill>/,
+        # cms-platform's flat skills/<skill>/, adamdaniel.ai's
+        # .claude/skills/<skill>/ — see harness/registries.yml). `layout`
+        # carries the glob for the registry under test, defaulting to
+        # agentskills' shape for callers that predate #63. Sorted so multiple
+        # matches pick deterministically.
+        layout = arm.get("layout", "plugins/*/skills/*/SKILL.md")
+        skill_glob = _skill_dir_glob(layout, skill)
+        matches = sorted(p for p in registry.glob(skill_glob) if p.is_dir())
         if not matches:
-            pattern = registry / "plugins" / "*" / "skills" / skill
+            pattern = registry / skill_glob
             return {"error": "skill_not_found",
                     "detail": f"no skill dir matched {pattern}"}
         skill_src = matches[0]
@@ -205,7 +292,7 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
     return "\n".join(lines) + "\n"
 
 
-def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
+def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up."""
     workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
@@ -223,7 +310,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
         }
         if arm_name == "with_skill":
             arm_config["skill"] = fixture["skill"]
-            arm_config["registry"] = registry
+            entry = registry_for_url(registries, fixture["registry"])
+            arm_config["registry"] = entry["path"]
+            arm_config["layout"] = entry["layout"]
 
         result = run_agent(workspace, fixture["prompt"], arm_config)
 
@@ -275,9 +364,13 @@ def main() -> int:
                         choices=["objective-only", "with_skill", "without_skill", "both"])
     parser.add_argument("--workspace", type=Path, default=None,
                         help="objective-only: score this workspace instead of the pristine seed")
-    parser.add_argument("--registry", type=Path, default=None,
-                        help="agentskills checkout path (with_skill arm); "
-                             "else $AGENTSKILLS_DIR, else ~/repos/agentskills")
+    parser.add_argument("--registry", action="append", default=None,
+                        help="registry checkout, repeatable: NAME=PATH (name from "
+                             "harness/registries.yml), or a bare PATH (legacy) taken "
+                             "as the agentskills entry; else $SKILLS_EVALS_REGISTRIES "
+                             "(same NAME=PATH,NAME=PATH shape), else $AGENTSKILLS_DIR "
+                             "for agentskills specifically, else a sibling checkout "
+                             "../<name> next to this repo")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
@@ -306,9 +399,10 @@ def main() -> int:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
-    registry = _resolve_registry(args.registry)
+    registries = resolve_registries(args.registry, os.environ.get("SKILLS_EVALS_REGISTRIES"),
+                                    Path(__file__).resolve().parent.parent)
 
-    arm_summaries = [_run_arm(name, fixture, seed, registry, args, timestamp)
+    arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
                      for name in arm_names]
 
     report = _render_report(fixture["skill"], fixture["prompt"], timestamp, arm_summaries)

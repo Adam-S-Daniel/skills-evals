@@ -86,14 +86,23 @@ CLAUDE_BIN=/path/to/claude AGENTSKILLS_DIR=~/repos/agentskills \
   python3 harness/run_eval.py evals/workflow-path-audit --arm both --results-dir /tmp/eval-out
 ```
 
-`--registry` (else `$AGENTSKILLS_DIR`, else `~/repos/agentskills`) must point
-at a checkout of the `agentskills` registry — the `with_skill` arm resolves
-the skill dir by globbing `plugins/*/skills/<skill>` (the first sorted match
-wins), so it works whether the registry lays a skill out under a plugin
-named after that skill (`plugins/<skill>/skills/<skill>/`, legacy) or under a
-bundle plugin holding several skills (`plugins/<bundle>/skills/<skill>/`).
-It then copies that resolved directory (the one containing `SKILL.md`) into
-the workspace's `.claude/skills/<skill>/`.
+A fixture's `registry:` field names which registry its skill lives in (by
+URL); `harness/registries.yml` maps each registry named there to a layout
+glob. `--registry NAME=PATH` (repeatable) points a name at a local checkout;
+a bare `--registry PATH` (no `=`, legacy) is taken as the `agentskills`
+entry. Without a flag, `$SKILLS_EVALS_REGISTRIES` (same `NAME=PATH,NAME=PATH`
+shape) is checked, then `$AGENTSKILLS_DIR` for the `agentskills` entry
+specifically, then a sibling checkout `../<name>` next to this repo — so
+`agentskills`, `cms-platform`, and `adamdaniel.ai` checkouts next to
+`skills-evals/` resolve with no flags at all. Within a registry, the
+`with_skill` arm resolves the skill dir by globbing that registry's layout
+with the skill name substituted for its final path segment (the first sorted
+match wins), which is what lets `plugins/*/skills/<skill>` (agentskills' own
+mix of the legacy `plugins/<skill>/skills/<skill>/` shape and the bundled
+`plugins/<bundle>/skills/<skill>/` shape), `skills/<skill>` (cms-platform),
+and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
+code path. It then copies that resolved directory (the one containing
+`SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
 
 ## Guidance-bridge canary
 

@@ -1327,5 +1327,121 @@ class CanaryTests(unittest.TestCase):
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
+class TestIssue63(unittest.TestCase):
+    """Issue #63: resolve the with_skill arm's skill dir against any registry
+    layout named in harness/registries.yml, not just agentskills'
+    plugins/*/skills/*/SKILL.md — cms-platform's flat skills/*/SKILL.md and
+    adamdaniel.ai's .claude/skills/*/SKILL.md must resolve too, and an
+    unknown registry: URL must fail loudly naming the file to fix.
+    """
+
+    REGISTRIES_YML = HARNESS_DIR / "registries.yml"
+
+    def _fake_registry(self, tmp: str, rel_skill_md: str) -> Path:
+        registry = Path(tmp) / "registry"
+        skill_md = registry / rel_skill_md
+        skill_md.parent.mkdir(parents=True)
+        skill_md.write_text(
+            f"---\nname: {skill_md.parent.name}\ndescription: fixture stand-in.\n---\n",
+            encoding="utf-8")
+        return registry
+
+    def _install(self, registry: Path, skill: str, layout: str, workspace: Path) -> dict:
+        arm = {"name": "with_skill", "skill": skill, "registry": registry,
+              "layout": layout, "timeout": 30}
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "agent"}):
+            return run_eval.run_agent(workspace, "audit the workflows", arm)
+
+    def test_resolves_flat_skills_layout(self):
+        # cms-platform-shaped: skills/<skill>/SKILL.md
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = self._fake_registry(tmp, "skills/some-skill/SKILL.md")
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            result = self._install(registry, "some-skill", "skills/*/SKILL.md", workspace)
+            self.assertNotIn("error", result)
+            installed = workspace / ".claude" / "skills"
+            self.assertTrue((installed / "some-skill" / "SKILL.md").is_file())
+            # Lands exactly there, not nested one level deeper.
+            files = sorted(p.relative_to(installed) for p in installed.rglob("*") if p.is_file())
+            self.assertEqual(files, [Path("some-skill/SKILL.md")])
+
+    def test_resolves_dotclaude_skills_layout(self):
+        # adamdaniel.ai-shaped: .claude/skills/<skill>/SKILL.md
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = self._fake_registry(tmp, ".claude/skills/some-skill/SKILL.md")
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            result = self._install(registry, "some-skill", ".claude/skills/*/SKILL.md", workspace)
+            self.assertNotIn("error", result)
+            installed = workspace / ".claude" / "skills"
+            self.assertTrue((installed / "some-skill" / "SKILL.md").is_file())
+            files = sorted(p.relative_to(installed) for p in installed.rglob("*") if p.is_file())
+            self.assertEqual(files, [Path("some-skill/SKILL.md")])
+
+    def test_unknown_registry_url_names_the_registries_file(self):
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        with self.assertRaises(ValueError) as ctx:
+            run_eval.registry_for_url(registries, "https://github.com/example/not-a-registry")
+        self.assertIn("harness/registries.yml", str(ctx.exception))
+        self.assertIn("not-a-registry", str(ctx.exception))
+
+    def test_legacy_single_registry_flag_still_resolves_the_agentskills_layout(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = self._fake_registry(
+                tmp, "plugins/a-bundle/skills/some-skill/SKILL.md")
+            # The pre-#63 form: one bare path, no NAME= prefix.
+            registries = run_eval.resolve_registries([str(registry)], None, REPO_ROOT)
+            entry = run_eval.registry_for_url(
+                registries, "https://github.com/Adam-S-Daniel/agentskills")
+            self.assertEqual(entry["path"], registry)
+            self.assertEqual(entry["layout"], "plugins/*/skills/*/SKILL.md")
+
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            result = self._install(entry["path"], "some-skill", entry["layout"], workspace)
+            self.assertNotIn("error", result)
+            self.assertTrue((workspace / ".claude" / "skills" / "some-skill"
+                            / "SKILL.md").is_file())
+
+    def test_registry_name_equals_path_flag_targets_that_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = self._fake_registry(tmp, "skills/some-skill/SKILL.md")
+            registries = run_eval.resolve_registries(
+                [f"cms-platform={registry}"], None, REPO_ROOT)
+            entry = run_eval.registry_for_url(
+                registries, "https://github.com/Adam-S-Daniel/cms-platform")
+            self.assertEqual(entry["path"], registry)
+            self.assertEqual(entry["layout"], "skills/*/SKILL.md")
+
+    def test_env_var_supplies_registry_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = self._fake_registry(tmp, ".claude/skills/some-skill/SKILL.md")
+            env_value = f"adamdaniel.ai={registry}"
+            registries = run_eval.resolve_registries(None, env_value, REPO_ROOT)
+            entry = run_eval.registry_for_url(
+                registries, "https://github.com/Adam-S-Daniel/adamdaniel.ai")
+            self.assertEqual(entry["path"], registry)
+
+    def test_no_override_falls_back_to_sibling_directory(self):
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        entry = registries["cms-platform"]
+        self.assertEqual(entry["path"], (REPO_ROOT / ".." / "cms-platform").resolve())
+
+    def test_registries_agree_with_agentskills_own_file(self):
+        agentskills_file = (REPO_ROOT / ".." / "agentskills" / "scripts"
+                            / "skills_registries.yml").resolve()
+        if not agentskills_file.is_file():
+            self.skipTest(f"no agentskills checkout at {agentskills_file} — "
+                          "skipping the cross-repo registries.yml agreement check")
+        import yaml
+        theirs = {e["name"]: e["layout"] for e in
+                 yaml.safe_load(agentskills_file.read_text(encoding="utf-8"))["registries"]}
+        ours = {e["name"]: e["layout"] for e in
+               yaml.safe_load(self.REGISTRIES_YML.read_text(encoding="utf-8"))["registries"]}
+        self.assertEqual(ours, theirs)
+
+
 if __name__ == "__main__":
     unittest.main()
