@@ -10,6 +10,7 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import os
 import re
@@ -1243,7 +1244,24 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # clause (Decap CMS publish loops, auto-merge nudges, dependabot
         # auto-merge landing commits on cms-platform/adamdaniel.ai's default
         # branches), must fail here.
-        text = self.WORKFLOW.read_text(encoding="utf-8")
+        #
+        # Review round 3, item C: the per-repo "header must name every
+        # checked-out registry" check below used to search the WHOLE file
+        # for `repo`, which always matches the checkout step's own
+        # `repository: <repo>` line — so it passed vacuously no matter what
+        # the header prose said. Scoped to just the file's LEADING comment
+        # block (the run of lines at the top that start with '#' or are
+        # blank) instead, and matched against the registry's basename
+        # (`agentskills`, not `Adam-S-Daniel/agentskills`) — the spelling
+        # the header prose actually uses.
+        lines = self.WORKFLOW.read_text(encoding="utf-8").splitlines()
+        header_lines = list(itertools.takewhile(
+            lambda line: line.strip() == "" or line.lstrip().startswith("#"),
+            lines))
+        header = "\n".join(header_lines)
+        self.assertTrue(header.strip(), "expected a non-empty leading "
+                        "comment block at the top of eval.yml")
+
         checkout_steps = [s for s in self._steps()
                           if (s.get("uses") or "").startswith("actions/checkout@")]
         count = len(checkout_steps)
@@ -1251,7 +1269,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         self.assertIn(count, number_words,
                       f"unexpected number of checkout steps: {count}")
         self.assertIn(
-            f"All {number_words[count]} checkouts", text,
+            f"All {number_words[count]} checkouts", header,
             f"the header must say 'All {number_words[count]} checkouts' — "
             f"it currently disagrees with the actual count ({count}) of "
             "actions/checkout@ steps in the file")
@@ -1263,15 +1281,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         self.assertTrue(named_repos, "expected at least one checkout step "
                         "naming a repository:")
         for repo in named_repos:
+            basename = repo.rsplit("/", 1)[-1]
             with self.subTest(repo=repo):
                 self.assertIn(
-                    repo, text,
-                    f"the header must name every checked-out registry "
-                    f"({repo!r} is missing) — write access to any checked-"
-                    "out registry is equivalent to key access here")
+                    basename, header,
+                    f"the header's LEADING COMMENT BLOCK must name every "
+                    f"checked-out registry ({basename!r} is missing) — "
+                    "write access to any checked-out registry is "
+                    "equivalent to key access here")
 
         self.assertIn(
-            "automated lanes", text,
+            "automated lanes", header,
             "the header's automated-lane clause (Decap CMS editorial "
             "publish loops, auto-merge nudges, dependabot auto-merge) must "
             "not be deleted — those lanes land commits inside the trust "
@@ -1284,21 +1304,51 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # in the real (scheduled, credentialed) workflow — up to a week
         # later. Caught here by checking the ACTUAL flags in the eval step's
         # run: block against the ACTUAL registry names and checkout paths.
+        #
+        # Review round 3, item A: the original version of this check only
+        # asked whether a flag's PATH basename was SOME checkout path, not
+        # whether that checkout's `repository:` is the repo registries.yml
+        # actually names for that flag's NAME — so a NAME/PATH pair
+        # transposed between two registries (e.g.
+        # `--registry agentskills=../cms-platform`) stayed green here and
+        # died at runtime with skill_not_found. Now built from
+        # {with.path: with.repository} and cross-checked against each
+        # registry's own url in harness/registries.yml.
         doc = self._doc()
         steps = doc["jobs"]["eval"]["steps"]
         eval_step = next(s for s in steps
                          if (s.get("name") or "").startswith("Run the eval"))
+        self.assertEqual(
+            eval_step.get("working-directory"), "skills-evals",
+            "the eval step must declare working-directory: skills-evals — "
+            "the ../<checkout-path> registry overrides below are relative "
+            "to it")
         run = eval_step["run"]
         flags = re.findall(r"--registry\s+([A-Za-z0-9_.-]+)=(\S+)", run)
         self.assertTrue(
             flags, "no --registry NAME=PATH flags found in the eval step's "
             "run: block")
 
-        known_names = {e["name"] for e in run_eval._load_registries_config()}
-        checkout_paths = {
-            (step.get("with") or {}).get("path")
-            for step in steps
-            if (step.get("uses") or "").startswith("actions/checkout@")}
+        registries_config = run_eval._load_registries_config()
+        known_names = {e["name"] for e in registries_config}
+        repo_by_name = {
+            e["name"]: run_eval._normalize_registry_url(e["url"]).rsplit("/", 1)[-1]
+            for e in registries_config}
+
+        checkout_steps = [s for s in steps
+                          if (s.get("uses") or "").startswith("actions/checkout@")]
+        registry_checkouts = [s for s in checkout_steps
+                              if (s.get("with") or {}).get("repository")]
+        path_to_repo = {
+            (s.get("with") or {}).get("path"):
+                (s.get("with") or {}).get("repository", "").rsplit("/", 1)[-1].lower()
+            for s in registry_checkouts}
+
+        self.assertEqual(
+            len(flags), len(registry_checkouts),
+            f"{len(flags)} --registry flag(s) but {len(registry_checkouts)} "
+            "registry checkout step(s) in eval.yml — every checked-out "
+            "registry must get exactly one flag and vice versa")
 
         for name, path in flags:
             with self.subTest(name=name, path=path):
@@ -1308,9 +1358,16 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                     "name listed in harness/registries.yml")
                 basename = path.rstrip("/").rsplit("/", 1)[-1]
                 self.assertIn(
-                    basename, checkout_paths,
+                    basename, path_to_repo,
                     f"--registry {name}={path}: no checkout step in eval.yml "
                     f"has with.path == {basename!r}")
+                self.assertEqual(
+                    path_to_repo[basename], repo_by_name[name],
+                    f"--registry {name}={path}: the checkout at path "
+                    f"{basename!r} checks out {path_to_repo[basename]!r}, "
+                    f"not the repo harness/registries.yml names for "
+                    f"{name!r} ({repo_by_name[name]!r}) — this flag's NAME "
+                    "and PATH point at two different registries")
 
 
 class CiDispatchTests(unittest.TestCase):
