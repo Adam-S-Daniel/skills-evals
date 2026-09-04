@@ -234,7 +234,18 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
                 total += n
                 if folded == target:
                     mine += n
-    return 0.0 if total == 0 else 100.0 * mine / total
+    # Integer multiplication FIRST, then a single true division of two ints
+    # — not `100.0 * mine / total`, which multiplies the float `100.0` by
+    # the int `mine` and so converts `mine` to a float before dividing at
+    # all. `usage_share` is called directly by a few tests on hand-built
+    # counts that bypass `_clean_counts`'s own upper bound, so this stays
+    # safe on its own: Python's int/int true division computes the exact
+    # ratio's correctly-rounded float without ever needing `mine` or
+    # `total` to fit in a float individually, which `100.0 * mine` does —
+    # a `mine` near the top of a float's range overflows that multiplication
+    # to `inf`, and one with hundreds of digits raises OverflowError
+    # converting it to a float at all.
+    return 0.0 if total == 0 else (100 * mine) / total
 
 
 def _version_key(model_id: str) -> tuple:
@@ -283,6 +294,13 @@ def _clean_models(models_doc: dict, warn) -> list[dict]:
     return clean
 
 
+#: A week is 604800 seconds; no real account's turn rate gets within two
+#: orders of magnitude of one turn a second, sustained for a week. Anything
+#: above this in a single census cell is a bad value, not real usage — see
+#: `_clean_counts`'s upper-bound check.
+MAX_WEEKLY_TURNS = 10 ** 7
+
+
 def _clean_counts(counts, warn) -> dict:
     """{model: {week: int}}, coerced. Nothing that fails coercion is counted.
 
@@ -326,6 +344,18 @@ def _clean_counts(counts, warn) -> dict:
             # cancelling +/- pair could zero a census's only ranked usage
             # while `_census_verdict` still read it as usable).
             if value < 0:
+                bad_cells += 1
+                continue
+            # An upper bound, not just a lower one: `1e308` (a huge but
+            # finite float) or a several-hundred-digit JSON integer both
+            # pass `int()` cleanly — Python ints are arbitrary precision —
+            # and used to ride straight into usage_share's arithmetic, where
+            # multiplying a value that large by a float either silently
+            # produces `inf` (published as "carries inf% of census usage")
+            # or raises OverflowError converting it to a float at all. A
+            # week cannot hold more turns than MAX_WEEKLY_TURNS; reject
+            # anything above it as a bad cell, the same as a negative one.
+            if value > MAX_WEEKLY_TURNS:
                 bad_cells += 1
                 continue
             cleaned.setdefault(model_id, {})[week] = value

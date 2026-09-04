@@ -5032,6 +5032,47 @@ class TestIssue67Review3(unittest.TestCase):
                          "the alias's 1000 turns must not inflate the "
                          "denominator for a real id's share")
 
+    # --- item 4: _clean_counts bounds a cell above zero, and usage_share
+    # stays safe even when a huge value gets past it anyway -------------
+
+    def test_clean_counts_rejects_a_cell_above_the_weekly_turn_ceiling(self):
+        """A week cannot hold more turns than roster.MAX_WEEKLY_TURNS. A
+        cell of `1e308` (a huge but finite float) or a several-hundred-
+        digit JSON integer both pass a bare `int()` cleanly — Python ints
+        are arbitrary precision — and used to ride straight into
+        usage_share's arithmetic."""
+        notes = []
+        huge_int = int("9" * 400)
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": 1e308, "2026-W35": huge_int,
+                               "2026-W34": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
+        self.assertTrue(any("number" in n for n in notes), notes)
+
+    def test_usage_share_does_not_overflow_on_a_huge_count(self):
+        """usage_share is called directly by other tests on hand-built
+        counts that bypass _clean_counts's own upper bound, so it must stay
+        safe on its own: `100.0 * mine` converts a huge `mine` to a float
+        BEFORE dividing, which either overflows to `inf` (a `1e308`-sized
+        int, published as "carries inf% of census usage") or raises
+        OverflowError outright (a several-hundred-digit int)."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        huge = int(1e308)
+        cleaned = {"claude-opus-5": {TestIssue67.W[0]: huge},
+                  "claude-sonnet-5": {TestIssue67.W[0]: huge}}
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+        way_huge = int("9" * 400)
+        cleaned = {"claude-opus-5": {TestIssue67.W[0]: way_huge},
+                  "claude-sonnet-5": {TestIssue67.W[0]: way_huge}}
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
     # --- item 1: model_usage_census.py must not need PyYAML just to import
     # or to fail an argument, only to actually build a census ---
 
