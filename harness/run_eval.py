@@ -163,20 +163,21 @@ def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
         # roster, not "no arms configured" — and it is unsafe to trust for
         # ANYTHING this roster names (including the judge), regardless of
         # whether this particular run even needed an arm from it.
-        return None, None, (f"the model roster at {path} lists "
+        return None, None, (f"the model roster at {path.name} lists "
                             f"{len(raw_arms)} arm entry/entries but none has "
                             f"a usable string `id` (skipped {skipped}); this "
                             f"roster cannot be trusted for a model pick")
     if needs_agent and not arm_ids:
-        return None, None, (f"the model roster at {path} names no usable arm, "
-                            f"and this fixture pins no model")
+        return None, None, (f"the model roster at {path.name} names no usable "
+                            f"arm, and this fixture pins no model")
     if needs_judge and not judge_id:
-        return None, None, (f"the model roster at {path} names no usable judge, "
-                            f"and this fixture pins no judge model")
+        return None, None, (f"the model roster at {path.name} names no usable "
+                            f"judge, and this fixture pins no judge model")
     if needs_judge and judge_is_arm:
-        return None, None, (f"the model roster at {path} names a judge that is "
-                            f"also an arm; a model must not grade its own run. "
-                            f"Pin `judge.model:` in the fixture to override")
+        return None, None, (f"the model roster at {path.name} names a judge "
+                            f"that is also an arm; a model must not grade its "
+                            f"own run. Pin `judge.model:` in the fixture to "
+                            f"override")
     return (pinned_agent or arm_ids[0]), (pinned_judge or judge_id), None
 
 
@@ -348,24 +349,27 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
     passed in: the roster is one file describing one run, and re-reading it per
     arm let two arms of the same run disagree if it changed underneath them.
     """
+    agent_model, roster_judge_model, selection_error = (
+        selection if selection is not None else select_models(fixture, args))
+    if selection_error:
+        # A runner-level error, recorded on the arm exactly like an agent
+        # failure, so it leaves through main()'s existing exit-2 path instead
+        # of running the agent on a model nobody chose. Checked BEFORE
+        # materializing anything: a workspace this run will never use (no
+        # agent is ever invoked) is not worth an mkdtemp + copytree + a git
+        # init/add/commit only to shutil.rmtree it two lines later.
+        error = {"type": "model-selection", "detail": selection_error}
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+        return {"arm": arm_name, "error": error, "agent": None,
+                "objective_checks": None, "judge": None}
+
     workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
     try:
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
         _git("init", "-q", cwd=workspace)
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "-m", "seed", cwd=workspace)
-
-        agent_model, roster_judge_model, selection_error = (
-            selection if selection is not None else select_models(fixture, args))
-        if selection_error:
-            # A runner-level error, recorded on the arm exactly like an agent
-            # failure, so it leaves through main()'s existing exit-2 path
-            # instead of running the agent on a model nobody chose.
-            error = {"type": "model-selection", "detail": selection_error}
-            _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                           error, None, None, None, None)
-            return {"arm": arm_name, "error": error, "agent": None,
-                    "objective_checks": None, "judge": None}
 
         arm_config = {
             "name": arm_name,

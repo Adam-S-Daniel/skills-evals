@@ -2661,7 +2661,11 @@ class TestIssue67Review(unittest.TestCase):
                 path = self._roster_file(tmp, raw)
                 summary, seen = self._run_one_arm(eval_dir, path)
                 self.assertIsNotNone(summary["error"])
-                self.assertIn(str(path), summary["error"]["detail"])
+                # The roster's basename, not necessarily its full absolute
+                # path (item 15, #129 review round 2): a selection error
+                # naming the roster's ABSOLUTE path lands in summary.json,
+                # which eval.yml commits to the public eval-results branch.
+                self.assertIn(path.name, summary["error"]["detail"])
                 self.assertNotIn("agent", seen)
 
     def test_the_runner_refuses_a_roster_judge_that_is_also_an_arm(self):
@@ -3368,7 +3372,7 @@ exit 0
             args = argparse.Namespace(model=None, roster=roster_path, no_judge=False)
             agent, judge_model, error = run_eval.select_models(loaded_fixture, args)
         self.assertIsNotNone(error)
-        self.assertIn(str(roster_path), error)
+        self.assertIn(roster_path.name, error)
 
     # --- item 10: `compared_to_previous` collapses "unreadable previous"
     #              into "first run" — publish a third state -------------
@@ -3441,6 +3445,36 @@ exit 0
                          "counts under `other` keeps this script's own turn "
                          "count honest, it does not feed the roster's share "
                          "math at all")
+
+    # --- item 14: _run_arm materialized the workspace before checking
+    #              whether the run can even proceed ------------------------
+
+    def test_run_arm_checks_selection_error_before_materializing_the_workspace(self):
+        """A model-selection error means the agent never runs; mkdtemp +
+        copytree + a git init/add/commit for a workspace that gets
+        `shutil.rmtree`'d one line later was pure waste on every unpinned
+        fixture that hits a missing or broken roster."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "evals" / "a-skill"
+            (eval_dir / "seed").mkdir(parents=True)
+            (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+            fixture_doc = {"skill": "a-skill", "prompt": "do the thing",
+                           "judge_rubric": "grade it",
+                           "arms": {"without_skill": {"install": "none"}}}
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture_doc),
+                                                    encoding="utf-8")
+            fixture = run_eval.load_fixture(eval_dir)
+            results_dir = Path(tempfile.mkdtemp())
+            self.addCleanup(shutil.rmtree, results_dir, ignore_errors=True)
+            args = argparse.Namespace(model=None, timeout=30, no_judge=False,
+                                      results_dir=results_dir,
+                                      roster=Path(tmp) / "nope.json")
+            with mock.patch.object(run_eval.tempfile, "mkdtemp") as fake_mkdtemp:
+                summary = run_eval._run_arm(
+                    "without_skill", fixture, eval_dir / "seed",
+                    Path("/nonexistent-registry"), args, "20260904T120000Z")
+        self.assertIsNotNone(summary["error"])
+        fake_mkdtemp.assert_not_called()
 
 
 if __name__ == "__main__":
