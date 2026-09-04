@@ -4975,6 +4975,63 @@ class TestIssue67Review3(unittest.TestCase):
         self.assertIn("refusing to publish a roster with no arms",
                       got["summary"])
 
+    # --- item 3: a proxy alias carrying a family word (`claude-sonnet-
+    # proxy-route`) is `rung_of()`-ranked but not a catalogue model or a
+    # previous arm — its usage must not count as "usage this policy can
+    # rank" ------------------------------------------------------------
+
+    def test_proxy_alias_census_holds_previous_arms_not_credits_them(self):
+        """A census whose in-window usage is entirely a proxy alias that
+        merely carries a family word (not a real catalogue id, measured
+        end to end through the real census) used to be read as usable
+        evidence — rung_of() ranks it — crediting its usage to nobody's
+        numerator while still inflating every real arm's denominator, and
+        letting an otherwise-unattributable census retire a previous arm at
+        0.0%. This is the same failure round 2 closed for an entirely-
+        `other` census (test_census_entirely_unrankable_is_held_not_read_as
+        _usable), by a second route.
+        """
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-proxy-route":
+                  {w: 500 for w in TestIssue67.W[:4]}}
+        result = TestIssue67._compute(
+            census=TestIssue67._census_doc(counts=counts), previous=previous)
+        self.assertIn("claude-opus-4-8", TestIssue67._arm_ids(result),
+                      "a census with no attributable usage is not evidence "
+                      "to retire a previous arm")
+        reason = TestIssue67._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("no usage this policy can rank", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_real_id_census_still_computes_shares(self):
+        """The new attribution filter changes nothing when every census key
+        really is a catalogue id — the ordinary case must not regress."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {TestIssue67.W[0]: 250},
+             "claude-sonnet-5": {TestIssue67.W[0]: 250}}, lambda _m: None)
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+    def test_mixed_census_computes_share_against_real_ids_only(self):
+        """One real id at 60 turns and one alias at 1000 turns: the real
+        id's share is computed against real ids only — the alias's usage
+        must not inflate the denominator."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {TestIssue67.W[0]: 60},
+             "claude-sonnet-proxy-route": {TestIssue67.W[0]: 1000}},
+            lambda _m: None)
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5"}, previous_arms=set())
+        self.assertEqual(share, 100.0,
+                         "the alias's 1000 turns must not inflate the "
+                         "denominator for a real id's share")
+
     # --- item 1: model_usage_census.py must not need PyYAML just to import
     # or to fail an argument, only to actually build a census ---
 

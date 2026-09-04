@@ -164,9 +164,40 @@ def alias_map(ids) -> dict[str, str]:
     return mapping
 
 
+def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
+                     previous_arms: set[str]) -> bool:
+    """Whether a census key names something the catalogue (or a previous
+    roster) can actually credit: an id currently in the Models API catalogue
+    (`folded` — alias-folded, so a dated snapshot's usage still counts under
+    its alias), or a previous roster's arm. `api_ids=None` means "no
+    catalogue context was given" — every caller inside compute_roster always
+    gives one; the handful of tests that call usage_share()/
+    _in_window_totals() directly, on already-real ids, with no context at
+    all, get the old unfiltered behavior instead of an empty catalogue.
+
+    Being ranked (a recognised family word in the id) is necessary but NOT
+    sufficient: a proxy or routing alias can paste extra segments onto a
+    real family word and still be `rung_of()`-ranked (see
+    test/run_tests.py::TestIssue67Review3 for a worked example), without
+    being a model this policy can seat or credit — nobody's numerator ever
+    matches it, so letting it into a denominator only pushes every real
+    arm's share toward zero, and letting it into `_in_window_totals`'s
+    ranked total makes an otherwise entirely unattributable census read as
+    "usable" evidence to retire a real previous arm at 0.0%. Closing that
+    (see `_in_window_totals`) for a proxy alias is the same fix `other`
+    already had for a value with no family word at all — a second route to
+    the identical failure.
+    """
+    if api_ids is None:
+        return True
+    return folded in api_ids or candidate in previous_arms or folded in previous_arms
+
+
 def usage_share(counts: dict, model_id: str, weeks: list[str],
-                rungs: list[list[str]], aliases: dict | None = None) -> float:
-    """Percent of RANKED census usage over `weeks` that `model_id` carries.
+                rungs: list[list[str]], aliases: dict | None = None,
+                api_ids=None, previous_arms=None) -> float:
+    """Percent of RANKED, ATTRIBUTABLE census usage over `weeks` that
+    `model_id` carries.
 
     The denominator counts every model the census saw THAT THE LADDER CAN
     PLACE, including ones the Models API no longer lists — work done on a
@@ -177,9 +208,17 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     every ranked model under the entry bar (measured: a model at 60 turns a
     week computed at 5.7% against 1000 unranked turns a week).
 
+    `api_ids`/`previous_arms`, when given, ALSO exclude a ranked-but-
+    unattributable key — see `_is_attributable`. Every call inside
+    compute_roster gives both; omitted (both default None), the denominator
+    is every ranked key regardless of catalogue membership, the pre-#67-
+    review-round-3 behavior a few direct tests of the raw arithmetic rely on.
+
     A dated snapshot's usage is folded onto its alias — one model, one share.
     """
     aliases = aliases or {}
+    api_ids_set = None if api_ids is None else set(api_ids)
+    previous_arms_set = set(previous_arms) if previous_arms else set()
     wanted = set(weeks)
     target = aliases.get(model_id, model_id)
     total = 0
@@ -188,6 +227,8 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
         if rung_of(candidate, rungs) is None:
             continue
         folded = aliases.get(candidate, candidate)
+        if not _is_attributable(candidate, folded, api_ids_set, previous_arms_set):
+            continue
         for week, n in (by_week or {}).items():
             if week in wanted:
                 total += n
@@ -321,22 +362,34 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     return ids
 
 
-def _in_window_totals(counts: dict, weeks: set[str],
-                      rungs: list[list[str]]) -> tuple[int, int]:
+def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
+                      aliases: dict | None = None, api_ids=None,
+                      previous_arms=None) -> tuple[int, int]:
     """(raw_total, ranked_total) of census usage over `weeks`.
 
     `ranked_total` mirrors `usage_share`'s own denominator — it excludes
-    `other` and every id the tier ladder cannot place, the same as a roster
-    seat would. Computed once and handed to `_census_verdict`, so its
-    "is there usage evidence" check agrees with the number every arm's share
-    is actually divided by, rather than reading raw counts that can be
-    nonzero while the ranked denominator is zero (a census entirely routed
-    through Bedrock/Vertex/a proxy lands every count under `other`).
+    `other`, every id the tier ladder cannot place, and (when `api_ids`/
+    `previous_arms` are given, as every call inside compute_roster does —
+    see `_is_attributable`) every ranked-but-unattributable key such as a
+    proxy alias that merely carries a family word without being a real
+    catalogue model or a previous arm. Computed once and handed to
+    `_census_verdict`, so its "is there usage evidence" check agrees with
+    the number every arm's share is actually divided by, rather than
+    reading raw counts that can be nonzero while the ranked denominator is
+    zero (a census entirely routed through Bedrock/Vertex/a proxy lands
+    every count under `other`, or — the second route to the same gap — a
+    proxy alias that happens to carry a family word).
     """
+    aliases = aliases or {}
+    api_ids_set = None if api_ids is None else set(api_ids)
+    previous_arms_set = set(previous_arms) if previous_arms else set()
     raw_total = 0
     ranked_total = 0
     for candidate, by_week in (counts or {}).items():
         ranked = rung_of(candidate, rungs) is not None
+        if ranked:
+            folded = aliases.get(candidate, candidate)
+            ranked = _is_attributable(candidate, folded, api_ids_set, previous_arms_set)
         for week, n in (by_week or {}).items():
             if week in weeks:
                 raw_total += n
@@ -437,10 +490,18 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     available = [m for m in ranked if m["id"] not in snapshots]
     available.sort(key=lambda m: _rank(m, rungs))
 
+    # Computed before _in_window_totals: the census verdict's own "is there
+    # usage this policy can rank" check must agree with the same catalogue/
+    # previous-arm attribution `usage_share` uses below, which needs
+    # previous_arms too — see _is_attributable.
+    previous_arms = _clean_previous_arms(previous, warn)
+
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])
     window_union = set(enter_weeks) | set(exit_weeks)
-    raw_total, ranked_total = _in_window_totals(counts, window_union, rungs)
+    raw_total, ranked_total = _in_window_totals(
+        counts, window_union, rungs, aliases=aliases,
+        api_ids=api_ids, previous_arms=previous_arms)
     usable, stale_note, census_code = _census_verdict(
         census_doc, raw_total, ranked_total, policy, now,
         census_problem=census_problem)
@@ -454,7 +515,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     census_at_published = ((census_doc or {}).get("generated_at")
                            if census_code in CENSUS_PUBLISHED_CODES
                            else None)
-    previous_arms = _clean_previous_arms(previous, warn)
 
     newest_by_rung: dict[int, str] = {}
     for model in available:  # sorted weakest-first, oldest-first within a rung
@@ -475,7 +535,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
         reason = None
         if usable:
-            share = usage_share(counts, model_id, enter_weeks, rungs, aliases)
+            share = usage_share(counts, model_id, enter_weeks, rungs, aliases,
+                               api_ids=api_ids, previous_arms=previous_arms)
             if share >= policy["arm_enter_usage_pct"]:
                 reason = (f"carries {share:.1f}% of census usage over the last "
                           f"{policy['arm_enter_window_weeks']} weeks "
@@ -487,7 +548,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                       else f"{stale_note}; fell back to newest per tier — {newest_words}")
         if reason is None and model_id in previous_arms:
             if usable:
-                held = usage_share(counts, model_id, exit_weeks, rungs, aliases)
+                held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
+                                  api_ids=api_ids, previous_arms=previous_arms)
                 if held >= policy["arm_exit_usage_pct"]:
                     reason = (f"held over from the previous roster: still "
                               f"{held:.1f}% of census usage over the last "
@@ -620,7 +682,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 why = (f"{stale_note}; the fallback roster is newest-per-tier and "
                        f"this model is not the newest in its tier")
             else:
-                held = usage_share(counts, model_id, exit_weeks, rungs, aliases)
+                held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
+                                  api_ids=api_ids, previous_arms=previous_arms)
                 why = (f"below the {policy['arm_exit_usage_pct']}% exit bar for the last "
                        f"{policy['arm_exit_window_weeks']} weeks ({held:.1f}%)")
             retired.append({"id": model_id, "reason": why})
