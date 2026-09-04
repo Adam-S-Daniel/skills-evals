@@ -52,7 +52,9 @@ from pathlib import Path
 
 import yaml
 
-from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: F401
+from timeweeks import parse_ts, window_weeks
+from timeweeks import iso_week  # noqa: F401 -- re-exported: identity-checked
+                                 # by test_roster_and_census_share_one_week_implementation
 
 # The Models API has no price field, so "cheapest" and "most capable" are both
 # read off the tier ladder rather than off a number. Within one tier the newest
@@ -200,10 +202,14 @@ def _version_key(model_id: str) -> tuple:
     Only the tie-break — `created_at` decides first — but on a tie it decides
     which model is "the newest in its tier", and a string compare gets that
     exactly backwards for any family that reaches a two-digit minor.
+
+    `isdecimal()`, not `isdigit()`: `isdigit()` is True for characters (e.g.
+    the superscript `²`) that `int()` then refuses with a ValueError.
+    `isdecimal()` is exactly the set `int()` accepts.
     """
     parts = []
     for token in str(model_id).split("-"):
-        parts.append((1, int(token), "") if token.isdigit() else (0, 0, token))
+        parts.append((1, int(token), "") if token.isdecimal() else (0, 0, token))
     return tuple(parts)
 
 

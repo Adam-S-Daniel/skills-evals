@@ -3554,6 +3554,48 @@ exit 0
         self.assertEqual(got["rc"], 0, got["out"])
         self.assertIn("census.json is present but unreadable", got["summary"])
 
+    # --- item 20: _version_key uses isdigit(), which int() does not agree
+    #              with for every character isdigit() accepts ------------
+
+    def test_version_key_does_not_crash_on_a_non_ascii_digit_token(self):
+        """`'²'.isdigit()` (superscript two) is True, but
+        `int('²')` raises ValueError — `isdigit()` and `int()` do not
+        agree on what counts as a digit."""
+        result = roster._version_key("claude-sonnet-²")
+        self.assertEqual(result, ((0, 0, "claude"), (0, 0, "sonnet"),
+                                  (0, 0, "²")))
+
+    # --- item 21: roster.py imports window_start but never uses it, hidden
+    #              behind a line-wide `# noqa: F401` -----------------------
+
+    def test_roster_does_not_import_the_unused_window_start(self):
+        """`iso_week` is legitimately unused BY roster.py's own logic — it is
+        re-exported so `test_roster_and_census_share_one_week_implementation`
+        can check identity with timeweeks.iso_week — but `window_start` has
+        no such reason and roster.py never calls it at all."""
+        self.assertFalse(hasattr(roster, "window_start"),
+                         "window_start is dead weight in roster.py's import")
+        self.assertTrue(hasattr(roster, "iso_week"),
+                        "iso_week stays: it is deliberately re-exported")
+
+    # --- item 22: roster-policy.yml's comment says a model's tier is "the
+    #              first word to appear in its id" — rung_of returns the
+    #              LOWEST matching rung, not positional order -------------
+
+    def test_roster_policy_comment_matches_rung_of_lowest_rung_behavior(self):
+        text = self.POLICY.read_text(encoding="utf-8")
+        self.assertNotIn("the first of these words to appear", text,
+                         "rung_of() returns the WEAKEST matching rung, "
+                         "walking the ladder top-down — not the first word "
+                         "to appear positionally in the id")
+        # And the code the comment describes actually does that:
+        rungs = roster.tier_rungs(self._policy())
+        self.assertEqual(roster.rung_of("claude-opus-haiku-5", rungs),
+                         roster.rung_of("claude-haiku-5", rungs),
+                         "an id carrying both an opus and a haiku token "
+                         "ranks by the weaker rung, regardless of which "
+                         "word appears first in the id string")
+
 
 if __name__ == "__main__":
     unittest.main()

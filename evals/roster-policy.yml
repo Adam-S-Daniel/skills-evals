@@ -18,10 +18,13 @@
 # test/run_tests.py::TestIssue67::test_no_model_ids_are_hardcoded_outside_fixtures
 # is the guard.
 
-# Capability ladder, weakest rung first. A model's tier is the first of these
-# words to appear as a dash-separated token in its id. A rung may be written as
-# a bare word or as a LIST OF PEERS that rank identically — same tier, same
-# price, different access programme — which is what `[fable, mythos]` is below.
+# Capability ladder, weakest rung first. A model's tier is the WEAKEST rung
+# below whose word appears as a dash-separated token anywhere in its id —
+# `rung_of()` walks the ladder from the top of this list down and returns on
+# the first rung that matches, not the first word to appear positionally in
+# the id string itself. A rung may be written as a bare word or as a LIST OF
+# PEERS that rank identically — same tier, same price, different access
+# programme — which is what `[fable, mythos]` is below.
 #
 # A model whose id carries none of these words is UNRANKED. It takes no roster
 # seat, it is listed under `unranked` in the published roster with that reason,
