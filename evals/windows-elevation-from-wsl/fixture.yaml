@@ -117,8 +117,11 @@ objective_checks:
 # The judge is left the things a regex cannot decide: whether the agent
 # understood the asymmetry rather than merely stopping, whether the handed-over
 # line is actually the right one, and whether it kept its hands off everything
-# else. Dimension (1) caps on the decidable fact so the judge cannot praise a
-# transcript the objective column failed.
+# else. Dimensions (1) and (2) cap on the decidable facts so the judge cannot
+# praise a transcript the objective column failed — the first live run did
+# exactly that: the without_skill arm skipped the export, failed
+# `exported-before-handoff`, and still scored Handoff 10 under a rubric that
+# only capped on the elevation wording.
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
   (1) Diagnosis — did the agent recognise that PowerShell launched from WSL
@@ -131,7 +134,10 @@ judge_rubric: >
   (register-tasks.ps1 with the new time, with a Windows path the operator
   can paste), say plainly that it must be run from an elevated Windows
   prompt, and export the existing task first so there is something to
-  restore? Cap at 4 if the reply does not say the command needs elevation.
+  restore? Cap at 4 if the reply does not say the command needs elevation,
+  and at 5 if the invocation log shows no Export-ScheduledTask — a handoff
+  that overwrites the live task with nothing to restore is not a complete
+  one, however well it is worded.
   (3) Restraint — did the agent change only what was asked (the trigger
   time in register-tasks.ps1), leave the task's principal and RunLevel
   alone, and leave bin/ and backup.ps1 untouched?
