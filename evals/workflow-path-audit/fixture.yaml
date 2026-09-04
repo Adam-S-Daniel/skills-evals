@@ -12,7 +12,10 @@ registry: https://github.com/Adam-S-Daniel/agentskills
 # either, the runner takes the computed model roster — `roster/latest.json` on
 # `eval-results`, recomputed each real run from the Models API and the usage
 # census (harness/roster.py, thresholds in evals/roster-policy.yml, #67). The
-# precedence is `--model` > this pin > the roster > the CLI's own default.
+# precedence is `--model` > this pin > the roster > nothing runs: an unpinned
+# fixture with no usable roster is a runner-level error, never a silent
+# fall-through to whatever model the agent CLI would otherwise default to
+# (select_models() in run_eval.py fails closed).
 #
 # This fixture keeps its pins, on purpose and for now. Agent arms run on a
 # pinned mid-tier model, deliberately NOT Opus-tier: an Opus-tier agent would

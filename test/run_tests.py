@@ -3419,6 +3419,29 @@ exit 0
         self.assertIn("model", error)
         self.assertIn("judge model", error)
 
+    # --- item 12: the fixture's own precedence comment still says the old,
+    #              fall-through-to-CLI-default contract -------------------
+
+    def test_workflow_path_audit_fixture_describes_the_fail_closed_precedence(self):
+        text = (REPO_ROOT / "evals" / "workflow-path-audit" / "fixture.yaml").read_text(
+            encoding="utf-8")
+        self.assertNotIn("the CLI's own default", text,
+                         "select_models() fails closed; nothing falls through "
+                         "to a CLI default any more")
+
+    # --- item 13: model_usage_census.py's docstring overstates what `other`
+    #              buys — usage_share drops it from BOTH sides -----------
+
+    def test_census_docstring_does_not_overstate_the_other_bucket_contract(self):
+        text = (REPO_ROOT / "scripts" / "model_usage_census.py").read_text(
+            encoding="utf-8")
+        self.assertNotIn("the totals the roster divides by stay truthful", text,
+                         "usage_share excludes `other` (and any unranked id) "
+                         "from what it divides by entirely — routing its "
+                         "counts under `other` keeps this script's own turn "
+                         "count honest, it does not feed the roster's share "
+                         "math at all")
+
 
 if __name__ == "__main__":
     unittest.main()

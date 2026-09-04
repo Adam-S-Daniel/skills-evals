@@ -21,8 +21,12 @@ inference-profile ARN carries an AWS account number, a Vertex path carries a
 GCP project id, a local proxy can put a filesystem path or free prose there.
 Copying that verbatim into a top-level key published every one of them. Only
 values matching `MODEL_ID_RE` become keys; everything else is counted under
-the single key `other`, so the totals the roster divides by stay truthful
-without any of those strings crossing the boundary. Nothing is ever passed
+the single key `other`, so the raw turn count this script publishes stays
+honest — nothing is silently dropped — without any of those strings crossing
+the boundary. The roster's own usage_share() then EXCLUDES `other`, and any
+key it cannot rank, from what it divides by: this file's contract is a
+truthful count of turns seen, not a truthful denominator for a model's
+share, which is roster.py's decision to make. Nothing is ever passed
 through `str()` — `str()` of a dict is `repr()`, which publishes its values.
 `test/run_tests.py::TestIssue67::test_census_emits_only_model_week_counts_and
 _leaks_nothing` and its review-round sibling in `TestIssue67Review` are the
