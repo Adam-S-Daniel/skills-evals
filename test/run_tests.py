@@ -1808,7 +1808,9 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(policy["arm_exit_usage_pct"], 2)
         self.assertEqual(policy["arm_exit_window_weeks"], 8)
         self.assertEqual(policy["census_max_age_days"], 14)
-        self.assertEqual(policy["tiers"], ["haiku", "sonnet", "opus", "fable"])
+        self.assertEqual(roster.tier_rungs(policy),
+                         [["haiku"], ["sonnet"], ["opus"], ["fable", "mythos"]],
+                         "a rung may name peers that rank identically")
         self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
                                   "sub-issue until the ADR itself exists")
 
@@ -2088,6 +2090,308 @@ class TestIssue67Review(unittest.TestCase):
         self.assertIs(roster.window_weeks, timeweeks.window_weeks)
         self.assertIs(model_usage_census.window_weeks, timeweeks.window_weeks)
         self.assertIs(roster.parse_ts, timeweeks.parse_ts)
+    # --- S1: an empty census is not usage evidence -----------------------
+
+    def _empty_census(self, **kwargs):
+        return self._census_doc(counts={}, **kwargs)
+
+    def test_a_fresh_but_empty_census_is_not_treated_as_usage_evidence(self):
+        """Nobody ran anything, or the publisher wrote a census of nothing —
+        either way there is no evidence, and every arm was reading as though
+        it had been chosen on usage."""
+        result = self._compute(census=self._empty_census())
+        self.assertTrue(result["arms"], "the fallback still names an arm set")
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("census published but empty over the window",
+                              arm["reason"])
+        self.assertEqual(result["source"]["census_at"], "2026-09-04T06:00:00Z",
+                         "the census WAS published; its provenance is recorded")
+
+    def test_a_census_with_no_weeks_inside_the_window_is_not_evidence(self):
+        outside = {"claude-sonnet-5": {"2026-W02": 500}}
+        result = self._compute(census=self._census_doc(counts=outside))
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("census published but empty over the window",
+                              arm["reason"])
+
+    # --- S2: staleness is not evidence of retirement ---------------------
+
+    STALE = "2026-08-14T00:00:00Z"  # 21 days before NOW, past the 14-day window
+
+    def test_a_stale_census_holds_previous_arms_still_in_the_api(self):
+        """Measured: a previous arm at 33% usage dropped because the census
+        was 21 days old. A stale census says nothing about usage — including
+        nothing that would justify retiring anything."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(census=self._census_doc(generated_at=self.STALE),
+                               previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        held = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no fresh census", held)
+        self.assertIn("no evidence to retire it", held)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_a_stale_census_still_retires_a_model_that_left_the_api(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(
+            models=self._models_doc(drop=("claude-opus-4-8",)),
+            census=self._census_doc(generated_at=self.STALE), previous=previous)
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
+        self.assertIn("no longer returned by the Models API",
+                      result["retired_since_last"][0]["reason"])
+
+    def test_an_empty_census_holds_previous_arms_the_same_way(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(census=self._empty_census(), previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertIn("no evidence to retire it",
+                      self._reason(result, "claude-opus-4-8"))
+
+    # --- S16: a future census timestamp is not fresh ---------------------
+
+    def test_a_census_generated_in_the_future_is_not_fresh(self):
+        ahead = self._census_doc(generated_at="2026-10-01T00:00:00Z")
+        result = self._compute(census=ahead)
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("in the future", arm["reason"])
+        self.assertIsNone(result["source"]["census_at"])
+
+    # --- S6: the ladder places mythos, and names what it cannot place ----
+
+    def test_mythos_ranks_as_a_peer_of_fable(self):
+        rungs = roster.tier_rungs(self._policy())
+        self.assertEqual(roster.rung_of("claude-mythos-5-1", rungs),
+                         roster.rung_of("claude-fable-5-1", rungs))
+        self.assertIsNotNone(roster.rung_of("claude-mythos-5-1", rungs))
+
+    def test_an_unranked_claude_model_is_named_with_its_reason(self):
+        extra = [TestIssue67._model("claude-zephyr-1", "2026-01-01T00:00:00Z")]
+        result = self._compute(models=self._models_doc(extra=extra))
+        self.assertEqual([u["id"] for u in result["unranked"]], ["claude-zephyr-1"])
+        self.assertIn("ladder", result["unranked"][0]["reason"])
+        self.assertNotIn("claude-zephyr-1", self._arm_ids(result))
+
+    def test_unranked_usage_is_excluded_from_the_share_denominator(self):
+        """Measured: 60/week of sonnet computed at 5.7% — under the 10% entry
+        bar — against 1000/week of usage on a model the ladder never placed."""
+        counts = {"claude-sonnet-5": {w: 60 for w in self.W[:4]},
+                  "claude-zephyr-1": {w: 1000 for w in self.W[:4]}}
+        result = self._compute(census=self._census_doc(counts=counts))
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertIn("100.0% of census usage", self._reason(result, "claude-sonnet-5"))
+
+    # --- S7: what was excluded from the arm set, and why -----------------
+
+    def test_a_model_with_no_created_at_is_excluded_and_says_which(self):
+        broken = TestIssue67._model("claude-fable-9", None)
+        result = self._compute(models=self._models_doc(
+            extra=[broken], drop=("claude-fable-5-1",)))
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-9")
+        self.assertIn("created_at", entry["reason"])
+        self.assertIn("absent", entry["reason"])
+        self.assertNotIn("days old", entry["reason"],
+                         "'created_at absent' is not 'too new'")
+
+    def test_a_model_inside_the_cooling_off_is_excluded_and_says_so(self):
+        result = self._compute()
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-5-1")
+        self.assertIn("cooling-off", entry["reason"])
+        self.assertIn("3 days old", entry["reason"])
+
+    def test_an_unparseable_created_at_reads_as_absent_not_as_new(self):
+        broken = TestIssue67._model("claude-fable-9", "last Tuesday")
+        result = self._compute(models=self._models_doc(
+            extra=[broken], drop=("claude-fable-5-1",)))
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-9")
+        self.assertIn("unparseable", entry["reason"])
+
+    def test_an_empty_arm_set_is_fatal_and_publishes_nothing(self):
+        """An all-inside-cooling-off tier used to yield `arms: []` and exit 0
+        — a roster with no arms is not a roster, it is a silent no-op run."""
+        fresh_only = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-9", "2026-09-02T00:00:00Z")]}
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(fresh_only), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertNotEqual(rc, 0)
+            self.assertFalse(out.exists(), "nothing is written when there are no arms")
+            self.assertIn("no arms", (stdout.getvalue() + stderr.getvalue()).lower())
+
+    # --- S8: an alias and its dated snapshot are one model ---------------
+
+    SNAPSHOT = "claude-sonnet-5-20260201"
+
+    def _with_snapshot(self):
+        return self._models_doc(
+            extra=[TestIssue67._model(self.SNAPSHOT, "2026-02-01T00:00:00Z")])
+
+    def test_a_dated_snapshot_takes_no_second_arm_seat(self):
+        result = self._compute(models=self._with_snapshot())
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertNotIn(self.SNAPSHOT, self._arm_ids(result))
+        entry = next(e for e in result["excluded"] if e["id"] == self.SNAPSHOT)
+        self.assertIn("claude-sonnet-5", entry["reason"])
+        self.assertIn("snapshot", entry["reason"])
+
+    def test_a_dated_id_whose_alias_is_absent_stands_on_its_own(self):
+        """Only collapse onto an alias that actually exists — otherwise a
+        catalogue that publishes ONLY dated ids would have no arms at all."""
+        models = self._models_doc(drop=("claude-sonnet-5",),
+                                  extra=[TestIssue67._model(self.SNAPSHOT,
+                                                            "2026-02-01T00:00:00Z")])
+        result = self._compute(models=models)
+        self.assertIn(self.SNAPSHOT, self._arm_ids(result))
+
+    def test_snapshot_usage_counts_towards_its_alias(self):
+        counts = {self.SNAPSHOT: {w: 100 for w in self.W[:4]},
+                  "claude-haiku-4-5": {w: 100 for w in self.W[:4]}}
+        result = self._compute(models=self._with_snapshot(),
+                               census=self._census_doc(counts=counts))
+        self.assertIn("50.0% of census usage", self._reason(result, "claude-sonnet-5"))
+
+    def test_version_components_sort_numerically_not_lexicographically(self):
+        """`claude-x-4-10` supersedes `claude-x-4-9`; a string sort says the
+        opposite, and the tie-break decides which model is 'newest in tier'."""
+        same_day = "2026-03-01T00:00:00Z"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-sonnet-4-9", same_day),
+            TestIssue67._model("claude-sonnet-4-10", same_day)]}
+        rungs = roster.tier_rungs(self._policy())
+        ordered = sorted(models["models"], key=lambda m: roster._rank(m, rungs))
+        self.assertEqual([m["id"] for m in ordered],
+                         ["claude-sonnet-4-9", "claude-sonnet-4-10"])
+
+    # --- S10: the judge says, in a field, whether it is also an arm ------
+
+    def test_judge_carries_a_machine_readable_is_arm_flag(self):
+        result = self._compute()
+        self.assertIs(result["judge"]["is_arm"], False)
+        self.assertNotIn(result["judge"]["id"], self._arm_ids(result))
+
+    def test_judge_is_arm_is_true_when_every_model_is_an_arm(self):
+        one_per_tier = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            TestIssue67._model("claude-sonnet-5", "2026-02-01T00:00:00Z")]}
+        result = self._compute(models=one_per_tier, census=None)
+        self.assertIs(result["judge"]["is_arm"], True)
+        self.assertIn(result["judge"]["id"], self._arm_ids(result))
+
+    # --- S12: the three documents come off a public branch ---------------
+
+    def _warned(self, **kwargs):
+        """compute_roster with the warnings collected instead of printed."""
+        notes: list[str] = []
+        kwargs.setdefault("models_doc", self._models_doc())
+        kwargs.setdefault("census_doc", self._census_doc())
+        kwargs.setdefault("policy", self._policy())
+        kwargs.setdefault("previous", None)
+        kwargs.setdefault("now", self.NOW)
+        result = roster.compute_roster(warn=notes.append, **kwargs)
+        return result, notes
+
+    def test_a_model_entry_without_a_string_id_is_skipped_and_named(self):
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            {"display_name": "no id at all", "created_at": "2026-01-01T00:00:00Z"},
+            {"id": 5, "created_at": "2026-01-01T00:00:00Z"},
+            TestIssue67._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            TestIssue67._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            "not even a dict",
+        ]}
+        result, notes = self._warned(models_doc=models)
+        self.assertEqual(self._arm_ids(result), ["claude-sonnet-5", "claude-opus-5"])
+        self.assertTrue(notes)
+        for note in notes:
+            with self.subTest(note=note):
+                self.assertNotIn("\n", note, "one line, never a traceback")
+                self.assertIn("models", note)
+
+    def test_census_counts_that_are_not_numbers_are_coerced_or_dropped(self):
+        counts = {"claude-sonnet-5": {w: "100" for w in self.W[:4]},
+                  "claude-opus-5": {w: None for w in self.W[:4]},
+                  "claude-haiku-4-5": "not a mapping at all"}
+        result, notes = self._warned(census_doc=self._census_doc(counts=counts))
+        # "100" coerces; None does not, and neither crashes the run.
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertIn("100.0% of census usage", self._reason(result, "claude-sonnet-5"))
+        self.assertTrue(any("census" in n for n in notes), notes)
+        for note in notes:
+            self.assertNotIn("\n", note)
+
+    def test_previous_arms_that_are_not_dicts_with_an_id_are_ignored(self):
+        previous = {"arms": ["claude-opus-4-8", {"reason": "no id"}, 7,
+                             {"id": "claude-opus-4-8"}]}
+        result, notes = self._warned(previous=previous)
+        self.assertTrue(any("previous" in n for n in notes), notes)
+        # The one well-formed entry is still honoured.
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
+
+    def test_a_wrong_shaped_previous_document_does_not_raise(self):
+        for previous in ({"arms": "claude-opus-5"}, {"arms": None}, {}):
+            with self.subTest(previous=previous):
+                result, _ = self._warned(previous=previous)
+                self.assertEqual(result["retired_since_last"], [])
+
+    # --- N5: an unranked previous arm is not "gone from the API" ---------
+
+    def test_an_unranked_previous_arm_is_retired_for_the_right_reason(self):
+        extra = [TestIssue67._model("claude-zephyr-1", "2026-01-01T00:00:00Z")]
+        previous = {"arms": [{"id": "claude-zephyr-1", "reason": "was an arm"}]}
+        result = self._compute(models=self._models_doc(extra=extra),
+                               previous=previous)
+        why = next(r["reason"] for r in result["retired_since_last"]
+                   if r["id"] == "claude-zephyr-1")
+        self.assertNotIn("no longer returned by the Models API", why)
+        self.assertIn("ladder", why)
+
+    # --- S9: the summary never claims "no change" it cannot know ---------
+
+    def test_summary_says_there_was_no_previous_roster_on_a_first_run(self):
+        text = roster.render_summary(self._compute(previous=None))
+        self.assertIn("no previous roster to compare against", text)
+        self.assertNotIn("No change to the arm set", text)
+
+    def test_summary_says_no_change_only_when_it_compared_something(self):
+        previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
+        text = roster.render_summary(self._compute(previous=previous))
+        self.assertIn("No change to the arm set", text)
+
+    def test_summary_says_inputs_unavailable_when_the_previous_was_unreadable(self):
+        text = roster.render_summary(self._compute(previous=None),
+                                     previous_state="unavailable")
+        self.assertIn("roster inputs unavailable", text.lower())
+        self.assertNotIn("No change to the arm set", text)
+
+    def test_main_reports_unavailable_when_the_previous_roster_is_corrupt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            previous = Path(tmp) / "previous.json"
+            previous.write_text("{ this is not json", encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--previous", str(previous), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("roster inputs unavailable", printed.lower())
 
 if __name__ == "__main__":
     unittest.main()

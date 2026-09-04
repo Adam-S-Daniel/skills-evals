@@ -11,19 +11,29 @@ Inputs
                availability, straight from GET /v1/models.
   census_doc   {"generated_at": ..., "weeks": [...], "counts": {model: {week: n}}}
                — usage, published to `eval-results` as usage/latest.json by
-               scripts/model_usage_census.py. Optional: absent or older than
-               the policy's freshness window and the roster falls back to
-               "newest per tier" and says so in every reason.
+               scripts/model_usage_census.py. Optional: absent, older than the
+               policy's freshness window, dated in the future, or empty over
+               the window, and the roster falls back to "newest per tier" and
+               says which of those it was in every reason.
   policy       evals/roster-policy.yml — every threshold, plus the tier ladder.
   previous     the last published roster, for added/retired-since-last.
 
+TWO OF THOSE THREE COME OFF A PUBLIC BRANCH, written by other jobs on other
+machines. They are inputs, not invariants: an entry without a string `id`, a
+count that is not a number, a `previous.arms` entry that is not a dict — each
+is skipped with a one-line named message, never a traceback, and never with
+the offending value echoed into a public log.
+
 Output — roster/latest.json on `eval-results`:
   {generated_at, source: {models_api_at, census_at, admin_report_at},
-   arms: [{id, reason}], judge: {id, reason}, preflight: {id, reason},
-   retired_since_last: [...], added_since_last: [...]}
+   arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
+   unranked: [{id, reason}], excluded: [{id, reason}],
+   compared_to_previous: bool, retired_since_last: [...], added_since_last: [...]}
 
 Every entry carries its reason IN WORDS. The explorer tool renders them, and a
 roster nobody can explain is one nobody will override when it is wrong.
+`judge.is_arm` is the one thing a reason cannot carry: the runner has to refuse
+a judge that is also an arm, and it cannot do that by reading prose.
 
 NO MODEL ID APPEARS IN THIS FILE. Tier comes from the family word in the id
 itself, matched against the ladder in roster-policy.yml.
@@ -33,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -47,132 +58,378 @@ from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: F4
 # far (a new version supersedes its predecessor at the same or lower price).
 # If that ever stops holding, this is the assumption to revisit first.
 
+#: An id that is another id plus a date is a pinned snapshot of it, not a
+#: second model. See `alias_map`.
+SNAPSHOT_SUFFIX = re.compile(r"^(?P<base>.+)-[0-9]{8}$")
+
+
+def _stderr(message: str) -> None:
+    print(f"roster: {message}", file=sys.stderr)
+
 
 def load_policy(path: str | Path) -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
-def load_json(path: str | Path | None) -> dict | None:
-    """Read a JSON document, treating absent/empty/corrupt as absent.
+def read_json(path: str | Path | None) -> tuple[dict | None, str | None]:
+    """(document, problem). Absent is not a problem; unreadable is.
 
     CI materializes the optional inputs with `git show ... || true`, which
     leaves an EMPTY file behind when the branch or the path does not exist yet
-    — the first run, every time. That is a legitimate "no census", not a
-    failure, so it must not raise.
+    — the first run, every time. That is a legitimate "not published", not a
+    failure, so it must not raise and must not be reported as a problem. A
+    file that IS there and cannot be parsed is a different thing, and the
+    summary says so rather than claiming nothing was published.
     """
     if path is None:
-        return None
+        return None, None
     p = Path(path)
     if not p.is_file() or p.stat().st_size == 0:
-        return None
+        return None, None
     try:
         with open(p, encoding="utf-8") as f:
-            return json.load(f)
-    except json.JSONDecodeError:
-        return None
+            document = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        return None, f"{p.name} is present but unreadable ({type(exc).__name__})"
+    if not isinstance(document, dict):
+        return None, f"{p.name} is not a JSON object"
+    return document, None
 
 
-def tier_of(model_id: str, tiers: list[str]) -> str | None:
-    """The model's tier, from the family word in its own id.
+def load_json(path: str | Path | None) -> dict | None:
+    """read_json without the problem half, for callers that cannot act on it."""
+    return read_json(path)[0]
+
+
+def tier_rungs(policy: dict) -> list[list[str]]:
+    """The capability ladder, weakest rung first, each rung a list of peers.
+
+    A rung is written as a bare family word, or as a list of words that rank
+    identically (`[fable, mythos]` — same tier, same price, different access
+    programme). Peers matter: a model whose family word the ladder does not
+    know is unranked, takes no seat, and — worse — used to sit in the usage
+    denominator, shrinking every ranked model's share towards zero.
+    """
+    rungs: list[list[str]] = []
+    for rung in policy["tiers"]:
+        words = [rung] if isinstance(rung, str) else list(rung)
+        rungs.append([str(word).lower() for word in words])
+    return rungs
+
+
+def tier_words(policy: dict) -> list[str]:
+    """Every family word on the ladder, flattened."""
+    return [word for rung in tier_rungs(policy) for word in rung]
+
+
+def rung_of(model_id: str, rungs: list[list[str]]) -> int | None:
+    """The model's rung index, from the family word in its own id.
 
     Token match on `-`, not a substring search: a substring test would let an
     id that merely CONTAINS a family word inside a longer token claim that
     tier. Unrecognised family word -> None -> unranked.
     """
     tokens = set(str(model_id).lower().split("-"))
-    for tier in tiers:
-        if tier in tokens:
-            return tier
+    for index, rung in enumerate(rungs):
+        if tokens.intersection(rung):
+            return index
     return None
 
 
-def usage_share(counts: dict, model_id: str, weeks: list[str]) -> float:
-    """Percent of ALL census usage over `weeks` that `model_id` carries.
+def rung_label(rungs: list[list[str]], index: int) -> str:
+    """What to call a rung in a reason: `opus`, or `fable/mythos` for peers."""
+    return "/".join(rungs[index])
 
-    The denominator counts every model the census saw, including ones the
-    Models API no longer lists — the question is what share of the fleet's real
-    work this model did, and work done on a since-retired model still happened.
+
+def alias_map(ids) -> dict[str, str]:
+    """{dated snapshot id: the undated alias it pins}, for ids that both exist.
+
+    An id of the form `<alias>-YYYYMMDD` is the same model as `<alias>` with a
+    version pinned to it. Left alone the two take two arm seats and split one
+    model's usage across two census keys. The collapse only happens when the
+    alias is itself present in `ids` — a catalogue that publishes only dated
+    ids has no alias to collapse onto, and every one of them stands on its own.
     """
+    known = {i for i in ids if isinstance(i, str)}
+    mapping: dict[str, str] = {}
+    for model_id in sorted(known):
+        match = SNAPSHOT_SUFFIX.match(model_id)
+        if match and match.group("base") in known:
+            mapping[model_id] = match.group("base")
+    return mapping
+
+
+def usage_share(counts: dict, model_id: str, weeks: list[str],
+                rungs: list[list[str]], aliases: dict | None = None) -> float:
+    """Percent of RANKED census usage over `weeks` that `model_id` carries.
+
+    The denominator counts every model the census saw THAT THE LADDER CAN
+    PLACE, including ones the Models API no longer lists — work done on a
+    since-retired model still happened, and the question is what share of the
+    fleet's real work this model did. It EXCLUDES models the ladder cannot
+    place, and the census's own `other` bucket with them: an unranked model
+    takes no roster seat, so leaving its usage in the denominator only pushes
+    every ranked model under the entry bar (measured: a model at 60 turns a
+    week computed at 5.7% against 1000 unranked turns a week).
+
+    A dated snapshot's usage is folded onto its alias — one model, one share.
+    """
+    aliases = aliases or {}
+    wanted = set(weeks)
+    target = aliases.get(model_id, model_id)
     total = 0
     mine = 0
     for candidate, by_week in (counts or {}).items():
+        if rung_of(candidate, rungs) is None:
+            continue
+        folded = aliases.get(candidate, candidate)
         for week, n in (by_week or {}).items():
-            if week in weeks:
+            if week in wanted:
                 total += n
-                if candidate == model_id:
+                if folded == target:
                     mine += n
     return 0.0 if total == 0 else 100.0 * mine / total
 
 
-def _rank(model: dict, tiers: list[str]) -> tuple:
-    """Capability sort key: tier first, then newest, then id for determinism."""
-    tier = tier_of(model["id"], tiers)
+def _version_key(model_id: str) -> tuple:
+    """Version components compared NUMERICALLY: `-4-10` sorts above `-4-9`.
+
+    Only the tie-break — `created_at` decides first — but on a tie it decides
+    which model is "the newest in its tier", and a string compare gets that
+    exactly backwards for any family that reaches a two-digit minor.
+    """
+    parts = []
+    for token in str(model_id).split("-"):
+        parts.append((1, int(token), "") if token.isdigit() else (0, 0, token))
+    return tuple(parts)
+
+
+def _rank(model: dict, rungs: list[list[str]]) -> tuple:
+    """Capability sort key: rung first, then newest, then version."""
     created = parse_ts(model.get("created_at")) or datetime.min.replace(tzinfo=timezone.utc)
-    return (tiers.index(tier), created, model["id"])
+    return (rung_of(model["id"], rungs), created, _version_key(model["id"]))
+
+
+def _clean_models(models_doc: dict, warn) -> list[dict]:
+    """Model entries that are dicts with a string `id`. Everything else named.
+
+    The Models API is trusted; the FILE is not — it is written by another job
+    and read off a public branch, and a `models` list holding a string or an
+    entry with no id used to raise a TypeError three frames down.
+    """
+    entries = (models_doc or {}).get("models")
+    if not isinstance(entries, list):
+        warn("models document has no `models` list; treating the catalogue as empty")
+        return []
+    clean = []
+    skipped = 0
+    for entry in entries:
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry["id"]:
+            clean.append(entry)
+        else:
+            skipped += 1
+    if skipped:
+        warn(f"models document: skipped {skipped} entry/entries without a string `id`")
+    return clean
+
+
+def _clean_counts(counts, warn) -> dict:
+    """{model: {week: int}}, coerced. Nothing that fails coercion is counted.
+
+    No offending VALUE is ever quoted back: the census is public, and an old
+    census on the branch predates the key allowlist that keeps it that way.
+    """
+    if counts is None:
+        return {}
+    if not isinstance(counts, dict):
+        warn("census `counts` is not an object; treating the census as empty")
+        return {}
+    cleaned: dict[str, dict[str, int]] = {}
+    bad_rows = 0
+    bad_cells = 0
+    for model_id, by_week in counts.items():
+        if not isinstance(model_id, str) or not isinstance(by_week, dict):
+            bad_rows += 1
+            continue
+        for week, n in by_week.items():
+            if not isinstance(week, str):
+                bad_cells += 1
+                continue
+            try:
+                value = int(n)
+            except (TypeError, ValueError):
+                bad_cells += 1
+                continue
+            cleaned.setdefault(model_id, {})[week] = value
+    if bad_rows:
+        warn(f"census `counts`: skipped {bad_rows} row(s) that are not "
+             f"model -> {{week: count}}")
+    if bad_cells:
+        warn(f"census `counts`: skipped {bad_cells} weekly count(s) that are "
+             f"not a number")
+    return cleaned
+
+
+def _clean_previous_arms(previous, warn) -> list[str]:
+    """The previous roster's arm ids. A malformed entry is skipped, not fatal."""
+    if previous is None:
+        return []
+    entries = previous.get("arms") if isinstance(previous, dict) else None
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        warn("previous roster: `arms` is not a list; comparing against nothing")
+        return []
+    ids = []
+    skipped = 0
+    for entry in entries:
+        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry["id"]:
+            if entry["id"] not in ids:
+                ids.append(entry["id"])
+        else:
+            skipped += 1
+    if skipped:
+        warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
+             f"not an object with a string `id`")
+    return ids
+
+
+def _census_verdict(census_doc, counts, policy, now, enter_weeks, exit_weeks):
+    """(usable, note) — is there usage evidence for the window, and if not why.
+
+    Four ways to have none, and they are NOT the same fact: nothing published,
+    a timestamp in the future (clock skew or a hand edit — every week then
+    falls outside the window while the age check reads as fresh), a census
+    older than the freshness window, and a census that is present and current
+    and simply holds nothing for these weeks. Each says so in its own words,
+    because "fell back to newest per tier" without the cause is a roster
+    nobody can debug.
+    """
+    census_at = parse_ts((census_doc or {}).get("generated_at"))
+    if census_doc is None or census_at is None:
+        return False, "no fresh census (none published)"
+    if census_at > now:
+        return False, ("no fresh census (its generated_at is in the future, so "
+                       "every week of usage falls outside the window — clock "
+                       "skew or a hand edit)")
+    age = (now - census_at).days
+    if now - census_at > timedelta(days=policy["census_max_age_days"]):
+        return False, (f"no fresh census (last published {age} days ago, over the "
+                       f"{policy['census_max_age_days']}-day window)")
+    weeks = set(enter_weeks) | set(exit_weeks)
+    if not any(week in weeks and n
+               for by_week in counts.values() for week, n in by_week.items()):
+        return False, ("census published but empty over the window (no usage "
+                       "recorded for any model in these weeks)")
+    return True, ""
 
 
 def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                    previous: dict | None, now: datetime,
-                   admin_doc: dict | None = None) -> dict:
-    tiers = list(policy["tiers"])
-    available = [m for m in (models_doc.get("models") or [])
-                 if tier_of(m["id"], tiers) is not None]
-    available.sort(key=lambda m: _rank(m, tiers))
-    by_id = {m["id"]: m for m in available}
+                   admin_doc: dict | None = None, warn=None) -> dict:
+    warn = warn or _stderr
+    rungs = tier_rungs(policy)
 
-    # --- is the census usable? -------------------------------------------
-    census_at = parse_ts((census_doc or {}).get("generated_at"))
-    counts = (census_doc or {}).get("counts") or {}
-    max_age = timedelta(days=policy["census_max_age_days"])
-    if census_doc is None or census_at is None:
-        fresh, stale_note = False, "no fresh census (none published)"
-    elif now - census_at > max_age:
-        age = (now - census_at).days
-        fresh = False
-        stale_note = (f"no fresh census (last published {age} days ago, over the "
-                      f"{policy['census_max_age_days']}-day window)")
-    else:
-        fresh, stale_note = True, ""
+    entries = _clean_models(models_doc, warn)
+    api_ids = [m["id"] for m in entries]
+    ranked = [m for m in entries if rung_of(m["id"], rungs) is not None]
+    unranked = [{"id": m["id"],
+                 "reason": ("no family word from the tier ladder appears in its "
+                            "id, so it cannot be ranked and takes no roster seat")}
+                for m in entries if rung_of(m["id"], rungs) is None]
+    unranked_ids = {u["id"] for u in unranked}
+
+    counts = _clean_counts((census_doc or {}).get("counts"), warn)
+    # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
+    # an alias the catalogue actually offers — an alias that exists solely as
+    # an old census key is not a model anyone can run. USAGE folds over both,
+    # so a seat keeps the usage recorded under either spelling of itself.
+    seat_aliases = alias_map(api_ids)
+    aliases = alias_map(api_ids + list(counts))
+    snapshots = {m["id"]: seat_aliases[m["id"]]
+                 for m in ranked if m["id"] in seat_aliases}
+
+    available = [m for m in ranked if m["id"] not in snapshots]
+    available.sort(key=lambda m: _rank(m, rungs))
+    by_id = {m["id"]: m for m in available}
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])
-    previous_arms = [a["id"] for a in ((previous or {}).get("arms") or [])]
+    usable, stale_note = _census_verdict(census_doc, counts, policy, now,
+                                         enter_weeks, exit_weeks)
+    # Provenance: the timestamp of the census this roster actually read. A
+    # census that was published and simply held nothing for these weeks HAS a
+    # timestamp worth recording — dropping it made "we read a census and it
+    # said nothing" indistinguishable from "nobody published one". A stale or
+    # future-dated census was not read, so it records nothing.
+    census_at_published = ((census_doc or {}).get("generated_at")
+                           if usable or stale_note.startswith("census published")
+                           else None)
+    previous_arms = _clean_previous_arms(previous, warn)
 
-    newest_by_tier: dict[str, str] = {}
-    for model in available:  # sorted weakest-first, oldest-first within a tier
-        newest_by_tier[tier_of(model["id"], tiers)] = model["id"]
+    newest_by_rung: dict[int, str] = {}
+    for model in available:  # sorted weakest-first, oldest-first within a rung
+        newest_by_rung[rung_of(model["id"], rungs)] = model["id"]
 
     # --- who is an arm, and why ------------------------------------------
     arms: list[dict] = []
+    excluded: list[dict] = []
     for model in available:
         model_id = model["id"]
-        tier = tier_of(model_id, tiers)
-        created = parse_ts(model.get("created_at"))
+        rung = rung_of(model_id, rungs)
+        label = rung_label(rungs, rung)
+        raw_created = model.get("created_at")
+        created = parse_ts(raw_created)
         age_days = (now - created).days if created else None
-        is_newest = newest_by_tier.get(tier) == model_id
+        is_newest = newest_by_rung.get(rung) == model_id
         old_enough = age_days is not None and age_days >= policy["cooling_off_days"]
 
         reason = None
-        if fresh:
-            share = usage_share(counts, model_id, enter_weeks)
+        if usable:
+            share = usage_share(counts, model_id, enter_weeks, rungs, aliases)
             if share >= policy["arm_enter_usage_pct"]:
                 reason = (f"carries {share:.1f}% of census usage over the last "
                           f"{policy['arm_enter_window_weeks']} weeks "
                           f"(at or above the {policy['arm_enter_usage_pct']}% entry bar)")
         if reason is None and is_newest and old_enough:
-            newest_words = (f"newest model in the {tier} tier, {age_days} days old "
+            newest_words = (f"newest model in the {label} tier, {age_days} days old "
                             f"(past the {policy['cooling_off_days']}-day cooling-off)")
-            reason = newest_words if fresh else f"{stale_note}; fell back to newest per tier — {newest_words}"
-        if reason is None and fresh and model_id in previous_arms:
-            held = usage_share(counts, model_id, exit_weeks)
-            if held >= policy["arm_exit_usage_pct"]:
-                reason = (f"held over from the previous roster: still "
-                          f"{held:.1f}% of census usage over the last "
-                          f"{policy['arm_exit_window_weeks']} weeks (at or above "
-                          f"the {policy['arm_exit_usage_pct']}% exit bar)")
+            reason = (newest_words if usable
+                      else f"{stale_note}; fell back to newest per tier — {newest_words}")
+        if reason is None and model_id in previous_arms:
+            if usable:
+                held = usage_share(counts, model_id, exit_weeks, rungs, aliases)
+                if held >= policy["arm_exit_usage_pct"]:
+                    reason = (f"held over from the previous roster: still "
+                              f"{held:.1f}% of census usage over the last "
+                              f"{policy['arm_exit_window_weeks']} weeks (at or above "
+                              f"the {policy['arm_exit_usage_pct']}% exit bar)")
+            else:
+                # Staleness is not evidence of disuse. Retiring a previous arm
+                # because nobody published a census retires it on NO evidence
+                # — measured: an arm at 33% usage dropped when the census was
+                # 21 days old. The only retirement a stale census supports is
+                # a model that left the Models API, handled below.
+                reason = (f"held over from the previous roster: {stale_note}, so "
+                          f"there is no evidence to retire it")
         if reason:
             arms.append({"id": model_id, "reason": reason})
+        elif created is None:
+            why = "absent" if not raw_created else "unparseable"
+            excluded.append({"id": model_id, "reason": (
+                f"excluded from the arm set: its created_at is {why}, so the "
+                f"{policy['cooling_off_days']}-day cooling-off cannot be checked")})
+        elif is_newest and not old_enough:
+            excluded.append({"id": model_id, "reason": (
+                f"excluded from the arm set: newest in the {label} tier but only "
+                f"{age_days} days old, inside the {policy['cooling_off_days']}-day "
+                f"cooling-off")})
+
+    for snapshot_id in sorted(snapshots):
+        excluded.append({"id": snapshot_id, "reason": (
+            f"dated snapshot of `{snapshots[snapshot_id]}`; collapsed onto that "
+            f"alias for ranking, seating and usage, so it takes no seat of its own")})
 
     arm_ids = {a["id"] for a in arms}
 
@@ -183,25 +440,27 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # before any census has been published. Emitting a null judge there would
     # ship a roster with a hole in it, so the fallback names the strongest model
     # available and says out loud that it is also an arm, leaving the caller to
-    # decide rather than leaving it to find out.
-    strongest_arm_tier = max((tiers.index(tier_of(a, tiers)) for a in arm_ids),
-                             default=None)
+    # decide rather than leaving it to find out. `is_arm` carries that in a
+    # field as well as in words: run_eval.py refuses such a judge for an
+    # unpinned fixture, and it cannot read prose.
+    strongest_arm_rung = max((rung_of(a, rungs) for a in arm_ids), default=None)
     non_arms = [m for m in available if m["id"] not in arm_ids]
-    above = ([m for m in non_arms
-              if tiers.index(tier_of(m["id"], tiers)) > strongest_arm_tier]
-             if strongest_arm_tier is not None else [])
+    above = ([m for m in non_arms if rung_of(m["id"], rungs) > strongest_arm_rung]
+             if strongest_arm_rung is not None else [])
 
     if above:
         pick = above[-1]
         judge = {"id": pick["id"],
                  "reason": (f"most capable available model at least one tier above "
-                            f"the strongest arm model ({tier_of(pick['id'], tiers)} "
-                            f"over {tiers[strongest_arm_tier]}), and not itself an arm")}
+                            f"the strongest arm model "
+                            f"({rung_label(rungs, rung_of(pick['id'], rungs))} "
+                            f"over {rung_label(rungs, strongest_arm_rung)}), and "
+                            f"not itself an arm")}
     elif non_arms:
         pick = non_arms[-1]
         arm_tier_words = (f" — nothing available sits above the strongest arm's "
-                          f"{tiers[strongest_arm_tier]} tier"
-                          if strongest_arm_tier is not None else "")
+                          f"{rung_label(rungs, strongest_arm_rung)} tier"
+                          if strongest_arm_rung is not None else "")
         judge = {"id": pick["id"],
                  "reason": f"strongest available model that is not an arm{arm_tier_words}"}
     elif available:
@@ -213,15 +472,18 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     else:
         judge = {"id": None,
                  "reason": "the Models API returned no model this policy can rank"}
+    judge["is_arm"] = judge["id"] in arm_ids
 
     # --- preflight ---------------------------------------------------------
     # Cheapest = the lowest tier the API still returns, and the newest model
     # within it (the Models API exposes no price; the ladder is the proxy).
-    cheapest = by_id[newest_by_tier[tier_of(available[0]["id"], tiers)]] if available else None
+    cheapest = (by_id[newest_by_rung[rung_of(available[0]["id"], rungs)]]
+                if available else None)
     preflight = ({"id": cheapest["id"],
-                  "reason": (f"cheapest available model: the {tier_of(cheapest['id'], tiers)} "
-                             f"tier is the lowest the Models API still returns, and this "
-                             f"is the newest model in it")}
+                  "reason": (f"cheapest available model: the "
+                             f"{rung_label(rungs, rung_of(cheapest['id'], rungs))} "
+                             f"tier is the lowest the Models API still returns, and "
+                             f"this is the newest model in it")}
                  if cheapest else {"id": None, "reason": "the Models API returned no "
                                                          "model this policy can rank"})
 
@@ -233,13 +495,20 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         for model_id in previous_arms:
             if model_id in arm_ids:
                 continue
-            if model_id not in by_id:
+            if model_id not in api_ids:
                 why = "no longer returned by the Models API"
-            elif not fresh:
-                why = (f"{stale_note}; the fallback roster is newest-per-tier and this "
-                       f"model is not the newest in its tier")
+            elif model_id in unranked_ids:
+                why = ("still returned by the Models API, but no family word from "
+                       "the tier ladder appears in its id, so it can no longer be "
+                       "ranked or seated")
+            elif model_id in snapshots:
+                why = (f"collapsed onto its undated alias `{snapshots[model_id]}`, "
+                       f"which holds the seat")
+            elif not usable:
+                why = (f"{stale_note}; the fallback roster is newest-per-tier and "
+                       f"this model is not the newest in its tier")
             else:
-                held = usage_share(counts, model_id, exit_weeks)
+                held = usage_share(counts, model_id, exit_weeks, rungs, aliases)
                 why = (f"below the {policy['arm_exit_usage_pct']}% exit bar for the last "
                        f"{policy['arm_exit_window_weeks']} weeks ({held:.1f}%)")
             retired.append({"id": model_id, "reason": why})
@@ -247,31 +516,47 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     return {
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": {
-            "models_api_at": models_doc.get("fetched_at"),
-            "census_at": (census_doc or {}).get("generated_at") if fresh else None,
+            "models_api_at": (models_doc or {}).get("fetched_at"),
+            "census_at": census_at_published,
             "admin_report_at": (admin_doc or {}).get("fetched_at") if admin_doc else None,
         },
         "arms": arms,
         "judge": judge,
         "preflight": preflight,
+        "unranked": unranked,
+        "excluded": excluded,
+        "compared_to_previous": previous is not None,
         "retired_since_last": retired,
         "added_since_last": added,
     }
 
 
-def render_summary(roster: dict) -> str:
-    """Markdown for $GITHUB_STEP_SUMMARY. A roster change leads."""
+def render_summary(roster: dict, previous_state: str = "auto") -> str:
+    """Markdown for $GITHUB_STEP_SUMMARY. A roster change leads.
+
+    `previous_state` is "auto" (derive it from the roster) or "unavailable"
+    — the previous roster exists but could not be read. The three cases are
+    NOT interchangeable: printing "No change to the arm set since the last
+    run" on a first run, or when the comparison never happened, is a claim
+    about a comparison nobody made.
+    """
     lines = ["### Model roster", ""]
     changed = roster["added_since_last"] or roster["retired_since_last"]
-    if changed:
+    if previous_state == "unavailable":
+        lines += ["**Roster inputs unavailable** — the previous roster could not "
+                  "be read this run, so nothing was compared against it.", ""]
+    elif changed:
         lines.append("**Roster changed since the last run.**")
         for entry in roster["added_since_last"]:
             lines.append(f"- added `{entry['id']}` — {entry['reason']}")
         for entry in roster["retired_since_last"]:
             lines.append(f"- retired `{entry['id']}` — {entry['reason']}")
         lines.append("")
-    else:
+    elif roster.get("compared_to_previous"):
         lines += ["No change to the arm set since the last run.", ""]
+    else:
+        lines += ["First published roster here — no previous roster to compare "
+                  "against.", ""]
 
     lines += ["| Role | Model | Why |", "| --- | --- | --- |"]
     for arm in roster["arms"]:
@@ -279,6 +564,13 @@ def render_summary(roster: dict) -> str:
     for role in ("judge", "preflight"):
         entry = roster[role]
         lines.append(f"| {role} | `{entry['id']}` | {entry['reason']} |")
+    for role, entries in (("unranked", roster.get("unranked") or []),
+                          ("excluded", roster.get("excluded") or [])):
+        for entry in entries:
+            lines.append(f"| {role} | `{entry['id']}` | {entry['reason']} |")
+    if roster["judge"].get("is_arm"):
+        lines += ["", "> **The judge is also an arm this run.** Do not run it as "
+                      "the arm and the judge of the same eval."]
     source = roster["source"]
     lines += ["", f"Models API `{source['models_api_at']}` · census "
                   f"`{source['census_at'] or 'none'}` · admin report "
@@ -301,24 +593,50 @@ def main() -> int:
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
-    models_doc = load_json(args.models)
+    models_doc, problem = read_json(args.models)
     if models_doc is None:
-        print(f"no models document at {args.models}", file=sys.stderr)
+        print(problem or f"no models document at {args.models}", file=sys.stderr)
         return 1
+
+    census_doc, census_problem = read_json(args.census)
+    if census_problem:
+        _stderr(census_problem)
+    previous_doc, previous_problem = read_json(args.previous)
+    if previous_problem:
+        _stderr(previous_problem)
 
     roster = compute_roster(
         models_doc=models_doc,
-        census_doc=load_json(args.census),
+        census_doc=census_doc,
         policy=load_policy(args.policy),
-        previous=load_json(args.previous),
+        previous=previous_doc,
         now=datetime.now(timezone.utc),
         admin_doc=load_json(args.admin_report),
     )
+
+    if not roster["arms"]:
+        # A roster with no arms is not a roster. It used to exit 0 and publish
+        # an empty arm set — a run that silently evaluated nothing, which is
+        # exactly the "went stale without anyone noticing" failure #67 exists
+        # to remove. Nothing is written, so the last good roster stands.
+        print("refusing to publish a roster with no arms: every ranked model is "
+              "excluded (see the excluded/unranked reasons above)", file=sys.stderr)
+        for entry in roster["excluded"] + roster["unranked"]:
+            print(f"  {entry['id']}: {entry['reason']}", file=sys.stderr)
+        return 3
+
+    # Written via a temp file in the same directory and renamed: a partial
+    # roster is worse than no roster, and the caller's "did the file appear?"
+    # is the only signal the commit step has.
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with open(args.out, "w", encoding="utf-8") as f:
+    staged = args.out.with_name(args.out.name + ".partial")
+    with open(staged, "w", encoding="utf-8") as f:
         json.dump(roster, f, indent=2)
         f.write("\n")
-    print(render_summary(roster))
+    staged.replace(args.out)
+
+    print(render_summary(roster,
+                         previous_state="unavailable" if previous_problem else "auto"))
     return 0
 
 

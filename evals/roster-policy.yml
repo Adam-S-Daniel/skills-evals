@@ -18,16 +18,31 @@
 # test/run_tests.py::TestIssue67::test_no_model_ids_are_hardcoded_outside_fixtures
 # is the guard.
 
-# Capability ladder, weakest first. A model's tier is the first of these words
-# to appear as a dash-separated token in its id; a model whose id carries none
-# of them is unranked and takes no roster seat (it can still be measured — it
-# simply cannot be ordered against the others without a capability claim the
-# Models API does not make).
+# Capability ladder, weakest rung first. A model's tier is the first of these
+# words to appear as a dash-separated token in its id. A rung may be written as
+# a bare word or as a LIST OF PEERS that rank identically — same tier, same
+# price, different access programme — which is what `[fable, mythos]` is below.
+#
+# A model whose id carries none of these words is UNRANKED. It takes no roster
+# seat, it is listed under `unranked` in the published roster with that reason,
+# and — this is the part that bites — its usage is excluded from the share
+# denominator. Leaving it in pushed every ranked model's share towards zero
+# (measured: a model at 60 turns a week computed at 5.7% against 1000 unranked
+# turns a week) and quietly emptied the arm set. Adding a rung here is how a
+# new family becomes visible; there is nothing else to change.
 tiers:
   - haiku
   - sonnet
   - opus
-  - fable
+  - [fable, mythos]
+
+# ASSUMPTION, recorded here because the code acts on it: an id that is another
+# id plus a `-YYYYMMDD` suffix is a dated SNAPSHOT of that model, not a second
+# model. Both are collapsed onto the undated alias for ranking, seating and
+# usage — otherwise one model takes two arm seats and its usage splits across
+# two census keys, halving both shares. The collapse only happens when the
+# undated alias is itself in the catalogue; a catalogue that publishes only
+# dated ids has nothing to collapse onto and every id stands on its own.
 
 # A model becomes an arm if it carries at least this share of census usage
 # over the trailing window...
