@@ -266,12 +266,18 @@ jobs:
               git show origin/eval-results:roster/latest.json > "$work/previous.json" 2>/dev/null || true
               git show origin/eval-results:usage/latest.json > "$work/census.json" 2>/dev/null || true
             fi
+            # stderr is captured, not swallowed: it is echoed back to the log
+            # either way, and on failure its first non-warning line becomes the
+            # ::warning::. Both scripts are written to keep that line to a
+            # status code or an exception class — never a response body.
             if ! python3 scripts/refresh_models.py \
                  --out "$work/models.json" \
                  --admin-report "$RUNNER_TEMP/admin-usage.json" 2> "$work/refresh.err"; then
-              reason="$(tail -n 1 "$work/refresh.err")"
+              cat "$work/refresh.err" >&2
+              reason="$(grep -v '^$' "$work/refresh.err" | tail -n 1)"
               return 1
             fi
+            cat "$work/refresh.err" >&2
             if ! python3 harness/roster.py \
                  --models "$work/models.json" \
                  --policy evals/roster-policy.yml \
@@ -279,10 +285,12 @@ jobs:
                  --admin-report "$RUNNER_TEMP/admin-usage.json" \
                  --previous "$work/previous.json" \
                  --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
-              reason="$(tail -n 1 "$work/roster.err")"
+              cat "$work/roster.err" >&2
+              reason="$(grep -v '^roster: ' "$work/roster.err" | grep -v '^$' | head -n 1)"
               return 1
             fi
-            cat "$work/summary.md" >> "$GITHUB_STEP_SUMMARY"
+            cat "$work/roster.err" >&2
+            cat "$work/summary.md" | tee -a "$GITHUB_STEP_SUMMARY"
             return 0
           }
           if refresh; then

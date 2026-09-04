@@ -1121,7 +1121,12 @@ it looks like the repair failed.
 >    `~/.claude/projects/` exists, run
 >    `python3 scripts/model_usage_census.py --out usage/latest.json` in the
 >    same `skills-evals` clone and publish `usage/latest.json` to
->    `eval-results` in the same commit as step 4. If the directory is absent,
+>    `eval-results` in the same commit as step 4 — with **`git add -f
+>    usage/latest.json`**, because `usage/` is gitignored on `main` (a local
+>    run must never ride into a PR) while being tracked on `eval-results`.
+>    That asymmetry is the same one `results/` and `roster/` have, and the
+>    `-f` is what makes it work instead of silently dropping the file. If the
+>    directory is absent,
 >    skip it and say `census: no transcripts on this surface` — do not
 >    reconstruct usage from anything else. **Read that script's header before
 >    running it.** Its output is committed to a public branch, and it is

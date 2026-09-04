@@ -298,6 +298,40 @@ this account and has grown a run-a-script grader; until then this harness
 stays the system of record. If `results/` is ever restructured, mirror its
 report schema to keep a future migration cheap.
 
+## Model roster (2026-09-04, #67)
+
+The harness's model choices were literals: an arm pinned in each fixture, a
+judge beside it, a preflight model in `eval.yml`. Nothing in the repo noticed
+when a model shipped or retired, and the first symptom would have been a run
+against a model that no longer exists.
+
+`harness/roster.py` computes the set instead, as **a pure function over
+files** — already-parsed documents and a frozen `now` in, a roster dict out.
+No network, no clock, no environment, which is what makes the whole policy
+testable at the granularity of one threshold. The single network call in the
+feature is `scripts/refresh_models.py`; the usage side is
+`scripts/model_usage_census.py`, which runs on a durable machine (a CI runner
+has no transcripts) as a best-effort passenger on the Tier-3 account-store
+Routine.
+
+Three properties are load-bearing and should survive any rework:
+
+1. **No model id in the machinery.** Tier comes from the family word in a
+   model's own id, matched against a ladder in `evals/roster-policy.yml`. A
+   model that ships after this was written needs no edit anywhere.
+2. **Every entry carries its reason in words**, and every degradation says
+   which degradation it was — absent census, stale census, future-dated
+   census, census present but empty over the window. A roster that falls back
+   silently is indistinguishable from one that did not need to.
+3. **No evidence is not evidence.** Nothing retires an arm except leaving the
+   Models API or measurably falling under the exit bar. A missing or stale
+   census retires nothing.
+
+Thresholds, and the reasoning behind the numbers, belong in an ADR —
+[#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the
+README's "Model roster" section for the precedence rule and the census's
+public-output contract.
+
 ## Out of scope
 
 - `GHA-bench` as the harness (#18 caveat) — this is a dedicated harness.
