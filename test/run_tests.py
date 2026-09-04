@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -1750,7 +1751,7 @@ class TestIssue67(unittest.TestCase):
         path.write_text(json.dumps(self._compute()), encoding="utf-8")
         return path
 
-    def _capture_models(self, eval_dir, roster_path):
+    def _capture_models(self, eval_dir, roster_path, want="models"):
         """Run one arm with the agent and judge stubbed, returning the models
         the runner actually chose."""
         seen = {}
@@ -1771,9 +1772,10 @@ class TestIssue67(unittest.TestCase):
         fixture = run_eval.load_fixture(eval_dir)
         with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
              mock.patch.object(run_eval.judge, "score", fake_score):
-            run_eval._run_arm("without_skill", fixture, eval_dir / "seed",
-                              Path("/nonexistent-registry"), args, "20260904T120000Z")
-        return seen
+            summary = run_eval._run_arm(
+                "without_skill", fixture, eval_dir / "seed",
+                Path("/nonexistent-registry"), args, "20260904T120000Z")
+        return summary if want == "summary" else seen
 
     def test_runner_takes_the_roster_when_the_fixture_has_no_model(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -1791,11 +1793,23 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(seen["judge"], "claude-opus-4-6")
 
     def test_runner_survives_a_missing_roster(self):
+        """It no longer falls through to the CLI default: an unpinned fixture
+        with no usable roster is a RUNNER-level error naming the path it
+        looked for (the exit-2 path), while a pinned fixture is unaffected and
+        still runs with no roster at all. TestIssue67Review covers both sides
+        in detail; this is the regression floor for the change of contract."""
         with tempfile.TemporaryDirectory() as tmp:
             eval_dir = self._fixture_dir(tmp, pinned=False)
+            missing = Path(tmp) / "nope.json"
+            summary = self._capture_models(eval_dir, missing, want="summary")
+        self.assertIsNotNone(summary["error"])
+        self.assertIn(str(missing), summary["error"]["detail"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
             seen = self._capture_models(eval_dir, Path(tmp) / "nope.json")
-        self.assertIsNone(seen["agent"], "no roster and no pin leaves the CLI "
-                                         "default in place rather than crashing")
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6",
+                         "a pinned fixture still runs with no roster at all")
 
     # --- policy file + the no-hardcoded-ids guard ------------------------
 
@@ -2392,6 +2406,250 @@ class TestIssue67Review(unittest.TestCase):
             printed = stdout.getvalue()
         self.assertEqual(rc, 0)
         self.assertIn("roster inputs unavailable", printed.lower())
+    # --- S13: a half-read catalogue is refused, loudly and without a body ---
+
+    def test_a_models_api_that_never_stops_paging_is_refused(self):
+        """The file says it refuses a half-read API because a partial read is
+        indistinguishable from a retirement. It then read 20 pages and wrote
+        whatever it had."""
+        pages = iter(range(10_000))
+
+        def endless(url, headers):
+            n = next(pages)
+            return {"data": [{"id": f"claude-sonnet-{n}", "created_at":
+                              "2026-01-01T00:00:00Z"}],
+                    "has_more": True, "last_id": f"claude-sonnet-{n}"}
+
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(endless, now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_a_catalogue_that_ends_within_the_bound_is_written(self):
+        pages = [
+            {"data": [{"id": "claude-sonnet-5", "created_at": "2026-02-01T00:00:00Z"}],
+             "has_more": True, "last_id": "claude-sonnet-5"},
+            {"data": [{"id": "claude-opus-5", "created_at": "2026-04-01T00:00:00Z"}],
+             "has_more": False},
+        ]
+        served = iter(pages)
+        doc = refresh_models.build_models_document(
+            lambda url, headers: next(served), now=self.NOW)
+        self.assertEqual([m["id"] for m in doc["models"]],
+                         ["claude-opus-5", "claude-sonnet-5"])
+
+    def _refresh_main(self, exc):
+        """main() with the network call replaced by a raise. (rc, printed)."""
+        def boom(url, headers, timeout=30):
+            raise exc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "models.json"
+            argv = ["refresh_models.py", "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(refresh_models, "http_json", boom), \
+                 mock.patch.object(refresh_models, "_auth_headers", lambda: {}), \
+                 mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = refresh_models.main()
+            wrote = out.exists()
+        return rc, stdout.getvalue() + stderr.getvalue(), wrote
+
+    def test_a_timeout_is_caught_and_named_by_its_class(self):
+        """TimeoutError is an OSError, not a URLError — it used to escape the
+        except clause entirely and exit through a traceback."""
+        rc, printed, wrote = self._refresh_main(TimeoutError("timed out"))
+        self.assertEqual(rc, 1)
+        self.assertIn("TimeoutError", printed)
+        self.assertFalse(wrote)
+
+    def test_a_decoding_error_is_caught_and_named_by_its_class(self):
+        exc = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        rc, printed, _ = self._refresh_main(exc)
+        self.assertEqual(rc, 1)
+        self.assertIn("UnicodeDecodeError", printed)
+        self.assertNotIn("invalid start byte", printed)
+
+    def test_an_http_error_reports_the_status_code_and_no_response_body(self):
+        body = "the account example-org is over its quota"
+        exc = urllib.error.HTTPError(
+            "https://example.com/v1/models", 429, "Too Many Requests", {},
+            io.BytesIO(body.encode()))
+        rc, printed, _ = self._refresh_main(exc)
+        self.assertEqual(rc, 1)
+        self.assertIn("429", printed)
+        self.assertNotIn(body, printed)
+        self.assertNotIn("example-org", printed)
+
+    def test_a_missing_credential_still_says_which_variable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "models.json"
+            argv = ["refresh_models.py", "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+                os.environ.pop("ANTHROPIC_API_KEY", None)
+                with mock.patch.object(sys, "argv", argv), \
+                     contextlib.redirect_stdout(stdout), \
+                     contextlib.redirect_stderr(stderr):
+                    rc = refresh_models.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("ANTHROPIC_AUTH_TOKEN", printed)
+    # --- S11 / S10: the runner fails closed on an unusable roster --------
+
+    def _fixture_dir(self, tmp, pinned, pin_judge=None):
+        eval_dir = Path(tmp) / "evals" / "a-skill"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+        fixture = {"skill": "a-skill", "prompt": "do the thing",
+                   "judge_rubric": "grade it",
+                   "arms": {"without_skill": {"install": "none"}}}
+        if pinned:
+            fixture["model"] = "claude-sonnet-4-6"
+        if pinned or pin_judge:
+            fixture["judge"] = {"model": pin_judge or "claude-opus-4-6"}
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def _roster_file(self, tmp, document=None, name="latest.json"):
+        path = Path(tmp) / "roster" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(document, str):
+            path.write_text(document, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(document if document is not None
+                                       else self._compute()), encoding="utf-8")
+        return path
+
+    def _run_one_arm(self, eval_dir, roster_path):
+        """One arm with the agent and judge stubbed. Returns the arm summary."""
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm):
+            seen["agent"] = arm.get("model")
+            return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        def fake_score(rubric, transcript, diff, model=None, **kwargs):
+            seen["judge"] = model
+            return {"dimensions": [], "overall": 1.0}
+
+        args = argparse.Namespace(
+            model=None, timeout=30, no_judge=False,
+            results_dir=Path(tempfile.mkdtemp()), roster=roster_path)
+        self.addCleanup(shutil.rmtree, args.results_dir, ignore_errors=True)
+        fixture = run_eval.load_fixture(eval_dir)
+        with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+             mock.patch.object(run_eval.judge, "score", fake_score):
+            summary = run_eval._run_arm("without_skill", fixture, eval_dir / "seed",
+                                        Path("/nonexistent-registry"), args,
+                                        "20260904T120000Z")
+        return summary, seen
+
+    def test_an_unpinned_fixture_with_no_roster_is_a_runner_level_error(self):
+        """Silently falling back to the CLI's default model published a badge
+        for a model nobody chose, and made every week-over-week comparison a
+        comparison against a different model."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            missing = Path(tmp) / "roster" / "nope.json"
+            summary, seen = self._run_one_arm(eval_dir, missing)
+        self.assertIsNotNone(summary["error"], "no pin and no roster must not run")
+        self.assertIn(str(missing), summary["error"]["detail"],
+                      "the error names the roster path it looked for")
+        self.assertNotIn("agent", seen, "the agent is never invoked")
+
+    def test_a_pinned_fixture_runs_with_no_roster_at_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            summary, seen = self._run_one_arm(eval_dir, Path(tmp) / "nope.json")
+        self.assertIsNone(summary["error"])
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6")
+        self.assertEqual(seen["judge"], "claude-opus-4-6")
+
+    WRONG_SHAPES = {
+        "top level list": '[{"id": "claude-opus-5"}]',
+        "arms as strings": '{"arms": ["claude-opus-5"], "judge": {"id": "claude-fable-5-1"}}',
+        "judge as a string": '{"arms": [{"id": "claude-opus-5"}], "judge": "claude-fable-5-1"}',
+        "arms not a list": '{"arms": "claude-opus-5", "judge": {"id": "claude-fable-5-1"}}',
+        "empty arms": '{"arms": [], "judge": {"id": "claude-fable-5-1"}}',
+        "truncated": '{"arms": [{"id": "claude-opus-5"}',
+        "empty file": "",
+    }
+
+    def test_a_wrong_shaped_roster_is_a_named_error_not_an_attributeerror(self):
+        for label, raw in self.WRONG_SHAPES.items():
+            with self.subTest(shape=label), tempfile.TemporaryDirectory() as tmp:
+                eval_dir = self._fixture_dir(tmp, pinned=False)
+                path = self._roster_file(tmp, raw)
+                summary, seen = self._run_one_arm(eval_dir, path)
+                self.assertIsNotNone(summary["error"])
+                self.assertIn(str(path), summary["error"]["detail"])
+                self.assertNotIn("agent", seen)
+
+    def test_the_runner_refuses_a_roster_judge_that_is_also_an_arm(self):
+        """The roster says so in a field precisely so the runner can refuse:
+        a model grading its own run is not a judgement."""
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y", "is_arm": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            summary, seen = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNotNone(summary["error"])
+        self.assertIn("judge", summary["error"]["detail"].lower())
+        self.assertNotIn("agent", seen)
+
+    def test_a_fixture_that_pins_its_judge_may_still_use_a_judge_is_arm_roster(self):
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y", "is_arm": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False, pin_judge="claude-fable-5-1")
+            summary, seen = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNone(summary["error"])
+        self.assertEqual(seen["agent"], "claude-opus-5")
+        self.assertEqual(seen["judge"], "claude-fable-5-1")
+
+    def test_a_judge_that_merely_appears_in_arms_is_refused_too(self):
+        """`is_arm` absent (an older roster) is not permission — membership in
+        `arms` is the fact, and the flag is the shortcut."""
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            summary, _ = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNotNone(summary["error"])
+
+    # --- N3: the roster is read once a run, not once an arm --------------
+
+    def test_the_roster_is_read_once_per_run_not_once_per_arm(self):
+        reads = []
+        real = run_eval.read_roster
+
+        def counting(path):
+            reads.append(path)
+            return real(path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            path = self._roster_file(tmp)
+            results = Path(tmp) / "results"
+            argv = ["run_eval.py", str(eval_dir), "--arm", "both",
+                    "--roster", str(path), "--results-dir", str(results)]
+
+            def fake_run_agent(workspace, prompt, arm):
+                return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                        "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+            with mock.patch.object(run_eval, "read_roster", counting), \
+                 mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+                 mock.patch.object(run_eval.judge, "score",
+                                   lambda *a, **k: {"dimensions": [], "overall": 1.0}), \
+                 mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                rc = run_eval.main()
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(reads), 1, f"read {len(reads)} times for 2 arms")
 
 if __name__ == "__main__":
     unittest.main()

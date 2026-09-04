@@ -45,6 +45,8 @@ ANTHROPIC_VERSION = "2023-06-01"
 # would select on.
 MODEL_FIELDS = ("id", "display_name", "created_at", "max_input_tokens",
                 "max_tokens", "capabilities")
+#: Page ceiling. Reaching it raises — see build_models_document.
+MAX_PAGES = 20
 
 
 def _auth_headers() -> dict:
@@ -95,8 +97,12 @@ def build_models_document(fetch, now: datetime, headers: dict | None = None,
     seen: set[str] = set()
     # Bounded: a server that keeps answering `has_more` with the same cursor
     # would otherwise spin forever inside a step that holds a credential. The
-    # catalogue is tens of models, so 20 pages is far past any real answer.
-    for _ in range(20):
+    # catalogue is tens of models, so MAX_PAGES is far past any real answer —
+    # and reaching it is a FAILURE, not a stopping condition. This file refuses
+    # a half-read API because a partial read is indistinguishable from a model
+    # retiring; writing the first 20 pages and calling it the catalogue is
+    # exactly that half read. See the `for ... else` below.
+    for _ in range(MAX_PAGES):
         params = {"limit": page_size}
         if after:
             params["after_id"] = after
@@ -114,6 +120,10 @@ def build_models_document(fetch, now: datetime, headers: dict | None = None,
         if not next_after or next_after == after:
             break
         after = next_after
+    else:
+        raise RuntimeError(
+            f"the Models API still reports more pages after {MAX_PAGES} pages; "
+            f"refusing to publish a truncated catalogue")
 
     models.sort(key=lambda m: m["id"])
     return {"fetched_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "models": models}
@@ -159,12 +169,27 @@ def main() -> int:
     args = parser.parse_args()
 
     now = datetime.now(timezone.utc)
+    # Loud on purpose: a partial read looks exactly like a retirement. What is
+    # PRINTED is a status code or an exception class name and nothing else —
+    # never a response body. This runs in a public CI log, and an error body
+    # from a billing or auth endpoint is the kind of thing that carries an
+    # account id or an org name. The two RuntimeErrors raised here are our own
+    # sentences (no credential; truncated catalogue), so they print in full.
+    #
+    # OSError covers URLError, HTTPError and TimeoutError; ValueError covers
+    # JSONDecodeError and UnicodeDecodeError. Naming URLError and
+    # JSONDecodeError separately was redundant, and the two it left out —
+    # a socket timeout and a mis-encoded body — both exited by traceback.
     try:
         document = build_models_document(http_json, now, _auth_headers())
-    except (urllib.error.URLError, urllib.error.HTTPError, RuntimeError,
-            json.JSONDecodeError) as exc:
-        # Loud on purpose: a partial read looks exactly like a retirement.
+    except urllib.error.HTTPError as exc:
+        print(f"Models API read failed: HTTP {exc.code}", file=sys.stderr)
+        return 1
+    except RuntimeError as exc:
         print(f"Models API read failed: {exc}", file=sys.stderr)
+        return 1
+    except (OSError, ValueError) as exc:
+        print(f"Models API read failed: {type(exc).__name__}", file=sys.stderr)
         return 1
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

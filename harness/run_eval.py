@@ -63,34 +63,94 @@ def _resolve_roster(cli_value: Path | None) -> Path:
     return Path(__file__).resolve().parent.parent / "roster" / "latest.json"
 
 
-def roster_models(roster_path: Path | None) -> tuple[str | None, str | None]:
-    """(agent model, judge model) from the roster, or (None, None).
+def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
+    """(roster, problem). Never raises, and never returns a half-shaped roster.
 
-    A fixture's `model:` and `judge.model:` are OVERRIDES now, not the only
-    source: absent one, the runner takes the roster, which is recomputed from
-    the Models API and the usage census on every real run (#67). Absent BOTH,
-    the model stays unset and the CLI's own default applies — the pre-roster
-    behaviour, unchanged.
-
-    The roster's arms are ordered cheapest tier first. A single-arm run takes
-    the first; the matrix runner will run every one of them. A fixture that
-    needs a specific calibration — an arm deliberately held off the top tier to
-    avoid a ceiling effect, say — keeps its pin, which is exactly why the two
-    existing fixtures still carry theirs.
+    The roster is a JSON file written by another job on another machine and
+    read off a public branch. Every one of these shapes was reachable and
+    three of them crashed with an AttributeError three frames down: a
+    top-level list, `arms` as a list of strings, `judge` as a string, a
+    truncated file, an empty file. A named problem is the whole difference
+    between a run that says what is wrong and a stack trace in a CI log.
     """
     if roster_path is None:
-        return None, None
+        return None, "no roster path was resolved"
     path = Path(roster_path)
     if not path.is_file() or path.stat().st_size == 0:
-        return None, None
+        return None, f"no model roster at {path}"
     try:
         with open(path, encoding="utf-8") as f:
-            roster = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return None, None
-    arms = roster.get("arms") or []
-    agent = arms[0].get("id") if arms else None
-    return agent, (roster.get("judge") or {}).get("id")
+            document = json.load(f)
+    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+        return None, f"model roster at {path} is unreadable ({type(exc).__name__})"
+    if not isinstance(document, dict):
+        return None, f"model roster at {path} is not a JSON object"
+    return document, None
+
+
+def roster_models(roster: dict | None) -> tuple[list[str], str | None, bool]:
+    """(arm ids, judge id, judge-is-also-an-arm) out of a roster document.
+
+    Anything the wrong shape is dropped here rather than trusted downstream.
+    `judge.is_arm` is the roster's own flag; membership in `arms` is the fact
+    behind it, and an older roster carrying no flag must not read as consent.
+    """
+    entries = roster.get("arms") if isinstance(roster, dict) else None
+    arm_ids = ([a["id"] for a in entries
+                if isinstance(a, dict) and isinstance(a.get("id"), str) and a["id"]]
+               if isinstance(entries, list) else [])
+    judge_entry = roster.get("judge") if isinstance(roster, dict) else None
+    judge_id = judge_entry.get("id") if isinstance(judge_entry, dict) else None
+    if not isinstance(judge_id, str) or not judge_id:
+        judge_id = None
+    flagged = bool(isinstance(judge_entry, dict) and judge_entry.get("is_arm"))
+    return arm_ids, judge_id, flagged or (judge_id is not None and judge_id in arm_ids)
+
+
+def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
+    """(agent model, judge model, error) for this run.
+
+    Precedence: `--model` > the fixture's pin > the roster > nothing runs.
+
+    FAIL CLOSED. The runner used to fall through to the CLI's own default
+    model whenever the fixture pinned nothing and the roster was absent,
+    empty, truncated or the wrong shape — which publishes a badge for a model
+    nobody chose and makes every week-over-week comparison a comparison
+    against a different model. An unpinned fixture with no usable roster is a
+    runner-level error naming the path it looked for, and it leaves through
+    the normal exit-2 path. A PINNED fixture never needs the roster and is
+    unaffected: it still runs with no roster at all.
+
+    The roster's arms are ordered cheapest tier first, so `arms[0]` is the
+    WEAKEST model in the set. That is deliberate for a single-arm run — a
+    floor effect is as signal-free as a ceiling effect, and the matrix runner
+    that will run every arm is where the per-fixture calibration belongs. A
+    fixture that needs a specific one keeps its pin.
+    """
+    pinned_agent = args.model or fixture.get("model")
+    pinned_judge = (fixture.get("judge") or {}).get("model")
+    needs_agent = not pinned_agent
+    needs_judge = not pinned_judge and not getattr(args, "no_judge", False)
+    if not needs_agent and not needs_judge:
+        return pinned_agent, pinned_judge, None
+
+    path = _resolve_roster(getattr(args, "roster", None))
+    roster, problem = read_roster(path)
+    if problem:
+        return None, None, (f"{problem}, and this fixture pins no "
+                            f"{'model' if needs_agent else 'judge model'}")
+    arm_ids, judge_id, judge_is_arm = roster_models(roster)
+    if needs_agent and not arm_ids:
+        return None, None, (f"the model roster at {path} names no usable arm, "
+                            f"and this fixture pins no model")
+    if needs_judge and not judge_id:
+        return None, None, (f"the model roster at {path} names no usable judge, "
+                            f"and this fixture pins no judge model")
+    if needs_judge and judge_is_arm:
+        return None, None, (f"the model roster at {path} names a judge that is "
+                            f"also an arm; a model must not grade its own run. "
+                            f"Pin `judge.model:` in the fixture to override")
+    return (pinned_agent or arm_ids[0]), (pinned_judge or judge_id), None
 
 
 def agent_env(workspace: Path, env_spec: dict | None) -> dict:
@@ -253,8 +313,14 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 
 
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
-            args: argparse.Namespace, timestamp: str) -> dict:
-    """Materialize a workspace, invoke the agent, score it, write results, clean up."""
+            args: argparse.Namespace, timestamp: str,
+            selection: tuple | None = None) -> dict:
+    """Materialize a workspace, invoke the agent, score it, write results, clean up.
+
+    `selection` is `select_models()`'s answer, resolved ONCE by main() and
+    passed in: the roster is one file describing one run, and re-reading it per
+    arm let two arms of the same run disagree if it changed underneath them.
+    """
     workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
     try:
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
@@ -262,12 +328,21 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "-m", "seed", cwd=workspace)
 
-        roster_agent_model, roster_judge_model = roster_models(
-            _resolve_roster(getattr(args, "roster", None)))
+        agent_model, roster_judge_model, selection_error = (
+            selection if selection is not None else select_models(fixture, args))
+        if selection_error:
+            # A runner-level error, recorded on the arm exactly like an agent
+            # failure, so it leaves through main()'s existing exit-2 path
+            # instead of running the agent on a model nobody chose.
+            error = {"type": "model-selection", "detail": selection_error}
+            _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                           error, None, None, None, None)
+            return {"arm": arm_name, "error": error, "agent": None,
+                    "objective_checks": None, "judge": None}
 
         arm_config = {
             "name": arm_name,
-            "model": args.model or fixture.get("model") or roster_agent_model,
+            "model": agent_model,
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
         }
@@ -302,7 +377,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
                 try:
                     judge_result = judge.score(
                         fixture["judge_rubric"], result.get("transcript") or "", diff,
-                        model=judge_cfg.get("model") or roster_judge_model,
+                        model=roster_judge_model,
                         timeout=judge_cfg.get("timeout_s", 120),
                         weights=judge_cfg.get("weights"),
                     )
@@ -362,7 +437,10 @@ def main() -> int:
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
     registry = _resolve_registry(args.registry)
 
-    arm_summaries = [_run_arm(name, fixture, seed, registry, args, timestamp)
+    # Resolved once: one roster read, one model choice, both arms.
+    selection = select_models(fixture, args)
+    arm_summaries = [_run_arm(name, fixture, seed, registry, args, timestamp,
+                              selection)
                      for name in arm_names]
 
     report = _render_report(fixture["skill"], fixture["prompt"], timestamp, arm_summaries)
