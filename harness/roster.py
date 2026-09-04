@@ -28,7 +28,8 @@ Output — roster/latest.json on `eval-results`:
   {generated_at, source: {models_api_at, census_at, admin_report_at},
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
-   compared_to_previous: bool, retired_since_last: [...], added_since_last: [...]}
+   compared_to_previous: bool, previous_state: "compared"|"none"|"unavailable",
+   retired_since_last: [...], added_since_last: [...]}
 
 Every entry carries its reason IN WORDS. The explorer tool renders them, and a
 roster nobody can explain is one nobody will override when it is wrong.
@@ -403,7 +404,8 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
 def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                    previous: dict | None, now: datetime,
                    admin_doc: dict | None = None, warn=None,
-                   census_problem: str | None = None) -> dict:
+                   census_problem: str | None = None,
+                   previous_problem: str | None = None) -> dict:
     warn = warn or _stderr
     rungs = tier_rungs(policy)
 
@@ -617,6 +619,16 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                        f"{policy['arm_exit_window_weeks']} weeks ({held:.1f}%)")
             retired.append({"id": model_id, "reason": why})
 
+    # Three states, not two: `previous is not None` alone collapses "the
+    # previous roster was there but unreadable" into the same false as
+    # "there is no previous roster (first run)" — the exact gap that let the
+    # published JSON and the rendered Markdown disagree about what happened,
+    # since main() derived the Markdown's state from `previous_problem`
+    # directly while the JSON only ever recorded the boolean. Publishing the
+    # state itself means every caller reads the same fact.
+    previous_state = ("unavailable" if previous_problem
+                      else "compared" if previous is not None else "none")
+
     return {
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": {
@@ -629,7 +641,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         "preflight": preflight,
         "unranked": unranked,
         "excluded": excluded,
-        "compared_to_previous": previous is not None,
+        "compared_to_previous": previous_state == "compared",
+        "previous_state": previous_state,
         "retired_since_last": retired,
         "added_since_last": added,
     }
@@ -638,14 +651,20 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 def render_summary(roster: dict, previous_state: str = "auto") -> str:
     """Markdown for $GITHUB_STEP_SUMMARY. A roster change leads.
 
-    `previous_state` is "auto" (derive it from the roster) or "unavailable"
-    — the previous roster exists but could not be read. The three cases are
-    NOT interchangeable: printing "No change to the arm set since the last
-    run" on a first run, or when the comparison never happened, is a claim
-    about a comparison nobody made.
+    `previous_state` is "auto" (read the roster's own `previous_state`
+    field — this is what every real caller does now that compute_roster
+    fills it in, so the JSON and this Markdown cannot disagree) or an
+    explicit override ("unavailable", "compared", "none") for exercising one
+    state in isolation. The three cases are NOT interchangeable: printing
+    "No change to the arm set since the last run" on a first run, or when
+    the comparison never happened, is a claim about a comparison nobody made.
     """
     lines = ["### Model roster", ""]
     changed = roster["added_since_last"] or roster["retired_since_last"]
+    if previous_state == "auto":
+        previous_state = (roster.get("previous_state") or
+                          ("compared" if roster.get("compared_to_previous")
+                           else "none"))
     if previous_state == "unavailable":
         lines += ["**Roster inputs unavailable** — the previous roster could not "
                   "be read this run, so nothing was compared against it.", ""]
@@ -656,7 +675,7 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
         for entry in roster["retired_since_last"]:
             lines.append(f"- retired `{entry['id']}` — {entry['reason']}")
         lines.append("")
-    elif roster.get("compared_to_previous"):
+    elif previous_state == "compared":
         lines += ["No change to the arm set since the last run.", ""]
     else:
         lines += ["First published roster here — no previous roster to compare "
@@ -717,6 +736,7 @@ def main() -> int:
         now=datetime.now(timezone.utc),
         admin_doc=load_json(args.admin_report),
         census_problem=census_problem,
+        previous_problem=previous_problem,
     )
 
     if not roster["arms"]:
@@ -740,8 +760,7 @@ def main() -> int:
         f.write("\n")
     staged.replace(args.out)
 
-    print(render_summary(roster,
-                         previous_state="unavailable" if previous_problem else "auto"))
+    print(render_summary(roster))
     return 0
 
 

@@ -3370,6 +3370,55 @@ exit 0
         self.assertIsNotNone(error)
         self.assertIn(str(roster_path), error)
 
+    # --- item 10: `compared_to_previous` collapses "unreadable previous"
+    #              into "first run" — publish a third state -------------
+
+    def test_previous_state_is_published_and_the_summary_reads_it_off_the_roster(self):
+        """The JSON and the Markdown used to disagree by construction: main()
+        derived render_summary's `previous_state` argument from
+        `previous_problem` itself, while the roster dict only ever recorded
+        `compared_to_previous: previous is not None` — collapsing "the
+        previous roster was there but unreadable" into the same `False` as
+        "there is no previous roster (first run)". Publishing the state in
+        the roster means render_summary(roster), with no override, already
+        agrees with what actually happened."""
+        result = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=None, now=self.NOW,
+            previous_problem="previous.json is present but unreadable (JSONDecodeError)")
+        self.assertEqual(result["previous_state"], "unavailable")
+        text = roster.render_summary(result)
+        self.assertIn("roster inputs unavailable", text.lower())
+        self.assertNotIn("No change to the arm set", text)
+        self.assertNotIn("First published roster here", text)
+
+    def test_previous_state_distinguishes_none_from_compared(self):
+        first_run = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=None, now=self.NOW)
+        self.assertEqual(first_run["previous_state"], "none")
+        self.assertFalse(first_run["compared_to_previous"])
+
+        previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
+        compared = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=previous, now=self.NOW)
+        self.assertEqual(compared["previous_state"], "compared")
+        self.assertTrue(compared["compared_to_previous"])
+
+    # --- item 11: a fixture pinning neither model nor judge is told only
+    #              about the model pin -------------------------------------
+
+    def test_a_fixture_pinning_neither_model_nor_judge_is_told_about_both(self):
+        fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
+        args = argparse.Namespace(model=None,
+                                  roster=Path("/nonexistent/roster.json"),
+                                  no_judge=False)
+        agent, judge_model, error = run_eval.select_models(fixture, args)
+        self.assertIsNotNone(error)
+        self.assertIn("model", error)
+        self.assertIn("judge model", error)
+
 
 if __name__ == "__main__":
     unittest.main()

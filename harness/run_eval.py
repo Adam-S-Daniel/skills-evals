@@ -153,8 +153,9 @@ def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
     path = _resolve_roster(getattr(args, "roster", None))
     roster, problem = read_roster(path)
     if problem:
-        return None, None, (f"{problem}, and this fixture pins no "
-                            f"{'model' if needs_agent else 'judge model'}")
+        missing = [w for need, w in ((needs_agent, "model"),
+                                     (needs_judge, "judge model")) if need]
+        return None, None, f"{problem}, and this fixture pins no {' or '.join(missing)}"
     arm_ids, judge_id, judge_is_arm, skipped = roster_models(roster)
     raw_arms = roster.get("arms") if isinstance(roster, dict) else None
     if isinstance(raw_arms, list) and raw_arms and not arm_ids:
