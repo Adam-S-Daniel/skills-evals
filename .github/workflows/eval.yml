@@ -299,7 +299,15 @@ jobs:
                  --previous "$work/previous.json" \
                  --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
               cat "$work/roster.err" >&2
-              reason="$(grep -v '^roster: ' "$work/roster.err" | grep -v '^$' | head -n 1)"
+              # The LAST non-empty line, matching the refresh.err extractor
+              # above — not the first. `roster: `-prefixed warn() lines are
+              # NOT filtered out here any more: they are chronologically
+              # first (compute_roster's own warnings), so on the fatal
+              # "refusing to publish" path this still lands on that
+              # informative last line; on an uncaught exception it lands on
+              # the exception's own message rather than the traceback's
+              # useless first line ("Traceback (most recent call last):").
+              reason="$(grep -v '^$' "$work/roster.err" | tail -n 1)"
               return 1
             fi
             cat "$work/roster.err" >&2
@@ -317,6 +325,23 @@ jobs:
               echo "**The roster was not refreshed this run.** ${reason:-unknown failure}"
               echo
               echo "No roster is published; the eval below ran on the fixture pins."
+              # The `roster: `-prefixed warn() lines carry the actual
+              # diagnosis (a stale/unreadable census, skipped bad rows, ...)
+              # and used to reach only the raw job log, never the step
+              # summary — the surface most people actually read first.
+              if [ -f "$work/roster.err" ]; then
+                warnings=$(grep '^roster: ' "$work/roster.err" || true)
+                if [ -n "$warnings" ]; then
+                  echo
+                  echo "<details><summary>roster warnings</summary>"
+                  echo
+                  echo '```'
+                  printf '%s\n' "$warnings"
+                  echo '```'
+                  echo
+                  echo "</details>"
+                fi
+              fi
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 

@@ -2766,12 +2766,18 @@ class TestIssue67Review(unittest.TestCase):
 
     # --- the roster step, actually executed -------------------------------
 
-    def _run_roster_step(self, *, refresh_rc=0, git_shim=None):
+    def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
+                         roster_fail_stderr=None):
         """Run eval.yml's roster step for real, against stubs.
 
         Hermetic: the two python scripts it calls are replaced by stubs, `git`
         by an optional shim, and there is no network and no credential. What is
         under test is the STEP — its failure handling — not the scripts.
+
+        `roster_fail_stderr`, if given, makes the roster.py stub write that
+        exact text to stderr and exit 1 (instead of succeeding) — for
+        exercising the step's own reason-extraction and step-summary logic
+        against a controlled roster.err.
         """
         script = self._step_named("roster")["run"]
         tmp = Path(tempfile.mkdtemp())
@@ -2793,10 +2799,14 @@ class TestIssue67Review(unittest.TestCase):
                 "open(a.out, 'w').write(json.dumps({'models': []}))\n"
                 "open(a.admin_report, 'w').write('{}')\n"),
             encoding="utf-8")
-        (tmp / "harness" / "roster.py").write_text(
-            stub_args + "open(a.out, 'w').write('{}')\n"
-                        "print('### Model roster')\n",
-            encoding="utf-8")
+        if roster_fail_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_fail_stderr!r})\n"
+                           f"sys.exit(1)\n")
+        else:
+            roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
+                                       "print('### Model roster')\n")
+        (tmp / "harness" / "roster.py").write_text(roster_stub, encoding="utf-8")
         subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
         # A real (empty) bare "origin" — actions/checkout always configures
         # one in production, and item 2's fix makes the step's behavior
@@ -3510,6 +3520,39 @@ exit 0
             os.link(original, duplicate)
             counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
         self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1}})
+
+    # --- item 19: eval.yml's two reason extractors disagree (tail vs head),
+    #              and grep -v '^roster: ' discards the diagnosis itself ---
+
+    def test_roster_failure_reason_is_the_last_line_not_the_traceback_header(self):
+        """`head -n 1` on roster.err — even filtered through `grep -v
+        '^roster: '` — picks 'Traceback (most recent call last):' on an
+        uncaught exception: the single least useful line a traceback has.
+        The last line is the exception message."""
+        stderr = ("roster: census.json is present but unreadable (JSONDecodeError)\n"
+                  "Traceback (most recent call last):\n"
+                  '  File "harness/roster.py", line 1, in <module>\n'
+                  "ValueError: something roster.py did not expect\n")
+        got = self._run_roster_step(roster_fail_stderr=stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertIn("ValueError: something roster.py did not expect",
+                      got["out"])
+        self.assertNotIn("Traceback (most recent call last):",
+                         [ln for ln in got["out"].splitlines()
+                          if ln.startswith("::warning::")][0])
+
+    def test_roster_warnings_are_carried_into_the_step_summary(self):
+        """The `roster: `-prefixed warn() lines used to be filtered OUT of
+        the reason candidates and never appeared anywhere but the raw job
+        log — the step summary (the UI surface most people actually read)
+        never showed the diagnosis at all on a failure."""
+        stderr = ("roster: census.json is present but unreadable (JSONDecodeError)\n"
+                  "refusing to publish a roster with no arms: every ranked "
+                  "model is excluded\n")
+        got = self._run_roster_step(roster_fail_stderr=stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("census.json is present but unreadable", got["summary"])
 
 
 if __name__ == "__main__":
