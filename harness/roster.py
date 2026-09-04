@@ -397,7 +397,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
     available = [m for m in ranked if m["id"] not in snapshots]
     available.sort(key=lambda m: _rank(m, rungs))
-    by_id = {m["id"]: m for m in available}
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])
@@ -524,17 +523,41 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     judge["is_arm"] = judge["id"] in arm_ids
 
     # --- preflight ---------------------------------------------------------
-    # Cheapest = the lowest tier the API still returns, and the newest model
-    # within it (the Models API exposes no price; the ladder is the proxy).
-    cheapest = (by_id[newest_by_rung[rung_of(available[0]["id"], rungs)]]
-                if available else None)
-    preflight = ({"id": cheapest["id"],
-                  "reason": (f"cheapest available model: the "
-                             f"{rung_label(rungs, rung_of(cheapest['id'], rungs))} "
-                             f"tier is the lowest the Models API still returns, and "
-                             f"this is the newest model in it")}
-                 if cheapest else {"id": None, "reason": "the Models API returned no "
-                                                         "model this policy can rank"})
+    # Cheapest = the lowest tier the API still returns. Within it, prefer a
+    # model that has cleared the cooling-off: a day-old cheapest-tier model
+    # is exactly the kind an old or narrowly-scoped bearer may not yet be
+    # entitled to invoke, and eval.yml's preflight step this feeds is FATAL
+    # to the whole job — it used to canary on "newest in tier" with no
+    # regard for age at all. Falls back to the newest regardless of age only
+    # when nothing in the tier has cleared cooling-off yet: there being no
+    # older model in the tier to prefer over it.
+    cheapest = None
+    cheapest_reason = None
+    if available:
+        lowest_rung = rung_of(available[0]["id"], rungs)
+        rung_models = [m for m in available if rung_of(m["id"], rungs) == lowest_rung]
+        label = rung_label(rungs, lowest_rung)
+        cooled = []
+        for m in rung_models:  # ascending order -> newest last
+            created = parse_ts(m.get("created_at"))
+            age_days = (now - created).days if created else None
+            if age_days is not None and age_days >= policy["cooling_off_days"]:
+                cooled.append(m)
+        if cooled:
+            cheapest = cooled[-1]
+            cheapest_reason = (f"newest model in the {label} tier that is past the "
+                               f"{policy['cooling_off_days']}-day cooling-off: the "
+                               f"lowest tier the Models API still returns, and this "
+                               f"is its cheapest safely-invocable pick")
+        else:
+            cheapest = rung_models[-1]
+            cheapest_reason = (f"newest model in the {label} tier: the lowest tier "
+                               f"the Models API still returns (still within the "
+                               f"{policy['cooling_off_days']}-day cooling-off — "
+                               f"nothing older in this tier has cleared it yet)")
+    preflight = ({"id": cheapest["id"], "reason": cheapest_reason}
+                if cheapest else {"id": None, "reason": "the Models API returned no "
+                                                        "model this policy can rank"})
 
     # --- what moved --------------------------------------------------------
     added: list[dict] = []

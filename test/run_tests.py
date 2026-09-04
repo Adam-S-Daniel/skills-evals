@@ -3088,6 +3088,114 @@ exec {GIT} "$@"
                 lambda url, headers: next(pages), now=self.NOW)
         self.assertIn("truncated", str(caught.exception).lower())
 
+    # --- item 4a: the preflight pick applies the cooling-off, not just
+    #              "newest in the lowest rung" ----------------------------
+
+    def test_preflight_prefers_a_model_past_cooling_off_over_a_newer_one_inside_it(self):
+        """A day-old cheapest-tier model is exactly the kind an old or
+        narrowly-scoped bearer may not yet be entitled to invoke — and the
+        preflight step this feeds is FATAL to the whole job. When an older,
+        already-cooled-off model exists in the same (cheapest) tier, that is
+        the one to canary with, not the newest arrival."""
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(extra=[TestIssue67._model("claude-haiku-5", yesterday)])
+        result = self._compute(models=models)
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cooling-off", result["preflight"]["reason"])
+
+    def test_preflight_falls_back_to_newest_when_nothing_in_tier_has_cooled_off(self):
+        """The tier's only model is brand new — there is nothing older to
+        prefer, so the newest (still within cooling-off) is the only pick,
+        and the reason says so rather than silently pretending otherwise."""
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-9", yesterday),
+            TestIssue67._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+        result = self._compute(models=models, census=None)
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-9")
+        self.assertIn("within the", result["preflight"]["reason"])
+        self.assertIn("cooling-off", result["preflight"]["reason"])
+
+    # --- item 4b: eval.yml retries the preflight once with the fallback --
+
+    def _run_preflight_step(self, *, roster_doc, claude_shim):
+        """Run eval.yml's WIF auth preflight step for real, against a fake
+        `claude` on PATH. No network, no real credential."""
+        script = self._step_named("preflight")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        if roster_doc is not None:
+            (runner / "roster").mkdir()
+            (runner / "roster" / "latest.json").write_text(
+                json.dumps(roster_doc), encoding="utf-8")
+        bindir = tmp / "bin"
+        bindir.mkdir()
+        fake = bindir / "claude"
+        fake.write_text(claude_shim, encoding="utf-8")
+        fake.chmod(0o755)
+        env = dict(os.environ)
+        env["RUNNER_TEMP"] = str(runner)
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+        script_file = tmp / "preflight_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=60)
+        return {"rc": proc.returncode, "out": proc.stdout + proc.stderr}
+
+    #: Fails when invoked with `--model claude-opus-5` (the roster's pick),
+    #: succeeds on anything else (the ROSTER FALLBACK literal).
+    CLAUDE_SHIM_FAILS_ON_ROSTER_MODEL = '''#!/usr/bin/env bash
+model=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--model" ]; then model="$a"; fi
+  prev="$a"
+done
+if [ "$model" = "claude-opus-5" ]; then
+  echo "not entitled to invoke claude-opus-5" >&2
+  exit 1
+fi
+echo '{"result":"ok"}'
+exit 0
+'''
+
+    CLAUDE_SHIM_ALWAYS_FAILS = '''#!/usr/bin/env bash
+echo "nope" >&2
+exit 1
+'''
+
+    def test_preflight_retries_once_with_the_fallback_on_failure(self):
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(
+            roster_doc=roster, claude_shim=self.CLAUDE_SHIM_FAILS_ON_ROSTER_MODEL)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertIn("claude-opus-5", got["out"])
+        self.assertIn("preflight model: claude-opus-5", got["out"])
+        self.assertIn("preflight model: claude-haiku-4-5", got["out"],
+                      "retried with the fallback")
+
+    def test_preflight_fails_the_job_when_the_fallback_also_fails(self):
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(
+            roster_doc=roster, claude_shim=self.CLAUDE_SHIM_ALWAYS_FAILS)
+        self.assertNotEqual(got["rc"], 0)
+
+    def test_preflight_does_not_retry_when_the_roster_model_already_succeeds(self):
+        always_ok = '''#!/usr/bin/env bash
+echo '{"result":"ok"}'
+exit 0
+'''
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(roster_doc=roster, claude_shim=always_ok)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertNotIn("::warning::", got["out"])
+        self.assertEqual(got["out"].count("preflight model:"), 1,
+                         "no retry when the first attempt already succeeded")
+
 
 if __name__ == "__main__":
     unittest.main()

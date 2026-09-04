@@ -326,27 +326,40 @@ jobs:
       # nothing while this step hardcoded a model of its own.
       #
       # The literal below is the documented ROSTER FALLBACK, and it is the
-      # only model id in this file. It is used ONLY when the step above could
-      # not publish a roster; `test_no_model_ids_are_hardcoded_outside
-      # _fixtures` allows exactly one such literal and only because the
-      # marker on its line says what it is.
+      # only model id in this file. It is used when the step above could not
+      # publish a roster, AND as the one retry when the roster's own
+      # preflight pick fails (a day-old cheapest-tier model can be past the
+      # roster's cooling-off check yet still not entitled for this bearer) —
+      # `test_no_model_ids_are_hardcoded_outside_fixtures` allows exactly one
+      # such literal and only because the marker on its line says what it is.
       - name: WIF auth preflight
         run: |
           set +e
-          model="claude-haiku-4-5" # ROSTER FALLBACK: used only when no roster
+          fallback="claude-haiku-4-5" # ROSTER FALLBACK: used when no roster, and retried once if the roster's preflight model fails
+          model="$fallback"
           roster="$RUNNER_TEMP/roster/latest.json"
           if [ -f "$roster" ]; then
             from_roster=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=(d.get("preflight") or {}).get("id"); print(p if isinstance(p, str) else "")' "$roster" 2>/dev/null)
             if [ -n "$from_roster" ]; then model="$from_roster"; fi
           fi
-          echo "preflight model: $model"
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
+          echo "preflight model: $model"
           out=$(timeout 120 claude -p 'Reply with exactly: ok' \
             --model "$model" --output-format json 2>&1)
           rc=$?
           echo "preflight exit: $rc"
           printf '%s\n' "$out" | tail -c 4000
+          if [ "$rc" -ne 0 ] && [ "$model" != "$fallback" ]; then
+            echo "::warning::preflight failed on roster model $model; retrying with the fallback"
+            model="$fallback"
+            echo "preflight model: $model"
+            out=$(timeout 120 claude -p 'Reply with exactly: ok' \
+              --model "$model" --output-format json 2>&1)
+            rc=$?
+            echo "preflight exit: $rc"
+            printf '%s\n' "$out" | tail -c 4000
+          fi
           exit $rc
 
       - name: Run the eval (both arms, judge)
