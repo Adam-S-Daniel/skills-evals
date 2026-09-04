@@ -1828,17 +1828,54 @@ class TestIssue67(unittest.TestCase):
         self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
                                   "sub-issue until the ADR itself exists")
 
+    #: Anything a maintainer marks with this on the SAME LINE is allowed to
+    #: carry a model id, and each file gets at most one. The marker is the
+    #: whole of the exemption: an unmarked literal is a bug by definition.
+    FALLBACK_MARKER = "ROSTER FALLBACK"
+
+    def _model_id_pattern(self):
+        """The shape of a model id, with the family words taken FROM THE
+        POLICY rather than restated here.
+
+        A literal alternation drifts the moment a rung is added — the guard
+        would then stop looking for the very family that was just introduced,
+        and go on passing. Deriving it means a new rung is covered the day it
+        lands.
+
+        The trailing group is `-<anything lowercase>`, repeated: it catches
+        `claude-opus-4-8`, the older `claude-3-opus-20240229` (hence the
+        optional numeric segment BEFORE the family word) and the alias shapes
+        like `claude-opus-latest` — all of which the previous
+        `-(family)-[0-9]` pattern walked straight past.
+        """
+        families = "|".join(re.escape(w) for w in roster.tier_words(self._policy()))
+        return re.compile(rf"claude-(?:[0-9]+-)?(?:{families})(?:-[0-9a-z.]+)+")
+
     def test_no_model_ids_are_hardcoded_outside_fixtures(self):
-        # `claude-<family>-<n>`: the shape of a model id. Fixtures may pin one;
-        # the roster machinery may not, or the whole point of computing the
-        # roster from the API is lost the first time a model retires.
-        pattern = re.compile(r"claude-(haiku|sonnet|opus|fable|mythos)-[0-9]")
-        for rel in ("harness/roster.py", "scripts/refresh_models.py",
-                    "scripts/model_usage_census.py", "evals/roster-policy.yml"):
+        # Fixtures may pin a model; the roster machinery may not, or the whole
+        # point of computing the roster from the API is lost the first time a
+        # model retires. eval.yml and run_eval.py are in scope because that is
+        # where the two surviving literals were: the preflight's hardcoded
+        # `--model`, and the runner's fall-through to the CLI default.
+        pattern = self._model_id_pattern()
+        # Self-check: the pattern must actually match the shapes it claims to.
+        for shape in ("claude-opus-4-8", "claude-3-opus-20240229",
+                      "claude-opus-latest", "claude-mythos-5-1"):
+            self.assertRegex(shape, pattern, "the guard's own pattern is inert")
+        for rel in ("harness/roster.py", "harness/timeweeks.py",
+                    "harness/run_eval.py", "scripts/refresh_models.py",
+                    "scripts/model_usage_census.py", "evals/roster-policy.yml",
+                    ".github/workflows/eval.yml"):
             text = (REPO_ROOT / rel).read_text(encoding="utf-8")
-            self.assertIsNone(pattern.search(text),
-                              f"{rel} hardcodes a model id: "
-                              f"{pattern.search(text).group(0) if pattern.search(text) else ''}")
+            offenders = [line for line in text.splitlines()
+                         if pattern.search(line)
+                         and self.FALLBACK_MARKER not in line]
+            self.assertEqual(offenders, [], f"{rel} hardcodes a model id")
+            marked = [line for line in text.splitlines()
+                      if self.FALLBACK_MARKER in line and pattern.search(line)]
+            self.assertLessEqual(len(marked), 1,
+                                 f"{rel} carries more than one marked fallback "
+                                 f"literal; there is only ever one")
 
     # --- eval.yml -----------------------------------------------------------
 
@@ -1886,6 +1923,23 @@ class TestIssue67(unittest.TestCase):
                                  "every uses: is a bare 40-hex SHA, no comment")
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
+        # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
+        # `uses: owner/repo@<sha> # v4` sailed through the parsed check above
+        # (mutation-proven). Re-assert it on the raw text, where the comment
+        # still exists. TestIssue67Review carries the same rule; the
+        # duplication is deliberate — this is the test nobody may delete.
+        for line in raw.splitlines():
+            if re.match(r"^\s*(?:-\s+)?uses:", line):
+                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
+                                 "a `uses:` pin carries a trailing comment")
+        for step in doc["jobs"]["eval"]["steps"]:
+            if (step.get("uses") or "").startswith("actions/checkout@"):
+                self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                              False, f"checkout step {step.get('name')!r} keeps a "
+                                     "GitHub credential on the runner")
+        self.assertEqual(doc["concurrency"],
+                         {"group": "real-eval", "cancel-in-progress": False},
+                         "the badge commit races itself without this lane")
 
 
 class TestIssue67Review(unittest.TestCase):
@@ -2650,6 +2704,205 @@ class TestIssue67Review(unittest.TestCase):
                 rc = run_eval.main()
         self.assertEqual(rc, 0)
         self.assertEqual(len(reads), 1, f"read {len(reads)} times for 2 arms")
+    # --- S3 / S4 / S9 / S15: the roster step in eval.yml ------------------
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    def test_the_roster_is_refreshed_before_the_preflight_that_consumes_it(self):
+        names = [s.get("name", "") for s in self._steps()]
+        roster_at = next(i for i, n in enumerate(names) if "roster" in n.lower())
+        preflight_at = next(i for i, n in enumerate(names) if "preflight" in n.lower())
+        self.assertLess(roster_at, preflight_at,
+                        "the preflight takes its model from the roster, so the "
+                        "roster has to exist first")
+
+    def test_the_preflight_takes_its_model_from_the_roster(self):
+        script = self._step_named("preflight")["run"]
+        self.assertIn("roster/latest.json", script,
+                      "`preflight` was computed and consumed by nothing")
+        self.assertIn('"preflight"', script, "it reads the preflight entry")
+        self.assertIn('--model "$model"', script,
+                      "the model is a variable the roster fills in, not a literal")
+        # Exactly one model id in the whole file, and it carries the marker.
+        raw = self.WORKFLOW.read_text(encoding="utf-8")
+        pattern = TestIssue67._model_id_pattern(TestIssue67())
+        literals = [ln for ln in raw.splitlines() if pattern.search(ln)]
+        self.assertEqual(len(literals), 1, literals)
+        self.assertIn("ROSTER FALLBACK", literals[0])
+
+    # --- the roster step, actually executed -------------------------------
+
+    def _run_roster_step(self, *, refresh_rc=0, git_shim=None):
+        """Run eval.yml's roster step for real, against stubs.
+
+        Hermetic: the two python scripts it calls are replaced by stubs, `git`
+        by an optional shim, and there is no network and no credential. What is
+        under test is the STEP — its failure handling — not the scripts.
+        """
+        script = self._step_named("roster")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "scripts").mkdir()
+        (tmp / "harness").mkdir()
+        (tmp / "evals").mkdir()
+        (tmp / "evals" / "roster-policy.yml").write_text("tiers: []\n", encoding="utf-8")
+        stub_args = ("import sys, json, argparse\n"
+                     "p = argparse.ArgumentParser()\n"
+                     "for f in ('--models','--policy','--census',"
+                     "'--admin-report','--previous','--out'):\n"
+                     "    p.add_argument(f)\n"
+                     "a = p.parse_args()\n")
+        (tmp / "scripts" / "refresh_models.py").write_text(
+            stub_args + (
+                "print('Models API read failed: HTTP 503', file=sys.stderr)\n"
+                "sys.exit(1)\n" if refresh_rc else
+                "open(a.out, 'w').write(json.dumps({'models': []}))\n"
+                "open(a.admin_report, 'w').write('{}')\n"),
+            encoding="utf-8")
+        (tmp / "harness" / "roster.py").write_text(
+            stub_args + "open(a.out, 'w').write('{}')\n"
+                        "print('### Model roster')\n",
+            encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        env = dict(os.environ)
+        env.update({"RUNNER_TEMP": str(runner),
+                    "GITHUB_ENV": str(tmp / "github_env"),
+                    "GITHUB_STEP_SUMMARY": str(tmp / "summary.md")})
+        (tmp / "github_env").write_text("", encoding="utf-8")
+        (tmp / "summary.md").write_text("", encoding="utf-8")
+        if git_shim:
+            bindir = tmp / "bin"
+            bindir.mkdir()
+            shim = bindir / "git"
+            shim.write_text(git_shim.replace("{GIT}", shutil.which("git")),
+                            encoding="utf-8")
+            shim.chmod(0o755)
+            env["PATH"] = f"{bindir}:{env['PATH']}"
+        proc = subprocess.run(["bash", "-c", script], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=120)
+        return {
+            "rc": proc.returncode,
+            "out": proc.stdout + proc.stderr,
+            "roster": runner / "roster" / "latest.json",
+            "env": (tmp / "github_env").read_text(encoding="utf-8"),
+            "summary": (tmp / "summary.md").read_text(encoding="utf-8"),
+        }
+
+    def test_the_roster_step_publishes_a_roster_on_the_happy_path(self):
+        got = self._run_roster_step()
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertTrue(got["roster"].is_file(), got["out"])
+        self.assertIn("EVAL_ROSTER=", got["env"])
+        self.assertIn("Model roster", got["summary"])
+
+    def test_a_models_api_failure_does_not_fail_the_eval(self):
+        """S4: the roster step sits ahead of the eval and the badge, neither of
+        which ever depended on it. A Models API blip must not kill both."""
+        got = self._run_roster_step(refresh_rc=1)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists(),
+                         "no roster is published — never a partial one")
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+        self.assertIn("not refreshed", got["summary"].lower())
+
+    #: `fetch` fails, `ls-remote` says the branch is there — a transient
+    #: network failure, not a first run. Anything else goes to the real git.
+    GIT_SHIM_FETCH_FAILS = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
+    ls-remote) printf 'deadbeef\\trefs/heads/eval-results\\n'; exit 0 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    #: `fetch` fails and the branch does not exist either — a genuine first run.
+    GIT_SHIM_FIRST_RUN = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) exit 128 ;;
+    ls-remote) exit 0 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    def test_a_failed_fetch_is_not_read_as_a_first_run(self):
+        """S9: `git fetch || true` conflated a transient failure with a first
+        run, and the roster then asserted 'no fresh census (none published)'."""
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_FETCH_FAILS)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists())
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+
+    def test_a_genuine_first_run_still_computes_a_roster(self):
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_FIRST_RUN)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertTrue(got["roster"].is_file(), got["out"])
+
+    def test_the_admin_usage_report_is_written_outside_the_published_directory(self):
+        """S15: it went into the very directory the commit step copies from."""
+        script = self._step_named("roster")["run"]
+        self.assertNotIn('roster/admin-usage.json', script)
+        self.assertIn('"$RUNNER_TEMP/admin-usage.json"', script)
+        got = self._run_roster_step()
+        published = got["roster"].parent
+        self.assertEqual(sorted(p.name for p in published.iterdir()),
+                         ["latest.json"],
+                         "only the roster itself lives in the copied directory")
+
+    # --- S14: the security header's rules, checked where they live -------
+
+    def test_every_uses_line_is_bare_in_the_RAW_file(self):
+        """The parsed-YAML check cannot see this: yaml.safe_load strips the
+        comment, so `uses: owner/repo@<sha> # v4` passed it (mutation-proven).
+        A trailing version comment is a LEXICAL property of the file, and a
+        regex over the raw text is the right tool for a lexical property."""
+        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$")
+        raw = self.WORKFLOW.read_text(encoding="utf-8")
+        lines = [ln for ln in raw.splitlines() if re.match(r"^\s*(?:-\s+)?uses:", ln)]
+        self.assertTrue(lines, "no `uses:` lines found — the check is inert")
+        for line in lines:
+            with self.subTest(line=line.strip()):
+                self.assertRegex(line, bare,
+                                 "every `uses:` is a bare 40-hex SHA with no "
+                                 "trailing version/date comment")
+
+    def test_every_checkout_disables_persist_credentials(self):
+        checkouts = [s for s in self._steps()
+                     if (s.get("uses") or "").startswith("actions/checkout@")]
+        self.assertTrue(checkouts)
+        for step in checkouts:
+            with self.subTest(step=step.get("name")):
+                self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                              False)
+
+    def test_the_concurrency_group_is_still_there(self):
+        """Nothing in this round adds or changes it — that is the assertion.
+        The badge commit races itself without it."""
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        self.assertEqual(doc["concurrency"],
+                         {"group": "real-eval", "cancel-in-progress": False})
+
+    def test_no_run_block_interpolates_an_actions_expression(self):
+        for step in self._steps():
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("${{", step.get("run") or "")
 
 if __name__ == "__main__":
     unittest.main()
