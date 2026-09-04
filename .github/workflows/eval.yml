@@ -21,6 +21,12 @@
 #   with the key in env — write access to any of the three checked-out
 #   registries is equivalent to key access here. All four repos (this one
 #   included) are maintainer-only; keep it that way or drop the key.
+#   cms-platform and adamdaniel.ai also land commits on their default
+#   branches through automated lanes — Decap CMS editorial publish loops,
+#   auto-merge nudges, dependabot auto-merge — not only direct maintainer
+#   pushes. A commit landed by one of those lanes is inside this trust
+#   boundary just the same as a maintainer's own push: treat it as trusted,
+#   or drop the key.
 #
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
 #   secret exists. The Claude Code CLI does not resolve the
@@ -56,7 +62,7 @@
 #   (600s per arm, 120s per judge call); the workspace spend limit, not
 #   this workflow, is the hard ceiling.
 #
-# * Both checkouts use `persist-credentials: false`; push auth is injected
+# * All four checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
 #   only credential in reach is the short-lived WIF-derived access token

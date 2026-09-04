@@ -144,13 +144,22 @@ two layouts for `<plugin>`:
   alongside other skills under that same `adam` bundle.
 
 Because the plugin/bundle directory name can't be assumed to equal the skill
-name, `run_agent` resolves it with a glob — `plugins/*/skills/<skill>` —
-rather than hardcoding `plugins/<skill>/skills/<skill>`. Matches are sorted
-and the first is used, so resolution is deterministic even if a skill name
-were ever (mistakenly) present under more than one plugin/bundle. The
-`with_skill` arm then copies that resolved nested directory (the one
-containing `SKILL.md`) to `<workspace>/.claude/skills/<skill>/` — copying the
-outer plugin/bundle directory instead would silently produce a workspace
+name — and because cms-platform's flat `skills/<skill>/` and adamdaniel.ai's
+`.claude/skills/<skill>/` shapes need the same treatment (issue #63) —
+resolution is not a glob hardcoded in `run_agent` any more. Each registry
+gets a `layout` glob in [`harness/registries.yml`](harness/registries.yml)
+(`plugins/*/skills/*/SKILL.md` for agentskills, `skills/*/SKILL.md` for
+cms-platform, `.claude/skills/*/SKILL.md` for adamdaniel.ai), and `run_agent`
+substitutes the skill name for the placeholder segment immediately before
+`SKILL.md`. It globs for the `SKILL.md` FILE itself, not the containing
+directory, and takes that file's parent — so a skill directory that exists
+but has no `SKILL.md` inside it (a stub left by a rename, a bundle
+mid-migration) fails closed as `skill_not_found` rather than "installing"
+whatever's actually in there. Matches are sorted and the first is used, so
+resolution is deterministic even if a skill name were ever (mistakenly)
+present under more than one plugin/bundle. The `with_skill` arm then copies
+that resolved directory to `<workspace>/.claude/skills/<skill>/` — copying
+the outer plugin/bundle directory instead would silently produce a workspace
 where the skill never loads. `run_agent` fails loudly, naming the glob
 pattern searched, if nothing matches.
 

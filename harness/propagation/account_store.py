@@ -260,7 +260,12 @@ def read_manifest(store: Path) -> list:
 
 
 def registry_skill_dir(registry: Path, name: str) -> Path | None:
-    """`plugins/*/skills/<name>` — the same glob run_eval.py resolves with."""
+    """`plugins/*/skills/<name>` — agentskills' own layout, hardcoded here
+    since this audit only ever compares against the agentskills registry.
+    run_eval.py now resolves this per-registry via harness/registries.yml
+    (issue #63) rather than a single hardcoded glob; this one is unaffected
+    and deliberately stays a plain agentskills-shaped glob.
+    """
     matches = sorted(p for p in (registry / "plugins").glob(f"*/skills/{name}")
                      if p.is_dir())
     return matches[0] if matches else None
