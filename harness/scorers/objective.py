@@ -452,6 +452,196 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
 
 
+# --------------------------------------------------------------------------
+# Structural workflow-step checks (issue #86, post-failure-comment)
+# --------------------------------------------------------------------------
+
+# A ref that is neither a 40-hex commit SHA nor an obviously-floating branch
+# name. Doesn't have to be semver-shaped — this only needs to reject the two
+# things that would defeat "pin to a release": an unpinned floating branch,
+# and (the opposite mistake) a full commit SHA, which is what the fleet's
+# general SHA-pinning rule would produce if applied to the one ref carved out
+# of it (an own-account cms-platform ref, which stays on its release tag).
+_FLOATING_REF_NAMES = {"main", "master", "head", "latest", "trunk"}
+
+
+def _looks_like_a_tag(ref: str) -> bool:
+    if not ref or SHA_RE.match(ref):
+        return False
+    return ref.lower() not in _FLOATING_REF_NAMES
+
+
+def _stringify_if(value) -> str:
+    """A step/job `if:` as a string. YAML can hand back a bare boolean for an
+    unquoted `if: true`-shaped value; every real workflow `if:` is either a
+    string or absent, so absent becomes "" (never matches an `if_contains`
+    substring, which is the correct "no gate at all" reading).
+    """
+    if value is None:
+        return ""
+    return str(value)
+
+
+def _iter_workflow_steps(doc: dict):
+    """Yield (job_id, job, step) for every step in every job of a parsed
+    workflow document. Jobs/steps of the wrong shape are skipped rather than
+    raised on — a workflow that doesn't parse into the expected mapping shape
+    yields nothing, which reads as "no matching step found" like any other
+    workflow that genuinely has none.
+    """
+    jobs = doc.get("jobs")
+    if not isinstance(jobs, dict):
+        return
+    for job_id, job in jobs.items():
+        if not isinstance(job, dict):
+            continue
+        for step in job.get("steps") or []:
+            if isinstance(step, dict):
+                yield job_id, job, step
+
+
+def _job_matches(job_id: str, job: dict, job_selector: str | None) -> bool:
+    if job_selector is None:
+        return True
+    if job_selector == job_id:
+        return True
+    return isinstance(job.get("name"), str) and job["name"] == job_selector
+
+
+def workflow_step_uses(workspace: str, patterns: list[str], *,
+                       uses_suffix: str | None = None,
+                       job: str | None = None,
+                       job_if_equals: str | None = None,
+                       job_needs_nonempty: bool = False,
+                       if_contains: str | None = None,
+                       with_present: list[str] | None = None,
+                       with_equals: dict | None = None,
+                       with_tag_ref: str | None = None,
+                       unique_with_key: str | None = None,
+                       min_matches: int = 1) -> tuple[bool, str]:
+    """Structural assertions over parsed workflow YAML: does at least
+    `min_matches` step, across every workflow matched by `patterns`, call a
+    `uses:` action whose ref (the part before '@') ends with `uses_suffix`,
+    inside a job matching `job` (by id or `name:`), satisfying the given
+    job/step-level shape?
+
+    Every constraint below is decided structurally, by walking the parsed
+    jobs/steps tree — never a line or regex scan deciding WHICH step or job is
+    in play. Only once a step is already selected does a `with:`/`if:`/`uses:`
+    VALUE (a leaf string) get a plain string test — e.g. `if_contains`,
+    `with_equals`, `with_tag_ref` — which is the "leaf strings tested
+    lexically" half of the house rule, not a shortcut around the structural
+    half.
+
+    `unique_with_key` switches to a second mode instead of the match/count
+    check above: collect every `uses_suffix`-matching step's `with[key]`
+    value across every matched file, group by value, and fail if any value's
+    steps span more than one FILE. This is deliberately looser than "unique
+    per step": the documented convention pairs a `post` and a `resolve` call
+    in the SAME workflow under the SAME marker (that's the dedup key, not a
+    collision) — only two DIFFERENT workflows sharing one marker is the
+    clobbering bug.
+    """
+    matches = []  # (rel, job_id, job, step) for every uses_suffix-matching step
+    for rel, doc in _load_workflows(workspace, patterns):
+        if doc is None:
+            continue
+        for job_id, job_body, step in _iter_workflow_steps(doc):
+            uses = step.get("uses")
+            if not isinstance(uses, str):
+                continue
+            ref = uses.split("@", 1)[0]
+            if uses_suffix is not None and not ref.endswith(uses_suffix):
+                continue
+            matches.append((rel, job_id, job_body, step))
+
+    if unique_with_key is not None:
+        by_value: dict[str, set[str]] = {}
+        for rel, _job_id, _job_body, step in matches:
+            with_block = step.get("with")
+            if not isinstance(with_block, dict):
+                continue
+            value = with_block.get(unique_with_key)
+            if value is None:
+                continue
+            by_value.setdefault(str(value), set()).add(rel)
+        dupes = {v: sorted(files) for v, files in by_value.items() if len(files) > 1}
+        if dupes:
+            detail = "; ".join(f"{v!r} used in {', '.join(fs)}" for v, fs in sorted(dupes.items()))
+            return (False, f"{unique_with_key!r} not unique per workflow: {detail}")
+        return (True, f"every {unique_with_key!r} distinct across workflows "
+                      f"({len(by_value)} value(s) seen)")
+
+    qualifying = []
+    for rel, job_id, job_body, step in matches:
+        if job is not None and not _job_matches(job_id, job_body, job):
+            continue
+        if job_if_equals is not None and _stringify_if(job_body.get("if")) != job_if_equals:
+            continue
+        if job_needs_nonempty:
+            needs = job_body.get("needs")
+            has_needs = (isinstance(needs, str) and bool(needs)) or \
+                       (isinstance(needs, list) and len(needs) > 0)
+            if not has_needs:
+                continue
+        if if_contains is not None and if_contains not in _stringify_if(step.get("if")):
+            continue
+        with_block = step.get("with") if isinstance(step.get("with"), dict) else {}
+        if with_present and any(not with_block.get(k) for k in with_present):
+            continue
+        if with_equals and any(with_block.get(k) != v for k, v in with_equals.items()):
+            continue
+        if with_tag_ref is not None and not _looks_like_a_tag(str(with_block.get(with_tag_ref) or "")):
+            continue
+        qualifying.append((rel, job_id))
+
+    if len(qualifying) >= min_matches:
+        return (True, f"{len(qualifying)} matching step(s): "
+                      f"{', '.join(f'{rel}:{jid}' for rel, jid in qualifying)}")
+    return (False,
+            f"expected >= {min_matches} step(s) matching (uses ending "
+            f"{uses_suffix!r}, job={job!r}, job_if_equals={job_if_equals!r}, "
+            f"job_needs_nonempty={job_needs_nonempty!r}, if_contains={if_contains!r}, "
+            f"with_present={with_present!r}, with_equals={with_equals!r}, "
+            f"with_tag_ref={with_tag_ref!r}) — found {len(qualifying)} of "
+            f"{len(matches)} step(s) with a matching `uses:`")
+
+
+# `${{ ... github.event.<x> ... }}` or `${{ ... inputs.<x> ... }}` anywhere
+# inside one `${{ }}` expression — the untrusted-payload half of the classic
+# Actions script-injection vector (the composite action's own "Security: env
+# vars, not interpolation" rule exists for exactly this reason, for its
+# embedded github-script calls; this check applies the same rule to `run:`).
+_EVENT_OR_INPUT_INTERPOLATION_RE = re.compile(
+    r"\$\{\{[^}]*\b(?:github\.event\.|inputs\.)[^}]*\}\}")
+
+
+def no_event_interpolation_in_run(workspace: str, patterns: list[str]) -> tuple[bool, str]:
+    """No `run:` step body may interpolate `${{ github.event.* }}` or
+    `${{ inputs.* }}` directly into the shell command.
+
+    Structural first, lexical only at the leaf: the YAML is parsed and walked
+    to every step's `run:` VALUE, and only that leaf string is regex-tested —
+    never a raw line scan of the file, which cannot tell a `run:` body apart
+    from a comment, a `with:` block, or an unrelated string elsewhere in the
+    same document.
+    """
+    problems = []
+    for rel, doc in _load_workflows(workspace, patterns):
+        if doc is None:
+            continue
+        for job_id, _job_body, step in _iter_workflow_steps(doc):
+            run_body = step.get("run")
+            if not isinstance(run_body, str):
+                continue
+            hits = _EVENT_OR_INPUT_INTERPOLATION_RE.findall(run_body)
+            if hits:
+                label = step.get("name") or step.get("id") or "(unnamed step)"
+                problems.append(f"{rel}:{job_id}:{label}: {', '.join(hits)}")
+    return (not problems, "no run: step interpolates github.event.* or inputs.*"
+            if not problems else "; ".join(problems))
+
+
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "yaml_parses": yaml_parses,
@@ -462,6 +652,8 @@ CHECKS = {
     "files_unchanged": files_unchanged,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
+    "workflow_step_uses": workflow_step_uses,
+    "no_event_interpolation_in_run": no_event_interpolation_in_run,
 }
 
 
@@ -495,6 +687,12 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "workflow_step_uses":
+            for key in ("uses_suffix", "job", "job_if_equals", "job_needs_nonempty",
+                       "if_contains", "with_present", "with_equals", "with_tag_ref",
+                       "unique_with_key", "min_matches"):
+                if key in check:
+                    kwargs[key] = check[key]
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

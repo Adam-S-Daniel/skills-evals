@@ -1,0 +1,30 @@
+name: Visual regression
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b95a8788078d258779e994565cf6eef663ff911e
+      - uses: actions/setup-node@0d8272df0b6587bb41dfe4211061c1d8a3370a1f
+        with:
+          node-version: "20"
+      - run: npm ci
+      - name: Run chromium visual tests
+        run: npx playwright test --project=chromium 2>&1 | tee /tmp/visual-chromium.log
+
+  firefox:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b95a8788078d258779e994565cf6eef663ff911e
+      - uses: actions/setup-node@0d8272df0b6587bb41dfe4211061c1d8a3370a1f
+        with:
+          node-version: "20"
+      - run: npm ci
+      - name: Run firefox visual tests
+        run: npx playwright test --project=firefox 2>&1 | tee /tmp/visual-firefox.log

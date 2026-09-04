@@ -1,0 +1,196 @@
+# Eval fixture: post-failure-comment
+# Measures whether the post-failure-comment skill improves an agent's ability
+# to wire a workflow's captured Playwright log into the platform's
+# .github/actions/post-failure-comment composite action, instead of an ad hoc
+# inline comment block — and to follow the composite's caller-side-gating
+# convention exactly, including the shapes the skill documents as broken.
+
+skill: post-failure-comment
+registry: https://github.com/Adam-S-Daniel/cms-platform
+
+# Class A (workspace transform, per DESIGN.md's four-instrument taxonomy):
+# correctness is decidable from the resulting workflow files alone, so the
+# objective checks below carry the whole behavioural spec; the judge is left
+# only what genuinely needs judgement (see judge_rubric).
+model: claude-sonnet-5
+
+judge:
+  model: claude-opus-4-8
+  # Weighted overall — the harness recomputes it from these and ignores the
+  # judge's own arithmetic. Convention fidelity carries the correctness axis
+  # (every documented gate/shape, including the two "don't repeat" traps);
+  # restraint is a guardrail, not a substitute for doing the work, so it is
+  # weighted below convention fidelity, per DESIGN.md's "correctness outweighs
+  # guardrails" rule — an equal-weighted restraint quietly rewards an arm that
+  # touches only the schedule-only workflow and calls it done.
+  weights:
+    convention_fidelity: 0.5
+    gitleaks_explanation: 0.2
+    restraint: 0.3
+
+prompt: >
+  Make CI failures in these workflows self-report to the PR the way the
+  platform's failure-comment action expects.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# Objective checks run by harness/scorers/objective.py against the resulting
+# workspace. All structural (yaml-parsed jobs/steps), never a line/regex scan
+# deciding WHICH step or job is in play — only a selected step's leaf VALUES
+# (an `if:` string, a `with:` value, a `run:` body) get a plain string test.
+objective_checks:
+  - id: workflows-still-parse
+    description: All three workflow files still parse as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml"]
+
+  - id: schedule-only-workflow-untouched
+    description: >
+      nightly-audit.yml has no PR to comment on (schedule-only) and must be
+      left byte-identical — the skill's own "When NOT to use this" section.
+    type: files_unchanged
+    paths: [".github/workflows/nightly-audit.yml"]
+
+  - id: e2e-inline-block-removed
+    description: >
+      The pre-composite ad hoc block (raw `gh pr comment`, the log
+      interpolated straight into the shell command, no marker, no gitleaks)
+      is gone from e2e-tests.yml, not merely left alongside the composite call.
+    type: file_matches
+    paths: [".github/workflows/e2e-tests.yml"]
+    must_not_match:
+      - "gh pr comment"
+      - "steps\\.capture\\.outputs\\.log"
+
+  - id: e2e-post-step
+    description: >
+      e2e-tests.yml's `e2e` job calls the composite with `if: failure()`,
+      mode: post, and a real log-file/marker/title — the single-job shape
+      from the skill's caller convention.
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: e2e
+    if_contains: "failure()"
+    with_present: ["log-file", "marker", "title"]
+    with_equals:
+      mode: post
+
+  - id: e2e-resolve-step
+    description: e2e-tests.yml's `e2e` job resolves the comment on success.
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: e2e
+    if_contains: "success()"
+    with_present: ["marker", "title"]
+    with_equals:
+      mode: resolve
+
+  - id: e2e-cms-platform-checked-out-on-a-tag
+    description: >
+      The composite lives at ./.cms-platform/..., so e2e-tests.yml must check
+      the platform out itself, pinned to a release TAG — the one carve-out
+      from the fleet's SHA-pinning rule, so a bare SHA here is wrong too, not
+      just an unpinned branch.
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml"]
+    uses_suffix: "actions/checkout"
+    with_equals:
+      repository: Adam-S-Daniel/cms-platform
+    with_tag_ref: ref
+
+  - id: visual-regression-report-job-shape
+    description: >
+      The multi-job workflow's failure-comment calls live in a final job that
+      always runs regardless of the upstream jobs' outcome and depends on them
+      — the `needs:` + `if: always()` shape (job.status/failure()/success()
+      only reflect the FINALIZE job's own state, never the matrix's).
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: report
+    job_if_equals: always()
+    job_needs_nonempty: true
+
+  - id: visual-regression-post-step
+    description: >
+      The report job's post call gates on `needs.<job>.result`, not
+      `job.status` or a bare `failure()` (which would read the report job's
+      own trivial status, not the matrix's).
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: report
+    if_contains: "needs."
+    with_present: ["log-file", "marker", "title"]
+    with_equals:
+      mode: post
+
+  - id: visual-regression-resolve-step
+    description: The report job resolves the comment when neither upstream job failed.
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: report
+    if_contains: "needs."
+    with_present: ["marker", "title"]
+    with_equals:
+      mode: resolve
+
+  - id: visual-regression-cms-platform-checked-out-on-a-tag
+    description: Same platform-checkout requirement as e2e-tests.yml, independently.
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "actions/checkout"
+    with_equals:
+      repository: Adam-S-Daniel/cms-platform
+    with_tag_ref: ref
+
+  - id: markers-unique-per-workflow
+    description: >
+      No two DIFFERENT workflows share a marker (they would clobber each
+      other's comments) — a `post`/`resolve` pair in the SAME workflow
+      sharing one marker is the correct dedup key, not a collision.
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml", ".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    unique_with_key: marker
+
+  - id: no-event-or-input-interpolation-in-run
+    description: >
+      No `run:` step interpolates `${{ github.event.* }}` or `${{ inputs.* }}`
+      directly into a shell command, in any workflow — the log and any PR
+      metadata now flow through the composite's own inputs/env, not a hand
+      rolled `gh pr comment` line.
+    type: no_event_interpolation_in_run
+    paths: [".github/workflows/*.yml"]
+
+# Judge scoring: 3 dimensions, 0-10 each, dictated to match judge.weights'
+# keys exactly. Everything decidable from the workflow files alone is
+# checked objectively above; the judge is left only what needs judgement.
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) convention_fidelity — did the agent follow the composite's documented
+  caller convention exactly: caller-side `if: failure()`/`if: success()`
+  gating (never moved inside the action), the correct outcome source for each
+  workflow's shape (a bare `failure()`/`success()` for the single-job
+  workflow, `needs.<job>.result` for the multi-job one — never `job.status`,
+  which the skill documents as silently expanding to an empty string inside
+  the action's own `with:` block), a real captured log path, a marker unique
+  per workflow, and `pull-requests: write` granted wherever the composite is
+  called. Cap this dimension at 4 if either of the skill's documented "don't
+  repeat" patterns appears anywhere in the result.
+  (2) gitleaks_explanation — since nothing objective here can see WHY the
+  wiring is safe, does the agent's reply explain that every comment posted
+  through the composite is scrubbed via its bundled gitleaks pass-through,
+  that this has no caller-side opt-out, and that this is exactly why the
+  agent did not need to (and should not) add its own redaction step?
+  (3) restraint — did the agent leave nightly-audit.yml alone, avoid editing
+  the vendored .cms-platform/ action contract, avoid inventing a new marker
+  convention or a third mode the action doesn't support, and avoid touching
+  files outside the two Playwright workflows?
