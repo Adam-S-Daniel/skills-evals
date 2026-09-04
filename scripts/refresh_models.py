@@ -93,7 +93,10 @@ def build_models_document(fetch, now: datetime, headers: dict | None = None,
     models: list[dict] = []
     after: str | None = None
     seen: set[str] = set()
-    while True:
+    # Bounded: a server that keeps answering `has_more` with the same cursor
+    # would otherwise spin forever inside a step that holds a credential. The
+    # catalogue is tens of models, so 20 pages is far past any real answer.
+    for _ in range(20):
         params = {"limit": page_size}
         if after:
             params["after_id"] = after
@@ -107,9 +110,10 @@ def build_models_document(fetch, now: datetime, headers: dict | None = None,
             models.append({field: entry.get(field) for field in MODEL_FIELDS})
         if not page.get("has_more") or not entries:
             break
-        after = page.get("last_id") or entries[-1].get("id")
-        if not after:
+        next_after = page.get("last_id") or entries[-1].get("id")
+        if not next_after or next_after == after:
             break
+        after = next_after
 
     models.sort(key=lambda m: m["id"])
     return {"fetched_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "models": models}
