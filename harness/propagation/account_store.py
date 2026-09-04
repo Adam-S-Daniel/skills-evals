@@ -263,8 +263,14 @@ def registry_skill_dir(registry: Path, name: str) -> Path | None:
     """`plugins/*/skills/<name>` — agentskills' own layout, hardcoded here
     since this audit only ever compares against the agentskills registry.
     run_eval.py now resolves this per-registry via harness/registries.yml
-    (issue #63) rather than a single hardcoded glob; this one is unaffected
-    and deliberately stays a plain agentskills-shaped glob.
+    (issue #63) rather than a single hardcoded glob; this one is deliberately
+    unchanged and stays a plain agentskills-shaped glob. That is NOT a clean
+    bill of health, though: unlike run_eval.py's `_skill_md_glob`, this still
+    globs for the skill DIRECTORY rather than for `SKILL.md` itself, so the
+    same stub hazard #63 closed there (a skill dir with no SKILL.md, e.g. a
+    rename or bundle mid-migration) is still open here — a future audit run
+    can still "find" a directory with nothing to compare. No behavior change
+    made in this pass.
     """
     matches = sorted(p for p in (registry / "plugins").glob(f"*/skills/{name}")
                      if p.is_dir())

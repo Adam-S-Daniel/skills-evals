@@ -42,6 +42,32 @@ REGISTRIES_YML = Path(__file__).parent / "registries.yml"
 _REQUIRED_REGISTRY_FIELDS = ("name", "url", "layout")
 
 
+def _normalize_registry_url(url: str) -> str:
+    """Case-insensitive, trailing-slash- and .git-suffix-insensitive form of
+    a registry URL, so `https://github.com/Org/repo/`, `...repo.git`, and a
+    differently-cased host or path all match the same registries.yml entry.
+    """
+    url = url.strip().rstrip("/")
+    if url.lower().endswith(".git"):
+        url = url[:-4]
+    return url.lower()
+
+
+def _layout_parts(layout: str) -> list[str]:
+    """Split a registries.yml `layout` glob into path segments and check it
+    ends in the skill-name placeholder immediately before `SKILL.md` — the
+    one shape `_skill_md_glob` can substitute into. Shared by load-time
+    validation and `_skill_md_glob` itself so the two can never drift apart:
+    a layout that "passes" at load time (e.g. `skills/bundle*/SKILL.md`,
+    which merely ends with the substring `*/SKILL.md`) but is rejected at
+    arm time by a stricter check used to raise uncaught, deep inside a run.
+    """
+    parts = layout.split("/")
+    if len(parts) < 2 or parts[-1] != "SKILL.md" or parts[-2] != "*":
+        raise ValueError(f"layout {layout!r} must end in '*/SKILL.md'")
+    return parts
+
+
 def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
     """harness/registries.yml: [{name, url, layout}, ...] — this harness's own
     record of registry name/URL/layout, kept in step by hand with agentskills'
@@ -55,8 +81,11 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
     """
     if not path.is_file():
         raise ValueError(f"{path} not found")
-    with open(path, encoding="utf-8") as f:
-        doc = yaml.safe_load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = yaml.safe_load(f)
+    except yaml.YAMLError as exc:
+        raise ValueError(f"{path} is not valid YAML: {exc}") from exc
     if not isinstance(doc, dict) or not doc.get("registries"):
         raise ValueError(f"{path} is empty or missing a top-level 'registries:' key")
     entries = doc["registries"]
@@ -68,27 +97,44 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
     for i, entry in enumerate(entries):
         if not isinstance(entry, dict):
             raise ValueError(f"{path} registries[{i}] must be a mapping")
-        missing = [f for f in _REQUIRED_REGISTRY_FIELDS if not entry.get(f)]
+        # Presence first (a genuinely absent or blank field), then type —
+        # `not entry.get(f)` alone would misreport a wrong-typed-but-present
+        # value (`name: no` parses as the bool False) as "missing" instead of
+        # naming the real problem.
+        missing = [f for f in _REQUIRED_REGISTRY_FIELDS
+                  if entry.get(f) is None or entry.get(f) == ""]
         if missing:
             raise ValueError(
                 f"{path} registries[{i}] is missing required field(s): "
                 f"{', '.join(missing)}")
+        bad_type = [f for f in _REQUIRED_REGISTRY_FIELDS
+                   if not isinstance(entry.get(f), str)]
+        if bad_type:
+            raise ValueError(
+                f"{path} registries[{i}] field(s) must be strings: " +
+                ", ".join(f"{f!r} is {type(entry[f]).__name__}" for f in bad_type))
         name, url, layout = entry["name"], entry["url"], entry["layout"]
         if name in seen_names:
             raise ValueError(f"{path} has a duplicate registry name {name!r}")
         seen_names.add(name)
-        norm_url = url.rstrip("/")
+        norm_url = _normalize_registry_url(url)
         if norm_url in seen_urls:
             raise ValueError(f"{path} has a duplicate registry url {url!r}")
         seen_urls.add(norm_url)
-        if not layout.endswith("*/SKILL.md"):
+        try:
+            _layout_parts(layout)
+        except ValueError as exc:
             raise ValueError(
                 f"{path} entry {name!r} has layout {layout!r} — must end in "
-                "'*/SKILL.md'")
+                "'*/SKILL.md'") from exc
         if Path(layout).is_absolute():
             raise ValueError(
                 f"{path} entry {name!r} has an absolute layout {layout!r} — "
                 "layouts are globbed relative to the registry checkout")
+        if ".." in Path(layout).parts:
+            raise ValueError(
+                f"{path} entry {name!r} has layout {layout!r} containing "
+                "'..' — layouts must stay within the registry checkout")
     return entries
 
 
@@ -98,6 +144,9 @@ def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
     legacy invocation (`--registry ../agentskills`) keeps working unchanged.
     An empty PATH (`--registry agentskills=`, or a bare empty string) is
     rejected here rather than silently resolving to the current directory.
+    A NAME repeated across two flags (bare or explicit) is rejected too —
+    silently taking the last one made a copy-pasted or re-ordered invocation
+    "work" while quietly dropping the first flag's registry.
     """
     out: dict[str, str] = {}
     for value in values or []:
@@ -107,13 +156,20 @@ def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
                 raise ValueError(
                     f"--registry {value!r}: empty PATH after '=' for "
                     f"registry {name!r}")
-            out[name] = path
+            key = name
         else:
             if not value:
                 raise ValueError(
                     "--registry '': empty value — expected NAME=PATH, or a "
                     "bare PATH (legacy, taken as the agentskills entry)")
-            out["agentskills"] = value
+            key = "agentskills"
+            path = value
+        if key in out:
+            raise ValueError(
+                f"--registry {value!r}: registry {key!r} given more than "
+                f"once (already {out[key]!r}) — repeated --registry flags "
+                "for the same name silently last-won; pass it once")
+        out[key] = path
     return out
 
 
@@ -212,17 +268,6 @@ def _validate_registry_paths(registries: dict[str, dict]) -> None:
                 f"{entry['path']}, which is not a directory")
 
 
-def _normalize_registry_url(url: str) -> str:
-    """Case-insensitive, trailing-slash- and .git-suffix-insensitive form of
-    a registry URL, so `https://github.com/Org/repo/`, `...repo.git`, and a
-    differently-cased host or path all match the same registries.yml entry.
-    """
-    url = url.strip().rstrip("/")
-    if url.lower().endswith(".git"):
-        url = url[:-4]
-    return url.lower()
-
-
 def registry_for_url(registries: dict[str, dict], url: str) -> dict:
     """The registries.yml entry (path + layout) whose url matches a fixture's
     `registry:` field. Raises with a message naming harness/registries.yml —
@@ -248,9 +293,7 @@ def _skill_md_glob(layout: str, skill: str) -> str:
     a rename, a bundle mid-migration) must fail closed as skill_not_found
     rather than "installing" whatever happens to sit in that directory.
     """
-    parts = layout.split("/")
-    if len(parts) < 2 or parts[-1] != "SKILL.md" or parts[-2] != "*":
-        raise ValueError(f"registries.yml layout {layout!r} must end in '*/SKILL.md'")
+    parts = _layout_parts(layout)
     parts[-2] = skill
     return "/".join(parts)
 
@@ -265,7 +308,7 @@ def _validate_skill_name(skill: str) -> None:
     and the workspace on write, `*` would install whichever skill happens to
     glob-match first, and `""` would install the whole registry container.
     """
-    if not _SKILL_NAME_RE.match(skill) or skill in (".", ".."):
+    if not _SKILL_NAME_RE.fullmatch(skill) or skill in (".", ".."):
         raise ValueError(
             f"invalid skill name {skill!r}: must be a single non-empty path "
             "segment with no path or glob metacharacters")
@@ -300,11 +343,11 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
     duration_ms/raw. Error dicts always have an "error" key — one of
-    "invalid_skill_name", "skill_not_found", "timeout", "nonzero_exit",
-    "invalid_json", "agent_error" — plus a "detail". Callers MUST check
-    `"error" in result` rather than relying on exceptions; only skill
-    installation and process invocation failures are turned into error dicts
-    here, nothing is raised.
+    "invalid_skill_name", "skill_not_found", "skill_install_failed", "timeout",
+    "nonzero_exit", "invalid_json", "agent_error" — plus a "detail". Callers
+    MUST check `"error" in result` rather than relying on exceptions; only
+    skill installation and process invocation failures are turned into error
+    dicts here, nothing is raised.
     """
     if arm["name"] == "with_skill":
         skill = arm["skill"]
@@ -331,7 +374,12 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             return {"error": "skill_not_found",
                     "detail": f"no SKILL.md matched {pattern}"}
         skill_src = matches[0]
-        shutil.copytree(skill_src, workspace / ".claude" / "skills" / skill)
+        skill_dest = workspace / ".claude" / "skills" / skill
+        try:
+            shutil.copytree(skill_src, skill_dest)
+        except FileExistsError as exc:
+            return {"error": "skill_install_failed",
+                    "detail": f"{skill_dest} already exists in the seed: {exc}"}
 
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
            "--output-format", "json", "--permission-mode", "bypassPermissions",
@@ -467,11 +515,11 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         # documented `return 2`.
         registry_error = None
         if arm_name == "with_skill":
-            if "registry" not in fixture:
+            if not fixture.get("registry"):
                 registry_error = {
                     "error": "missing_registry_field",
                     "detail": f"fixture for skill {fixture.get('skill')!r} has "
-                              "no 'registry:' field"}
+                              "no (or a blank) 'registry:' field"}
             else:
                 try:
                     entry = registry_for_url(registries, fixture["registry"])
@@ -562,6 +610,41 @@ def main() -> int:
     fixture = load_fixture(args.eval_dir)
     seed = args.eval_dir / "seed"
 
+    # Validated ONCE, here, before any path is derived from the fixture:
+    # `_write_summary` and `report_path` below both build a filesystem path
+    # out of `fixture["skill"]` unconditionally, for every arm — a fixture
+    # missing "skill" or "prompt" used to die with a bare KeyError deep
+    # inside _run_arm/_render_report, and a `skill:` containing `../` was
+    # never rejected before those paths were built (run_agent's own check
+    # only fires for the with_skill arm, by which point _write_summary has
+    # already used the raw name for with_skill AND without_skill).
+    required = ["skill"] if args.arm == "objective-only" else ["skill", "prompt"]
+    missing = [f for f in required if not fixture.get(f)]
+    if missing:
+        print(f"{args.eval_dir / 'fixture.yaml'} is missing required "
+              f"field(s): {', '.join(missing)}")
+        return 2
+
+    # Resolved and validated before ANY arm starts, including objective-only:
+    # a bad --registry/$SKILLS_EVALS_REGISTRIES override used to be silently
+    # ignored for objective-only (it never reaches resolve_registries at
+    # all), so a typo'd override "worked" there while failing everywhere else.
+    try:
+        registries = resolve_registries(
+            args.registry, os.environ.get("SKILLS_EVALS_REGISTRIES"),
+            Path(__file__).resolve().parent.parent, os.environ.get("AGENTSKILLS_DIR"))
+        _validate_registry_paths(registries)
+    except ValueError as exc:
+        print(f"registry configuration error: {exc}")
+        return 2
+
+    if args.arm != "objective-only":
+        try:
+            _validate_skill_name(fixture["skill"])
+        except ValueError as exc:
+            print(f"invalid fixture: {exc}")
+            return 2
+
     if args.arm == "objective-only":
         if args.workspace:
             workspace = args.workspace
@@ -578,15 +661,6 @@ def main() -> int:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
-    try:
-        registries = resolve_registries(
-            args.registry, os.environ.get("SKILLS_EVALS_REGISTRIES"),
-            Path(__file__).resolve().parent.parent, os.environ.get("AGENTSKILLS_DIR"))
-        _validate_registry_paths(registries)
-    except ValueError as exc:
-        print(f"registry configuration error: {exc}")
-        return 2
-
     arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
                      for name in arm_names]
 

@@ -102,7 +102,10 @@ unresolved after all of the above falls back to a sibling checkout
 `adamdaniel.ai` checkouts next to `skills-evals/` resolve with no flags at
 all. (The harness's older `~/repos/agentskills` last-resort default is gone;
 a sibling `../agentskills` checkout is the default now, which is what the
-invocations above rely on.) Within a registry, the
+invocations above rely on.) An unknown registry name, an empty `PATH`, or an
+override that resolves to a nonexistent directory aborts the run before any
+arm starts — including `--arm objective-only` — rather than failing partway
+through or silently ignoring the bad value. Within a registry, the
 `with_skill` arm resolves the skill dir by globbing that registry's layout
 with the skill name substituted for its second-to-last path segment — the
 `*` immediately before `SKILL.md` (the first sorted match wins), which is

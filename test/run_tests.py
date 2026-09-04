@@ -1152,9 +1152,25 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             with self.subTest(uses=uses):
                 self.assertRegex(
                     uses, self.USES_SHA_RE,
-                    f"{uses!r} is not a bare owner/repo@<40-hex-sha> pin — no "
-                    "trailing version/date comment, per the header's cooling-off "
-                    "convention")
+                    f"{uses!r} is not a bare owner/repo@<40-hex-sha> pin, per "
+                    "the header's cooling-off convention")
+        # The assertion above is on the PARSED `uses:` value, which
+        # yaml.safe_load has already stripped of any comment — it cannot see
+        # a trailing version/date comment even when one is there. That is a
+        # lexical, not structural, concern, so a raw-line scan is the right
+        # tool here (not a drift risk: this is the one place in this test
+        # class that reads the file as text instead of parsed YAML).
+        for lineno, line in enumerate(
+                self.WORKFLOW.read_text(encoding="utf-8").splitlines(), 1):
+            if line.strip().startswith("uses:"):
+                with self.subTest(line=lineno):
+                    self.assertNotIn(
+                        "#", line,
+                        f"{self.WORKFLOW}:{lineno} has a uses: line with a "
+                        "trailing comment — the header's cooling-off "
+                        "convention makes the bare SHA the only claim, since "
+                        "a version/date comment can go stale silently and "
+                        "then lie")
 
     def test_every_checkout_step_disables_persist_credentials(self):
         for step in self._steps():
@@ -1187,6 +1203,114 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "eval.yml holds a live API key and runs the agent under "
             "bypassPermissions — pull_request/pull_request_target must never "
             "be added, per the header's first rule")
+
+    def test_permissions_are_exactly_contents_write_and_id_token_write(self):
+        # "Single job, so contents:write is the whole workflow's privilege
+        # set" — the header's own claim. A widened `permissions:` block
+        # (an added scope, or contents: write turning into admin) would slip
+        # past every other test in this class.
+        doc = self._doc()
+        self.assertEqual(
+            doc.get("permissions"), {"contents": "write", "id-token": "write"},
+            "eval.yml's permissions must be exactly {contents: write, "
+            "id-token: write} — the header states this is the workflow's "
+            "whole privilege set")
+
+    def test_no_workflow_or_job_level_env(self):
+        # The header requires GITHUB_TOKEN (and the exchanged bearer token)
+        # to live only in the step that needs it, "never top-level env" —
+        # hoisting either to workflow- or job-level env would put a live
+        # credential in scope for every step, including the ones that run
+        # the bypassPermissions agent against untrusted-ish fixture output.
+        doc = self._doc()
+        self.assertNotIn(
+            "env", doc,
+            "eval.yml must not declare a workflow-level env: block — the "
+            "header requires every credential to be step-scoped")
+        for job_name, job in doc["jobs"].items():
+            with self.subTest(job=job_name):
+                self.assertNotIn(
+                    "env", job,
+                    f"job {job_name!r} must not declare a job-level env: "
+                    "block — the header requires every credential to be "
+                    "step-scoped")
+
+    def test_header_names_every_checkout_and_the_automated_lane_clause(self):
+        # Ties the header's own claims to the ACTUAL step list, rather than
+        # to a number written in prose that can go stale the moment a
+        # checkout is added or removed: reverting "All four checkouts" back
+        # to an earlier "Both checkouts", or deleting the automated-lane
+        # clause (Decap CMS publish loops, auto-merge nudges, dependabot
+        # auto-merge landing commits on cms-platform/adamdaniel.ai's default
+        # branches), must fail here.
+        text = self.WORKFLOW.read_text(encoding="utf-8")
+        checkout_steps = [s for s in self._steps()
+                          if (s.get("uses") or "").startswith("actions/checkout@")]
+        count = len(checkout_steps)
+        number_words = {2: "two", 3: "three", 4: "four", 5: "five"}
+        self.assertIn(count, number_words,
+                      f"unexpected number of checkout steps: {count}")
+        self.assertIn(
+            f"All {number_words[count]} checkouts", text,
+            f"the header must say 'All {number_words[count]} checkouts' — "
+            f"it currently disagrees with the actual count ({count}) of "
+            "actions/checkout@ steps in the file")
+
+        named_repos = sorted(
+            (step.get("with") or {}).get("repository")
+            for step in checkout_steps
+            if (step.get("with") or {}).get("repository"))
+        self.assertTrue(named_repos, "expected at least one checkout step "
+                        "naming a repository:")
+        for repo in named_repos:
+            with self.subTest(repo=repo):
+                self.assertIn(
+                    repo, text,
+                    f"the header must name every checked-out registry "
+                    f"({repo!r} is missing) — write access to any checked-"
+                    "out registry is equivalent to key access here")
+
+        self.assertIn(
+            "automated lanes", text,
+            "the header's automated-lane clause (Decap CMS editorial "
+            "publish loops, auto-merge nudges, dependabot auto-merge) must "
+            "not be deleted — those lanes land commits inside the trust "
+            "boundary the same as a maintainer's own push")
+
+    def test_registry_flags_match_registries_yml_and_checkout_paths(self):
+        # A `--registry NAME=PATH` flag typo'd either side (a NAME not in
+        # harness/registries.yml, or a PATH whose basename names no checkout
+        # step) stays green in this hermetic suite and only dies at runtime
+        # in the real (scheduled, credentialed) workflow — up to a week
+        # later. Caught here by checking the ACTUAL flags in the eval step's
+        # run: block against the ACTUAL registry names and checkout paths.
+        doc = self._doc()
+        steps = doc["jobs"]["eval"]["steps"]
+        eval_step = next(s for s in steps
+                         if (s.get("name") or "").startswith("Run the eval"))
+        run = eval_step["run"]
+        flags = re.findall(r"--registry\s+([A-Za-z0-9_.-]+)=(\S+)", run)
+        self.assertTrue(
+            flags, "no --registry NAME=PATH flags found in the eval step's "
+            "run: block")
+
+        known_names = {e["name"] for e in run_eval._load_registries_config()}
+        checkout_paths = {
+            (step.get("with") or {}).get("path")
+            for step in steps
+            if (step.get("uses") or "").startswith("actions/checkout@")}
+
+        for name, path in flags:
+            with self.subTest(name=name, path=path):
+                self.assertIn(
+                    name, known_names,
+                    f"--registry {name}={path}: {name!r} is not a registry "
+                    "name listed in harness/registries.yml")
+                basename = path.rstrip("/").rsplit("/", 1)[-1]
+                self.assertIn(
+                    basename, checkout_paths,
+                    f"--registry {name}={path}: no checkout step in eval.yml "
+                    f"has with.path == {basename!r}")
 
 
 class CiDispatchTests(unittest.TestCase):
@@ -1258,8 +1382,12 @@ class CiDispatchTests(unittest.TestCase):
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
         steps = doc["jobs"]["test"]["steps"]
+        # Identified by with.path == "skills-evals", not positionally — a
+        # reordering of the checkout steps must not make this compare the
+        # agentskills checkout's SHA against itself and pass vacuously.
         own_checkout = next(s for s in steps
-                            if (s.get("uses") or "").startswith("actions/checkout@"))
+                            if (s.get("uses") or "").startswith("actions/checkout@")
+                            and (s.get("with") or {}).get("path") == "skills-evals")
         own_sha = own_checkout["uses"].split("@", 1)[1]
 
         agentskills_checkouts = [
@@ -1469,19 +1597,34 @@ class TestIssue63(unittest.TestCase):
     def test_resolves_flat_skills_layout(self):
         # cms-platform-shaped: skills/<skill>/SKILL.md. Two skills present —
         # see _fake_registry_many's docstring for why one isn't enough.
+        # Requests "some-skill" specifically because it sorts AFTER
+        # "other-skill": a mutant that drops the skill-name substitution
+        # (leaving the layout's `*` unresolved, matching both skills,
+        # first-sorted-match wins) would pick "other-skill" here — asserting
+        # against the one that does NOT sort first is what gives the content
+        # check below teeth; requesting "other-skill" would coincidentally
+        # "pass" under that mutant since it also sorts first.
         with tempfile.TemporaryDirectory() as tmp:
             registry = self._fake_registry_many(
                 tmp, ["skills/some-skill/SKILL.md", "skills/other-skill/SKILL.md"])
             workspace = Path(tmp) / "ws"
             workspace.mkdir()
-            result = self._install(registry, "other-skill", "skills/*/SKILL.md", workspace)
+            result = self._install(registry, "some-skill", "skills/*/SKILL.md", workspace)
             self.assertNotIn("error", result)
             installed = workspace / ".claude" / "skills"
-            self.assertTrue((installed / "other-skill" / "SKILL.md").is_file())
-            self.assertFalse((installed / "some-skill").exists())
+            skill_md = installed / "some-skill" / "SKILL.md"
+            self.assertTrue(skill_md.is_file())
+            self.assertFalse((installed / "other-skill").exists())
             # Lands exactly there, not nested one level deeper.
             files = sorted(p.relative_to(installed) for p in installed.rglob("*") if p.is_file())
-            self.assertEqual(files, [Path("other-skill/SKILL.md")])
+            self.assertEqual(files, [Path("some-skill/SKILL.md")])
+            # Content, not just the destination path: the destination dir is
+            # ALWAYS named after the requested skill (run_agent's copytree
+            # target), so a mutant that drops the skill-name substitution in
+            # _skill_md_glob would still satisfy every assertion above while
+            # installing the WRONG skill's content under the right-looking
+            # name. Only reading back the seeded `name:` line catches that.
+            self.assertIn("name: some-skill", skill_md.read_text(encoding="utf-8"))
 
     def test_resolves_dotclaude_skills_layout(self):
         # adamdaniel.ai-shaped: .claude/skills/<skill>/SKILL.md. Two skills
@@ -1495,10 +1638,16 @@ class TestIssue63(unittest.TestCase):
             result = self._install(registry, "some-skill", ".claude/skills/*/SKILL.md", workspace)
             self.assertNotIn("error", result)
             installed = workspace / ".claude" / "skills"
-            self.assertTrue((installed / "some-skill" / "SKILL.md").is_file())
+            skill_md = installed / "some-skill" / "SKILL.md"
+            self.assertTrue(skill_md.is_file())
             self.assertFalse((installed / "other-skill").exists())
             files = sorted(p.relative_to(installed) for p in installed.rglob("*") if p.is_file())
             self.assertEqual(files, [Path("some-skill/SKILL.md")])
+            # See test_resolves_flat_skills_layout's comment: the destination
+            # path alone cannot tell "installed what was asked for" apart
+            # from "installed whatever glob-matched first" once the
+            # destination is renamed to the requested skill regardless.
+            self.assertIn("name: some-skill", skill_md.read_text(encoding="utf-8"))
 
     def test_flat_layout_missing_skill_names_the_skills_path(self):
         # A non-plugins layout's skill_not_found detail must name the actual
@@ -1541,7 +1690,13 @@ class TestIssue63(unittest.TestCase):
             registry = self._fake_registry(tmp, "plugins/a-bundle/skills/real-skill/SKILL.md")
             workspace = Path(tmp) / "ws"
             workspace.mkdir()
-            for bad in ("../../etc", "*", "", "a/b", "..", ".", "a\\b", "a?b", "a[b]c"):
+            for bad in ("../../etc", "*", "", "a/b", "..", ".", "a\\b", "a?b", "a[b]c",
+                       "a\n", "..\n", ".\n"):
+                # The `\n`-suffixed cases: `_SKILL_NAME_RE`'s trailing `$`
+                # matches just before a trailing newline (not only at the
+                # true end of string), so `.match()` used to ACCEPT these —
+                # exactly what a folded YAML scalar (`skill: >` with a
+                # single line) produces. `re.fullmatch` closes it.
                 with self.subTest(skill=bad):
                     result = self._install(
                         registry, bad, "plugins/*/skills/*/SKILL.md", workspace)
@@ -1599,7 +1754,11 @@ class TestIssue63(unittest.TestCase):
         self.assertEqual(entry["source"], "sibling default")
         # Derived independently of resolve_registries' own (base_dir / ".." /
         # name).resolve() expression, rather than restating it verbatim.
-        self.assertEqual(entry["path"], REPO_ROOT.parent / "cms-platform")
+        # Resolved on BOTH sides: entry["path"] has already gone through
+        # .resolve() (which follows symlinks), so comparing it to an
+        # unresolved expression is the suite's only failure on otherwise
+        # correct code when a sibling checkout sits behind a symlink.
+        self.assertEqual(entry["path"], (REPO_ROOT.parent / "cms-platform").resolve())
         self.assertTrue(entry["path"].is_absolute())
 
     def test_registries_agree_with_agentskills_own_file(self):
@@ -1848,6 +2007,298 @@ class TestIssue63Review(unittest.TestCase):
         names = {e["name"] for e in entries}
         self.assertEqual(names, {"agentskills", "cms-platform", "adamdaniel.ai",
                                  "agentskills-private"})
+
+
+class TestIssue63Round2(unittest.TestCase):
+    """Review round 2 on PR #128 (issue #63): should-fix items from a code
+    review and an adversarial pass over round 1's own fixes (741aeb8). See
+    the PR description's "Review round 2" section for the letter each test
+    maps to.
+    """
+
+    # --- R3: _load_registries_config validates type, not just presence ---
+
+    def test_registries_yml_field_wrong_type_has_a_clear_message(self):
+        cases = {
+            "url": ("registries:\n  - name: agentskills\n    url: 12345\n"
+                    "    layout: 'plugins/*/skills/*/SKILL.md'\n"),
+            "layout": ("registries:\n  - name: agentskills\n"
+                       "    url: https://example.com/a\n    layout: 99\n"),
+            "name": ("registries:\n  - name: [a]\n"
+                     "    url: https://example.com/a\n"
+                     "    layout: 'plugins/*/skills/*/SKILL.md'\n"),
+        }
+        for field, text in cases.items():
+            with self.subTest(field=field):
+                with tempfile.TemporaryDirectory() as tmp:
+                    bad = Path(tmp) / "registries.yml"
+                    bad.write_text(text, encoding="utf-8")
+                    with self.assertRaises(ValueError) as ctx:
+                        run_eval._load_registries_config(bad)
+                    self.assertIn(field, str(ctx.exception))
+                    self.assertIn("string", str(ctx.exception).lower())
+
+    def test_registries_yml_boolean_like_name_is_a_type_error_not_missing(self):
+        # `name: no` parses as the YAML 1.1 bool False, which `not entry.get(f)`
+        # used to misreport as "missing" — the real problem is the type.
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "registries.yml"
+            bad.write_text(
+                "registries:\n  - name: no\n    url: https://example.com/a\n"
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n",
+                encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                run_eval._load_registries_config(bad)
+            msg = str(ctx.exception)
+            self.assertNotIn("missing", msg.lower())
+            self.assertIn("string", msg.lower())
+
+    def test_registries_yml_malformed_yaml_has_a_clear_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "registries.yml"
+            # Inconsistent indentation — a real yaml.YAMLError, not something
+            # a bare `yaml.safe_load(f)` call should let escape as-is.
+            bad.write_text(
+                "registries:\n  - name: agentskills\n      url: https://example.com/a\n"
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n",
+                encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                run_eval._load_registries_config(bad)
+            self.assertIn(str(bad), str(ctx.exception))
+
+    def test_load_time_layout_check_matches_skill_md_glob(self):
+        # `skills/bundle*/SKILL.md` ends with the SUBSTRING '*/SKILL.md', so
+        # the old load-time `layout.endswith(...)` check passed it — but
+        # `_skill_md_glob` requires the segment immediately before SKILL.md
+        # to be exactly '*', which 'bundle*' is not, so this used to raise
+        # uncaught at arm time instead of failing loudly here at load time.
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "registries.yml"
+            bad.write_text(
+                "registries:\n  - name: agentskills\n"
+                "    url: https://example.com/a\n"
+                "    layout: 'skills/bundle*/SKILL.md'\n",
+                encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                run_eval._load_registries_config(bad)
+            self.assertIn("SKILL.md", str(ctx.exception))
+
+    def test_registries_yml_layout_containing_dotdot_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "registries.yml"
+            bad.write_text(
+                "registries:\n  - name: agentskills\n"
+                "    url: https://example.com/a\n"
+                "    layout: '../*/SKILL.md'\n",
+                encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                run_eval._load_registries_config(bad)
+            self.assertIn("..", str(ctx.exception))
+
+    # --- R4: duplicate-URL dedup must use the same normalization as the
+    # matcher (registry_for_url), not a bare .rstrip("/") ---
+
+    def test_registries_yml_duplicate_url_detected_after_normalization(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = Path(tmp) / "registries.yml"
+            bad.write_text(
+                "registries:\n"
+                "  - name: a\n    url: https://github.com/Org/repo\n"
+                "    layout: 'plugins/*/skills/*/SKILL.md'\n"
+                "  - name: b\n    url: https://GITHUB.com/org/REPO.git/\n"
+                "    layout: 'skills/*/SKILL.md'\n",
+                encoding="utf-8")
+            with self.assertRaises(ValueError) as ctx:
+                run_eval._load_registries_config(bad)
+            self.assertIn("duplicate", str(ctx.exception).lower())
+
+    # --- R5: skill name validated once, before any path is derived ---
+
+    def test_invalid_skill_names_are_fullmatch_not_prefix_matched(self):
+        for bad in ("a\n", "..\n", ".\n"):
+            with self.subTest(skill=repr(bad)):
+                with self.assertRaises(ValueError):
+                    run_eval._validate_skill_name(bad)
+
+    def test_fixture_skill_name_validated_before_any_result_write(self):
+        # skill: "../../escaped" used to error correctly INSIDE run_agent
+        # (invalid_skill_name), but _write_summary and report_path had
+        # already used the raw fixture["skill"] to build a path — so
+        # summary.json still landed outside --results-dir. Nested two levels
+        # under tmp so the escape (results_dir/../../escaped) stays inside
+        # tmp and is cleaned up automatically either way.
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = Path(tmp)
+            eval_dir = outer / "eval"
+            seed_dir = eval_dir / "seed"
+            seed_dir.mkdir(parents=True)
+            (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            fixture = {"skill": "../../escaped", "prompt": "do the thing"}
+            import yaml
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+
+            results_dir = outer / "a" / "b" / "results"
+            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+                  "--arm", "without_skill", "--results-dir", str(results_dir),
+                  "--timeout", "30", "--no-judge"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("skill", (proc.stdout + proc.stderr).lower())
+            self.assertFalse(results_dir.exists())
+            self.assertFalse((outer / "a" / "escaped").exists())
+
+    # --- R6: fixture field validation, once, without an uncaught KeyError
+    # or AttributeError ---
+
+    def test_blank_registry_field_is_a_missing_registry_field_error(self):
+        # registry: written and left blank parses as None, which used to
+        # reach _normalize_registry_url's .strip() and die with an uncaught
+        # AttributeError — no report, no summary, without_skill never ran.
+        with tempfile.TemporaryDirectory() as tmp:
+            seed = Path(tmp) / "seed"
+            seed.mkdir()
+            (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            fixture = {"skill": "some-skill", "registry": None, "prompt": "do the thing"}
+            registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+            args = argparse.Namespace(model=None, timeout=30,
+                                      results_dir=Path(tmp) / "results", no_judge=True)
+            result = run_eval._run_arm("with_skill", fixture, seed, registries, args,
+                                       "20260101T000000Z")
+        self.assertIsNotNone(result["error"])
+        self.assertEqual(result["error"]["type"], "missing_registry_field")
+
+    def test_fixture_missing_prompt_field_exits_2_with_message(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "eval"
+            seed_dir = eval_dir / "seed"
+            seed_dir.mkdir(parents=True)
+            (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            fixture = {"skill": "some-skill",
+                      "registry": "https://github.com/Adam-S-Daniel/agentskills"}
+            import yaml
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+
+            results_dir = Path(tmp) / "results"
+            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+                  "--arm", "without_skill", "--results-dir", str(results_dir),
+                  "--timeout", "30", "--no-judge"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("prompt", (proc.stdout + proc.stderr).lower())
+            self.assertFalse(results_dir.exists())
+
+    def test_fixture_missing_skill_field_exits_2_with_message(self):
+        # A without_skill arm never installs a skill, but _write_summary
+        # still reached fixture["skill"] unconditionally — a KeyError on a
+        # fixture that legitimately has no "skill:" field at all.
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "eval"
+            seed_dir = eval_dir / "seed"
+            seed_dir.mkdir(parents=True)
+            (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            fixture = {"prompt": "do the thing"}
+            import yaml
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+
+            results_dir = Path(tmp) / "results"
+            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+                  "--arm", "without_skill", "--results-dir", str(results_dir),
+                  "--timeout", "30", "--no-judge"]
+            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("skill", (proc.stdout + proc.stderr).lower())
+            self.assertFalse(results_dir.exists())
+
+    # --- R8: registry_not_found (a fixture naming a registry whose sibling
+    # default doesn't exist) ---
+
+    def test_registry_not_found_ends_via_exit_2_with_message_naming_path(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "eval"
+            seed_dir = eval_dir / "seed"
+            seed_dir.mkdir(parents=True)
+            (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            fixture = {
+                "skill": "some-skill",
+                "registry": "https://github.com/Adam-S-Daniel/agentskills-private",
+                "prompt": "do the thing",
+            }
+            import yaml
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+
+            results_dir = Path(tmp) / "results"
+            env = os.environ.copy()
+            env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
+            env["FAKE_CLAUDE_MODE"] = "agent"
+            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+                  "--arm", "both", "--results-dir", str(results_dir),
+                  "--timeout", "30", "--no-judge"]
+            proc = subprocess.run(cmd, capture_output=True, text=True,
+                                  env=env, cwd=str(REPO_ROOT))
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+
+            run_dirs = list((results_dir / "some-skill").iterdir())
+            self.assertEqual(len(run_dirs), 1)
+            run_dir = run_dirs[0]
+            with_skill_summary = json.loads(
+                (run_dir / "with_skill" / "summary.json").read_text(encoding="utf-8"))
+            self.assertEqual(with_skill_summary["error"]["type"], "registry_not_found")
+            expected_path = str((REPO_ROOT.parent / "agentskills-private").resolve())
+            self.assertIn(expected_path, with_skill_summary["error"]["detail"])
+
+            without_skill_summary = json.loads(
+                (run_dir / "without_skill" / "summary.json").read_text(encoding="utf-8"))
+            self.assertIsNone(without_skill_summary["error"])
+
+    # --- R9: run_agent must not raise FileExistsError when the seed already
+    # ships the skill's destination directory ---
+
+    def test_seed_already_shipping_the_skill_dir_is_a_clean_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "registry"
+            skill_md = registry / "skills" / "some-skill" / "SKILL.md"
+            skill_md.parent.mkdir(parents=True)
+            skill_md.write_text(
+                "---\nname: some-skill\ndescription: fixture stand-in.\n---\n",
+                encoding="utf-8")
+
+            workspace = Path(tmp) / "ws"
+            preexisting = workspace / ".claude" / "skills" / "some-skill"
+            preexisting.mkdir(parents=True)
+            (preexisting / "SKILL.md").write_text(
+                "---\nname: some-skill\n---\n", encoding="utf-8")
+
+            arm = {"name": "with_skill", "skill": "some-skill", "registry": registry,
+                  "layout": "skills/*/SKILL.md", "timeout": 30}
+            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                              "FAKE_CLAUDE_MODE": "agent"}):
+                result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            self.assertIn("error", result)
+            self.assertEqual(result["error"], "skill_install_failed")
+
+    # --- N4: a repeated --registry NAME= for the same name must raise, not
+    # silently last-win ---
+
+    def test_repeated_cli_flag_for_same_name_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            run_eval.resolve_registries(
+                ["cms-platform=/a", "cms-platform=/b"], None, REPO_ROOT)
+        self.assertIn("cms-platform", str(ctx.exception))
+
+    def test_repeated_bare_legacy_flag_raises(self):
+        with self.assertRaises(ValueError) as ctx:
+            run_eval.resolve_registries(["/a", "/b"], None, REPO_ROOT)
+        self.assertIn("agentskills", str(ctx.exception))
+
+    # --- N5: registry resolution/validation must abort BEFORE any arm
+    # starts, including --arm objective-only ---
+
+    def test_bad_registry_override_aborts_objective_only_run(self):
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(EVAL_DIR),
+              "--arm", "objective-only", "--registry", "not-a-real-registry=/x"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
 
 
 if __name__ == "__main__":

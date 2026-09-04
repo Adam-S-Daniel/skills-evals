@@ -10,7 +10,11 @@ name: CI
 # built after the eval-results checkout. Plus this file itself, so a change to
 # the filter is always exercised by the filter. README/DESIGN/AGENTS/CLAUDE and
 # badges/ are deliberately absent: the suite never opens them, so a docs-only
-# pull request has nothing to prove here and should not pay for a runner.
+# pull request has nothing to prove here and should not pay for a runner. One
+# path this filter structurally cannot name: the suite also reads agentskills'
+# own scripts/skills_registries.yml from the side-by-side checkout below, for
+# TestIssue63::test_registries_agree_with_agentskills_own_file — a file in a
+# different repo, outside anything a `paths:` filter here can match.
 #
 # `push:` is pinned to main because without a branch filter every push to a
 # pull-request branch ran `test` TWICE — once for the push, once for the

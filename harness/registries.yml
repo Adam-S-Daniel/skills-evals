@@ -9,9 +9,10 @@
 # of this repo, and skips (with a printed reason, never silently) otherwise.
 #
 # `url` matches a fixture's `registry:` field. `layout` is a glob ending in
-# `*/SKILL.md`; the final `*` is the skill-name placeholder substituted by
-# `_skill_dir_glob` in harness/run_eval.py, any earlier `*` (a bundle/plugin
-# name) stays a wildcard.
+# `*/SKILL.md`; the `*` immediately before `SKILL.md` (the second-to-last
+# path segment) is the skill-name placeholder substituted by `_skill_md_glob`
+# in harness/run_eval.py, any earlier `*` (a bundle/plugin name) stays a
+# wildcard.
 registries:
   - name: agentskills
     url: https://github.com/Adam-S-Daniel/agentskills
