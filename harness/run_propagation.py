@@ -58,7 +58,12 @@ def load_fixture(eval_dir: Path) -> dict:
 
 
 def resolve_registry(cli_value: Path | None) -> Path:
-    """Same convention as run_eval.py: --registry, $AGENTSKILLS_DIR, ~/repos.
+    """This script's OWN convention: --registry, $AGENTSKILLS_DIR, ~/repos.
+
+    Unlike run_eval.py (issue #63), this probe only ever targets the
+    agentskills registry, so it keeps its own single-path resolution rather
+    than harness/registries.yml's multi-registry NAME=PATH scheme — the two
+    are deliberately NOT the same shape any more; don't assume parity.
 
     ABSOLUTE on every branch, and that is load-bearing rather than tidiness:
     the arms hand registry-derived paths to children they spawn with `cwd` set
