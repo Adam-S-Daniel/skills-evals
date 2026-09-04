@@ -4835,5 +4835,49 @@ class TestIssue63Round2(unittest.TestCase):
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
 
 
+class TestIssue67Review3(unittest.TestCase):
+    """Round 3 fixes for #67, one test per fix. See run_tests.py's
+    class-per-review-round convention (TestIssue67Review, TestIssue67Review2)."""
+
+    # --- item 1: model_usage_census.py must not need PyYAML just to import
+    # or to fail an argument, only to actually build a census ---
+
+    def test_missing_pyyaml_is_a_named_exit_2_not_a_traceback(self):
+        """model_usage_census.py used to `import roster` (for `tier_words`)
+        and build MODEL_ID_RE at IMPORT TIME, so a machine with no PyYAML
+        installed died with a bare ImportError before argparse ever ran —
+        before even `--help` worked. The roster import is now lazy
+        (`_require_model_id_re()`), and main() turns a missing PyYAML into
+        one named line on stderr and exit 2, never a traceback.
+        """
+        import model_usage_census
+        saved = {name: sys.modules.get(name) for name in ("yaml", "roster")}
+        saved_re = model_usage_census.MODEL_ID_RE
+        for name in ("yaml", "roster"):
+            sys.modules.pop(name, None)
+        sys.modules["yaml"] = None  # the standard "this module is not installed" shim
+        model_usage_census.MODEL_ID_RE = None  # force a fresh (failing) resolve
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "usage.json"
+                argv = ["model_usage_census.py", "--out", str(out)]
+                err = io.StringIO()
+                with mock.patch.object(sys, "argv", argv), \
+                     contextlib.redirect_stderr(err), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    rc = model_usage_census.main()
+                self.assertFalse(out.exists())
+        finally:
+            for name, mod in saved.items():
+                if mod is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = mod
+            model_usage_census.MODEL_ID_RE = saved_re
+        self.assertEqual(rc, 2)
+        self.assertIn(model_usage_census.PYYAML_MISSING_MESSAGE, err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

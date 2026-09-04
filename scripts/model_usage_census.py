@@ -46,6 +46,15 @@ usage is in the week buckets. The roster's freshness check reads it as
 "how long ago did someone last publish a census", which is the question it
 should be asking of a publication timestamp.
 
+NOT stdlib-only: classifying a `message.model` value against the tier ladder
+needs `harness/roster.py`'s `tier_words()`/`load_policy()`, and roster.py
+itself needs PyYAML. That import is LAZY (see `_require_model_id_re()`), so
+importing this module and running `--help` work with no PyYAML installed —
+only building an actual census does, and a machine that lacks it gets one
+named line on stderr and exit 2, never an ImportError traceback. See
+`evals/propagation/ROUTINE.md` step 6 for installing it on the durable
+machine that runs this script.
+
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json
 """
@@ -61,16 +70,16 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "harness"))
 from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: E402
-# tier_words()/load_policy() ONLY — never the network or file-writing parts
-# of roster.py. This is the one place model_usage_census.py stops being
-# stdlib-only: roster.py imports PyYAML to read the tier ladder. The
-# alternative — hand-rolling family words here — is exactly what NO MODEL
-# IDS/FAMILY WORDS LIVE OUTSIDE roster-policy.yml exists to prevent.
-import roster  # noqa: E402
 
 DEFAULT_PROJECTS = Path.home() / ".claude" / "projects"
 DEFAULT_WEEKS = 8
 POLICY_PATH = Path(__file__).resolve().parent.parent / "evals" / "roster-policy.yml"
+
+#: The one message this script prints for a missing PyYAML, everywhere it can
+#: be hit — main()'s guard and the test that shims the import away both key
+#: off this exact string, so it can never drift out of step with itself.
+PYYAML_MISSING_MESSAGE = ("model_usage_census needs PyYAML: "
+                          "python3 -m pip install --user pyyaml")
 
 
 def _model_id_re() -> re.Pattern:
@@ -83,7 +92,17 @@ def _model_id_re() -> re.Pattern:
     never hardcoded here), and it is capped at the length a real id needs —
     about 40 — so a long adjacent string cannot ride in just because it
     happens to contain a family word somewhere in it.
+
+    `import roster` is LOCAL to this function, not at module level: it is
+    the one place this script needs PyYAML (roster.py's own `import yaml`,
+    to read the tier ladder) — the alternative, hand-rolling family words
+    here, is exactly what NO MODEL IDS/FAMILY WORDS LIVE OUTSIDE
+    roster-policy.yml exists to prevent. Deferring the import means a
+    machine with no PyYAML installed can still import this module and reach
+    `--help`/argument errors; only actually building a census needs it, and
+    `main()` turns that ImportError into one named line, never a traceback.
     """
+    import roster
     words = "|".join(re.escape(w) for w in
                      roster.tier_words(roster.load_policy(POLICY_PATH)))
     return re.compile(
@@ -91,7 +110,22 @@ def _model_id_re() -> re.Pattern:
         rf"(?:-[a-z0-9.]{{1,20}})*$")
 
 
-MODEL_ID_RE = _model_id_re()
+#: Populated by `_require_model_id_re()` on first use — never at import time.
+MODEL_ID_RE: re.Pattern | None = None
+
+
+def _require_model_id_re() -> re.Pattern:
+    """The module-level MODEL_ID_RE, computed on first call. Raises
+    ImportError, uncaught, if PyYAML (via roster.py) is not installed —
+    callers that can reach a user (main()) must catch it themselves and
+    print PYYAML_MISSING_MESSAGE; callers in a test that already has PyYAML
+    installed never see it raise at all.
+    """
+    global MODEL_ID_RE
+    if MODEL_ID_RE is None:
+        MODEL_ID_RE = _model_id_re()
+    return MODEL_ID_RE
+
 
 #: Where everything else is counted. One key, no detail — the count is the
 #: only part of a non-conforming value that is safe to publish.
@@ -107,7 +141,7 @@ def published_key(model) -> str | None:
     """
     if model is None or model == "":
         return None
-    if isinstance(model, str) and MODEL_ID_RE.match(model):
+    if isinstance(model, str) and _require_model_id_re().match(model):
         return model
     return OTHER_KEY
 
@@ -221,6 +255,17 @@ def main() -> int:
     parser.add_argument("--weeks", type=int, default=DEFAULT_WEEKS)
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
+
+    try:
+        _require_model_id_re()
+    except ImportError:
+        # PyYAML (via roster.py) is not installed on this machine. Printed
+        # here, not raised: the durable-machine Routine that runs this
+        # script (evals/propagation/ROUTINE.md step 6) installs nothing by
+        # default, and a bare ImportError traceback used to kill the import
+        # of this module before argparse ever ran — even `--help` failed.
+        print(PYYAML_MISSING_MESSAGE, file=sys.stderr)
+        return 2
 
     if not Path(args.projects).is_dir():
         # Say so and stop, rather than publishing a clean census of nothing —

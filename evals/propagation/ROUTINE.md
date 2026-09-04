@@ -1118,7 +1118,10 @@ it looks like the repair failed.
 >    race, and what it produces is an issue whose body changes shape depending
 >    on which of them wrote last.
 > 6. **Best effort, and only on a surface that has the transcripts:** if
->    `~/.claude/projects/` exists, run
+>    `~/.claude/projects/` exists, first check `python3 -c "import yaml"` — if
+>    that fails, run `python3 -m pip install --user pyyaml` (the census needs
+>    it, via `harness/roster.py`, to classify model ids; this machine installs
+>    nothing by default). Then run
 >    `python3 scripts/model_usage_census.py --out usage/latest.json` in the
 >    same `skills-evals` clone and publish `usage/latest.json` to
 >    `eval-results` in the same commit as step 4 — with **`git add -f
