@@ -1,0 +1,101 @@
+# Eval fixture: adam-writing-style — proposal bio
+#
+# Class C, same shape as the recruiter-reply fixture in this directory: the
+# judge ranks the draft against two committed references, blind, and only
+# the decidable bits are scored objectively. Expect noise; N>=5 per arm.
+#
+# The register is the point here. Core move 8 says a proposal bio drops the
+# email softeners and goes third person, factual, employer-and-dates, no
+# puff — the opposite of the self-appraisal fixture next door, which is why
+# the two are separate fixtures rather than one.
+#
+# Harborlight Regional Library System, RFP HRLS-2026-014, Halyard Civic Data
+# and Ardith Analytics are all invented; there is no real client or employer
+# anywhere in this fixture.
+#
+# The sixty-word cap is deliberately NOT an objective check: a regex cannot
+# count words, and objective.py is not this fixture's to extend. The judge's
+# register dimension carries it.
+
+skill: adam-writing-style
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+model: claude-sonnet-5
+
+judge:
+  mode: pairwise
+  model: claude-opus-4-8
+  references:
+    - name: in-voice
+      path: references/in-voice.md
+    - name: generic
+      path: references/generic.md
+
+prompt: >
+  Write my 60-word bio for this proposal
+
+objective_checks:
+  # Verbatim from the skill's "Avoid (almost always)" list; kept honest by
+  # test/run_tests.py::TestIssue81, which reads that list from the registry
+  # at test time.
+  - id: no-avoid-list-words
+    description: None of the skill's avoid-list buzzwords survived into the bio
+    type: transcript_matches
+    must_not_match:
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[- ]in[- ]class\b'
+      - '(?i)\bworld[- ]class\b'
+      - '(?i)\bdeep[- ]dives?\b'
+      - '(?i)\bdeep expertise in\b'
+      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
+      - '(?i)\btouch(?:es|ed|ing)? base\b'
+      - '(?i)\bping me\b'
+
+  # Core move 8: third person. Both halves matter — a bio with no
+  # third-person pronoun at all is as wrong as one that slips into "I", and
+  # checking only for the absence of "I" would pass an empty reply.
+  #
+  # Known noise source: `\bI\b` is matched over the agent's whole final
+  # reply, so an agent that wraps the paragraph in commentary of its own
+  # ("I kept it to 58 words") fails a check about the bio's register. The
+  # brief asks for the paragraph on its own to keep that rare, and the
+  # judge's register dimension backstops it.
+  - id: bio-is-third-person
+    description: The bio is written in the third person, with no first-person "I"
+    type: transcript_matches
+    must_match:
+      - '\b[Hh]e\b'
+    must_not_match:
+      - '\bI\b'
+
+  # Core move 3, in the bio register: concrete employer-and-dates structure
+  # and the named standard, not "extensive accessibility experience". Both
+  # facts are in background.md; neither is asked for.
+  - id: cites-both-facts
+    description: The bio carries the employment dates and the named accessibility standard
+    type: transcript_matches
+    must_match:
+      - '\b2019\s*(?:[-–—]|to)\s*2024\b'
+      # Case-sensitive on purpose: the skill's spelling rules say "Section
+      # 508", capital S, never abbreviated.
+      - 'Section 508'
+
+judge_rubric: >
+  Rank the drafts best to worst as a key-personnel paragraph for a public
+  sector proposal, judged as writing rather than formatting. Score every
+  draft 0-10 on each dimension with a one-sentence rationale.
+  (1) Specificity — concrete employer-and-dates structure, named standards,
+  and countable scope, rather than adjectives about ability. Roughly sixty
+  words is the budget; a draft that spends it on adjectives has spent it
+  badly.
+  (2) Register match — third person throughout, factual, no email softeners
+  and no self-praise; em dashes for asides about scope or scale; any
+  certifications listed plainly at the end.
+  (3) Absence of corporate filler — no buzzwords, and none of the
+  résumé-headline vocabulary ("results-driven", "passionate", "proven track
+  record", "seasoned").
+  A draft that omits either concrete fact must not rank first, however well
+  it reads.

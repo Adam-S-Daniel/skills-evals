@@ -1,0 +1,116 @@
+# Eval fixture: adam-writing-style — recruiter reply
+#
+# Class C (DESIGN.md, "Four instruments, one harness"): the judge carries
+# the load, the few decidable bits stay objective, and the comparison is a
+# pairwise preference against committed reference samples rather than an
+# absolute rubric score. DESIGN.md's own warning applies — expect noise here
+# and run N>=5 trials per arm.
+#
+# Everything in seed/ is invented: Dana Whitcombe, Northgate Bell Talent
+# Group and the client behind REQ-4417 are not real people or companies, and
+# the only addresses are example.com / example.net.
+#
+# The two facts the objective check looks for (REQ-4417, March 2027) sit in
+# the MATERIAL — the recruiter's own email and a personal note — and the
+# brief never asks for them to be quoted. That is deliberate: a brief that
+# said "cite these" would score instruction-following, which both arms pass,
+# instead of the skill's specificity move, which is the thing under test.
+#
+# References live beside this file, NOT in seed/: seed/ is copied into the
+# agent's workspace, so a reference in there would hand the agent the answer.
+
+skill: adam-writing-style
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+# Arms pinned mid-tier, judge pinned strong — DESIGN.md's harness-wide
+# rules. A ceiling-effect arm is signal-free, and an unpinned arm silently
+# tracks the CLI's default model across releases.
+model: claude-sonnet-5
+
+judge:
+  mode: pairwise
+  model: claude-opus-4-8
+  # Blind, shuffled per trial, score = rank. No `weights:` — the score is a
+  # rank, not a weighted mean, and harness/scorers/judge.py rejects a
+  # fixture that carries both rather than half-honouring it.
+  references:
+    - name: in-voice
+      path: references/in-voice.md
+    - name: generic
+      path: references/generic.md
+
+prompt: >
+  Reply to this recruiter's cold email in my voice, declining but leaving
+  the door open
+
+objective_checks:
+  # The avoid list, verbatim from the skill's "Avoid (almost always)"
+  # section. test/run_tests.py::TestIssue81 reads that section out of the
+  # agentskills checkout at TEST time and fails if a term there is not
+  # covered here, so the two cannot drift apart.
+  - id: no-avoid-list-words
+    description: None of the skill's avoid-list buzzwords survived into the reply
+    type: transcript_matches
+    must_not_match:
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[- ]in[- ]class\b'
+      - '(?i)\bworld[- ]class\b'
+      - '(?i)\bdeep[- ]dives?\b'
+      - '(?i)\bdeep expertise in\b'
+      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
+      - '(?i)\btouch(?:es|ed|ing)? base\b'
+      - '(?i)\bping me\b'
+
+  # Core move 1: greet warmly, by name.
+  - id: greets-the-recruiter-by-name
+    description: The reply uses the recruiter's name
+    type: transcript_matches
+    must_match:
+      - '\bDana\b'
+
+  # Core move 2: open with a hedge or apology. Any of the skill's shapes
+  # counts, but it has to be near the top — a hedge in the last paragraph is
+  # not the move, which is why this is anchored to the first 400 characters
+  # rather than searched over the whole reply. The window is generous enough
+  # to survive a short "Here's the reply:" preamble.
+  - id: opens-with-a-hedge
+    description: The reply opens with one of the skill's hedges rather than an assertion
+    type: transcript_matches
+    must_match:
+      - '(?s)\A.{0,400}?(?:I[''’]m guessing|I think\b|as far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
+
+  # Core move 3: be specific — paste the ID verbatim, name the date. Both
+  # facts are in the seed material; neither is asked for.
+  - id: cites-both-facts
+    description: The reply quotes the requisition number and the contract end date
+    type: transcript_matches
+    must_match:
+      - '\bREQ-4417\b'
+      - '(?i)\bMarch 2027\b'
+
+# Pairwise: the judge ranks this reply against the two committed references
+# without being told which is which, and the rank is the score. The
+# dimensions sit beside the rank as the "why". The last line is this
+# fixture's version of the harness-wide rule that a decidable failure caps
+# the judge — here it caps the rank instead of a dimension.
+judge_rubric: >
+  Rank the drafts best to worst as a reply that declines a recruiter's cold
+  approach without closing the door, judged as writing rather than
+  formatting. Score every draft 0-10 on each dimension with a one-sentence
+  rationale.
+  (1) Specificity — does the draft use the concrete material available (the
+  requisition number, the date the writer's current commitment ends, the
+  on-site expectation) instead of vague paraphrase like "my current
+  commitments"?
+  (2) Register match — warm but direct; greets by name; opens by hedging or
+  apologising rather than asserting; em dashes for asides but not in every
+  sentence; a plain sign-off; at most one exclamation mark; no "Dear" for
+  ordinary correspondence.
+  (3) Absence of corporate filler — no buzzwords, no résumé-headline
+  language, no closing "let me know if you have any questions" with nothing
+  behind it.
+  A draft that omits either concrete fact must not rank first, however well
+  it reads.

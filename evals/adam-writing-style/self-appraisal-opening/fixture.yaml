@@ -1,0 +1,89 @@
+# Eval fixture: adam-writing-style — self-appraisal opening
+#
+# Class C, same shape as the other two fixtures in this directory. The
+# register is the mirror of the proposal bio: core move 9 says a
+# self-appraisal is first person, narrative, and generous — takes credit
+# alongside collaborators and names next quarter's goals — where the bio is
+# third person and stripped of softeners. Getting one register right and the
+# other wrong is exactly what a single merged fixture would hide.
+#
+# The quarter, the repository name and every number in notes.md are
+# invented; no real employer, coworker or system appears.
+
+skill: adam-writing-style
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+model: claude-sonnet-5
+
+judge:
+  mode: pairwise
+  model: claude-opus-4-8
+  references:
+    - name: in-voice
+      path: references/in-voice.md
+    - name: generic
+      path: references/generic.md
+
+prompt: >
+  Draft the opening paragraph of my self-appraisal for this quarter from
+  these notes.
+
+objective_checks:
+  # Verbatim from the skill's "Avoid (almost always)" list; kept honest by
+  # test/run_tests.py::TestIssue81, which reads that list from the registry
+  # at test time.
+  - id: no-avoid-list-words
+    description: None of the skill's avoid-list buzzwords survived into the paragraph
+    type: transcript_matches
+    must_not_match:
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[- ]in[- ]class\b'
+      - '(?i)\bworld[- ]class\b'
+      - '(?i)\bdeep[- ]dives?\b'
+      - '(?i)\bdeep expertise in\b'
+      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
+      - '(?i)\btouch(?:es|ed|ing)? base\b'
+      - '(?i)\bping me\b'
+
+  # Core move 9: first person. The must_not_match patterns catch the
+  # specific failure a third-person draft shows — narrating the writer's own
+  # quarter about him — rather than banning third-person pronouns outright,
+  # which would also ban the sentence that credits a coworker.
+  - id: appraisal-is-first-person
+    description: The paragraph is written in the first person, not narrated about Adam
+    type: transcript_matches
+    must_match:
+      - '\bI\b'
+    must_not_match:
+      - '(?i)\bAdam(?: Daniel)?\s+(?:led|built|delivered|stood|drove|owned|shipped|spent|took|closed|cut|reduced|ran)\b'
+      - '(?i)\bhe\s+(?:led|built|delivered|stood|drove|owned|shipped|took|closed|cut|reduced|ran)\b'
+
+  # Core move 3 again, in the eval register: the named thing and the number,
+  # not "improved our deployment tooling". Both facts are in notes.md;
+  # neither is asked for.
+  - id: cites-both-facts
+    description: The paragraph names the repository and the pipeline number from the notes
+    type: transcript_matches
+    must_match:
+      - '\bdeploy-scaffold\b'
+      - '\b26\s*-?\s*min'
+
+judge_rubric: >
+  Rank the drafts best to worst as the narrative opening of a performance
+  self-appraisal, judged as writing rather than formatting. Score every
+  draft 0-10 on each dimension with a one-sentence rationale.
+  (1) Specificity — named systems and real numbers from the notes, rather
+  than "significant contributions" and "meaningful efficiencies". Credit
+  shared with a collaborator where the notes say so counts here too: it is
+  a fact about the quarter, not modesty.
+  (2) Register match — first person, narrative prose rather than a bullet
+  list, generous about collaborators, and ending on what next quarter is
+  for; em dashes for asides but not in every sentence.
+  (3) Absence of corporate filler — no buzzwords, no stacked hedging, and
+  none of the annual-review vocabulary that says nothing ("strategic
+  initiatives", "cross-functionally", "positioning the team for success").
+  A draft that omits either concrete fact must not rank first, however well
+  it reads.
