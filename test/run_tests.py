@@ -1930,5 +1930,66 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.assertEqual(keys[-1], "repo-view-example-org-example-site.json")
 
 
+    # ---------------------------------------- part 2: the arm's environment
+
+    def test_the_arms_workspace_beats_an_outer_workspace_variable(self):
+        """`$WORKSPACE` must mean the arm's workspace, always.
+
+        `os.path.expandvars` reads `os.environ` first, so a `WORKSPACE`
+        already set in the harness's own environment resolved
+        `$WORKSPACE/bin` to the OUTER path — silently removing the fake from
+        PATH and leaving whatever real `gh` is next on it, under
+        bypassPermissions.
+        """
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, {"WORKSPACE": "/decoy",
+                                             "PATH": "/usr/bin"}):
+            env = run_eval.agent_env(Path(tmp), {
+                "PATH": "$WORKSPACE/bin:$PATH",
+                "FAKE_GH_PAYLOADS": "${WORKSPACE}/" + self.PAYLOAD_DIR,
+            })
+        self.assertEqual(env["PATH"], f"{tmp}/bin:/usr/bin")
+        self.assertEqual(env["FAKE_GH_PAYLOADS"], f"{tmp}/{self.PAYLOAD_DIR}")
+        self.assertEqual(env["WORKSPACE"], tmp)
+
+    def _mini_eval(self, seed_bin: dict[str, str] | None) -> Path:
+        """A throwaway eval dir whose fixture prepends `$WORKSPACE/bin`."""
+        root = Path(tempfile.mkdtemp(prefix="issue84-eval-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        (root / "fixture.yaml").write_text(
+            "skill: mini\nprompt: probe\n"
+            'env:\n  PATH: "$WORKSPACE/bin:$PATH"\n'
+            "objective_checks: []\njudge_rubric: none\n", encoding="utf-8")
+        seed = root / "seed"
+        (seed / "bin").mkdir(parents=True)
+        (seed / "README.md").write_text("mini seed\n", encoding="utf-8")
+        for name, body in (seed_bin or {}).items():
+            path = seed / "bin" / name
+            path.write_text(body, encoding="utf-8")
+            path.chmod(0o755)
+        return root
+
+    def _run_mini(self, eval_dir: Path) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
+        env["FAKE_CLAUDE_MODE"] = "agent_and_judge"
+        with tempfile.TemporaryDirectory() as results:
+            return subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+                 "--arm", "without_skill", "--no-judge", "--timeout", "30",
+                 "--results-dir", results],
+                capture_output=True, text=True, env=env, cwd=str(REPO_ROOT))
+
+    def test_an_arm_whose_stand_in_never_made_it_onto_path_fails_loudly(self):
+        """Better a crashed arm than one that ran the real tool."""
+        proc = self._run_mini(self._mini_eval(None))
+        self.assertNotEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("PATH", proc.stderr)
+
+    def test_an_arm_whose_stand_in_is_on_path_runs(self):
+        proc = self._run_mini(self._mini_eval({"gh": "#!/bin/sh\nexit 0\n"}))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -18,6 +18,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -46,6 +47,22 @@ def _resolve_registry(cli_value: Path | None) -> Path:
     return Path.home() / "repos" / "agentskills"
 
 
+_VAR_RE = re.compile(r"\$(\w+)|\$\{([^}]*)\}")
+
+
+def expand(value: str, env: dict) -> str:
+    """`$VAR` / `${VAR}` resolved against `env`, in ONE pass.
+
+    Not `os.path.expandvars`: that reads `os.environ`, so a `WORKSPACE`
+    already set in the harness's own environment won every time and
+    `$WORKSPACE/bin` resolved to the OUTER path — which silently removed the
+    fixture's fake from PATH and left whatever real tool was next on it, under
+    bypassPermissions. One pass also means the substituted text is never
+    re-scanned, so a workspace path holding a `$` cannot expand again.
+    """
+    return _VAR_RE.sub(lambda m: env.get(m.group(1) or m.group(2), m.group(0)), value)
+
+
 def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     """The environment the agent under test runs in.
 
@@ -61,8 +78,31 @@ def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     env = dict(os.environ)
     env["WORKSPACE"] = str(workspace)
     for key, value in (env_spec or {}).items():
-        env[str(key)] = os.path.expandvars(str(value)).replace("$WORKSPACE", str(workspace))
+        env[str(key)] = expand(str(value), env)
     return env
+
+
+def assert_stand_ins_on_path(workspace: Path, env: dict, env_spec: dict | None) -> None:
+    """A fixture that prepends `$WORKSPACE/<dir>` to PATH must actually get it.
+
+    The failure this catches is silent and total: the arm runs the REAL tool
+    the fixture meant to fake, under bypassPermissions, and scores whatever
+    that tool happened to say. Raising is the right end for it — a harness
+    that cannot honour a fixture's `env:` block has no result worth writing.
+    """
+    spec = str((env_spec or {}).get("PATH", ""))
+    if not spec.startswith("$WORKSPACE"):
+        return
+    wanted = Path(expand(spec.split(os.pathsep, 1)[0], dict(env)))
+    got = Path(env["PATH"].split(os.pathsep)[0])
+    if got != wanted:
+        raise RuntimeError(f"fixture PATH resolved to {got}, expected {wanted}")
+    stand_ins = ([p for p in sorted(wanted.iterdir())
+                  if p.is_file() and os.access(p, os.X_OK)] if wanted.is_dir() else [])
+    if not stand_ins:
+        raise RuntimeError(
+            f"no executable stand-in in {wanted}, which the fixture puts first "
+            "on PATH: the arm would run the real tool instead")
 
 
 def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
@@ -214,6 +254,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
         _git("init", "-q", cwd=workspace)
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "-m", "seed", cwd=workspace)
+
+        assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
+                                 fixture.get("env"))
 
         arm_config = {
             "name": arm_name,
