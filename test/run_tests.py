@@ -3196,6 +3196,74 @@ exit 0
         self.assertEqual(got["out"].count("preflight model:"), 1,
                          "no retry when the first attempt already succeeded")
 
+    # --- item 5: `_clean_counts` misses OverflowError, non-finite floats,
+    #             and negative counts ---------------------------------------
+
+    def test_clean_counts_rejects_infinite_and_nan_cells(self):
+        """`int(float('inf'))` raises OverflowError, which `except
+        (TypeError, ValueError)` does not catch — a census cell of `1e400`
+        (JSON overflows it to inf) or the literal `Infinity` used to exit by
+        an uncaught traceback instead of being skipped as a bad cell."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": float("inf"),
+                               "2026-W35": float("-inf"),
+                               "2026-W34": float("nan"),
+                               "2026-W33": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W33": 50}})
+        self.assertTrue(any("number" in n for n in notes), notes)
+
+    def test_main_does_not_crash_on_a_non_finite_census_count(self):
+        """End-to-end: Python's `json` module accepts the bare `Infinity`
+        literal by default (it is what `1e400` also decodes to). This used
+        to reach `int()` unguarded and exit by traceback; eval.yml's
+        extractor then printed the traceback's first line as the reason."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            census.write_text(
+                '{"generated_at": "2026-09-04T06:00:00Z", "weeks": %s, '
+                '"counts": {"claude-sonnet-5": {"2026-W36": Infinity}}}'
+                % json.dumps(self.W), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--census", str(census), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(rc, 0, printed)
+        self.assertNotIn("Traceback", printed)
+
+    def test_negative_counts_are_rejected_as_bad_cells(self):
+        """A `-99` cell was accepted at face value — `int(-99)` does not
+        raise — and fed straight into usage_share's totals, once producing
+        a nonsensical 'carries 10000.0% of census usage'."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": -99, "2026-W35": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W35": 50}})
+        self.assertTrue(any("number" in n for n in notes), notes)
+
+    def test_a_cancelling_pair_does_not_net_to_a_smaller_share(self):
+        """A `+100`/`-100` pair on the same model used to sum straight into
+        usage_share's totals and net to zero usage — including a zero
+        DENOMINATOR when that pair was the census's only entry, which the
+        old `_census_verdict` (checking raw, un-rejected counts) read as
+        usable."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {self.W[0]: 100, self.W[1]: -100},
+             "claude-sonnet-5": {w: 100 for w in self.W[:4]}}, notes.append)
+        rungs = roster.tier_rungs(self._policy())
+        share = roster.usage_share(cleaned, "claude-opus-5", self.W[:4], rungs)
+        self.assertEqual(share, 20.0,
+                         "the -100 cell is rejected, not summed: opus-5 "
+                         "keeps its 100 turns against a 500-turn ranked total")
+
 
 if __name__ == "__main__":
     unittest.main()

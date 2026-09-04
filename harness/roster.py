@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -256,9 +257,27 @@ def _clean_counts(counts, warn) -> dict:
             if not isinstance(week, str):
                 bad_cells += 1
                 continue
+            # `int(float('inf'))` raises OverflowError, not TypeError or
+            # ValueError — an uncaught OverflowError used to exit this
+            # script by traceback on a census cell of `1e400` (which JSON
+            # overflows to inf) or the literal `Infinity`/`NaN`, both of
+            # which Python's `json` module accepts by default. Rejecting
+            # non-finite floats before `int()` catches it without relying on
+            # the exception ever firing.
+            if isinstance(n, float) and not math.isfinite(n):
+                bad_cells += 1
+                continue
             try:
                 value = int(n)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
+                bad_cells += 1
+                continue
+            # A negative count is not a real turn tally — accepting it at
+            # face value let it sum straight into usage_share's totals
+            # (a `-99` cell once yielded a 'carries 10000.0%' reason, and a
+            # cancelling +/- pair could zero a census's only ranked usage
+            # while `_census_verdict` still read it as usable).
+            if value < 0:
                 bad_cells += 1
                 continue
             cleaned.setdefault(model_id, {})[week] = value
