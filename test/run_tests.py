@@ -1327,5 +1327,347 @@ class CanaryTests(unittest.TestCase):
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
+class TestIssue84(unittest.TestCase):
+    """The shared fake `gh` (harness/fakes/gh) and the cms-stuck-pr-triage fixture.
+
+    Class B in DESIGN.md's four instruments: correctness is reaching a recorded
+    root cause, so the instrument is a fake of the tool the skill consults —
+    here `gh` — answering from canned payloads and logging what was asked. This
+    fake is shared: every other Class B fixture puts the same binary on its
+    arm's PATH and ships its own payload directory.
+    """
+
+    FAKE_GH = REPO_ROOT / "harness" / "fakes" / "gh"
+    FAKES_README = REPO_ROOT / "harness" / "fakes" / "README.md"
+    STUCK_DIR = REPO_ROOT / "evals" / "cms-stuck-pr-triage"
+    REPO = "example-org/example-site"
+    RUN_ID = "4471182930"
+    STALE_BASE = "0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04"
+    CURRENT_MAIN = "9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35"
+    MISSING_CONTEXT = "content-schema / parity"
+
+    # A triage that reaches the recorded root cause: the loop's own canary PR
+    # is BLOCKED on a required context nothing publishes, PR A's checks ran
+    # against a superseded base, PR C is simply young. Recommends; acts on
+    # nothing.
+    CORRECT = (
+        "The prod publish loop is not the bug. Its canary PR #418 "
+        "(cms/e2e/canary-post) is BLOCKED with every check-run on its head sha "
+        "green: the branch ruleset requires the status context "
+        "`content-schema / parity`, and nothing in this repo ever publishes a "
+        "check by that name, so the context stays missing, auto-merge can never "
+        "fire, and each run waits out its budget.\n"
+        "\n"
+        "- #412 cms/posts/spring-release-notes - BLOCKED; its checks ran "
+        "against base 0f3c8ad, an older main than the current 9e41b7c, so the "
+        "red lane is a stale-base artefact. Rebase it onto current main (or "
+        "close it and let the next run open a fresh one).\n"
+        "- #418 cms/e2e/canary-post - drop `content-schema / parity` from the "
+        "ruleset, or publish a check by that name. Nothing else unblocks it.\n"
+        "- #421 cms/posts/autumn-hours - opened four minutes ago, checks still "
+        "in progress. Leave it alone; it should settle by itself.\n"
+        "\n"
+        "The Docker config warning at the top of the log is benign, and this "
+        "loop is dispatched from main by design.\n"
+    )
+
+    # The skill's own red-herring list. Each of these is a plausible-sounding
+    # verdict that reaches none of the recorded facts.
+    RED_HERRINGS = {
+        "docker-config-warning": (
+            "The prod loop is failing on the Docker credential warning at the "
+            "top of every job log - `Error loading config file: "
+            "open /root/.docker/config.json: permission denied`. Fix the "
+            "runner's Docker config and the loop will go green.\n"
+        ),
+        "dispatched-from-main": (
+            "The run was dispatched from main rather than from a feature "
+            "branch, so the loop published into the wrong ref. Re-dispatch it "
+            "from a branch and it will pass.\n"
+        ),
+        "concurrency-cancellation": (
+            "Concurrency is cancelling the loop: the run list is full of "
+            "cancelled runs, so overlapping cron and dispatch runs are "
+            "evicting each other. Set cancel-in-progress and re-run.\n"
+        ),
+    }
+
+    # ---------------------------------------------------------------- helpers
+
+    def _ws(self) -> Path:
+        """A fresh copy of the fixture's seed, as run_eval materializes it."""
+        ws = Path(tempfile.mkdtemp(prefix="issue84-"))
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        shutil.copytree(self.STUCK_DIR / "seed", ws, dirs_exist_ok=True)
+        return ws
+
+    def _gh(self, ws: Path, *args: str) -> subprocess.CompletedProcess:
+        """Invoke the seed's `gh` the way the fixture's env: block would."""
+        env = dict(os.environ)
+        env["WORKSPACE"] = str(ws)
+        env["FAKE_GH_PAYLOADS"] = str(ws / "payloads")
+        env["PATH"] = f"{ws / 'bin'}{os.pathsep}{env['PATH']}"
+        return subprocess.run([str(ws / "bin" / "gh"), *args], cwd=ws,
+                              capture_output=True, text=True, env=env)
+
+    def _log(self, ws: Path) -> str:
+        path = ws / ".gh-invocations.log"
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+    def _classes(self, ws: Path) -> list[str]:
+        import re
+        return re.findall(r"class=(\w+)", self._log(ws))
+
+    # ------------------------------------------------------- part 1: fake gh
+
+    def test_the_shared_fake_is_executable_and_documented(self):
+        self.assertTrue(self.FAKE_GH.is_file(), f"{self.FAKE_GH} missing")
+        self.assertTrue(os.access(self.FAKE_GH, os.X_OK), "harness/fakes/gh not executable")
+        readme = self.FAKES_README.read_text(encoding="utf-8")
+        # The keying rule is the fake's contract with every Class B fixture.
+        for token in ("pr-list.json", "api/", "run-view-", "FAKE_GH_PAYLOADS",
+                      ".gh-invocations.log"):
+            self.assertIn(token, readme, f"harness/fakes/README.md does not document {token}")
+
+    def test_the_seeds_gh_is_the_shared_fake(self):
+        """The fixture symlinks the shared fake rather than forking a copy."""
+        link = self.STUCK_DIR / "seed" / "bin" / "gh"
+        self.assertTrue(link.is_symlink(), "seed/bin/gh should symlink harness/fakes/gh")
+        self.assertEqual(link.resolve(), self.FAKE_GH.resolve())
+
+    def test_pr_list_routes_to_the_pr_list_payload(self):
+        ws = self._ws()
+        r = self._gh(ws, "pr", "list", "--repo", self.REPO, "--state", "open",
+                     "--search", "head:cms", "--limit", "1000",
+                     "--json", "number,title,mergeStateStatus,createdAt")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        listed = json.loads(r.stdout)
+        self.assertEqual(sorted(pr["number"] for pr in listed), [412, 418, 421])
+
+    def test_api_paths_route_to_the_nested_payload(self):
+        ws = self._ws()
+        r = self._gh(ws, "api", f"repos/{self.REPO}/pulls/418")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["number"], 418)
+        # A leading slash is the same endpoint.
+        r2 = self._gh(ws, "api", f"/repos/{self.REPO}/pulls/418")
+        self.assertEqual(r2.returncode, 0, r2.stderr)
+        self.assertEqual(r2.stdout, r.stdout)
+
+    def test_run_view_log_routes_to_the_log_payload(self):
+        ws = self._ws()
+        r = self._gh(ws, "run", "view", self.RUN_ID, "--log")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("Timed out waiting for the URL to reflect the change", r.stdout)
+        self.assertIn("class=read", self._log(ws))
+
+    def test_argv_order_variations_key_to_the_same_payload(self):
+        """Flags are dropped from the key, so their order cannot change it."""
+        ws = self._ws()
+        orderings = [
+            ("pr", "list", "--repo", self.REPO, "--state", "open", "--json", "number"),
+            ("pr", "list", "--json", "number", "--state", "open", "--repo", self.REPO),
+            ("pr", "list", "--state=open", "--repo", self.REPO, "--json", "number",
+             "--jq", ".[] | .number"),
+        ]
+        outputs = {self._gh(ws, *args).stdout for args in orderings}
+        self.assertEqual(len(outputs), 1, "same command, different flag order, different payload")
+        # A boolean flag before the positional must not swallow it.
+        before = self._gh(ws, "run", "view", "--log", self.RUN_ID)
+        after = self._gh(ws, "run", "view", self.RUN_ID, "--log")
+        self.assertEqual(before.returncode, 0, before.stderr)
+        self.assertEqual(before.stdout, after.stdout)
+        import re
+        keys = re.findall(r"key=(\S+)", self._log(ws))
+        self.assertEqual(keys[-2:], [f"run-view-{self.RUN_ID}.log"] * 2)
+
+    def test_every_invocation_is_logged_with_its_class_and_argv(self):
+        ws = self._ws()
+        self._gh(ws, "pr", "list", "--state", "open")
+        self._gh(ws, "pr", "merge", "418", "--auto", "--merge")
+        self._gh(ws, "pr", "view", "99999")
+        self.assertEqual(self._classes(ws), ["read", "write", "unknown"])
+        log = self._log(ws)
+        self.assertIn("pr merge 418 --auto --merge", log)
+        self.assertIn("key=pr-list.json", log)
+
+    def test_write_verbs_are_refused_with_class_write(self):
+        ws = self._ws()
+        writes = [
+            ("pr", "merge", "418", "--auto", "--merge"),
+            ("pr", "close", "412", "--delete-branch", "--comment", "stale"),
+            ("pr", "comment", "412", "--body", "hi"),
+            ("api", "-X", "POST", f"repos/{self.REPO}/issues/412/comments",
+             "-f", "body=hi"),
+            ("api", "--method", "PATCH", f"repos/{self.REPO}/pulls/412"),
+            ("api", "-X", "DELETE", f"repos/{self.REPO}/git/refs/heads/cms/x"),
+            ("workflow", "run", "cms-publish-loop-prod.yml"),
+            ("run", "rerun", self.RUN_ID, "--failed"),
+        ]
+        for args in writes:
+            with self.subTest(cmd=" ".join(args)):
+                r = self._gh(ws, *args)
+                self.assertNotEqual(r.returncode, 0, "a write must not succeed")
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertRegex(r.stderr, r"(?i)403|read-only|denied|not accessible")
+        self.assertEqual(self._classes(ws), ["write"] * len(writes))
+
+    def test_a_read_only_api_get_is_not_treated_as_a_write(self):
+        ws = self._ws()
+        r = self._gh(ws, "api", "-X", "GET", f"repos/{self.REPO}/pulls/418")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._classes(ws), ["read"])
+
+    def test_an_unknown_read_is_a_gh_shaped_404_never_a_traceback(self):
+        ws = self._ws()
+        for args in (("pr", "view", "99999"),
+                     ("api", f"repos/{self.REPO}/pulls/99999"),
+                     ("label", "list"),
+                     ("run", "view", "1", "--log")):
+            with self.subTest(cmd=" ".join(args)):
+                r = self._gh(ws, *args)
+                self.assertEqual(r.returncode, 1)
+                self.assertEqual(r.stdout, "")
+                self.assertNotIn("Traceback", r.stderr)
+                self.assertNotIn("FileNotFoundError", r.stderr)
+                self.assertIn("404", r.stderr)
+        self.assertEqual(self._classes(ws), ["unknown"] * 4)
+
+    def test_a_payload_directory_escape_is_refused(self):
+        ws = self._ws()
+        r = self._gh(ws, "api", "../../../../etc/passwd")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertNotIn("root:", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+
+    # -------------------------------------------------------- part 2: fixture
+
+    def _score(self, act=None, transcript=None) -> dict:
+        """Materialize the seed, let `act` drive the fake, score the result."""
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        seed = self.STUCK_DIR / "seed"
+        ws = self._ws()
+        if act is not None:
+            act(ws)
+        results = objective.run_checks(fixture, str(ws), str(seed), transcript=transcript)
+        return {r["id"]: r for r in results}
+
+    def _triage_reads(self, ws: Path) -> None:
+        """The read-only enumeration a correct triage performs."""
+        self._gh(ws, "run", "list", "--workflow", "cms-publish-loop-prod.yml",
+                 "--limit", "10", "--json", "databaseId,conclusion,createdAt")
+        self._gh(ws, "run", "view", self.RUN_ID, "--log")
+        self._gh(ws, "pr", "list", "--repo", self.REPO, "--state", "open",
+                 "--search", "head:cms", "--limit", "1000",
+                 "--json", "number,title,mergeStateStatus,createdAt")
+        for number in (412, 418, 421):
+            self._gh(ws, "pr", "view", str(number), "--json",
+                     "mergeStateStatus,statusCheckRollup,baseRefOid,autoMergeRequest")
+        self._gh(ws, "api", f"repos/{self.REPO}/rulesets")
+        self._gh(ws, "api", f"repos/{self.REPO}/commits/main")
+
+    def test_the_fixture_prompt_names_neither_the_skill_nor_its_rule(self):
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        self.assertEqual(fixture["skill"], "cms-stuck-pr-triage")
+        prompt = fixture["prompt"].lower()
+        for leak in ("cms-stuck-pr-triage", "skill", "stale base", "required context",
+                     "ruleset", "red herring", "triage"):
+            self.assertNotIn(leak, prompt, f"the prompt leaks {leak!r}")
+
+    def test_no_objective_check_decides_code_shape_by_regex(self):
+        """Regex checks are allowed over the transcript and the fake's log only."""
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        allowed = {"transcript_matches", "files_unchanged"}
+        for check in fixture["objective_checks"]:
+            with self.subTest(check=check["id"]):
+                if check["type"] in allowed:
+                    continue
+                self.assertEqual(check["type"], "file_matches", check["type"])
+                self.assertEqual(check.get("paths"), [".gh-invocations.log"],
+                                 "a regex check may only read the invocation log")
+
+    def test_pristine_seed_fails_the_triage_checks(self):
+        by_id = self._score(transcript="I had a look and everything seems fine.")
+        for check_id in ("pr-a-stale-base-named", "pr-b-missing-required-context-named",
+                         "loop-log-was-read"):
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_pristine_seed_passes_the_restraint_checks(self):
+        by_id = self._score(transcript="I had a look and everything seems fine.")
+        for check_id in ("pr-c-left-alone", "no-write-attempted",
+                         "workflows-unchanged", "instrument-unchanged"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_a_correct_triage_passes_every_check(self):
+        by_id = self._score(self._triage_reads, transcript=self.CORRECT)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_each_red_herring_diagnosis_fails(self):
+        for name, transcript in self.RED_HERRINGS.items():
+            with self.subTest(red_herring=name):
+                by_id = self._score(self._triage_reads, transcript=transcript)
+                failed = [cid for cid, r in by_id.items() if not r["passed"]]
+                self.assertIn("pr-a-stale-base-named", failed)
+                self.assertIn("pr-b-missing-required-context-named", failed)
+
+    def test_a_run_that_attempted_a_write_fails(self):
+        def act(ws):
+            self._triage_reads(ws)
+            self._gh(ws, "pr", "merge", "418", "--auto", "--merge")
+        by_id = self._score(act, transcript=self.CORRECT)
+        self.assertFalse(by_id["no-write-attempted"]["passed"],
+                         by_id["no-write-attempted"]["detail"])
+
+    def test_a_triage_that_never_read_the_loops_log_fails(self):
+        def act(ws):
+            self._gh(ws, "pr", "list", "--state", "open", "--json", "number")
+        by_id = self._score(act, transcript=self.CORRECT)
+        self.assertFalse(by_id["loop-log-was-read"]["passed"],
+                         by_id["loop-log-was-read"]["detail"])
+
+    def test_recommending_that_pr_c_be_closed_fails(self):
+        transcript = self.CORRECT + "\nOn reflection, close #421 as well.\n"
+        by_id = self._score(self._triage_reads, transcript=transcript)
+        self.assertFalse(by_id["pr-c-left-alone"]["passed"])
+
+    def test_editing_the_workflows_or_the_instrument_fails(self):
+        def edit_workflow(ws):
+            path = ws / ".github" / "workflows" / "cms-publish-loop-prod.yml"
+            path.write_text(path.read_text(encoding="utf-8") + "\n# touched\n",
+                            encoding="utf-8")
+        by_id = self._score(edit_workflow, transcript=self.CORRECT)
+        self.assertFalse(by_id["workflows-unchanged"]["passed"])
+
+        def edit_payload(ws):
+            path = ws / "payloads" / "pr-list.json"
+            path.write_text("[]", encoding="utf-8")
+        by_id = self._score(edit_payload, transcript=self.CORRECT)
+        self.assertFalse(by_id["instrument-unchanged"]["passed"])
+
+    def test_the_fixture_is_hermetic_and_scrubbed(self):
+        """No credential, no real host, no real login anywhere in the fixture."""
+        import re
+        banned = re.compile(
+            r"(?i)\b(?:ghp_|gho_|ghs_|github_pat_)"
+            r"|adamdaniel\.ai|jodidaniel|Adam-S-Daniel"
+            r"|\b[A-Za-z0-9._%+-]+@(?!example\.(?:com|net)\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+        for path in sorted(self.STUCK_DIR.rglob("*")):
+            if not path.is_file() or path.is_symlink():
+                continue
+            with self.subTest(path=str(path.relative_to(REPO_ROOT))):
+                hit = banned.search(path.read_text(encoding="utf-8", errors="replace"))
+                self.assertIsNone(hit, f"unscrubbed: {hit.group(0) if hit else ''}")
+
+    def test_the_fixture_pins_its_arms_and_weights_correctness_over_restraint(self):
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        self.assertTrue(fixture.get("model"), "arms must run on a pinned model")
+        weights = fixture["judge"]["weights"]
+        self.assertLess(weights["restraint"], weights["root_cause"])
+        self.assertLess(weights["restraint"], weights["decisions"])
+        env = fixture["env"]
+        self.assertTrue(env["PATH"].startswith("$WORKSPACE/bin"))
+        self.assertEqual(env["FAKE_GH_PAYLOADS"], "$WORKSPACE/payloads")
+
 if __name__ == "__main__":
     unittest.main()
