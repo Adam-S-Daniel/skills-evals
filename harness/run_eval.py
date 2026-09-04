@@ -46,11 +46,31 @@ def _resolve_registry(cli_value: Path | None) -> Path:
     return Path.home() / "repos" / "agentskills"
 
 
+def agent_env(workspace: Path, env_spec: dict | None) -> dict:
+    """The environment the agent under test runs in.
+
+    A fixture's `env:` mapping is applied over the harness's own environment,
+    with `$WORKSPACE` (and any other `$VAR`) expanded against the workspace
+    the arm actually got — a temp dir the fixture cannot know in advance.
+    That is what lets a seed put a fake binary on the agent's PATH
+    (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B "fake `gh` on the seed
+    workspace's PATH" move DESIGN.md prescribes, without the seed carrying an
+    absolute path. Values are strings; a non-string is stringified rather
+    than rejected, since YAML will happily hand over an int.
+    """
+    env = dict(os.environ)
+    env["WORKSPACE"] = str(workspace)
+    for key, value in (env_spec or {}).items():
+        env[str(key)] = os.path.expandvars(str(value)).replace("$WORKSPACE", str(workspace))
+    return env
+
+
 def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     """Run the agent under test (the Claude Code CLI, headless) on the workspace.
 
     `arm` carries: name ("with_skill"/"without_skill"), skill + registry (Path,
-    only for with_skill), optional model, optional timeout (default 600s).
+    only for with_skill), optional model, optional timeout (default 600s),
+    optional env (the fixture's `env:` mapping, see agent_env).
 
     This replaces the old `-> str` transcript stub with a richer dict. Success
     dicts have no "error" key and carry transcript/usage/cost_usd/num_turns/
@@ -86,7 +106,8 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     timeout = arm.get("timeout", 600)
     try:
         result = subprocess.run(cmd, cwd=workspace, capture_output=True,
-                                text=True, timeout=timeout)
+                                text=True, timeout=timeout,
+                                env=agent_env(workspace, arm.get("env")))
     except subprocess.TimeoutExpired:
         return {"error": "timeout", "detail": f"agent timed out after {timeout}s"}
 
@@ -198,6 +219,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
             "name": arm_name,
             "model": args.model or fixture.get("model"),
             "timeout": args.timeout or fixture.get("timeout_s", 600),
+            "env": fixture.get("env"),
         }
         if arm_name == "with_skill":
             arm_config["skill"] = fixture["skill"]
@@ -220,7 +242,8 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
                 "duration_ms": result.get("duration_ms"),
                 "usage": result.get("usage"),
             }
-            objective_checks = objective.run_checks(fixture, str(workspace), str(seed))
+            objective_checks = objective.run_checks(
+                fixture, str(workspace), str(seed), transcript=result.get("transcript"))
 
             if not args.no_judge:
                 _git("add", "-A", cwd=workspace)

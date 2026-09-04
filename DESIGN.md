@@ -233,6 +233,11 @@ for every fixture, not folklore in one file's comments:
   trials are the mitigation.
 - **Hermetic, always** — no network, no wall-clock; canned payloads and fake
   binaries.
+  A fixture puts a fake binary in front of the real one with an `env:`
+  block (`PATH: "$WORKSPACE/bin:$PATH"`; `$WORKSPACE` expands to the arm's
+  temp workspace), and reads what the agent did off the log the fake writes
+  — `file_matches` over the log, `transcript_matches` over the final reply.
+  `windows-elevation-from-wsl` is the first fixture in that shape.
 
 ### Coverage accrues by process, not by project
 
@@ -265,6 +270,7 @@ yet" must stay distinguishable.)
 | `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
 | `launch-wsl-claude-session`, `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
+| `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
 | `fastmail` bundle | defer | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own |
 | `aws-bootstrap`, `preview-environments` | freshness lint | staleness is the failure mode, not procedure quality |
 

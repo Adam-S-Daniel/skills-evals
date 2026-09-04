@@ -33,6 +33,9 @@ evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
     seed/                  # workspace the agent starts from (unfiltered workflows)
+  windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
+    fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
+    seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
