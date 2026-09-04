@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -254,16 +255,35 @@ def _blind_label(index: int) -> str:
     return chr(ord("A") + index)
 
 
-def _order_key(trial_index: int, identity: str) -> str:
-    """The sort key that shuffles the drafts for one trial.
-
-    A hash rather than `random.shuffle`: the permutation has to be
-    reproducible from the trial index alone — across processes, across
-    machines, and across Python versions — and `random`'s shuffle is an
-    implementation detail no test should pin.
+def _digest(payload: str) -> int:
+    """A stable integer from a string — sha256, so the value is the same on
+    every machine, process and Python version. `hash()` is none of those.
     """
-    payload = f"skills-evals/pairwise/{int(trial_index)}/{identity}"
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    return int(hashlib.sha256(payload.encode("utf-8")).hexdigest(), 16)
+
+
+def _cycle_offset(identities: list[str]) -> int:
+    """Where in the permutation cycle trial 0 starts, for this set of drafts.
+
+    Without it trial 0 would always be the identity permutation, which puts
+    the draft under test in slot A for every fixture's first trial.
+    """
+    return _digest("skills-evals/pairwise/cycle/" + "|".join(sorted(identities)))
+
+
+def _nth_permutation(items: list, index: int) -> list:
+    """The `index`-th permutation of `items` in lexicographic order.
+
+    Computed through the factorial number system rather than by enumerating
+    permutations, so the cost is O(n^2) instead of O(n!).
+    """
+    items = list(items)
+    index %= math.factorial(len(items))
+    out = []
+    for i in range(len(items), 0, -1):
+        pick, index = divmod(index, math.factorial(i - 1))
+        out.append(items.pop(pick))
+    return out
 
 
 def blind_order(candidate_text: str, references: list,
@@ -276,13 +296,23 @@ def blind_order(candidate_text: str, references: list,
     and the draft under test does not sit in the same slot every trial (so a
     judge cannot learn the slot instead of the writing).
     """
-    candidates = [{"identity": AGENT_IDENTITY, "text": candidate_text or ""}]
+    candidates = {AGENT_IDENTITY: {"identity": AGENT_IDENTITY,
+                                   "text": candidate_text or ""}}
     for reference in _normalize_references(references):
-        candidates.append({"identity": _REFERENCE_PREFIX + reference["name"],
-                           "text": reference["text"]})
-    ordered = sorted(candidates,
-                     key=lambda c: _order_key(trial_index, c["identity"]))
-    return [{"label": _blind_label(i), **c} for i, c in enumerate(ordered)]
+        identity = _REFERENCE_PREFIX + reference["name"]
+        candidates[identity] = {"identity": identity, "text": reference["text"]}
+
+    identities = sorted(candidates)
+    # Systematic rather than random: consecutive trials always get DIFFERENT
+    # permutations, and over one full cycle (n! trials) every draft sits in
+    # every slot exactly the same number of times. Drawing each trial's
+    # permutation independently at random would leave a five-trial run free
+    # to put the draft under test in slot A four times out of five, which is
+    # the position bias the shuffle exists to remove.
+    chosen = _nth_permutation(
+        identities, _cycle_offset(identities) + int(trial_index))
+    return [{"label": _blind_label(i), **candidates[identity]}
+            for i, identity in enumerate(chosen)]
 
 
 def _build_pairwise_prompt(rubric: str, ordered: list[dict],
@@ -438,3 +468,29 @@ def load_references(eval_dir, judge_cfg: dict) -> list[dict]:
         loaded.append({"name": str(entry.get("name") or f"reference-{i}"),
                        "text": resolved.read_text(encoding="utf-8")})
     return _normalize_references(loaded)
+
+
+def score_fixture(eval_dir, fixture: dict, transcript: str,
+                  workspace_diff: str = "", *, trial_index: int = 0) -> dict:
+    """Score one arm from a loaded fixture, honouring its `judge:` block.
+
+    This is the seam `run_eval._run_arm` should call: it reads `mode`,
+    `model`, `timeout_s` and `weights` off the fixture, and for
+    `mode: pairwise` loads the fixture's references from `eval_dir` — the
+    two things a fixture can say that `score()`'s three positional arguments
+    cannot carry.
+
+    run_eval.py still calls `score()` directly with the arguments it knew
+    before #81, so `judge.mode: pairwise` is inert in a real run until that
+    one call site moves here. That change belongs to the issue that owns
+    run_eval.py; #81 owns this file, and stops at the seam.
+    """
+    judge_cfg = fixture.get("judge") or {}
+    mode = judge_cfg.get("mode", "absolute")
+    references = (load_references(eval_dir, judge_cfg)
+                  if mode == "pairwise" else None)
+    return score(fixture["judge_rubric"], transcript or "", workspace_diff,
+                 model=judge_cfg.get("model"),
+                 timeout=judge_cfg.get("timeout_s", 120),
+                 weights=judge_cfg.get("weights"),
+                 mode=mode, references=references, trial_index=trial_index)

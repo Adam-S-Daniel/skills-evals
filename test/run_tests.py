@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import itertools
 import json
+import math
 import os
 import re
 import shutil
@@ -3047,6 +3048,12 @@ class TestIssue81(unittest.TestCase):
         agent_label = self._label_of(result, judge.AGENT_IDENTITY)
         expected = self.CANNED_RANKING.index(agent_label) + 1
         self.assertEqual(result["rank"], expected)
+        # Concretely, against trial 0's pinned order: the draft under test
+        # carries label C, and the canned ranking ["B", "A", "C"] puts C
+        # last, so the rank is 3. Spelled out so the mapping is pinned to a
+        # number and not only to the implementation that produced it.
+        self.assertEqual(agent_label, "C")
+        self.assertEqual(result["rank"], 3)
         # "score = rank" — the issue's wording, and 1 is best.
         self.assertEqual(result["score"], result["rank"])
         self.assertEqual(result["mode"], "pairwise")
@@ -3082,8 +3089,8 @@ class TestIssue81(unittest.TestCase):
 
     def test_pairwise_order_changes_with_the_seed(self):
         # The references must never be shown in a fixed order: a judge that
-        # always sees the agent in slot A can learn the slot instead of the
-        # writing.
+        # always sees the draft under test in slot A can learn the slot
+        # instead of the writing.
         orders = [tuple(c["identity"] for c in
                         judge.blind_order(self.CANDIDATE, self.REFERENCES, t))
                   for t in range(8)]
@@ -3091,8 +3098,38 @@ class TestIssue81(unittest.TestCase):
                            f"the order never changed across trials: {orders}")
         agent_slots = {order.index(judge.AGENT_IDENTITY) for order in orders}
         self.assertGreater(len(agent_slots), 1,
-                           "the candidate under test always landed in the "
+                           "the draft under test always landed in the "
                            f"same slot: {orders}")
+
+    def test_pairwise_order_walks_the_whole_cycle(self):
+        # Stronger than "it changes": across one full cycle of n! trials
+        # every permutation appears exactly once, so each draft sits in each
+        # slot the same number of times. Independent random draws per trial
+        # would satisfy the weaker test above and still leave a five-trial
+        # run free to show the draft under test first four times out of five.
+        cycle = math.factorial(1 + len(self.REFERENCES))
+        orders = [tuple(c["identity"] for c in
+                        judge.blind_order(self.CANDIDATE, self.REFERENCES, t))
+                  for t in range(cycle)]
+        self.assertEqual(len(set(orders)), cycle, orders)
+        slots = [order.index(judge.AGENT_IDENTITY) for order in orders]
+        self.assertEqual(sorted(slots), [0, 0, 1, 1, 2, 2], orders)
+        # And it repeats from there, so trial n! replays trial 0.
+        self.assertEqual(
+            orders[0],
+            tuple(c["identity"] for c in
+                  judge.blind_order(self.CANDIDATE, self.REFERENCES, cycle)))
+
+    def test_pairwise_order_for_trial_zero_is_pinned(self):
+        # The reproducibility contract, written down: an eval re-run months
+        # from now on another machine must show the judge the same drafts in
+        # the same order for the same trial index. A change to the seed
+        # derivation is allowed to fail this test — it is not allowed to
+        # happen silently.
+        self.assertEqual(
+            [c["identity"] for c in
+             judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)],
+            ["reference:generic", "reference:in-voice", "agent"])
 
     def test_pairwise_prompt_is_blind(self):
         ordered = judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)
@@ -3233,6 +3270,41 @@ class TestIssue81(unittest.TestCase):
                 for reference in references:
                     self.assertTrue(
                         (self.STYLE_DIR / name / reference["path"]).is_file())
+
+    def test_score_fixture_ranks_every_fixture_end_to_end(self):
+        # fixture.yaml -> references off disk -> blind shuffled prompt ->
+        # canned ranking -> a rank, with nothing hand-assembled in between.
+        # This is the whole pairwise path except run_eval's call site, which
+        # #81 is not allowed to touch.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                fixture = self._fixture(name)
+                transcript = self._reference(name, "in-voice")
+                with mock.patch.dict(
+                        os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                     "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+                    result = judge.score_fixture(self.STYLE_DIR / name, fixture,
+                                                 transcript, trial_index=1)
+                self.assertEqual(result["mode"], "pairwise")
+                self.assertEqual(result["n_candidates"], 3)
+                self.assertEqual(result["score"], result["rank"])
+                self.assertIn(result["rank"], (1, 2, 3))
+                self.assertEqual(sorted(result["reference_dimensions"]),
+                                 ["generic", "in-voice"])
+
+    def test_score_fixture_still_defaults_to_the_absolute_mode(self):
+        # A fixture with no `judge.mode:` — every fixture that predates #81 —
+        # must go on being scored exactly as before, weights and all.
+        fixture = {"judge_rubric": "rubric",
+                   "judge": {"weights": {"completeness": 0.5}}}
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge"}):
+            result = judge.score_fixture(self.STYLE_DIR, fixture, "transcript",
+                                         "diff")
+        self.assertNotIn("mode", result)
+        # The weighted mean of fake-claude's canned dimensions, i.e. the
+        # weights reached score() rather than being dropped on the way.
+        self.assertAlmostEqual(result["overall"], 26 / 3.5)
 
     def test_fixture_rubrics_ask_for_the_three_pairwise_dimensions(self):
         for name in self.FIXTURES:
