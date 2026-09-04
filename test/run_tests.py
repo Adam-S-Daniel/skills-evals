@@ -2904,5 +2904,96 @@ exec {GIT} "$@"
             with self.subTest(step=step.get("name")):
                 self.assertNotIn("${{", step.get("run") or "")
 
+
+class TestIssue67Review2(unittest.TestCase):
+    """Review-round-2 fixes on top of #67's roster feature (PR #129, round 2).
+
+    A SIBLING of TestIssue67 and TestIssue67Review — same reasons: reuse the
+    canned documents, run its own tests once. Same hermetic rules apply.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        return TestIssue67._models_doc(extra=extra, drop=drop)
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        return TestIssue67._census_doc(counts=counts, generated_at=generated_at)
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    # --- item 1: usage_share's denominator excludes `other`/unranked, and
+    #             _census_verdict must agree, not read RAW counts -----------
+
+    def test_census_entirely_unrankable_is_held_not_read_as_usable(self):
+        """A census whose in-window usage is entirely `other` (e.g. every
+        turn routed through Bedrock/Vertex/a proxy) has raw usage but a ZERO
+        ranked denominator. `usage_share` already excludes `other` from that
+        denominator; `_census_verdict` used to check raw counts instead, so
+        it called this census usable and let previous arms fall under the
+        exit bar at 0.0% — retiring them on no measurable evidence, exactly
+        the failure the stale-census hold-over path exists to prevent."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {model_usage_census.OTHER_KEY:
+                  {w: 500 for w in self.W[:4]}}
+        result = self._compute(census=self._census_doc(counts=counts),
+                               previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result),
+                      "an unrankable-only census is not evidence to retire "
+                      "a previous arm")
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("no usage this policy can rank", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_census_verdict_distinguishes_unranked_only_from_truly_empty(self):
+        """The existing 'empty over the window' message is for a census that
+        recorded NOTHING; a census that recorded usage none of which the
+        ladder can rank is a different fact and gets its own words."""
+        raw_total, ranked_total = roster._in_window_totals(
+            {model_usage_census.OTHER_KEY: {self.W[0]: 500}},
+            set(self.W[:4]), roster.tier_rungs(self._policy()))
+        self.assertEqual(raw_total, 500)
+        self.assertEqual(ranked_total, 0)
+        _, note, code = roster._census_verdict(
+            self._census_doc(counts={model_usage_census.OTHER_KEY:
+                                     {self.W[0]: 500}}),
+            raw_total, ranked_total, self._policy(), self.NOW)
+        self.assertEqual(code, "unranked")
+        self.assertIn("no usage this policy can rank", note)
+
+        empty_raw, empty_ranked = roster._in_window_totals(
+            {}, set(self.W[:4]), roster.tier_rungs(self._policy()))
+        _, empty_note, empty_code = roster._census_verdict(
+            self._census_doc(counts={}), empty_raw, empty_ranked,
+            self._policy(), self.NOW)
+        self.assertEqual(empty_code, "empty")
+        self.assertIn("empty over the window", empty_note)
+
+
 if __name__ == "__main__":
     unittest.main()

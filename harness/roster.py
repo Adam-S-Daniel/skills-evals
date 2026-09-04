@@ -295,34 +295,79 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     return ids
 
 
-def _census_verdict(census_doc, counts, policy, now, enter_weeks, exit_weeks):
-    """(usable, note) — is there usage evidence for the window, and if not why.
+def _in_window_totals(counts: dict, weeks: set[str],
+                      rungs: list[list[str]]) -> tuple[int, int]:
+    """(raw_total, ranked_total) of census usage over `weeks`.
 
-    Four ways to have none, and they are NOT the same fact: nothing published,
-    a timestamp in the future (clock skew or a hand edit — every week then
-    falls outside the window while the age check reads as fresh), a census
-    older than the freshness window, and a census that is present and current
-    and simply holds nothing for these weeks. Each says so in its own words,
-    because "fell back to newest per tier" without the cause is a roster
-    nobody can debug.
+    `ranked_total` mirrors `usage_share`'s own denominator — it excludes
+    `other` and every id the tier ladder cannot place, the same as a roster
+    seat would. Computed once and handed to `_census_verdict`, so its
+    "is there usage evidence" check agrees with the number every arm's share
+    is actually divided by, rather than reading raw counts that can be
+    nonzero while the ranked denominator is zero (a census entirely routed
+    through Bedrock/Vertex/a proxy lands every count under `other`).
+    """
+    raw_total = 0
+    ranked_total = 0
+    for candidate, by_week in (counts or {}).items():
+        ranked = rung_of(candidate, rungs) is not None
+        for week, n in (by_week or {}).items():
+            if week in weeks:
+                raw_total += n
+                if ranked:
+                    ranked_total += n
+    return raw_total, ranked_total
+
+
+#: `_census_verdict`'s machine-readable half. Reasons are for humans; this is
+#: for callers deciding what else follows (e.g. whether `census_at` is
+#: recorded), so they do not have to reconstruct it from a string prefix.
+CENSUS_ABSENT = "absent"
+CENSUS_FUTURE = "future"
+CENSUS_STALE = "stale"
+CENSUS_EMPTY = "empty"
+CENSUS_UNRANKED = "unranked"
+CENSUS_FRESH = "fresh"
+
+#: Verdicts whose census WAS published and current enough to be worth citing
+#: as provenance, even though it is not usable evidence — see `CENSUS_EMPTY`
+#: and `CENSUS_UNRANKED` below.
+CENSUS_PUBLISHED_CODES = (CENSUS_EMPTY, CENSUS_UNRANKED, CENSUS_FRESH)
+
+
+def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now):
+    """(usable, note, code) — is there usage evidence for the window, and why not.
+
+    Five ways to have none, and they are NOT the same fact: nothing
+    published, a timestamp in the future (clock skew or a hand edit — every
+    week then falls outside the window while the age check reads as fresh),
+    a census older than the freshness window, a census that is present and
+    current and simply holds nothing for these weeks, and a census that holds
+    usage but none of it is usage the tier ladder can rank (every count fell
+    under `other` or an unranked id). Each says so in its own words, because
+    "fell back to newest per tier" without the cause is a roster nobody can
+    debug.
     """
     census_at = parse_ts((census_doc or {}).get("generated_at"))
     if census_doc is None or census_at is None:
-        return False, "no fresh census (none published)"
+        return False, "no fresh census (none published)", CENSUS_ABSENT
     if census_at > now:
         return False, ("no fresh census (its generated_at is in the future, so "
                        "every week of usage falls outside the window — clock "
-                       "skew or a hand edit)")
+                       "skew or a hand edit)"), CENSUS_FUTURE
     age = (now - census_at).days
     if now - census_at > timedelta(days=policy["census_max_age_days"]):
         return False, (f"no fresh census (last published {age} days ago, over the "
-                       f"{policy['census_max_age_days']}-day window)")
-    weeks = set(enter_weeks) | set(exit_weeks)
-    if not any(week in weeks and n
-               for by_week in counts.values() for week, n in by_week.items()):
+                       f"{policy['census_max_age_days']}-day window)"), CENSUS_STALE
+    if raw_total == 0:
         return False, ("census published but empty over the window (no usage "
-                       "recorded for any model in these weeks)")
-    return True, ""
+                       "recorded for any model in these weeks)"), CENSUS_EMPTY
+    if ranked_total == 0:
+        return False, ("census published but holds no usage this policy can "
+                       "rank over the window (every count in these weeks is "
+                       "`other` or an id the tier ladder cannot place)"), \
+            CENSUS_UNRANKED
+    return True, "", CENSUS_FRESH
 
 
 def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
@@ -356,15 +401,19 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])
-    usable, stale_note = _census_verdict(census_doc, counts, policy, now,
-                                         enter_weeks, exit_weeks)
+    window_union = set(enter_weeks) | set(exit_weeks)
+    raw_total, ranked_total = _in_window_totals(counts, window_union, rungs)
+    usable, stale_note, census_code = _census_verdict(
+        census_doc, raw_total, ranked_total, policy, now)
     # Provenance: the timestamp of the census this roster actually read. A
-    # census that was published and simply held nothing for these weeks HAS a
-    # timestamp worth recording — dropping it made "we read a census and it
-    # said nothing" indistinguishable from "nobody published one". A stale or
-    # future-dated census was not read, so it records nothing.
+    # census that was published and simply held nothing usable for these
+    # weeks HAS a timestamp worth recording — dropping it made "we read a
+    # census and it said nothing" indistinguishable from "nobody published
+    # one". A stale or future-dated census was not read, so it records
+    # nothing. Branches on the verdict CODE, not on the reason string's
+    # prefix — a human-facing sentence is not a stable thing to match on.
     census_at_published = ((census_doc or {}).get("generated_at")
-                           if usable or stale_note.startswith("census published")
+                           if census_code in CENSUS_PUBLISHED_CODES
                            else None)
     previous_arms = _clean_previous_arms(previous, warn)
 
