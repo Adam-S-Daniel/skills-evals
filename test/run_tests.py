@@ -2112,7 +2112,11 @@ class TestIssue67(unittest.TestCase):
             missing = Path(tmp) / "nope.json"
             summary = self._capture_models(eval_dir, missing, want="summary")
         self.assertIsNotNone(summary["error"])
-        self.assertIn(str(missing), summary["error"]["detail"])
+        # The roster's basename, not its full absolute path (item 5, #129
+        # review round 3) — this detail reaches summary.json, which
+        # eval.yml commits to the public eval-results branch.
+        self.assertIn(missing.name, summary["error"]["detail"])
+        self.assertNotIn(str(missing), summary["error"]["detail"])
 
         with tempfile.TemporaryDirectory() as tmp:
             eval_dir = self._fixture_dir(tmp, pinned=True)
@@ -2942,8 +2946,14 @@ class TestIssue67Review(unittest.TestCase):
             missing = Path(tmp) / "roster" / "nope.json"
             summary, seen = self._run_one_arm(eval_dir, missing)
         self.assertIsNotNone(summary["error"], "no pin and no roster must not run")
-        self.assertIn(str(missing), summary["error"]["detail"],
+        # The roster's basename, not its full absolute path (item 5, #129
+        # review round 3): this detail flows into summary.json, which
+        # eval.yml commits to the public eval-results branch.
+        self.assertIn(missing.name, summary["error"]["detail"],
                       "the error names the roster path it looked for")
+        self.assertNotIn(str(missing), summary["error"]["detail"],
+                         "the roster's absolute path must not reach a "
+                         "public summary.json")
         self.assertNotIn("agent", seen, "the agent is never invoked")
 
     def test_a_pinned_fixture_runs_with_no_roster_at_all(self):
@@ -2971,11 +2981,16 @@ class TestIssue67Review(unittest.TestCase):
                 path = self._roster_file(tmp, raw)
                 summary, seen = self._run_one_arm(eval_dir, path)
                 self.assertIsNotNone(summary["error"])
-                # The roster's basename, not necessarily its full absolute
-                # path (item 15, #129 review round 2): a selection error
-                # naming the roster's ABSOLUTE path lands in summary.json,
-                # which eval.yml commits to the public eval-results branch.
+                # The roster's basename, not its full absolute path (item
+                # 15, #129 review round 2; item 5, round 3): a selection
+                # error naming the roster's ABSOLUTE path lands in
+                # summary.json, which eval.yml commits to the public
+                # eval-results branch. assertIn(path.name, ...) alone has
+                # no teeth here — path.name is a substring of the full
+                # path too — so the absolute path's absence is asserted
+                # explicitly.
                 self.assertIn(path.name, summary["error"]["detail"])
+                self.assertNotIn(str(path), summary["error"]["detail"])
                 self.assertNotIn("agent", seen)
 
     def test_the_runner_refuses_a_roster_judge_that_is_also_an_arm(self):

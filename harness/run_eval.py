@@ -362,15 +362,20 @@ def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
     if roster_path is None:
         return None, "no roster path was resolved"
     path = Path(roster_path)
+    # The basename, not the full path (see select_models' own messages,
+    # round 2 item 15): this problem string flows unchanged into
+    # select_models' return value, which the caller writes into
+    # summary.json — and eval.yml commits that file to the public
+    # eval-results branch.
     if not path.is_file() or path.stat().st_size == 0:
-        return None, f"no model roster at {path}"
+        return None, f"no model roster at {path.name}"
     try:
         with open(path, encoding="utf-8") as f:
             document = json.load(f)
     except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
-        return None, f"model roster at {path} is unreadable ({type(exc).__name__})"
+        return None, f"model roster at {path.name} is unreadable ({type(exc).__name__})"
     if not isinstance(document, dict):
-        return None, f"model roster at {path} is not a JSON object"
+        return None, f"model roster at {path.name} is not a JSON object"
     return document, None
 
 
