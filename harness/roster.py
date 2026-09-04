@@ -39,6 +39,8 @@ from pathlib import Path
 
 import yaml
 
+from timeweeks import iso_week, parse_ts, window_start, window_weeks  # noqa: F401
+
 # The Models API has no price field, so "cheapest" and "most capable" are both
 # read off the tier ladder rather than off a number. Within one tier the newest
 # model is taken as the current one — which is true of every tier transition so
@@ -69,30 +71,6 @@ def load_json(path: str | Path | None) -> dict | None:
             return json.load(f)
     except json.JSONDecodeError:
         return None
-
-
-def parse_ts(value: str | None) -> datetime | None:
-    """Parse an RFC 3339 timestamp, `Z` included. None on anything unparseable."""
-    if not value:
-        return None
-    text = str(value).strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
-
-
-def iso_week(moment: datetime) -> str:
-    year, week, _ = moment.isocalendar()
-    return f"{year}-W{week:02d}"
-
-
-def window_weeks(now: datetime, count: int) -> list[str]:
-    """The `count` ISO week labels ending with the one `now` falls in."""
-    return [iso_week(now - timedelta(weeks=offset)) for offset in range(count)]
 
 
 def tier_of(model_id: str, tiers: list[str]) -> str | None:

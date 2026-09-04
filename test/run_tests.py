@@ -10,6 +10,8 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import contextlib
+import io
 import json
 import os
 import re
@@ -37,6 +39,7 @@ CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
 sys.path.insert(0, str(HARNESS_DIR))
 import roster  # noqa: E402
 import run_eval  # noqa: E402
+import timeweeks  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
@@ -1365,7 +1368,8 @@ class TestIssue67(unittest.TestCase):
                 "max_input_tokens": max_input, "max_tokens": max_output,
                 "capabilities": {"thinking": {"supported": True}}}
 
-    def _models_doc(self, extra=None, drop=()):
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
         """A canned GET /v1/models payload spanning all four tiers.
 
         claude-fable-5-1 is deliberately 3 days old: it is the newest model in
@@ -1374,43 +1378,46 @@ class TestIssue67(unittest.TestCase):
         from.
         """
         models = [
-            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
-            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
-            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
-            self._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
-            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
-            self._model("claude-fable-5-1", "2026-09-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
+            cls._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            cls._model("claude-fable-5-1", "2026-09-01T00:00:00Z"),
         ]
         models = [m for m in models if m["id"] not in drop]
         models += list(extra or [])
         return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
 
-    def _census_doc(self, counts=None, generated_at="2026-09-04T06:00:00Z"):
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
         if counts is None:
             counts = {
                 # last four weeks: 400 / 620 = 64.5%
-                "claude-sonnet-5": {w: 100 for w in self.W[:4]},
+                "claude-sonnet-5": {w: 100 for w in cls.W[:4]},
                 # last four weeks: 200 / 620 = 32.3%
-                "claude-opus-5": {w: 50 for w in self.W[:4]},
+                "claude-opus-5": {w: 50 for w in cls.W[:4]},
                 # last four weeks: 20 / 620 = 3.2% — under the 10% entry bar
-                "claude-haiku-4-5": {w: 5 for w in self.W[:4]},
+                "claude-haiku-4-5": {w: 5 for w in cls.W[:4]},
                 # all outside the four-week window
-                "claude-sonnet-4-6": {self.W[7]: 100},
+                "claude-sonnet-4-6": {cls.W[7]: 100},
             }
-        return {"generated_at": generated_at, "weeks": self.W, "counts": counts}
+        return {"generated_at": generated_at, "weeks": cls.W, "counts": counts}
 
-    def _policy(self):
-        return roster.load_policy(self.POLICY)
+    @classmethod
+    def _policy(cls):
+        return roster.load_policy(cls.POLICY)
 
     #: distinguishes "use the default fixture" from "there is no census at all",
     #: which None cannot do here — the absence IS one of the cases under test.
     DEFAULT = object()
 
-    def _compute(self, models=DEFAULT, census=DEFAULT, previous=None):
+    @classmethod
+    def _compute(cls, models=DEFAULT, census=DEFAULT, previous=None):
         return roster.compute_roster(
-            models_doc=self._models_doc() if models is self.DEFAULT else models,
-            census_doc=self._census_doc() if census is self.DEFAULT else census,
-            policy=self._policy(), previous=previous, now=self.NOW)
+            models_doc=cls._models_doc() if models is cls.DEFAULT else models,
+            census_doc=cls._census_doc() if census is cls.DEFAULT else census,
+            policy=cls._policy(), previous=previous, now=cls.NOW)
 
     @staticmethod
     def _arm_ids(result):
@@ -1596,12 +1603,29 @@ class TestIssue67(unittest.TestCase):
     def test_census_emits_only_model_week_counts_and_leaks_nothing(self):
         """MANDATORY (#67 guardrail): the census output is public data on a
         public branch. A fixture transcript carrying a project path and prose
-        must yield neither."""
+        must yield neither — in its VALUES or in its KEYS.
+
+        The hostile `message.model` values below are the review round's
+        addition (B1): that field is whatever the routing layer wrote, and it
+        was being copied verbatim into a top-level key. TestIssue67Review
+        takes each of them apart individually; here they ride along in the one
+        test nobody is allowed to delete.
+        """
         secret_path = "/home/example/repos/private-client-work"
         secret_text = "the merger closes on Tuesday"
+        account_arn = ("arn:aws:bedrock:us-east-1:123456789012:"
+                       "application-inference-profile/abcd1234")
+        gcp_path = ("projects/example-gcp-project/locations/us-east5/"
+                    "publishers/anthropic/models/claude-opus-5")
         with tempfile.TemporaryDirectory() as tmp:
             projects = Path(tmp) / "projects" / "-home-example-repos-private-client-work"
             projects.mkdir(parents=True)
+            hostile = [
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+                 "message": {"role": "assistant", "model": value}}
+                for value in (account_arn, gcp_path, secret_path, secret_text,
+                              {"id": "claude-opus-5"}, ["claude-opus-5"], 7)
+            ]
             entries = [
                 {"type": "user", "cwd": secret_path,
                  "sessionId": "11111111-2222-4333-8444-555555555555",
@@ -1618,19 +1642,34 @@ class TestIssue67(unittest.TestCase):
                  "message": {"role": "assistant", "model": "claude-haiku-4-5",
                              "content": [{"type": "text", "text": secret_text}]}},
             ]
-            (projects / "session.jsonl").write_text(
-                "\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+            entries += hostile
+            path = projects / "session.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\n",
+                            encoding="utf-8")
+            # Explicit mtime: the census skips transcripts last written before
+            # the window, so a wall-clock mtime would make this test's verdict
+            # depend on the year the suite runs in.
+            stamp = self.NOW.timestamp()
+            os.utime(path, (stamp, stamp))
 
             counts = model_usage_census.census_counts(
                 Path(tmp) / "projects", now=self.NOW, weeks=8)
             self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1},
-                                      "claude-haiku-4-5": {"2026-W35": 1}})
+                                      "claude-haiku-4-5": {"2026-W35": 1},
+                                      model_usage_census.OTHER_KEY: {"2026-W36": 7}})
 
             document = model_usage_census.build_document(
                 Path(tmp) / "projects", now=self.NOW, weeks=8)
             blob = json.dumps(document)
+            for key in document["counts"]:
+                self.assertTrue(
+                    model_usage_census.MODEL_ID_RE.match(key)
+                    or key == model_usage_census.OTHER_KEY,
+                    f"census published {key!r} as a key on a public branch")
             self.assertNotIn(secret_path, blob)
             self.assertNotIn(secret_text, blob)
+            self.assertNotIn("123456789012", blob)
+            self.assertNotIn("example-gcp-project", blob)
             self.assertNotIn("private-client-work", blob)
             self.assertNotIn("session.jsonl", blob)
             self.assertNotIn("11111111-2222-4333-8444-555555555555", blob)
@@ -1652,9 +1691,11 @@ class TestIssue67(unittest.TestCase):
                 {"type": "summary", "timestamp": "2026-09-03T10:00:00Z",
                  "message": {"model": "claude-opus-5"}},
             ]
-            (projects / "s.jsonl").write_text(
-                "\n".join(json.dumps(e) for e in entries) + "\nnot json\n",
-                encoding="utf-8")
+            path = projects / "s.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\nnot json\n",
+                            encoding="utf-8")
+            stamp = self.NOW.timestamp()
+            os.utime(path, (stamp, stamp))
             counts = model_usage_census.census_counts(
                 Path(tmp) / "projects", now=self.NOW, weeks=8)
             self.assertEqual(counts, {})
@@ -1830,6 +1871,223 @@ class TestIssue67(unittest.TestCase):
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
 
+
+class TestIssue67Review(unittest.TestCase):
+    """Review-round fixes on top of #67's roster feature (PR #129, round 1).
+
+    A SIBLING of TestIssue67, not a subclass: it reuses that class's canned
+    documents (they are classmethods for exactly this reason) so the two are
+    testing one model of the policy, but its own tests run once, not twice.
+
+    Same hermetic rules: frozen `now`, no network, no real `claude`, and
+    `example`-shaped stand-ins for anything that would name a real account,
+    project or path.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        return TestIssue67._models_doc(extra=extra, drop=drop)
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        return TestIssue67._census_doc(counts=counts, generated_at=generated_at)
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    # --- shared fixture helpers ------------------------------------------
+
+    @staticmethod
+    def _write_transcript(path: Path, entries: list, mtime: datetime) -> Path:
+        """A JSONL transcript with an EXPLICIT mtime.
+
+        The census skips transcripts whose mtime falls before the window
+        (N6), so a fixture that relied on the wall clock for its mtime would
+        pass or fail depending on the year the suite is run in. Setting it
+        explicitly keeps the hermetic-time rule intact.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(e) for e in entries) + "\n",
+                        encoding="utf-8")
+        stamp = mtime.timestamp()
+        os.utime(path, (stamp, stamp))
+        return path
+
+    def _assistant(self, model, when, **extra):
+        entry = {"type": "assistant", "timestamp": when,
+                 "message": {"role": "assistant", "model": model}}
+        entry["message"].update(extra.pop("message_extra", {}))
+        entry.update(extra)
+        return entry
+
+    # --- B1: the census publishes model-id-shaped keys, or `other` -------
+
+    #: The values a real transcript can carry in `message.model` that are NOT
+    #: model ids. Every one of these was found in a real routing setup; each
+    #: would have been copied verbatim into a key of a file on a public
+    #: branch. `example`-shaped stand-ins only — no real account or project.
+    HOSTILE_MODELS = {
+        "bedrock_arn": ("arn:aws:bedrock:us-east-1:123456789012:"
+                        "application-inference-profile/abcd1234"),
+        "vertex_path": ("projects/example-gcp-project/locations/us-east5/"
+                        "publishers/anthropic/models/claude-opus-5"),
+        "fs_path": "/home/example/repos/example-private-client/model.json",
+        "prose": "the model I used for the merger memo",
+    }
+
+    def test_census_publishes_only_model_id_shaped_keys(self):
+        """B1: `message.model` is attacker-adjacent data — it is whatever the
+        routing layer wrote — and it became a top-level KEY of a public file."""
+        values = list(self.HOSTILE_MODELS.values()) + [
+            {"id": "claude-opus-5", "provider": "example"},   # a dict
+            ["claude-opus-5"],                                 # a list
+            7,                                                 # an int
+            "claude-opus-5",                                   # the honest case
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-home-example-x" / "s.jsonl",
+                [self._assistant(v, "2026-09-03T10:00:00Z") for v in values],
+                mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+
+        for key in counts:
+            with self.subTest(key=key):
+                self.assertTrue(
+                    model_usage_census.MODEL_ID_RE.match(key)
+                    or key == model_usage_census.OTHER_KEY,
+                    f"census published {key!r} as a key on a public branch")
+        # Totals stay truthful: seven non-conforming values, all bucketed.
+        self.assertEqual(counts[model_usage_census.OTHER_KEY]["2026-W36"], 7)
+        self.assertEqual(counts["claude-opus-5"]["2026-W36"], 1)
+
+    def test_census_never_stringifies_a_non_string_model(self):
+        """`str(some_dict)` is `repr()` — it publishes every value inside."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-home-example-x" / "s.jsonl",
+                [self._assistant({"id": "claude-opus-5", "api_key": "sk-ant-example"},
+                                 "2026-09-03T10:00:00Z")],
+                mtime=self.NOW)
+            document = model_usage_census.build_document(projects, now=self.NOW, weeks=8)
+        blob = json.dumps(document)
+        self.assertNotIn("sk-ant-example", blob)
+        self.assertNotIn("api_key", blob)
+        self.assertEqual(list(document["counts"]), [model_usage_census.OTHER_KEY])
+
+    def test_census_main_prints_nothing_from_under_the_projects_tree(self):
+        """The status line is the other public surface: CI logs are public."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            out = Path(tmp) / "published" / "usage.json"
+            self._write_transcript(
+                projects / "-home-example-repos-private-client-work" / "s.jsonl",
+                [self._assistant(v, "2026-09-03T10:00:00Z")
+                 for v in self.HOSTILE_MODELS.values()],
+                mtime=self.NOW)
+            argv = ["model_usage_census.py", "--projects", str(projects),
+                    "--out", str(out), "--weeks", "8"]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = model_usage_census.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(rc, 0, printed)
+            self.assertNotIn(str(projects), printed)
+            self.assertNotIn("private-client-work", printed)
+            for value in self.HOSTILE_MODELS.values():
+                self.assertNotIn(value, printed)
+            published = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(list(published["counts"]), [model_usage_census.OTHER_KEY])
+
+    # --- S5: one count per API turn, not per JSONL entry -----------------
+
+    def test_census_counts_one_turn_per_message_id(self):
+        """A thinking block, a text block and two tool calls arrive as four
+        assistant entries sharing one `message.id`. Counting entries inflated
+        the numbers the 10%/2% bars are decided on (measured 2.5x)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            entries = [self._assistant("claude-opus-5", "2026-09-03T10:00:0%dZ" % i,
+                                       message_extra={"id": "msg_01AAA"})
+                       for i in range(4)]
+            entries.append(self._assistant("claude-opus-5", "2026-09-03T11:00:00Z",
+                                           message_extra={"id": "msg_01BBB"}))
+            self._write_transcript(projects / "-x" / "s.jsonl", entries, mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    def test_census_falls_back_to_request_id_then_counts_the_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            entries = [
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:00Z",
+                 "requestId": "req_1", "message": {"model": "claude-opus-5"}},
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:01Z",
+                 "requestId": "req_1", "message": {"model": "claude-opus-5"}},
+                # No id and no requestId: nothing to dedupe on, so it counts.
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+                 "message": {"model": "claude-opus-5"}},
+            ]
+            self._write_transcript(projects / "-x" / "s.jsonl", entries, mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    def test_dedupe_is_per_transcript_not_global(self):
+        """Two sessions can legitimately carry the same message id only if one
+        is a resumed copy of the other; across unrelated transcripts, ids are
+        distinct. Deduping globally would silently drop real turns."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            for name in ("a.jsonl", "b.jsonl"):
+                self._write_transcript(
+                    projects / "-x" / name,
+                    [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z",
+                                     message_extra={"id": "msg_01SAME"})],
+                    mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    # --- N6: transcripts older than the window are not parsed ------------
+
+    def test_census_skips_transcripts_last_written_before_the_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-x" / "old.jsonl",
+                [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z")],
+                mtime=self.NOW - timedelta(days=365))
+            self._write_transcript(
+                projects / "-x" / "new.jsonl",
+                [self._assistant("claude-sonnet-5", "2026-09-03T10:00:00Z")],
+                mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-sonnet-5": {"2026-W36": 1}})
+
+    # --- N1: one week-arithmetic implementation, not two -----------------
+
+    def test_roster_and_census_share_one_week_implementation(self):
+        self.assertIs(roster.iso_week, timeweeks.iso_week)
+        self.assertIs(model_usage_census.iso_week, timeweeks.iso_week)
+        self.assertIs(roster.window_weeks, timeweeks.window_weeks)
+        self.assertIs(model_usage_census.window_weeks, timeweeks.window_weeks)
+        self.assertIs(roster.parse_ts, timeweeks.parse_ts)
 
 if __name__ == "__main__":
     unittest.main()
