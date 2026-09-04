@@ -2990,6 +2990,7 @@ class TestIssue67Review2(unittest.TestCase):
     #: The roster step, actually executed against stubs — same harness as
     #: TestIssue67Review, reused rather than duplicated.
     _run_roster_step = TestIssue67Review._run_roster_step
+    _roster_file = TestIssue67Review._roster_file
 
     # --- item 1: usage_share's denominator excludes `other`/unranked, and
     #             _census_verdict must agree, not read RAW counts -----------
@@ -3327,6 +3328,47 @@ exit 0
         self.assertIn("JSONDecodeError", note)
         _, _, absent_code = roster._census_verdict(None, 0, 0, self._policy(), self.NOW)
         self.assertEqual(absent_code, "absent")
+
+    # --- item 8: roster_models() drops malformed arm entries silently, and
+    #             the judge-is-arm refusal was checked against an emptied set
+
+    def test_roster_models_returns_a_skipped_count(self):
+        arm_ids, judge_id, judge_is_arm, skipped = run_eval.roster_models(
+            {"arms": [{"id": "claude-opus-5", "reason": "x"}, "not-a-dict",
+                      {"reason": "no id"}],
+             "judge": {"id": "claude-fable-5-1"}})
+        self.assertEqual(arm_ids, ["claude-opus-5"])
+        self.assertEqual(judge_id, "claude-fable-5-1")
+        self.assertFalse(judge_is_arm)
+        self.assertEqual(skipped, 2)
+
+    def test_a_roster_whose_arms_all_fail_to_parse_is_a_selection_error_even_when_the_agent_is_pinned(self):
+        """A fixture pinning `model:` but not `judge.model:` still reads the
+        roster (for the judge) — and `{"arms": ["claude-opus-5"], "judge":
+        {"id": "claude-opus-5", "is_arm": false}}` used to be ACCEPTED: the
+        raw string arm entry is dropped silently, arm_ids comes back empty,
+        and the judge-is-arm check (`judge_id in arm_ids`) is then checked
+        against that emptied set — even though the roster's own arms list
+        plainly names this exact judge id. A roster whose `arms` list is
+        non-empty but yields zero usable ids cannot be trusted, regardless
+        of whether this run even needed an arm from it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "evals" / "a-skill"
+            (eval_dir / "seed").mkdir(parents=True)
+            (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+            fixture = {"skill": "a-skill", "prompt": "do the thing",
+                      "judge_rubric": "grade it", "model": "claude-sonnet-4-6",
+                      "arms": {"without_skill": {"install": "none"}}}
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture),
+                                                    encoding="utf-8")
+            document = {"arms": ["claude-opus-5"],
+                       "judge": {"id": "claude-opus-5", "is_arm": False}}
+            roster_path = self._roster_file(tmp, document)
+            loaded_fixture = run_eval.load_fixture(eval_dir)
+            args = argparse.Namespace(model=None, roster=roster_path, no_judge=False)
+            agent, judge_model, error = run_eval.select_models(loaded_fixture, args)
+        self.assertIsNotNone(error)
+        self.assertIn(str(roster_path), error)
 
 
 if __name__ == "__main__":

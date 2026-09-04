@@ -91,23 +91,36 @@ def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
     return document, None
 
 
-def roster_models(roster: dict | None) -> tuple[list[str], str | None, bool]:
-    """(arm ids, judge id, judge-is-also-an-arm) out of a roster document.
+def roster_models(roster: dict | None) -> tuple[list[str], str | None, bool, int]:
+    """(arm ids, judge id, judge-is-also-an-arm, skipped) out of a roster document.
 
     Anything the wrong shape is dropped here rather than trusted downstream.
     `judge.is_arm` is the roster's own flag; membership in `arms` is the fact
     behind it, and an older roster carrying no flag must not read as consent.
+
+    `skipped` counts `arms` entries dropped for being the wrong shape (not a
+    dict with a string `id`). It matters because dropping them silently once
+    let the judge-is-arm check pass against an EMPTIED set: a malformed
+    `arms` list (e.g. raw strings instead of `{id, reason}` objects) parsed
+    to `arm_ids == []`, so `judge_id in arm_ids` was always False even when
+    the roster's own (unparsed) entries plainly named that judge as an arm.
     """
     entries = roster.get("arms") if isinstance(roster, dict) else None
-    arm_ids = ([a["id"] for a in entries
-                if isinstance(a, dict) and isinstance(a.get("id"), str) and a["id"]]
-               if isinstance(entries, list) else [])
+    arm_ids = []
+    skipped = 0
+    if isinstance(entries, list):
+        for a in entries:
+            if isinstance(a, dict) and isinstance(a.get("id"), str) and a["id"]:
+                arm_ids.append(a["id"])
+            else:
+                skipped += 1
     judge_entry = roster.get("judge") if isinstance(roster, dict) else None
     judge_id = judge_entry.get("id") if isinstance(judge_entry, dict) else None
     if not isinstance(judge_id, str) or not judge_id:
         judge_id = None
     flagged = bool(isinstance(judge_entry, dict) and judge_entry.get("is_arm"))
-    return arm_ids, judge_id, flagged or (judge_id is not None and judge_id in arm_ids)
+    return (arm_ids, judge_id,
+           flagged or (judge_id is not None and judge_id in arm_ids), skipped)
 
 
 def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
@@ -142,7 +155,17 @@ def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
     if problem:
         return None, None, (f"{problem}, and this fixture pins no "
                             f"{'model' if needs_agent else 'judge model'}")
-    arm_ids, judge_id, judge_is_arm = roster_models(roster)
+    arm_ids, judge_id, judge_is_arm, skipped = roster_models(roster)
+    raw_arms = roster.get("arms") if isinstance(roster, dict) else None
+    if isinstance(raw_arms, list) and raw_arms and not arm_ids:
+        # Non-empty `arms` that parses to zero usable ids is a broken
+        # roster, not "no arms configured" — and it is unsafe to trust for
+        # ANYTHING this roster names (including the judge), regardless of
+        # whether this particular run even needed an arm from it.
+        return None, None, (f"the model roster at {path} lists "
+                            f"{len(raw_arms)} arm entry/entries but none has "
+                            f"a usable string `id` (skipped {skipped}); this "
+                            f"roster cannot be trusted for a model pick")
     if needs_agent and not arm_ids:
         return None, None, (f"the model roster at {path} names no usable arm, "
                             f"and this fixture pins no model")
