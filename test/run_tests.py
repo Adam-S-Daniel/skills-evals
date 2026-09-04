@@ -9,15 +9,20 @@ Run: python3 test/run_tests.py
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 TEST_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TEST_DIR.parent
@@ -30,11 +35,14 @@ ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
 
 sys.path.insert(0, str(HARNESS_DIR))
+import roster  # noqa: E402
 import run_eval  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import make_badge  # noqa: E402
+import model_usage_census  # noqa: E402
+import refresh_models  # noqa: E402
 
 
 class WithSkillInstallTests(unittest.TestCase):
@@ -1325,6 +1333,482 @@ class CanaryTests(unittest.TestCase):
         names = {leg["name"] for leg in summary["legs"]}
         self.assertIn("bridge-subagent", names)
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
+
+
+class TestIssue67(unittest.TestCase):
+    """Model roster: availability + usage -> arms/judge/preflight (#67).
+
+    Every model id below is TEST FIXTURE data. The policy code under test
+    carries none: tiers are inferred from the id's family word, and the family
+    words themselves live in evals/roster-policy.yml. `test_no_model_ids_are
+    _hardcoded_outside_fixtures` is the guard that keeps it that way.
+
+    `NOW` is frozen so the ISO-week windows and the 7-day cooling-off are
+    decidable rather than wall-clock-dependent — the harness-wide "hermetic,
+    always" rule (DESIGN.md) applies to time as much as to network.
+    """
+
+    NOW = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)
+    # 2026-09-04 is ISO week 36; the four- and eight-week windows below run
+    # back from it. Spelled out rather than computed, so a bug in the
+    # implementation's own week arithmetic cannot hide inside the fixture.
+    W = ["2026-W36", "2026-W35", "2026-W34", "2026-W33",
+         "2026-W32", "2026-W31", "2026-W30", "2026-W29"]
+
+    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+    # --- fixture builders -------------------------------------------------
+
+    @staticmethod
+    def _model(model_id, created, *, max_input=1_000_000, max_output=128_000):
+        return {"id": model_id, "display_name": model_id, "created_at": created,
+                "max_input_tokens": max_input, "max_tokens": max_output,
+                "capabilities": {"thinking": {"supported": True}}}
+
+    def _models_doc(self, extra=None, drop=()):
+        """A canned GET /v1/models payload spanning all four tiers.
+
+        claude-fable-5-1 is deliberately 3 days old: it is the newest model in
+        its tier but inside the cooling-off window, so it is NOT an arm — which
+        is what leaves a tier above the strongest arm for the judge to come
+        from.
+        """
+        models = [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
+            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            self._model("claude-fable-5-1", "2026-09-01T00:00:00Z"),
+        ]
+        models = [m for m in models if m["id"] not in drop]
+        models += list(extra or [])
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    def _census_doc(self, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        if counts is None:
+            counts = {
+                # last four weeks: 400 / 620 = 64.5%
+                "claude-sonnet-5": {w: 100 for w in self.W[:4]},
+                # last four weeks: 200 / 620 = 32.3%
+                "claude-opus-5": {w: 50 for w in self.W[:4]},
+                # last four weeks: 20 / 620 = 3.2% — under the 10% entry bar
+                "claude-haiku-4-5": {w: 5 for w in self.W[:4]},
+                # all outside the four-week window
+                "claude-sonnet-4-6": {self.W[7]: 100},
+            }
+        return {"generated_at": generated_at, "weeks": self.W, "counts": counts}
+
+    def _policy(self):
+        return roster.load_policy(self.POLICY)
+
+    #: distinguishes "use the default fixture" from "there is no census at all",
+    #: which None cannot do here — the absence IS one of the cases under test.
+    DEFAULT = object()
+
+    def _compute(self, models=DEFAULT, census=DEFAULT, previous=None):
+        return roster.compute_roster(
+            models_doc=self._models_doc() if models is self.DEFAULT else models,
+            census_doc=self._census_doc() if census is self.DEFAULT else census,
+            policy=self._policy(), previous=previous, now=self.NOW)
+
+    @staticmethod
+    def _arm_ids(result):
+        return [a["id"] for a in result["arms"]]
+
+    @staticmethod
+    def _reason(result, model_id):
+        return next(a["reason"] for a in result["arms"] if a["id"] == model_id)
+
+    # --- policy: the headline case ---------------------------------------
+
+    def test_canned_models_and_census_give_the_expected_roster(self):
+        result = self._compute()
+
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"])
+        # Usage-qualified arms say so, in words, with the share.
+        self.assertIn("64.5%", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("4 weeks", self._reason(result, "claude-sonnet-5"))
+        # haiku is under the 10% bar and rides in on newest-in-tier instead.
+        self.assertIn("newest", self._reason(result, "claude-haiku-4-5"))
+        self.assertIn("haiku", self._reason(result, "claude-haiku-4-5"))
+
+        # One tier above the strongest arm (opus) is fable, and the only fable
+        # model available is not an arm — so it is the judge.
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertIn("tier above", result["judge"]["reason"])
+
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cheapest", result["preflight"]["reason"])
+
+        self.assertEqual(result["source"]["models_api_at"], "2026-09-04T11:00:00Z")
+        self.assertEqual(result["source"]["census_at"], "2026-09-04T06:00:00Z")
+        self.assertIsNone(result["source"]["admin_report_at"])
+        self.assertIn("generated_at", result)
+
+    def test_judge_is_never_an_arm_model(self):
+        # Strip the fable tier: the strongest arm is then opus-5 with nothing
+        # above it, so the judge falls back to the strongest AVAILABLE model —
+        # which must still not be one of the arms.
+        result = self._compute(models=self._models_doc(drop={"claude-fable-5-1"}))
+        self.assertNotIn(result["judge"]["id"], self._arm_ids(result))
+        self.assertEqual(result["judge"]["id"], "claude-opus-4-8")
+        self.assertIn("strongest available", result["judge"]["reason"])
+
+    def test_preflight_is_the_cheapest_available_model(self):
+        # Drop the whole haiku tier and the cheapest becomes the newest sonnet.
+        result = self._compute(models=self._models_doc(drop={"claude-haiku-4-5"}))
+        self.assertEqual(result["preflight"]["id"], "claude-sonnet-5")
+
+    # --- the 7-day cooling-off -------------------------------------------
+
+    def test_seven_day_rule_excludes_a_model_created_yesterday(self):
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(
+            extra=[self._model("claude-sonnet-6", yesterday)])
+        result = self._compute(models=models)
+        self.assertNotIn("claude-sonnet-6", self._arm_ids(result),
+                         "a model one day old is inside the fleet's 7-day "
+                         "cooling-off and must not enter the arm set on the "
+                         "newest-in-tier rule")
+        # ... and the tier's previous newest keeps the seat.
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+
+    def test_a_brand_new_model_still_enters_on_usage(self):
+        # The cooling-off gates the newest-in-tier rule only. A model the fleet
+        # is demonstrably already using is an arm on the usage rule regardless
+        # of age — otherwise the roster would refuse to measure what is in use.
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(extra=[self._model("claude-sonnet-6", yesterday)])
+        census = self._census_doc(counts={
+            "claude-sonnet-6": {self.W[0]: 300},
+            "claude-sonnet-5": {w: 100 for w in self.W[:4]},
+        })
+        result = self._compute(models=models, census=census)
+        self.assertIn("claude-sonnet-6", self._arm_ids(result))
+        self.assertIn("usage", self._reason(result, "claude-sonnet-6"))
+
+    # --- leaving the arm set ---------------------------------------------
+
+    def test_model_missing_from_the_api_is_retired_even_with_high_usage(self):
+        previous = {"arms": [{"id": "claude-opus-4-7", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = self._census_doc(counts={
+            "claude-opus-4-7": {w: 400 for w in self.W},   # ~66% of everything
+            "claude-sonnet-5": {w: 200 for w in self.W},
+        })
+        result = self._compute(census=census, previous=previous)
+
+        self.assertNotIn("claude-opus-4-7", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-7", retired)
+        self.assertIn("Models API", retired["claude-opus-4-7"])
+
+    def test_a_previous_arm_is_held_over_until_it_is_under_two_percent(self):
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"},
+                             {"id": "claude-opus-4-8", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = self._census_doc(counts={
+            "claude-sonnet-5": {w: 100 for w in self.W},           # 800
+            # 40/week over 8 weeks = 320/1128 ≈ 28% of the 8-week window but
+            # only 160/560 of the 4-week one... keep it simple: sonnet-4-6 sits
+            # above 2% over 8 weeks, opus-4-8 below it.
+            "claude-sonnet-4-6": {w: 10 for w in self.W},          # 80
+            "claude-opus-4-8": {self.W[7]: 2},                     # 2
+        })
+        result = self._compute(census=census, previous=previous)
+
+        arms = self._arm_ids(result)
+        self.assertIn("claude-sonnet-4-6", arms,
+                      "a previous arm above the 2% exit bar over 8 weeks stays")
+        self.assertIn("held over", self._reason(result, "claude-sonnet-4-6"))
+        self.assertNotIn("claude-opus-4-8", arms)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("2", retired["claude-opus-4-8"])
+        self.assertIn("8 weeks", retired["claude-opus-4-8"])
+
+    def test_added_since_last_names_the_new_arms_with_their_reason(self):
+        previous = {"arms": [{"id": "claude-sonnet-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        added = {a["id"]: a["reason"] for a in result["added_since_last"]}
+        self.assertEqual(sorted(added), ["claude-haiku-4-5", "claude-opus-5"])
+        self.assertTrue(all(added.values()), "every entry carries its reason")
+
+    def test_first_run_has_no_previous_roster_and_reports_nothing_retired(self):
+        result = self._compute(previous=None)
+        self.assertEqual(result["retired_since_last"], [])
+        # Everything is new, but with no previous roster there is no "since
+        # last" to speak of — an empty added list, not the whole arm set.
+        self.assertEqual(result["added_since_last"], [])
+
+    # --- the census fallback ---------------------------------------------
+
+    def test_absent_census_falls_back_to_newest_per_tier_and_says_so(self):
+        result = self._compute(census=None)
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"])
+        for arm in result["arms"]:
+            self.assertIn("no fresh census", arm["reason"].lower())
+        self.assertIsNone(result["source"]["census_at"])
+
+    def test_stale_census_falls_back_the_same_way(self):
+        stale = self._census_doc(generated_at="2026-08-01T00:00:00Z")  # 34 days
+        result = self._compute(census=stale)
+        for arm in result["arms"]:
+            self.assertIn("no fresh census", arm["reason"].lower())
+        # The usage-only arm set would have been different, which is the whole
+        # point of saying so in the file rather than publishing it silently.
+        self.assertIn("claude-haiku-4-5", self._arm_ids(result))
+
+    def test_a_census_inside_the_freshness_window_is_used(self):
+        fresh = self._census_doc(generated_at="2026-08-25T00:00:00Z")  # 10 days
+        result = self._compute(census=fresh)
+        self.assertNotIn("no fresh census", self._reason(result, "claude-sonnet-5").lower())
+
+    # --- the census parser, and its privacy guard ------------------------
+
+    def test_census_emits_only_model_week_counts_and_leaks_nothing(self):
+        """MANDATORY (#67 guardrail): the census output is public data on a
+        public branch. A fixture transcript carrying a project path and prose
+        must yield neither."""
+        secret_path = "/home/example/repos/private-client-work"
+        secret_text = "the merger closes on Tuesday"
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-home-example-repos-private-client-work"
+            projects.mkdir(parents=True)
+            entries = [
+                {"type": "user", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"role": "user", "content": secret_text}},
+                {"type": "assistant", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-09-03T10:00:01Z",
+                 "message": {"role": "assistant", "model": "claude-opus-5",
+                             "content": [{"type": "text", "text": secret_text}]}},
+                {"type": "assistant", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-08-27T09:00:00Z",
+                 "message": {"role": "assistant", "model": "claude-haiku-4-5",
+                             "content": [{"type": "text", "text": secret_text}]}},
+            ]
+            (projects / "session.jsonl").write_text(
+                "\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8")
+
+            counts = model_usage_census.census_counts(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1},
+                                      "claude-haiku-4-5": {"2026-W35": 1}})
+
+            document = model_usage_census.build_document(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            blob = json.dumps(document)
+            self.assertNotIn(secret_path, blob)
+            self.assertNotIn(secret_text, blob)
+            self.assertNotIn("private-client-work", blob)
+            self.assertNotIn("session.jsonl", blob)
+            self.assertNotIn("11111111-2222-4333-8444-555555555555", blob)
+            # Keys are exactly the published contract — nothing else rides along.
+            self.assertEqual(sorted(document), ["counts", "generated_at", "weeks"])
+
+    def test_census_ignores_entries_outside_the_window_and_without_a_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-tmp-x"
+            projects.mkdir(parents=True)
+            entries = [
+                # 12 weeks back — outside an 8-week window.
+                {"type": "assistant", "timestamp": "2026-06-12T10:00:00Z",
+                 "message": {"model": "claude-opus-4-8"}},
+                # assistant entry with no model at all
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"role": "assistant"}},
+                # a summary/system line the loader must not count
+                {"type": "summary", "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"model": "claude-opus-5"}},
+            ]
+            (projects / "s.jsonl").write_text(
+                "\n".join(json.dumps(e) for e in entries) + "\nnot json\n",
+                encoding="utf-8")
+            counts = model_usage_census.census_counts(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            self.assertEqual(counts, {})
+
+    # --- availability refresh --------------------------------------------
+
+    def test_refresh_models_normalizes_the_models_api_payload(self):
+        page = {"data": [
+            {"id": "claude-opus-5", "display_name": "Claude Opus 5",
+             "created_at": "2026-04-01T00:00:00Z", "max_input_tokens": 1000000,
+             "max_tokens": 128000, "capabilities": {"thinking": {"supported": True}},
+             "type": "model"},
+            {"id": "some-other-vendor-model", "display_name": "Other",
+             "created_at": "2026-04-01T00:00:00Z", "max_input_tokens": 1,
+             "max_tokens": 1, "capabilities": {}, "type": "model"},
+        ], "has_more": False}
+        doc = refresh_models.build_models_document(
+            lambda url, headers: page, now=self.NOW)
+        self.assertEqual([m["id"] for m in doc["models"]], ["claude-opus-5"],
+                         "only Claude models are written to the roster input")
+        model = doc["models"][0]
+        for field in ("max_input_tokens", "max_tokens", "capabilities", "created_at"):
+            self.assertIn(field, model)
+        self.assertEqual(doc["fetched_at"], "2026-09-04T12:00:00Z")
+
+    def test_admin_report_fails_soft_with_a_notice_naming_the_secret(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ANTHROPIC_ADMIN_KEY", None)
+            report, notice = refresh_models.fetch_admin_usage_report(
+                now=self.NOW, fetch=None)
+        self.assertIsNone(report)
+        self.assertTrue(notice.startswith("::notice::"), notice)
+        self.assertIn("ANTHROPIC_ADMIN_KEY", notice)
+
+    # --- consumption by the runner ---------------------------------------
+
+    def _fixture_dir(self, tmp, pinned):
+        eval_dir = Path(tmp) / "evals" / "a-skill"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+        fixture = {"skill": "a-skill", "prompt": "do the thing",
+                   "judge_rubric": "grade it", "arms": {"without_skill": {"install": "none"}}}
+        if pinned:
+            fixture["model"] = "claude-sonnet-4-6"
+            fixture["judge"] = {"model": "claude-opus-4-6"}
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def _roster_file(self, tmp):
+        path = Path(tmp) / "roster" / "latest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(self._compute()), encoding="utf-8")
+        return path
+
+    def _capture_models(self, eval_dir, roster_path):
+        """Run one arm with the agent and judge stubbed, returning the models
+        the runner actually chose."""
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm):
+            seen["agent"] = arm.get("model")
+            return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        def fake_score(rubric, transcript, diff, model=None, **kwargs):
+            seen["judge"] = model
+            return {"dimensions": [], "overall": 1.0}
+
+        args = argparse.Namespace(
+            model=None, timeout=30, no_judge=False,
+            results_dir=Path(tempfile.mkdtemp()), roster=roster_path)
+        self.addCleanup(shutil.rmtree, args.results_dir, ignore_errors=True)
+        fixture = run_eval.load_fixture(eval_dir)
+        with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+             mock.patch.object(run_eval.judge, "score", fake_score):
+            run_eval._run_arm("without_skill", fixture, eval_dir / "seed",
+                              Path("/nonexistent-registry"), args, "20260904T120000Z")
+        return seen
+
+    def test_runner_takes_the_roster_when_the_fixture_has_no_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            seen = self._capture_models(eval_dir, self._roster_file(tmp))
+        expected = self._compute()
+        self.assertEqual(seen["agent"], expected["arms"][0]["id"])
+        self.assertEqual(seen["judge"], expected["judge"]["id"])
+
+    def test_runner_takes_the_fixture_pin_when_it_has_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            seen = self._capture_models(eval_dir, self._roster_file(tmp))
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6")
+        self.assertEqual(seen["judge"], "claude-opus-4-6")
+
+    def test_runner_survives_a_missing_roster(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            seen = self._capture_models(eval_dir, Path(tmp) / "nope.json")
+        self.assertIsNone(seen["agent"], "no roster and no pin leaves the CLI "
+                                         "default in place rather than crashing")
+
+    # --- policy file + the no-hardcoded-ids guard ------------------------
+
+    def test_policy_file_carries_the_thresholds_and_the_adr_placeholder(self):
+        raw = self.POLICY.read_text(encoding="utf-8")
+        policy = self._policy()
+        self.assertEqual(policy["cooling_off_days"], 7)
+        self.assertEqual(policy["arm_enter_usage_pct"], 10)
+        self.assertEqual(policy["arm_enter_window_weeks"], 4)
+        self.assertEqual(policy["arm_exit_usage_pct"], 2)
+        self.assertEqual(policy["arm_exit_window_weeks"], 8)
+        self.assertEqual(policy["census_max_age_days"], 14)
+        self.assertEqual(policy["tiers"], ["haiku", "sonnet", "opus", "fable"])
+        self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
+                                  "sub-issue until the ADR itself exists")
+
+    def test_no_model_ids_are_hardcoded_outside_fixtures(self):
+        # `claude-<family>-<n>`: the shape of a model id. Fixtures may pin one;
+        # the roster machinery may not, or the whole point of computing the
+        # roster from the API is lost the first time a model retires.
+        pattern = re.compile(r"claude-(haiku|sonnet|opus|fable|mythos)-[0-9]")
+        for rel in ("harness/roster.py", "scripts/refresh_models.py",
+                    "scripts/model_usage_census.py", "evals/roster-policy.yml"):
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            self.assertIsNone(pattern.search(text),
+                              f"{rel} hardcodes a model id: "
+                              f"{pattern.search(text).group(0) if pattern.search(text) else ''}")
+
+    # --- eval.yml -----------------------------------------------------------
+
+    def _eval_workflow(self):
+        path = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+        return path.read_text(encoding="utf-8"), yaml.safe_load(
+            path.read_text(encoding="utf-8"))
+
+    def test_eval_workflow_refreshes_the_roster_before_running_the_eval(self):
+        _, doc = self._eval_workflow()
+        steps = doc["jobs"]["eval"]["steps"]
+        names = [s.get("name", "") for s in steps]
+        refresh = next(i for i, n in enumerate(names) if "roster" in n.lower())
+        run = next(i for i, n in enumerate(names) if n.startswith("Run the eval"))
+        self.assertLess(refresh, run,
+                        "the roster has to exist before the eval reads it")
+        script = steps[refresh]["run"]
+        self.assertIn("GITHUB_STEP_SUMMARY", script,
+                      "#67: the computed roster is called out in the job summary")
+        self.assertIn("roster.py", script)
+        self.assertIn("refresh_models.py", script)
+
+    def test_eval_workflow_commits_the_roster(self):
+        _, doc = self._eval_workflow()
+        commit = next(s for s in doc["jobs"]["eval"]["steps"]
+                      if "git checkout -B eval-results" in (s.get("run") or ""))
+        self.assertIn("roster", commit["run"],
+                      "roster/ is published on eval-results alongside the badge")
+
+    def test_eval_workflow_keeps_its_security_posture(self):
+        raw, doc = self._eval_workflow()
+        triggers = doc.get("on", doc.get(True))
+        self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"],
+                         "eval.yml holds a credential and runs the agent under "
+                         "bypassPermissions — no pull_request trigger, ever")
+        self.assertEqual(doc["permissions"], {"contents": "write", "id-token": "write"})
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            self.assertNotIn("${{", script,
+                             f"step {step.get('name')!r} interpolates into a "
+                             "run: block; read inputs from $GITHUB_EVENT_PATH")
+            uses = step.get("uses")
+            if uses:
+                self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
+                                 "every uses: is a bare 40-hex SHA, no comment")
+        self.assertNotIn("ANTHROPIC_API_KEY", raw,
+                         "auth is WIF-derived; no stored key shape is added")
 
 
 if __name__ == "__main__":

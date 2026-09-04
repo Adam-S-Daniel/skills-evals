@@ -8,17 +8,30 @@
 skill: workflow-path-audit
 registry: https://github.com/Adam-S-Daniel/agentskills
 
-# Agent arms run on a pinned mid-tier model, deliberately NOT Opus-tier: an
-# Opus-tier agent would likely ace this task WITHOUT the skill, and a ceiling
-# effect leaves the with/without comparison signal-free. Pinning also stops the
-# arms silently tracking Claude Code's default model as it changes across CLI
-# releases, which is what makes week-over-week badge comparisons meaningful.
-# Carried forward unchanged from the predecessor fixture so the retargeted eval
-# stays calibrated the same way. `--model` on the command line overrides this.
+# `model:` and `judge.model:` are OVERRIDES, not the only source. Absent
+# either, the runner takes the computed model roster — `roster/latest.json` on
+# `eval-results`, recomputed each real run from the Models API and the usage
+# census (harness/roster.py, thresholds in evals/roster-policy.yml, #67). The
+# precedence is `--model` > this pin > the roster > the CLI's own default.
+#
+# This fixture keeps its pins, on purpose and for now. Agent arms run on a
+# pinned mid-tier model, deliberately NOT Opus-tier: an Opus-tier agent would
+# likely ace this task WITHOUT the skill, and a ceiling effect leaves the
+# with/without comparison signal-free. Pinning also stops the arms silently
+# tracking Claude Code's default model as it changes across CLI releases,
+# which is what makes week-over-week badge comparisons meaningful. Carried
+# forward unchanged from the predecessor fixture so the retargeted eval stays
+# calibrated the same way. The roster cannot express "deliberately one tier
+# below the ceiling" — it names the arm set, not which arm suits which
+# fixture. That is the matrix runner's job; when it lands and runs every arm,
+# these two pins come out there rather than here (#67, step 5).
 model: claude-sonnet-5
 
 # The judge is pinned to a strong model: judgment consistency matters more
-# than agent-arm parity, and two short judge calls per run cost pennies.
+# than agent-arm parity, and two short judge calls per run cost pennies. The
+# roster's judge is chosen on the same principle — the most capable available
+# model at least one tier above the strongest arm, never an arm itself — so
+# dropping this pin later is a continuation, not a change of policy.
 judge:
   model: claude-opus-4-8
   # Weighted overall — the harness recomputes it from these and ignores the

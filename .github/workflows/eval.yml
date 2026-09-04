@@ -54,6 +54,19 @@
 #   (600s per arm, 120s per judge call); the workspace spend limit, not
 #   this workflow, is the hard ceiling.
 #
+# * The model roster step (#67) adds ONE more caller of that same bearer: a
+#   `GET /v1/models` read from scripts/refresh_models.py, exported
+#   step-locally exactly like the claude calls and never at top level. It
+#   introduces NO new credential shape — no stored secret, no new federation
+#   binding — and it is a read of the model catalogue, not of usage or
+#   billing. The one thing it would use if it existed is ANTHROPIC_ADMIN_KEY,
+#   for the optional org-wide usage report; that variable is deliberately NOT
+#   provisioned, and its absence prints a `::notice::` naming it rather than
+#   failing the run. Do not create it to silence the notice — provision it
+#   only if the org-wide report is actually wanted. Because the WIF rule's sub
+#   claim matches `ref:refs/heads/main` only, a dispatch from any other ref
+#   gets no bearer and dies at the exchange step above, before this one.
+#
 # * Both checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
@@ -187,6 +200,52 @@ jobs:
           printf '%s\n' "$out" | tail -c 4000
           exit $rc
 
+      # Model roster (#67). Recomputes which models this harness should be
+      # running against — arms, judge, preflight — from what the Models API
+      # says is AVAILABLE and what the published usage census says is USED,
+      # and publishes it with the run. Deliberately small and separate: the
+      # eval step below is untouched, and the roster reaches it through
+      # $EVAL_ROSTER rather than through a new flag on its command line.
+      #
+      # No new credential. The Models API call reuses the same WIF-derived
+      # bearer minted above; ANTHROPIC_ADMIN_KEY is optional and its absence
+      # produces a ::notice::, never a failure. The Models API read itself is
+      # fatal on purpose — a half-read API is indistinguishable from a model
+      # retiring, and publishing that quietly is the failure mode this whole
+      # feature exists to remove.
+      #
+      # Everything lands in $RUNNER_TEMP, not the working tree: roster/ is
+      # tracked on eval-results and untracked on main, so a copy in the
+      # working tree would make the commit step's `git checkout -B
+      # eval-results` refuse. The commit step restores it after the switch,
+      # exactly as it already does for results/.
+      - name: Refresh the model roster
+        working-directory: skills-evals
+        run: |
+          set -euo pipefail
+          ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
+          export ANTHROPIC_AUTH_TOKEN
+          out="$RUNNER_TEMP/roster"
+          rm -rf "$out"; mkdir -p "$out"
+          # Previous roster and published census come off eval-results WITHOUT
+          # checking it out — the branch switch belongs to the commit step, and
+          # both inputs are optional, so a first run (no branch, no files) just
+          # leaves empty files behind and roster.py treats those as absent.
+          git fetch origin eval-results || true
+          git show origin/eval-results:roster/latest.json > "$out/previous.json" 2>/dev/null || true
+          git show origin/eval-results:usage/latest.json > "$out/census.json" 2>/dev/null || true
+          python3 scripts/refresh_models.py \
+            --out "$out/models.json" \
+            --admin-report "$out/admin-usage.json"
+          python3 harness/roster.py \
+            --models "$out/models.json" \
+            --policy evals/roster-policy.yml \
+            --census "$out/census.json" \
+            --admin-report "$out/admin-usage.json" \
+            --previous "$out/previous.json" \
+            --out "$out/latest.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "EVAL_ROSTER=$out/latest.json" >> "$GITHUB_ENV"
+
       - name: Run the eval (both arms, judge)
         working-directory: skills-evals
         run: |
@@ -237,13 +296,19 @@ jobs:
             git checkout -B eval-results
           fi
           [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
+          # The roster the refresh step computed, restored after the switch for
+          # the same reason results/ is: it is tracked here and nowhere on main.
+          if [ -f "$RUNNER_TEMP/roster/latest.json" ]; then
+            mkdir -p roster
+            cp "$RUNNER_TEMP/roster/latest.json" roster/latest.json
+          fi
           python3 "$RUNNER_TEMP/make_badge.py" workflow-path-audit
-          git add badges results
+          git add badges results roster
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "eval: workflow-path-audit run + badge [skip ci]"
+          git commit -m "eval: workflow-path-audit run + badge + roster [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
 

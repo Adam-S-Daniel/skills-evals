@@ -3,7 +3,8 @@
 
 Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
-    python3 harness/run_eval.py evals/<skill> --arm both [--registry PATH] [--no-judge]
+    python3 harness/run_eval.py evals/<skill> --arm both [--registry PATH]
+        [--roster PATH] [--no-judge]
 
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
 pristine seed should FAIL the fixture's checks; a correctly reworked copy
@@ -44,6 +45,52 @@ def _resolve_registry(cli_value: Path | None) -> Path:
     if env:
         return Path(env).expanduser()
     return Path.home() / "repos" / "agentskills"
+
+
+def _resolve_roster(cli_value: Path | None) -> Path:
+    """Model roster: --roster, else $EVAL_ROSTER, else this checkout's roster/.
+
+    The roster is published to the `eval-results` branch as `roster/latest.json`
+    (harness/roster.py); CI materializes it before the eval runs and points
+    $EVAL_ROSTER at it, which is why the eval invocation itself needs no new
+    flag. A missing roster is not an error — see roster_models().
+    """
+    if cli_value:
+        return Path(cli_value).expanduser()
+    env = os.environ.get("EVAL_ROSTER")
+    if env:
+        return Path(env).expanduser()
+    return Path(__file__).resolve().parent.parent / "roster" / "latest.json"
+
+
+def roster_models(roster_path: Path | None) -> tuple[str | None, str | None]:
+    """(agent model, judge model) from the roster, or (None, None).
+
+    A fixture's `model:` and `judge.model:` are OVERRIDES now, not the only
+    source: absent one, the runner takes the roster, which is recomputed from
+    the Models API and the usage census on every real run (#67). Absent BOTH,
+    the model stays unset and the CLI's own default applies — the pre-roster
+    behaviour, unchanged.
+
+    The roster's arms are ordered cheapest tier first. A single-arm run takes
+    the first; the matrix runner will run every one of them. A fixture that
+    needs a specific calibration — an arm deliberately held off the top tier to
+    avoid a ceiling effect, say — keeps its pin, which is exactly why the two
+    existing fixtures still carry theirs.
+    """
+    if roster_path is None:
+        return None, None
+    path = Path(roster_path)
+    if not path.is_file() or path.stat().st_size == 0:
+        return None, None
+    try:
+        with open(path, encoding="utf-8") as f:
+            roster = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None, None
+    arms = roster.get("arms") or []
+    agent = arms[0].get("id") if arms else None
+    return agent, (roster.get("judge") or {}).get("id")
 
 
 def agent_env(workspace: Path, env_spec: dict | None) -> dict:
@@ -215,9 +262,12 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "-m", "seed", cwd=workspace)
 
+        roster_agent_model, roster_judge_model = roster_models(
+            _resolve_roster(getattr(args, "roster", None)))
+
         arm_config = {
             "name": arm_name,
-            "model": args.model or fixture.get("model"),
+            "model": args.model or fixture.get("model") or roster_agent_model,
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
         }
@@ -252,7 +302,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registry: Path,
                 try:
                     judge_result = judge.score(
                         fixture["judge_rubric"], result.get("transcript") or "", diff,
-                        model=judge_cfg.get("model"),
+                        model=judge_cfg.get("model") or roster_judge_model,
                         timeout=judge_cfg.get("timeout_s", 120),
                         weights=judge_cfg.get("weights"),
                     )
@@ -280,6 +330,10 @@ def main() -> int:
                              "else $AGENTSKILLS_DIR, else ~/repos/agentskills")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
+    parser.add_argument("--roster", type=Path, default=None,
+                        help="model roster JSON (harness/roster.py); used when the "
+                             "fixture pins no model. Else $EVAL_ROSTER, else "
+                             "roster/latest.json in this checkout")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
                         help="override the fixture's agent timeout (seconds)")
