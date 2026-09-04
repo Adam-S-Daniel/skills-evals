@@ -1,0 +1,121 @@
+# Eval fixture: github-actions-sha-pinning
+# Measures whether the github-actions-sha-pinning skill improves an agent's
+# ability to bring a repo's `uses:` pins into line with the fleet policy:
+# every third-party action goes to a bare full 40-character commit SHA with
+# NO trailing version comment, while a cross-repo reference to this account's
+# own cms-platform (a reusable workflow OR a composite action) stays on its
+# release TAG instead. Resurrects the retired `pin-actions-to-sha` instrument
+# (see DESIGN.md's "Reference eval" section) and retargets it at the skill
+# that survived cms-platform's 2026-08-20 comment-convention reversal.
+
+skill: github-actions-sha-pinning
+registry: https://github.com/Adam-S-Daniel/cms-platform
+
+# Agent arms run on a pinned mid-tier model, deliberately NOT Opus-tier: an
+# Opus-tier agent would likely ace this task WITHOUT the skill, and a ceiling
+# effect leaves the with/without comparison signal-free. Pinning also stops
+# the arms silently tracking Claude Code's default model as it changes across
+# CLI releases, which is what makes week-over-week badge comparisons
+# meaningful. `--model` on the command line overrides this.
+model: claude-sonnet-5
+
+# The judge is pinned to a strong model: judgment consistency matters more
+# than agent-arm parity, and two short judge calls per run cost pennies.
+judge:
+  model: claude-opus-5
+  # Weighted overall — the harness recomputes it from these and ignores the
+  # judge's own arithmetic. Carve-out handling carries the correctness axis
+  # (the fixture's whole reason for existing is the one shape a naive
+  # "pin everything" pass gets wrong), so it outweighs the other two.
+  weights:
+    carve_out: 0.4
+    comment_removal: 0.3
+    restraint: 0.3
+
+prompt: >
+  Bring this repo's action pins into line with the pinning policy.
+
+arms:
+  with_skill:
+    # The harness copies the flat skills/github-actions-sha-pinning/ dir
+    # (cms-platform's registry layout, see harness/registries.yml) into
+    # .claude/skills/github-actions-sha-pinning/.
+    install: copy
+  without_skill:
+    install: none          # same prompt, no skill
+
+# Objective checks run by harness/scorers/objective.py against the resulting
+# workspace. Each check has an id, a description, and a type the scorer knows.
+objective_checks:
+  - id: third-party-actions-sha-pinned
+    description: >
+      Every third-party `uses:` ref in ci.yml is a full 40-character commit
+      SHA — not a tag, not an abbreviated SHA. Scoped to ci.yml only: the
+      cms-platform refs in deploy.yml and the gate composite are checked
+      separately below, since this check type has no carve-out awareness and
+      would flag a correctly-preserved cms-platform tag as "unpinned".
+    type: uses_refs_sha_pinned
+    paths: [".github/workflows/ci.yml"]
+
+  - id: no-trailing-version-comments
+    description: >
+      No `uses:` line anywhere carries a trailing version comment (e.g.
+      "# v4.1.0") — reversed 2026-08-20, see the skill's Rule 2. Applies
+      fleet-wide, including a cms-platform ref pinned by tag.
+    type: pin_comment_absent
+    paths: [".github/workflows/*.yml", ".github/actions/*/action.yml"]
+
+  - id: cms-platform-refs-stay-on-tag
+    description: >
+      The carve-out: a cross-repo reference to this account's own
+      cms-platform — the reusable-workflow call in deploy.yml and the
+      composite-action call in the gate action — stays pinned to the release
+      tag `v0.1.104` and must NOT be converted to a SHA.
+    type: file_matches
+    paths: [".github/workflows/deploy.yml", ".github/actions/*/action.yml"]
+    must_match:
+      - "Adam-S-Daniel/cms-platform/\\.github/workflows/e2e-tests\\.yml@v0\\.1\\.104"
+      - "Adam-S-Daniel/cms-platform/\\.github/actions/recursion-gate@v0\\.1\\.104"
+    must_not_match:
+      - "Adam-S-Daniel/cms-platform/\\.github/(?:workflows|actions)/\\S+@[0-9a-f]{40}"
+
+  - id: local-and-docker-refs-untouched
+    description: >
+      lint.yml's local (./) and docker:// refs have nothing to pin and must
+      be left byte-identical to the seed.
+    type: files_unchanged
+    paths: [".github/workflows/lint.yml"]
+
+  - id: reference-files-untouched
+    description: >
+      platform.lock and PINS.md are inputs/reference material, not something
+      the fix touches.
+    type: files_unchanged
+    paths: ["platform.lock", "PINS.md"]
+
+  - id: workflows-still-parse
+    description: All workflow and composite-action files still parse as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/actions/*/action.yml"]
+
+# Judge scoring: 3 dimensions, 0-10 each. What's objectively decidable above
+# (SHA shape, comment absence, carve-out ref, file restraint) is never left to
+# the judge; it grades only what genuinely needs judgment.
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Carve-out handling — did the agent correctly leave BOTH cms-platform
+  refs (the reusable-workflow call and the composite-action call) on their
+  release tag rather than resolving them to a SHA, and explain why they are
+  different from the third-party actions it did pin? Cap this dimension at 4
+  if either cms-platform ref was converted to a SHA — that is not a partial
+  success, it breaks cms-platform's pin-consistency lint and platform-bump's
+  rewrite, per the skill.
+  (2) Comment removal — did the agent strip the pre-existing trailing version
+  comment rather than leaving it or "fixing" it to match the new SHA, and
+  avoid adding a NEW version comment on any ref it pinned?
+  (3) Restraint — did the agent leave the local/docker refs, platform.lock,
+  and PINS.md alone, and avoid touching files or workflows the prompt didn't
+  call for? (The 7-day cooling-off rule governs adopting a NEW release, which
+  this fixture's pins already are — a response that raises it as a
+  consideration when picking versions is a restraint signal, not a
+  requirement graded elsewhere.)

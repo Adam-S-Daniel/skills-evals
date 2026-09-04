@@ -43,6 +43,78 @@ def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str
             else "unpinned: " + "; ".join(bad))
 
 
+def _uses_value_nodes(node) -> list:
+    """Every YAML *value* Node bound to a literal `uses:` mapping key, found
+    by walking the composed document tree — never by scanning the raw text
+    for the string "uses:", which could also match inside a `name:` field or
+    a comment. Recurses into every Mapping/Sequence node so it finds `uses:`
+    wherever it appears: a step, a job-level reusable-workflow call, or a
+    composite action's `runs.steps`.
+    """
+    import yaml
+    out = []
+    if isinstance(node, yaml.MappingNode):
+        for key_node, value_node in node.value:
+            if isinstance(key_node, yaml.ScalarNode) and key_node.value == "uses":
+                out.append(value_node)
+            out.extend(_uses_value_nodes(key_node))
+            out.extend(_uses_value_nodes(value_node))
+    elif isinstance(node, yaml.SequenceNode):
+        for item in node.value:
+            out.extend(_uses_value_nodes(item))
+    return out
+
+
+def _line_has_trailing_comment(line: str) -> bool:
+    """Does the raw source `line` carry a `#` comment after its content?
+
+    Lexical, not structural: a `uses:` value in a workflow is always a plain
+    git ref or path and never itself contains `#`, so any `#` on the line
+    marks a genuine YAML comment start — YAML requires the character before a
+    comment-opening `#` to be whitespace or the start of the line, which is
+    never true of a ref's own characters.
+    """
+    idx = line.find("#")
+    return idx != -1 and (idx == 0 or line[idx - 1] in " \t")
+
+
+def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
+    """No `uses:` ref carries a trailing version comment.
+
+    Rule 2 (reversed 2026-08-20 — see cms-platform's github-actions-sha-pinning
+    skill): a `uses:` line ends at its ref, third-party SHA or cms-platform
+    tag alike, with nothing after it. Locates each `uses:` node with a real
+    YAML parse (`yaml.compose`, which keeps line numbers) rather than a regex
+    over the file, then reads only THAT line's raw text to decide whether a
+    comment trails it. A regex over the whole file can't reliably tell a
+    `uses:` value's line from any other, and mistaking one for the other is
+    exactly the class of bug locating the node structurally first avoids.
+    """
+    import yaml
+    bad = []
+    for pattern in patterns:
+        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            try:
+                doc = yaml.compose(text, Loader=yaml.SafeLoader)
+            except yaml.YAMLError:
+                continue  # yaml_parses reports this; nothing to check here
+            if doc is None:
+                continue
+            lines = text.splitlines()
+            rel = os.path.relpath(path, workspace)
+            for value_node in _uses_value_nodes(doc):
+                lineno = value_node.start_mark.line
+                if lineno >= len(lines):
+                    continue
+                raw = lines[lineno]
+                if _line_has_trailing_comment(raw):
+                    bad.append(f"{rel}:{lineno + 1} {raw.strip()}")
+    return (not bad, "no trailing comment on any uses: pin" if not bad
+            else "version comment present: " + "; ".join(bad))
+
+
 def yaml_parses(workspace: str, patterns: list[str]) -> tuple[bool, str]:
     import yaml
     bad = []
@@ -454,6 +526,7 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
 
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
+    "pin_comment_absent": pin_comment_absent,
     "yaml_parses": yaml_parses,
     "non_remote_refs_unchanged": non_remote_refs_unchanged,
     "changeset_triggers": changeset_triggers,

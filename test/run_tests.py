@@ -31,6 +31,7 @@ FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
 EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
 ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
+GHA_SHA_PINNING_DIR = REPO_ROOT / "evals" / "github-actions-sha-pinning"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
@@ -2558,6 +2559,243 @@ class TestIssue63Round2(unittest.TestCase):
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
+
+
+class TestIssue85(unittest.TestCase):
+    """evals/github-actions-sha-pinning: resurrects the retired
+    pin-actions-to-sha instrument (DESIGN.md's "Reference eval" section)
+    retargeted at the skill that survived cms-platform's 2026-08-20
+    comment-convention reversal — cms-platform/skills/github-actions-sha-pinning.
+    """
+
+    # The "correct" edits below are applied by anchored replacement, and each
+    # anchor is asserted present first — so if the seed's ci.yml drifts, this
+    # test fails loudly instead of quietly measuring nothing. actions/cache's
+    # already-correct bare SHA has no entry here on purpose: leaving it alone
+    # is itself part of what the restraint checks below cover.
+    _CI_FIXES = (
+        ("uses: actions/checkout@v4",
+         "uses: actions/checkout@8c145d657eb0e222586a451c0917c3072252d69a"),
+        ("uses: actions/setup-node@297dbbf",
+         "uses: actions/setup-node@297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708"),
+        ("uses: actions/upload-artifact@469fdae6c9a7a133f770f31f7ebfe863a834fba1"
+         "  # v4.1.0",
+         "uses: actions/upload-artifact@469fdae6c9a7a133f770f31f7ebfe863a834fba1"),
+    )
+
+    def _replace(self, path: Path, old: str, new: str) -> None:
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text, f"{path.name}: anchor drifted out of the seed")
+        path.write_text(text.replace(old, new), encoding="utf-8")
+
+    def _audited(self, ws: Path) -> None:
+        """Apply the correct fix in place: pin every third-party ref in
+        ci.yml to a full SHA and strip the pre-existing version comment.
+        """
+        ci = ws / ".github" / "workflows" / "ci.yml"
+        for old, new in self._CI_FIXES:
+            self._replace(ci, old, new)
+
+    def _seed_copy(self, tmp: str) -> Path:
+        ws = Path(tmp) / "ws"
+        shutil.copytree(GHA_SHA_PINNING_DIR / "seed", ws)
+        return ws
+
+    def _checks(self, ws: Path, seed: Path) -> dict:
+        fixture = run_eval.load_fixture(GHA_SHA_PINNING_DIR)
+        return {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(seed))}
+
+    def _run(self, audited: bool) -> dict:
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            if audited:
+                self._audited(ws)
+            return self._checks(ws, seed)
+
+    # -- the four properties issue #85 asks for ------------------------------
+
+    def test_pristine_seed_fails_the_fixup_checks(self):
+        by_id = self._run(audited=False)
+        for check_id in ("third-party-actions-sha-pinned",
+                         "no-trailing-version-comments"):
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_pristine_seed_passes_the_restraint_checks(self):
+        # These can only be broken by a careless fix, so they must start out
+        # green — otherwise a failure on them says nothing about the arm.
+        by_id = self._run(audited=False)
+        for check_id in ("cms-platform-refs-stay-on-tag",
+                         "local-and-docker-refs-untouched",
+                         "reference-files-untouched",
+                         "workflows-still-parse"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_audited_copy_passes_all_checks(self):
+        for check_id, result in self._run(audited=True).items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_cms_platform_workflow_ref_converted_to_sha_fails(self):
+        # The carve-out's whole point: a naive "pin everything" pass breaks
+        # cms-platform's own pin-consistency lint. Converting just the
+        # reusable-workflow ref (deploy.yml) must fail even though ci.yml and
+        # the composite ref are both otherwise correctly fixed.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "@v0.1.104",
+                          "@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_cms_platform_composite_ref_converted_to_sha_fails(self):
+        # Same trap, the other shape: the composite-action ref, not the
+        # reusable-workflow one.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            gate = ws / ".github" / "actions" / "gate" / "action.yml"
+            self._replace(gate, "@v0.1.104",
+                          "@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_surviving_version_comment_fails(self):
+        # A comment added to the one ref the audit doesn't otherwise touch
+        # (actions/cache's already-correct bare SHA) — proving the check
+        # scans every uses: line, not only the ones the fix rewrote.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            self._replace(
+                ci, "uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f",
+                "uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f  # v4.1.0")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["no-trailing-version-comments"]["passed"])
+
+    # -- the restraint checks have teeth too ---------------------------------
+
+    def test_editing_local_docker_workflow_fails_restraint(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            lint = ws / ".github" / "workflows" / "lint.yml"
+            lint.write_text(lint.read_text(encoding="utf-8") + "\n# stray edit\n",
+                            encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["local-and-docker-refs-untouched"]["passed"])
+
+    def test_editing_platform_lock_fails_restraint(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / "platform.lock").write_text("platform_ref: v0.1.105\n",
+                                              encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["reference-files-untouched"]["passed"])
+
+    def test_editing_pins_md_fails_restraint(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / "PINS.md").write_text("edited\n", encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["reference-files-untouched"]["passed"])
+
+    def test_broken_yaml_fails_parse_check(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(ci.read_text(encoding="utf-8") + "\n  bad: [unclosed\n",
+                         encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["workflows-still-parse"]["passed"])
+
+    # -- the pin_comment_absent primitive, exercised directly ----------------
+
+    def _synthetic_ws(self, files: dict[str, str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, content in files.items():
+            (ws / rel).write_text(content, encoding="utf-8")
+        return ws
+
+    def test_pin_comment_absent_passes_a_clean_pin(self):
+        ws = self._synthetic_ws({
+            "clean.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["clean.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_pin_comment_absent_flags_a_step_level_comment(self):
+        ws = self._synthetic_ws({
+            "commented.yml": "jobs:\n  test:\n    steps:\n"
+                             "      - uses: actions/checkout@" + "0" * 40
+                             + "  # v4.3.1\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["commented.yml"])
+        self.assertFalse(passed)
+        self.assertIn("commented.yml:4", detail)
+
+    def test_pin_comment_absent_flags_a_job_level_uses(self):
+        # A reusable-workflow call (`jobs.<id>.uses:`) has no leading `-` and
+        # no `steps:` above it — the node-walk must find it too, not just the
+        # step shape.
+        ws = self._synthetic_ws({
+            "job-level.yml": "jobs:\n  deploy:\n"
+                             "    uses: Adam-S-Daniel/cms-platform/"
+                             ".github/workflows/x.yml@v0.1.1  # keep on v0.1.1\n"})
+        passed, _ = objective.pin_comment_absent(str(ws), ["job-level.yml"])
+        self.assertFalse(passed)
+
+    def test_pin_comment_absent_skips_unparseable_yaml(self):
+        # yaml_parses is the check that reports a syntax error; this one must
+        # not raise on the same file.
+        ws = self._synthetic_ws({"broken.yml": "jobs: [unclosed\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["broken.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_pin_comment_absent_ignores_a_hash_glued_to_the_value(self):
+        # None of this fixture's real ref values contain '#', but the
+        # detector's own rule (whitespace-then-#) is what makes that safe
+        # rather than merely assumed: a '#' glued directly onto the preceding
+        # character is plain scalar content per YAML, not a comment start,
+        # and the check must not treat it as one.
+        ws = self._synthetic_ws({
+            "glued.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@abc#not-a-comment\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["glued.yml"])
+        self.assertTrue(passed, detail)
+
+    # -- the CLI path itself --------------------------------------------------
+
+    def test_run_eval_objective_only_exits_1_on_pristine_seed(self):
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+              str(GHA_SHA_PINNING_DIR), "--arm", "objective-only"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["third-party-actions-sha-pinned"]["passed"])
+
+    def test_run_eval_objective_only_exits_0_on_audited_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                  str(GHA_SHA_PINNING_DIR), "--arm", "objective-only",
+                  "--workspace", str(ws)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
 if __name__ == "__main__":
