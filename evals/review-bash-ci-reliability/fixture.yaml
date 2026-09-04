@@ -1,0 +1,163 @@
+# Eval fixture: review-bash-ci-reliability
+# Measures whether the review-bash-ci-reliability skill improves an agent's
+# ability to find and correctly fix CI-reliability bugs in shell scripts: a
+# process-substitution failure that `set -euo pipefail` does not catch, a
+# `grep -q` that pipefail/SIGPIPE can turn into a spurious pipeline failure,
+# a `gh api` failure swallowed by `|| true`, a `git commit` with no configured
+# identity, and a script that assumes `jq` is available without ensuring it.
+# Two decoys — a genuinely optional `|| true` and an already-correct `set -e`
+# — look like findings but are not, and must be left alone.
+
+skill: review-bash-ci-reliability
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+# Same calibration as the other fixtures: a pinned mid-tier model so the
+# with/without comparison is not flattened by a ceiling effect, and so the
+# arms do not silently track the CLI's default model across releases.
+model: claude-sonnet-5
+
+judge:
+  model: claude-opus-4-8
+  # Correctness carries the axis that matters: did each fix actually solve
+  # the failure mode, not paper over it. Restraint is the guardrail (leave
+  # the decoys and everything else alone) and must not outvote Correctness.
+  # Explanation is weighted below both, same as DESIGN.md's harness-wide rule.
+  weights:
+    correctness: 0.5
+    restraint: 0.2
+    explanation: 0.3
+
+prompt: >
+  Review the shell in this repo's CI for reliability problems and fix what
+  you find.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# Objective checks run by harness/scorers/objective.py against the resulting
+# workspace. Every check is lexical (a regex against shell/YAML text) except
+# the first, which parses the workflow with `yaml` rather than guessing at
+# its structure from a regex.
+objective_checks:
+  - id: workflow-yaml-parses
+    description: The release workflow still parses as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+  # Finding 1: `mapfile ... < <(gh run watch "$RUN_ID" | tail -n 5)` — process
+  # substitution runs in a disconnected subshell, so a failing `gh run watch`
+  # is invisible to `set -euo pipefail`: mapfile succeeds regardless of what
+  # the substituted pipeline's exit status was. The prescribed fix (mirrors
+  # the skill's own example) is to capture the risky command with plain
+  # command substitution FIRST — which `set -e` does catch — and only feed
+  # the now-safe, already-captured text through process substitution.
+  - id: process-substitution-error-propagates
+    description: >
+      gh run watch's exit status is captured before any process substitution,
+      so set -euo pipefail actually catches a failed publish run
+    type: file_matches
+    paths: ["scripts/publish.sh"]
+    must_not_match:
+      - '<\s*<\(gh run watch'
+    must_match:
+      - 'watch_output=\$\(gh run watch'
+
+  # Finding 2: `echo "$build_log" | grep -q ...` as a bare statement under
+  # `pipefail` — if grep matches and exits before echo finishes writing, echo
+  # can be killed by SIGPIPE, and pipefail reports the pipeline as failed even
+  # though grep found what it was looking for. Feeding grep via a here-string
+  # (or equivalent) removes the producer process that could receive SIGPIPE.
+  - id: grep-q-avoids-broken-pipe
+    description: grep -q reads via a here-string instead of a piped echo
+    type: file_matches
+    paths: ["scripts/publish.sh"]
+    must_not_match:
+      - 'echo "\$build_log" \| grep -q'
+    must_match:
+      - 'grep -q[^\n]*<<<\s*"\$build_log"'
+
+  # Finding 3: the gh api capture's failure is swallowed by `|| true`, and
+  # since a failed call and a genuinely empty result both leave `out` blank,
+  # the two become indistinguishable — the script reports "nothing to
+  # release" either way. The fix checks the call's own exit status.
+  - id: gh-api-failure-not-swallowed
+    description: A failed gh api call is not silently treated as "nothing found"
+    type: file_matches
+    paths: ["scripts/collect.sh"]
+    must_not_match:
+      - 'gh api[^\n]*\|\|\s*true'
+    must_match:
+      - 'if ! out=\$\(gh api'
+      - 'exit 1'
+
+  # Finding 4: `git commit` with no git identity configured fails with exit
+  # 128 on any runner that lacks a global user.name/user.email. Suppressing
+  # the failure (`|| true`, `2>/dev/null`) would make the check un-fixable by
+  # definition, so those dodges are forbidden alongside requiring the fix.
+  - id: git-identity-configured-before-commit
+    description: git user.email is configured before the commit, not worked around
+    type: file_matches
+    paths: ["scripts/bump.sh"]
+    must_match:
+      - 'git config( --local)? user\.email'
+    must_not_match:
+      - 'git commit[^\n]*\|\|\s*true'
+      - 'git commit[^\n]*2>/dev/null'
+
+  # Finding 5: `jq` is used to read package.json's version with no guarantee
+  # it's installed. The fixed script no longer depends on it.
+  - id: version-read-does-not-depend-on-jq
+    description: Reading the current version no longer shells out to jq
+    type: file_matches
+    paths: ["scripts/bump.sh"]
+    must_not_match:
+      - '\bjq\b'
+
+  # Decoy 1: a `|| true` on a temp-file cleanup that is genuinely optional
+  # (idempotent, already commented as such). A correct fix leaves it alone.
+  - id: decoy-optional-cleanup-untouched
+    description: The genuinely-optional rm -f ... || true cleanup line is untouched
+    type: file_matches
+    paths: ["scripts/collect.sh"]
+    must_match:
+      - 'rm -f "\$tmp_response" \|\| true\s*#.*harmless if it.s already gone'
+
+  # Decoy 2: `set -euo pipefail` is already correctly present. The comment
+  # above it (an old habit of forgetting it) might bait an over-eager agent
+  # into re-adding a redundant bare `set -e`; a correct fix leaves it as one
+  # line, exactly as it is.
+  - id: decoy-existing-set-e-untouched
+    description: The already-correct set -euo pipefail line is neither removed nor duplicated
+    type: file_matches
+    paths: ["scripts/publish.sh"]
+    must_match:
+      - '^set -euo pipefail$'
+    must_not_match:
+      - '^set -e$'
+
+# The judge is left what a regex cannot decide: whether each fix actually
+# solves the failure mode the checklist describes (vs. a plausible-looking
+# workaround), whether the agent explained the failure mode it found, and
+# whether it kept its hands off the decoys and everything else. Dimension
+# (1) caps on the decidable facts so the judge cannot praise a transcript the
+# objective column failed.
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Correctness — for each of the five real findings (the process-
+  substitution-hidden failure in publish.sh, the pipefail/SIGPIPE-prone
+  grep -q, the gh api failure swallowed by `|| true`, the missing git
+  identity before the commit, and the unguaranteed jq dependency), did the
+  fix solve the actual failure mode rather than merely suppress the symptom
+  (e.g. wrapping a still-broken call in `|| true` or `2>/dev/null` instead of
+  fixing it)? Cap this dimension at 4 if any objective check for a real
+  finding is failing.
+  (2) Restraint — did the agent leave both decoys (the optional cleanup's
+  `|| true`, and the already-correct `set -euo pipefail`) untouched, and
+  avoid editing files or lines the review did not call for? Cap at 4 if
+  either decoy check is failing.
+  (3) Explanation — for each fix, did the reply name the actual failure mode
+  (e.g. "process substitution runs in a subshell set -e can't see", not just
+  "fixed a bug"), so a reader could tell why the original code was unsafe?

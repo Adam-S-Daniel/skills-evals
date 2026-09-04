@@ -31,6 +31,7 @@ FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
 EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
 ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
+BASH_CI_DIR = REPO_ROOT / "evals" / "review-bash-ci-reliability"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
@@ -824,6 +825,190 @@ class WindowsElevationFixtureTests(unittest.TestCase):
                 f.write("# tampered\n")
         by_id = self._run(act, transcript=self.HANDOFF)
         self.assertFalse(by_id["fake-powershell-untouched"]["passed"])
+
+
+class TestIssue74(unittest.TestCase):
+    """The review-bash-ci-reliability fixture's checks (issue #74).
+
+    Every real-finding check must fail on the pristine seed and pass once
+    that finding is hand-fixed; every decoy check must PASS on both the
+    pristine seed and a hand-fixed copy (the decoys are correct as shipped),
+    and FAIL on a copy where the decoy itself was incorrectly "fixed" — that
+    is what proves the decoy checks actually have teeth, not just that they
+    happen to pass.
+    """
+
+    REAL_FINDING_IDS = (
+        "process-substitution-error-propagates",
+        "grep-q-avoids-broken-pipe",
+        "gh-api-failure-not-swallowed",
+        "git-identity-configured-before-commit",
+        "version-read-does-not-depend-on-jq",
+    )
+    DECOY_IDS = ("decoy-optional-cleanup-untouched", "decoy-existing-set-e-untouched")
+    RESTRAINT_IDS = ("workflow-yaml-parses",) + DECOY_IDS
+
+    def _ws(self) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        shutil.copytree(BASH_CI_DIR / "seed", ws, dirs_exist_ok=True)
+        return ws
+
+    def _run(self, ws: Path) -> dict:
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        results = objective.run_checks(fixture, str(ws), str(BASH_CI_DIR / "seed"))
+        return {r["id"]: r for r in results}
+
+    # -- hand fixes, one per real finding, mirroring the skill's own remedy --
+
+    def _fix_publish(self, ws: Path) -> None:
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'mapfile -t WATCH_LOG < <(gh run watch "$RUN_ID" | tail -n 5)',
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)')
+        text = text.replace(
+            'echo "$build_log" | grep -q "Successfully published"',
+            'grep -q "Successfully published" <<< "$build_log"')
+        path.write_text(text, encoding="utf-8")
+
+    def _fix_collect(self, ws: Path) -> None:
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || true',
+            'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then\n'
+            '    echo "ERROR: gh api call failed" >&2\n'
+            '    exit 1\n'
+            'fi')
+        path.write_text(text, encoding="utf-8")
+
+    def _fix_bump(self, ws: Path) -> None:
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            "VERSION=$(jq -r '.version' package.json)",
+            "VERSION=$(grep -m1 '\"version\"' package.json | "
+            "sed -E 's/.*\"version\":[[:space:]]*\"([^\"]+)\".*/\\1/')")
+        text = text.replace(
+            "git add package.json",
+            'git config --local user.email "release-bot@example.com"\n'
+            'git config --local user.name "release-bot"\n'
+            'git add package.json')
+        path.write_text(text, encoding="utf-8")
+
+    def _fix_all(self, ws: Path) -> None:
+        self._fix_publish(ws)
+        self._fix_collect(ws)
+        self._fix_bump(ws)
+
+    def test_pristine_seed_fails_every_real_finding(self):
+        by_id = self._run(self._ws())
+        for check_id in self.REAL_FINDING_IDS:
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_pristine_seed_passes_the_restraint_checks(self):
+        # The restraint checks (yaml_parses + both decoys) can only be
+        # broken by a careless agent, so they must start out green —
+        # otherwise a failure here says nothing about the arm under test.
+        by_id = self._run(self._ws())
+        for check_id in self.RESTRAINT_IDS:
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_hand_fixed_copy_passes_every_check(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        for check_id, result in self._run(ws).items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_decoy_1_incorrectly_fixed_fails_only_its_own_check(self):
+        # An agent that mistakes the genuinely-optional cleanup for a bug and
+        # strips its `|| true` must fail decoy-optional-cleanup-untouched —
+        # and nothing else, proving the check is isolated to that one line.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(
+            'rm -f "$tmp_response" || true  # temp file cleanup; '
+            "harmless if it's already gone", text)
+        text = text.replace(
+            'rm -f "$tmp_response" || true  # temp file cleanup; '
+            "harmless if it's already gone",
+            'rm -f "$tmp_response"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["decoy-optional-cleanup-untouched"]["passed"])
+        for check_id in self.REAL_FINDING_IDS + ("decoy-existing-set-e-untouched",
+                                                  "workflow-yaml-parses"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_decoy_2_incorrectly_replaced_fails_only_its_own_check(self):
+        # An agent that "fixes" the already-correct set -euo pipefail by
+        # splitting it back into set -e / set -o pipefail must fail
+        # decoy-existing-set-e-untouched — and nothing else.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("set -euo pipefail\n", text)
+        text = text.replace("set -euo pipefail\n", "set -e\nset -o pipefail\n")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["decoy-existing-set-e-untouched"]["passed"])
+        for check_id in self.REAL_FINDING_IDS + ("decoy-optional-cleanup-untouched",
+                                                  "workflow-yaml-parses"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_decoy_2_redundantly_duplicated_fails_its_check(self):
+        # A second, over-cautious "fix": re-adding a bare `set -e` alongside
+        # the existing (untouched) `set -euo pipefail` line.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("set -euo pipefail\n", "set -euo pipefail\nset -e\n")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["decoy-existing-set-e-untouched"]["passed"])
+
+    def test_suppressing_the_commit_failure_instead_of_fixing_identity_fails(self):
+        # A plausible-looking wrong fix: silence the exit-128 symptom with
+        # `|| true` instead of configuring git identity. Must still fail —
+        # otherwise the check can be gamed by the exact anti-pattern the
+        # skill's "Commands with Suppressed Errors" item warns against.
+        ws = self._ws()
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'git commit -m "chore: bump version to ${NEXT_VERSION}"',
+            'git commit -m "chore: bump version to ${NEXT_VERSION}" || true')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["git-identity-configured-before-commit"]["passed"])
+
+    def test_objective_only_cli_fails_on_pristine_seed(self):
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(BASH_CI_DIR),
+              "--arm", "objective-only"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 1)
+        payload = json.loads(proc.stdout)
+        self.assertEqual(payload["skill"], "review-bash-ci-reliability")
+        self.assertEqual(payload["arm"], "objective-only")
+        by_id = {c["id"]: c for c in payload["checks"]}
+        for check_id in self.REAL_FINDING_IDS:
+            self.assertFalse(by_id[check_id]["passed"])
+        for check_id in self.RESTRAINT_IDS:
+            self.assertTrue(by_id[check_id]["passed"])
+
+    def test_objective_only_cli_passes_on_a_hand_fixed_copy(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(BASH_CI_DIR),
+              "--arm", "objective-only", "--workspace", str(ws)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
 class MakeBadgeTests(unittest.TestCase):
