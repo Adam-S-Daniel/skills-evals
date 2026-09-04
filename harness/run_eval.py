@@ -6,6 +6,8 @@ Usage:
     python3 harness/run_eval.py evals/<skill> --arm both [--registry PATH]
         [--roster PATH] [--no-judge]
 
+The model a run uses: `--model` > the fixture's `model:` > the roster > error.
+
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
 pristine seed should FAIL the fixture's checks; a correctly reworked copy
 should PASS. `--arm with_skill|without_skill|both` runs the agent under test
@@ -53,7 +55,8 @@ def _resolve_roster(cli_value: Path | None) -> Path:
     The roster is published to the `eval-results` branch as `roster/latest.json`
     (harness/roster.py); CI materializes it before the eval runs and points
     $EVAL_ROSTER at it, which is why the eval invocation itself needs no new
-    flag. A missing roster is not an error — see roster_models().
+    flag. Whether a missing roster is an error depends on the fixture — see
+    select_models(): it is for an unpinned one, and it is not for a pinned one.
     """
     if cli_value:
         return Path(cli_value).expanduser()
@@ -406,8 +409,8 @@ def main() -> int:
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--roster", type=Path, default=None,
-                        help="model roster JSON (harness/roster.py); used when the "
-                             "fixture pins no model. Else $EVAL_ROSTER, else "
+                        help="model roster JSON (harness/roster.py); REQUIRED when "
+                             "the fixture pins no model. Else $EVAL_ROSTER, else "
                              "roster/latest.json in this checkout")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
