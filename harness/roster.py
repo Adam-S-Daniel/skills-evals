@@ -341,6 +341,7 @@ def _in_window_totals(counts: dict, weeks: set[str],
 #: `_census_verdict`'s machine-readable half. Reasons are for humans; this is
 #: for callers deciding what else follows (e.g. whether `census_at` is
 #: recorded), so they do not have to reconstruct it from a string prefix.
+CENSUS_UNREADABLE = "unreadable"
 CENSUS_ABSENT = "absent"
 CENSUS_FUTURE = "future"
 CENSUS_STALE = "stale"
@@ -350,23 +351,33 @@ CENSUS_FRESH = "fresh"
 
 #: Verdicts whose census WAS published and current enough to be worth citing
 #: as provenance, even though it is not usable evidence — see `CENSUS_EMPTY`
-#: and `CENSUS_UNRANKED` below.
+#: and `CENSUS_UNRANKED` below. `CENSUS_UNREADABLE` is deliberately absent:
+#: a file that failed to parse has no `generated_at` to cite.
 CENSUS_PUBLISHED_CODES = (CENSUS_EMPTY, CENSUS_UNRANKED, CENSUS_FRESH)
 
 
-def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now):
+def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
+                    census_problem: str | None = None):
     """(usable, note, code) — is there usage evidence for the window, and why not.
 
-    Five ways to have none, and they are NOT the same fact: nothing
-    published, a timestamp in the future (clock skew or a hand edit — every
-    week then falls outside the window while the age check reads as fresh),
-    a census older than the freshness window, a census that is present and
-    current and simply holds nothing for these weeks, and a census that holds
-    usage but none of it is usage the tier ladder can rank (every count fell
-    under `other` or an unranked id). Each says so in its own words, because
-    "fell back to newest per tier" without the cause is a roster nobody can
-    debug.
+    Six ways to have none, and they are NOT the same fact: a file that is
+    present but failed to parse (distinct from nothing being published at
+    all — `read_json` already tells the two apart, but `main()` used to
+    collapse them by discarding the problem and passing `census_doc=None`
+    either way), nothing published, a timestamp in the future (clock skew or
+    a hand edit — every week then falls outside the window while the age
+    check reads as fresh), a census older than the freshness window, a
+    census that is present and current and simply holds nothing for these
+    weeks, and a census that holds usage but none of it is usage the tier
+    ladder can rank (every count fell under `other` or an unranked id). Each
+    says so in its own words, because "fell back to newest per tier" without
+    the cause is a roster nobody can debug.
     """
+    if census_problem:
+        # `read_json`'s message already names the file and the exception
+        # class only — never file content — so it is safe to surface
+        # verbatim as far down as an arm's own reason.
+        return False, census_problem, CENSUS_UNREADABLE
     census_at = parse_ts((census_doc or {}).get("generated_at"))
     if census_doc is None or census_at is None:
         return False, "no fresh census (none published)", CENSUS_ABSENT
@@ -391,7 +402,8 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now):
 
 def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                    previous: dict | None, now: datetime,
-                   admin_doc: dict | None = None, warn=None) -> dict:
+                   admin_doc: dict | None = None, warn=None,
+                   census_problem: str | None = None) -> dict:
     warn = warn or _stderr
     rungs = tier_rungs(policy)
 
@@ -422,7 +434,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     window_union = set(enter_weeks) | set(exit_weeks)
     raw_total, ranked_total = _in_window_totals(counts, window_union, rungs)
     usable, stale_note, census_code = _census_verdict(
-        census_doc, raw_total, ranked_total, policy, now)
+        census_doc, raw_total, ranked_total, policy, now,
+        census_problem=census_problem)
     # Provenance: the timestamp of the census this roster actually read. A
     # census that was published and simply held nothing usable for these
     # weeks HAS a timestamp worth recording — dropping it made "we read a
@@ -703,6 +716,7 @@ def main() -> int:
         previous=previous_doc,
         now=datetime.now(timezone.utc),
         admin_doc=load_json(args.admin_report),
+        census_problem=census_problem,
     )
 
     if not roster["arms"]:

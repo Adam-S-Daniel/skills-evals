@@ -3264,6 +3264,48 @@ exit 0
                          "the -100 cell is rejected, not summed: opus-5 "
                          "keeps its 100 turns against a 500-turn ranked total")
 
+    # --- item 6: an unreadable (present, but corrupt) census must not read
+    #             the same as "none published" ----------------------------
+
+    def test_main_reports_census_unreadable_and_it_reaches_the_arm_reasons(self):
+        """`read_json` already distinguishes absent from present-but-
+        unreadable; main() printed the distinction to stderr and then threw
+        it away, passing `census_doc=None` either way — so a census
+        truncated mid-write said 'no fresh census (none published)', a
+        different (and wrong) fact."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            census.write_text('{"generated_at": "2026-09-04T06:00:00Z", "wee',
+                              encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--census", str(census), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(rc, 0, printed)
+            self.assertIn("unreadable", printed.lower())
+            published = json.loads(out.read_text(encoding="utf-8"))
+        self.assertTrue(published["arms"])
+        for arm in published["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("unreadable", arm["reason"].lower())
+                self.assertNotIn("none published", arm["reason"].lower())
+
+    def test_census_verdict_code_distinguishes_unreadable_from_absent(self):
+        _, note, code = roster._census_verdict(
+            None, 0, 0, self._policy(), self.NOW,
+            census_problem="latest.json is present but unreadable (JSONDecodeError)")
+        self.assertEqual(code, "unreadable")
+        self.assertIn("JSONDecodeError", note)
+        _, _, absent_code = roster._census_verdict(None, 0, 0, self._policy(), self.NOW)
+        self.assertEqual(absent_code, "absent")
+
 
 if __name__ == "__main__":
     unittest.main()
