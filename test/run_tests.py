@@ -1132,6 +1132,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
     """
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+    CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
     USES_SHA_RE = re.compile(r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
 
     def _doc(self) -> dict:
@@ -1195,6 +1196,35 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
                         "expansion into a shell command that runs under "
                         "bypassPermissions with a live key in env is a "
                         "command-injection vector")
+
+    def test_ci_yml_shares_the_sha_pin_persist_creds_and_no_interp_rules(self):
+        # Item H (round 3, optional): the three rules above are workflow-file
+        # hygiene, not eval.yml-specific — ci.yml's two checkouts were
+        # compared only to EACH OTHER (CiDispatchTests), so pinning both to
+        # the same @v4 tag would have stayed green there.
+        import yaml
+        doc = yaml.safe_load(self.CI_WORKFLOW.read_text(encoding="utf-8"))
+        steps = [s for job in doc["jobs"].values() for s in job.get("steps", [])]
+        for step in steps:
+            uses = step.get("uses")
+            with self.subTest(uses=uses, step=step.get("name")):
+                if uses is not None:
+                    self.assertRegex(uses, self.USES_SHA_RE,
+                                     f"{uses!r} is not a bare SHA pin")
+                if (uses or "").startswith("actions/checkout@"):
+                    self.assertIs(
+                        (step.get("with") or {}).get("persist-credentials"), False,
+                        "checkout step must set persist-credentials: false")
+                if step.get("run"):
+                    self.assertNotIn("${{", step["run"],
+                                     "run: block must not interpolate")
+        for lineno, line in enumerate(
+                self.CI_WORKFLOW.read_text(encoding="utf-8").splitlines(), 1):
+            if line.strip().startswith("uses:"):
+                with self.subTest(line=lineno):
+                    self.assertNotIn(
+                        "#", line, f"line {lineno} has a trailing comment "
+                        "on a uses: line")
 
     def test_triggers_are_exactly_schedule_and_dispatch(self):
         doc = self._doc()
