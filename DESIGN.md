@@ -335,6 +335,11 @@ Three properties are load-bearing and should survive any rework:
 3. **No evidence is not evidence.** Nothing retires an arm except leaving the
    Models API or measurably falling under the exit bar. A missing or stale
    census retires nothing.
+4. **Three previous-roster states, not two.** The published `previous_state`
+   is `compared`, `none` (first run), or `unavailable` (a previous roster
+   exists but could not be read this run) — collapsing the last two into one
+   boolean once let the rendered summary claim "no change since the last
+   run" about a comparison that never happened.
 
 Thresholds, and the reasoning behind the numbers, belong in an ADR —
 [#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the

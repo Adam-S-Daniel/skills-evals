@@ -2343,6 +2343,11 @@ class TestIssue67Review(unittest.TestCase):
         # only the `claude` prefix requirement keeps this one out — it is
         # otherwise a well-formed, short, family-word-bearing id shape.
         "family_word_without_claude_prefix": "internal-proxy-opus-route",
+        # `$`, unlike `\Z`, matches just before a trailing newline — item 6
+        # (#129 review round 3): an otherwise honest id with a trailing
+        # newline used to be published as its own (distinct, newline-
+        # carrying) key rather than falling to `other`.
+        "trailing_newline": "claude-opus-5\n",
     }
 
     #: The only key this test's transcript can honestly earn — an
@@ -4872,7 +4877,7 @@ class TestIssue67Review3(unittest.TestCase):
                     if needle.lower() in (s.get("name") or "").lower())
 
     def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
-                         roster_fail_stderr=None):
+                         roster_fail_stderr=None, roster_success_stderr=None):
         """Run eval.yml's roster step for real, against stubs.
 
         Hermetic: the two python scripts it calls are replaced by stubs, `git`
@@ -4882,7 +4887,11 @@ class TestIssue67Review3(unittest.TestCase):
         `roster_fail_stderr`, if given, makes the roster.py stub write that
         exact text to stderr and exit 1 (instead of succeeding) — for
         exercising the step's own reason-extraction and step-summary logic
-        against a controlled roster.err.
+        against a controlled roster.err. `roster_success_stderr`, if given
+        (and `roster_fail_stderr` is not), makes the stub write that text to
+        stderr but still SUCCEED (exit 0, write --out) — a stale/unreadable
+        census or skipped bad rows can print `roster: ` warnings and still
+        let the run succeed overall.
         """
         script = self._step_named("roster")["run"]
         tmp = Path(tempfile.mkdtemp())
@@ -4908,6 +4917,11 @@ class TestIssue67Review3(unittest.TestCase):
             roster_stub = (stub_args +
                            f"sys.stderr.write({roster_fail_stderr!r})\n"
                            f"sys.exit(1)\n")
+        elif roster_success_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_success_stderr!r})\n"
+                           "open(a.out, 'w').write('{}')\n"
+                           "print('### Model roster')\n")
         else:
             roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
                                        "print('### Model roster')\n")
@@ -4989,6 +5003,23 @@ class TestIssue67Review3(unittest.TestCase):
                          "instead of the headline")
         self.assertIn("refusing to publish a roster with no arms",
                       got["summary"])
+
+    # --- item 7: the roster-warnings <details> block must render on the
+    # success path too, not only on failure -----------------------------
+
+    def test_roster_warnings_reach_the_step_summary_on_the_success_path_too(self):
+        """A stale/unreadable census or skipped bad rows can print
+        `roster: `-prefixed warnings and still let the roster refresh
+        succeed overall. The <details> block used to render only in the
+        failure branch, so these warnings reached the raw job log but
+        never the step summary on a run that otherwise succeeded.
+        """
+        got = self._run_roster_step(
+            roster_success_stderr="roster: census.json is present but "
+                                  "unreadable (JSONDecodeError)\n")
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("roster warnings", got["summary"])
+        self.assertIn("census.json is present but unreadable", got["summary"])
 
     # --- item 3: a proxy alias carrying a family word (`claude-sonnet-
     # proxy-route`) is `rung_of()`-ranked but not a catalogue model or a

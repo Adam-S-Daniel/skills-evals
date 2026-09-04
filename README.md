@@ -338,6 +338,15 @@ Routine** (`evals/propagation/ROUTINE.md`), best-effort, publishing
 is absent, stale, future-dated or empty over the window, the roster falls back
 to newest-per-tier and says which of those it was, in every arm's reason.
 
+**What moved since last time.** The published roster carries `previous_state`
+— `compared` (a previous roster was read and diffed against), `none` (first
+run: no previous roster exists), or `unavailable` (a previous roster was
+published but could not be read this run, so nothing was compared) — plus
+`added_since_last`/`retired_since_last`, the arms that changed. The three
+states are not interchangeable: reporting "no change since the last run" on a
+first run, or when the comparison never happened, is a claim about a
+comparison nobody made.
+
 ## Quality badge (real weekly run)
 
 `.github/workflows/eval.yml` runs the full `workflow-path-audit` A/B eval every

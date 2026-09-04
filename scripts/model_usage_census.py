@@ -105,9 +105,13 @@ def _model_id_re() -> re.Pattern:
     import roster
     words = "|".join(re.escape(w) for w in
                      roster.tier_words(roster.load_policy(POLICY_PATH)))
+    # `\Z`, not `$`: `$` matches just before a trailing newline too, so an
+    # otherwise honest id with one appended would satisfy this pattern and
+    # be published as its own (distinct, newline-carrying) key rather than
+    # falling to `other` (see test/run_tests.py's HOSTILE_MODELS).
     return re.compile(
-        rf"^(?=.{{1,40}}$)claude(?:-[a-z0-9.]{{1,20}})*-(?:{words})"
-        rf"(?:-[a-z0-9.]{{1,20}})*$")
+        rf"^(?=.{{1,40}}\Z)claude(?:-[a-z0-9.]{{1,20}})*-(?:{words})"
+        rf"(?:-[a-z0-9.]{{1,20}})*\Z")
 
 
 #: Populated by `_require_model_id_re()` on first use — never at import time.

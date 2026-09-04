@@ -297,6 +297,30 @@ jobs:
             done < "$1"
             grep -v '^$' "$1" | tail -n 1
           }
+          # The `roster: `-prefixed warn() lines carry the actual diagnosis
+          # (a stale/unreadable census, skipped bad rows, ...). A census
+          # that is stale/unreadable/carries skipped rows can print these
+          # and STILL let the run succeed overall (a graceful fallback), so
+          # this runs on both the success and failure paths — it used to
+          # run only on failure, reaching only the raw job log on success,
+          # never the step summary — the surface most people actually read
+          # first.
+          emit_roster_warnings() {
+            local file="$1" warnings
+            [ -f "$file" ] || return 0
+            warnings=$(grep '^roster: ' "$file" || true)
+            [ -n "$warnings" ] || return 0
+            {
+              echo
+              echo "<details><summary>roster warnings</summary>"
+              echo
+              echo '```'
+              printf '%s\n' "$warnings"
+              echo '```'
+              echo
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
           refresh() {
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
@@ -354,6 +378,7 @@ jobs:
             fi
             cat "$work/roster.err" >&2
             cat "$work/summary.md" | tee -a "$GITHUB_STEP_SUMMARY"
+            emit_roster_warnings "$work/roster.err"
             return 0
           }
           if refresh; then
@@ -367,24 +392,8 @@ jobs:
               echo "**The roster was not refreshed this run.** ${reason:-unknown failure}"
               echo
               echo "No roster is published; the eval below ran on the fixture pins."
-              # The `roster: `-prefixed warn() lines carry the actual
-              # diagnosis (a stale/unreadable census, skipped bad rows, ...)
-              # and used to reach only the raw job log, never the step
-              # summary — the surface most people actually read first.
-              if [ -f "$work/roster.err" ]; then
-                warnings=$(grep '^roster: ' "$work/roster.err" || true)
-                if [ -n "$warnings" ]; then
-                  echo
-                  echo "<details><summary>roster warnings</summary>"
-                  echo
-                  echo '```'
-                  printf '%s\n' "$warnings"
-                  echo '```'
-                  echo
-                  echo "</details>"
-                fi
-              fi
             } >> "$GITHUB_STEP_SUMMARY"
+            emit_roster_warnings "$work/roster.err"
           fi
 
       # Cheap canary validating the exchanged bearer before the real spend,

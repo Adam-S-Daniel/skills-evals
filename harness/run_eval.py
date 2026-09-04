@@ -659,6 +659,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     `selection` is `select_models()`'s answer, resolved ONCE by main() and
     passed in: the roster is one file describing one run, and re-reading it per
     arm let two arms of the same run disagree if it changed underneath them.
+    A selection error is checked and recorded FIRST, before any workspace is
+    materialized (mkdtemp/copytree/git init) — a run this arm will never make
+    is not worth building one only to shutil.rmtree it straight back out.
     """
     agent_model, roster_judge_model, selection_error = (
         selection if selection is not None else select_models(fixture, args))
