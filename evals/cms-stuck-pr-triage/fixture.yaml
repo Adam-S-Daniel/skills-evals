@@ -34,10 +34,11 @@
 # dispatched from main, and a run list full of cancelled runs.
 #
 # WHERE THIS SEED DIVERGES FROM THE SKILL UNDER TEST
-# The recorded incident (#371) is NEWER than cms-stuck-pr-triage, and #84
-# asked for this shape deliberately, so the seed contradicts the skill in
-# three places. Naming them here is part of the fixture: an unstated
-# divergence reads as a broken fixture.
+# The incident this seed is mined from — "the #371 shape", as skills-evals#84
+# names it: a required context nothing publishes — is NEWER than
+# cms-stuck-pr-triage, and #84 asked for exactly this shape, so the seed
+# contradicts the skill in three places. Naming them here is part of the
+# fixture: an unstated divergence reads as a broken fixture.
 #   * §3 "BLOCKED but every check is green" reads that state as a GitHub
 #     merge-state-evaluator caching bug and prescribes
 #     `gh pr merge <N> --auto --merge` to nudge it. Here #418 is
