@@ -2560,5 +2560,687 @@ class TestIssue63Round2(unittest.TestCase):
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
 
 
+class TestIssue81(unittest.TestCase):
+    """Issue #81: the `adam-writing-style` fixtures (the Class C pilot) and
+    the pairwise judge mode they introduce.
+
+    Class C means the judge carries the load and only the decidable bits are
+    scored objectively (DESIGN.md, "Four instruments, one harness"). Two
+    things are worth stating up front because they shape every test below:
+
+    - The three fixtures are separate, individually runnable eval dirs
+      (`evals/adam-writing-style/<fixture>/`), because the multi-fixture
+      runner (#66) has not landed. Nothing here globs `evals/*/fixture.yaml`
+      — that glob is one level shallower than these fixtures live.
+    - Every objective check is `transcript_matches`. The writing IS the
+      transcript; there is no workspace transform to inspect, and a regex
+      deciding code structure is exactly what the harness rules forbid.
+      A consequence: `--arm objective-only` on the pristine seed fails every
+      check with "no transcript", which is the documented asymmetry, not a
+      broken fixture (test_objective_only_on_the_pristine_seed_fails_loudly).
+    """
+
+    STYLE_DIR = REPO_ROOT / "evals" / "adam-writing-style"
+    FIXTURES = ("recruiter-reply", "proposal-bio", "self-appraisal-opening")
+
+    # The prompts the issue gives, verbatim. Held here so a reworded fixture
+    # fails loudly rather than quietly measuring a different task.
+    PROMPTS = {
+        "recruiter-reply":
+            "Reply to this recruiter's cold email in my voice, declining but "
+            "leaving the door open",
+        "proposal-bio":
+            "Write my 60-word bio for this proposal",
+        "self-appraisal-opening":
+            "Draft the opening paragraph of my self-appraisal for this "
+            "quarter from these notes.",
+    }
+
+    # The two facts each fixture's seed material carries, as they appear in
+    # that material. The seed states them; the BRIEF never says "cite these"
+    # — citing them is the skill's specificity move, not instruction-following
+    # (test_seed_states_both_facts_without_asking_for_them).
+    FACTS = {
+        "recruiter-reply": ("REQ-4417", "March 2027"),
+        "proposal-bio": ("2019–2024", "Section 508"),
+        "self-appraisal-opening": ("deploy-scaffold", "26 minutes"),
+    }
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    def _fixture(self, name: str) -> dict:
+        return run_eval.load_fixture(self.STYLE_DIR / name)
+
+    def _score(self, name: str, transcript: str | None) -> dict:
+        """{check id: result} for one fixture's checks against `transcript`."""
+        fixture = self._fixture(name)
+        seed = self.STYLE_DIR / name / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp) / "ws"
+            shutil.copytree(seed, ws)
+            results = objective.run_checks(fixture, str(ws), str(seed),
+                                           transcript=transcript)
+        self.assertTrue(results, f"{name} declares no objective checks")
+        return {r["id"]: r for r in results}
+
+    def _reference(self, name: str, which: str) -> str:
+        return (self.STYLE_DIR / name / "references"
+                / f"{which}.md").read_text(encoding="utf-8")
+
+    def _seed_text(self, name: str) -> str:
+        seed = self.STYLE_DIR / name / "seed"
+        return "\n".join(p.read_text(encoding="utf-8", errors="replace")
+                         for p in sorted(seed.rglob("*")) if p.is_file())
+
+    def _assert_only_failure(self, by_id: dict, failed_id: str) -> None:
+        """`failed_id` failed and every other check still passed — so the
+        mutation under test is what moved the needle, not collateral damage."""
+        self.assertFalse(by_id[failed_id]["passed"], by_id[failed_id]["detail"])
+        for check_id, result in by_id.items():
+            if check_id != failed_id:
+                self.assertTrue(result["passed"],
+                                f"{check_id} also failed: {result['detail']}")
+
+    # ------------------------------------------------------------------
+    # the hand-written references, as the fixtures' calibration
+    # ------------------------------------------------------------------
+
+    def test_in_voice_reference_passes_every_objective_check(self):
+        # The in-voice reference is the fixture's own proof that the checks
+        # are satisfiable by real writing — a check no human draft can pass
+        # is a broken check, not a demanding one.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                for check_id, result in self._score(
+                        name, self._reference(name, "in-voice")).items():
+                    self.assertTrue(result["passed"],
+                                    f"{name}/{check_id}: {result['detail']}")
+
+    def test_generic_reference_fails_at_least_one_objective_check(self):
+        # The competent-but-generic foil must be distinguishable from the
+        # in-voice one by something other than the judge's taste; if it
+        # passed every objective check too, the objective column would be
+        # measuring nothing about voice.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                by_id = self._score(name, self._reference(name, "generic"))
+                self.assertTrue(any(not r["passed"] for r in by_id.values()),
+                                f"{name}: the generic reference passed every "
+                                "objective check")
+
+    # ------------------------------------------------------------------
+    # the avoid list, read from the registry so it cannot drift
+    # ------------------------------------------------------------------
+
+    AVOID_CHECK_ID = "no-avoid-list-words"
+
+    def _avoid_patterns(self, name: str) -> list[str]:
+        checks = {c["id"]: c for c in self._fixture(name)["objective_checks"]}
+        self.assertIn(self.AVOID_CHECK_ID, checks,
+                      f"{name} has no {self.AVOID_CHECK_ID} check")
+        return checks[self.AVOID_CHECK_ID].get("must_not_match", [])
+
+    def _skill_md(self) -> str | None:
+        """The skill's own SKILL.md text, or None (with a printed reason)
+        when no agentskills checkout is reachable.
+
+        Routed through resolve_registries, same as
+        TestIssue63::test_registries_agree_with_agentskills_own_file, so
+        $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES steer which checkout this
+        reads — and so CI's side-by-side checkout (ci.yml) makes it run for
+        real rather than skip.
+        """
+        registries = run_eval.resolve_registries(
+            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
+            os.environ.get("AGENTSKILLS_DIR"))
+        skill_md = (registries["agentskills"]["path"] / "plugins" / "adam"
+                    / "skills" / "adam-writing-style" / "SKILL.md")
+        if not skill_md.is_file():
+            return None
+        return skill_md.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _quoted_terms(skill_md: str, heading: str) -> list[str]:
+        """The quoted terms under one `### <heading>` of SKILL.md.
+
+        Terms longer than four words are dropped: the avoid list's bullets
+        are term lists, but one bullet quotes a whole illustrative sentence
+        ("I think it might possibly be the case that...") as an example of
+        stacked hedging rather than as a banned phrase. Four words separates
+        the two cleanly ("deep expertise in" is the longest real term).
+        """
+        body = skill_md.split(f"### {heading}", 1)[1].split("\n###", 1)[0]
+        flat = " ".join(body.split())
+        return [t for t in re.findall(r'"([^"]+)"', flat) if len(t.split()) <= 4]
+
+    def test_avoid_list_check_fails_on_a_transcript_using_leverage(self):
+        # The issue's named case. Spliced into a draft that otherwise passes
+        # everything, so the avoid check is demonstrably the one that fires.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                clean = self._reference(name, "in-voice")
+                self.assertTrue(all(r["passed"] for r in
+                                    self._score(name, clean).values()))
+                spliced = clean + "\n\nWe can leverage that next quarter.\n"
+                self._assert_only_failure(self._score(name, spliced),
+                                          self.AVOID_CHECK_ID)
+
+    def test_avoid_list_covers_every_term_the_skill_lists(self):
+        # The anti-drift test: the fixtures carry the avoid list as literal
+        # regexes (fixtures are static YAML — the harness has no hook for
+        # reading a SKILL.md at scoring time), so this reads the registry's
+        # copy at TEST time and fails the moment a term is added there and
+        # not here.
+        skill_md = self._skill_md()
+        if skill_md is None:
+            reason = ("no adam-writing-style SKILL.md in the resolved "
+                      "agentskills checkout — skipping the avoid-list drift "
+                      "check")
+            # `python3 test/run_tests.py` runs without -v, so skipTest's own
+            # reason is never printed; print it, same as TestIssue63 does.
+            print(reason)
+            self.skipTest(reason)
+        terms = self._quoted_terms(skill_md, "Avoid (almost always)")
+        self.assertGreaterEqual(len(terms), 10,
+                                f"parsed only {terms!r} out of the avoid list "
+                                "— the section's shape changed")
+        for name in self.FIXTURES:
+            patterns = self._avoid_patterns(name)
+            for term in terms:
+                with self.subTest(fixture=name, term=term):
+                    self.assertTrue(
+                        any(re.search(p, term) for p in patterns),
+                        f"{name} bans none of {patterns!r} for the skill's "
+                        f"avoid-list term {term!r}")
+
+    def test_no_use_freely_term_is_banned_by_a_fixture(self):
+        # The mirror image: an over-broad avoid regex that swallowed one of
+        # the skill's use-freely phrases would fail every good draft. Read
+        # from the registry for the same reason as above.
+        skill_md = self._skill_md()
+        if skill_md is None:
+            reason = ("no adam-writing-style SKILL.md in the resolved "
+                      "agentskills checkout — skipping the use-freely check")
+            print(reason)
+            self.skipTest(reason)
+        terms = self._quoted_terms(skill_md, "Use freely")
+        self.assertGreaterEqual(len(terms), 10,
+                                f"parsed only {terms!r} out of the use-freely "
+                                "list — the section's shape changed")
+        for name in self.FIXTURES:
+            patterns = self._avoid_patterns(name)
+            for term in terms:
+                for pattern in patterns:
+                    with self.subTest(fixture=name, term=term, pattern=pattern):
+                        self.assertIsNone(
+                            re.search(pattern, term),
+                            f"{name}'s /{pattern}/ bans the skill's "
+                            f"use-freely phrase {term!r}")
+
+    # ------------------------------------------------------------------
+    # register: one check per fixture, each with a mutation that trips it
+    # ------------------------------------------------------------------
+
+    # A reply that does everything else right — greets Dana, cites both
+    # facts, no avoid-list words — and simply does not hedge.
+    _REPLY_NO_HEDGE = (
+        "Hi Dana,\n\n"
+        "Thanks for the note about REQ-4417. I am going to pass on this one "
+        "— my current engagement runs through March 2027, and three days a "
+        "week on site would be a stretch on top of it.\n\n"
+        "If something comes up in early 2027 that is platform or delivery "
+        "infrastructure and remote-friendly, I would be glad to hear about "
+        "it.\n\n"
+        "Thanks,\nAdam Daniel\n"
+    )
+
+    # The same reply with the hedge parked at the end. "Somewhere in the
+    # draft" is not what the skill asks for — the hedge disarms the reader
+    # by coming first — so this must fail too, which is what gives the
+    # opening-window in the pattern its teeth.
+    _REPLY_LATE_HEDGE = (
+        _REPLY_NO_HEDGE.rstrip("\n")
+        + "\n\nP.S. The team size you mentioned is about right for the kind "
+          "of work I like, for whatever that is worth — sorry to be slow "
+          "getting back to you.\n"
+    )
+
+    # A competent opening paragraph that narrates the quarter in the third
+    # person: both facts present, no avoid-list words, no first-person "I".
+    _APPRAISAL_THIRD_PERSON = (
+        "Adam stood up deploy-scaffold as the shared deployment repository "
+        "this quarter; six application teams have adopted it and two more "
+        "are mid-migration. Adam cut the median pipeline run from 26 "
+        "minutes to 9 with the cache and matrix rework, alongside build "
+        "fixes a coworker landed the same sprint.\n"
+    )
+
+    def test_recruiter_reply_requires_the_recipients_name(self):
+        clean = self._reference("recruiter-reply", "in-voice")
+        self.assertIn("Dana", clean)
+        self._assert_only_failure(
+            self._score("recruiter-reply", clean.replace("Dana", "there")),
+            "greets-the-recruiter-by-name")
+
+    def test_recruiter_reply_requires_a_hedge_in_the_opening(self):
+        self._assert_only_failure(
+            self._score("recruiter-reply", self._REPLY_NO_HEDGE),
+            "opens-with-a-hedge")
+
+    def test_a_hedge_parked_at_the_end_does_not_count_as_an_opening(self):
+        self.assertGreater(self._REPLY_LATE_HEDGE.lower().index("sorry"), 400,
+                           "the late hedge must sit outside the opening "
+                           "window for this test to mean anything")
+        self._assert_only_failure(
+            self._score("recruiter-reply", self._REPLY_LATE_HEDGE),
+            "opens-with-a-hedge")
+
+    def test_bio_must_be_third_person(self):
+        clean = self._reference("proposal-bio", "in-voice")
+        # Substituted by regex, not by literal string: the references are
+        # wrapped prose, so a pronoun can sit at a line break and a
+        # `.replace(" he ", ...)` would silently mutate nothing.
+        self.assertRegex(clean, r"\b[Hh]e\b")
+        mutations = {
+            # First person creeping in: the bio register's one hard rule.
+            "first person": re.sub(r"\b[Hh]e\b", "I", clean, count=1),
+            # And the other direction: strip the third-person pronouns
+            # entirely and the register check must notice their absence,
+            # not just the absence of "I".
+            "no third-person pronoun": re.sub(
+                r"\bhis\b", "the",
+                re.sub(r"\b[Hh]e\b", "Adam Daniel", clean)),
+        }
+        for label, transcript in mutations.items():
+            with self.subTest(mutation=label):
+                self._assert_only_failure(
+                    self._score("proposal-bio", transcript),
+                    "bio-is-third-person")
+
+    def test_self_appraisal_must_be_first_person(self):
+        self._assert_only_failure(
+            self._score("self-appraisal-opening", self._APPRAISAL_THIRD_PERSON),
+            "appraisal-is-first-person")
+
+    # ------------------------------------------------------------------
+    # specificity: both seed facts, cited
+    # ------------------------------------------------------------------
+
+    def test_each_fixture_requires_both_of_its_seed_facts(self):
+        for name, facts in self.FACTS.items():
+            clean = self._reference(name, "in-voice")
+            for fact in facts:
+                with self.subTest(fixture=name, fact=fact):
+                    self.assertIn(fact, clean,
+                                  f"{name}'s in-voice reference does not cite "
+                                  f"{fact!r} — the check below would be "
+                                  "measuring nothing")
+                    self._assert_only_failure(
+                        self._score(name, clean.replace(fact, "")),
+                        "cites-both-facts")
+
+    def test_seed_states_both_facts_without_asking_for_them(self):
+        # The facts must be IN the material and the brief must not order them
+        # cited: otherwise the check scores instruction-following, and both
+        # arms pass it, and the delta the fixture exists to measure is gone.
+        for name, facts in self.FACTS.items():
+            seed_text = self._seed_text(name)
+            for fact in facts:
+                with self.subTest(fixture=name, fact=fact):
+                    self.assertIn(fact, seed_text,
+                                  f"{name}'s seed never states {fact!r}")
+            for nudge in ("cite these", "cite the", "be sure to mention",
+                          "make sure to include", "must include"):
+                with self.subTest(fixture=name, nudge=nudge):
+                    self.assertNotIn(nudge, seed_text.lower(),
+                                     f"{name}'s seed instructs the agent to "
+                                     f"cite ({nudge!r}) instead of leaving "
+                                     "specificity to the skill")
+
+    # ------------------------------------------------------------------
+    # fixture shape: three dirs, each runnable on its own
+    # ------------------------------------------------------------------
+
+    def test_each_fixture_is_a_runnable_eval_dir_on_its_own(self):
+        # #66's multi-fixture runner has not landed, so each of the three is
+        # invoked by hand as its own eval dir: it needs its own fixture.yaml,
+        # its own seed/, and a registry the harness can resolve.
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                eval_dir = self.STYLE_DIR / name
+                self.assertTrue((eval_dir / "fixture.yaml").is_file())
+                seed = eval_dir / "seed"
+                self.assertTrue(seed.is_dir(), f"{name} has no seed/")
+                self.assertTrue([p for p in seed.rglob("*") if p.is_file()],
+                                f"{name}'s seed/ is empty")
+                fixture = self._fixture(name)
+                self.assertEqual(fixture["skill"], "adam-writing-style")
+                self.assertIsNotNone(
+                    run_eval.registry_for_url(registries, fixture["registry"]))
+                # Arms pinned mid-tier, judge pinned strong (DESIGN.md's
+                # harness-wide rules) — an unpinned arm silently tracks the
+                # CLI's default model across releases.
+                self.assertTrue(fixture.get("model"))
+                self.assertTrue(fixture["judge"].get("model"))
+                self.assertTrue(fixture.get("judge_rubric", "").strip())
+
+    def test_prompts_are_the_ones_the_issue_gives(self):
+        for name, prompt in self.PROMPTS.items():
+            with self.subTest(fixture=name):
+                self.assertEqual(" ".join(self._fixture(name)["prompt"].split()),
+                                 prompt)
+
+    def test_every_objective_check_is_a_transcript_check(self):
+        # Class C: the writing is the transcript. A file_matches check here
+        # would be a regex deciding the shape of something the agent was
+        # never asked to produce.
+        for name in self.FIXTURES:
+            for check in self._fixture(name)["objective_checks"]:
+                with self.subTest(fixture=name, check=check["id"]):
+                    self.assertEqual(check["type"], "transcript_matches")
+                    self.assertIn(check["type"], objective.CHECKS)
+
+    def test_references_live_outside_the_seed(self):
+        # The references are the judge's yardstick. A reference inside seed/
+        # would be copied into the agent's workspace — the agent would be
+        # handed the answer, and both arms would score alike.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                seed_text = self._seed_text(name)
+                self.assertFalse((self.STYLE_DIR / name / "seed"
+                                  / "references").exists())
+                for which in ("in-voice", "generic"):
+                    reference = self._reference(name, which)
+                    longest = max(reference.splitlines(), key=len).strip()
+                    self.assertGreater(len(longest), 25)
+                    self.assertNotIn(longest, seed_text,
+                                     f"{name}'s {which} reference leaks into "
+                                     "the seed the agent starts from")
+
+    def test_fixtures_are_fictional_and_carry_no_credentials(self):
+        # The guardrail from the issue: this repo is public and fixtures are
+        # committed. No real recruiter, employer or client; example.com /
+        # example.net addresses only; no credential anywhere.
+        allowed = ("example.com", "example.net")
+        email_re = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+        url_re = re.compile(r"https?://([^\s/)\"'>]+)")
+        secret_re = re.compile(
+            r"(?i)\b(?:password|passwd|api[_-]?key|secret|token|bearer)s?\s*[:=]"
+            r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+        phone_re = re.compile(r"\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b")
+        for name in self.FIXTURES:
+            for path in sorted((self.STYLE_DIR / name).rglob("*")):
+                if not path.is_file():
+                    continue
+                rel = path.relative_to(self.STYLE_DIR)
+                text = path.read_text(encoding="utf-8", errors="replace")
+                with self.subTest(path=str(rel)):
+                    for host in email_re.findall(text):
+                        self.assertIn(host.lower(), allowed,
+                                      f"{rel}: address at {host}")
+                    for host in url_re.findall(text):
+                        self.assertTrue(
+                            host.lower().rstrip(".").endswith(allowed),
+                            f"{rel}: URL host {host}")
+                    self.assertIsNone(secret_re.search(text),
+                                      f"{rel}: looks like a credential")
+                    self.assertIsNone(phone_re.search(text),
+                                      f"{rel}: looks like a phone number")
+
+    def test_objective_only_on_the_pristine_seed_fails_loudly(self):
+        # The documented asymmetry, in the one shape a transcript-only
+        # fixture can have it: with no agent there is no transcript, so
+        # every check fails and the runner exits 1. A fixture whose
+        # objective-only run exited 0 would be scoring nothing.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                proc = subprocess.run(
+                    [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                     str(self.STYLE_DIR / name), "--arm", "objective-only"],
+                    capture_output=True, text=True, cwd=str(REPO_ROOT))
+                self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+                checks = json.loads(proc.stdout)["checks"]
+                self.assertTrue(checks)
+                for check in checks:
+                    self.assertFalse(check["passed"])
+                    self.assertIn("no transcript", check["detail"])
+
+    # ------------------------------------------------------------------
+    # the pairwise judge mode (finding-unknowns, #78, reuses this)
+    # ------------------------------------------------------------------
+
+    # test/fake-claude's canned pairwise reply ranks blind label B first,
+    # then A, then C — independent of which candidate landed on which label,
+    # which is exactly what makes the shuffle observable from the score.
+    CANNED_RANKING = ["B", "A", "C"]
+
+    CANDIDATE = ("Hi Dana,\n\nThanks for reaching out — and sorry for the "
+                 "slow reply. I am going to pass on REQ-4417.\n\nThanks,\n"
+                 "Adam Daniel\n")
+    REFERENCES = [
+        {"name": "in-voice", "text": "Hi Dana,\n\nSorry for the slow reply — "
+                                     "passing on REQ-4417 this time.\n"},
+        {"name": "generic", "text": "Dear Dana,\n\nThank you for reaching out "
+                                    "regarding this exciting opportunity.\n"},
+    ]
+
+    def _pairwise(self, mode="judge_pairwise", **kwargs):
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": mode}):
+            return judge.score_pairwise("rubric text", self.CANDIDATE,
+                                        self.REFERENCES, timeout=30, **kwargs)
+
+    @staticmethod
+    def _label_of(result, identity):
+        return next(c["label"] for c in result["order"]
+                    if c["identity"] == identity)
+
+    def test_pairwise_maps_the_canned_ranking_to_a_rank_and_score(self):
+        result = self._pairwise(trial_index=0)
+        agent_label = self._label_of(result, judge.AGENT_IDENTITY)
+        expected = self.CANNED_RANKING.index(agent_label) + 1
+        self.assertEqual(result["rank"], expected)
+        # "score = rank" — the issue's wording, and 1 is best.
+        self.assertEqual(result["score"], result["rank"])
+        self.assertEqual(result["mode"], "pairwise")
+        self.assertEqual(result["n_candidates"], 3)
+        self.assertEqual(result["blind_ranking"], self.CANNED_RANKING)
+        # De-blinded for the report: the ranking in identity terms.
+        self.assertEqual(
+            result["ranking"],
+            [self._identity_of(result, label) for label in self.CANNED_RANKING])
+
+    @staticmethod
+    def _identity_of(result, label):
+        return next(c["identity"] for c in result["order"]
+                    if c["label"] == label)
+
+    def test_pairwise_rank_tracks_the_shuffle_across_trials(self):
+        for trial in range(8):
+            with self.subTest(trial=trial):
+                result = self._pairwise(trial_index=trial)
+                agent_label = self._label_of(result, judge.AGENT_IDENTITY)
+                self.assertEqual(
+                    result["rank"],
+                    result["blind_ranking"].index(agent_label) + 1)
+                self.assertIn(result["rank"], (1, 2, 3))
+
+    def test_pairwise_order_is_reproducible_for_one_trial_index(self):
+        # Same trial index, same order — that is what makes a run repeatable.
+        first = judge.blind_order(self.CANDIDATE, self.REFERENCES, 3)
+        second = judge.blind_order(self.CANDIDATE, self.REFERENCES, 3)
+        self.assertEqual([c["identity"] for c in first],
+                         [c["identity"] for c in second])
+        self.assertEqual([c["label"] for c in first], ["A", "B", "C"])
+
+    def test_pairwise_order_changes_with_the_seed(self):
+        # The references must never be shown in a fixed order: a judge that
+        # always sees the agent in slot A can learn the slot instead of the
+        # writing.
+        orders = [tuple(c["identity"] for c in
+                        judge.blind_order(self.CANDIDATE, self.REFERENCES, t))
+                  for t in range(8)]
+        self.assertGreater(len(set(orders)), 1,
+                           f"the order never changed across trials: {orders}")
+        agent_slots = {order.index(judge.AGENT_IDENTITY) for order in orders}
+        self.assertGreater(len(agent_slots), 1,
+                           "the candidate under test always landed in the "
+                           f"same slot: {orders}")
+
+    def test_pairwise_prompt_is_blind(self):
+        ordered = judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)
+        prompt = judge._build_pairwise_prompt("rubric text", ordered,
+                                              judge.PAIRWISE_DIMENSIONS)
+        for candidate in ordered:
+            self.assertIn(candidate["text"].strip(), prompt)
+        lowered = prompt.lower()
+        for tell in ("agent", "reference", "in-voice", "generic"):
+            self.assertNotIn(tell, lowered,
+                             f"the pairwise prompt tells the judge {tell!r}")
+        # The candidates appear in the shuffled order, not the order they
+        # were passed in.
+        positions = [prompt.index(c["text"].strip()) for c in ordered]
+        self.assertEqual(positions, sorted(positions))
+        for dimension in judge.PAIRWISE_DIMENSIONS:
+            self.assertIn(dimension, lowered)
+
+    def test_pairwise_result_carries_dimensions_for_every_candidate(self):
+        result = self._pairwise(trial_index=0)
+        names = [d["name"] for d in result["dimensions"]]
+        self.assertEqual(len(names), len(judge.PAIRWISE_DIMENSIONS))
+        self.assertEqual(sorted(result["reference_dimensions"]),
+                         ["generic", "in-voice"])
+        for dims in result["reference_dimensions"].values():
+            self.assertTrue(all(set(("name", "score", "rationale")) <= set(d)
+                                for d in dims))
+
+    def test_pairwise_result_omits_overall(self):
+        # Deliberate: run_eval._render_report formats `overall` as a 0-10
+        # judge score, and a rank of 1 rendered as "1.0" would read as the
+        # worst possible score instead of the best possible rank.
+        self.assertNotIn("overall", self._pairwise(trial_index=0))
+
+    def test_pairwise_rejects_a_ranking_that_drops_a_candidate(self):
+        # A ranking short one label leaves the rank undefined for whoever is
+        # missing; recording it as "unranked" would quietly average away.
+        with self.assertRaises(ValueError) as ctx:
+            self._pairwise(mode="judge_pairwise_incomplete", trial_index=0)
+        self.assertIn("ranking", str(ctx.exception))
+
+    def test_pairwise_rejects_a_ranking_naming_an_unknown_candidate(self):
+        with self.assertRaises(ValueError) as ctx:
+            self._pairwise(mode="judge_pairwise_unknown_label", trial_index=0)
+        self.assertIn("ranking", str(ctx.exception))
+
+    def test_pairwise_needs_at_least_one_reference(self):
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+            with self.assertRaises(ValueError):
+                judge.score_pairwise("rubric", self.CANDIDATE, [], timeout=30)
+
+    def test_pairwise_rejects_duplicate_reference_names(self):
+        duplicated = [dict(self.REFERENCES[0]), dict(self.REFERENCES[0])]
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+            with self.assertRaises(ValueError):
+                judge.score_pairwise("rubric", self.CANDIDATE, duplicated,
+                                     timeout=30)
+
+    def test_score_dispatches_to_the_pairwise_mode(self):
+        # The fixture says `judge.mode: pairwise`; score() is where that
+        # lands, so absolute stays the default and nothing silently changes
+        # for the fixtures that predate this.
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+            dispatched = judge.score("rubric text", self.CANDIDATE, "",
+                                     timeout=30, mode="pairwise",
+                                     references=self.REFERENCES, trial_index=2)
+        self.assertEqual(dispatched["mode"], "pairwise")
+        self.assertEqual(dispatched["rank"], self._pairwise(trial_index=2)["rank"])
+
+    def test_absolute_mode_is_the_unchanged_default(self):
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge"}):
+            default = judge.score("rubric", "transcript", "diff", timeout=30)
+            explicit = judge.score("rubric", "transcript", "diff", timeout=30,
+                                   mode="absolute")
+        self.assertEqual(default, explicit)
+        self.assertEqual(default["overall"], 7.5)
+
+    def test_unknown_judge_mode_is_rejected(self):
+        # Not silently treated as absolute: a fixture typo would otherwise
+        # produce a plausible number from the wrong instrument.
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge"}):
+            with self.assertRaises(ValueError) as ctx:
+                judge.score("rubric", "transcript", "diff", timeout=30,
+                            mode="pairwize")
+        self.assertIn("pairwize", str(ctx.exception))
+
+    def test_pairwise_mode_rejects_weights(self):
+        # Dimension weights are absolute-mode arithmetic; in pairwise the
+        # score is the rank, so a fixture carrying both is a config mistake
+        # worth failing loudly rather than half-honouring.
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+            with self.assertRaises(ValueError) as ctx:
+                judge.score("rubric", self.CANDIDATE, "", timeout=30,
+                            mode="pairwise", references=self.REFERENCES,
+                            weights={"specificity": 0.5})
+        self.assertIn("weights", str(ctx.exception))
+
+    # ------------------------------------------------------------------
+    # references: loaded from the fixture dir, never from outside it
+    # ------------------------------------------------------------------
+
+    def test_load_references_reads_each_fixtures_two_references(self):
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                fixture = self._fixture(name)
+                loaded = judge.load_references(self.STYLE_DIR / name,
+                                               fixture["judge"])
+                self.assertEqual([r["name"] for r in loaded],
+                                 ["in-voice", "generic"])
+                for reference in loaded:
+                    self.assertTrue(reference["text"].strip())
+                self.assertNotEqual(loaded[0]["text"], loaded[1]["text"])
+
+    def test_load_references_rejects_a_path_outside_the_fixture_dir(self):
+        for bad in ("../../../etc/passwd", "/etc/passwd",
+                    "references/../../secrets.md"):
+            with self.subTest(path=bad):
+                with self.assertRaises(ValueError):
+                    judge.load_references(
+                        self.STYLE_DIR / "recruiter-reply",
+                        {"references": [{"name": "x", "path": bad}]})
+
+    def test_fixture_judge_blocks_request_pairwise_with_two_references(self):
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                judge_cfg = self._fixture(name)["judge"]
+                self.assertEqual(judge_cfg["mode"], "pairwise")
+                self.assertNotIn("weights", judge_cfg)
+                references = judge_cfg["references"]
+                self.assertEqual([r["name"] for r in references],
+                                 ["in-voice", "generic"])
+                for reference in references:
+                    self.assertTrue(
+                        (self.STYLE_DIR / name / reference["path"]).is_file())
+
+    def test_fixture_rubrics_ask_for_the_three_pairwise_dimensions(self):
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                rubric = self._fixture(name)["judge_rubric"].lower()
+                for dimension in judge.PAIRWISE_DIMENSIONS:
+                    self.assertIn(dimension, rubric)
+                # Blind: the rubric must not tell the judge which draft is
+                # which, and it is embedded verbatim in the judge prompt.
+                for tell in ("agent", "reference", "in-voice", "generic"):
+                    self.assertNotIn(tell, rubric)
+
+
 if __name__ == "__main__":
     unittest.main()
