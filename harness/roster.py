@@ -199,31 +199,42 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     arm_ids = {a["id"] for a in arms}
 
     # --- judge -------------------------------------------------------------
-    # Never an arm in the same run: a model cannot be both the thing measured
-    # and the instrument measuring it.
-    candidates = [m for m in available if m["id"] not in arm_ids]
-    judge = {"id": None, "reason": "no model is available to judge — every "
-                                   "available model is an arm"}
-    if candidates:
-        strongest_arm_tier = max((tiers.index(tier_of(a, tiers)) for a in arm_ids),
-                                 default=None)
-        above = ([m for m in candidates
-                  if tiers.index(tier_of(m["id"], tiers)) > strongest_arm_tier]
-                 if strongest_arm_tier is not None else [])
-        if above:
-            pick = above[-1]
-            judge = {"id": pick["id"],
-                     "reason": (f"most capable available model at least one tier above "
-                                f"the strongest arm model ({tier_of(pick['id'], tiers)} "
-                                f"over {tiers[strongest_arm_tier]}), and not itself an arm")}
-        else:
-            pick = candidates[-1]
-            arm_tier_words = (f" — nothing available sits above the strongest arm's "
-                              f"{tiers[strongest_arm_tier]} tier"
-                              if strongest_arm_tier is not None else "")
-            judge = {"id": pick["id"],
-                     "reason": (f"strongest available model that is not an arm"
-                                f"{arm_tier_words}")}
+    # Preference order, and the last rung is not decorative: with no census the
+    # arm set is "newest per tier", which on a catalogue holding one current
+    # model per tier is EVERY available model — the state of the very first run,
+    # before any census has been published. Emitting a null judge there would
+    # ship a roster with a hole in it, so the fallback names the strongest model
+    # available and says out loud that it is also an arm, leaving the caller to
+    # decide rather than leaving it to find out.
+    strongest_arm_tier = max((tiers.index(tier_of(a, tiers)) for a in arm_ids),
+                             default=None)
+    non_arms = [m for m in available if m["id"] not in arm_ids]
+    above = ([m for m in non_arms
+              if tiers.index(tier_of(m["id"], tiers)) > strongest_arm_tier]
+             if strongest_arm_tier is not None else [])
+
+    if above:
+        pick = above[-1]
+        judge = {"id": pick["id"],
+                 "reason": (f"most capable available model at least one tier above "
+                            f"the strongest arm model ({tier_of(pick['id'], tiers)} "
+                            f"over {tiers[strongest_arm_tier]}), and not itself an arm")}
+    elif non_arms:
+        pick = non_arms[-1]
+        arm_tier_words = (f" — nothing available sits above the strongest arm's "
+                          f"{tiers[strongest_arm_tier]} tier"
+                          if strongest_arm_tier is not None else "")
+        judge = {"id": pick["id"],
+                 "reason": f"strongest available model that is not an arm{arm_tier_words}"}
+    elif available:
+        pick = available[-1]
+        judge = {"id": pick["id"],
+                 "reason": ("strongest available model — every available model is "
+                            "currently an arm, so no non-arm judge exists; do not "
+                            "run this model as the arm and the judge of the same run")}
+    else:
+        judge = {"id": None,
+                 "reason": "the Models API returned no model this policy can rank"}
 
     # --- preflight ---------------------------------------------------------
     # Cheapest = the lowest tier the API still returns, and the newest model

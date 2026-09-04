@@ -1456,6 +1456,26 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(result["judge"]["id"], "claude-opus-4-8")
         self.assertIn("strongest available", result["judge"]["reason"])
 
+    def test_judge_falls_back_when_every_available_model_is_an_arm(self):
+        """The first real run's state: no census published yet, so the arm set
+        is newest-per-tier — which on a one-current-model-per-tier catalogue is
+        every model there is. A null judge would be a hole in the published
+        roster, so the strongest available model is named and the reason says
+        plainly that it is also an arm."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            self._model("claude-fable-5-1", "2026-05-01T00:00:00Z"),
+        ]}
+        result = self._compute(models=models, census=None)
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-fable-5-1", "claude-haiku-4-5",
+                          "claude-opus-5", "claude-sonnet-5"])
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertIn("every available model is currently an arm",
+                      result["judge"]["reason"])
+
     def test_preflight_is_the_cheapest_available_model(self):
         # Drop the whole haiku tier and the cheapest becomes the newest sonnet.
         result = self._compute(models=self._models_doc(drop={"claude-haiku-4-5"}))

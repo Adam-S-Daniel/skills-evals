@@ -1117,7 +1117,18 @@ it looks like the repair failed.
 >    whole lifecycle and reads what you publish; two writers on one issue is a
 >    race, and what it produces is an issue whose body changes shape depending
 >    on which of them wrote last.
-> 6. Finish with one status line: counts, exit code, and whether the publish
+> 6. **Best effort, and only on a surface that has the transcripts:** if
+>    `~/.claude/projects/` exists, run
+>    `python3 scripts/model_usage_census.py --out usage/latest.json` in the
+>    same `skills-evals` clone and publish `usage/latest.json` to
+>    `eval-results` in the same commit as step 4. If the directory is absent,
+>    skip it and say `census: no transcripts on this surface` — do not
+>    reconstruct usage from anything else. **Read that script's header before
+>    running it.** Its output is committed to a public branch, and it is
+>    narrow by construction for exactly that reason: model ids, ISO weeks and
+>    counts, nothing else. Do not widen it, do not summarise a transcript into
+>    the commit message, and do not name a project.
+> 7. Finish with one status line: counts, exit code, and whether the publish
 >    succeeded — with the exact error quoted if it did not. **Never print a
 >    skill description, a file's contents, an email address, or any path under
 >    `$HOME`.** Skill names are already inside the published artifact, so
@@ -1202,3 +1213,36 @@ Two findings the issue predicted that did **not** reproduce here:
 The CRLF false-positive rate was also smaller than assumed: normalisation is
 what keeps the four genuine drifts distinguishable, not what rescues the check
 from being ~100% noise.
+
+## The usage census rides along on this Routine (2026-09-04)
+
+The model roster (#67) needs one thing this repo's CI cannot get: what the
+account actually *runs*. Availability comes from the Models API, which any
+runner can read; usage lives in `~/.claude/projects/**/*.jsonl` on a durable
+machine, and a GitHub runner has none. So `scripts/model_usage_census.py`
+publishes to the same branch, by the same route, on the same clock as the
+account audit — step 6 of the prompt above — rather than growing a second
+transport with its own failure modes. `harness/roster.py` reads
+`usage/latest.json` and, when it is absent or older than 14 days, falls back to
+"newest model per tier" and **says so in every arm's reason**. That is the
+whole degradation story: the roster never silently reports stale usage as
+current, and a Routine that stops publishing shows up as the word
+"no fresh census" in the next published roster rather than as nothing at all.
+
+**Why it is best-effort and not a step that can fail the audit.** The account
+audit is the job; the census is a passenger. A surface without transcripts is
+a normal case (a cloud session has the account store but not the projects
+tree), not a fault, and a passenger that can red the driver is how a useful
+Routine becomes one people disable.
+
+**The output is public, and it is the narrowest thing that answers the
+question.** `{model_id: {iso_week: count}}` — no project names, no paths, no
+prompt or reply text, no session ids, no timestamps finer than a week. The
+transcripts it reads carry every one of those; `~/.claude/projects/` encodes
+the project path in the *directory name* alone. Weekly rather than daily
+buckets are part of that: a daily series over one account is a record of when
+a person was at their desk, and the roster policy only ever asks about 4- and
+8-week windows. The guard is a test, not a convention —
+`test/run_tests.py::TestIssue67::test_census_emits_only_model_week_counts_and_leaks_nothing`
+runs the parser over a fixture transcript containing a project path and prose
+and asserts neither string survives into the output. It stays.
