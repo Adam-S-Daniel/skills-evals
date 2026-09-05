@@ -7960,6 +7960,50 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
             if expected != "write":
                 with self.subTest(named_as_not_a_write=verb):
                     self.assertIn(f"`pr {verb}`", comment)
+    # ------------------------------------------------------------------ N3
+
+    # A reply that reaches no diagnosis of its own and still scores 7/7 on
+    # the objective column: the three payloads pasted whole, then a shrug.
+    # The reply column is two EXISTENCE tests — a `412` spelling and
+    # `0f3c8ad`; a `418` spelling and the required context — and a paste
+    # satisfies both without saying anything about either pull request.
+    SHRUG = ("I pulled everything I could reach:\\n\\n"
+             "{payloads}\\n\\n"
+             "I could not work out what is wrong with the loop.\\n")
+
+    def _shrug_reply(self) -> str:
+        payloads = "\\n".join(
+            (self.STUCK_DIR / "seed" / self.PAYLOAD_DIR / name)
+            .read_text(encoding="utf-8")
+            for name in ("pr-list.json", "pr-view-412.json",
+                         "ruleset-view-1837402.json"))
+        return self.SHRUG.format(payloads=payloads)
+
+    def test_a_pasted_payload_and_a_shrug_scores_the_whole_objective_column(self):
+        """The size of round 4's decision, measured rather than asserted.
+
+        Moving attribution to the judge left the reply column certifying
+        MENTIONS. This is what that buys a reply that mentions everything
+        and concludes nothing: 7 of 7. It is the right trade — a pattern
+        loose enough to pass every correct phrasing passes wrong ones too,
+        which rounds 1-3 measured three separate ways — but the size of it
+        belongs in the header, and the rubric has to carry the weight.
+        """
+        by_id = self._score(self._triage_reads, transcript=self._shrug_reply())
+        failed = [k for k, v in by_id.items() if not v["passed"]]
+        self.assertEqual(failed, [], {k: by_id[k]["detail"] for k in failed})
+
+    def test_the_rubric_caps_a_reply_that_reaches_no_diagnosis(self):
+        """So the judge's two correctness dimensions carry it, explicitly."""
+        rubric = run_eval.load_fixture(self.STUCK_DIR)["judge_rubric"].lower()
+        self.assertIn(
+            "cap both root_cause and decisions at 2 if the reply reaches no "
+            "diagnosis of its own", rubric)
+
+    def test_the_header_records_what_the_reply_column_cannot_decide(self):
+        header = self._header().lower()
+        self.assertIn("existence test", header)
+        self.assertIn("7/7", header)
 
 if __name__ == "__main__":
     unittest.main()
