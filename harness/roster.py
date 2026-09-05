@@ -837,12 +837,21 @@ def _clean_previous_arms(previous, warn, api_ids=(),
     is reported retired. `carried` is that list capped, and is what
     attribution and the hold-over check read.
 
-    What that costs is a `retired_since_last` as long as the previous
-    roster's own `arms` list, which only a hostile branch can inflate —
-    linear in the input, not amplified, and this harness's own next
-    `previous.json` is the small roster it publishes rather than the
-    planted one. Reporting 500 fabricated retirements and omitting the
-    real one is the worse of the two.
+    WHAT THAT COSTS, measured rather than assumed: `retired_since_last`
+    is now as long as the previous roster's own `arms` list. A planted
+    38MB `previous.json` holding a million arm entries publishes a 96MB
+    roster and 64MB of `render_summary` Markdown, where the cap used to
+    hold both to 500 entries. It is linear in the input, it needs write
+    access to `eval-results` to reach at all, and it does not compound:
+    the next run's `previous.json` is the small roster this harness
+    itself publishes, not the planted one.
+
+    A size cap would not buy the invariant back — it would only move the
+    number at which a real retirement can be hidden, from 501 planted
+    entries to whatever the new cap is, and hiding it is the failure
+    this exists to remove. Nothing in the data tells a filler apart from
+    a real id, so the choice is between reporting all of them and
+    silently reporting the wrong 500.
     """
     if previous is None:
         return [], []
