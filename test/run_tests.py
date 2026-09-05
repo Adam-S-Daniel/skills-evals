@@ -10,6 +10,7 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import itertools
 import json
@@ -2534,6 +2535,123 @@ class TestIssue74(unittest.TestCase):
         by_id = self._run(ws)
         self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
                         by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    # -- Round-6 review F2 (FOURTH consecutive round on this same paragraph).
+    # Rounds 3, 4 and 5 each rewrote it as prose and each rewrite introduced
+    # a fresh over-claim; round 5's said a suppression is forbidden only "as
+    # the last thing on that line before an optional trailing comment", which
+    # is true of the reassignment ban alone — the `|| true/:/echo` and
+    # `2>/dev/null` bans fire wherever on the line they appear. The design
+    # decision for this round: the paragraph is a LIST OF PINNED CLAIMS, one
+    # per bullet, each ending with the name of the test below that measures
+    # it through the real scorer, and the words test enforces both halves. --
+
+    def test_gh_api_swallow_anywhere_on_the_line_fails(self):
+        # The two rows that falsified round 5's end-anchor claim: neither
+        # suppression is the last thing on its line, and both are still
+        # caught. Regression floors, not new behaviour — they already fail
+        # today; what is new is that the paragraph now says so. Mutation
+        # proof: dropping must_not_match alternative 1 turns the first
+        # subTest red, dropping alternative 2 turns the second red.
+        call = ('out=$(gh api "repos/${REPO}/pulls?state=merged" '
+                "--jq '.[].title')")
+        rows = (
+            ("alt 1, mid-line", f'{call} || true; echo "continuing"',
+             r"(true|:|echo)"),
+            ("alt 2, mid-line",
+             'out=$(gh api "repos/${REPO}/pulls?state=merged" '
+             "--jq '.[].title' 2>/dev/null) || out=$(cat cache)",
+             "2>"),
+        )
+        for label, line, expected_pattern_fragment in rows:
+            with self.subTest(row=label):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "collect.sh"
+                text = path.read_text(encoding="utf-8")
+                path.write_text(text.replace(self.GH_API_FIXED_BLOCK, line),
+                                encoding="utf-8")
+                result = self._run(ws)["gh-api-failure-not-swallowed"]
+                self.assertFalse(result["passed"])
+                # Pins WHICH ban caught it, so the row cannot start passing
+                # for a different reason than the bullet claims.
+                self.assertIn(expected_pattern_fragment, result["detail"])
+
+    def _gh_api_finding_comment(self) -> str:
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        start = text.index("# Finding 3:")
+        end = text.index("- id: gh-api-failure-not-swallowed")
+        return text[start:end]
+
+    def _test_issue_74_method_names(self) -> set[str]:
+        """Every method of TestIssue74, parsed with `ast` (never a regex)."""
+        tree = ast.parse((TEST_DIR / "run_tests.py").read_text(encoding="utf-8"))
+        classes = [node for node in tree.body
+                  if isinstance(node, ast.ClassDef) and node.name == "TestIssue74"]
+        self.assertEqual(len(classes), 1, "expected exactly one TestIssue74")
+        return {node.name for node in classes[0].body
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+
+    @staticmethod
+    def _claim_bullets(comment: str) -> list[str]:
+        """Each `#   - ...` bullet of the comment, with its wrapped lines."""
+        bullets: list[str] = []
+        for raw in comment.splitlines():
+            body = raw.lstrip()
+            if not body.startswith("#"):
+                continue
+            body = body[1:]
+            if body.startswith("   - "):
+                bullets.append(body[5:].strip())
+            elif bullets and body.startswith("     ") and body.strip():
+                bullets[-1] += " " + body.strip()
+        return bullets
+
+    def test_f2_gh_api_paragraph_pins_every_claim_to_a_named_test(self):
+        # (a) every test name the paragraph cites exists as a method of
+        # TestIssue74 (test/run_tests.py parsed with `ast`, never a regex),
+        # and every bullet ends with one — the rule that stops a fifth
+        # round of unpinned prose; (b) the operative words of the claims.
+        comment = self._gh_api_finding_comment()
+        defined = self._test_issue_74_method_names()
+
+        cited = re.findall(r"\btest_[A-Za-z0-9_]+", comment)
+        self.assertTrue(cited, "the paragraph must cite the tests that "
+                        "measure its claims")
+        self.assertEqual(sorted({n for n in cited if n not in defined}), [],
+                         "cited test name(s) are not methods of TestIssue74")
+
+        bullets = self._claim_bullets(comment)
+        self.assertGreaterEqual(len(bullets), 8, bullets)
+        for bullet in bullets:
+            with self.subTest(bullet=bullet[:60]):
+                last = bullet.rstrip().rstrip(",.").split()[-1]
+                self.assertIn(last, defined,
+                              "every claim bullet must END with the name of "
+                              "the TestIssue74 test that measures it")
+
+        # (b) the operative words, and the ordinals the bullets assert.
+        for word in ("LINE-LOCAL", "FILE-SCOPED", "WHEREVER", "line-local",
+                     "file-scoped", "set +e", "gh api"):
+            with self.subTest(word=word):
+                self.assertIn(word, comment)
+
+        # The bullets number the alternatives; pin that numbering against
+        # the fixture's own must_not_match order, and pin the structural
+        # LINE-LOCAL/FILE-SCOPED split against the patterns themselves.
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        [check] = [c for c in fixture["objective_checks"]
+                  if c["id"] == "gh-api-failure-not-swallowed"]
+        bans = check["must_not_match"]
+        self.assertEqual(len(bans), 4, bans)
+        self.assertIn("(true|:|echo)", bans[0])
+        self.assertIn("2>", bans[1])
+        self.assertIn(r"set \+e", bans[2])
+        self.assertIn(r"\w+=", bans[3])
+        line_local_prefix = r"^[^#\n]*gh api[^#\n]*"
+        for index in (0, 1, 3):
+            self.assertTrue(bans[index].startswith(line_local_prefix), bans[index])
+        self.assertFalse(bans[2].startswith(line_local_prefix), bans[2])
 
     # -- Round-4 review S2: documented known limitation. [^#\n]* treats the
     # FIRST '#' on a line as a comment start even inside a quoted string, so

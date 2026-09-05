@@ -159,30 +159,63 @@ objective_checks:
   # Finding 3: the gh api capture's failure is swallowed, and since a failed
   # call and a genuinely empty result both leave `out` blank, the two become
   # indistinguishable — the script reports "nothing to release" either way.
-  # Any fix that removes the suppression on the gh api line itself is
-  # accepted, whether that means checking the call's own exit status (the
-  # skill's own `x=$(gh api …) || { ...; exit 1; }` shape) or simply no
-  # longer swallowing it (relying on `set -euo pipefail` to propagate the
-  # failure). Only the suppression forms themselves are forbidden — including
-  # swallowing it with `|| echo ""`, `|| out=""`, or `|| out=''` instead of
-  # `|| true`, wrapping the call in `set +e` / `set -e` to disable errexit
-  # around it, and deleting the call outright (must_match requires the call
-  # itself to still be present). Three of the four must_not_match
-  # alternatives below (the `|| true/:/echo` suppression, the
-  # `2>/dev/null` swallow, and the empty-string/bare reassignment) are
-  # line-local: each requires `gh api` to appear earlier on that same live
-  # line (the `^[^#\n]*gh api[^#\n]*` prefix), so a genuine fallback for
-  # some other, unrelated command a few lines away — even one that happens
-  # to reuse the name `out`, e.g. `|| out=$(cat cache)` — does not suppress
-  # *this* call's failure and is left alone; only a form that hangs
-  # directly off the gh api line itself, as the last thing on that line
-  # before an optional trailing comment, is forbidden. The remaining
-  # alternative — a bare `set +e` — is deliberately file-scoped instead: it
-  # bans a live `set +e` anywhere in collect.sh, not only next to the gh
-  # api call, because whether a `set +e`/`set -e` bracket actually wraps
-  # this particular call is a structural question a regex must not try to
-  # answer (the header above explains why no check here decides shell
-  # structure by regex).
+  # What this check's patterns accept and reject is written below as a LIST
+  # OF PINNED CLAIMS, never as prose: one claim per bullet, each ending with
+  # the name of the TestIssue74 test that measures exactly that claim
+  # through the real scorer. Rounds 3, 4, 5 and 6 each found a fresh
+  # over-claim here while this was a prose paragraph — round 5's was that a
+  # suppression is forbidden only as the last thing on the line, which is
+  # true of the reassignment ban alone. The words test named in the last
+  # bullet enforces both halves of the rule: that every cited name exists
+  # (test/run_tests.py parsed with `ast`, never a regex) and that every
+  # bullet ends with one.
+  # Only the suppression forms themselves are forbidden — four bans, three
+  # of them line-local and one file-scoped, one per bullet:
+  #   - must_not_match alternatives 1, 2 and 4 (`|| true`/`:`/`echo`, the
+  #     `2>/dev/null` swallow, and the empty-string/bare reassignment) are
+  #     LINE-LOCAL: each requires `gh api` earlier on that same live line
+  #     (the `^[^#\n]*gh api[^#\n]*` prefix), so a suppression belonging to
+  #     some other command — collect.sh's own decoy `rm -f "$tmp_response"
+  #     || true`, or an `|| out=""` fallback a few lines away that happens
+  #     to reuse the name `out` — does not suppress *this* call's failure
+  #     and is left alone —
+  #     test_f2_control_without_far_away_set_plus_e_still_passes,
+  #     test_gh_api_unrelated_or_out_empty_elsewhere_still_passes
+  #   - alternatives 1 and 2 fire WHEREVER on that line the suppression
+  #     appears, not only at its end: `… || true; echo "continuing"` and
+  #     `… 2>/dev/null) || out=$(cat cache)` are both caught even though
+  #     neither suppression is the last thing on its line —
+  #     test_gh_api_swallow_anywhere_on_the_line_fails
+  #   - alternative 4 is the one END-ANCHORED ban: it fires only when the
+  #     empty-string or bare reassignment is the last thing on the line,
+  #     before an optional trailing comment —
+  #     test_s1_gh_api_empty_string_reassignment_swallow_fails
+  #   - a fallback that assigns a real value rather than emptying `out`
+  #     (`|| out=$(cat cache)`) is not a swallow and stays legal —
+  #     test_s1_gh_api_genuine_fallback_on_same_line_stays_legal
+  #   - alternative 3, a bare `set +e`, is deliberately FILE-SCOPED
+  #     instead: it fires on any live `set +e` in collect.sh, not only one
+  #     next to the gh api call, because whether a `set +e`/`set -e`
+  #     bracket actually wraps this particular call is a structural
+  #     question a regex must not try to answer (the header above explains
+  #     why no check here decides shell structure by regex) —
+  #     test_f2_far_away_set_plus_e_bracket_around_unrelated_command_fails
+  #   - a `set +e` that exists only inside a comment, trailing on the fixed
+  #     line or standing alone, never fires —
+  #     test_s2_trailing_set_plus_e_comment_on_fixed_gh_api_line_passes,
+  #     test_s2_standalone_comment_warning_against_set_plus_e_passes
+  #   - deleting the call outright does not pass either: must_match
+  #     requires the `gh api … pulls` call itself to still be present —
+  #     test_gh_api_deleted_outright_fails
+  #   - the accepted fixes are the plain call, letting `set -euo pipefail`
+  #     propagate the failure, and the skill's own `|| { echo …; exit 1; }`
+  #     shape, which checks the call's own exit status —
+  #     test_b2_simplest_fix_bare_assignment_passes,
+  #     test_b2_skill_safe_snippet_passes
+  #   - this list's own shape — every bullet ending in a test name, every
+  #     cited name a real TestIssue74 method, and the alternative numbering
+  #     above matching the fixture's own must_not_match order — is checked
+  #     by test_f2_gh_api_paragraph_pins_every_claim_to_a_named_test
   - id: gh-api-failure-not-swallowed
     description: A failed gh api call is not silently treated as "nothing found"
     type: file_matches
