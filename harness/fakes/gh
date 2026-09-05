@@ -422,31 +422,88 @@ def one_line(text: str) -> str:
     return text.encode("unicode_escape").decode("ascii").replace(" ", "\\x20")
 
 
-def log_invocation(argv: list[str], klass: str, key: str | None, code: int) -> None:
-    """Append ONE record to `<log_dir()>/.gh-invocations.log`.
+LOG_NAME = ".gh-invocations.log"
 
-    One line per invocation, with the argv JSON-encoded: an argv element
-    carrying a newline would otherwise write extra records, and a pattern
-    matched over the log could be satisfied without the command ever having
-    run. `json.dumps` escapes the newline instead, so a reader anchoring its
-    patterns at `^` cannot be fooled by anything inside an argv.
+
+def render_record(argv: list[str], klass: str, key: str | None, code: int) -> bytes:
+    """The ONE line this invocation is worth, ready to append.
+
+    The argv is JSON-encoded: an argv element carrying a newline would
+    otherwise write extra records, and a pattern matched over the log could
+    be satisfied without the command ever having run. `json.dumps` escapes
+    the newline instead, so a reader anchoring its patterns at `^` cannot be
+    fooled by anything inside an argv. The key is built from argv too, so it
+    is escaped the same way: one record, one line, whatever was typed.
+    """
+    safe = [a.encode("utf-8", "backslashreplace").decode("utf-8") for a in argv]
+    field = one_line(key) if key else "-"
+    record = (f"--- invocation (class={klass} key={field} exit={code}) "
+              f"--- {json.dumps(safe)}\n")
+    return record.encode("utf-8", "backslashreplace")
+
+
+def log_invocation(argv: list[str], klass: str, key: str | None,
+                   code: int) -> int | None:
+    """Append ONE record to `<LOG_DIR>/.gh-invocations.log`.
+
+    Returns the byte offset the record starts at, so a caller that ends up
+    exiting with a DIFFERENT code can correct it (see `amend_exit`), or
+    None if nothing was written.
 
     Nothing raised here may reach the caller: the record is the only
     evidence of what ran, and a run that could not be logged must still
     behave exactly like one that could.
     """
     try:
-        safe = [a.encode("utf-8", "backslashreplace").decode("utf-8") for a in argv]
-        # The key is built from argv too, so it is escaped for the same
-        # reason: one record, one line, whatever was typed.
-        field = one_line(key) if key else "-"
-        record = (f"--- invocation (class={klass} key={field} exit={code}) "
-                  f"--- {json.dumps(safe)}\n")
-        with open(os.path.join(LOG_DIR, ".gh-invocations.log"), "a",
-                  encoding="utf-8", errors="backslashreplace") as handle:
-            handle.write(record)
+        with open(os.path.join(LOG_DIR, LOG_NAME), "ab") as handle:
+            handle.seek(0, os.SEEK_END)
+            offset = handle.tell()
+            handle.write(render_record(argv, klass, key, code))
+        return offset
     except Exception:  # noqa: BLE001 — a log we cannot write changes nothing
+        return None
+
+
+def amend_exit(offset: int | None, argv: list[str], klass: str,
+               key: str | None, was: int, code: int) -> None:
+    """Correct a record's `exit=` to the code the caller actually got.
+
+    The record goes down BEFORE any output, which is what keeps it when the
+    output fails — but the code in it is then the one this was about to
+    return, not the one that came out. Rewritten in place, and only while
+    the record is still the last thing in the file: with two of these
+    running at once, another's record must never be truncated away. Every
+    failure is swallowed, exactly like the write that put it there.
+    """
+    if offset is None or code == was:
+        return
+    try:
+        with open(os.path.join(LOG_DIR, LOG_NAME), "r+b") as handle:
+            handle.seek(offset)
+            if handle.read() != render_record(argv, klass, key, was):
+                return
+            handle.seek(offset)
+            handle.write(render_record(argv, klass, key, code))
+            handle.truncate()
+    except Exception:  # noqa: BLE001 — see log_invocation
         pass
+
+
+def emit(text: str) -> int:
+    """Write `text` to stdout and flush it here; 0 on success, 1 on failure.
+
+    Flushed here on purpose: left to the interpreter, a stdout that cannot
+    be flushed (a full disk, a closed pipe) reports it at shutdown, in a
+    message about this file's internals, and exits 120 whatever was
+    returned. Caught here, the caller gets a plain exit code and the log
+    gets the truth.
+    """
+    try:
+        sys.stdout.write(text)
+        sys.stdout.flush()
+    except (OSError, ValueError):
+        return 1
+    return 0
 
 
 def refuse_write(positionals: list[str], flags: dict[str, list]) -> int:
@@ -492,9 +549,9 @@ def main(argv: list[str]) -> int:
     # invocation — `gh pr view --help` still keys to a payload.
     if not positionals:
         version = "--version" in flags
-        log_invocation(argv, "read", None, 0)
-        sys.stdout.write(GH_VERSION if version else GH_USAGE)
-        return 0
+        offset = log_invocation(argv, "read", None, 0)
+        return finish(offset, argv, "read", None,
+                      emit(GH_VERSION if version else GH_USAGE))
 
     key = payload_key(positionals, flags)
     klass = classify(positionals, flags)
@@ -508,17 +565,38 @@ def main(argv: list[str]) -> int:
         try:
             with open(path, encoding="utf-8") as handle:
                 payload = handle.read()
-        except OSError:
+        except (OSError, UnicodeDecodeError):
+            # A response that will not read is a response that is not there.
+            # UnicodeDecodeError is not an OSError, so it used to escape to
+            # the top-level handler: this file's internals on stderr, and no
+            # record of the call at all.
             path = None
     if path is None:
         log_invocation(argv, "unknown", key, 1)
         return not_found()
 
     # The record goes down before the payload does: an output that fails
-    # (a closed pipe, a full disk) must not cost the log its evidence.
-    log_invocation(argv, "read", key, 0)
-    sys.stdout.write(payload)
-    return 0
+    # (a closed pipe, a full disk) must not cost the log its evidence. If
+    # the output does fail, `finish` corrects the code the record carries.
+    offset = log_invocation(argv, "read", key, 0)
+    return finish(offset, argv, "read", key, emit(payload))
+
+
+def finish(offset: int | None, argv: list[str], klass: str, key: str | None,
+           code: int) -> int:
+    """Return `code`, having corrected the record if the output failed.
+
+    Ends the process itself on failure: stdout still holds what could not be
+    written, and letting the interpreter discover that at shutdown prints
+    its own error and exits 120 whatever this returns — which would leave
+    the log naming a code the caller never saw, the very thing the
+    correction exists to stop.
+    """
+    if code == 0:
+        return 0
+    amend_exit(offset, argv, klass, key, 0, code)
+    sys.stderr.flush()
+    os._exit(code)
 
 
 if __name__ == "__main__":

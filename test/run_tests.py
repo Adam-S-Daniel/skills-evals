@@ -4740,5 +4740,66 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
                 self.assertIn("no such file", by_id[check_id]["detail"])
                 self.assertIn(".gh-invocations.log", by_id[check_id]["detail"])
 
+    # ------------------------------- payloads that will not read, and exits
+
+    def test_a_payload_that_is_not_utf8_is_a_404_not_a_traceback(self):
+        """The one read path that escaped as this file's internals (S7).
+
+        `open(..., encoding="utf-8")` raises UnicodeDecodeError, which is
+        not an OSError, so it sailed past the "no payload" branch and out
+        to the top-level handler: `gh: unexpected error: UnicodeDecodeError:
+        'utf-8' codec can't decode byte 0xff …` on stderr, no record in the
+        log at all, and an agent told exactly what it is talking to. A
+        payload that cannot be read is a payload that is not there.
+        """
+        ws = self._ws()
+        (ws / self.PAYLOAD_DIR / "pr-view-777.json").write_bytes(
+            b'{"number": 777, "title": "\xff\xfe not utf-8"}')
+        r = self._gh(ws, "pr", "view", "777")
+        self.assertEqual(r.returncode, 1)
+        self.assertEqual(r.stdout, "")
+        self.assertIn("404", r.stderr)
+        for leak in ("traceback", "unicode", "codec", "unexpected error"):
+            self.assertNotIn(leak, r.stderr.lower(), r.stderr)
+        self.assertEqual(self._classes(ws), ["unknown"])
+        self.assertIn("key=pr-view-777.json", self._log(ws))
+
+    def test_the_log_records_the_exit_code_the_caller_actually_got(self):
+        """`exit=` is the code the caller saw, not the one intended (N4).
+
+        The record is written before the payload reaches stdout, which is
+        what keeps it when the output fails — but it carried the exit code
+        this was ABOUT to return. On a full disk the read was logged
+        `exit=0` while the caller got a failure, so the log said a payload
+        was served that never arrived. The record is corrected in place
+        when, and only when, the two differ.
+        """
+        ws = self._ws()
+        env = dict(os.environ)
+        env["WORKSPACE"] = str(ws)
+        env["GH_REPLAY_DIR"] = str(ws / self.PAYLOAD_DIR)
+        with open("/dev/full", "w", encoding="utf-8") as sink:
+            proc = subprocess.run(
+                [str(ws / "bin" / "gh"), "pr", "list", "--state", "open"],
+                cwd=str(ws), stdout=sink, stderr=subprocess.PIPE, env=env)
+        self.assertNotEqual(proc.returncode, 0, "the caller got a clean exit")
+        record = self._log(ws).strip().splitlines()[-1]
+        self.assertIn("key=pr-list.json", record)
+        self.assertIn(f"exit={proc.returncode})", record)
+        # …and the failure is not this file's internals on someone's terminal.
+        stderr = proc.stderr.decode("utf-8", "replace").lower()
+        for leak in ("traceback", "oserror", "unexpected error",
+                     "exception ignored"):
+            self.assertNotIn(leak, stderr, proc.stderr)
+
+    def test_a_successful_read_still_records_exit_zero(self):
+        """The correction fires only when the codes differ."""
+        ws = self._ws()
+        r = self._gh(ws, "pr", "list", "--state", "open")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        log = self._log(ws).strip()
+        self.assertEqual(len(log.splitlines()), 1, log)
+        self.assertIn("key=pr-list.json exit=0)", log)
+
 if __name__ == "__main__":
     unittest.main()

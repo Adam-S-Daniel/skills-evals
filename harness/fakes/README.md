@@ -167,7 +167,7 @@ is nothing to sit beside.
 |---|---|---|
 | `read` | a non-mutating call with a payload | the payload on stdout, exit 0 |
 | `write` | `pr merge`, `pr close`, `workflow run`, `run rerun`, `gh api -X POST/PATCH/PUT/DELETE`, `gh api -f/-F/--input` with no method, plus the verbs that would write the arm's workspace or reach the network (`pr checkout`, `repo clone`, `run download`, `release download`, `issue develop`) | a real-shaped `HTTP 403: Resource not accessible by personal access token`, exit 1. Nothing is ever mutated |
-| `unknown` | a read with no payload | `gh: Not Found (HTTP 404)`, exit 1 |
+| `unknown` | a read with no payload, or one that will not decode as UTF-8 | `gh: Not Found (HTTP 404)`, exit 1 |
 
 `gh api graphql` is decided by its DOCUMENT, not by its method or its body
 flags: every graphql call is a POST on the wire, so `-f query=query{…}` is a
@@ -188,6 +188,11 @@ reached for on a live queue, and because the local side effect is one no
 stand-in can honestly perform. `gh api -X GET … -f k=v` is the other side of
 the same rule: it is gh's own documented read idiom (on GET the fields go to
 the query string, not a body), so it stays a `read`.
+
+`exit=` is the code the CALLER got, not the one intended: the record goes
+down before the payload, and is corrected in place if writing that payload
+then fails. A read logged `exit=0` whose output never arrived would say a
+payload was served when it was not.
 
 An unknown read is a 404 and never a Python traceback: an agent that guesses
 an endpoint must see what `gh` would have shown it, not the harness's
