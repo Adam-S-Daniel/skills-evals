@@ -6040,6 +6040,14 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
                         by_id["exactly-one-new-adr-file"]["detail"])
         self.assertFalse(by_id["nothing-else-touched"]["passed"],
                          by_id["nothing-else-touched"]["detail"])
+        # Round 4, N-b: deleting 0002 also dangles its own index row (the
+        # seed's README.md still links to it) — S1's fix to link_targets_exist
+        # (every link on a line, not just the first) is what makes this a
+        # SECOND real check catching the same mutation, not just
+        # nothing-else-touched; record that here rather than leaving it
+        # unasserted.
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"],
+                         by_id["readme-index-links-resolve"]["detail"])
         self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
         self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
