@@ -345,6 +345,31 @@ def expand(value: str, env: dict) -> str:
     return _VAR_RE.sub(lambda m: env.get(m.group(1) or m.group(2), m.group(0)), value)
 
 
+# Inherited variables an arm must not receive, for every fixture.
+#
+# The arm's workspace is its cwd under bypassPermissions and `env` is one of
+# the first things a shell reaches for, so a variable that names this
+# repository, this workflow or this checkout tells the agent what it is being
+# measured with — the same leak `WORKSPACE_PREFIX` and `SEED_COMMIT_IDENTITY`
+# close for `pwd` and `git log`. On a GitHub runner that is `GITHUB_*` /
+# `RUNNER_*` / `ACTIONS_*`; locally it is `OLDPWD`, which carries the
+# operator's cwd, and `PWD`, which a runner sets to the checkout. `CI`
+# changes how tools behave, which a hermetic arm should not have decided for
+# it elsewhere.
+_DROPPED_ENV = ("OLDPWD", "PWD", "CI")
+_DROPPED_ENV_PREFIXES = ("GITHUB_", "RUNNER_", "ACTIONS_")
+
+# Emptied rather than dropped. `GH_TOKEN`/`GITHUB_TOKEN` are forwarded
+# whenever the operator's shell has them, and an arm under bypassPermissions
+# can call a real `gh` by absolute path — past the stand-in on PATH — and
+# spend a live credential against the real API. Empty rather than absent
+# because an absent token sends `gh` looking in its config and the keyring
+# for another one; `GH_CONFIG_DIR` moves that lookup inside the workspace,
+# where there is no host and no credential to find.
+_BLANKED_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
+_WORKSPACE_GH_CONFIG = ".gh/config"
+
+
 def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     """The environment the agent under test runs in.
 
@@ -356,9 +381,22 @@ def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     workspace's PATH" move DESIGN.md prescribes, without the seed carrying an
     absolute path. Values are strings; a non-string is stringified rather
     than rejected, since YAML will happily hand over an int.
+
+    "Over the harness's own environment" is not "over all of it": the
+    variables named above are dropped or emptied first, for every fixture,
+    because they either tell the arm what it is being measured with or hand
+    it a credential it must not have. Everything else is inherited, because
+    the CLI needs it — `PATH`, `HOME`, the API credentials the CLI itself
+    authenticates with. The fixture's own block is applied last, so a fixture
+    that wants one of these back can say so.
     """
-    env = dict(os.environ)
+    env = {key: value for key, value in os.environ.items()
+           if key not in _DROPPED_ENV
+           and not key.startswith(_DROPPED_ENV_PREFIXES)}
     env["WORKSPACE"] = str(workspace)
+    for key in _BLANKED_ENV:
+        env[key] = ""
+    env["GH_CONFIG_DIR"] = str(workspace / _WORKSPACE_GH_CONFIG)
     for key, value in (env_spec or {}).items():
         env[str(key)] = expand(str(value), env)
     return env

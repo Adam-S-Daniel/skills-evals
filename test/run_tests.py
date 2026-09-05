@@ -1724,6 +1724,26 @@ class Issue84Fixture:
         "loop is dispatched from main by design.\n"
     )
 
+    # What a CI runner — and an operator's own shell — put in the
+    # environment the harness inherits. Every one of these either names this
+    # repository, this workflow or this checkout to anything that runs
+    # `env`, or hands the arm a live credential. Planted before `agent_env`
+    # is called, they are what the arm must NOT receive.
+    RUNNER_ENVIRONMENT = {
+        "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals",
+        "GITHUB_WORKFLOW": "eval",
+        "GITHUB_WORKSPACE": "/home/runner/work/skills-evals/skills-evals",
+        "GITHUB_ACTIONS": "true",
+        "GITHUB_RUN_ID": "4471182930",
+        "RUNNER_TEMP": "/home/runner/work/_temp",
+        "ACTIONS_RUNTIME_TOKEN": "planted-runtime-token",
+        "CI": "true",
+        "PWD": "/home/runner/work/skills-evals/skills-evals",
+        "OLDPWD": "/home/user/skills-evals",
+        "GH_TOKEN": "planted-credential",
+        "GITHUB_TOKEN": "planted-credential",
+    }
+
     # ---------------------------------------------------------------- helpers
 
     def _ws(self) -> Path:
@@ -2407,7 +2427,8 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         stand-in for the `gh` CLI, shared by every Class B eval fixture"
         (from `cat`).
         """
-        ws, env, fixture = self._arm_workspace()
+        with mock.patch.dict(os.environ, self.RUNNER_ENVIRONMENT):
+            ws, env, fixture = self._arm_workspace()
         problems, seen = [], []
         for path in sorted(ws.rglob("*")):
             rel = path.relative_to(ws).as_posix()
@@ -2422,15 +2443,22 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
             text = path.read_bytes().decode("utf-8", "replace")
             seen.append(text.lower())
             problems += self._leaks(f"file {rel}", text)
-        # The environment the arm is GIVEN — the inherited variables are the
-        # operator's own, and `PATH` keeps only the entry the fixture
-        # prepends.
-        given = {"WORKSPACE": env["WORKSPACE"], "cwd": str(ws)}
-        for key in fixture["env"]:
-            value = env[key]
-            given[key] = value.split(os.pathsep)[0] if key == "PATH" else value
-        for key, value in given.items():
+        # The WHOLE environment the arm is GIVEN, not just the variables the
+        # fixture names: it used to start from `dict(os.environ)` and keep
+        # everything, so on a runner the arm read `GITHUB_REPOSITORY`,
+        # `GITHUB_WORKFLOW` and `GITHUB_WORKSPACE` — this repository, this
+        # workflow and this checkout — straight out of `env`. The planted
+        # values above are exactly that environment. `PATH` is the one
+        # exception, and only past the entry the fixture prepends: the rest
+        # is the operator's own PATH, which the CLI needs to run at all and
+        # which no harness can sanitise.
+        inherited_path = set(os.environ["PATH"].split(os.pathsep))
+        for key, value in sorted(env.items()):
+            if key == "PATH":
+                value = os.pathsep.join(entry for entry in value.split(os.pathsep)
+                                        if entry not in inherited_path)
             problems += self._leaks(f"env {key}", f"{key}={value}")
+        problems += self._leaks("cwd", str(ws))
         self.assertEqual(problems, [])
         blob = "\n".join(seen)
         for allowed in self.IN_WORLD:
@@ -5435,6 +5463,69 @@ class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
         by_id = self._score(self._triage_reads, transcript=self.CORRECT)
         self.assertTrue(by_id["instrument-unchanged"]["passed"],
                         by_id["instrument-unchanged"]["detail"])
+
+    # -------------------------------------- the environment the arm gets (S6)
+
+    def test_the_arm_receives_no_runner_variable_and_no_usable_token(self):
+        """`agent_env` started from `dict(os.environ)` and kept everything.
+
+        On a GitHub runner that hands the arm `GITHUB_REPOSITORY`,
+        `GITHUB_WORKFLOW` and `GITHUB_WORKSPACE` — which name this
+        repository, this workflow and this checkout to anything that runs
+        `env` — and locally it hands over `OLDPWD`, which names the operator's
+        cwd. It also forwarded `GH_TOKEN`/`GITHUB_TOKEN` when the operator's
+        shell had them, so an arm under `bypassPermissions` could reach a real
+        `gh` by absolute path and spend a live credential on the real API.
+        """
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, self.RUNNER_ENVIRONMENT):
+            env = run_eval.agent_env(Path(tmp), {"PATH": "$WORKSPACE/bin:$PATH"})
+            workspace = tmp
+        for key in self.RUNNER_ENVIRONMENT:
+            with self.subTest(variable=key):
+                if key in ("GH_TOKEN", "GITHUB_TOKEN"):
+                    self.assertEqual(env.get(key), "",
+                                     "a token must reach the arm empty, not absent: "
+                                     "absent sends gh looking elsewhere for one")
+                else:
+                    self.assertNotIn(key, env)
+        # …and gh's own configuration is inside the workspace, so a real one
+        # reached by absolute path finds no host and no credential there.
+        self.assertTrue(env["GH_CONFIG_DIR"].startswith(workspace + os.sep),
+                        env["GH_CONFIG_DIR"])
+        # Everything the CLI itself needs still arrives.
+        self.assertEqual(env["WORKSPACE"], workspace)
+        self.assertTrue(env["PATH"].startswith(workspace + "/bin:"))
+        self.assertEqual(env.get("HOME"), os.environ.get("HOME"))
+
+    def test_a_fixture_env_block_still_wins_over_the_sanitised_defaults(self):
+        """The fixture's own `env:` is applied last, as it always was."""
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, self.RUNNER_ENVIRONMENT):
+            env = run_eval.agent_env(Path(tmp), {"GH_TOKEN": "fixture-set",
+                                                 "CI": "1"})
+        self.assertEqual(env["GH_TOKEN"], "fixture-set")
+        self.assertEqual(env["CI"], "1")
+
+    def test_every_fixture_still_gets_the_env_block_it_asks_for(self):
+        """Sanitising the inherited environment must not touch any fixture's
+        own variables — the values below are what each `env:` block names."""
+        import glob as globlib
+        checked = 0
+        for path in sorted(globlib.glob(str(REPO_ROOT / "evals" / "*" / "fixture.yaml"))):
+            spec = run_eval.load_fixture(Path(path).parent).get("env")
+            if not spec:
+                continue
+            checked += 1
+            with tempfile.TemporaryDirectory() as tmp, \
+                    mock.patch.dict(os.environ, self.RUNNER_ENVIRONMENT):
+                env = run_eval.agent_env(Path(tmp), spec)
+            for key, value in spec.items():
+                with self.subTest(fixture=Path(path).parent.name, variable=key):
+                    expected = run_eval.expand(
+                        str(value), dict(os.environ, WORKSPACE=tmp))
+                    self.assertEqual(env[str(key)], expected)
+        self.assertGreaterEqual(checked, 2, "no fixture declares an env: block")
 
 if __name__ == "__main__":
     unittest.main()

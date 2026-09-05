@@ -57,7 +57,14 @@ appears nowhere in it. Keep it that way — the source of truth for what an arm
 may read is here, not in the file the agent gets a copy of.
 `TestIssue84Review.test_nothing_the_arm_can_read_names_the_instrument`
 materializes an arm workspace with the harness's own code and greps every
-byte of it.
+byte of it — and every variable of the environment it hands over, which is
+why `agent_env` drops the inherited `GITHUB_*` / `RUNNER_*` / `ACTIONS_*`,
+`PWD`, `OLDPWD` and `CI` for every fixture: on a runner they name this
+repository, this workflow and this checkout to anything that runs `env`. It
+empties `GH_TOKEN` / `GITHUB_TOKEN` in the same pass and points
+`GH_CONFIG_DIR` inside the workspace, so an arm that reaches a REAL `gh` by
+absolute path — past the stand-in on `PATH`, under `bypassPermissions` —
+finds no host and no credential.
 
 ### The keying rule
 
