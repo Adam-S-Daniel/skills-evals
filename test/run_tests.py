@@ -5798,6 +5798,44 @@ class TestIssue67Review5(unittest.TestCase):
         self.assertIn("1.96%", retired["claude-opus-4-8"])
         self.assertNotIn("2.0%", retired["claude-opus-4-8"])
 
+    def test_retirement_reason_escalates_past_two_decimals_when_needed(self):
+        """S2 (#129 review round 6): two decimals is not always enough to
+        stop touching the bar (1.9999% still rounds to "2.00%" at two
+        decimals), and a genuinely tiny nonzero share (0.04%, 0.004%)
+        must not render as the misleading "0.0%" — about a model that
+        DID carry turns, not one with none. `_format_share` escalates
+        through 1/2/3/4/6 decimals until the text differs from the bar
+        and, for a nonzero value, does not read as "0.0...0"."""
+        cases = [
+            (1999, 98001, "1.999%", "2.0%"),
+            (19999, 980001, "1.9999%", "2.00%"),
+            (4, 9996, "0.04%", "0.0%"),
+            (40, 999960, "0.004%", "0.00%"),
+        ]
+        for opus, sonnet, expect, forbid in cases:
+            with self.subTest(opus=opus, sonnet=sonnet):
+                previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+                counts = {"claude-opus-4-8": {self.W[0]: opus},
+                         "claude-sonnet-5": {self.W[0]: sonnet}}
+                census = TestIssue67._census_doc(counts=counts)
+                result = self._compute(census=census, previous=previous)
+                retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+                self.assertIn("claude-opus-4-8", retired)
+                self.assertIn(expect, retired["claude-opus-4-8"])
+                self.assertNotIn(forbid, retired["claude-opus-4-8"])
+        # Mutation check (manual): reverting `_format_share` to stop after
+        # two decimals renders 1.9999% as "2.00%" (touches the bar) and
+        # 0.004% as "0.00%" (reads as no usage) — turning the
+        # corresponding subTest red.
+
+    def test_at_or_above_reasons_are_not_escalated(self):
+        """A model at EXACTLY its bar in the "at or above" direction is
+        not self-contradictory ("carries 10.0% ... at or above the 10%
+        entry bar" is correct at a true 10.0%) — `_format_share` must not
+        escalate past one decimal there."""
+        self.assertEqual(roster._format_share(10.0, 10), "10.0")
+        self.assertEqual(roster._format_share(2.0, 2), "2.0")
+
     # --- N2: _clean_counts must require an actual int, not a coercible
     # string/float --------------------------------------------------------
 

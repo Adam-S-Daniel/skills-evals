@@ -313,13 +313,31 @@ def _fold_set(ids: set[str], aliases: dict) -> set[str]:
     return {aliases.get(i, i) for i in ids}
 
 
-def _format_share(value: float, bar: float) -> str:
-    """A share percentage, rendered against its own bar: one decimal place,
-    unless rounding to one decimal would land exactly ON the bar and read
-    as self-contradictory next to a "below"/"under" comparison — "below the
-    2% exit bar (2.0%)" at a true 1.96%. Two decimals in that case only."""
-    one = f"{value:.1f}"
-    return f"{value:.2f}" if float(one) == bar else one
+def _format_share(value: float, bar: float, *, under: bool = False) -> str:
+    """A share percentage, rendered against its own bar.
+
+    In the "at or above" direction (`under=False`, the default), landing
+    exactly on the bar is correct, not contradictory — "carries 10.0% ...
+    at or above the 10% entry bar" at a true 10.0% — so one decimal place
+    always suffices.
+
+    In the "below"/"under" direction (`under=True`), landing on the bar
+    at one decimal reads as self-contradictory — "below the 2% exit bar
+    (2.0%)" at a true 1.96%, or still at two decimals for 1.9999% — and a
+    genuinely tiny NONZERO share can round all the way to "0.0" and read
+    as no usage at all about a model that carried real turns. Escalate
+    through 1, 2, 3, 4, then 6 decimal places until the rendering both
+    differs from the bar and, for a nonzero value, does not read as
+    "0.0...0"; `:.6g` is the last-resort fallback for a value so small
+    even 6 decimal places round it away.
+    """
+    if not under:
+        return f"{value:.1f}"
+    for decimals in (1, 2, 3, 4, 6):
+        text = f"{value:.{decimals}f}"
+        if float(text) != bar and (value == 0 or float(text) != 0.0):
+            return text
+    return f"{value:.6g}"
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],
@@ -926,7 +944,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                                  f"{exit_raw_total} raw turns over the last "
                                  f"{policy['arm_exit_window_weeks']} weeks are "
                                  f"rankable, attributable usage "
-                                 f"({_format_share(pct, bar)}% — under the "
+                                 f"({_format_share(pct, bar, under=True)}% — under the "
                                  f"{bar:g}% relative floor for this window), "
                                  f"too little to be evidence of anything")
                 reason = (f"held over from the previous roster: {floor_note}, so "
@@ -1071,7 +1089,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                                   catalogue_seen=catalogue_seen)
                 why = (f"below the {policy['arm_exit_usage_pct']}% exit bar for the last "
                        f"{policy['arm_exit_window_weeks']} weeks "
-                       f"({_format_share(held, policy['arm_exit_usage_pct'])}% of "
+                       f"({_format_share(held, policy['arm_exit_usage_pct'], under=True)}% of "
                        f"rankable census usage)")
             retired.append({"id": model_id, "reason": why})
 
