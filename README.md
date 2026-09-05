@@ -33,6 +33,9 @@ evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
     seed/                  # workspace the agent starts from (unfiltered workflows)
+  github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
+    fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
+    seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
   post-failure-comment/    # A/B eval, Class A: wire CI failures into the platform's composite
     fixture.yaml           # prompt, structural workflow-step checks, judge rubric
     seed/                  # two Playwright workflows + a vendored cms-platform action contract
