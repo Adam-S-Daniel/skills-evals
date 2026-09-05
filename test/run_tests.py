@@ -6201,7 +6201,12 @@ class TestIssue67Review6(unittest.TestCase):
         self.assertIn("claude-opus-4-8", self._arm_ids(result))
         reason = self._reason(result, "claude-opus-4-8")
         self.assertIn("no evidence to retire it", reason)
-        self.assertNotIn("0.1%", reason)
+        # "0.1%" legitimately appears here now (N7, #129 review round 6):
+        # it's the RAW-vs-ranked ratio S1's relative floor reports (96 of
+        # 96000 raw turns are rankable), not the old per-model DILUTED
+        # share this test guards against — that specific phrasing is what
+        # must stay absent.
+        self.assertNotIn("still 0.1%", reason)
         self.assertNotIn("claude-opus-4-8",
                          {r["id"] for r in result["retired_since_last"]})
         # Mutation check (manual): skipping the age-eviction step in
@@ -6298,6 +6303,27 @@ class TestIssue67Review6(unittest.TestCase):
         self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
         for w in warnings:
             self.assertNotIn("claude-sonnet-599-9", w)
+
+    # --- N7: the policy's own relative-floor percentage must not round
+    # to "0%" via `:.0f` -------------------------------------------------
+
+    def test_census_unranked_relative_floor_reason_does_not_round_the_bar_to_zero(self):
+        """`f"{100 * policy['min_ranked_share']:.0f}%"` rendered a 0.5%
+        policy floor as "0%" — self-contradictory next to a measured
+        share that IS under 0.5% but reads as "under the 0% floor".
+        `:g` for the policy bar, and the S2 escalating formatter for the
+        measured share."""
+        policy = dict(self._policy())
+        policy["min_ranked_share"] = 0.005
+        _, note, code = roster._census_verdict(
+            {"generated_at": self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ")},
+            raw_total=100000, ranked_total=499, policy=policy, now=self.NOW)
+        self.assertEqual(code, roster.CENSUS_UNRANKED)
+        self.assertIn("0.5% relative", note)
+        self.assertNotIn("0% relative", note)
+        self.assertIn("0.499%", note)
+        # Mutation check (manual): reverting the bar's format spec to
+        # `:.0f` renders "0% relative floor" — red.
 
 
 if __name__ == "__main__":

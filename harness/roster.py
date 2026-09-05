@@ -900,12 +900,13 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
                        f"too little to be evidence of anything"), \
             CENSUS_UNRANKED
     if ranked_total < policy["min_ranked_share"] * raw_total:
+        bar = 100 * policy["min_ranked_share"]
         pct = 100 * ranked_total / raw_total
         return False, (f"census published but only {ranked_total} of "
                        f"{raw_total} raw turns over the window are rankable, "
-                       f"attributable usage ({pct:.2f}% — under the "
-                       f"{100 * policy['min_ranked_share']:.0f}% relative "
-                       f"floor), too little to be evidence of anything"), \
+                       f"attributable usage ({_format_share(pct, bar, under=True)}% "
+                       f"— under the {bar:g}% relative floor), too little to "
+                       f"be evidence of anything"), \
             CENSUS_UNRANKED
     return True, "", CENSUS_FRESH
 
