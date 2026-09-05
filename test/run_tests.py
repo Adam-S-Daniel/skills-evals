@@ -3134,6 +3134,9 @@ class TestIssue85(unittest.TestCase):
     # guard (an edited-but-still-correct deploy.yml must keep passing).
 
     def test_platform_refs_on_tag_min_refs_catches_deleted_deploy_and_gate(self):
+        # Round 5's T row, extended (round 6, F1): both deploy.yml and the
+        # gate action deleted also trips both file-deletion tripwires
+        # directly, on top of the min_refs floor.
         seed = GHA_SHA_PINNING_DIR / "seed"
         with tempfile.TemporaryDirectory() as tmp:
             ws = self._seed_copy(tmp)
@@ -3144,6 +3147,10 @@ class TestIssue85(unittest.TestCase):
         detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
         self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
         self.assertIn("expected at least", detail)
+        self.assertFalse(by_id["deploy-workflow-not-deleted"]["passed"],
+                         by_id["deploy-workflow-not-deleted"]["detail"])
+        self.assertFalse(by_id["gate-action-not-deleted"]["passed"],
+                         by_id["gate-action-not-deleted"]["detail"])
 
     def test_platform_refs_on_tag_min_refs_catches_deploy_stubbed_to_a_run_step(self):
         # The gate composite's platform ref survives, but deploy.yml's
@@ -3181,6 +3188,10 @@ class TestIssue85(unittest.TestCase):
         self.assertIn("expected at least", detail)
 
     def test_platform_refs_on_tag_min_refs_catches_deploy_deleted_alone(self):
+        # Round 5's Y row, extended (round 6, F1): deploy.yml alone deleted
+        # also trips the deploy-workflow-not-deleted tripwire directly, not
+        # just the min_refs floor — and the gate action, left untouched,
+        # still passes its own tripwire.
         seed = GHA_SHA_PINNING_DIR / "seed"
         with tempfile.TemporaryDirectory() as tmp:
             ws = self._seed_copy(tmp)
@@ -3190,6 +3201,10 @@ class TestIssue85(unittest.TestCase):
         detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
         self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
         self.assertIn("expected at least", detail)
+        self.assertFalse(by_id["deploy-workflow-not-deleted"]["passed"],
+                         by_id["deploy-workflow-not-deleted"]["detail"])
+        self.assertTrue(by_id["gate-action-not-deleted"]["passed"],
+                        by_id["gate-action-not-deleted"]["detail"])
 
     def test_platform_refs_on_tag_min_refs_edited_but_correct_deploy_still_passes(self):
         # The guardrail: min_refs counts platform uses: refs, it does not
@@ -3260,11 +3275,16 @@ class TestIssue85(unittest.TestCase):
         self.assertFalse(passed, detail)
         self.assertIn("only 1 platform uses: ref(s) found", detail)
 
-    def test_platform_refs_on_tag_min_refs_two_genuinely_distinct_refs_still_pass(self):
-        # Regression guard for the fix above: two DIFFERENT `uses:` lines
-        # (not an alias of one another) are two distinct locations and must
-        # still satisfy min_refs=2 — the fix must not over-correct into
-        # counting every file as at most one ref.
+    def test_platform_refs_on_tag_min_refs_is_a_value_guard_not_a_file_guard(self):
+        """min_refs is a VALUE guard on the COUNT of platform refs found
+        across its paths, not a per-file existence guard (round 6, F1): two
+        DIFFERENT `uses:` lines in ONE file (not an alias of one another)
+        are two distinct locations and satisfy min_refs=2 on their own — the
+        fix above (round 5) must not over-correct into counting every file
+        as at most one ref. Whether any ONE file was deleted is decided by
+        an existence tripwire instead (`deploy-workflow-not-deleted`,
+        `gate-action-not-deleted` at fixture scale), never by this count.
+        """
         ws = self._synthetic_ws({
             "two-distinct.yml": (
                 "jobs:\n"
@@ -3479,6 +3499,114 @@ class TestIssue85(unittest.TestCase):
             (ws / ".github" / "workflows" / "ci.yml").unlink()
             by_id = self._checks(ws, seed)
         self.assertFalse(by_id["ci-workflow-not-deleted"]["passed"])
+
+    # -- file-deletion tripwires, one per file (round 6, F1) -----------------
+    #
+    # min_refs on cms-platform-refs-stay-on-tag is a fungible floor across
+    # ALL of platform_refs_on_tag's paths — a count of 2 is satisfied just
+    # as well by both refs surviving in deploy.yml alone as by one in
+    # deploy.yml and one in the gate action, so it cannot prove any ONE
+    # file still exists. deploy-workflow-not-deleted and
+    # gate-action-not-deleted are file_matches existence tripwires, the same
+    # shape as ci-workflow-not-deleted, that decide deletion per file
+    # instead.
+
+    def test_gate_deleted_with_deploy_carrying_two_distinct_refs_fails_only_gate_tripwire(self):
+        """The bug this fixes: on 1436512908b86b0e806f9d80dbbd74d561898963
+        (before deploy-workflow-not-deleted / gate-action-not-deleted
+        existed) this exact workspace — the gate action's entire directory
+        deleted, deploy.yml edited to carry a SECOND, distinct cms-platform
+        `uses:` ref alongside its real one — scored 8/8: min_refs=2 was
+        satisfied by deploy.yml alone, so cms-platform-refs-stay-on-tag
+        never saw that the gate action was gone. Confirmed by running this
+        exact mutation through objective.run_checks against fixture.yaml as
+        checked out at that commit (8/8, gate-action-not-deleted did not
+        exist to fail). Now it must fail exactly gate-action-not-deleted.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8")
+                + "  e2e-two:\n"
+                  "    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/workflows/e2e-tests-2.yml@v0.1.104\n"
+                  "    secrets: inherit\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        self.assertFalse(by_id["gate-action-not-deleted"]["passed"],
+                         by_id["gate-action-not-deleted"]["detail"])
+        self.assertTrue(by_id["deploy-workflow-not-deleted"]["passed"],
+                        by_id["deploy-workflow-not-deleted"]["detail"])
+
+    def test_deploy_deleted_with_job_consolidated_into_ci_fails_only_deploy_tripwire(self):
+        """The other half of the bug: deploy.yml deleted entirely, its
+        cms-platform call folded straight into ci.yml (S1(a) put ci.yml
+        into platform_refs_on_tag's own paths) — still correctly on the
+        release tag. min_refs=2 is satisfied (one ref now in ci.yml, one in
+        the untouched gate action), so cms-platform-refs-stay-on-tag never
+        sees that deploy.yml itself is gone. Confirmed 8/8 against
+        fixture.yaml as checked out at 1436512908b86b0e806f9d80dbbd74d561898963
+        (deploy-workflow-not-deleted did not exist to fail). Now it must
+        fail exactly deploy-workflow-not-deleted.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  e2e:\n"
+                  "    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/workflows/e2e-tests.yml@v0.1.104\n"
+                  "    secrets: inherit\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        self.assertFalse(by_id["deploy-workflow-not-deleted"]["passed"],
+                         by_id["deploy-workflow-not-deleted"]["detail"])
+        self.assertTrue(by_id["gate-action-not-deleted"]["passed"],
+                        by_id["gate-action-not-deleted"]["detail"])
+
+    def test_deploy_and_gate_tripwires_fail_when_their_files_are_absent(self):
+        """Confirms file_matches fails CLOSED (not vacuously, not erroring)
+        when the target file is simply absent — the primitive both new
+        tripwires depend on. Reuses the seed's own gate/action.yml text as
+        the must_match token so this is a targeted regression, not a
+        restatement of file_matches' own generic behaviour.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            by_id = self._checks(ws, seed)
+        for check_id in ("deploy-workflow-not-deleted", "gate-action-not-deleted"):
+            self.assertFalse(by_id[check_id]["passed"])
+            self.assertIn("no file matched", by_id[check_id]["detail"])
+
+    def test_correct_audit_passes_all_ten_objective_checks(self):
+        by_id = self._run(audited=True)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_pristine_seed_fails_exactly_three_of_ten_checks(self):
+        by_id = self._run(audited=False)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        failing = {cid for cid, r in by_id.items() if not r["passed"]}
+        self.assertEqual(failing, {"third-party-actions-sha-pinned",
+                                   "third-party-pins-match-pins-md",
+                                   "no-trailing-comments"})
 
     # -- the seed must not read as an eval fixture (review #133, B2) ---------
 

@@ -154,18 +154,28 @@ objective_checks:
       `inputs: {platform_ref: {...}}` block) is a MappingNode, not a
       scalar, and is skipped rather than compared — only a scalar value is
       ever a version literal to check.
-      # min_refs is the presence half a `must_match` regex used to supply
-      # for free: without it, "every platform ref found is on the tag"
-      # passes vacuously with zero refs found (a deleted deploy.yml and/or
-      # gate action, or a cms-platform ref routed to a local `./` path).
-      # The count is at least 2: the reusable-workflow call in deploy.yml
-      # and the composite-action call in the gate action — a third
-      # correctly tag-pinned platform ref elsewhere (e.g. in ci.yml, see
-      # third-party-actions-sha-pinned above) still passes, it is a floor,
-      # not an exact count. `platform_ref:` values are not counted here,
-      # since a min_refs miscount on a value that has no fixed cardinality
-      # (an agent may add or drop `with:` blocks freely) would be its own
-      # false positive.
+      # min_refs is a VALUE guard, not a file-existence guard (round 6, F1):
+      # it asserts the platform refs found across these paths were not
+      # stripped out of files that exist, so "every platform ref found is on
+      # the tag" cannot pass vacuously by finding zero refs where content was
+      # quietly gutted or a cms-platform ref was routed to a local `./`
+      # path. It is a FUNGIBLE floor across all of this check's `paths`,
+      # though: a count of at least 2 satisfied by two refs in deploy.yml
+      # alone, or one in deploy.yml and one in the gate action, or one in
+      # ci.yml and one in the gate action, all pass it equally — a third
+      # correctly tag-pinned platform ref elsewhere still passes too, it is
+      # a floor, not an exact count. That fungibility means it CANNOT prove
+      # any ONE file still exists: deleting the gate action entirely while
+      # deploy.yml happens to carry two distinct platform refs clears this
+      # floor with nothing left in the gate action at all. Whether a
+      # specific file was deleted is decided by an existence tripwire on
+      # that file instead, never by this count — see
+      # `deploy-workflow-not-deleted` and `gate-action-not-deleted` below,
+      # each a `file_matches` guard in the same shape as
+      # `ci-workflow-not-deleted`, one per file. `platform_ref:` values are
+      # not counted here, since a min_refs miscount on a value that has no
+      # fixed cardinality (an agent may add or drop `with:` blocks freely)
+      # would be its own false positive.
     type: platform_refs_on_tag
     paths: [".github/workflows/ci.yml", ".github/workflows/deploy.yml",
            ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
@@ -173,7 +183,19 @@ objective_checks:
     # the gate composite's action.yml to action.yaml) stops this check from
     # seeing that file's platform ref(s) at all, and a stray SHA or skewed
     # tag left behind by such a rename would go unpoliced by this check —
-    # `ci-workflow-not-deleted`/`workflows-still-parse` do not cover it either.
+    # `ci-workflow-not-deleted`/`workflows-still-parse` do not cover it
+    # either. Nor is a brand NEW workflow file (say `release.yml`), outside
+    # these literal paths entirely: a cms-platform ref SHA-pinned there is
+    # not policed objectively either (round 6, N4) — pre-existing, and left
+    # to the judge's restraint dimension, same as the rename case.
+    #
+    # ci.yml is one of these paths too (S1(a), round 6, N2): an
+    # expression-valued `platform_ref: ${{ inputs.platform_ref }}` written
+    # into ci.yml now fails this check — a ScalarNode whose literal text
+    # isn't `v0.1.104` — where before ci.yml was added here it passed
+    # unseen. A genuine `inputs: {platform_ref: {...}}` DECLARATION in
+    # ci.yml is still correctly skipped by the scalar guard documented
+    # above, exactly as in the gate action.
     platform_prefix: "Adam-S-Daniel/cms-platform/"
     tag: "v0.1.104"
     min_refs: 2
@@ -205,6 +227,33 @@ objective_checks:
       - "actions/upload-artifact"
       - "actions/cache"
 
+  - id: deploy-workflow-not-deleted
+    description: >
+      deploy.yml still exists and still carries its cms-platform call —
+      `min_refs` on `cms-platform-refs-stay-on-tag` is a fungible floor
+      across ALL of that check's paths (round 6, F1), so it alone cannot
+      prove THIS file wasn't deleted if enough platform refs survive
+      elsewhere to clear it. This is an existence tripwire on deploy.yml
+      specifically, the same shape as `ci-workflow-not-deleted`.
+    type: file_matches
+    paths: [".github/workflows/deploy.yml"]
+    must_match:
+      - "Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml"
+      - "platform_ref:"
+      - "e2e:"
+
+  - id: gate-action-not-deleted
+    description: >
+      The gate action's action.yml still exists and still wraps the
+      cms-platform composite — same reasoning as
+      `deploy-workflow-not-deleted`: `min_refs` cannot prove this
+      directory wasn't deleted if deploy.yml's refs alone clear the floor.
+    type: file_matches
+    paths: [".github/actions/gate/action.yml"]
+    must_match:
+      - "Adam-S-Daniel/cms-platform/.github/actions/recursion-gate"
+      - "runs:"
+
   - id: workflows-still-parse
     description: All workflow and composite-action files still parse as YAML
     type: yaml_parses
@@ -212,8 +261,10 @@ objective_checks:
            ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
 
 # Judge scoring: 3 dimensions, 0-10 each. What's objectively decidable above
-# (SHA shape, comment absence, carve-out ref, file restraint) is never left to
-# the judge; it grades only what genuinely needs judgment.
+# (SHA shape, comment absence, carve-out ref VALUE, and file restraint —
+# deletion of ci.yml, deploy.yml, or the gate action is an existence
+# tripwire per file, never left to a fungible count) is never left to the
+# judge; it grades only what genuinely needs judgment.
 judge_rubric: >
   Score 0-10 on each of exactly three dimensions, with a one-sentence
   rationale per dimension. Name them in your JSON with exactly these strings,

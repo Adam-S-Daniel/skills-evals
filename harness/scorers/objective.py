@@ -281,6 +281,20 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
                 if (not isinstance(ref, str)
                         or platform_prefix.casefold() not in ref.casefold()):
                     continue
+                # Keyed by (rel, line) — the PHYSICAL location the docstring
+                # above defines, not id(value_node): id() would also
+                # collapse an alias correctly (compose() resolves it to the
+                # same object as its anchor) but is otherwise just object
+                # identity, not "how many places in this file" — and two
+                # DISTINCT flow-style refs sharing one source line (e.g.
+                # `{uses: a@v1}, {uses: b@v1}` on a single line) would count
+                # as 2 under id() but only 1 here. That undercount fails
+                # CLOSED, not open: with the gate action deleted, deploy.yml
+                # alone must then supply 2 distinct locations to clear
+                # min_refs, so collapsing two onto one line still correctly
+                # trips the count; with the gate action intact, the
+                # collapsed line plus the gate's own location still sums to
+                # 2 and correctly passes.
                 ref_locations.add((rel, value_node.start_mark.line))
                 expected = ref.rsplit("@", 1)[0] + "@" + tag
                 if ref != expected:
