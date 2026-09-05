@@ -4818,13 +4818,19 @@ class TestIssue81(unittest.TestCase):
     # it — `deployment pipeline behind eleven state agency websites, and ran
     # the` and the line under it — while the same text on one line kept
     # everything.
+    #
+    # It is genuinely RESTRUCTURED — the note's facts, the agent's clause
+    # order — because that is what a bio the agent wrote looks like. The
+    # near-verbatim restatement this constant used to hold moved to
+    # `_BIO_RESTATING_THE_NOTE` below, where design decision 3 now calls it
+    # what it is.
     _BIO_WRAPPED_LIKE_THE_SEED = (
-        "Adam Daniel leads the delivery-infrastructure group at a mid-size "
-        "civic technology consultancy. At Halyard Civic Data (2019–2024) he "
-        "rebuilt the deployment pipeline behind eleven state agency "
-        "websites, and ran the accessibility remediation program that took "
-        "all eleven to a clean Section 508 audit. Certifications: AWS "
-        "Solutions Architect – Professional, CISSP.")
+        "Adam Daniel leads delivery infrastructure at a mid-size civic "
+        "technology consultancy. He spent 2019–2024 at Halyard Civic Data, "
+        "where eleven state agency websites deployed through a pipeline he "
+        "rebuilt, and where all eleven reached a clean Section 508 audit "
+        "for the first time. Certifications: AWS Solutions Architect – "
+        "Professional, CISSP.")
 
     def test_a_bio_wrapped_where_the_seed_wraps_keeps_its_own_words(self):
         seed = str(self.STYLE_DIR / "proposal-bio" / "seed")
@@ -4836,12 +4842,11 @@ class TestIssue81(unittest.TestCase):
                 self._assert_all_pass("proposal-bio", wrapped,
                                       f"a third-person bio wrapped at {width}")
                 residue = objective.strip_seed_material(wrapped, seed)
-                # Every word of the sentence the agent COMPOSED survives —
-                # it is the agent's however close to the note it reads,
-                # because the note has no sentence with these words in this
-                # order.
-                self.assertIn("deployment pipeline behind eleven state "
-                              "agency websites", " ".join(residue.split()))
+                # Every word of the sentence the agent WROTE survives: it
+                # carries the note's facts in the agent's own clause order,
+                # and the note has no run of six words in common with it.
+                self.assertIn("eleven state agency websites deployed "
+                              "through a pipeline", " ".join(residue.split()))
                 # Hyphen spacing folded: a wrap can fall at a hyphen, and
                 # the rejoin puts the space every other rejoin uses there.
                 # It changes no verdict — the provenance key drops the
@@ -4852,6 +4857,47 @@ class TestIssue81(unittest.TestCase):
                                     " ".join(residue.split())))
         self.assertEqual(len(residues), 1,
                          f"the residue depends on the wrap column: {residues}")
+
+    # The same bio as this constant used to hold: the note's four bullets
+    # restated almost word for word, with a name glued on the front and the
+    # bullet markers turned into sentences. Rounds 1-4 called it "composed"
+    # and scored it as the agent's writing, because no sentence of it was
+    # contiguous in the note once "Adam Daniel", "At" and "he" were
+    # inserted. Design decision 3 calls it what it is: 0.88 to 0.92 of its
+    # words lie inside runs of the note's, so it is the note's material:
+    # what is left of it carries neither a third-person subject nor either
+    # of the two facts, which is the right answer for a bio that wrote
+    # nothing of its own.
+    #
+    # This is the DECISION changing, not a check breaking. The bio above,
+    # which states the same facts in its own clause order, passes every
+    # check at every one of the same 63 wrap columns.
+    _BIO_RESTATING_THE_NOTE = (
+        "Adam Daniel leads the delivery-infrastructure group at a mid-size "
+        "civic technology consultancy. At Halyard Civic Data (2019–2024) he "
+        "rebuilt the deployment pipeline behind eleven state agency "
+        "websites, and ran the accessibility remediation program that took "
+        "all eleven to a clean Section 508 audit. Certifications: AWS "
+        "Solutions Architect – Professional, CISSP.")
+
+    def test_a_bio_that_only_restates_the_note_is_the_notes(self):
+        seed = str(self.STYLE_DIR / "proposal-bio" / "seed")
+        verdicts = {}
+        for width in self.WRAP_COLUMNS:
+            wrapped = "\n".join(
+                textwrap.wrap(self._BIO_RESTATING_THE_NOTE, width)) + "\n"
+            by_id = self._score_reusing_workspace("proposal-bio", wrapped)
+            failed = tuple(sorted(check for check, r in by_id.items()
+                                  if not r["passed"]))
+            verdicts.setdefault(failed, []).append(width)
+            self.assertNotIn(
+                "deployment pipeline behind eleven state agency websites",
+                " ".join(objective.strip_seed_material(wrapped, seed).split()))
+        # One verdict at every column — the wrap column still decides
+        # nothing — and that verdict is a failure.
+        self.assertEqual(
+            list(verdicts), [("bio-is-third-person", "cites-both-facts")],
+            f"the verdict depends on the wrap column: {verdicts}")
 
     def test_a_certifications_line_costs_the_bio_nothing(self):
         # Core move 8 tells the writer to end on a plain certifications
@@ -6710,6 +6756,500 @@ class TestIssue81(unittest.TestCase):
                 # which, and it is embedded verbatim in the judge prompt.
                 for tell in ("agent", "reference", "in-voice", "generic"):
                     self.assertNotIn(tell, rubric)
+
+    # ------------------------------------------------------------------
+    # design decision 3: provenance by COVERAGE, not only by contiguity
+    # ------------------------------------------------------------------
+    #
+    # B1, the blocker, on its fifth round. Rules (a) and (b) — the sentence
+    # key and the contiguous run — both require CONTIGUITY, and contiguity
+    # is a property a paste can break without the agent writing a word.
+    # Every escape that survived four rounds walked through that one gap:
+    # two of her non-adjacent clauses spliced with a comma or an "and"; the
+    # space after a full stop deleted, so two of her sentences became one;
+    # a two-word prefix ("She wrote: "); a footnote, link or image
+    # container whose extra tokens broke the run. Each of those was
+    # "composed" under the old rule and scored as the agent's writing, and
+    # the round-3 transcript below ALL-PASSED recruiter-reply byte for byte
+    # on the merged tree.
+    #
+    # Rule (c) asks how MUCH of the sentence is hers rather than whether
+    # her words arrived in one piece: the fraction of the sentence's words
+    # that lie inside a run of `_SEED_COVERAGE_RUN` consecutive words of
+    # some seed file's. The two batteries below are what set the two
+    # constants, and they are a merge condition rather than illustration —
+    # a rule tuned on the shapes it was designed against measures nothing.
+    #
+    # The GENUINE battery must ALL-PASS. The PASTE battery must fail
+    # `cites-both-facts` on every fixture it applies to. The margins are
+    # measured in `test_the_coverage_margins_hold` and reported in the PR
+    # body.
+
+    # The round-3 transcript, verbatim, em dashes U+2014. Every brief since
+    # round 3 has named this input; it is a constant so no future rework
+    # can quietly stop measuring it (N5). It is a reply that quotes her
+    # email back with two of her clauses spliced onto each other and a
+    # two-word prefix on the note's sentence — and nothing else.
+    ROUND_3_TRANSCRIPT = (
+        "> On Tue, 1 Sep 2026, Dana Whitcombe wrote:\n"
+        "> Hi Adam, I think your background lines up well with what they "
+        "are after.\n"
+        "> I am filling a Staff Platform Engineer role for a client of "
+        "ours —\n"
+        "> requisition REQ-4417 — and the client would like to start "
+        "interviews\n"
+        "> inside the next two weeks.\n"
+        ">\n"
+        "> My own note: the engagement is contracted through March 2027.\n")
+
+    # The round-4 paste: four quoted lines re-selecting her greeting, her
+    # requisition sentence, her interview-timing sentence and the note
+    # file's March 2027 sentence. Also a constant, for the same reason.
+    ROUND_4_FOUR_LINE_PASTE = (
+        "> Hi Adam,\n"
+        "> I am filling a Staff Platform Engineer role for a client of "
+        "ours — requisition REQ-4417 — and I think your background "
+        "lines up well with what they are after.\n"
+        "> the client would like to start interviews inside the next two "
+        "weeks.\n"
+        "> The engagement is contracted through March 2027.\n")
+
+    # The GENUINE battery: sixteen drafts that are the agent's writing and
+    # have to stay it. Each is deliberately close to the seed in one of the
+    # ways a real reply is close to its material — a shared employer, a
+    # shared job title, a quoted question answered, a close paraphrase, a
+    # stock phrase, her own hedge turned round — because those are exactly
+    # the shapes a coverage rule can get wrong.
+    GENUINE_BATTERY = {
+        # A shared employer and the role title, four and five words of hers.
+        "employer-and-title": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply. I am going to pass on the Staff "
+            "Platform Engineer role at Northgate Bell Talent Group — "
+            "REQ-4417 is not going to work for me, and my own engagement "
+            "runs to March 2027.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # A 26-character repository path, which is one token and no run.
+        "repo-path": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry to be slow. REQ-4417 is not one for me: most of my time "
+            "goes to Adam-S-Daniel/cms-platform right now, and my "
+            "engagement here is contracted to March 2027.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # Her question, quoted in order to answer it.
+        "quotes-her-question": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "I think you asked whether I would be open to a short call this "
+            "week — honestly, no, not for REQ-4417. March 2027 is when my "
+            "engagement here ends and I would rather not start something I "
+            "cannot finish.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # A close paraphrase of one of her clauses: the highest-coverage
+        # genuine sentence in this battery, at 0.59.
+        "close-paraphrase": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply. Three days a week in an office is "
+            "not something I would take on today, and REQ-4417 would need "
+            "exactly that; my engagement here runs through March 2027 in "
+            "any case.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # A stock phrase of the notes', reproduced end to end. Rule (a) has
+        # always called this the seed's; it costs no check, which is the
+        # documented cost of deciding authorship by the words.
+        "stock-phrase-end-to-end": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry to be slow here. Not interested in management-track "
+            "roles. REQ-4417 is a pass for me, and my engagement runs "
+            "through March 2027 anyway.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # Her own hedge sentence, used as the opener and then answered.
+        "her-hedge-as-my-opener": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "I think your background lines up well with what they are after "
+            "— that is the line I would have used myself, and I am "
+            "flattered. REQ-4417 is still a no: my engagement here is "
+            "contracted to March 2027.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # Abbreviations: `vs.`, `Inc.` and `e.g.` all end in a full stop
+        # followed by a space, which is where a sentence splits.
+        "abbreviations": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply. REQ-4417 is a no for me — the "
+            "on-site expectation vs. what I do today is the sticking point, "
+            "and my engagement (through Ardith Analytics, Inc., e.g.) runs "
+            "to March 2027.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        "ellipsis-and-initials": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry, I sat on this... REQ-4417 is a pass. A. S. D. is booked "
+            "through March 2027, which is the short version.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # A decimal and a URL, neither of which is prose.
+        "decimals-and-a-url": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply. REQ-4417 is a no — my rate would be "
+            "1.75x what the band looks like, and the engagement runs to "
+            "March 2027. The public write-up is at "
+            "https://example.com/delivery-infrastructure/2026-notes if it "
+            "helps.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # A table the AGENT wrote, which the pre-pass has to read as the
+        # agent's rows rather than as a quotation device.
+        "a-table-the-agent-wrote": ("recruiter-reply",
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply — the short version is a table:\n\n"
+            "| Question | Answer |\n"
+            "| --- | --- |\n"
+            "| REQ-4417 | A pass, with thanks |\n"
+            "| Free from | March 2027 |\n"
+            "| On site | Not three days a week |\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        # Core move 8's plain certifications listing: the skill tells the
+        # writer to write the sentence the note already carries.
+        "plain-certifications-line": ("proposal-bio",
+            "Adam Daniel leads the delivery-infrastructure group at a civic "
+            "technology consultancy. At Halyard Civic Data (2019–2024) he "
+            "took eleven state agency websites to a clean Section 508 "
+            "audit. Certifications: AWS Solutions Architect – Professional, "
+            "CISSP.\n"),
+        # A self-appraisal with one deliberate sentence per line.
+        "one-sentence-per-line": ("self-appraisal-opening",
+            "Most of the quarter went into deploy-scaffold.\n"
+            "I stood it up as the shared deployment repository and six "
+            "teams are on it now.\n"
+            "The cache and matrix rework took the median pipeline run from "
+            "26 minutes down to 9.\n"
+            "A coworker's build fixes landed the same sprint and are part "
+            "of that number.\n"
+            "Next quarter I want the last two teams migrated.\n"),
+    }
+
+    # The genuine bio, hard-wrapped at four columns, added to the battery
+    # below rather than typed out four times.
+    _GENUINE_BIO = (
+        "Adam Daniel leads the delivery-infrastructure group at a civic "
+        "technology consultancy. He spent 2019–2024 at Halyard Civic Data, "
+        "where eleven state agency websites deployed through a pipeline he "
+        "rebuilt, and where all eleven reached a clean Section 508 audit "
+        "for the first time. He holds the AWS Solutions Architect – "
+        "Professional certification and the CISSP.")
+
+    @classmethod
+    def _genuine_battery(cls) -> dict:
+        battery = dict(cls.GENUINE_BATTERY)
+        for width in (60, 68, 72, 80):
+            battery[f"bio-hard-wrapped-{width}"] = (
+                "proposal-bio",
+                "\n".join(textwrap.wrap(cls._GENUINE_BIO, width)) + "\n")
+        return battery
+
+    # A register line that carries no fact: enough to satisfy the greeting,
+    # the hedge and the pronoun checks, so the only thing a paste can be
+    # scored on is whether the FACTS came out of the material.
+    _PASTE_REGISTER_LINE = {
+        "recruiter-reply": "Hi Dana,\n\nSorry — here is the text you asked "
+                           "for.\n",
+        "proposal-bio": "That is the paragraph he asked for.\n",
+        "self-appraisal-opening": "I hope that works for the form.\n",
+    }
+
+    # One code point from each class the fold covers (S3): a Hangul filler,
+    # a combining mark, a bidi embedding, a TAG character, a supplementary
+    # variation selector, a musical format control, an interlinear
+    # annotation mark.
+    _INVISIBLE_CLASSES = ("ᅟ", "́", "‪", "\U000e0041",
+                          "\U000e0100", "\U0001d173", "￹")
+
+    # Two of the seed's clauses joined by a connective of the agent's: the
+    # shape four rounds called "composed".
+    _TWO_CLAUSES_JOINED = {
+        "recruiter-reply":
+            "I am filling a Staff Platform Engineer role for a client of "
+            "ours — requisition REQ-4417 — and the engagement is "
+            "contracted through March 2027.",
+        "proposal-bio":
+            "Rebuilt the deployment pipeline behind eleven state agency "
+            "websites, and ran the accessibility remediation program that "
+            "took all eleven to a clean Section 508 audit, 2019–2024.",
+        "self-appraisal-opening":
+            "Stood up deploy-scaffold, the shared deployment repository, "
+            "and median pipeline run fell from 26 minutes to 9 after the "
+            "cache and matrix rework.",
+    }
+
+    # A line of the agent's own, 110 characters, to sit beside the
+    # sub-floor fragments: without it the bulleted shape is nothing but
+    # pieces under the floor and there is no run to anchor.
+    _AGENTS_OWN_LONG_LINE = (
+        "The short version is that none of this changes what I would tell "
+        "you on a call today, whenever that suits.")
+
+    @classmethod
+    def _flat_seed_sentences(cls, material: str) -> list[str]:
+        flat = re.sub(r"\s+", " ", material)
+        return [part.strip() for part in re.split(r"(?<=[.!?])\s+", flat)
+                if part.strip()]
+
+    @classmethod
+    def _paste_battery(cls, name: str, material: str) -> dict:
+        """Every paste shape that must fail, computed from the real seed."""
+        flat = " ".join(material.split())
+        sentences = cls._flat_seed_sentences(material)
+        register = cls._PASTE_REGISTER_LINE[name]
+        shapes = {}
+        if name == "recruiter-reply":
+            shapes["round-3-transcript"] = cls.ROUND_3_TRANSCRIPT
+            shapes["round-4-four-line-quote"] = cls.ROUND_4_FOUR_LINE_PASTE
+        # Every `". "` replaced by `" and "`: no sentence boundary left
+        # where the seed has one, so no key is one of the seed's sentences.
+        shapes["flat-and-joined"] = (
+            register + "\n" + flat.replace(". ", " and ") + "\n")
+        # The space after every full stop deleted: two of her sentences
+        # become one, and the run breaks at the join.
+        shapes["full-stop-space-deleted"] = (
+            register + "\n" + flat.replace(". ", ".") + "\n")
+        # A two-word prefix on each of her sentences.
+        shapes["she-wrote-prefixed"] = (
+            register + "\n"
+            + " ".join("She wrote: " + s for s in sentences) + "\n")
+        shapes["two-clauses-joined"] = (
+            register + "\n" + cls._TWO_CLAUSES_JOINED[name] + "\n")
+        shapes["footnote-definition"] = (
+            register + "\n"
+            + "\n".join(f"[^{i + 1}]: {s}" for i, s in enumerate(sentences))
+            + "\n")
+        shapes["markdown-link"] = (
+            register + "\n"
+            + "\n".join(f"[{s}](https://example.com/x)" for s in sentences)
+            + "\n")
+        shapes["markdown-image"] = (
+            register + "\n"
+            + "\n".join(f"![{s}](https://example.com/x.png)"
+                        for s in sentences) + "\n")
+        words = flat.split()
+        shapes["sub-floor-bullets"] = (
+            register + "\n"
+            + "\n".join("- " + " ".join(words[i:i + 3])
+                        for i in range(0, len(words), 3))
+            + "\n- " + cls._AGENTS_OWN_LONG_LINE + "\n")
+        salted = []
+        for i, sentence in enumerate(sentences):
+            char = cls._INVISIBLE_CLASSES[i % len(cls._INVISIBLE_CLASSES)]
+            cut = min(12, max(4, len(sentence) // 2))
+            salted.append(sentence[:cut] + char + sentence[cut:])
+        shapes["mid-word-invisibles"] = (
+            register + "\n" + "\n".join(salted) + "\n")
+        return shapes
+
+    def test_every_genuine_draft_passes_every_check(self):
+        # The first half of the merge condition: sixteen drafts, each one
+        # the agent's writing, each one ALL-PASS. A coverage rule that
+        # claimed any of these would be measuring the material rather than
+        # the writing.
+        battery = self._genuine_battery()
+        self.assertGreaterEqual(len(battery), 16, sorted(battery))
+        for label, (name, draft) in sorted(battery.items()):
+            with self.subTest(draft=label, fixture=name):
+                by_id = self._score_reusing_workspace(name, draft)
+                for check_id, result in sorted(by_id.items()):
+                    self.assertTrue(result["passed"],
+                                    f"{label} on {name}/{check_id}: "
+                                    f"{result['detail']}")
+
+    def test_every_paste_shape_fails_cites_both_facts(self):
+        # The second half. `cites-both-facts` by name rather than "something
+        # failed", which a register check happens to satisfy for reasons
+        # that have nothing to do with provenance.
+        shapes = 0
+        for name in self.FIXTURES:
+            material = self._seed_text(name)
+            for label, paste in sorted(
+                    self._paste_battery(name, material).items()):
+                shapes += 1
+                with self.subTest(shape=label, fixture=name):
+                    by_id = self._score_reusing_workspace(name, paste)
+                    self.assertFalse(
+                        by_id["cites-both-facts"]["passed"],
+                        f"{label} on {name}: the paste supplied the facts")
+        self.assertEqual(shapes, 29, "the paste battery changed size")
+
+    def test_the_round_3_transcript_cites_nothing(self):
+        # The named blocker, on its own, so a failure names itself. On the
+        # merged tree this transcript ALL-PASSED: her greeting line
+        # satisfied the name check, her "I think" satisfied the hedge, and
+        # two of her clauses spliced together carried both facts.
+        by_id = self._score_reusing_workspace("recruiter-reply",
+                                              self.ROUND_3_TRANSCRIPT)
+        for check_id in ("cites-both-facts", "opens-with-a-hedge"):
+            self.assertFalse(by_id[check_id]["passed"],
+                             f"the round-3 transcript passed {check_id}")
+        # Nothing of HERS is left. What is left is the agent's own two
+        # labels, and one of them names her — which is why
+        # `greets-the-recruiter-by-name` still passes here. That is the
+        # greeting pattern reading an attribution line as a greeting, not a
+        # provenance leak: "On Tue, 1 Sep 2026, Dana Whitcombe wrote:" is a
+        # line the agent wrote, and provenance is the only thing this fix
+        # is about. Recorded rather than fixed, because widening the
+        # greeting pattern is not this round's change.
+        residue = objective.strip_seed_material(
+            self.ROUND_3_TRANSCRIPT,
+            str(self.STYLE_DIR / "recruiter-reply" / "seed"))
+        self.assertEqual(
+            " ".join(residue.split()),
+            "On Tue, 1 Sep 2026, Dana Whitcombe wrote: My own note:")
+        self.assertTrue(by_id["greets-the-recruiter-by-name"]["passed"])
+
+    def test_a_markdown_container_contributes_only_its_text(self):
+        # The container half of design decision 3, as a unit: a link's
+        # destination, an image's, and a footnote definition's marker are
+        # not writing, and their tokens used to break the run that the
+        # text inside them IS.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        sentence = "The engagement is contracted through March 2027."
+        for shape in (f"[{sentence}](https://example.com/x)",
+                      f"![{sentence}](https://example.com/x.png)",
+                      f"[^1]: {sentence}",
+                      f"[^note]: {sentence}"):
+            with self.subTest(shape=shape[:40]):
+                self.assertEqual(
+                    objective.strip_seed_material(shape + "\n", seed), "")
+        # And only the container: a link the AGENT wrote keeps its text and
+        # loses nothing else it had to say.
+        agents = ("See [the posting](https://careers.example.com/x) — "
+                  "REQ-4417 is still a no from me.")
+        self.assertIn("See the posting", objective.strip_seed_material(
+            agents + "\n", seed))
+
+    def test_the_coverage_rule_is_load_bearing(self):
+        # Which paste shapes rule (c) DECIDES: with the coverage threshold
+        # put out of reach, the shapes below regain `cites-both-facts`. It
+        # is the mutation for design decision 3, run in-process rather than
+        # described: the suite must go red on the paste rows and only
+        # there.
+        material = self._seed_text("recruiter-reply")
+        shapes = self._paste_battery("recruiter-reply", material)
+        decided = []
+        original = objective._SEED_COVERAGE
+        try:
+            objective._SEED_COVERAGE = 1.01
+            for label, paste in sorted(shapes.items()):
+                by_id = self._score_reusing_workspace("recruiter-reply",
+                                                      paste)
+                if by_id["cites-both-facts"]["passed"]:
+                    decided.append(label)
+            # No genuine draft changes verdict when the rule is switched
+            # off — the rule only ever takes material away.
+            for label, (name, draft) in sorted(
+                    self._genuine_battery().items()):
+                by_id = self._score_reusing_workspace(name, draft)
+                self.assertTrue(all(r["passed"] for r in by_id.values()),
+                                f"{label} depends on the coverage rule")
+        finally:
+            objective._SEED_COVERAGE = original
+        # The two shapes NO other rule reaches, on every fixture: the whole
+        # seed flattened with `" and "` where every `". "` was, and two of
+        # its clauses joined by a connective of the agent's. Both are one
+        # sentence carrying a word order the seed does not have, which is
+        # exactly what rounds 1-4 called "composed" and scored as the
+        # agent's writing.
+        self.assertEqual(decided, ["flat-and-joined", "two-clauses-joined"],
+                         "the set of shapes only coverage catches moved")
+
+    def _newly_claimable(self, text: str, name: str):
+        """(coverage, sentence) for every sentence rule (c) could claim.
+
+        A sentence rules (a) or (b) already own is the seed's at any
+        threshold, so it says nothing about where the threshold should sit;
+        the margin is measured over the rest. Read off
+        `objective.seed_coverage_report`, which is the scorer's own
+        pipeline, so the number is a number about the code that runs.
+        """
+        seed = str(self.STYLE_DIR / name / "seed")
+        return [(row["coverage"], row["text"])
+                for row in objective.seed_coverage_report(text, seed)
+                if not row["contiguous"]
+                and len(row["key"]) >= objective._SEED_MATERIAL_FLOOR]
+
+    def _highest_coverage(self, text: str, name: str):
+        seed = str(self.STYLE_DIR / name / "seed")
+        rows = [(row["coverage"], row["text"])
+                for row in objective.seed_coverage_report(text, seed)
+                if len(row["key"]) >= objective._SEED_MATERIAL_FLOOR]
+        return max(rows) if rows else None
+
+    MARGIN = 0.1
+
+    def test_the_coverage_margins_hold(self):
+        """The threshold is not sitting on top of either population.
+
+        The rule the brief set and this test enforces: the highest coverage
+        any GENUINE sentence reaches must be at least `MARGIN` below
+        `_SEED_COVERAGE`, and the highest-coverage sentence of every PASTE
+        shape at least `MARGIN` above it. If a future draft closes either
+        margin the answer is to report it, not to tune the constant past
+        it — which is why this is a test and not a comment.
+        """
+        ceiling = (0.0, "", "")
+        for label, (name, draft) in sorted(self._genuine_battery().items()):
+            for coverage, sentence in self._newly_claimable(draft, name):
+                if coverage > ceiling[0]:
+                    ceiling = (coverage, label, sentence)
+        # The three in-voice references at every wrap column, in the loop
+        # the sweep asks for. `test_the_verdict_is_the_same_at_every_wrap_column`
+        # already asserts they ALL-PASS at each of them; this measures how
+        # much room there was.
+        for name in self.FIXTURES:
+            reference = self._reference(name, "in-voice")
+            for width in self.WRAP_COLUMNS:
+                rewrapped = self._rewrap(reference, width)
+                for coverage, sentence in self._newly_claimable(rewrapped,
+                                                                name):
+                    if coverage > ceiling[0]:
+                        ceiling = (coverage, f"in-voice/{name}@{width}",
+                                   sentence)
+        self.assertLessEqual(
+            ceiling[0], objective._SEED_COVERAGE - self.MARGIN,
+            "a genuine sentence is within the margin of the coverage "
+            f"floor: {ceiling}")
+
+        floor = (1.01, "", "")
+        for name in self.FIXTURES:
+            material = self._seed_text(name)
+            for label, paste in sorted(
+                    self._paste_battery(name, material).items()):
+                if label == "sub-floor-bullets":
+                    # Three-word fragments, every one of them shorter than
+                    # the coverage run: this shape tests the FLOOR and the
+                    # run-swallow rule, not coverage, and its measured
+                    # coverage is 0 by construction. It still has to fail
+                    # `cites-both-facts`, which
+                    # `test_every_paste_shape_fails_cites_both_facts`
+                    # asserts on every fixture.
+                    continue
+                top = self._highest_coverage(paste, name)
+                self.assertIsNotNone(top, label)
+                if top[0] < floor[0]:
+                    floor = (top[0], f"{label}/{name}", top[1])
+        self.assertGreaterEqual(
+            floor[0], objective._SEED_COVERAGE + self.MARGIN,
+            f"a paste shape is within the margin of the coverage floor: "
+            f"{floor}")
+        # Pinned, so a change to either battery that moves the measurement
+        # has to say so out loud rather than drifting.
+        self.assertAlmostEqual(ceiling[0], 0.59, places=2, msg=str(ceiling))
+        self.assertAlmostEqual(floor[0], 0.93, places=2, msg=str(floor))
+
+    def test_the_coverage_constants_are_named_with_their_margins(self):
+        # R and C are calibration, so they are module constants with the
+        # measurement beside them rather than numbers inline in the rule.
+        self.assertEqual(objective._SEED_COVERAGE_RUN, 6)
+        self.assertEqual(objective._SEED_COVERAGE, 0.75)
+        source = (REPO_ROOT / "harness" / "scorers"
+                  / "objective.py").read_text(encoding="utf-8")
+        for phrase in ("0.59", "0.88", "margins stay at 0.1 or better"):
+            self.assertIn(phrase, source,
+                          "the measured margins are not recorded beside the "
+                          "constants")
 
 
 class SetupHookTests(unittest.TestCase):

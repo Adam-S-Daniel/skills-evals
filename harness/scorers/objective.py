@@ -1092,11 +1092,76 @@ _TABLE_ROW_RE = wrapping.TABLE_ROW_RE
 # character cannot read as nothing to the judge and as something here.
 _fold_invisibles = invisibles.fold
 
-# A sentence ends at `.`, `!`, `?` or `;` FOLLOWED BY WHITESPACE, or at the
-# end of a line. The trailing-whitespace requirement is what keeps
-# `dana.whitcombe@example.com` in one piece; the line boundary is what ends
-# a list item and a table row, neither of which is punctuated.
-_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?;])[^\S\n]+")
+# CONTAINERS. A Markdown link `[text](dest)` and image `![alt](dest)`
+# contribute only their text or alt: a destination is an address, not
+# writing, and its tokens used to break the run a link's own text is. So did
+# a footnote definition's marker. `[^1]: <one of her sentences>` and
+# `[<one of her sentences>](https://example.com/x)` were both "composed"
+# sentences the agent had written — on the strength of a URL.
+#
+# Deliberately narrow: only the two inline shapes and the definition marker,
+# neither spanning a line. Everything else a bracket can mean — a
+# reference-style link's label, an array subscript in prose, a bracketed
+# aside — is words the agent chose and stays.
+_LINK_RE = re.compile(r"!?\[([^\]\n]*)\]\([^)\n]*\)")
+_FOOTNOTE_MARKER_RE = re.compile(r"^[^\S\n]*\[\^[^\]\n]+\]:[^\S\n]*")
+
+# COVERAGE (design decision 3). The shortest run of consecutive words that
+# counts as the seed's rather than as two writers reaching for the same
+# phrase, and the fraction of a sentence that has to be inside such a run
+# before the sentence is the seed's.
+#
+# SIX words, measured rather than assumed. Four was the starting value and
+# it is too short: a genuine draft written FROM the seed reuses four- and
+# five-word runs of it constantly and legitimately — "Staff Platform
+# Engineer role at", "the shared deployment repository", "a clean Section
+# 508 audit" — and the committed in-voice references, which are the
+# fixtures' own proof that the checks are satisfiable by real writing, lost
+# `cites-both-facts` at 126 of the 189 wrap-column cells at four and 63 at
+# five. At six the whole battery of genuine drafts passes at every column
+# from 38 to 100, and the paste shapes still measure at or above 0.88. Six
+# is also the shortest value at which the seed's own longest FACT phrases —
+# an employer, a job title, a repo path, a date — cannot be a run on their
+# own, which is what the run length is for.
+_SEED_COVERAGE_RUN = 6
+
+# 0.75, with the margins measured by the batteries in
+# test/run_tests.py::TestIssue81 (`test_the_coverage_margins_hold`, and the
+# GENUINE and PASTE tables in the PR body).
+#
+# The ceiling is measured over the sentences this rule could NEWLY claim —
+# the ones (a) and (b) do not already call the seed's. It has to be: a
+# genuine draft is ALLOWED to reproduce one of the seed's sentences end to
+# end (core move 8's plain certifications listing has one natural phrasing
+# and the background note carries it), rule (a) has always called that the
+# seed's, and it costs no check. Counting those in would put the raw
+# genuine maximum at 1.00 by construction and make any margin unreachable.
+#
+# Measured this round, R = 6: the highest-coverage sentence rule (c) could
+# newly claim in any genuine draft — 16 drafts plus the three in-voice
+# references at every wrap column from 38 to 100, 189 cells — is 0.59, and
+# the lowest highest-coverage sentence of any paste shape that has to fail
+# is 0.88. So the floor sits 0.16 above the genuine ceiling and 0.13 below
+# the paste floor. The rule is that both margins stay at 0.1 or better; if
+# a future draft closes one, the answer is to report it, not to tune this
+# number past the margin.
+_SEED_COVERAGE = 0.75
+
+# A sentence ends at `.`, `!`, `?`, `;` or `:` FOLLOWED BY WHITESPACE, or at
+# the end of a line. The trailing-whitespace requirement is what keeps
+# `dana.whitcombe@example.com`, `09:14:00` and `https://example.com` in one
+# piece; the line boundary is what ends a list item and a table row, neither
+# of which is punctuated.
+#
+# The colon is here because a LABEL is a sentence boundary and pretending
+# otherwise hands a paste a way to dilute itself: `She wrote: ` and `My own
+# note: ` in front of one of her sentences made a longer "sentence" whose
+# coverage the two extra words dragged under the floor, and the sentence
+# behind the label went back to being the agent's. The fixtures already
+# read a colon this way — recruiter-reply's hedge check ends a sentence at
+# `,;:` as well as at `.!?—`, because a greeting and its hedge are
+# routinely one line.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?;:])[^\S\n]+")
 
 # Everything that is not a letter, a digit or a space, dropped before two
 # pieces of text are compared. Provenance is about WORDS: a paste that
@@ -1147,10 +1212,12 @@ def _strip_wrapper(line: str, tag_gap: str = " ") -> tuple[str, bool]:
     """(`line` with its wrapper removed, was it wrapper and nothing else?).
 
     Wrapper is leading whitespace, `>` runs with any number of spaces after
-    them, list markers, and the bare tags in `_WRAPPER_TAGS`. Everything
-    else is the agent's text and stays exactly as it arrived — an HTML
-    comment, a tag outside that set, a tag carrying attributes, and the
-    attribute values with it.
+    them, list markers, a footnote definition's marker, a Markdown link's or
+    image's CONTAINER (the brackets, the parentheses and the destination —
+    the text or alt is writing and stays), and the bare tags in
+    `_WRAPPER_TAGS`. Everything else is the agent's text and stays exactly
+    as it arrived — an HTML comment, a tag outside that set, a tag carrying
+    attributes, and the attribute values with it.
 
     `tag_gap` is what a bare wrapper tag leaves behind, and it is a
     parameter because the two answers are both right and neither is right
@@ -1175,7 +1242,8 @@ def _strip_wrapper(line: str, tag_gap: str = " ") -> tuple[str, bool]:
         if shorter == stripped:
             break
         stripped = shorter
-    stripped = stripped.strip()
+    stripped = _FOOTNOTE_MARKER_RE.sub("", stripped, count=1)
+    stripped = _LINK_RE.sub(r"\1", stripped).strip()
     bare = _BARE_WRAPPER_TAG_RE.sub(tag_gap, stripped).strip()
     return bare, bool(stripped) and not bare
 
@@ -1220,8 +1288,9 @@ def _dequote(line: str) -> str:
         line = shorter
 
 
-def _seed_index(seed: str | None) -> tuple[set[str], list[str]]:
-    """(the seed's sentences, one word-key per seed FILE) — all as keys.
+def _seed_index(seed: str | None) -> tuple[set[str], list[str],
+                                           set[tuple[str, ...]]]:
+    """(the seed's sentences, one word-key per seed FILE, its word n-grams).
 
     Every text file under `seed` is read; a file carrying a NUL in its first
     `_SEED_READ_CAP` bytes is taken for a binary and skipped, which is how
@@ -1229,12 +1298,22 @@ def _seed_index(seed: str | None) -> tuple[set[str], list[str]]:
     file's wrapper-stripped lines are joined by a space before the key is
     taken, so a sentence the seed hard-wrapped is one run in the index; the
     files are kept APART, so a run can never span a boundary that was never
-    adjacent to begin with.
+    adjacent to begin with. That applies to the n-grams too — they are taken
+    per file, so the last words of one file and the first of the next are
+    never a run, however the walk happened to order them.
+
+    The third member is every window of `_SEED_COVERAGE_RUN` consecutive
+    words in each file, which is what the coverage test in
+    `_is_seed_material` reads: a word of a sentence is the seed's when some
+    window of that length containing it occurs in this set, and a window of
+    exactly that length is enough because any LONGER contiguous run
+    containing the word contains such a window.
     """
     sentences: set[str] = set()
     wholes: list[str] = []
+    grams: set[tuple[str, ...]] = set()
     if not seed or not os.path.isdir(seed):
-        return sentences, wholes
+        return sentences, wholes, grams
     for root, dirs, files in os.walk(seed):
         dirs.sort()
         for name in sorted(files):
@@ -1263,42 +1342,112 @@ def _seed_index(seed: str | None) -> tuple[set[str], list[str]]:
             if not here:
                 continue
             flat = " ".join(here)
-            wholes.append(_key(flat))
+            whole = _key(flat)
+            wholes.append(whole)
+            words = whole.split()
+            grams.update(tuple(words[i:i + _SEED_COVERAGE_RUN])
+                         for i in range(len(words) - _SEED_COVERAGE_RUN + 1))
             sentences.update(key for key in map(_key, _sentences(flat)) if key)
-    return sentences, wholes
+    return sentences, wholes, grams
 
 
-def _is_seed_material(key: str, index: tuple[set[str], list[str]],
+def _seed_coverage(key: str, grams: set[tuple[str, ...]]) -> float:
+    """What fraction of this sentence's words sit inside a seed run.
+
+    A word is the seed's when some window of `_SEED_COVERAGE_RUN`
+    consecutive words of the sentence CONTAINING that word occurs
+    contiguously in one seed file. The answer is the marked fraction; 0.0
+    when the sentence is shorter than the window, which is what keeps a
+    two- or three-word line the agent wrote from being anybody's but its
+    own.
+
+    Coverage is deliberately blind to WHERE the runs are: a sentence
+    stitched out of two of her clauses is as much hers as one of her
+    sentences copied whole, and the word order the stitch invents is the
+    agent's contribution of a comma.
+    """
+    words = key.split()
+    if len(words) < _SEED_COVERAGE_RUN:
+        return 0.0
+    marked = [False] * len(words)
+    for start in range(len(words) - _SEED_COVERAGE_RUN + 1):
+        if tuple(words[start:start + _SEED_COVERAGE_RUN]) in grams:
+            for i in range(start, start + _SEED_COVERAGE_RUN):
+                marked[i] = True
+    return sum(marked) / len(words)
+
+
+def _is_seed_material(key: str, index: tuple[set[str], list[str],
+                                             set[tuple[str, ...]]],
                       run_floor: int, sentence_floor: int) -> bool:
     """Is this sentence the SEED's rather than the agent's?
 
-    Two ways to be, with different floors because they are different
+    THREE ways to be, with different floors because they are different
     strengths of evidence:
 
-    - it is a contiguous run of some seed file's own text, and long enough
-      (`run_floor`) that the agent could not plausibly have arrived at those
-      words in that order by writing about the same subject;
-    - it IS one of the seed's sentences, whole. An exact sentence match is
-      much stronger evidence than a substring, so it earns a lower floor
-      (`sentence_floor`) — a short line of the seed's, reproduced end to
-      end, is a paste where the same words as a fragment of a longer seed
-      sentence would not be.
+    (a) it IS one of the seed's sentences, whole. An exact sentence match is
+        much stronger evidence than a substring, so it earns the lowest
+        floor (`sentence_floor`) — a short line of the seed's, reproduced
+        end to end, is a paste where the same words as a fragment of a
+        longer seed sentence would not be;
+    (b) it is one contiguous run of some seed file's own text, and long
+        enough (`run_floor`) that the agent could not plausibly have
+        arrived at those words in that order by writing about the same
+        subject;
+    (c) COVERAGE: at least `_SEED_COVERAGE` of its words lie inside a run
+        of `_SEED_COVERAGE_RUN` or more consecutive words of the seed's,
+        and at least one such run exists.
 
-    Neither can fire on a sentence carrying a word the seed does not have in
-    that position: both are exact comparisons over the word key.
+    (c) is design decision 3, and it exists because (a) and (b) between them
+    require CONTIGUITY, which is a property a paste can break without the
+    agent writing a word. Everything that survived four rounds walked
+    through that gap: two of her non-adjacent clauses spliced with a comma
+    or an "and"; a deleted space between two of her sentences; a two-word
+    prefix ("She wrote:"); a footnote, link or image container whose extra
+    tokens broke the run. None of those is composition. Coverage asks how
+    much of the sentence is HERS rather than whether her words arrived in
+    one piece, so a stitch is caught by the same rule as a copy.
+
+    The floors still apply to (c): a sentence under `run_floor` is never the
+    seed's on coverage alone, which is what keeps the agent's own "Thanks,"
+    and its own sign-off — and a genuine short sentence that happens to
+    reuse four of her words — its own.
+
+    None of the three can fire on a sentence carrying a word the seed does
+    not have where the sentence has it: all three are exact comparisons over
+    the word key.
     """
-    sentences, wholes = index
+    if _is_contiguous_seed_material(key, index, run_floor, sentence_floor):
+        return True
+    if not key or len(key) < run_floor:
+        return False
+    return _seed_coverage(key, index[2]) >= _SEED_COVERAGE
+
+
+def _is_contiguous_seed_material(key: str,
+                                 index: tuple[set[str], list[str],
+                                              set[tuple[str, ...]]],
+                                 run_floor: int, sentence_floor: int) -> bool:
+    """Rules (a) and (b) of `_is_seed_material`, without the coverage rule.
+
+    Asked for on its own so `seed_coverage_report` can say which sentences
+    rule (c) could NEWLY claim — which is the population the coverage margin
+    is measured over, since a sentence (a) or (b) already owns is the seed's
+    at any threshold.
+    """
+    sentences, wholes, _ = index
     if not key:
         return False
     if len(key) >= sentence_floor and key in sentences:
         return True
+    if len(key) < run_floor:
+        return False
     # Padded on both sides so a run has to line up on WORD boundaries: an
     # unpadded substring test matches "ana whitcombe" inside "dana
     # whitcombe", which is a fragment of a word rather than a run of the
     # seed's text.
     padded = f" {key} "
-    return (len(key) >= run_floor
-            and any(padded in f" {whole} " for whole in wholes))
+    return any(padded in f" {whole} " for whole in wholes)
 
 
 def _wrapped_blocks(content: list[str]) -> list[tuple[int, int]]:
@@ -1377,44 +1526,109 @@ def strip_seed_material(text: str, seed: str | None,
        followed by whitespace, and at the line break that ends a list item
        or a table row.
     5. **A sentence is the SEED's** when its word key (casefolded,
-       punctuation dropped, whitespace collapsed) is a long enough
-       contiguous run of some seed file's own text, or IS one of the seed's
-       sentences whole — see `_is_seed_material` for why those two carry
-       different floors. Inside a MARKED quotation (a fence, an HTML
-       wrapper, a `>` run) there is no floor at all: the markup already says
-       the block is a quotation. A paragraph every sentence of which is the
-       seed's, and which carries at least one piece of seed material above
-       the floor, goes WHOLE — that is an unmarked paste, and its short
-       lines ("Hi Adam,", a bare name) came with it.
+       punctuation dropped, whitespace collapsed) IS one of the seed's
+       sentences whole, or is a long enough contiguous run of some seed
+       file's own text, or — design decision 3 — when enough of its words
+       lie inside runs of the seed's for the sentence to be the seed's
+       however the words were re-ordered. See `_is_seed_material` for the
+       three rules and why they carry different floors. Inside a MARKED
+       quotation (a fence, an HTML wrapper, a `>` run) there is no floor at
+       all: the markup already says the block is a quotation. A paragraph
+       every sentence of which is the seed's, and which carries at least
+       one piece of seed material above the floor, goes WHOLE — that is an
+       unmarked paste, and its short lines ("Hi Adam,", a bare name) came
+       with it.
     6. **The residue is what is left**, the kept sentences re-joined with
        their line and paragraph breaks, and BOTH `must_match` and
        `must_not_match` are scored over it.
 
-    Two consequences are the point rather than side effects. A sentence the
-    agent COMPOSED from the seed's phrases — two seed runs joined by its own
-    connective, a seed clause inside its own sentence — carries a word
-    ordering the seed does not have and is the agent's writing, so it stays
-    and is scored. And a deliverable the agent chose to present as a
-    blockquote or inside a fence is not seed material either: it stays,
-    unwrapped, and its bans fire. Every calibration example in the skill
-    under test is a blockquote, so formatting cannot be allowed to decide
-    authorship.
+    A deliverable the agent chose to present as a blockquote or inside a
+    fence is not seed material: it stays, unwrapped, and its bans fire.
+    Every calibration example in the skill under test is a blockquote, so
+    formatting cannot be allowed to decide authorship.
+
+    What is NO LONGER the agent's, and was for four rounds: a sentence
+    "composed" out of the seed's phrases. Two of her non-adjacent clauses
+    spliced with a comma or an "and", a deleted space between two of her
+    sentences, a two-word prefix ("She wrote:"), a link or footnote
+    container whose extra tokens broke the run — each of those carries a
+    word order the seed does not have, and rounds 1-4 therefore scored all
+    of them as the agent's writing. None of them is the agent writing
+    anything, and every escape that survived four rounds was one of them.
+    Rule (c) decides those by how MUCH of the sentence is the seed's rather
+    than by whether the seed's words arrived in one piece.
 
     There is no whole-reply fallback: a reply that is nothing but the quoted
     seed has an empty residue, so its `must_match` checks fail and the
     fixture fails, which is the right answer for a reply that wrote nothing.
 
-    The limit, stated because it is real: a sentence the agent built around
-    a fact is its own writing and is scored, even though the fact in it came
-    from the seed — and by the same rule, a sentence that reproduces the
-    seed's own words end to end is the seed's even when the skill told the
-    agent to write exactly that (a plain certifications listing, core move
-    8). Dropping it costs no check: the thing a check looks for is never
-    only in a line the agent could have copied.
+    The limits, stated because they are real. A sentence the agent built
+    around a fact is its own writing and is scored, even though the fact in
+    it came from the seed — a genuine draft measures at most 0.59 coverage
+    on this repo's batteries, well under the 0.75 floor. By the same rule, a
+    sentence that reproduces the seed's own words end to end is the seed's
+    even when the skill told the agent to write exactly that (a plain
+    certifications listing, core move 8); dropping it costs no check,
+    because the thing a check looks for is never only in a line the agent
+    could have copied. Below the coverage floor the sentence is the agent's
+    BY RULE, so a paste diluted with enough of the agent's own words in the
+    same sentence survives by design. And coverage is a test over WORDS: a
+    paste re-spelled in Cyrillic homoglyphs everywhere except the fact
+    tokens is not the seed's words in any byte sense and passes all three
+    rules — NFKC does not map confusables onto each other. The pairwise
+    judge is the backstop for both, and it is not wired into `run_eval`
+    until #97.
+    """
+    paragraphs = _provenance_paragraphs(text, seed, tag_gap)
+    out: list[str] = []
+    for paragraph in paragraphs:
+        rendered = [" ".join(entry["text"] for entry in line
+                             if not entry.get("drop"))
+                    for line in paragraph]
+        rendered = [line for line in rendered if line]
+        if rendered:
+            out.append("\n".join(rendered))
+    return "\n\n".join(out)
+
+
+def seed_coverage_report(text: str, seed: str | None,
+                         tag_gap: str = " ") -> list[dict]:
+    """Every sentence `strip_seed_material` weighs, and what it decided.
+
+    One dict per sentence, in reading order: `text`, its word `key`, the
+    `coverage` rule (c) measured on it, whether rules (a)/(b) already called
+    it the seed's (`contiguous`), whether the sentence sat inside a marked
+    quotation (`quoted`), and whether it was `dropped`.
+
+    It exists so a test can measure the coverage MARGIN — how far the
+    genuine drafts sit below `_SEED_COVERAGE` and the paste shapes above it
+    — without reimplementing the pipeline that produces the sentences. A
+    second implementation would drift from this one, and the number it
+    reported would then be a number about the second implementation.
+    """
+    rows = []
+    for paragraph in _provenance_paragraphs(text, seed, tag_gap):
+        for line in paragraph:
+            for entry in line:
+                rows.append({"text": entry["text"], "key": entry["key"],
+                             "coverage": entry["coverage"],
+                             "contiguous": entry["contiguous"],
+                             "quoted": entry["quoted"],
+                             "dropped": bool(entry.get("drop"))})
+    return rows
+
+
+def _provenance_paragraphs(text: str, seed: str | None,
+                           tag_gap: str = " ") -> list[list[list[dict]]]:
+    """[[[sentence entry, ...] per logical line] per paragraph].
+
+    The whole pipeline `strip_seed_material` documents, stopping one step
+    short of rendering: every sentence is here with the provenance verdict
+    already taken and `drop` set on the ones the seed owns.
     """
     raw = _fold_invisibles(text or "").splitlines()
     if not raw:
-        return ""
+        return []
     index = _seed_index(seed)
 
     # Wrapper off, once, per line. `dequoted` keeps the tags and the fence
@@ -1463,7 +1677,7 @@ def strip_seed_material(text: str, seed: str | None,
 
     width = wrapping.wrap_width([[payload[i] for i in g] for g in groups])
 
-    out: list[str] = []
+    out: list[list[list[dict]]] = []
     for group in groups:
         paragraph: list[list[dict]] = []
         for part in wrapping.unwrap_indices([payload[i] for i in group], width):
@@ -1482,13 +1696,18 @@ def strip_seed_material(text: str, seed: str | None,
             line = []
             for sentence in _sentences(logical):
                 key = _key(sentence)
+                floor = 0 if quoted else _SEED_MATERIAL_FLOOR
+                sentence_floor = 0 if quoted else _SEED_SENTENCE_FLOOR
                 line.append({
                     "text": sentence,
+                    "key": key,
+                    "quoted": quoted,
+                    "coverage": _seed_coverage(key, index[2]),
+                    "contiguous": _is_contiguous_seed_material(
+                        key, index, floor, sentence_floor),
                     "seed": _is_seed_material(key, index, 0, 0),
-                    "above": _is_seed_material(
-                        key, index,
-                        0 if quoted else _SEED_MATERIAL_FLOOR,
-                        0 if quoted else _SEED_SENTENCE_FLOOR)})
+                    "above": _is_seed_material(key, index, floor,
+                                               sentence_floor)})
             paragraph.append(line)
 
         # One rule, over the paragraph's sentences in order: a maximal RUN
@@ -1514,16 +1733,8 @@ def strip_seed_material(text: str, seed: str | None,
                 for entry in flat[i:j]:
                     entry["drop"] = True
             i = j
-
-        rendered = [" ".join(entry["text"] for entry in line
-                             if not entry.get("drop"))
-                    for line in paragraph]
-        rendered = [line for line in rendered if line]
-        if rendered:
-            out.append("\n".join(rendered))
-    return "\n\n".join(out)
-
-
+        out.append(paragraph)
+    return out
 def _text_matches_any(texts: list[str], must_match: list[str],
                       must_not_match: list[str],
                       subject: str) -> tuple[bool, str]:
