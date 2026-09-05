@@ -670,6 +670,76 @@ class TextMatchCheckTests(unittest.TestCase):
         self.assertTrue(by_id["t"]["passed"], by_id["t"]["detail"])
 
 
+class FileCountCheckTests(unittest.TestCase):
+    """file_count: assert the number of files a glob matches falls in
+    [min, max] — the "exactly N files exist" shape file_matches/
+    files_unchanged can't express, e.g. "exactly one new ADR was added".
+    """
+
+    def _ws(self, names: list[str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel in names:
+            path = ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("x\n", encoding="utf-8")
+        return ws
+
+    def test_within_range_passes(self):
+        ws = self._ws(["a.md", "b.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=1, max_count=3)
+        self.assertTrue(passed, detail)
+        self.assertIn("2 file(s)", detail)
+
+    def test_below_min_fails(self):
+        ws = self._ws(["a.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=2, max_count=5)
+        self.assertFalse(passed)
+        self.assertIn("found 1, expected at least 2", detail)
+
+    def test_above_max_fails(self):
+        ws = self._ws(["a.md", "b.md", "c.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=0, max_count=2)
+        self.assertFalse(passed)
+        self.assertIn("found 3, expected at most 2", detail)
+
+    def test_max_none_means_unbounded(self):
+        ws = self._ws([f"{i}.md" for i in range(10)])
+        self.assertTrue(objective.file_count(str(ws), ["*.md"], min_count=1)[0])
+
+    def test_overlapping_patterns_are_not_double_counted(self):
+        # Both patterns match a.md; it must count once, not twice.
+        ws = self._ws(["a.md"])
+        passed, detail = objective.file_count(
+            str(ws), ["*.md", "a.*"], min_count=1, max_count=1)
+        self.assertTrue(passed, detail)
+
+    def test_zero_matches_within_a_zero_min_passes(self):
+        ws = self._ws(["unrelated.txt"])
+        self.assertTrue(objective.file_count(str(ws), ["*.md"], min_count=0, max_count=0)[0])
+
+    def test_run_checks_reads_min_max_from_fixture(self):
+        ws = self._ws(["docs/decisions/0001-x.md", "docs/decisions/0002-y.md"])
+        fixture = {"objective_checks": [
+            {"id": "count", "type": "file_count",
+             "paths": ["docs/decisions/*.md"], "min": 2, "max": 2},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(ws))}
+        self.assertTrue(by_id["count"]["passed"], by_id["count"]["detail"])
+
+    def test_run_checks_defaults_min_to_zero_when_omitted(self):
+        ws = self._ws([])
+        fixture = {"objective_checks": [
+            {"id": "count", "type": "file_count", "paths": ["*.md"], "max": 0},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(ws))}
+        self.assertTrue(by_id["count"]["passed"], by_id["count"]["detail"])
+
+    def test_file_count_is_registered_in_checks_map(self):
+        self.assertIn("file_count", objective.CHECKS)
+        self.assertIs(objective.CHECKS["file_count"], objective.file_count)
+
+
 class FakePowershellTests(unittest.TestCase):
     """The windows-elevation-from-wsl seed's stand-in powershell.exe.
 

@@ -452,6 +452,31 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
 
 
+def file_count(workspace: str, patterns: list[str], min_count: int = 0,
+               max_count: int | None = None) -> tuple[bool, str]:
+    """Assert the number of files matched by `patterns` falls in [min_count, max_count].
+
+    `max_count=None` means no upper bound. A file matched by more than one
+    pattern is counted once (patterns are pooled through a set of paths, not
+    summed), so overlapping globs can't inflate the count. This is the check
+    for "exactly N files exist" shapes a regex over content can't express —
+    e.g. asserting exactly one new file was added to a directory that
+    already had others, which `file_matches`/`files_unchanged` have no way
+    to state.
+    """
+    matched = set()
+    for pattern in patterns:
+        matched.update(glob.glob(os.path.join(workspace, pattern)))
+    count = len(matched)
+    problems = []
+    if count < min_count:
+        problems.append(f"found {count}, expected at least {min_count}")
+    if max_count is not None and count > max_count:
+        problems.append(f"found {count}, expected at most {max_count}")
+    return (not problems, f"{count} file(s) matched {patterns}" if not problems
+            else "; ".join(problems))
+
+
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "yaml_parses": yaml_parses,
@@ -462,6 +487,7 @@ CHECKS = {
     "files_unchanged": files_unchanged,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
+    "file_count": file_count,
 }
 
 
@@ -495,6 +521,9 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "file_count":
+            kwargs["min_count"] = check.get("min", 0)
+            kwargs["max_count"] = check.get("max")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
