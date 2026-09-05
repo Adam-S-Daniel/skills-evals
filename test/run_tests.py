@@ -1731,6 +1731,11 @@ class Issue84Fixture:
              418: "5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d",
              421: "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1"}
 
+    def _header(self) -> str:
+        """The fixture's own header comment — where its recorded truth lives."""
+        text = (self.STUCK_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        return text.split("\nskill:", 1)[0]
+
     def _payload(self, *parts: str):
         """One recorded response, parsed, named by its path parts."""
         path = self.STUCK_DIR / "seed" / self.PAYLOAD_DIR
@@ -2806,11 +2811,6 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.assertAlmostEqual(judge._weighted_overall(dimensions, weights),
                                expected, places=6)
 
-
-    def _header(self) -> str:
-        """The fixture's own header comment — where its recorded truth lives."""
-        text = (self.STUCK_DIR / "fixture.yaml").read_text(encoding="utf-8")
-        return text.split("\nskill:", 1)[0]
 
     def test_the_recorded_reason_for_pr_c_is_relative_to_the_run(self):
         """Wall-clock rots: the payloads are frozen, "now" is not.
@@ -4936,6 +4936,68 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
                 referenced = set(re.findall(r"#(\d+)", text))
                 self.assertTrue(referenced <= ours,
                                 f"{sorted(referenced - ours)} names nothing here")
+
+    # ------------------------------------ what the rubric and the checks ask
+
+    def test_the_missing_context_is_missing_on_every_pr_not_just_pr_b(self):
+        """So "drop the context" is a true thing to say about #412 too (S2).
+
+        The rubric capped `decisions` at 5 whenever #412 and #418 got the
+        same remedy. But the ruleset requires a context no workflow
+        publishes, and no PR's checks carry it — #412's included — so
+        "remove the unpublishable required context, and rebase #412 onto
+        current main while you are at it" is a correct answer that the cap
+        punished for being right. What is wrong is offering the context fix
+        as #412's WHOLE explanation, and that is what the cap now names.
+        """
+        for number in self.HEADS:
+            with self.subTest(pr=number):
+                published = {c["name"] for c in
+                             self._payload(f"pr-checks-{number}.json")}
+                self.assertNotIn(self.MISSING_CONTEXT, published)
+        rubric = run_eval.load_fixture(self.STUCK_DIR)["judge_rubric"].lower()
+        self.assertNotIn("if #412 and #418 are given the same remedy", rubric)
+        self.assertIn("without also naming", rubric)
+        self.assertIn("0f3c8ad", rubric)
+
+    # The spellings a reply may use for a PR number. `#412` was mandatory
+    # and unstated: a reply that said "PR 412" throughout — which is how
+    # people write it — failed a check that had nothing to do with spelling.
+    PR_SPELLINGS = ("#412", "PR 412", "PR#412", "pull 412", "pull request 412",
+                    "https://github.com/example-org/example-site/pull/412")
+
+    def test_a_pr_may_be_named_in_any_of_the_recorded_spellings(self):
+        for spelling in self.PR_SPELLINGS:
+            with self.subTest(said=spelling):
+                reply = (f"{spelling} ran its checks against base 0f3c8ad, "
+                         "which current main 9e41b7c has superseded — rebase "
+                         "it onto main.\n")
+                by_id = self._score(transcript=reply)
+                self.assertTrue(by_id["pr-a-stale-base-named"]["passed"],
+                                by_id["pr-a-stale-base-named"]["detail"])
+
+    def test_the_required_context_check_accepts_the_same_spellings(self):
+        for spelling in ("#418", "PR 418", "pull request 418"):
+            with self.subTest(said=spelling):
+                reply = (f"{spelling} is BLOCKED because the ruleset requires "
+                         "the status context `content-schema / parity`, which "
+                         "nothing here publishes.\n")
+                by_id = self._score(transcript=reply)
+                self.assertTrue(
+                    by_id["pr-b-missing-required-context-named"]["passed"],
+                    by_id["pr-b-missing-required-context-named"]["detail"])
+
+    def test_a_neighbouring_number_is_not_the_pr(self):
+        """The looser spelling must not get looser about WHICH pull request."""
+        reply = ("PR 4120 ran its checks against base 0f3c8ad; rebase it.\n")
+        by_id = self._score(transcript=reply)
+        self.assertFalse(by_id["pr-a-stale-base-named"]["passed"],
+                         by_id["pr-a-stale-base-named"]["detail"])
+
+    def test_the_fixture_header_states_the_spellings_it_accepts(self):
+        header = self._header().lower()
+        self.assertIn("pr 412", header)
+        self.assertIn("spelling", header)
 
 if __name__ == "__main__":
     unittest.main()

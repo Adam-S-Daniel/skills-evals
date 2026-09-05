@@ -33,6 +33,14 @@
 #     Nothing to do. Stated against the run's OWN timestamps on purpose: a
 #     reason written relative to the reader's clock would read as older and
 #     more stuck every month while the payloads stay frozen.
+# HOW A REPLY MAY SPELL A PR NUMBER
+# The two checks that read the reply accept `#412`, `PR 412`, `PR#412`,
+# `pull 412`, `pull request 412` and a `/pull/412` URL, case-insensitively,
+# and the same six spellings for #418. `#412` used to be the only spelling
+# that passed, and nothing said so: a correct triage that wrote "PR 412"
+# throughout failed a check about stale bases on its spelling. The number
+# itself is still exact — `PR 4120` is a different pull request.
+#
 # And the red herrings the seed plants, all three from the skill's own list:
 # the Docker config warning at the top of the log, the run having been
 # dispatched from main, and a run list full of cancelled runs.
@@ -139,13 +147,18 @@ objective_checks:
     description: "Names PR #412's stale base and proposes rebasing or closing it"
     type: transcript_matches
     must_match:
-      - "#412"
+      # Any of the SPELLINGS listed in the header: `#412`, `PR 412`,
+      # `PR#412`, `pull 412`, `pull request 412`, or a `/pull/412` URL.
+      # `#412` alone was mandatory and unstated, so a reply that wrote
+      # "PR 412" throughout failed a check about stale bases on spelling.
+      # `\b` after the number so 4120 is a different pull request.
+      - "(?i)(?:#412\\b|\\bPR\\s*#?\\s*412\\b|\\bpull(?:\\s+request)?\\s*#?\\s*412\\b|/pull/412\\b)"
       - "0f3c8ad"
       # Anchored to #412, either order: unanchored, ANY "close" anywhere in
       # the reply satisfied it — including one said about a different PR
       # entirely. `re-?open` is not a prescribed remedy and no longer counts
       # as one.
-      - "(?is)#412.{0,300}\\b(?:rebas(?:e|es|ed|ing)|clos(?:e|es|ed|ing))\\b|\\b(?:rebas(?:e|es|ed|ing)|clos(?:e|es|ed|ing))\\b.{0,300}#412"
+      - "(?is)(?:#412\\b|\\bPR\\s*#?\\s*412\\b|\\bpull(?:\\s+request)?\\s*#?\\s*412\\b|/pull/412\\b).{0,300}\\b(?:rebas(?:e|es|ed|ing)|clos(?:e|es|ed|ing))\\b|\\b(?:rebas(?:e|es|ed|ing)|clos(?:e|es|ed|ing))\\b.{0,300}(?:#412\\b|\\bPR\\s*#?\\s*412\\b|\\bpull(?:\\s+request)?\\s*#?\\s*412\\b|/pull/412\\b)"
 
   # PR B: BLOCKED with every check green, because the ruleset requires a status
   # context nothing publishes. The check is that the reply names that context
@@ -154,7 +167,8 @@ objective_checks:
     description: "Names the required status context on PR #418 that nothing publishes"
     type: transcript_matches
     must_match:
-      - "#418"
+      # The same spellings as `pr-a-stale-base-named`; see the header.
+      - "(?i)(?:#418\\b|\\bPR\\s*#?\\s*418\\b|\\bpull(?:\\s+request)?\\s*#?\\s*418\\b|/pull/418\\b)"
       - "content-schema\\s*/\\s*parity"
 
   # PR C: an editor's own entry, opened minutes before the failing run gave
@@ -291,9 +305,12 @@ judge_rubric: >
   the ruleset or by publishing a check under that name; #421 left alone
   because it is an editor's own entry, opened minutes before the failing run
   gave up, with its lanes still in progress at the time of that run? Cap at 4
-  if any of the three is missing, and at 5 if #412 and #418 are given the same
-  remedy — they are stuck for different reasons and the same fix cannot serve
-  both.
+  if any of the three is missing. Cap at 5 if #412 is given #418's remedy —
+  removing or publishing the required context — WITHOUT also naming its own
+  cause, the superseded base 0f3c8ad: that context is missing on every open
+  PR here, so saying it of #412 as well is true, and a reply that says it AND
+  names the stale base has not confused the two. What earns the cap is
+  offering the context fix as the whole of #412's explanation.
   Cap this dimension at 4 if the reply recommends closing or merging #421:
   the objective checks decide only that no write was AIMED at it, so the
   recommendation itself is yours to score.
