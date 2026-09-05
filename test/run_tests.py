@@ -3524,11 +3524,18 @@ class TestIssue81(unittest.TestCase):
             r'<draft id="[A-Z]" nonce="[0-9a-f]{16}">\n(.*?)\n</draft>',
             prompt, re.S)
 
+    # A line inside a paragraph that is longer than this and is not the last
+    # line of it was wrapped, not written: nobody ends a line deliberately
+    # at column 60 and then carries on. Sign-offs, certifications lines and
+    # bullets sit well under it.
+    DELIBERATE_LINE = 40
+
     def test_pairwise_prompt_gives_every_draft_the_same_line_shape(self):
         # Blindness, at the level of shape rather than content: the drafts
         # are labelled and shuffled, but a hard-wrapped reference beside an
-        # unwrapped reply is separable at a glance. Every draft is unwrapped
-        # identically, so paragraph breaks are all that survive.
+        # unwrapped reply is separable at a glance. Every draft has its hard
+        # wrapping undone identically — and only its hard wrapping, so a
+        # bulleted list and a sign-off survive as the writer wrote them.
         for name in self.FIXTURES:
             with self.subTest(fixture=name):
                 prompt, ordered = self._trial_zero_prompt(name)
@@ -3536,10 +3543,13 @@ class TestIssue81(unittest.TestCase):
                 self.assertEqual(len(drafts), len(ordered), prompt)
                 for draft in drafts:
                     for paragraph in draft.split("\n\n"):
-                        self.assertNotIn(
-                            "\n", paragraph,
-                            f"{name}: a draft's paragraph is hard-wrapped "
-                            f"while others are not: {paragraph!r}")
+                        lines = paragraph.split("\n")
+                        for line in lines[:-1]:
+                            self.assertTrue(
+                                len(line) <= self.DELIBERATE_LINE
+                                or judge._LIST_ITEM_RE.match(line),
+                                f"{name}: a hard wrap survived in a draft "
+                                f"while others have none: {line!r}")
                     self.assertNotRegex(draft, r"  +",
                                         f"{name}: runs of spaces survived")
                 # The committed references really were wrapped, so the
@@ -4043,6 +4053,93 @@ class TestIssue81(unittest.TestCase):
         prompt = judge._build_pairwise_prompt("rubric text", ordered)
         self.assertNotIn("fictional", prompt.lower())
         self.assertNotIn("<!--", prompt)
+
+    # ------------------------------------------------------------------
+    # normalisation: unwrap hard wrapping, and nothing else
+    # ------------------------------------------------------------------
+    #
+    # Levelling the line shape used to join EVERY non-blank line into its
+    # predecessor, which hid or faked the very things two rubrics ask the
+    # judge about: a bulleted list became one line studded with " - " (the
+    # self-appraisal rubric asks it to penalise bullet lists and dash-soup),
+    # a certifications line collapsed into the sentence above it, and a
+    # sign-off joined the paragraph it sat under.
+
+    _BULLETED_DRAFT = (
+        "Most of this quarter went to the deployment work, and the shape of\n"
+        "it is easiest to see as a list:\n"
+        "\n"
+        "- Stood up deploy-scaffold, the shared deployment repository.\n"
+        "- Pulled the median pipeline run from 26 minutes to 9.\n"
+        "- Closed 34 of the 51 open secrets-remediation findings.\n"
+        "\n"
+        "Next quarter is for the last two teams.\n")
+
+    def test_normalisation_leaves_a_bulleted_draft_bulleted(self):
+        normalised = judge._normalize_draft_text(self._BULLETED_DRAFT)
+        bullets = [line for line in normalised.splitlines()
+                   if line.startswith("- ")]
+        self.assertEqual(len(bullets), 3, normalised)
+        # And dash-soup was not manufactured out of them.
+        self.assertNotIn(". - ", normalised)
+        # The prose above them is still unwrapped, which is the point of
+        # normalising at all.
+        self.assertIn("the shape of it is easiest to see as a list:",
+                      normalised)
+
+    _SIGNED_OFF_DRAFT = (
+        "None of that is a no forever. If you have something in 2027 that\n"
+        "is platform or delivery infrastructure and remote-friendly, I would\n"
+        "be glad to hear about it, and I am happy to stay on your list in\n"
+        "the meantime.\n"
+        "Adam\n")
+
+    def test_normalisation_leaves_a_sign_off_on_its_own_line(self):
+        normalised = judge._normalize_draft_text(self._SIGNED_OFF_DRAFT)
+        self.assertTrue(normalised.endswith("the meantime.\nAdam"), normalised)
+
+    # The same three sentences, hard-wrapped and not. A reference is
+    # hard-wrapped prose and a model's reply is not; if those two do not
+    # normalise to the same text, the shuffle hides which slot the draft
+    # under test is in and hides nothing else.
+    _WRAPPED_TWIN = (
+        "Hi Dana,\n"
+        "\n"
+        "Sorry for the slow reply — and thanks for reaching out directly\n"
+        "rather than through a form. I am going to pass on REQ-4417: my\n"
+        "engagement here is contracted through March 2027.\n")
+    _UNWRAPPED_TWIN = (
+        "Hi Dana,\n"
+        "\n"
+        "Sorry for the slow reply — and thanks for reaching out directly "
+        "rather than through a form. I am going to pass on REQ-4417: my "
+        "engagement here is contracted through March 2027.\n")
+
+    def test_a_hard_wrapped_draft_normalises_like_its_unwrapped_twin(self):
+        self.assertNotEqual(self._WRAPPED_TWIN, self._UNWRAPPED_TWIN)
+        self.assertEqual(judge._normalize_draft_text(self._WRAPPED_TWIN),
+                         judge._normalize_draft_text(self._UNWRAPPED_TWIN))
+
+    # ------------------------------------------------------------------
+    # a draft of invisible characters is not a draft
+    # ------------------------------------------------------------------
+
+    def test_a_draft_of_invisible_characters_is_not_a_draft(self):
+        # A BOM, a zero-width space or a NUL passed the non-empty guard and
+        # then evaded the duplicate guard as well, so an arm that produced
+        # nothing came back ranked as if its writing had been read.
+        for invisible in ("﻿", "​​", "\x00",
+                          "﻿\n​\n", "‎ ‏"):
+            with self.subTest(candidate=repr(invisible)):
+                with self.assertRaises(ValueError) as ctx:
+                    judge.blind_order(invisible, self.REFERENCES, 0)
+                self.assertIn("non-empty draft under test", str(ctx.exception))
+
+    def test_invisible_characters_do_not_hide_a_duplicate_draft(self):
+        twinned = "﻿" + self.REFERENCES[0]["text"] + "​"
+        with self.assertRaises(ValueError) as ctx:
+            judge.blind_order(twinned, self.REFERENCES, 0)
+        self.assertIn("identical", str(ctx.exception))
 
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it

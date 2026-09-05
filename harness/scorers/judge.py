@@ -320,7 +320,12 @@ def blind_order(candidate_text: str, references: list,
     and the draft under test does not sit in the same slot every trial (so a
     judge cannot learn the slot instead of the writing).
     """
-    if not (candidate_text or "").strip():
+    # Emptiness is decided on the NORMALISED text, which is the text the
+    # judge would actually see: a draft of nothing but a BOM, a zero-width
+    # space or a NUL passed a `.strip()` guard and then slipped past the
+    # duplicate guard too, so an arm that produced nothing came back with a
+    # rank as if its writing had been read and found wanting.
+    if not _normalize_draft_text(candidate_text):
         raise ValueError("pairwise judging needs a non-empty draft under test")
     candidates = {AGENT_IDENTITY: {"identity": AGENT_IDENTITY,
                                    "text": candidate_text}}
@@ -372,6 +377,47 @@ def strip_fiction_marker(text: str) -> str:
     return FICTION_MARKER_RE.sub("", text or "", count=1)
 
 
+# A list item, in any of the shapes Markdown and prose use for one. A line
+# that starts one, and the line before it, are never joined: a bulleted list
+# folded into a paragraph becomes one line studded with " - ", which is
+# neither the bullets the writer wrote nor the prose the rubric rewards.
+_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+•]|\d+[.)])\s")
+
+# Characters that take up no width and carry no meaning in a draft: a BOM,
+# the zero-width and bidi marks, and a stray NUL. A draft made only of these
+# used to pass the non-empty guard and then slip past the duplicate guard as
+# well, so an arm that produced nothing came back ranked.
+_INVISIBLE_RE = re.compile("[​-‏⁠﻿\x00]")
+
+
+def _unwrap_block(lines: list[str], width: int) -> list[str]:
+    """One paragraph's lines, with hard wrapping — and only that — undone.
+
+    A line is a continuation of the one above it when the line above was too
+    full for this line's first word to have fitted on it. That is what hard
+    wrapping IS, and it is why the test is against the draft's own widest
+    line rather than the paragraph's median: the ragged last line of a
+    wrapped paragraph ("than through a form.") is just as short as a
+    sign-off, and a median rule cannot tell them apart. Reconstructing the
+    wrap can: the line above a ragged tail is full, the line above a
+    sign-off is not.
+
+    A list item is never joined, in either direction, because a list can
+    follow a full line ("...easiest to see as a list:") and would otherwise
+    be swallowed by it.
+    """
+    out = [lines[0]]
+    for previous, line in zip(lines, lines[1:]):
+        first_word = line.split(" ", 1)[0]
+        wrapped = len(previous) + 1 + len(first_word) > width
+        if (wrapped and not _LIST_ITEM_RE.match(previous)
+                and not _LIST_ITEM_RE.match(line)):
+            out[-1] += " " + line
+        else:
+            out.append(line)
+    return out
+
+
 def _normalize_draft_text(text: str) -> str:
     """One draft, reduced to the line shape every other draft has.
 
@@ -383,16 +429,44 @@ def _normalize_draft_text(text: str) -> str:
 
     So every draft gets the same treatment: the fiction marker goes (it is
     on every committed reference and on no model's reply, unless the model
-    echoed one), trailing whitespace goes,
-    newlines inside a paragraph become spaces, runs of spaces collapse, and
-    a run of blank lines becomes one paragraph break. Paragraph structure is
-    the only shape that survives, which is why the fixtures' rubrics ask the
-    judge to rank "as writing rather than formatting".
+    echoed one), zero-width characters go, trailing whitespace goes, runs of
+    spaces collapse, a run of blank lines becomes one paragraph break, and
+    hard wrapping is undone.
+
+    Only hard wrapping. Joining every non-blank line into its predecessor —
+    which this did — hid or faked the things the rubrics ask the judge
+    about: a bulleted list became one line studded with " - " (the
+    self-appraisal rubric asks the judge to penalise bullet lists and
+    dash-soup, and the transport was manufacturing both), a certifications
+    line collapsed into the sentence above it, and a sign-off joined the
+    paragraph it sat under. `_unwrap_block` reconstructs the wrap instead,
+    so a break the writer meant survives and a break the wrap column caused
+    does not. Paragraph structure and deliberate line breaks are what
+    survive, which is why the fixtures' rubrics ask the judge to rank "as
+    writing rather than formatting".
     """
-    lines = [line.strip()
-             for line in strip_fiction_marker(text or "").strip().splitlines()]
-    joined = re.sub(r"(?<!\n)\n(?!\n)", " ", "\n".join(lines))
-    return re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", joined)).strip()
+    cleaned = _INVISIBLE_RE.sub("", strip_fiction_marker(text or ""))
+    lines = [re.sub(r"[ \t]+", " ", line).strip()
+             for line in cleaned.strip().splitlines()]
+    # The wrap column of a hard-wrapped draft is its longest line; an
+    # unwrapped draft's longest line is a whole paragraph, so nothing in one
+    # ever looks wrapped.
+    width = max((len(line) for line in lines if line), default=0)
+
+    out: list[str] = []
+    block: list[str] = []
+    for line in lines:
+        if line:
+            block.append(line)
+            continue
+        if block:
+            out += _unwrap_block(block, width)
+            block = []
+        if out and out[-1] != "":
+            out.append("")
+    if block:
+        out += _unwrap_block(block, width)
+    return "\n".join(out).strip()
 
 
 def _draft_block(label: str, text: str, nonce: str) -> str:
