@@ -827,6 +827,93 @@ class WindowsElevationFixtureTests(unittest.TestCase):
         self.assertFalse(by_id["fake-powershell-untouched"]["passed"])
 
 
+def _iter_regex_tokens(pattern: str):
+    """Yield (text, is_special) for `pattern`, walking it left to right.
+
+    A backslash-escape pair (`\\(`, `\\.`, ...) and a whole `[...]`
+    character class are each yielded as one opaque, non-special token —
+    neither can contain a *structural* `(`, `)`, or `|` even though a
+    class body routinely contains a literal `|` (e.g. `[^#\\n|]`), which
+    would otherwise be mistaken for a top-level alternation bar.
+    """
+    i = 0
+    n = len(pattern)
+    while i < n:
+        c = pattern[i]
+        if c == "\\" and i + 1 < n:
+            yield pattern[i:i + 2], False
+            i += 2
+            continue
+        if c == "[":
+            j = i + 1
+            if j < n and pattern[j] == "^":
+                j += 1
+            if j < n and pattern[j] == "]":
+                j += 1
+            while j < n and pattern[j] != "]":
+                if pattern[j] == "\\" and j + 1 < n:
+                    j += 2
+                else:
+                    j += 1
+            j = min(j + 1, n)
+            yield pattern[i:j], False
+            i = j
+            continue
+        yield c, True
+        i += 1
+
+
+def _regex_fully_wrapped(pattern: str) -> bool:
+    """Is `pattern` a single `(...)` group spanning the entire string?"""
+    if not (pattern.startswith("(") and pattern.endswith(")")):
+        return False
+    depth = 0
+    pos = 0
+    for tok, is_special in _iter_regex_tokens(pattern):
+        if is_special:
+            if tok == "(":
+                depth += 1
+            elif tok == ")":
+                depth -= 1
+                if depth == 0:
+                    return pos + len(tok) == len(pattern)
+        pos += len(tok)
+    return False
+
+
+def _split_top_level_alternatives(pattern: str) -> list[str]:
+    """Every top-level `|`-separated alternative of `pattern`.
+
+    If `pattern` is one `(...)` group spanning the whole string, split its
+    body on `|` at paren-depth 0 relative to that body (so a nested group's
+    own `|`, e.g. `( --(local|global))?`, is not a split point, and neither
+    is a literal `|` inside a character class like `[^#\\n|]`). Otherwise
+    `pattern` itself is the only alternative — this fixture never puts a
+    bare top-level `|` outside of a wrapping group.
+    """
+    if not _regex_fully_wrapped(pattern):
+        return [pattern]
+    body = pattern[1:-1]
+    alts, buf, depth = [], "", 0
+    for tok, is_special in _iter_regex_tokens(body):
+        if not is_special:
+            buf += tok
+            continue
+        if tok == "(":
+            depth += 1
+            buf += tok
+        elif tok == ")":
+            depth -= 1
+            buf += tok
+        elif tok == "|" and depth == 0:
+            alts.append(buf)
+            buf = ""
+        else:
+            buf += tok
+    alts.append(buf)
+    return alts
+
+
 class TestIssue74(unittest.TestCase):
     """The review-bash-ci-reliability fixture's checks (issue #74).
 
@@ -858,7 +945,7 @@ class TestIssue74(unittest.TestCase):
         "commit-signing-safe-for-ci",
     )
     DECOY_IDS = ("decoy-optional-cleanup-untouched", "decoy-existing-set-e-untouched")
-    RESTRAINT_IDS = ("workflow-yaml-parses",) + DECOY_IDS
+    RESTRAINT_IDS = ("workflow-yaml-parses", "workflow-file-present") + DECOY_IDS
 
     GH_API_LINE = ('out=$(gh api "repos/${REPO}/pulls?state=merged" '
                   '--jq \'.[].title\') || true')
@@ -1640,10 +1727,47 @@ class TestIssue74(unittest.TestCase):
         self.assertTrue(by_id["git-identity-configured"]["passed"],
                         by_id["git-identity-configured"]["detail"])
 
-    def test_fixture_header_states_both_sided_comment_anchoring(self):
-        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
-        self.assertNotIn("is anchored to a\n# non-comment prefix", text)
-        self.assertIn("pre-comment portion of the line", text)
+    # -- Round-3 review B1/S2/S3: must_match was never anchored the way
+    # must_not_match was, so a comment quoting the fix (or the bug) could
+    # satisfy or dodge a check with no live code present at all. Rather than
+    # pin one more hand-written scenario, this asserts the PROPERTY every
+    # alternative is now supposed to have: parse the fixture, split each
+    # must_match/must_not_match pattern into its top-level alternatives (a
+    # nested group's own `|`, and a literal `|` inside a character class
+    # like `[^#\n|]`, are not split points), and require every alternative
+    # that asserts something about one line of live code — as opposed to the
+    # handful of whole-document `\A...\Z` / `(?=...)` existence checks used
+    # by the jq checks, which are already anchored per-line internally and
+    # are exempted here — to both start with a non-comment-prefix anchor
+    # (`^[^#\n]*` or the pipe-excluding `^[^#\n|]*`) and contain no
+    # unanchored `[^...]*` run that omits `#` from its negated set (which
+    # would let the match run on into a trailing comment).
+    ANCHOR_PREFIXES = ("^[^#\\n]*", "^[^#\\n|]*")
+    WHOLE_DOCUMENT_PREFIXES = ("\\A", "(?=")
+    UNANCHORED_RUN_RE = re.compile(r"\[\^((?:\\.|[^\]])*)\]\*")
+
+    def test_every_shell_check_alternative_is_anchored_to_non_comment_text(self):
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        problems = []
+        for check in fixture["objective_checks"]:
+            if check["type"] != "file_matches":
+                continue
+            for field in ("must_match", "must_not_match"):
+                for pattern in check.get(field, []):
+                    for alt in _split_top_level_alternatives(pattern):
+                        if alt.startswith(self.WHOLE_DOCUMENT_PREFIXES):
+                            continue
+                        if not alt.startswith(self.ANCHOR_PREFIXES):
+                            problems.append(
+                                f"{check['id']}.{field}: {alt!r} does not "
+                                "start with a non-comment-prefix anchor")
+                        for m in self.UNANCHORED_RUN_RE.finditer(alt):
+                            if "#" not in m.group(1):
+                                problems.append(
+                                    f"{check['id']}.{field}: {alt!r} has an "
+                                    f"unanchored run {m.group(0)!r} that "
+                                    "does not exclude '#'")
+        self.assertEqual(problems, [], "\n".join(problems))
 
     # -- Round-2 review item 6: grep-q-avoids-broken-pipe pinned one exact
     # spelling of the fix. Any pipe-free consumption of $build_log is
@@ -1850,6 +1974,247 @@ class TestIssue74(unittest.TestCase):
     def test_readme_lists_the_new_eval_directory(self):
         text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("review-bash-ci-reliability/", text)
+
+    # -- Round-3 review B1: must_match had no comment anchor at all, so a
+    # comment merely quoting the fix (or, for a deleted call, quoting the old
+    # bug under a `# was: ...` marker) satisfied the check with no live code
+    # present. Each of these leaves the finding genuinely unfixed and must
+    # still fail. --
+
+    def test_b1_untouched_bump_sh_with_identity_and_signing_comments_fails(self):
+        ws = self._ws()
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text += (
+            '\n# git config --global user.email "ci@example.com"\n'
+            '# git config --global commit.gpgsign false\n')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["git-identity-configured"]["passed"])
+        self.assertFalse(by_id["commit-signing-safe-for-ci"]["passed"])
+
+    def test_b1_gh_api_deleted_with_was_comment_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(self.GH_API_FIXED_BLOCK, f'# was: {self.GH_API_LINE}\nout=""')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_b1_watch_deleted_with_was_comment_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            '# was: watch_output=$(gh run watch "$RUN_ID")\n'
+            'WATCH_LOG=()')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["process-substitution-error-propagates"]["passed"])
+
+    def test_b1_watch_deleted_with_pipestatus_only_comment_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            '# PIPESTATUS is not used here on purpose\n'
+            'WATCH_LOG=()')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["process-substitution-error-propagates"]["passed"])
+
+    def test_b1_decoy_1_stripped_with_was_comment_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'rm -f "$tmp_response" || true  # temp file cleanup; '
+            "harmless if it's already gone",
+            '# was: rm -f "$tmp_response" || true\n'
+            'rm -f "$tmp_response"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["decoy-optional-cleanup-untouched"]["passed"])
+
+    # -- Round-3 review B1/S3: the flip side — a skill-faithful fix must not
+    # lose credit for leaving a trailing `# was: ...` comment on the fixed
+    # line itself, even when that comment quotes old buggy code containing a
+    # `|` (S3's exact failure mode: a must_match alternative that needs to
+    # rule out a *live* pipe must stop looking at the comment's `#`, not
+    # chase a `|` that only exists inside quoted dead code). --
+
+    def _apply_all_fixes_with_trailing_was_comments(self, ws: Path) -> None:
+        self._fix_all(ws)
+        publish = ws / "scripts" / "publish.sh"
+        text = publish.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n',
+            'watch_output=$(gh run watch "$RUN_ID")  '
+            '# was: mapfile -t WATCH_LOG < <(gh run watch "$RUN_ID" | tail -n 5)\n')
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            'grep -q "Successfully published" <<< "$build_log"  '
+            '# was: echo "$build_log" | grep -q "Successfully published"')
+        publish.write_text(text, encoding="utf-8")
+
+        collect = ws / "scripts" / "collect.sh"
+        text = collect.read_text(encoding="utf-8")
+        text = text.replace(
+            'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then',
+            'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then  '
+            f'# was: {self.GH_API_LINE}')
+        text = text.replace(
+            'rm -f "$tmp_response" || true  # temp file cleanup; '
+            "harmless if it's already gone",
+            'rm -f "$tmp_response" || true  # was: unconditional rm -f')
+        collect.write_text(text, encoding="utf-8")
+
+        bump = ws / "scripts" / "bump.sh"
+        text = bump.read_text(encoding="utf-8")
+        text = text.replace(
+            self.JQ_FIXED_LINE,
+            self.JQ_FIXED_LINE + f"  # was: {self.JQ_LINE}")
+        text = text.replace(
+            'git config --local commit.gpgsign false\n',
+            'git config --local commit.gpgsign false  '
+            '# was: no defense against commit.gpgsign\n')
+        bump.write_text(text, encoding="utf-8")
+
+    def test_b1_s3_skill_faithful_fix_with_trailing_was_comments_passes(self):
+        ws = self._ws()
+        self._apply_all_fixes_with_trailing_was_comments(ws)
+        returncode, payload = self._run_cli(ws)
+        self.assertEqual(returncode, 0, payload)
+
+    def test_s3_trailing_was_comment_with_pipe_on_fixed_grep_q_line_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            'grep -q "Successfully published" <<< "$build_log"  '
+            '# was: echo "$build_log" | grep -q "Successfully published"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["grep-q-avoids-broken-pipe"]["passed"],
+                        by_id["grep-q-avoids-broken-pipe"]["detail"])
+
+    def test_s3_trailing_comment_on_no_pipe_remedy_line_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID"  # was: piped into tail via process substitution\n'
+            'mapfile -t WATCH_LOG < <(gh run view "$RUN_ID" --log | tail -n 5)')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    # -- Round-3 review S2 (round-1 B2, third time): `set \+e` had no anchor
+    # at all, so a trailing comment mentioning it, or a standalone comment
+    # warning against it, tripped gh-api-failure-not-swallowed even though
+    # no live `set +e` exists. The real dodge (an actual `set +e` wrapper)
+    # must still fail. --
+
+    def test_s2_trailing_set_plus_e_comment_on_fixed_gh_api_line_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then',
+            'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then  '
+            '# never use set +e here')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    def test_s2_standalone_comment_warning_against_set_plus_e_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            "# never use set +e around this call\n" + self.GH_API_FIXED_BLOCK)
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    def test_s2_live_set_plus_e_wrapper_still_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'set +e\n'
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\')\n'
+            'set -e')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    # -- Round-3 review N5: decoy 1 didn't tolerate an extra space, and
+    # decoy 2's must_match didn't tolerate a trailing explanatory comment. --
+
+    def test_n5_decoy_1_extra_space_after_rm_f_still_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace('rm -f "$tmp_response"', 'rm -f  "$tmp_response"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["decoy-optional-cleanup-untouched"]["passed"],
+                        by_id["decoy-optional-cleanup-untouched"]["detail"])
+
+    def test_n5_decoy_2_trailing_explanatory_comment_still_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'set -euo pipefail\n',
+            'set -euo pipefail  # fail fast, no partial releases\n')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["decoy-existing-set-e-untouched"]["passed"],
+                        by_id["decoy-existing-set-e-untouched"]["detail"])
+
+    # -- Round-3 review N6: yaml_parses passes vacuously when the workflow
+    # file is deleted outright — there's nothing left to fail parsing. --
+
+    def test_n6_workflow_file_deleted_fails_presence_check(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        (ws / ".github" / "workflows" / "release.yml").unlink()
+        by_id = self._run(ws)
+        self.assertFalse(by_id["workflow-file-present"]["passed"])
+        self.assertTrue(by_id["workflow-yaml-parses"]["passed"])
+
+    def test_n6_workflow_file_present_passes_on_hand_fixed_copy(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        by_id = self._run(ws)
+        self.assertTrue(by_id["workflow-file-present"]["passed"],
+                        by_id["workflow-file-present"]["detail"])
 
 
 class MakeBadgeTests(unittest.TestCase):

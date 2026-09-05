@@ -45,18 +45,34 @@ arms:
 # Objective checks run by harness/scorers/objective.py against the resulting
 # workspace. Every check is lexical (a regex against shell/YAML text) except
 # the first, which parses the workflow with `yaml` rather than guessing at
-# its structure from a regex. Every must_not_match below keeps its whole
-# match — the anchor token and the forbidden text alike — within the
-# pre-comment portion of the line (`[^#\n]*` before AND around the token,
-# not `[^\n]*`), so a fix that leaves behind a `# was: ...` comment quoting
-# the old, buggy line is not penalized for text that is no longer live code,
-# whether that comment precedes the line or trails after the live code on
-# the same line.
+# its structure from a regex. Every must_match and must_not_match alternative
+# below keeps its whole match — the anchor token and the required/forbidden
+# text alike — within the pre-comment portion of the line (`[^#\n]*` before
+# AND around the token, not `[^\n]*`), so a `# was: ...` comment quoting the
+# old, buggy line neither satisfies a must_match (a comment cannot stand in
+# for the fix) nor trips a must_not_match (a comment cannot stand in for the
+# bug), whether that comment precedes the line, stands alone, or trails
+# after the live code on the same line. A property test
+# (test_every_shell_check_alternative_is_anchored_to_non_comment_text) checks
+# this mechanically, alternative by alternative, over every file_matches
+# check in this fixture.
 objective_checks:
   - id: workflow-yaml-parses
     description: The release workflow still parses as YAML
     type: yaml_parses
     paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+
+  # Nit: yaml_parses alone passes vacuously if the workflow file is deleted
+  # outright — no file, no parse error, trivially "parses". This check
+  # requires the file's own `name:` key to still be present somewhere among
+  # the workflow paths, so a deleted (or renamed-away) workflow fails here
+  # even though it would pass yaml_parses.
+  - id: workflow-file-present
+    description: The release workflow file itself is still present (not deleted)
+    type: file_matches
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml"]
+    must_match:
+      - '^[^#\n]*name:\s*Release[^#\n]*'
 
   # Finding 1: `mapfile ... < <(gh run watch "$RUN_ID" | tail -n 5)` — process
   # substitution runs in a disconnected subshell, so a failing `gh run watch`
@@ -66,10 +82,12 @@ objective_checks:
   # (into any variable), check `${PIPESTATUS[0]}` right after a direct (non
   # process-substituted) pipe, or drop the pipe entirely and let `set -e` see
   # the command's own exit status. The dodge of keeping the broken shape but
-  # swallowing its failure with `|| true`/`|| :` is forbidden outright. The
-  # third must_match alternative (a pipe-free live line naming the command)
-  # is anchored to a non-comment prefix so a comment merely mentioning
-  # `gh run watch` cannot stand in for the command actually running.
+  # swallowing its failure with `|| true`/`|| :` is forbidden outright. Each
+  # of the three must_match alternatives is anchored to a non-comment prefix
+  # (and, for the pipe-free-line alternative, a non-comment/non-pipe run
+  # after it too), so a `# was: ...` comment quoting the capture variable,
+  # naming `PIPESTATUS`, or naming `gh run watch` cannot stand in for the
+  # command actually running.
   - id: process-substitution-error-propagates
     description: >
       gh run watch's exit status is captured before any process substitution
@@ -78,10 +96,10 @@ objective_checks:
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
-      - '^[^#\n]*<\s*<\(\s*gh run watch'
-      - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:)'
+      - '^[^#\n]*<\s*<\(\s*gh run watch[^#\n]*'
+      - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:)[^#\n]*'
     must_match:
-      - '(\w+=\$\(\s*gh run watch|PIPESTATUS|^[^#\n|]*\bgh run watch\b[^\n|]*$)'
+      - '(^[^#\n]*\w+=\$\(\s*gh run watch[^#\n]*|^[^#\n]*PIPESTATUS[^#\n]*|^[^#\n|]*\bgh run watch\b[^#\n|]*)'
 
   # Finding 2 (off-skill — see header): `echo "$build_log" | grep -q ...` as
   # a bare statement under `pipefail` — if grep matches and exits before echo
@@ -96,9 +114,9 @@ objective_checks:
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
-      - '^[^#\n]*echo "\$build_log" \| grep -q'
+      - '^[^#\n]*echo "\$build_log" \| grep -q[^#\n]*'
     must_match:
-      - '(^[^#\n|]*grep -q[^\n|]*"Successfully published"[^\n|]*$|\[\[\s*"\$\{?build_log\}?"\s*==\s*\*[^\n]*\*\s*\]\]|case\s+"\$\{?build_log\}?"\s+in)'
+      - '(^[^#\n|]*grep -q[^#\n|]*"Successfully published"[^#\n|]*|^[^#\n]*\[\[\s*"\$\{?build_log\}?"\s*==\s*\*[^#\n]*\*\s*\]\][^#\n]*|^[^#\n]*case\s+"\$\{?build_log\}?"\s+in[^#\n]*)'
 
   # Finding 3: the gh api capture's failure is swallowed, and since a failed
   # call and a genuinely empty result both leave `out` blank, the two become
@@ -111,16 +129,21 @@ objective_checks:
   # swallowing it with `|| echo ""` instead of `|| true`, wrapping the call in
   # `set +e` / `set -e` to disable errexit around it, and deleting the call
   # outright (must_match requires the call itself to still be present).
+  # `|| echo ""` is banned only when it hangs directly off the gh api line
+  # itself (the must_not_match pattern requires `gh api` earlier on the same
+  # live line); `|| out=""` on some other, unrelated command a few lines away
+  # — even one that happens to reuse the name `out` — does not suppress
+  # *this* call's failure and is left alone.
   - id: gh-api-failure-not-swallowed
     description: A failed gh api call is not silently treated as "nothing found"
     type: file_matches
     paths: ["scripts/collect.sh"]
     must_match:
-      - '\bgh api\b[^\n]*pulls'
+      - '^[^#\n]*\bgh api\b[^#\n]*pulls[^#\n]*'
     must_not_match:
-      - '^[^#\n]*gh api[^#\n]*\|\|\s*(true|:|echo)'
-      - '^[^#\n]*gh api[^#\n]*2>\s*/dev/null'
-      - 'set \+e'
+      - '^[^#\n]*gh api[^#\n]*\|\|\s*(true|:|echo)[^#\n]*'
+      - '^[^#\n]*gh api[^#\n]*2>\s*/dev/null[^#\n]*'
+      - '^[^#\n]*\bset \+e\b[^#\n]*'
 
   # Finding 4: `git commit` with no git identity configured fails with exit
   # 128 on any runner that lacks a global user.name/user.email. `--local` and
@@ -137,10 +160,10 @@ objective_checks:
     type: file_matches
     paths: ["scripts/bump.sh"]
     must_match:
-      - '(git config( --(local|global))? user\.email|-c\s+user\.email)'
+      - '(^[^#\n]*git config( --(local|global))? user\.email[^#\n]*|^[^#\n]*-c\s+user\.email[^#\n]*)'
     must_not_match:
-      - '^[^#\n]*git commit[^#\n]*\|\|\s*(true|:)'
-      - '^[^#\n]*git commit[^#\n]*2>\s*/dev/null'
+      - '^[^#\n]*git commit[^#\n]*\|\|\s*(true|:)[^#\n]*'
+      - '^[^#\n]*git commit[^#\n]*2>\s*/dev/null[^#\n]*'
 
   # Finding 5: `jq` is used to read package.json's version with no guarantee
   # it's installed. SKILL.md's checklist gives two remedies — install it in
@@ -177,7 +200,7 @@ objective_checks:
     type: file_matches
     paths: ["scripts/bump.sh", ".github/workflows/*.yml"]
     must_match:
-      - '(?i)\bversion\s*=.*package\.json'
+      - '^[^#\n]*(?i:\bversion\s*=.*package\.json)'
     must_not_match:
       - '(?=[\s\S]*(?:\A|\n)[^#\n]*\bjq\b)\A(?:(?!(?:\A|\n)[^#\n]*(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\n]*\bjq\b|(?:\A|\n)[^#\n]*uses:[^#\n]*jq|(?:\A|\n)[^#\n]*command -v jq)[\s\S])*\Z'
 
@@ -193,7 +216,7 @@ objective_checks:
     type: file_matches
     paths: ["scripts/bump.sh"]
     must_match:
-      - '(git config( --(local|global))? commit\.gpgsign\s+false|git config( --(local|global))? user\.signingkey|-c\s+commit\.gpgsign=false|--no-gpg-sign)'
+      - '(^[^#\n]*git config( --(local|global))? commit\.gpgsign\s+false[^#\n]*|^[^#\n]*git config( --(local|global))? user\.signingkey[^#\n]*|^[^#\n]*-c\s+commit\.gpgsign=false[^#\n]*|^[^#\n]*--no-gpg-sign[^#\n]*)'
 
   # Decoy 1: a `|| true` on a temp-file cleanup that is genuinely optional
   # (idempotent). A correct fix leaves the command alone; the check matches
@@ -203,7 +226,7 @@ objective_checks:
     type: file_matches
     paths: ["scripts/collect.sh"]
     must_match:
-      - 'rm -f "\$tmp_response" \|\| true'
+      - '^[^#\n]*rm -f\s+"\$tmp_response"\s*\|\|\s*true[^#\n]*'
 
   # Decoy 2: `set -euo pipefail` is already correctly present. An over-eager
   # agent might re-add a redundant bare `set -e` — with or without a
@@ -214,9 +237,9 @@ objective_checks:
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_match:
-      - '^set -euo pipefail$'
+      - '^[^#\n]*set -euo pipefail(\s*#.*)?$'
     must_not_match:
-      - '^set -e\s*(#.*)?$'
+      - '^[^#\n]*set -e\s*(#.*)?$'
 
 # The judge is left what a regex cannot decide: whether each fix actually
 # solves the failure mode the checklist describes (vs. a plausible-looking
