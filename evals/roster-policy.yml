@@ -132,5 +132,8 @@ min_ranked_share: 0.01
 # accumulated history can. See also the length cap in roster.py's
 # `CATALOGUE_SEEN_CAP` (currently 500 entries, oldest-by-id-sorted-out
 # first among non-live entries; this run's own live ids are exempt from
-# it too).
+# it too). The previous roster's `arms` list is capped the same way, at
+# the same 500, by roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round
+# 6) — neither list has any other bound on how large a public branch
+# could otherwise grow it.
 catalogue_seen_max_age_days: 180

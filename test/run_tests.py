@@ -6250,6 +6250,27 @@ class TestIssue67Review6(unittest.TestCase):
         for w in warnings:
             self.assertNotIn("claude-sonnet-599-9", w)
 
+    # --- N3: `_clean_previous_arms` dedup must be O(1)-membership and
+    # cap its accepted list the same way catalogue_seen does -------------
+
+    def test_previous_arms_caps_length_with_a_count_only_warning(self):
+        """`_clean_previous_arms` dedup used `entry not in ids` over a
+        growing list — O(n^2) — and had no cap at all. A set for
+        membership plus a 500-entry cap (sorted head, count-only
+        warning) matches the treatment `catalogue_seen` already got."""
+        previous = {"arms": [{"id": f"claude-sonnet-{i}-9", "reason": "x"}
+                             for i in range(600)]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=None,
+            policy=self._policy(), previous=previous, now=self.NOW,
+            warn=warnings.append)
+        retired_ids = {r["id"] for r in result["retired_since_last"]}
+        self.assertLessEqual(len(retired_ids), 500)
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            self.assertNotIn("claude-sonnet-599-9", w)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -579,6 +579,11 @@ def _clean_counts(counts, warn) -> dict:
     return cleaned
 
 
+#: N3 (#129 review round 6): the same cap `CATALOGUE_SEEN_CAP` applies to
+#: `catalogue_seen`, sized the same way — see that constant's own comment.
+PREVIOUS_ARMS_CAP = 500
+
+
 def _clean_previous_arms(previous, warn) -> list[str]:
     """The previous roster's arm ids. A malformed entry is skipped, not fatal.
 
@@ -588,6 +593,13 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     eval.yml prints to stdout — where GitHub parses `::` workflow commands.
     An offender is dropped the same way a bad-shaped `entry` is, and the
     warning names no value — only the count.
+
+    Dedup is a SET membership test, not `entry not in ids` over the
+    growing output list — the latter is O(n^2) and measured at 5.4s for
+    40,000 entries, 37s for 100,000, publishing a 2.7MB roster with no
+    warning at all. The accepted list is also capped at
+    `PREVIOUS_ARMS_CAP`: past it, only the alphabetically-sorted head is
+    kept, and the warning names the dropped COUNT, never a dropped id.
     """
     if previous is None:
         return []
@@ -597,18 +609,25 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     if not isinstance(entries, list):
         warn("previous roster: `arms` is not a list; comparing against nothing")
         return []
+    seen: set[str] = set()
     ids = []
     skipped = 0
     for entry in entries:
         if (isinstance(entry, dict) and isinstance(entry.get("id"), str)
                 and entry["id"] and PREVIOUS_ARM_ID_RE.match(entry["id"])):
-            if entry["id"] not in ids:
+            if entry["id"] not in seen:
+                seen.add(entry["id"])
                 ids.append(entry["id"])
         else:
             skipped += 1
     if skipped:
         warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
              f"not an object with a well-formed model-id-shaped `id`")
+    if len(ids) > PREVIOUS_ARMS_CAP:
+        dropped = len(ids) - PREVIOUS_ARMS_CAP
+        ids = sorted(ids)[:PREVIOUS_ARMS_CAP]
+        warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
+             f"the {PREVIOUS_ARMS_CAP}-entry cap")
     return ids
 
 
