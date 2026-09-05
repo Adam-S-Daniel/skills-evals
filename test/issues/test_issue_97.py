@@ -626,6 +626,22 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(env["FIXTURE_VAR"], f"{scratch / 'ws'}/bin")
         self.assertEqual(env["PLAIN"], "value")
 
+    def test_passthrough_is_exactly_the_committed_six(self):
+        # A REGRESSION FLOOR, not a red-first test: PASSTHROUGH is correct
+        # today and this pins the mutation that makes it wrong. Only the
+        # allowlist's NEGATIVES were asserted, so adding GITHUB_TOKEN,
+        # AWS_SECRET_ACCESS_KEY, SSH_AUTH_SOCK, HOSTNAME or
+        # CLAUDE_CODE_REMOTE_SESSION_ID to this tuple left all 438 tests green
+        # while every one of them reached a bypassPermissions agent in the
+        # key-bearing lane. The exact tuple, in order, is the assertion —
+        # exactly as EXTRA_PASSTHROUGH is pinned below.
+        self.assertEqual(
+            guidance.PASSTHROUGH,
+            ("PATH", "LANG", "LC_ALL", "SHELL", "USER", "NODE_PATH"),
+            "every name added here is inherited by name into a "
+            "bypassPermissions agent that runs beside a minted Anthropic "
+            "token; widening it is a security change, not a convenience")
+
     def test_extra_passthrough_is_empty_in_production(self):
         # Same lock harness/propagation/init_probe.py carries: the hermetic
         # suite widens this to let the fake CLI's mode variable through, and a
