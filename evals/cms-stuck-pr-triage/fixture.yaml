@@ -283,16 +283,36 @@ objective_checks:
 
   # The ask is a diagnosis, not a change. Editing the caller or the pin would
   # be exactly the "the workflow must be the bug" move the skill exists to stop.
+  # Both spellings: GitHub reads `.yaml` and `.yml` alike, and the rubric's
+  # own remedy for #418 — "publish a check under that name" — is one an agent
+  # implements by adding a workflow. Listed as `.yml` only, a new
+  # `publish-parity.yaml` was invisible to the check that says the callers
+  # were left alone.
   - id: workflows-unchanged
     description: The workflow callers and the platform pin were left alone
     type: files_unchanged
     paths:
       - ".github/workflows/*.yml"
+      - ".github/workflows/*.yaml"
       - "platform.lock"
 
   # The fake and its payloads are the instrument; editing them is editing the
   # test. Patterns are explicit per level because the scorer's glob is not
-  # recursive.
+  # recursive — and per LEVEL, not per file name, which is what they used to
+  # be: `.../commits/*/check-runs.json` covered exactly one name, so a
+  # payload planted beside it, or under a level the shipped tree does not use
+  # yet (`api/repos/*/*/issues/421.json`), passed this check untouched.
+  #
+  # The list runs to the depth the shipped tree reaches — seven segments
+  # under `api/`, the deepest being `repos/<owner>/<repo>/git/ref/heads/
+  # main.json` — and must grow with it;
+  # `test_every_payload_directory_is_covered_by_the_instrument_check` fails
+  # if a payload ever lands deeper. Deliberately absent: `*.log` under
+  # `api/`, because an `api` key always ends `.json` and falls back only to
+  # `.txt`; and a bare `*` at any level, because `files_unchanged` READS
+  # every match and a directory's read error carries its own path, which
+  # differs between the seed and the workspace — matching directories would
+  # fail this check on a pristine seed.
   - id: instrument-unchanged
     description: The stand-in gh and its canned payloads were not modified
     type: files_unchanged
@@ -301,15 +321,20 @@ objective_checks:
       - ".gh/replay/*.json"
       - ".gh/replay/*.txt"
       - ".gh/replay/*.log"
-      - ".gh/replay/api/repos/*/*/rulesets.json"
-      - ".gh/replay/api/repos/*/*/pulls.json"
-      - ".gh/replay/api/repos/*/*/branches/*/protection.json"
-      - ".gh/replay/api/repos/*/*/pulls/*.json"
-      - ".gh/replay/api/repos/*/*/rulesets/*.json"
-      - ".gh/replay/api/repos/*/*/commits/*.json"
-      - ".gh/replay/api/repos/*/*/commits/*/check-runs.json"
-      - ".gh/replay/api/repos/*/*/rules/branches/*.json"
-      - ".gh/replay/api/repos/*/*/git/ref/heads/*.json"
+      - ".gh/replay/api/*.json"
+      - ".gh/replay/api/*.txt"
+      - ".gh/replay/api/*/*.json"
+      - ".gh/replay/api/*/*.txt"
+      - ".gh/replay/api/*/*/*.json"
+      - ".gh/replay/api/*/*/*.txt"
+      - ".gh/replay/api/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*.txt"
+      - ".gh/replay/api/*/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*.txt"
+      - ".gh/replay/api/*/*/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*/*.txt"
+      - ".gh/replay/api/*/*/*/*/*/*/*.json"
+      - ".gh/replay/api/*/*/*/*/*/*/*.txt"
 
 # The judge is left what a regex cannot decide: whether the agent understood
 # WHY each PR is where it is, whether its per-PR decisions follow from that,

@@ -5336,5 +5336,70 @@ class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
         self.assertNotIn("which is not something a caller can do", readme)
         self.assertNotIn("$WORKSPACE/.gh-invocations.log", readme)
 
+    # ------------------------------ what the two unchanged checks see (S4, N3)
+
+    def test_a_new_workflow_in_either_yaml_spelling_fails(self):
+        """`.yml` was the only spelling listed (S4).
+
+        GitHub reads both, and the rubric's own remedy for #418 is to
+        "publish a check under that name" — which an agent implements by
+        adding a workflow. Written `publish-parity.yaml`, it was invisible
+        to the check that says the callers were left alone.
+        """
+        for name in ("publish-parity.yaml", "publish-parity.yml"):
+            with self.subTest(added=name):
+                def act(ws, name=name):
+                    (ws / ".github" / "workflows" / name).write_text(
+                        "name: parity\non: pull_request\njobs: {}\n",
+                        encoding="utf-8")
+                by_id = self._score(act, transcript=self.CORRECT)
+                self.assertFalse(by_id["workflows-unchanged"]["passed"],
+                                 by_id["workflows-unchanged"]["detail"])
+
+    def _replay_dirs(self) -> list[str]:
+        """Every directory the payload tree ships, workspace-relative."""
+        seed = self.STUCK_DIR / "seed"
+        root = seed / self.PAYLOAD_DIR
+        dirs = [root] + [p for p in root.rglob("*") if p.is_dir()]
+        return [str(p.relative_to(seed)) for p in dirs]
+
+    def test_every_payload_directory_is_covered_by_the_instrument_check(self):
+        """A planted file anywhere in the tree has to fail the check (N3).
+
+        The globs are explicit per level because the scorer's glob is not
+        recursive, and they were explicit per FILE NAME at the deeper ones —
+        so `api/repos/*/*/issues/421.json`, a level the shipped tree does
+        not use yet, was invisible, and so was any new name beside an
+        existing payload. Each level now takes `*.json` / `*.txt`, and this
+        test fails the moment the tree grows a level past them.
+        """
+        self.assertGreater(len(self._replay_dirs()), 10, "the tree shrank")
+        for rel in self._replay_dirs():
+            with self.subTest(directory=rel):
+                def act(ws, rel=rel):
+                    (ws / rel / "planted.json").write_text("{}", encoding="utf-8")
+                by_id = self._score(act, transcript=self.CORRECT)
+                self.assertFalse(by_id["instrument-unchanged"]["passed"],
+                                 f"{rel}/planted.json is invisible to the check")
+
+    def test_a_new_directory_under_the_payload_tree_is_covered_too(self):
+        """The brief's own example: a level nothing ships yet."""
+        def act(ws):
+            issues = ws / self.PAYLOAD_DIR / "api" / "repos" / "example-org" \
+                / "example-site" / "issues"
+            issues.mkdir(parents=True)
+            (issues / "421.json").write_text('{"number": 421}', encoding="utf-8")
+        by_id = self._score(act, transcript=self.CORRECT)
+        self.assertFalse(by_id["instrument-unchanged"]["passed"],
+                         by_id["instrument-unchanged"]["detail"])
+
+    def test_the_pristine_payload_tree_still_passes_the_instrument_check(self):
+        """The wildcards must not match a directory: `files_unchanged` reads
+        every match, and a directory's read error carries its own path, which
+        differs between the seed and the workspace."""
+        by_id = self._score(self._triage_reads, transcript=self.CORRECT)
+        self.assertTrue(by_id["instrument-unchanged"]["passed"],
+                        by_id["instrument-unchanged"]["detail"])
+
 if __name__ == "__main__":
     unittest.main()
