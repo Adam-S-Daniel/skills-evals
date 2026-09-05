@@ -313,13 +313,20 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     # — not `100.0 * mine / total`, which multiplies the float `100.0` by
     # the int `mine` and so converts `mine` to a float before dividing at
     # all. `usage_share` is called directly by a few tests on hand-built
-    # counts that bypass `_clean_counts`'s own upper bound, so this stays
-    # safe on its own: Python's int/int true division computes the exact
-    # ratio's correctly-rounded float without ever needing `mine` or
-    # `total` to fit in a float individually, which `100.0 * mine` does —
-    # a `mine` near the top of a float's range overflows that multiplication
-    # to `inf`, and one with hundreds of digits raises OverflowError
-    # converting it to a float at all.
+    # counts that bypass `_clean_counts`'s own bounds; this form stays safe
+    # for those PROVIDED `mine`/`total` are ints, as every real cell is —
+    # `_clean_counts` coerces and bounds every cell to `[0, MAX_WEEKLY_TURNS]`
+    # before compute_roster ever calls this. For int cells, Python's int/int
+    # true division computes the exact ratio's correctly-rounded float
+    # without ever needing `mine` or `total` to fit in a float individually,
+    # unlike `100.0 * mine`, which converts `mine` to a float FIRST and
+    # overflows to `inf` near the top of a float's range. It is NOT safe on
+    # its own for a FLOAT cell bypassing `_clean_counts` (a `1e308` cell
+    # gives `nan`: `100 * 1e308` itself overflows to `inf` under float
+    # arithmetic) or for an int pair whose quotient is itself too large to
+    # represent as a float (raises OverflowError converting it) — neither
+    # shape is reachable through compute_roster's own int-coerced, bounded
+    # cells, only through a hand-built dict a test constructs directly.
     return 0.0 if total == 0 else (100 * mine) / total
 
 
