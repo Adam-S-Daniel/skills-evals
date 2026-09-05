@@ -2963,6 +2963,32 @@ Use the platform Date APIs instead.
 One fewer dependency to update.
 """
 
+    # Bootstrap step 4: "Add a pointer paragraph in AGENTS.md (or README.md
+    # if there's no AGENTS.md) under a new '### Architecture Decision
+    # Records' heading". The seed's AGENTS.md has no such heading yet, so
+    # the skill-faithful answer appends this. Its second line is the same
+    # sentence the existing-convention seed's AGENTS.md already carries
+    # under that heading — see the two seeds' AGENTS.md files themselves,
+    # and test_seed_files_are_byte_identical_except_for_their_premise below.
+    BOOTSTRAP_AGENTS_MD_POINTER = """
+
+### Architecture Decision Records
+
+Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
+— read the index there before assuming a past choice was arbitrary.
+"""
+
+    # An ad-hoc, non-skill-shaped bootstrap README: it has an index row (so
+    # index-gained-a-row-for-0001 is satisfied) but none of the skill's
+    # template headings — for S5's "present but wrong" test.
+    BOOTSTRAP_ADHOC_README = """\
+# Decisions
+
+## Log
+
+| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry transient failures up to 5 times with capped exponential backoff | Accepted |
+"""
+
     # ---- shared helpers -----------------------------------------------------
 
     def _ws(self, eval_dir: Path) -> Path:
@@ -3025,9 +3051,18 @@ One fewer dependency to update.
     def _link_retry_sh_bootstrap(self, ws: Path) -> None:
         self._link_retry_sh(ws, self.BOOTSTRAP_RETRY_LINK)
 
+    def _add_agents_md_pointer_bootstrap(self, ws: Path) -> None:
+        path = ws / "AGENTS.md"
+        text = path.read_text(encoding="utf-8")
+        self.assertNotIn("### Architecture Decision Records", text,
+                         "AGENTS.md seed already carries a pointer — bootstrap "
+                         "fixture's seed drifted from its existing-convention twin")
+        path.write_text(text + self.BOOTSTRAP_AGENTS_MD_POINTER, encoding="utf-8")
+
     def _apply_correct_bootstrap(self, ws: Path) -> None:
         self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
         self._link_retry_sh_bootstrap(ws)
+        self._add_agents_md_pointer_bootstrap(ws)
 
     # ======================================================================
     # existing-convention
@@ -3040,6 +3075,8 @@ One fewer dependency to update.
                         "index-gained-a-row-for-0004", "retry-sh-links-the-adr",
                         "exactly-one-new-adr-file"):
             self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+        # nothing-else-touched is a trivial pass on the pristine seed.
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
 
     def test_existing_hand_written_correct_fix_passes_every_check(self):
         ws = self._ws(ADRS_EXISTING_DIR)
@@ -3068,6 +3105,7 @@ One fewer dependency to update.
                         by_id["adr-0004-house-format-sections-in-order"]["detail"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
 
     def test_existing_adr_and_index_but_no_code_link_fails_only_link_check(self):
         ws = self._ws(ADRS_EXISTING_DIR)
@@ -3078,6 +3116,7 @@ One fewer dependency to update.
         self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
         self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
         self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
 
     def test_existing_wrong_section_order_fails_only_format_check(self):
         ws = self._ws(ADRS_EXISTING_DIR)
@@ -3089,6 +3128,7 @@ One fewer dependency to update.
         self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
 
     def test_existing_second_adr_for_changelog_fact_fails_only_count_check(self):
         # The correct fix, PLUS an extra ADR nobody asked for, recording
@@ -3105,6 +3145,29 @@ One fewer dependency to update.
         self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
         self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_existing_delete_and_replace_adr_passes_the_stale_count_check_but_fails_restraint(self):
+        # S2: exactly-one-new-adr-file is a TOTAL count (min=4, max=4).
+        # Deleting 0002 and adding a differently-numbered decoy (0006) for
+        # the CHANGELOG's routine fact keeps the total at 4 — the count
+        # check alone scores this 4/4. nothing-else-touched is what catches
+        # it: 0002 must stay byte-identical, and its absence is a violation
+        # even though total count still looks right.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        (ws / "docs" / "decisions" / "0002-poll-fulfillment-service-every-30s.md").unlink()
+        (ws / "docs" / "decisions" / "0006-remove-moment-dependency.md").write_text(
+            self.DECOY_ADR_FOR_CHANGELOG.replace("# 0005.", "# 0006.", 1),
+            encoding="utf-8")
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"],
+                        by_id["exactly-one-new-adr-file"]["detail"])
+        self.assertFalse(by_id["nothing-else-touched"]["passed"],
+                         by_id["nothing-else-touched"]["detail"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
 
     # ======================================================================
     # bootstrap
@@ -3115,7 +3178,8 @@ One fewer dependency to update.
         by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
         for check_id in ("readme-bootstrapped-in-skill-shape",
                         "index-gained-a-row-for-0001", "adr-0001-sections-in-order",
-                        "retry-sh-links-the-adr", "exactly-one-adr-file"):
+                        "retry-sh-links-the-adr", "exactly-one-adr-file",
+                        "agents-md-gained-the-pointer"):
             self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
         # Restraint is a trivial pass on the pristine seed: nothing changed yet.
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
@@ -3146,6 +3210,7 @@ One fewer dependency to update.
             "backoff | Accepted |\n", "")
         self._bootstrap_docs_decisions(ws, readme_without_row, self.BOOTSTRAP_ADR_0001)
         self._link_retry_sh_bootstrap(ws)
+        self._add_agents_md_pointer_bootstrap(ws)
         by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
         self.assertFalse(by_id["index-gained-a-row-for-0001"]["passed"])
         self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"],
@@ -3154,10 +3219,13 @@ One fewer dependency to update.
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"],
+                        by_id["agents-md-gained-the-pointer"]["detail"])
 
     def test_bootstrap_adr_and_index_but_no_code_link_fails_only_link_check(self):
         ws = self._ws(ADRS_BOOTSTRAP_DIR)
         self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
+        self._add_agents_md_pointer_bootstrap(ws)
         by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
         self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
@@ -3165,12 +3233,14 @@ One fewer dependency to update.
         self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
 
     def test_bootstrap_wrong_section_order_fails_only_format_check(self):
         ws = self._ws(ADRS_BOOTSTRAP_DIR)
         self._bootstrap_docs_decisions(
             ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001_WRONG_ORDER)
         self._link_retry_sh_bootstrap(ws)
+        self._add_agents_md_pointer_bootstrap(ws)
         by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
         self.assertFalse(by_id["adr-0001-sections-in-order"]["passed"])
         self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
@@ -3178,6 +3248,7 @@ One fewer dependency to update.
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
 
     def test_bootstrap_second_adr_for_changelog_fact_fails_only_count_check(self):
         ws = self._ws(ADRS_BOOTSTRAP_DIR)
@@ -3192,6 +3263,7 @@ One fewer dependency to update.
         self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
 
     def test_bootstrap_touching_changelog_fails_only_restraint_check(self):
         ws = self._ws(ADRS_BOOTSTRAP_DIR)
@@ -3207,6 +3279,81 @@ One fewer dependency to update.
         self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
+
+    def test_bootstrap_readme_edit_fails_only_restraint_check(self):
+        # The B1 bug this fixture used to have: with no AGENTS.md in the
+        # seed, Bootstrap step 4 ("AGENTS.md, or README.md if there's no
+        # AGENTS.md") pointed a skill-faithful agent at README.md, and that
+        # correct-per-the-skill answer lost nothing-else-touched. Now the
+        # seed carries an AGENTS.md, so editing README.md instead is a
+        # genuine, not merely accidental, violation.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        readme = ws / "README.md"
+        readme.write_text(
+            readme.read_text(encoding="utf-8") +
+            "\n### Architecture Decision Records\n\nSee `docs/decisions/`.\n",
+            encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
+
+    def test_bootstrap_missing_agents_md_pointer_fails_only_the_pointer_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
+        self._link_retry_sh_bootstrap(ws)
+        # No _add_agents_md_pointer_bootstrap call: AGENTS.md stays pristine.
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["agents-md-gained-the-pointer"]["passed"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_agents_md_rewritten_from_scratch_fails_the_pointer_check(self):
+        # A new AGENTS.md carrying the heading but none of the seed's
+        # original content is a rewrite, not the append Bootstrap step 4
+        # calls for — agents-md-gained-the-pointer's must_match on an
+        # original paragraph is what catches this.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        (ws / "AGENTS.md").write_text(
+            "# AGENTS.md\n\n### Architecture Decision Records\n\n"
+            "Non-obvious decisions live in `docs/decisions/`.\n",
+            encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["agents-md-gained-the-pointer"]["passed"],
+                         by_id["agents-md-gained-the-pointer"]["detail"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_adhoc_readme_shape_fails_only_the_shape_check(self):
+        # readme-bootstrapped-in-skill-shape had no "present but wrong" test:
+        # an ad-hoc README with an index row but none of the skill's own
+        # template headings must fail ONLY this check.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_ADHOC_README, self.BOOTSTRAP_ADR_0001)
+        self._link_retry_sh_bootstrap(ws)
+        self._add_agents_md_pointer_bootstrap(ws)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["readme-bootstrapped-in-skill-shape"]["passed"],
+                         by_id["readme-bootstrapped-in-skill-shape"]["detail"])
+        for check_id in ("index-gained-a-row-for-0001", "adr-0001-sections-in-order",
+                         "retry-sh-links-the-adr", "exactly-one-adr-file",
+                         "nothing-else-touched", "agents-md-gained-the-pointer"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
 
     # ======================================================================
     # The bootstrap README-shape check is pinned to the skill's OWN template

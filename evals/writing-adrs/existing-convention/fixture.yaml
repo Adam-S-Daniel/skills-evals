@@ -67,21 +67,45 @@ objective_checks:
       - '\[0004\]\(0004-[a-z0-9-]+\.md\)'
 
   - id: retry-sh-links-the-adr
-    description: scripts/retry.sh's header points at the new ADR
+    description: >
+      scripts/retry.sh's header points at the new ADR, and the header's own
+      decision sentence (what the judge rubric leans on to check the ADR's
+      content against) is still there — gutting the header to nothing but
+      a link would otherwise still pass this check.
     type: file_matches
     paths: ["scripts/retry.sh"]
     must_match:
       - 'docs/decisions/0004-[a-z0-9-]+\.md'
+      - 'retry a transient command failure with capped exponential backoff'
 
   - id: exactly-one-new-adr-file
     description: >
       Exactly one ADR file was added (0001-0003 already existed): guards
       against a second, unwarranted ADR for the CHANGELOG.md entry, which is
-      a routine fact, not a decision with alternatives.
+      a routine fact, not a decision with alternatives. This is a total
+      count, not a diff — see nothing-else-touched below for the check that
+      catches deleting an existing ADR and adding a differently-numbered one
+      in its place, which this count alone cannot.
     type: file_count
     paths: ["docs/decisions/[0-9][0-9][0-9][0-9]-*.md"]
     min: 4
     max: 4
+
+  - id: nothing-else-touched
+    description: >
+      The pre-existing ADRs (0001-0003), CHANGELOG.md, and AGENTS.md must
+      stay byte-identical. README.md is deliberately left out: the index
+      row for the new ADR is a required edit. Without this, deleting
+      0002-poll-fulfillment-service-every-30s.md and adding a
+      differently-numbered decoy ADR (plus a rewritten CHANGELOG.md) keeps
+      exactly-one-new-adr-file's total count at 4 and scores full marks.
+    type: files_unchanged
+    paths:
+      - "CHANGELOG.md"
+      - "docs/decisions/0001-*.md"
+      - "docs/decisions/0002-*.md"
+      - "docs/decisions/0003-*.md"
+      - "AGENTS.md"
 
 # The judge is left the parts a regex can't decide: whether the new ADR
 # actually explains the alternatives retry.sh's header already names (retry
