@@ -1,0 +1,94 @@
+# Eval fixture: guidance/_delivery — the fleet-memory DELIVERY canary.
+#
+# Not a behavioral A/B. This fixture asks one question, on a schedule: does the
+# fleet's guidance actually REACH an agent's context the way fleet-memory.sh
+# says it does, in each of the five delivery modes? It is the scheduled probe
+# of the user-memory path that _agent-guidance#17 item 3 asked for and that
+# the guidance-bridge canary no longer covers: since the fleet-memory change
+# (measured 2026-08-29) the payload no longer travels through the
+# `CLAUDE.md -> @AGENTS.md` bridge — it is written into ~/.claude/CLAUDE.md by
+# the hook, whose only signal was its own verdict line. Keep the bridge canary
+# for the repo-stub path; this one covers user memory.
+#
+# Every arm carries the run's magic word (a fresh token per run, never
+# reproducible from an earlier one), so `none` seeing it means the arm was
+# contaminated — a real ~/.claude/CLAUDE.md that already IS the guidance —
+# and the harness reports INCONCLUSIVE rather than a number.
+#
+# TWO LOOKS PER ARM, deliberately. The harness's per-arm delivery guard is the
+# authoritative one: tool-free, with the canary's disallowed-tools list, so the
+# model cannot forage the token off disk. The `transcript_matches` check below
+# is the second look, through the ordinary agent invocation, and it is what
+# makes the delivery visible in the badge/report rather than only in the guard
+# block.
+
+subject: guidance
+
+# The section only has to exist and be small: this fixture measures DELIVERY,
+# not what any section teaches. `security` is the smallest `##` in base.md
+# (493 bytes), which keeps the `section` arm's payload — and this canary's
+# weekly cost — down. The id is a row in _agent-guidance's
+# agents-md/eval-coverage.yml and never changes when the heading is reworded.
+section: security
+
+# The cheapest model that can answer a tool-free probe. It is both the agent
+# model for these arms and, because a guidance arm's preflight model is the
+# fixture's own pin, the model the delivery guard runs on. When the model
+# roster (skills-evals#67) lands, its `preflight` entry supersedes this for
+# the guard leg.
+model: claude-haiku-4-5
+
+timeout_s: 300
+guard:
+  timeout_s: 300
+
+# The canary prompt: no task, just "is it in your context".
+prompt: >
+  If your context contains a magic word, reply with that magic word and
+  nothing else. If it does not, reply with exactly NO-MAGIC-WORD. Do not use
+  any tools.
+
+# One arm per delivery mode. `$MAGIC_TOKEN` is the harness's placeholder for
+# the run's fresh token — a fixture cannot name a token that does not exist
+# until the run starts.
+arms:
+  without_guidance:
+    mode: none
+    objective_checks:
+      - id: token-absent-under-none
+        description: >
+          The control arm delivers nothing, so the magic word must not be in
+          its context. If it is, some other channel delivered the guidance to
+          this arm and every without-arm number in the fleet is suspect.
+        type: transcript_matches
+        must_not_match: ["$MAGIC_TOKEN"]
+  with_guidance_stub:
+    mode: stub
+    objective_checks:
+      - id: token-visible-under-stub
+        description: The repo stub reached the agent's context.
+        type: transcript_matches
+        must_match: ["$MAGIC_TOKEN"]
+  with_guidance_section:
+    mode: section
+    objective_checks:
+      - id: token-visible-under-section
+        description: One section, plus its file's intro, reached the context.
+        type: transcript_matches
+        must_match: ["$MAGIC_TOKEN"]
+  with_guidance_full:
+    mode: full
+    objective_checks:
+      - id: token-visible-under-full
+        description: >
+          The whole 56 KB corpus reached the context — the arm most likely to
+          break first if a delivery or context limit changes.
+        type: transcript_matches
+        must_match: ["$MAGIC_TOKEN"]
+  with_guidance_full_minus_section:
+    mode: full-minus-section
+    objective_checks:
+      - id: token-visible-under-full-minus-section
+        description: The ablation payload reached the context.
+        type: transcript_matches
+        must_match: ["$MAGIC_TOKEN"]

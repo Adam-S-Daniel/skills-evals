@@ -776,3 +776,296 @@ class TestIssue97(unittest.TestCase):
                                   "--results-dir", tmp / "results", "--no-judge"])
         self.assertEqual(rc, 2)
         self.assertIn("--guidance", out)
+
+    # ------------------------------------------------------------------
+    # Item 6 — scripts/make_badge.py accepts guidance/<id>
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _write_summary_file(run_dir: Path, arm: str, passed: int, total: int,
+                            judge: float | None) -> None:
+        arm_dir = run_dir / arm
+        arm_dir.mkdir(parents=True, exist_ok=True)
+        checks = [{"id": f"c{i}", "passed": i < passed} for i in range(total)]
+        payload = {"arm": arm, "error": None, "objective_checks": checks,
+                   "judge": {"overall": judge} if judge is not None else None}
+        (arm_dir / "summary.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_make_badge_reads_a_guidance_runs_with_and_without_guidance_arms(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-badge-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        results = tmp / "results"
+        run = results / "guidance" / "security" / "20260904T070000Z"
+        self._write_summary_file(run, "with_guidance", 4, 4, 8.0)
+        self._write_summary_file(run, "without_guidance", 1, 4, 5.0)
+
+        badge = make_badge.build_badge(results, "guidance/security")
+        self.assertEqual(badge["label"], "guidance eval: security")
+        self.assertEqual(badge["color"], "green")
+        self.assertIn("with 4/4 vs without 1/4", badge["message"])
+        self.assertIn("2026-09-04", badge["message"])
+
+        out = tmp / "badges" / "guidance" / "security.json"
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"),
+             "guidance/security", "--results-dir", str(results), "--out", str(out)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(json.loads(out.read_text(encoding="utf-8"))["label"],
+                         "guidance eval: security")
+
+    def test_make_badge_still_reads_skill_arms_for_a_skill_name(self):
+        tmp = Path(tempfile.mkdtemp(prefix="skill-badge-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        results = tmp / "results"
+        run = results / "workflow-path-audit" / "20260904T070000Z"
+        self._write_summary_file(run, "with_skill", 4, 4, 8.0)
+        self._write_summary_file(run, "without_skill", 1, 4, 5.0)
+        badge = make_badge.build_badge(results, "workflow-path-audit")
+        self.assertEqual(badge["label"], "skill eval: workflow-path-audit")
+        self.assertEqual(badge["color"], "green")
+
+    def test_make_badge_rejects_a_name_that_escapes_the_results_tree(self):
+        for bad in ("../etc", "/abs/name", "guidance/../../x"):
+            with self.subTest(name=bad):
+                with self.assertRaises(ValueError):
+                    make_badge.build_badge(Path("results"), bad)
+
+    # ------------------------------------------------------------------
+    # Item 7 — the committed delivery canary, evals/guidance/_delivery
+    # ------------------------------------------------------------------
+
+    def _delivery_fixture(self) -> dict:
+        return yaml.safe_load((DELIVERY_DIR / "fixture.yaml").read_text(encoding="utf-8"))
+
+    def test_the_delivery_fixture_declares_one_arm_per_mode(self):
+        fixture = self._delivery_fixture()
+        self.assertEqual(fixture["subject"], "guidance")
+        self.assertIsInstance(fixture["section"], str)
+        modes = [arm["mode"] for arm in fixture["arms"].values()]
+        self.assertEqual(sorted(modes), sorted(guidance.MODES),
+                         "the delivery canary runs one arm per mode")
+        self.assertEqual(len(fixture["arms"]), 5)
+        # Every non-none arm asserts the token IS visible; the control arm
+        # asserts it is not. The token is fresh per run, so the fixture names
+        # it with the harness's placeholder.
+        for name, arm in fixture["arms"].items():
+            with self.subTest(arm=name):
+                checks = arm["objective_checks"]
+                self.assertEqual([c["type"] for c in checks], ["transcript_matches"])
+                key = "must_not_match" if arm["mode"] == "none" else "must_match"
+                self.assertEqual(checks[0][key], [run_eval.TOKEN_PLACEHOLDER])
+
+    def test_the_delivery_fixtures_section_exists_in_the_real_manifest(self):
+        if not (REAL_GUIDANCE_DIR / guidance.MANIFEST_REL).is_file():
+            reason = (f"no _agent-guidance checkout at {REAL_GUIDANCE_DIR} — "
+                      "skipping the section-id agreement check")
+            print(reason)
+            self.skipTest(reason)
+        manifest = guidance.load_manifest(REAL_GUIDANCE_DIR)
+        row = guidance.find_row(manifest, self._delivery_fixture()["section"],
+                                REAL_GUIDANCE_DIR)
+        self.assertTrue(row["heading"])
+
+    def test_the_delivery_canary_runs_all_five_modes_against_the_real_guidance(self):
+        if not (REAL_GUIDANCE_DIR / guidance.HOOK_REL).is_file():
+            reason = (f"no _agent-guidance checkout at {REAL_GUIDANCE_DIR} — "
+                      "skipping the end-to-end delivery-canary run")
+            print(reason)
+            self.skipTest(reason)
+        tmp = Path(tempfile.mkdtemp(prefix="delivery-canary-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        results = tmp / "results"
+        fixture = self._delivery_fixture()
+        # The committed fixture carries no `env:` (it is production), so the
+        # fake CLI's mode reaches the child through the allowlist's documented
+        # test seam instead — the same one init_probe.py has.
+        with mock.patch.object(guidance, "EXTRA_PASSTHROUGH", ("FAKE_CLAUDE_MODE",)), \
+                mock.patch.dict(os.environ, {"FAKE_CLAUDE_MODE": "guidance_probe"}):
+            rc, out = self._run_main([DELIVERY_DIR, "--arm", "both",
+                                      "--guidance", REAL_GUIDANCE_DIR,
+                                      "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 0, out)
+        key = f"guidance/{fixture['section']}"
+        for name, arm in fixture["arms"].items():
+            with self.subTest(arm=name):
+                summary = self._summary(results, key, name)
+                self.assertTrue(summary["guard"]["ok"], summary["guard"])
+                self.assertEqual(summary["guard"]["expected"], arm["mode"] != "none")
+                self.assertEqual(summary["bytes"] > 0, arm["mode"] != "none")
+                self.assertTrue(all(c["passed"] for c in summary["objective_checks"]),
+                                summary["objective_checks"])
+        stub = self._summary(results, key, "with_guidance_stub")["bytes"]
+        full = self._summary(results, key, "with_guidance_full")["bytes"]
+        minus = self._summary(results, key, "with_guidance_full_minus_section")["bytes"]
+        section = self._summary(results, key, "with_guidance_section")["bytes"]
+        self.assertLess(stub, full)
+        self.assertLess(minus, full)
+        self.assertLess(section, full)
+
+    def test_every_committed_fixture_declares_a_known_subject(self):
+        for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
+            with self.subTest(fixture=str(path.relative_to(REPO_ROOT))):
+                fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
+                self.assertIn(fixture.get("subject", "skill"),
+                              ("skill", "guidance"))
+
+    # ------------------------------------------------------------------
+    # Item 8 + the dispatch input — .github/workflows/eval.yml
+    # ------------------------------------------------------------------
+
+    MARKDOWN_IT_PIN = "markdown-it-py==4.2.0"
+
+    def _workflow(self) -> dict:
+        return yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+
+    def _eval_steps(self) -> list[dict]:
+        return self._workflow()["jobs"]["eval"]["steps"]
+
+    def _step_named(self, prefix: str) -> dict:
+        for step in self._eval_steps():
+            if (step.get("name") or "").startswith(prefix):
+                return step
+        self.fail(f"no step in eval.yml whose name starts with {prefix!r}")
+
+    def test_dispatch_takes_a_fixture_input_defaulting_to_workflow_path_audit(self):
+        # Without this input no fixture but workflow-path-audit can ever get a
+        # real run on main, so a guidance fixture (or any backfill fixture)
+        # could never be measured at all.
+        doc = self._workflow()
+        triggers = doc.get("on", doc.get(True))
+        self.assertEqual(set(triggers), {"schedule", "workflow_dispatch"},
+                         "eval.yml stays schedule + workflow_dispatch only")
+        inputs = (triggers["workflow_dispatch"] or {}).get("inputs") or {}
+        self.assertIn("fixture", inputs)
+        self.assertEqual(inputs["fixture"].get("default"), "evals/workflow-path-audit",
+                         "the scheduled run keeps its default")
+        self.assertFalse(inputs["fixture"].get("required"),
+                         "the schedule passes no inputs, so it must not be required")
+
+    def test_the_fixture_input_is_read_from_the_event_file_never_interpolated(self):
+        # `${{ inputs.fixture }}` inside a run: block is a shell-injection
+        # surface in the one workflow that holds a live API key. The value is
+        # read from $GITHUB_EVENT_PATH as data instead.
+        for step in self._eval_steps():
+            run = step.get("run") or ""
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("${{", run)
+        scripts = [s.get("run") or "" for s in self._eval_steps()]
+        reading = [s for s in scripts if "GITHUB_EVENT_PATH" in s]
+        self.assertEqual(len(reading), 1,
+                         "exactly one step reads the dispatch input, and it "
+                         "reads it from the event file")
+        self.assertIn("inputs.fixture", reading[0],
+                      "the event file's .inputs.fixture is the value read")
+
+    def test_the_fixture_is_validated_before_any_credential_step(self):
+        names = [(s.get("name") or "") for s in self._eval_steps()]
+        validate = next(i for i, s in enumerate(self._eval_steps())
+                        if "GITHUB_EVENT_PATH" in (s.get("run") or ""))
+        credential = next(i for i, name in enumerate(names)
+                          if name.startswith("Mint OIDC token"))
+        self.assertLess(validate, credential,
+                        "a value that names no committed fixture must fail the "
+                        "step before any credential is minted")
+        run_step = self._step_named("Run the eval")
+        self.assertIn("eval-fixture", run_step["run"],
+                      "the run step must take the fixture from the file the "
+                      "validation step wrote, not from the event again")
+
+    def _validation_script(self) -> str:
+        for step in self._eval_steps():
+            if "GITHUB_EVENT_PATH" in (step.get("run") or ""):
+                return step["run"]
+        self.fail("no validation step found")
+
+    def _run_validation(self, event: dict | None) -> subprocess.CompletedProcess:
+        tmp = Path(tempfile.mkdtemp(prefix="eval-dispatch-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        event_path = tmp / "event.json"
+        event_path.write_text(json.dumps(event if event is not None else {}),
+                              encoding="utf-8")
+        env = dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
+                   RUNNER_TEMP=str(tmp))
+        proc = subprocess.run(["bash", "-c", self._validation_script()],
+                              cwd=str(REPO_ROOT), env=env, capture_output=True,
+                              text=True, timeout=120)
+        proc.selected = (tmp / "eval-fixture").read_text(encoding="utf-8") \
+            if (tmp / "eval-fixture").is_file() else None
+        return proc
+
+    def test_the_validation_step_accepts_every_committed_fixture(self):
+        committed = sorted(str(p.parent.relative_to(REPO_ROOT))
+                           for p in (REPO_ROOT / "evals").glob("**/fixture.yaml"))
+        self.assertIn("evals/guidance/_delivery", committed)
+        for fixture in committed:
+            with self.subTest(fixture=fixture):
+                proc = self._run_validation({"inputs": {"fixture": fixture}})
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(proc.selected, fixture)
+
+    def test_the_validation_step_defaults_when_the_event_carries_no_input(self):
+        # The scheduled run: no `inputs` in the event payload at all.
+        for event in ({}, {"inputs": {}}, {"inputs": {"fixture": ""}}):
+            with self.subTest(event=event):
+                proc = self._run_validation(event)
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                self.assertEqual(proc.selected, "evals/workflow-path-audit")
+
+    def test_the_validation_step_rejects_anything_that_names_no_fixture(self):
+        for bad in ("evals/nope", "../../etc/passwd", "/etc", "evals",
+                    "evals/workflow-path-audit/seed", "evals/guidance",
+                    "; rm -rf /", "evals/workflow-path-audit "):
+            with self.subTest(fixture=bad):
+                proc = self._run_validation({"inputs": {"fixture": bad}})
+                self.assertEqual(proc.returncode, 1,
+                                 f"{bad!r} must fail the step: "
+                                 f"{proc.stdout + proc.stderr}")
+                self.assertIn("names no committed fixture", proc.stdout + proc.stderr)
+                self.assertIsNone(proc.selected)
+
+    def test_agent_guidance_is_checked_out_side_by_side_without_credentials(self):
+        checkout = next(
+            s for s in self._eval_steps()
+            if (s.get("with") or {}).get("repository", "").endswith("/_agent-guidance"))
+        with_block = checkout["with"]
+        self.assertEqual(with_block.get("path"), "_agent-guidance",
+                         "side by side, so the harness's sibling default resolves")
+        self.assertIs(with_block.get("persist-credentials"), False)
+        self.assertRegex(checkout["uses"], r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+        run = self._step_named("Run the eval")["run"]
+        self.assertNotIn("--registry _agent-guidance", run,
+                         "_agent-guidance is not a skill registry")
+        self.assertIn("--guidance ../_agent-guidance", run)
+
+    def test_markdown_it_py_is_pinned_exact_in_both_workflows(self):
+        for workflow in (EVAL_WORKFLOW, CI_WORKFLOW):
+            with self.subTest(workflow=workflow.name):
+                doc = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+                installs = [s.get("run") or "" for job in doc["jobs"].values()
+                            for s in job.get("steps", [])
+                            if "pip install" in (s.get("run") or "")]
+                self.assertTrue(installs, "no pip install step found")
+                self.assertTrue(
+                    any(self.MARKDOWN_IT_PIN in run for run in installs),
+                    f"{workflow.name} must install {self.MARKDOWN_IT_PIN} — the "
+                    "guidance payload parser is pinned exact, per the repo's "
+                    "cooling-off convention")
+
+    def test_the_security_header_carries_the_agent_guidance_clause(self):
+        import itertools
+        lines = EVAL_WORKFLOW.read_text(encoding="utf-8").splitlines()
+        header = "\n".join(itertools.takewhile(
+            lambda line: line.strip() == "" or line.lstrip().startswith("#"), lines))
+        self.assertIn("_agent-guidance", header,
+                      "the header must name every checked-out repo")
+        self.assertIn("bypassPermissions", header)
+        for phrase in ("write access", "equivalent to key access"):
+            self.assertIn(phrase, header)
+        guidance_clause = [para for para in header.split("#\n")
+                           if "_agent-guidance" in para]
+        self.assertTrue(
+            any("key access" in para for para in guidance_clause),
+            "the header must say that write access to _agent-guidance's "
+            "default branch now equals key access here — the with arm "
+            "executes its content under bypassPermissions")

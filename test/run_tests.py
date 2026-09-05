@@ -1372,8 +1372,18 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
         checkout_steps = [s for s in steps
                           if (s.get("uses") or "").startswith("actions/checkout@")]
-        registry_checkouts = [s for s in checkout_steps
-                              if (s.get("with") or {}).get("repository")]
+        # A checkout that names a repository is not necessarily a REGISTRY:
+        # since #97 the workflow also checks out _agent-guidance, which is the
+        # guidance subject's source and gets --guidance, never --registry. The
+        # one-flag-per-registry assertion below is therefore over the checkouts
+        # whose repo IS a registry in harness/registries.yml — a checked-out
+        # registry with no flag (and a flag with no checkout) still fails.
+        registry_repos = {name.rsplit("/", 1)[-1]
+                          for name in repo_by_name.values()}
+        registry_checkouts = [
+            s for s in checkout_steps
+            if (s.get("with") or {}).get("repository", "").rsplit("/", 1)[-1].lower()
+            in registry_repos]
         path_to_repo = {
             (s.get("with") or {}).get("path"):
                 (s.get("with") or {}).get("repository", "").rsplit("/", 1)[-1].lower()
