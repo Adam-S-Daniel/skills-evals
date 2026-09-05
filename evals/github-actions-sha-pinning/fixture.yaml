@@ -34,6 +34,14 @@
 # given), so this fixture tests whether the skill's stated rules generalize
 # correctly to a repo shape its own Scope section doesn't name — it is not
 # asserting that the skill is actually installed there in the real fleet.
+#
+# Left to the harness lane, not this fixture (review round 5, N7): two
+# pre-existing gaps in harness/scorers/objective.py that predate this PR and
+# are out of this fixture's scope to close — `_workflow_uses` (reached only
+# by `non_remote_refs_unchanged`, unused by any check here) still raises
+# `IsADirectoryError` on a directory match, and `run_checks` has no
+# per-check `try/except`, so one check raising would abort the whole run
+# rather than reporting that one check as failed.
 
 skill: github-actions-sha-pinning
 registry: https://github.com/Adam-S-Daniel/cms-platform
@@ -85,12 +93,15 @@ objective_checks:
   - id: third-party-actions-sha-pinned
     description: >
       Every third-party `uses:` ref in ci.yml is a full 40-character commit
-      SHA — not a tag, not an abbreviated SHA. Scoped to ci.yml only: the
-      cms-platform refs in deploy.yml and the gate composite are checked
-      separately below, since this check type has no carve-out awareness and
-      would flag a correctly-preserved cms-platform tag as "unpinned".
+      SHA — not a tag, not an abbreviated SHA. A cms-platform ref landing in
+      ci.yml (this check is scoped to ci.yml only) is exempted by
+      `platform_prefix`, the same way `pins_match_reference` below is
+      exempted: it stays on its release tag, and staying there is
+      `cms-platform-refs-stay-on-tag`'s business, checked separately over
+      paths that include this file.
     type: uses_refs_sha_pinned
     paths: [".github/workflows/ci.yml"]
+    platform_prefix: "Adam-S-Daniel/cms-platform/"
 
   - id: third-party-pins-match-pins-md
     description: >
@@ -103,7 +114,7 @@ objective_checks:
       not pass vacuously.
       # platform_prefix excludes a cms-platform ref from this check's
       # closure leg (round 4, N4, see the sibling cms-platform-refs-stay-
-      # on-tag check's own note above): PINS.md is a third-party ledger, and
+      # on-tag check's own note below): PINS.md is a third-party ledger, and
       # a platform ref staying on its tag is that check's business, not
       # this one's — an agent that moves the platform ref into whichever
       # file this check scans must not be failed twice for one carve-out.
@@ -138,19 +149,31 @@ objective_checks:
       `env:`, or inside a `matrix: include:` entry), not just directly under
       a job's `with:` — deliberately kept broad, since the input is a
       version literal wherever it appears, not only in the one shape this
-      seed happens to use.
+      seed happens to use. A `platform_ref:` key bound to an input
+      DECLARATION rather than a version value (a composite's own
+      `inputs: {platform_ref: {...}}` block) is a MappingNode, not a
+      scalar, and is skipped rather than compared — only a scalar value is
+      ever a version literal to check.
       # min_refs is the presence half a `must_match` regex used to supply
       # for free: without it, "every platform ref found is on the tag"
       # passes vacuously with zero refs found (a deleted deploy.yml and/or
       # gate action, or a cms-platform ref routed to a local `./` path).
-      # The count is 2: the reusable-workflow call in deploy.yml and the
-      # composite-action call in the gate action — `platform_ref:` values
-      # are not counted here, since a min_refs miscount on a value that has
-      # no fixed cardinality (an agent may add or drop `with:` blocks
-      # freely) would be its own false positive.
+      # The count is at least 2: the reusable-workflow call in deploy.yml
+      # and the composite-action call in the gate action — a third
+      # correctly tag-pinned platform ref elsewhere (e.g. in ci.yml, see
+      # third-party-actions-sha-pinned above) still passes, it is a floor,
+      # not an exact count. `platform_ref:` values are not counted here,
+      # since a min_refs miscount on a value that has no fixed cardinality
+      # (an agent may add or drop `with:` blocks freely) would be its own
+      # false positive.
     type: platform_refs_on_tag
-    paths: [".github/workflows/deploy.yml",
+    paths: [".github/workflows/ci.yml", ".github/workflows/deploy.yml",
            ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
+    # paths names deploy.yml literally: a rename to deploy.yaml (or moving
+    # the gate composite's action.yml to action.yaml) stops this check from
+    # seeing that file's platform ref(s) at all, and a stray SHA or skewed
+    # tag left behind by such a rename would go unpoliced by this check —
+    # `ci-workflow-not-deleted`/`workflows-still-parse` do not cover it either.
     platform_prefix: "Adam-S-Daniel/cms-platform/"
     tag: "v0.1.104"
     min_refs: 2

@@ -2704,6 +2704,49 @@ class TestIssue85(unittest.TestCase):
         self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
                          by_id["cms-platform-refs-stay-on-tag"]["detail"])
 
+    # -- the carve-out must apply in ci.yml too (review round 5, S1) --------
+    # `pins_match_reference`'s platform_prefix exclusion (round 4, N4) covers
+    # ci.yml, but `platform_refs_on_tag` (this carve-out's own enforcement)
+    # did not scan ci.yml at all, and `uses_refs_sha_pinned` had no carve-out
+    # awareness there either — so a cms-platform ref landing in ci.yml was
+    # policed backwards: SHA-pinning it (the violation) passed everything,
+    # and correctly tag-pinning it (compliance) failed the SHA-shape check.
+
+    def test_cms_platform_ref_sha_pinned_in_ci_yml_fails_only_the_carve_out_check(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  extra:\n    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/actions/recursion-gate"
+                  "@1e9a6937a11cbce43ac288d062ceec17fc51d43f\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        for check_id, result in by_id.items():
+            if check_id == "cms-platform-refs-stay-on-tag":
+                continue
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_cms_platform_ref_tag_pinned_in_ci_yml_passes_all_checks(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  extra:\n    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/actions/recursion-gate@v0.1.104\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
     # -- PINS.md is the only offline source of truth (review round 2, N1) ----
 
     def test_invented_sha_audit_fails_pins_match(self):
@@ -3230,21 +3273,38 @@ class TestIssue85(unittest.TestCase):
         'adam-s-daniel/cms-platform/...' ref naming this account's own
         platform repo is the SAME cross-repo reference and must be caught if
         it is SHA-pinned, not skipped as though it named something else.
+
+        Round 5, S2: the earlier version of this test REPLACED the ONLY
+        deploy.yml platform ref with the lowercased+SHA-pinned one — so a
+        case-SENSITIVE mutant (which fails to recognise the lowercased ref
+        as a platform ref at all) doesn't merely miss the violation, it also
+        stops COUNTING that ref: ref_count drops from 2 to 1 and `min_refs`
+        fails the check anyway, but for the wrong reason (a missing ref, not
+        a bad pin) — `assertFalse(passed)` can't tell the difference. This
+        version keeps BOTH seed refs (deploy.yml's reusable-workflow call
+        and the gate composite's) intact, satisfying min_refs=2 on their
+        own, and adds a THIRD, lowercased, SHA-pinned platform ref: the
+        case-sensitive mutant simply never sees it (ref_count still 2, both
+        real refs still correctly tag-pinned) and scores a full pass; only
+        the case-insensitive match catches the third ref, and names it.
         """
         seed = GHA_SHA_PINNING_DIR / "seed"
         with tempfile.TemporaryDirectory() as tmp:
             ws = self._seed_copy(tmp)
             self._audited(ws)
             deploy = ws / ".github" / "workflows" / "deploy.yml"
-            self._replace(
-                deploy,
-                "uses: Adam-S-Daniel/cms-platform/.github/workflows/"
-                "e2e-tests.yml@v0.1.104",
-                "uses: adam-s-daniel/cms-platform/.github/workflows/"
-                "e2e-tests.yml@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            original = deploy.read_text(encoding="utf-8")
+            extra = ("  stray:\n    uses: adam-s-daniel/cms-platform/"
+                    ".github/workflows/other.yml"
+                    "@1e9a6937a11cbce43ac288d062ceec17fc51d43f\n")
+            deploy.write_text(original + extra, encoding="utf-8")
             by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
-                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("adam-s-daniel/cms-platform/.github/workflows/"
+                      "other.yml@1e9a6937a11cbce43ac288d062ceec17fc51d43f",
+                      detail)
+        self.assertIn("expected @v0.1.104", detail)
 
     # -- an aliased platform_ref is one problem, not two (review round 4, N3)
 

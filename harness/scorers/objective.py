@@ -38,7 +38,8 @@ def _is_remote_action(ref: str) -> bool:
     return not ref.startswith(("./", "docker://"))
 
 
-def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str]:
+def uses_refs_sha_pinned(workspace: str, patterns: list[str],
+                         platform_prefix: str | None = None) -> tuple[bool, str]:
     """Every remote (non-local, non-docker) `uses:` ref is a bare full
     40-character commit SHA — never a tag, an abbreviated SHA, or anything
     else.
@@ -49,6 +50,13 @@ def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str
     quoted pin (the quote characters land inside the captured "ref") or a
     `uses:`-shaped line inside a `run: |` block scalar (prose, not a mapping
     key) both defeat.
+
+    `platform_prefix`, when given, skips a cross-repo reference to this
+    account's own platform repo (case-folded, matching `platform_refs_on_tag`'s
+    own comparison): that ref is meant to stay on its release TAG, not a
+    SHA, so scoring it here would fail the one thing the carve-out requires.
+    `platform_refs_on_tag` is what actually checks such a ref, in whichever
+    files the fixture points it at.
     """
     import yaml
     bad = []
@@ -69,6 +77,9 @@ def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str
                 ref = value_node.value
                 if not isinstance(ref, str) or not _is_remote_action(ref):
                     continue
+                if (platform_prefix
+                        and platform_prefix.casefold() in ref.casefold()):
+                    continue  # platform_refs_on_tag's business, not ours
                 if not SHA_RE.match(ref.rsplit("@", 1)[-1]):
                     lineno = value_node.start_mark.line + 1
                     bad.append(f"{rel}:{lineno} {ref}")
@@ -214,7 +225,17 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
     place. `min_refs` counts platform `uses:` value nodes only — not
     `platform_ref:` nodes, which are a separate leg entirely — so it stays a
     structural count, not a `files_unchanged`-style presence guard: an
-    edited-but-still-correct file with the same ref count still passes.
+    edited-but-still-correct file with the same ref count still passes. The
+    count is of DISTINCT `(file, line)` locations, not of node visits: an
+    anchored `uses:` value referenced again elsewhere via a YAML alias
+    (`*x`) is the same physical ref and must not inflate the count — see
+    the de-duplication note below, which applies here too.
+
+    The count can also undershoot for a reason that has nothing to do with
+    how many platform refs exist: a file that fails to parse, or one with no
+    content at all, contributes zero ref nodes and silently lowers the
+    count exactly as a genuinely deleted ref would — the detail names only
+    the resulting number, not which file (if any) could not be read.
 
     The prefix match is case-folded on both sides: a GitHub `owner/repo`
     path is case-insensitive, so `adam-s-daniel/cms-platform/...` is the same
@@ -228,12 +249,20 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
     consequence `pin_comment_absent` documents for a trailing comment on an
     alias's own line. `bad` is de-duplicated before being joined for this
     reason.
+
+    A `platform_ref:` key can also bind to a MappingNode rather than a
+    scalar — a composite action DECLARING an input named `platform_ref`
+    (`inputs: {platform_ref: {description: ..., required: true}}`) uses the
+    same key for something that is not a version literal at all. Only a
+    `yaml.ScalarNode` bound to that key is a value to compare; anything else
+    is skipped rather than compared (and never counted — only `uses:` nodes
+    feed `min_refs`).
     """
     import yaml
     if not platform_prefix or not tag:
         return (False, "platform_prefix/tag not configured")
     bad = []
-    ref_count = 0
+    ref_locations: set[tuple[str, int]] = set()
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
             if not os.path.isfile(path):
@@ -252,7 +281,7 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
                 if (not isinstance(ref, str)
                         or platform_prefix.casefold() not in ref.casefold()):
                     continue
-                ref_count += 1
+                ref_locations.add((rel, value_node.start_mark.line))
                 expected = ref.rsplit("@", 1)[0] + "@" + tag
                 if ref != expected:
                     lineno = value_node.start_mark.line + 1
@@ -264,6 +293,7 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
                     lineno = value_node.start_mark.line + 1
                     bad.append(f"{rel}:{lineno} platform_ref: {value_node.value} "
                               f"(expected {tag})")
+    ref_count = len(ref_locations)
     if min_refs is not None and ref_count < min_refs:
         bad.append(f"only {ref_count} platform uses: ref(s) found across "
                   f"{patterns} (expected at least {min_refs})")
@@ -277,7 +307,12 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
 # number of cells, or a malformed (e.g. shortened) sha, is still recognised
 # as a row rather than silently failing to match at all. Cell count and the
 # sha cell are both validated separately in _load_pins_reference, so either
-# kind of malformed row is reported instead of just vanishing.
+# kind of malformed row is reported instead of just vanishing. This is
+# deliberately loose enough to also classify a 1-cell line like `| note |`
+# as a "row" (it has a leading and trailing `|` and nothing else); that
+# never bites in practice because PINS.md is policed by `files_unchanged`
+# (byte-identical to the seed), so no malformed row of any shape can be
+# introduced into it by an audited run.
 PINS_TABLE_ROW_RE = re.compile(r"^\|(.+)\|\s*$")
 # The markdown alignment row under a table header (`|---|---|---|`, optional
 # `:` for alignment) — a table-shaped row with no meaningful cell content,
@@ -367,10 +402,13 @@ def pins_match_reference(workspace: str, patterns: list[str],
     account's own platform repo from that closure: PINS.md is a third-party
     pin ledger, and a platform ref staying on its release tag is
     `platform_refs_on_tag`'s business, checked separately (with its own
-    `min_refs` presence guard) against the very same files. Without the
-    exclusion, an agent that reorganises which file carries the platform
-    ref (e.g. consolidating a job into the file this check scans) would be
-    failed here too, for a carve-out this check does not police.
+    `min_refs` presence guard) over its own `paths` — a fixture configures
+    those as a superset of this check's, not the identical file set, so a
+    platform ref that lands in one of THIS check's files is still caught
+    there too. Without the exclusion, an agent that reorganises which file
+    carries the platform ref (e.g. consolidating a job into the file this
+    check scans) would be failed here too, for a carve-out this check does
+    not police.
 
     A malformed row in the reference file itself (a table-shaped row whose
     sha cell isn't valid 40-hex) fails the check directly rather than
@@ -1033,6 +1071,8 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "uses_refs_sha_pinned":
+            kwargs["platform_prefix"] = check.get("platform_prefix")
         elif check["type"] == "pins_match_reference":
             kwargs["reference"] = check.get("reference")
             kwargs["platform_prefix"] = check.get("platform_prefix")
