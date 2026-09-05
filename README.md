@@ -39,6 +39,9 @@ evals/
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
+    fixture.yaml           # prompt, objective checks (listing + content digests), rubric
+    seed/inbox/            # six committed PDFs built by ../make_pdfs.py
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces

@@ -7,10 +7,13 @@ reference them by their `type` field.
 
 from __future__ import annotations
 
+import fnmatch
 import glob
+import hashlib
 import json
 import os
 import re
+from collections import Counter
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -367,10 +370,28 @@ def event_only_workflows_unfiltered(workspace: str, patterns: list[str]) -> tupl
 
 
 def files_unchanged(workspace: str, patterns: list[str],
-                    seed: str | None = None) -> tuple[bool, str]:
-    """The named files must be byte-identical to the seed workspace."""
+                    seed: str | None = None, by: str = "path") -> tuple[bool, str]:
+    """The matched files' content must survive, relative to the seed workspace.
+
+    `by="path"` (default): every matched file must be byte-identical to the
+    seed file at the SAME relative path — a rename, even of untouched
+    content, is a failure. This is what every existing fixture wants: a
+    ruleset or a fake binary that must not be touched OR moved.
+
+    `by="digest"`: compares the MULTISET of sha256 content digests across
+    all matched files, ignoring which filename holds which content. A file
+    that got renamed (content preserved, path changed) still passes; a file
+    whose content changed, or one that vanished outright (e.g. a naive
+    rename that clobbered another file instead of disambiguating), does not
+    — its digest is missing from the resulting bag. This is the mode a
+    rename task needs: correct behaviour is EXPECTED to move content to new
+    paths, so path identity is not the property to protect, content
+    survival is.
+    """
     if seed is None:
         return (False, "seed workspace not provided")
+    if by not in ("path", "digest"):
+        return (False, f"files_unchanged: unknown by={by!r}, expected 'path' or 'digest'")
 
     def snapshot(root):
         out = {}
@@ -385,6 +406,22 @@ def files_unchanged(workspace: str, patterns: list[str],
         return out
 
     before, after = snapshot(seed), snapshot(workspace)
+
+    if by == "digest":
+        def digests(snapshot_dict):
+            return [hashlib.sha256(data).hexdigest() for data in snapshot_dict.values()]
+        before_counts, after_counts = Counter(digests(before)), Counter(digests(after))
+        if before_counts == after_counts:
+            return (True, f"content preserved by digest ({sum(before_counts.values())} file(s))")
+        lost = before_counts - after_counts
+        gained = after_counts - before_counts
+        problems = []
+        if lost:
+            problems.append(f"{sum(lost.values())} file(s)' content missing from the result")
+        if gained:
+            problems.append(f"{sum(gained.values())} file(s) with unexpected/new content in the result")
+        return (False, "; ".join(problems) if problems else "digest multiset changed")
+
     problems = [f"{rel}: removed" for rel in sorted(set(before) - set(after))]
     problems += [f"{rel}: added" for rel in sorted(set(after) - set(before))]
     problems += [f"{rel}: modified" for rel in sorted(set(before) & set(after))
@@ -392,6 +429,117 @@ def files_unchanged(workspace: str, patterns: list[str],
     return (not problems,
             f"unchanged ({', '.join(sorted(before)) or 'no files matched'})"
             if not problems else "; ".join(problems))
+
+
+def _capped_join(names: list[str], limit: int = 40) -> str:
+    """", "-join, but a huge listing doesn't dump every name into `detail`."""
+    if len(names) <= limit:
+        return ", ".join(names)
+    return f"{', '.join(names[:limit])}, and {len(names) - limit} more"
+
+
+def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str] | None = None,
+                        expected_file: str | None = None, seed: str | None = None,
+                        ignore: list[str] | None = None) -> tuple[bool, str]:
+    """The sorted immediate-entry listing of one directory must equal an
+    expected list of names.
+
+    `patterns` names exactly one directory, relative to the workspace (e.g.
+    `["inbox"]`) — this is not a glob, unlike every other check here; it is
+    listed once and compared whole, which is what a rename task needs: the
+    property under test is which NAMES exist afterward, not any one file's
+    content.
+
+    The expected names come from exactly one of:
+      - `expected`: an inline list in the fixture.
+      - `expected_file`: a path read from the pristine `seed` directory (never
+        the runtime workspace, so a run that deletes or edits its own copy of
+        that file cannot change what "expected" means) — one name per
+        non-blank line.
+
+    `ignore`: optional list of `fnmatch` glob patterns (compared as data,
+    never a regex) for entry names to drop from the listing before
+    comparing — for a name that is inherently non-deterministic (e.g. a
+    wall-clock-stamped log file) and so cannot itself appear in `expected`.
+    Anything NOT matching an ignore pattern is still compared normally, so
+    this narrows what is excused, not what is checked.
+    """
+    if len(patterns) != 1:
+        return (False, f"dir_listing_matches takes exactly one directory, got {patterns!r}")
+    directory = patterns[0]
+    if os.path.isabs(directory):
+        return (False, f"{directory}: must be a workspace-relative path, not absolute")
+    workspace_real = os.path.realpath(workspace)
+    target = os.path.join(workspace, directory)
+    target_real = os.path.realpath(target)
+    if os.path.commonpath([workspace_real, target_real]) != workspace_real:
+        return (False, f"{directory}: resolves outside the workspace")
+    if not os.path.isdir(target):
+        return (False, f"{directory}: not a directory")
+    actual = sorted(os.listdir(target))
+    if ignore:
+        actual = [name for name in actual
+                 if not any(fnmatch.fnmatch(name, pat) for pat in ignore)]
+
+    if expected is not None and expected_file is not None:
+        return (False, "dir_listing_matches: give expected or expected_file, not both")
+    if expected_file is not None:
+        if seed is None:
+            return (False, "seed workspace not provided")
+        try:
+            with open(os.path.join(seed, expected_file), encoding="utf-8") as f:
+                expected = [line.strip() for line in f if line.strip()]
+        except (OSError, UnicodeDecodeError) as exc:
+            return (False, f"{expected_file}: {exc}")
+    elif expected is None:
+        return (False, "dir_listing_matches: expected or expected_file is required")
+    if not isinstance(expected, list):
+        return (False, f"dir_listing_matches: expected must be a list, "
+                       f"got {type(expected).__name__}")
+    expected = sorted(expected)
+
+    if actual == expected:
+        return (True, f"{directory}/ matches the expected listing ({len(actual)} entries)")
+    missing = sorted(set(expected) - set(actual))
+    extra = sorted(set(actual) - set(expected))
+    problems = []
+    if missing:
+        problems.append("missing: " + _capped_join(missing))
+    if extra:
+        problems.append("unexpected: " + _capped_join(extra))
+    return (False, "; ".join(problems) if problems
+            else f"listing differs: {_capped_join(actual)} != {_capped_join(expected)}")
+
+
+def file_digests_match(workspace: str, patterns: list[str],
+                       sha256: str | None = None) -> tuple[bool, str]:
+    """Every path in `patterns` (workspace-relative, NOT a glob) must exist
+    and its content must hash to the exact `sha256` hex digest given.
+
+    Unlike `files_unchanged(by="digest")`, which compares a MULTISET of
+    digests against the seed with no fixed identity, this pins one exact,
+    known-in-advance digest to one or more named paths — "this specific
+    document's bytes ended up at this specific final name." More than one
+    path is for a disambiguated pair that is expected to still be
+    byte-identical copies of the SAME document (e.g. `foo.pdf` and
+    `foo (2).pdf`), not two different documents.
+    """
+    if not patterns:
+        return (False, "file_digests_match: at least one path is required")
+    if not sha256:
+        return (False, "file_digests_match: sha256 is required")
+    problems = []
+    for rel in patterns:
+        full = os.path.join(workspace, rel)
+        if not os.path.isfile(full):
+            problems.append(f"{rel}: not found")
+            continue
+        with open(full, "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        if digest != sha256:
+            problems.append(f"{rel}: digest {digest} != expected {sha256}")
+    return (not problems, f"{', '.join(patterns)}: digest matches" if not problems
+            else "; ".join(problems))
 
 
 def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
@@ -460,8 +608,10 @@ CHECKS = {
     "required_checks_early_skip": required_checks_early_skip,
     "event_only_workflows_unfiltered": event_only_workflows_unfiltered,
     "files_unchanged": files_unchanged,
+    "file_digests_match": file_digests_match,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
+    "dir_listing_matches": dir_listing_matches,
 }
 
 
@@ -484,9 +634,11 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                             "detail": f"unknown check type {check['type']!r}"})
             continue
         kwargs = {}
-        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged"):
+        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged", "dir_listing_matches"):
             kwargs["seed"] = seed
-        elif check["type"] == "changeset_triggers":
+        if check["type"] == "files_unchanged":
+            kwargs["by"] = check.get("by", "path")
+        if check["type"] == "changeset_triggers":
             kwargs["changeset"] = check.get("changeset", [])
             kwargs["expect_triggered"] = check.get("expect_triggered", [])
             kwargs["expect_skipped"] = check.get("expect_skipped", [])
@@ -495,6 +647,12 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "dir_listing_matches":
+            kwargs["expected"] = check.get("expected")
+            kwargs["expected_file"] = check.get("expected_file")
+            kwargs["ignore"] = check.get("ignore")
+        elif check["type"] == "file_digests_match":
+            kwargs["sha256"] = check.get("sha256")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
