@@ -22,6 +22,16 @@
 # is this fixture's own inline `expected:` list below (dir_listing_matches
 # already supports it) plus keeping the generator one directory up, in
 # evals/rename-pdfs/ rather than evals/rename-pdfs/seed/.
+#
+# Known limitation, worth reading before trusting a real with_skill run:
+# the skill's own scripts/extract_pdf_context.py has month-first
+# DATE_PATTERNS ("March 15, 2024") and no case for the statement's
+# day-first, bare-month range "1 Jan 2026 to 31 Jan 2026" — its 12-test
+# suite has no such case either. An agent that trusts the helper's parsed
+# dates rather than reading the extracted text itself lands on
+# 20260205-Statement-... (the scan date) instead of the range this fixture
+# expects. The issue prescribes the range string; this fixture keeps it
+# rather than watering down the task to what the helper currently parses.
 
 skill: rename-pdfs
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -76,6 +86,13 @@ objective_checks:
       the filename's decoy 20260301), the image-only scan left under its
       original name, the pre-named receipt untouched, and the duplicate
       bill disambiguated rather than overwritten.
+    # The statement's expected 20260101-20260131 depends on the agent
+    # reading "Billing Period: 1 Jan 2026 to 31 Jan 2026" from the extracted
+    # text itself: scripts/extract_pdf_context.py's dates_in_text will NOT
+    # contain either endpoint (its DATE_PATTERNS don't parse a bare-month,
+    # day-first date), so an agent that trusts only the helper's parsed
+    # dates instead of the raw `text` field it also returns has nothing
+    # pointing at the range and will fall back to the scan date instead.
     type: dir_listing_matches
     paths: ["inbox"]
     expected:
