@@ -25,6 +25,15 @@
 # section as "this is a consumer, there's nothing to fix" would wrongly
 # leave ci.yml's third-party pins alone; this seed is shaped so that
 # reading is wrong.
+#
+# One more gap this header should name (review round 2, N7): the skill's own
+# Scope section states it ships, today, only to cms-platform and the two
+# named consumers via their `skills.lock` — nothing installs it in this
+# wider ten-repo set for real. The with_skill arm runs it here anyway (the
+# harness's `install: copy` puts the skill in whatever workspace it is
+# given), so this fixture tests whether the skill's stated rules generalize
+# correctly to a repo shape its own Scope section doesn't name — it is not
+# asserting that the skill is actually installed there in the real fleet.
 
 skill: github-actions-sha-pinning
 registry: https://github.com/Adam-S-Daniel/cms-platform

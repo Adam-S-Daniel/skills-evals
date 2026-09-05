@@ -262,10 +262,10 @@ the reference they point at.
 
 Backfill order, by usage × decidability × incident material:
 `review-bash-ci-reliability` (the incident record practically is its fixture
-set), `github-actions-sha-pinning` (fully decidable, including the
-cms-platform tag carve-out), `cms-stuck-pr-triage` (builds the fake-`gh`
-machinery every Class B eval reuses), `debug-github-workflows`, then
-`adam-writing-style` as the Class C pilot.
+set), `cms-stuck-pr-triage` (builds the fake-`gh` machinery every Class B eval
+reuses), `debug-github-workflows`, then `adam-writing-style` as the Class C
+pilot. (`github-actions-sha-pinning` — fully decidable, including the
+cms-platform tag carve-out — has shipped: `evals/github-actions-sha-pinning/`.)
 
 ### Deliberate non-coverage
 

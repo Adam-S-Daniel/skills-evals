@@ -33,6 +33,9 @@ evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
     seed/                  # workspace the agent starts from (unfiltered workflows)
+  github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
+    fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
+    seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
   windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
     fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
     seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe

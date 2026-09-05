@@ -131,6 +131,22 @@ def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
     comment trails it. A regex over the whole file can't reliably tell a
     `uses:` value's line from any other, and mistaking one for the other is
     exactly the class of bug locating the node structurally first avoids.
+
+    Two known limits, both a consequence of inspecting only the value node's
+    own line:
+
+    - A version comment moved to the line ABOVE the step (rather than
+      trailing the `uses:` line itself) is invisible — nothing here looks at
+      any line but the value node's own.
+    - A comment trailing a YAML ALIAS (`*x`) is invisible: `yaml.compose`
+      resolves the alias to the SAME Node object as its anchor (`&x`), so
+      `value_node.end_mark` reports the ANCHOR's line, not the alias
+      occurrence's — a comment on the alias's own line is checked against
+      the wrong line entirely.
+
+    Both are the kind of intent a strict text match can't see either way;
+    the fixture's `comment_removal` judge dimension covers them instead of
+    this scoring them structurally.
     """
     import yaml
     bad = []
