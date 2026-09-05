@@ -837,6 +837,29 @@ def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]
     return ids
 
 
+def _as_date(moment: datetime) -> str:
+    """A `catalogue_seen` date: UTC, zero-padded, re-readable by `parse_ts`.
+
+    `strftime("%Y-%m-%d")` does neither of the last two on this platform
+    (A2/F2, #129 review round 8). It renders an offset-aware timestamp's
+    LOCAL date, so `2026-09-01T23:00:00-08:00` published `2026-09-01`, a
+    day early, and `2026-09-02T01:00:00+05:00` published `2026-09-02`, a
+    day late — the same fix `source.census_at` already had. And it does
+    not zero-pad a year below 1000, so `0001-01-01` published as
+    `1-01-01`, which `parse_ts` refuses: `_update_catalogue_seen` then
+    read the entry as "seen today" (`parse_ts(last_seen) or now`), an
+    entry two thousand years past the age window survived it, and 500
+    such plants sorted as the newest history there is and evicted the
+    real one. A date this harness writes and cannot read back is one
+    that silently stops ageing.
+    """
+    return moment.astimezone(timezone.utc).date().isoformat()
+
+
+#: What an unparseable `last_seen` sorts as inside `_update_catalogue_seen`'s
+#: cap: the oldest moment there is, never `now`.
+_LAST_SEEN_FLOOR = datetime.min.replace(tzinfo=timezone.utc)
+
 #: `catalogue_seen`'s cap (N3, merged into S3's rewrite): a length past
 #: which the O(1)-membership dedup below still leaves an unbounded, ever-
 #: growing publish. This run's own live api ids are never evicted by it —
@@ -880,7 +903,7 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
     if not isinstance(entries, list):
         warn("previous roster: `catalogue_seen` is not a list; starting empty")
         return []
-    today = now.strftime("%Y-%m-%d")
+    today = _as_date(now)
     by_id: dict[str, str] = {}
     migrated = 0
     skipped = 0
@@ -903,8 +926,7 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
             # around a date reached roster/latest.json on the public
             # branch as literal control characters. Same fix
             # `source.census_at` already had.
-            by_id[entry["id"]] = (today if parsed > now
-                                  else parsed.strftime("%Y-%m-%d"))
+            by_id[entry["id"]] = today if parsed > now else _as_date(parsed)
             continue
         skipped += 1
     if migrated:
@@ -946,7 +968,7 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     superset of `api_ids`, the property `usage_share`'s docstring and
     `compute_roster`'s callers rely on.
     """
-    today = now.strftime("%Y-%m-%d")
+    today = _as_date(now)
     by_id = {e["id"]: e["last_seen"] for e in previous_entries}
     for model_id in api_ids:
         by_id[model_id] = today
@@ -974,11 +996,17 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     # property this field is about, and it is the one the cap sorts on.
     # Two stable sorts rather than one composite key: id ascending first,
     # then `last_seen` descending, which leaves ids in ascending order
-    # within one date. An unparseable `last_seen` reads as `now` — the same
-    # benefit of the doubt the age check above gives it — though
-    # `_clean_catalogue_seen` normalizes every date before this runs.
+    # within one date. An unparseable `last_seen` sorts as the OLDEST
+    # moment there is, never as `now` (A2, #129 review round 8): a value
+    # this module cannot read asserts nothing, and must not outrank an
+    # entry that carries a real date. The branch is a FLOOR rather than a
+    # live one — `_clean_catalogue_seen` re-renders every date through
+    # `_as_date` before this runs, so everything reaching here parses —
+    # which is exactly why it must not read as today: that is the
+    # assumption `strftime`'s unpadded year quietly falsified.
     historical = sorted(i for i in survivors if i not in api_id_set)
-    historical.sort(key=lambda i: parse_ts(survivors[i]) or now, reverse=True)
+    historical.sort(key=lambda i: parse_ts(survivors[i]) or _LAST_SEEN_FLOOR,
+                    reverse=True)
     room = max(0, CATALOGUE_SEEN_CAP - len(live))
     kept = live + historical[:room]
     dropped = len(survivors) - len(kept)

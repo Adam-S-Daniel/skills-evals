@@ -7995,6 +7995,104 @@ class TestIssue67Review8(unittest.TestCase):
         # snapshots collect each other's turns and the shares sum past
         # 100% — also red.
 
+    # --- A2: `catalogue_seen[].last_seen` is republished as a date this
+    # module can read back ------------------------------------------------
+    #
+    # Round 7's N1 fix re-renders the PARSED timestamp with
+    # `strftime("%Y-%m-%d")`, which does not zero-pad a year below 1000 on
+    # this platform: `0001-01-01` published as `1-01-01`, which `parse_ts`
+    # cannot read. `_update_catalogue_seen` then gave the unparseable value
+    # the benefit of the doubt (`parse_ts(last_seen) or now`) and aged the
+    # entry as if it had been seen TODAY — so an entry that used to be
+    # dropped as older than the 180-day window survived it, the public
+    # branch carried a date this module cannot parse, and 500 such plants
+    # sorted as the newest history there is.
+
+    YEAR_ONE_PLANT = "claude-sonnet-9-9"
+    A2_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _two_model_catalogue(cls):
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+
+    def test_a_year_one_last_seen_ages_out_instead_of_reading_as_today(self):
+        """Through `main()` with files on disk: a `last_seen` of
+        `0001-01-01` is two thousand years older than the window, so
+        nothing of it may reach the published roster — and least of all a
+        `1-01-01` this module's own `parse_ts` refuses."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.YEAR_ONE_PLANT, "last_seen": "0001-01-01"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            text = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0)
+        self.assertNotIn(self.YEAR_ONE_PLANT, self._seen_ids(published),
+                         "an entry older than the window is dropped, not "
+                         "aged as if it had been seen today")
+        self.assertNotIn("1-01-01", text,
+                         "the published date must be one `parse_ts` reads")
+        # Mutation check (manual): reverting the rendering to
+        # `parsed.strftime("%Y-%m-%d")` publishes `1-01-01`, which
+        # `parse_ts` refuses, so `_update_catalogue_seen` reads it as today
+        # and republishes the plant — red on both assertions.
+
+    def test_five_hundred_year_one_plants_do_not_evict_real_history(self):
+        """The measured consequence: 500 plants dated `0001-01-01` read as
+        the newest history there is and filled the cap, evicting the one
+        genuinely since-retired id seen a day ago."""
+        plants = [f"0plant-{i:03d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": "0001-01-01"} for i in plants] +
+                    [{"id": self.A2_REAL, "last_seen": self._days_ago(1)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        seen = self._seen_ids(published)
+        self.assertIn(self.A2_REAL, seen,
+                      "a real id seen yesterday must outlive 500 entries "
+                      "dated in the year 1")
+        self.assertEqual(sorted(seen - {self.A2_REAL}),
+                         sorted(m["id"] for m
+                                in self._two_model_catalogue()["models"]),
+                         "every year-1 plant is older than the window")
+        # Mutation check (manual): as above — the plants read as today,
+        # survive the age check, sort ahead of the real id and take all 500
+        # slots: red.
+
+    def test_every_published_last_seen_round_trips_through_parse_ts(self):
+        """The property behind both tests above, over the shapes a public
+        branch can actually deliver: whatever `catalogue_seen` publishes,
+        this module's own `parse_ts` must read back to the same date. A
+        date this harness writes and cannot re-read is one that silently
+        stops ageing."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": "claude-opus-3-1", "last_seen": self._days_ago(2)},
+            {"id": "claude-opus-3-2", "last_seen": "\r\n2026-09-01T00:00:00Z\r\n"},
+            {"id": "claude-opus-3-3", "last_seen": "2026-09-01T23:00:00-08:00"},
+            {"id": "claude-opus-3-4", "last_seen": "9999-12-31"},
+            {"id": "claude-opus-3-5", "last_seen": "0001-01-01"},
+        ]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertTrue(published["catalogue_seen"])
+        for entry in published["catalogue_seen"]:
+            with self.subTest(entry=entry["id"]):
+                parsed = timeweeks.parse_ts(entry["last_seen"])
+                self.assertIsNotNone(parsed, entry)
+                self.assertEqual(
+                    parsed.astimezone(timezone.utc).date().isoformat(),
+                    entry["last_seen"], entry)
+        # Mutation check (manual): reverting to `strftime("%Y-%m-%d")`
+        # publishes `1-01-01` for the year-1 entry, which `parse_ts`
+        # returns None for — red.
 
 if __name__ == "__main__":
     unittest.main()
