@@ -29,8 +29,8 @@
 # agent's workspace, so a reference in there would hand the agent the answer.
 #
 # Known failure mode — commentary. Every check reads the agent's whole
-# final reply minus the material it quoted, so anything the agent wraps around
-# the writing is scored as if it were the writing: "I kept it free of
+# final reply minus the material it quoted, so anything the agent wraps
+# around the writing is scored as if it were the writing: "I kept it free of
 # 'leverage'" fails no-avoid-list-words, and an unquoted trailing note that
 # supplies a fact the reply itself omitted passes cites-both-facts. The
 # first direction is the one that bites, because the arm that knows the
