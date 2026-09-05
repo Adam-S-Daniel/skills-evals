@@ -1,24 +1,6 @@
-# Composite action: post a Playwright failure summary as a PR
-# comment, scrubbed of secrets via gitleaks. Resolves the comment
-# to a "passing on <sha>" stub on the next green run.
-#
-# Vendored copy of Adam-S-Daniel/cms-platform's
-# .github/actions/post-failure-comment/action.yml (contract only, for
-# this eval's fixture to read offline — this file is not fetched over
-# the network at eval-run time).
-
 name: Post failure summary to PR
 description: Scrub a Playwright log via gitleaks and post (or resolve) a PR failure-summary comment.
 
-# Eval fixture note (issue #86): the `mode` and `marker` input
-# DESCRIPTIONS below carry the caller-side-gating contract this eval
-# tests for (mode is selected by the caller's own `if:` gate; two
-# workflows must not share a marker). That's the allowed subset of
-# the real action's convention docs — do not "fix" it away by trimming
-# these descriptions down to bare types. Only the top-of-file
-# design-history comment (the caller-side-gating rationale, the "two
-# call sites per workflow" line) was removed here, because it handed
-# the without-skill arm the same convention the skill exists to teach.
 inputs:
   mode:
     description: |

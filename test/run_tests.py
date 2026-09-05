@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import yaml
 from pathlib import Path
 from unittest import mock
 
@@ -3251,26 +3252,56 @@ jobs:
         by_id = self._check_fixture(ws)
         self.assertFalse(by_id["cms-platform-vendored-contract-unchanged"]["passed"])
 
-    def test_vendored_action_has_no_design_history_or_stray_gating_guidance(self):
-        # Review round 1, B3: the seed's vendored action.yml used to keep the
-        # real file's "DESIGN (v3)" comment block, which handed the
-        # without-skill arm the caller-side-gating convention the skill
-        # exists to teach. The mode/marker input DESCRIPTIONS are still
-        # allowed to carry that contract — this only checks OUTSIDE them.
-        path = (POST_FAILURE_COMMENT_DIR / "seed" / ".cms-platform" / ".github" /
-               "actions" / "post-failure-comment" / "action.yml")
-        text = path.read_text(encoding="utf-8")
-        self.assertNotIn("DESIGN", text)
-        before_inputs, sep, rest = text.partition("\ninputs:\n")
-        self.assertEqual(sep, "\ninputs:\n", "expected an `inputs:` block")
-        _inputs_block, sep2, after_inputs = rest.partition("\nruns:\n")
-        self.assertEqual(sep2, "\nruns:\n", "expected a `runs:` block")
-        outside_inputs = before_inputs + "\nruns:\n" + after_inputs
-        self.assertNotIn("if: failure()", outside_inputs)
-        self.assertNotIn("if: success()", outside_inputs)
+    @staticmethod
+    def _seed_vendored_action_path() -> Path:
+        return (POST_FAILURE_COMMENT_DIR / "seed" / ".cms-platform" / ".github" /
+                "actions" / "post-failure-comment" / "action.yml")
+
+    @staticmethod
+    def _stray_comment_lines(text: str) -> list[str]:
+        """Lines carrying a `#` token outside the `inputs:` mapping.
+
+        Locates the `inputs:` value node by its YAML node marks (never a
+        text search — a `#` inside one of its block-scalar descriptions is
+        real action documentation, not a lexical boundary), then lexically
+        scans every line OUTSIDE that node's line range for a stray `#`.
+        """
+        root = yaml.compose(text)
+        assert isinstance(root, yaml.MappingNode), "expected a top-level mapping"
+        inputs_value = next((v for k, v in root.value if k.value == "inputs"), None)
+        assert inputs_value is not None, "expected an `inputs:` key"
+        start, end = inputs_value.start_mark.line, inputs_value.end_mark.line
+        return [line for i, line in enumerate(text.splitlines())
+               if not (start <= i < end) and "#" in line]
+
+    def test_vendored_action_seed_carries_no_comments_outside_inputs(self):
+        # Review round 3, B3: the seed's vendored action.yml used to carry a
+        # top-of-file design-history comment AND an "Eval fixture note"
+        # comment naming the eval/issue/harness by name outside `inputs:` —
+        # leaking the caller-side-gating convention (and the fixture's own
+        # existence) straight to the without-skill arm. The file now has
+        # only name/description/inputs/runs, and a comment is allowed
+        # nowhere except inside the `inputs:` mapping's own description
+        # text (real action documentation, not eval authorship). The old
+        # guard was a three-string blocklist ("DESIGN", "if: failure()",
+        # "if: success()") that a differently-worded re-leak would sail
+        # through; this asserts the actual shape instead.
+        text = self._seed_vendored_action_path().read_text(encoding="utf-8")
+        doc = yaml.safe_load(text)
+        self.assertEqual(set(doc.keys()), {"name", "description", "inputs", "runs"})
+        stray = self._stray_comment_lines(text)
+        self.assertEqual(stray, [], f"comment(s) outside `inputs:`: {stray}")
         # ...but the contract itself must still be there, inside inputs.
         self.assertIn("if: failure()", text)
         self.assertIn("if: success()", text)
+
+    def test_vendored_action_seed_guard_catches_a_reintroduced_comment(self):
+        # Proves the guard above isn't vacuous: a one-line convention
+        # comment re-inserted above `name:` (the exact shape B3 removed)
+        # must be caught.
+        text = self._seed_vendored_action_path().read_text(encoding="utf-8")
+        mutated = "# caller-side gating: see the skill's SKILL.md\n" + text
+        self.assertNotEqual(self._stray_comment_lines(mutated), [])
 
     def test_reintroduced_event_interpolation_in_run_fails(self):
         ws = self._correct_workspace()
