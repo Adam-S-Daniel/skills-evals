@@ -431,16 +431,24 @@ def _format_share(value: float, bar: float, *, under: bool = False) -> str:
     as no usage at all about a model that carried real turns. Escalate
     through 1, 2, 3, 4, then 6 decimal places until the rendering both
     differs from the bar and, for a nonzero value, does not read as
-    "0.0...0"; `:.6g` is the last-resort fallback for a value so small
-    even 6 decimal places round it away.
+    "0.0...0"; `:.6g` catches a value so small even 6 decimal places round
+    it away, and `:.17g` — enough digits to round-trip any float — is the
+    last resort.
+
+    EVERY rendering is checked against the bar, the fallbacks included (N3,
+    #129 review round 7). `:.6g` used to be returned unchecked, and six
+    SIGNIFICANT digits is not six decimal places: a share of 1.99999975%
+    renders there as exactly "2", so the reason read "below the 2% exit bar
+    (2% of rankable census usage)" — a sentence that contradicts itself
+    about a share that really is under the bar.
     """
     if not under:
         return f"{value:.1f}"
-    for decimals in (1, 2, 3, 4, 6):
-        text = f"{value:.{decimals}f}"
+    for spec in ("1f", "2f", "3f", "4f", "6f", "6g", "17g"):
+        text = f"{value:.{spec}}"
         if float(text) != bar and (value == 0 or float(text) != 0.0):
             return text
-    return f"{value:.6g}"
+    return f"{value:.17g}"
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],
