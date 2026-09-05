@@ -3314,6 +3314,13 @@ class TestIssue85(unittest.TestCase):
             by_id = self._checks(ws, seed)
         self.assertFalse(by_id["workflows-still-parse"]["passed"])
 
+    def test_yaml_parses_glob_skips_non_files(self):
+        # Round 4, N7: same isfile guard, yaml_parses' loop.
+        ws = self._synthetic_ws({"clean.yml": "jobs: {}\n"})
+        (ws / "clean.yml.d").mkdir()
+        passed, detail = objective.yaml_parses(str(ws), ["clean.yml*"])
+        self.assertTrue(passed, detail)
+
     def test_deleting_ci_workflow_fails_restraint(self):
         # Otherwise every glob-driven check above passes vacuously: nothing
         # unpinned, nothing commented, nothing changed in the files that
@@ -3415,6 +3422,17 @@ class TestIssue85(unittest.TestCase):
         passed, detail = objective.pin_comment_absent(str(ws), ["quoted-hash.yml"])
         self.assertTrue(passed, detail)
 
+    def test_pin_comment_absent_glob_skips_non_files(self):
+        # Round 4, N7: mirrors platform_refs_on_tag's isfile guard — a
+        # `paths` pattern matching a directory (not just files) must not
+        # raise IsADirectoryError on open().
+        ws = self._synthetic_ws({
+            "clean.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"})
+        (ws / "clean.yml.d").mkdir()
+        passed, detail = objective.pin_comment_absent(str(ws), ["clean.yml*"])
+        self.assertTrue(passed, detail)
+
     # -- uses_refs_sha_pinned, exercised directly (review #133, S1) ----------
     # Reimplemented on _uses_value_nodes (the same tree walk pin_comment_absent
     # uses) instead of a line regex: a quoted correct pin read as unpinned
@@ -3451,6 +3469,15 @@ class TestIssue85(unittest.TestCase):
         passed, detail = objective.uses_refs_sha_pinned(str(ws), ["tag.yml"])
         self.assertFalse(passed, detail)
         self.assertIn("actions/checkout@v4", detail)
+
+    def test_uses_refs_sha_pinned_glob_skips_non_files(self):
+        # Round 4, N7: same isfile guard, this loop.
+        ws = self._synthetic_ws({
+            "clean.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"})
+        (ws / "clean.yml.d").mkdir()
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["clean.yml*"])
+        self.assertTrue(passed, detail)
 
     def test_uses_value_nodes_terminates_on_a_self_referential_anchor(self):
         """A cyclic alias graph must not recurse forever.

@@ -51,6 +51,8 @@ def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str
     bad = []
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
             with open(path, encoding="utf-8") as f:
                 text = f.read()
             try:
@@ -158,6 +160,8 @@ def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
     bad = []
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
             with open(path, encoding="utf-8") as f:
                 text = f.read()
             try:
@@ -425,6 +429,8 @@ def yaml_parses(workspace: str, patterns: list[str]) -> tuple[bool, str]:
     bad = []
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
             try:
                 with open(path, encoding="utf-8") as f:
                     yaml.safe_load(f)
