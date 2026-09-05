@@ -3525,6 +3525,67 @@ jobs:
         self.assertFalse(by_id["visual-regression-resolve-step"]["passed"],
                          by_id["visual-regression-resolve-step"]["detail"])
 
+    def test_e2e_negated_single_job_inversion_scores_ten_of_twelve(self):
+        # Review round 4, B1 (the round-2 N6 defect on the other pair of
+        # checks — round 2 scoped N6's fix to the multi-job checks only). A
+        # single-job workflow gating the post step on `!failure()` (true on
+        # every GREEN run) and the resolve step on `!success()` (true on
+        # every RED run) used to still score 12/12 — `if_contains` sees the
+        # substring `failure()`/`success()` inside the negated expression
+        # and cannot tell the negation apart from the real thing. Only
+        # e2e-post-step and e2e-resolve-step may fail; every other check
+        # must still pass.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        post_if = "if: ${{ failure() && github.event_name == 'pull_request' }}"
+        resolve_if = "if: ${{ success() && github.event_name == 'pull_request' }}"
+        self.assertIn(post_if, text)
+        self.assertIn(resolve_if, text)
+        text = text.replace(post_if, "if: ${{ !failure() && github.event_name == 'pull_request' }}")
+        text = text.replace(resolve_if, "if: ${{ !success() && github.event_name == 'pull_request' }}")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        failing = sorted(k for k, v in by_id.items() if not v["passed"])
+        self.assertEqual(failing, ["e2e-post-step", "e2e-resolve-step"], by_id)
+
+    def test_e2e_plain_swap_scores_ten_of_twelve(self):
+        # The non-negated swap (post gated on success(), resolve gated on
+        # failure()) already correctly failed both e2e checks before B1 —
+        # `if_contains` alone catches this shape, since neither call's `if:`
+        # contains the substring it's checked for. Locks in that this stays
+        # true after adding `if_gates_on_outcome`.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        post_if = "if: ${{ failure() && github.event_name == 'pull_request' }}"
+        resolve_if = "if: ${{ success() && github.event_name == 'pull_request' }}"
+        self.assertIn(post_if, text)
+        self.assertIn(resolve_if, text)
+        text = text.replace(post_if, "__RESOLVE_IF__").replace(resolve_if, "__POST_IF__")
+        text = text.replace("__RESOLVE_IF__", resolve_if).replace("__POST_IF__", post_if)
+        path.write_text(text, encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        failing = sorted(k for k, v in by_id.items() if not v["passed"])
+        self.assertEqual(failing, ["e2e-post-step", "e2e-resolve-step"], by_id)
+
+    def test_e2e_post_step_with_a_correct_extra_conjunct_passes(self):
+        # A correct extra conjunct (an additional AND'd condition, not a
+        # negation) must not be mistaken for the inverted shape above —
+        # if_gates_on_outcome only asks whether the expression reads as
+        # gating on the named outcome, not whether it's exactly one call.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        target = "if: ${{ failure() && github.event_name == 'pull_request' }}"
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "if: ${{ failure() && github.event_name == 'pull_request' && !cancelled() }}"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertTrue(by_id["e2e-post-step"]["passed"], by_id["e2e-post-step"]["detail"])
+
     def test_cms_platform_checkout_pinned_to_branch_fails(self):
         # The carve-out is "stays on its release tag", not "may float".
         ws = self._correct_workspace()

@@ -103,12 +103,18 @@ objective_checks:
       `marker_pairs_with_mode: resolve` requires this step's marker to
       match the resolve step's, since a post/resolve pair under different
       markers leaves the resolve unable to find the post's comment (issue
-      #86 review round 3, N8).
+      #86 review round 3, N8). `if_gates_on_outcome: failure` asserts the
+      gate actually reads as "the job failed" — not merely that its `if:`
+      contains the substring `failure()`, which a negated condition like
+      `!failure()` (true on every GREEN run) still does (issue #86 review
+      round 4, B1 — the round-2 N6 defect applied to this pair of checks
+      too; round 2 scoped N6's fix to the multi-job checks only).
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml"]
     uses_suffix: "/post-failure-comment"
     job: e2e
     if_contains: "failure()"
+    if_gates_on_outcome: failure
     with_present: ["log-file", "marker", "title"]
     with_equals:
       mode: post
@@ -124,12 +130,15 @@ objective_checks:
       e2e-tests.yml's `e2e` job resolves the comment on success. Shares the
       marker-form and pairing guards with e2e-post-step (issue #86 review
       round 3, N8): `marker_pairs_with_mode: post` requires this step's
-      marker to match the post step's own.
+      marker to match the post step's own. `if_gates_on_outcome: success`
+      is the same inverted-wiring guard as e2e-post-step's, for the
+      opposite polarity (issue #86 review round 4, B1).
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml"]
     uses_suffix: "/post-failure-comment"
     job: e2e
     if_contains: "success()"
+    if_gates_on_outcome: success
     with_present: ["marker", "title"]
     with_equals:
       mode: resolve
