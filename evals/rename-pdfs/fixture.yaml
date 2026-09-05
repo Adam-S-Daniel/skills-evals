@@ -9,9 +9,19 @@
 #
 # Class A (DESIGN.md, "Scaling to the registry"): a workspace transform whose
 # correctness is decidable from the resulting files alone. seed/inbox/ ships
-# six PDFs built by the committed seed/make_pdfs.py (hand-rolled, stdlib-only
+# six PDFs built by the committed ../make_pdfs.py (hand-rolled, stdlib-only
 # PDF bytes — no reportlab) and committed as static binaries, so the seed
 # never regenerates at eval time.
+#
+# seed/ holds ONLY inbox/ and its six PDFs — no answer key, no generator.
+# run_eval.py's _run_arm copies seed/ WHOLE into the agent's cwd in BOTH
+# arms, so anything else living under seed/ is readable by the agent under
+# test. The issue that opened this fixture said `seed/expected.txt`; that
+# shape let a workspace map the four scanner names onto expected.txt's
+# names, sight unseen, and score 2/2 without opening a single PDF. The fix
+# is this fixture's own inline `expected:` list below (dir_listing_matches
+# already supports it) plus keeping the generator one directory up, in
+# evals/rename-pdfs/ rather than evals/rename-pdfs/seed/.
 
 skill: rename-pdfs
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -53,9 +63,12 @@ objective_checks:
   # YYYYMMDD-YYYYMMDD range form) built from each document's OWN date and
   # content, the image-only scan left under its original scanner name, the
   # already-conventional file untouched, and the collision disambiguated
-  # rather than overwritten. Reads seed/expected.txt from the pristine seed
-  # directory (never the runtime workspace), so nothing the agent does to its
-  # own copy of that file changes what "expected" means.
+  # rather than overwritten. The expected listing is inline (not
+  # `expected_file:`) because seed/ is copied whole into the agent's own
+  # workspace in both arms — an expected.txt living under seed/ would be
+  # sitting right there in inbox/'s parent for the agent to read and copy
+  # from, sight unseen. Inline still resolves against the FIXTURE, never
+  # the runtime workspace, so nothing the agent does can change it.
   - id: inbox-renamed-per-convention
     description: >
       inbox/'s final listing is exactly: the statement date-ranged
@@ -65,7 +78,13 @@ objective_checks:
       bill disambiguated rather than overwritten.
     type: dir_listing_matches
     paths: ["inbox"]
-    expected_file: expected.txt
+    expected:
+      - "20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf"
+      - "20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf"
+      - "20260303-Bill-Example Utilities Ltd-Account 9002.pdf"
+      - "20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf"
+      - "Scan_20260118_161230.pdf"
+      - "20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf"
 
   # Independent of file names: no PDF's CONTENT may be lost or altered.
   # Catches what a name-only check cannot — a collision that clobbered one

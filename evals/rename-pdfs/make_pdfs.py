@@ -8,7 +8,12 @@ so re-running this script reproduces the same PDFs exactly.
 
 Run from anywhere:
     python3 make_pdfs.py
-writes the PDFs into ./inbox/ next to this script (or --out-dir to redirect).
+writes the PDFs into seed/inbox/ next to this fixture (or --out-dir to
+redirect). Lives one level above seed/ (not inside it) so that seed/ holds
+nothing but inbox/ and its committed PDFs — seed/ is copied WHOLE into the
+agent's workspace in both arms (run_eval.py's _run_arm), so a generator that
+comments on the decoy date, the image-only file, or the collision would be
+readable by the agent under test.
 
 The PDFs are committed alongside this script; it is not invoked automatically.
 """
@@ -182,7 +187,7 @@ FILES: list[tuple[str, bytes]] = [
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--out-dir", type=Path, default=Path(__file__).parent / "inbox")
+    ap.add_argument("--out-dir", type=Path, default=Path(__file__).parent / "seed" / "inbox")
     args = ap.parse_args()
     args.out_dir.mkdir(parents=True, exist_ok=True)
     for name, data in FILES:

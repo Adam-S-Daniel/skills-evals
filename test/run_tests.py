@@ -2764,12 +2764,22 @@ class TestIssue82(unittest.TestCase):
         self.assertEqual(len(pdfs), 6, pdfs)
         self.assertEqual(set(pdfs), set(self.ORIGINAL_TO_CORRECT))
 
-    def test_expected_txt_matches_the_correct_renaming(self):
-        expected = sorted(
-            line.strip() for line in
-            (RENAME_DIR / "seed" / "expected.txt").read_text(encoding="utf-8").splitlines()
-            if line.strip())
-        self.assertEqual(expected, sorted(self.ORIGINAL_TO_CORRECT.values()))
+    def test_seed_holds_only_inbox_and_its_committed_pdfs(self):
+        # seed/ is copied WHOLE into the agent's cwd (run_eval.py's
+        # _run_arm), in both arms. Anything else living under seed/ — an
+        # answer key, a generator — is readable by the agent under test, so
+        # seed/ must hold nothing but the inbox/ it is supposed to rename.
+        seed = RENAME_DIR / "seed"
+        self.assertEqual(os.listdir(seed), ["inbox"])
+        pdfs = sorted(p.name for p in (seed / "inbox").iterdir())
+        self.assertEqual(set(pdfs), set(self.ORIGINAL_TO_CORRECT))
+
+    def test_fixture_expected_matches_the_correct_renaming(self):
+        fixture = run_eval.load_fixture(RENAME_DIR)
+        check = next(c for c in fixture["objective_checks"]
+                    if c["id"] == "inbox-renamed-per-convention")
+        self.assertEqual(sorted(check["expected"]),
+                         sorted(self.ORIGINAL_TO_CORRECT.values()))
 
     def test_duplicate_bills_are_byte_identical(self):
         inbox = RENAME_DIR / "seed" / "inbox"
