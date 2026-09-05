@@ -1179,6 +1179,12 @@ def _as_date(moment: datetime) -> str:
     round 9). Every caller that passes a moment derived from untrusted
     input catches it and skips the entry; `now` is this process's own
     clock and cannot reach it.
+
+    AND RAISES NOTHING ELSE (N-1, #129 review round 10). `parse_ts` returns
+    an AWARE datetime or None, `.astimezone` on an aware one can only
+    overflow, and `.date().isoformat()` raises nothing — so a caller
+    catching `ValueError` or `OSError` here is catching what cannot
+    happen. `_clean_catalogue_seen` used to; it no longer does.
     """
     return moment.astimezone(timezone.utc).date().isoformat()
 
@@ -1266,9 +1272,21 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
             # date this module cannot convert asserts nothing, so it gets
             # the treatment every other malformed entry gets: counted,
             # skipped, and never quoted back.
+            # `OverflowError` ALONE (N-1, #129 review round 10). It used
+            # to catch `ValueError` and `OSError` beside it, and neither
+            # is reachable from what `parse_ts` returns: it hands back an
+            # AWARE datetime or None, `.astimezone` on an aware one can
+            # only overflow `datetime`'s range, and `.date().isoformat()`
+            # raises nothing at all. Both were green as mutations because
+            # nothing could reach them, and a defence nothing can reach is
+            # deleted this round rather than kept as belt-and-braces (F-2).
+            # `main()`'s sibling guard on `census_at` keeps its wider catch
+            # because the comment there records the whole branch as
+            # unreachable already, for a reason about the policy's numbers
+            # rather than about this expression.
             try:
                 rendered = today if parsed > now else _as_date(parsed)
-            except (OverflowError, ValueError, OSError):
+            except OverflowError:
                 unconvertible += 1
                 continue
             by_id[entry["id"]] = rendered
