@@ -4094,6 +4094,14 @@ class TestIssue81(unittest.TestCase):
                         "Thanks,\nAdam Daniel"),
                     judge._normalize_draft_text(draft))
 
+    def test_unwrapping_no_lines_yields_no_groups(self):
+        # N6: `[[0]]` is an index into an empty list, and `unwrap_block`
+        # raises IndexError on it the moment it renders the group.
+        self.assertEqual(wrapping.unwrap_indices([], 72), [])
+        self.assertEqual(wrapping.unwrap_block([], 72), [])
+        # The one-line case is the boundary next to it and must not move.
+        self.assertEqual(wrapping.unwrap_indices(["Thanks,"], 72), [[0]])
+
     def test_every_reference_rewrapped_from_40_to_120_normalises_flat(self):
         # The regression floor: whatever the width rule is, the six
         # committed references must come out of it with no wrap surviving,

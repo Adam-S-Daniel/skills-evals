@@ -148,6 +148,14 @@ def unwrap_indices(lines: list[str], width: float) -> list[list[int]]:
     floor it applies to a sentence off whether every line behind it sat
     inside a marked quotation.
     """
+    # No lines, no groups. This used to seed the list with `[[0]]`
+    # unconditionally, so an empty paragraph came back as one group holding
+    # index 0 — an index into an empty list, which `unwrap_block` turns
+    # into an IndexError the moment it renders it. No caller passes an
+    # empty paragraph today (`paragraphs` never emits one), which is
+    # exactly why it went unnoticed.
+    if not lines:
+        return []
     groups: list[list[int]] = [[0]]
     for index, (previous, line) in enumerate(zip(lines, lines[1:]), start=1):
         first_word = line.split(" ", 1)[0]
