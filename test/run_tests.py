@@ -3118,7 +3118,7 @@ class TestIssue67Review(unittest.TestCase):
     # --- the roster step, actually executed -------------------------------
 
     def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
-                         roster_fail_stderr=None):
+                         roster_fail_stderr=None, roster_success_stderr=None):
         """Run eval.yml's roster step for real, against stubs.
 
         Hermetic: the two python scripts it calls are replaced by stubs, `git`
@@ -3128,7 +3128,17 @@ class TestIssue67Review(unittest.TestCase):
         `roster_fail_stderr`, if given, makes the roster.py stub write that
         exact text to stderr and exit 1 (instead of succeeding) — for
         exercising the step's own reason-extraction and step-summary logic
-        against a controlled roster.err.
+        against a controlled roster.err. `roster_success_stderr`, if given
+        (and `roster_fail_stderr` is not), makes the stub write that text to
+        stderr but still SUCCEED (exit 0, write --out) — a stale/unreadable
+        census or skipped bad rows can print `roster: ` warnings and still
+        let the run succeed overall.
+
+        SHARED with TestIssue67Review3 (assigned there rather than
+        duplicated — see this file's per-review-round class convention:
+        TestIssue67Review2 does the same). Same step, same stub shape; kept
+        as one definition so a future change to the step's fixture only
+        needs to happen once.
         """
         script = self._step_named("roster")["run"]
         tmp = Path(tempfile.mkdtemp())
@@ -3154,6 +3164,11 @@ class TestIssue67Review(unittest.TestCase):
             roster_stub = (stub_args +
                            f"sys.stderr.write({roster_fail_stderr!r})\n"
                            f"sys.exit(1)\n")
+        elif roster_success_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_success_stderr!r})\n"
+                           "open(a.out, 'w').write('{}')\n"
+                           "print('### Model roster')\n")
         else:
             roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
                                        "print('### Model roster')\n")
@@ -4883,11 +4898,12 @@ class TestIssue67Review3(unittest.TestCase):
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
     POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
 
-    # --- shared with TestIssue67Review: same step, same stub shape. Kept as
-    # its own copy rather than inherited, per this file's existing
-    # per-review-round class convention (see e.g. the two _fixture_dir
-    # definitions on TestIssue67/TestIssue67Review) — inheriting a TestCase
-    # subclass would re-collect and re-run its whole test suite here too.
+    # --- shared with TestIssue67Review: same step, same stub shape, one
+    # definition (item 9, #129 review round 4 — this file's existing
+    # per-review-round class convention already does this for
+    # TestIssue67Review2; a duplicate copy here just drifted from it once).
+    # NOT class inheritance: inheriting TestIssue67Review's TestCase would
+    # re-collect and re-run its whole test suite here too.
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
@@ -4897,90 +4913,7 @@ class TestIssue67Review3(unittest.TestCase):
         return next(s for s in self._steps()
                     if needle.lower() in (s.get("name") or "").lower())
 
-    def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
-                         roster_fail_stderr=None, roster_success_stderr=None):
-        """Run eval.yml's roster step for real, against stubs.
-
-        Hermetic: the two python scripts it calls are replaced by stubs, `git`
-        by an optional shim, and there is no network and no credential. What is
-        under test is the STEP — its failure handling — not the scripts.
-
-        `roster_fail_stderr`, if given, makes the roster.py stub write that
-        exact text to stderr and exit 1 (instead of succeeding) — for
-        exercising the step's own reason-extraction and step-summary logic
-        against a controlled roster.err. `roster_success_stderr`, if given
-        (and `roster_fail_stderr` is not), makes the stub write that text to
-        stderr but still SUCCEED (exit 0, write --out) — a stale/unreadable
-        census or skipped bad rows can print `roster: ` warnings and still
-        let the run succeed overall.
-        """
-        script = self._step_named("roster")["run"]
-        tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        (tmp / "scripts").mkdir()
-        (tmp / "harness").mkdir()
-        (tmp / "evals").mkdir()
-        (tmp / "evals" / "roster-policy.yml").write_text("tiers: []\n", encoding="utf-8")
-        stub_args = ("import sys, json, argparse\n"
-                     "p = argparse.ArgumentParser()\n"
-                     "for f in ('--models','--policy','--census',"
-                     "'--admin-report','--previous','--out'):\n"
-                     "    p.add_argument(f)\n"
-                     "a = p.parse_args()\n")
-        (tmp / "scripts" / "refresh_models.py").write_text(
-            stub_args + (
-                "print('Models API read failed: HTTP 503', file=sys.stderr)\n"
-                "sys.exit(1)\n" if refresh_rc else
-                "open(a.out, 'w').write(json.dumps({'models': []}))\n"
-                "open(a.admin_report, 'w').write('{}')\n"),
-            encoding="utf-8")
-        if roster_fail_stderr is not None:
-            roster_stub = (stub_args +
-                           f"sys.stderr.write({roster_fail_stderr!r})\n"
-                           f"sys.exit(1)\n")
-        elif roster_success_stderr is not None:
-            roster_stub = (stub_args +
-                           f"sys.stderr.write({roster_success_stderr!r})\n"
-                           "open(a.out, 'w').write('{}')\n"
-                           "print('### Model roster')\n")
-        else:
-            roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
-                                       "print('### Model roster')\n")
-        (tmp / "harness" / "roster.py").write_text(roster_stub, encoding="utf-8")
-        subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
-        bare_origin = tmp / "origin.git"
-        subprocess.run(["git", "init", "-q", "--bare", str(bare_origin)], check=True)
-        subprocess.run(["git", "remote", "add", "origin", str(bare_origin)],
-                       cwd=tmp, check=True)
-
-        runner = tmp / "runner"
-        runner.mkdir()
-        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
-        env = dict(os.environ)
-        env.update({"RUNNER_TEMP": str(runner),
-                    "GITHUB_ENV": str(tmp / "github_env"),
-                    "GITHUB_STEP_SUMMARY": str(tmp / "summary.md")})
-        (tmp / "github_env").write_text("", encoding="utf-8")
-        (tmp / "summary.md").write_text("", encoding="utf-8")
-        if git_shim:
-            bindir = tmp / "bin"
-            bindir.mkdir()
-            shim = bindir / "git"
-            shim.write_text(git_shim.replace("{GIT}", shutil.which("git")),
-                            encoding="utf-8")
-            shim.chmod(0o755)
-            env["PATH"] = f"{bindir}:{env['PATH']}"
-        script_file = tmp / "roster_step.sh"
-        script_file.write_text(script, encoding="utf-8")
-        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
-                              capture_output=True, text=True, timeout=120)
-        return {
-            "rc": proc.returncode,
-            "out": proc.stdout + proc.stderr,
-            "roster": runner / "roster" / "latest.json",
-            "env": (tmp / "github_env").read_text(encoding="utf-8"),
-            "summary": (tmp / "summary.md").read_text(encoding="utf-8"),
-        }
+    _run_roster_step = TestIssue67Review._run_roster_step
 
     # --- item 2: the roster-failure reason extractor must prefer the
     # no-arms headline over an indented per-model detail line ------------
