@@ -3003,9 +3003,25 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         return {r["id"]: r for r in results}
 
     def _run_cli(self, eval_dir: Path, ws: Path) -> tuple[int, dict]:
+        # N3: run_eval.py resolves+validates registries even for
+        # --arm objective-only (main() does this before any arm, on
+        # purpose — see its own comment). A stale $SKILLS_EVALS_REGISTRIES
+        # or $AGENTSKILLS_DIR left over in the calling shell's environment
+        # then makes main() print "registry configuration error: ..." and
+        # exit 2 instead of scoring the workspace — and that plain-text
+        # output isn't JSON, so json.loads below raised, turning the two
+        # *_cli_objective_only_exit_codes tests into errors instead of the
+        # clean skip a missing registry gets elsewhere in this class. Drop
+        # both vars explicitly rather than inheriting whatever the caller's
+        # shell happens to have set; objective-only never installs a skill,
+        # so it never needs either.
+        env = os.environ.copy()
+        env.pop("SKILLS_EVALS_REGISTRIES", None)
+        env.pop("AGENTSKILLS_DIR", None)
         cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
               "--arm", "objective-only", "--workspace", str(ws)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        proc = subprocess.run(cmd, capture_output=True, text=True, env=env,
+                              cwd=str(REPO_ROOT))
         payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
         return proc.returncode, payload
 
@@ -3094,6 +3110,25 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self._apply_correct_existing(ws_correct)
         code, payload = self._run_cli(ADRS_EXISTING_DIR, ws_correct)
         self.assertEqual(code, 0, payload)
+
+    def test_cli_objective_only_ignores_stale_registry_env_vars(self):
+        # N3: --arm objective-only never installs a skill, so it shouldn't
+        # matter that the calling shell has a stale $SKILLS_EVALS_REGISTRIES
+        # or $AGENTSKILLS_DIR pointing nowhere — but run_eval.py's main()
+        # resolves+validates registries before ANY arm, objective-only
+        # included, so an unfixed _run_cli used to let that bogus override
+        # reach the child process, main() printed a plain-text "registry
+        # configuration error" and exited 2, and json.loads on that
+        # non-JSON stdout raised — an ERROR, not the assertEqual(code, 1)
+        # failure a real bug should produce.
+        ws_pristine = self._ws(ADRS_EXISTING_DIR)
+        with mock.patch.dict(os.environ, {
+            "SKILLS_EVALS_REGISTRIES": "/does/not/exist/anywhere",
+            "AGENTSKILLS_DIR": "/does/not/exist/either",
+        }):
+            code, payload = self._run_cli(ADRS_EXISTING_DIR, ws_pristine)
+        self.assertEqual(code, 1, payload)
+        self.assertIn("checks", payload)
 
     def test_existing_adr_written_but_index_not_updated_fails_only_index_check(self):
         ws = self._ws(ADRS_EXISTING_DIR)
