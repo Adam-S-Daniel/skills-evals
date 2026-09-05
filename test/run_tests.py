@@ -4040,6 +4040,19 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertIn("writing-adrs/", readme_text)
 
     # ======================================================================
+    # Round 3, S5: DESIGN.md's Class A candidates list still named
+    # writing-adrs after it shipped its own eval (this one) — the same
+    # graduation rename-pdfs and post-failure-comment already record for
+    # themselves.
+    # ======================================================================
+
+    def test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate(self):
+        design_text = (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+        self.assertNotIn("`writing-adrs` (the format half)", design_text)
+        self.assertIn("`writing-adrs` graduated out of this list", design_text)
+        self.assertIn("`evals/writing-adrs/` (issue #80)", design_text)
+
+    # ======================================================================
     # N1: both seeds' retry.sh cited a 2026-06-02 outage / PR #142; issue #80
     # says 2026-03 / PR #41.
     # ======================================================================
