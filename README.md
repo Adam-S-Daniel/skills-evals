@@ -39,6 +39,9 @@ evals/
   windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
     fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
     seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe
+  rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
+    fixture.yaml           # prompt, objective checks (listing + content digests), rubric
+    seed/inbox/            # six committed PDFs built by ../make_pdfs.py
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
