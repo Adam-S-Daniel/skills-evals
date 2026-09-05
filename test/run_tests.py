@@ -2702,6 +2702,120 @@ class TestIssue85(unittest.TestCase):
         self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
                          by_id["cms-platform-refs-stay-on-tag"]["detail"])
 
+    # -- PINS.md is the only offline source of truth (review round 2, N1) ----
+
+    def test_invented_sha_audit_fails_pins_match(self):
+        """A hallucinated-but-40-hex SHA must not score a perfect run.
+
+        PINS.md is the seed's only offline source of truth for the correct
+        SHA per action; a plausible-looking invented value passes
+        `uses_refs_sha_pinned` (it IS 40 hex characters) but must fail the
+        PINS.md-bound check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        invented = "f" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            text = ci.read_text(encoding="utf-8")
+            text = (text
+                    .replace("actions/checkout@v4",
+                            f"actions/checkout@{invented}")
+                    .replace("actions/setup-node@297dbbf",
+                            f"actions/setup-node@{invented}")
+                    .replace("actions/upload-artifact@"
+                            "469fdae6c9a7a133f770f31f7ebfe863a834fba1  # v4.1.0",
+                            f"actions/upload-artifact@{invented}")
+                    .replace("actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f",
+                            f"actions/cache@{invented}"))
+            self.assertNotIn("v4", text.split("checkout@")[0])  # sanity: replace happened
+            ci.write_text(text, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_md_faithful_audit_passes_pins_match(self):
+        by_id = self._run(audited=True)
+        self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
+                        by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pristine_seed_fails_pins_match(self):
+        by_id = self._run(audited=False)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"])
+
+    def test_ci_stub_with_only_a_comment_fails_pins_match(self):
+        """N3: the old bare-name `ci-workflow-not-deleted` guard is satisfied
+        by a ci.yml stub whose only content is a comment naming the four
+        actions — no real `uses:` line at all. The PINS.md-bound check (N1)
+        closes this: it requires each PINS.md action to appear as an actual
+        `uses:` pin (located structurally via YAML), not merely as a
+        substring anywhere in the file.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                "name: CI\n"
+                "# actions/checkout actions/setup-node actions/upload-artifact"
+                " actions/cache\n"
+                "on:\n  push:\n    branches: [main]\n"
+                "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: []\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["ci-workflow-not-deleted"]["passed"],
+                        "the stub no longer trips the old bare-name check — "
+                        "test setup is stale")
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    # -- the platform_ref: input is bound too (review round 2, N2) -----------
+
+    def test_platform_ref_input_rewritten_to_sha_fails(self):
+        # The skill names this input explicitly ("the `platform_ref:` INPUT
+        # carrying the same version literal") — a SHA there breaks
+        # platform-bump's rewrite and the pin-consistency lint exactly like
+        # the `uses:@tag` line would.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          "platform_ref: 1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_platform_ref_input_skewed_fails(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104", "platform_ref: v0.1.99")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_cms_platform_refs_stay_on_tag_flags_an_uppercase_extra_sha_pinned_ref(self):
+        """N4: `must_not_match`'s SHA pattern must be case-insensitive to
+        match `uses_refs_sha_pinned`'s `SHA_RE` — an uppercase-hex extra
+        cms-platform ref must be caught exactly like a lowercase one is
+        (`test_cms_platform_refs_stay_on_tag_flags_an_extra_sha_pinned_ref`).
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            original = deploy.read_text(encoding="utf-8")
+            extra = ("  stray:\n    uses: Adam-S-Daniel/cms-platform/"
+                    ".github/workflows/other.yml"
+                    "@1E9A6937A11CBCE43AC288D062CEEC17FC51D43F\n")
+            deploy.write_text(original + extra, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
     # -- the restraint checks have teeth too ---------------------------------
 
     def test_editing_local_docker_workflow_fails_restraint(self):

@@ -157,6 +157,90 @@ def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
             else "version comment present: " + "; ".join(bad))
 
 
+PINS_TABLE_ROW_RE = re.compile(
+    r"^\|\s*([^\|]+?)\s*\|\s*[^\|]+?\s*\|\s*([0-9a-fA-F]{40})\s*\|\s*$")
+
+
+def _load_pins_reference(workspace: str, reference: str) -> dict[str, str]:
+    """{action: sha}, read lexically off a PINS.md-shaped markdown table.
+
+    The table's action-name and SHA cells are read as literal text — this
+    never decides code SHAPE, so a plain line regex over the reference
+    file's own leaf content is the right tool, unlike locating a `uses:`
+    node in a workflow (which _uses_value_nodes does via a real YAML parse).
+    """
+    try:
+        with open(os.path.join(workspace, reference), encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return {}
+    out = {}
+    for line in text.splitlines():
+        m = PINS_TABLE_ROW_RE.match(line)
+        if m:
+            out[m.group(1)] = m.group(2)
+    return out
+
+
+def pins_match_reference(workspace: str, patterns: list[str],
+                         reference: str | None = None) -> tuple[bool, str]:
+    """Every action a reference file (PINS.md) lists is pinned, in the given
+    files, to exactly the SHA that reference gives it — not merely a
+    40-hex-character value that happens to be present.
+
+    Binds to the seed's own offline source of truth rather than a
+    fixture-hardcoded SHA list, so a hallucinated-but-well-formed SHA (one
+    that satisfies `uses_refs_sha_pinned` by shape alone) still fails here.
+    Also checks completeness: an action the reference lists but that has no
+    `uses:` pin at all in the given files fails too, so a stub file that
+    drops the real pin down to a comment naming the action does not pass
+    vacuously.
+
+    `uses:` values are located the same way `uses_refs_sha_pinned` and
+    `pin_comment_absent` do — a real YAML parse via `_uses_value_nodes` —
+    never a text regex deciding where the code's structure is.
+    """
+    import yaml
+    if not reference:
+        return (False, "no reference file configured")
+    pins = _load_pins_reference(workspace, reference)
+    if not pins:
+        return (False, f"{reference}: no pin table rows found")
+    found: dict[str, list[tuple[str, int, str]]] = {action: [] for action in pins}
+    for pattern in patterns:
+        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            try:
+                doc = yaml.compose(text, Loader=yaml.SafeLoader)
+            except yaml.YAMLError:
+                continue  # yaml_parses reports this; nothing to check here
+            if doc is None:
+                continue
+            rel = os.path.relpath(path, workspace)
+            for value_node in _uses_value_nodes(doc):
+                ref = value_node.value
+                if not isinstance(ref, str) or not _is_remote_action(ref):
+                    continue
+                action, _, ref_val = ref.partition("@")
+                if action in found:
+                    lineno = value_node.start_mark.line + 1
+                    found[action].append((rel, lineno, ref_val))
+    problems = []
+    for action, expected_sha in pins.items():
+        refs = found[action]
+        if not refs:
+            problems.append(f"{action}: no `uses:` pin found "
+                            f"({reference} gives {expected_sha})")
+            continue
+        for rel, lineno, ref_val in refs:
+            if ref_val != expected_sha:
+                problems.append(f"{rel}:{lineno} {action}@{ref_val} "
+                                f"({reference} gives {expected_sha})")
+    return (not problems, f"every {reference} pin present and correct"
+            if not problems else "; ".join(problems))
+
+
 def yaml_parses(workspace: str, patterns: list[str]) -> tuple[bool, str]:
     import yaml
     bad = []
@@ -577,6 +661,7 @@ CHECKS = {
     "files_unchanged": files_unchanged,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
+    "pins_match_reference": pins_match_reference,
 }
 
 
@@ -610,6 +695,8 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "pins_match_reference":
+            kwargs["reference"] = check.get("reference")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
