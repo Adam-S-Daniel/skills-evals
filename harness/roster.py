@@ -146,6 +146,23 @@ def rung_label(rungs: list[list[str]], index: int) -> str:
     return "/".join(rungs[index])
 
 
+def _canonical_id_re(rungs: list[list[str]]) -> re.Pattern:
+    """The shape of an id the ladder recognizes as a genuine model — retired
+    or not — as opposed to a proxy/routing alias that merely pastes a family
+    word onto unrelated segments.
+
+    `claude-<family word>-<digits>(-<digits>)*(-<8-digit date>)?`: a bare
+    version id, a multi-part version, and a dated snapshot of either all
+    match — every real shape the ladder's own family words plus a numeric
+    version can produce. A routing alias that pastes a family word onto
+    NON-numeric segments, or that does not start with `claude-` at all,
+    does not — see `_is_attributable`, and TestIssue67Review4's worked
+    examples for both shapes.
+    """
+    words = "|".join(re.escape(w) for rung in rungs for w in rung)
+    return re.compile(rf"^claude-(?:{words})-\d+(?:-\d+)*(?:-[0-9]{{8}})?$")
+
+
 def alias_map(ids) -> dict[str, str]:
     """{dated snapshot id: the undated alias it pins}, for ids that both exist.
 
@@ -166,6 +183,7 @@ def alias_map(ids) -> dict[str, str]:
 
 def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
                      api_ids_folded: set[str] | None,
+                     canonical_id_re: re.Pattern,
                      previous_arms: set[str]) -> bool:
     """Whether a census key names something the catalogue (or a previous
     roster) can actually credit: an id currently in the Models API catalogue
@@ -206,12 +224,24 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     TestIssue67Review3's worked proxy-alias examples folds to, or ever
     equals, an api id or a previous arm under either spelling —
     TestIssue67Review4 carries the regression floor for that.
+
+    `canonical_id_re` (see `_canonical_id_re`) is a THIRD, independent route
+    to attribution: a real model that has left the Models API and was never
+    a previous arm matches neither `api_ids` nor `previous_arms` under any
+    spelling, yet the usage it carries is real work that happened — the
+    property `usage_share`'s own docstring states. Checked on both spellings
+    for the same reason as the other two checks (a since-retired DATED
+    snapshot is canonical-shaped too). A proxy/routing alias does not match
+    this shape either (see TestIssue67Review4's regression floor for round
+    3, exercised again here against this specific new path).
     """
     if api_ids is None:
         return True
     return (candidate in api_ids or folded in api_ids
            or folded in (api_ids_folded or ())
-           or candidate in previous_arms or folded in previous_arms)
+           or candidate in previous_arms or folded in previous_arms
+           or bool(canonical_id_re.match(candidate))
+           or bool(canonical_id_re.match(folded)))
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],
@@ -230,10 +260,17 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     week computed at 5.7% against 1000 unranked turns a week).
 
     `api_ids`/`previous_arms`, when given, ALSO exclude a ranked-but-
-    unattributable key — see `_is_attributable`. Every call inside
-    compute_roster gives both; omitted (both default None), the denominator
-    is every ranked key regardless of catalogue membership, the pre-#67-
-    review-round-3 behavior a few direct tests of the raw arithmetic rely on.
+    unattributable key — see `_is_attributable`. That exclusion is
+    deliberately narrower than "not currently in the catalogue": a
+    since-retired id that is CANONICALLY SHAPED like a real model on the
+    ladder (`_canonical_id_re`) still counts here, which is what keeps the
+    "including ones the Models API no longer lists" property above actually
+    true rather than only in the docstring — only a proxy/routing alias that
+    merely carries a family word is excluded. Every call inside
+    compute_roster gives both `api_ids` and `previous_arms`; omitted (both
+    default None), the denominator is every ranked key regardless of
+    catalogue membership, the pre-#67-review-round-3 behavior a few direct
+    tests of the raw arithmetic rely on.
 
     A dated snapshot's usage is folded onto its alias — one model, one share.
     """
@@ -241,6 +278,7 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     api_ids_set = None if api_ids is None else set(api_ids)
     api_ids_folded = (None if api_ids_set is None
                       else {aliases.get(i, i) for i in api_ids_set})
+    canonical_id_re = _canonical_id_re(rungs)
     previous_arms_set = set(previous_arms) if previous_arms else set()
     wanted = set(weeks)
     target = aliases.get(model_id, model_id)
@@ -251,7 +289,7 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
             continue
         folded = aliases.get(candidate, candidate)
         if not _is_attributable(candidate, folded, api_ids_set, api_ids_folded,
-                                previous_arms_set):
+                                canonical_id_re, previous_arms_set):
             continue
         for week, n in (by_week or {}).items():
             if week in wanted:
@@ -438,6 +476,7 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
     api_ids_set = None if api_ids is None else set(api_ids)
     api_ids_folded = (None if api_ids_set is None
                       else {aliases.get(i, i) for i in api_ids_set})
+    canonical_id_re = _canonical_id_re(rungs)
     previous_arms_set = set(previous_arms) if previous_arms else set()
     raw_total = 0
     ranked_total = 0
@@ -446,7 +485,8 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
         if ranked:
             folded = aliases.get(candidate, candidate)
             ranked = _is_attributable(candidate, folded, api_ids_set,
-                                      api_ids_folded, previous_arms_set)
+                                      api_ids_folded, canonical_id_re,
+                                      previous_arms_set)
         for week, n in (by_week or {}).items():
             if week in weeks:
                 raw_total += n
@@ -539,6 +579,9 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # an alias the catalogue actually offers — an alias that exists solely as
     # an old census key is not a model anyone can run. USAGE folds over both,
     # so a seat keeps the usage recorded under either spelling of itself.
+    # This is a SEPARATE mechanism from _is_attributable's canonical-shape
+    # check: that one credits a since-retired real id's own usage even when
+    # neither of ITS spellings ever held (or holds) a seat at all.
     seat_aliases = alias_map(api_ids)
     aliases = alias_map(api_ids + list(counts))
     snapshots = {m["id"]: seat_aliases[m["id"]]

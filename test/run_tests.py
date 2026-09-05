@@ -5294,6 +5294,63 @@ class TestIssue67Review4(unittest.TestCase):
                 api_ids=api_ids, previous_arms=previous_arms)
             self.assertEqual(ranked_total, 0, alias)
 
+    # --- item 2: a since-retired real model id must still count in the
+    # usage denominator — attribution by canonical ladder SHAPE, not only
+    # by catalogue/previous-arm membership. A proxy alias must not gain
+    # this path just because it carries a family word. --------------------
+
+    def test_a_since_retired_real_model_still_counts_in_the_denominator(self):
+        """`claude-opus-4-8` leaves the Models API and was never a previous
+        arm. Its 1000-turns/week usage is real work that happened, and
+        DESIGN.md's own property says it belongs in the denominator. Before
+        this fix, item 1 alone still excluded it (neither a bare/folded api
+        id nor a previous arm), starving the denominator down to
+        `claude-sonnet-4-6`'s own usage and inflating its measured share
+        from ~5.66% (correctly below the 10% entry bar) to a false 100%,
+        seating it as a paid arm on no real evidence.
+        """
+        rungs = roster.tier_rungs(self._policy())
+        counts = {"claude-sonnet-4-6": {w: 60 for w in self.W},
+                  "claude-opus-4-8": {w: 1000 for w in self.W}}
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        api_ids = {"claude-sonnet-4-6"}  # opus-4-8 dropped from the catalogue
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
+            api_ids=api_ids, previous_arms=set())
+        self.assertAlmostEqual(share, 100 * 240 / 4240, places=6)
+        self.assertLess(share, 10.0,
+                        "below the 10% entry bar — opus-4-8's usage must "
+                        "still be in the denominator")
+
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=None)
+        if "claude-sonnet-4-6" in self._arm_ids(result):
+            reason = self._reason(result, "claude-sonnet-4-6")
+            self.assertNotIn("100.0%", reason)
+            self.assertIn("newest", reason.lower(),
+                         "must be seated on newest-in-tier grounds, not a "
+                         "false usage share")
+
+    def test_a_proxy_alias_does_not_gain_a_seat_from_the_canonical_shape_check(self):
+        """The canonical-shape widening in the test above must not also
+        admit a proxy/routing alias that merely pastes a family word onto
+        unrelated segments — the round-3 regression floor, once more,
+        against the NEW attribution path specifically."""
+        rungs = roster.tier_rungs(self._policy())
+        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route"):
+            cleaned = roster._clean_counts(
+                {alias: {self.W[0]: 500}}, lambda _m: None)
+            api_ids = {"claude-opus-4-8"}
+            aliases = roster.alias_map(list(api_ids) + list(cleaned))
+            raw_total, ranked_total = roster._in_window_totals(
+                cleaned, set(self.W[:1]), rungs, aliases=aliases,
+                api_ids=api_ids, previous_arms=set())
+            self.assertEqual(ranked_total, 0, alias)
+
 
 if __name__ == "__main__":
     unittest.main()
