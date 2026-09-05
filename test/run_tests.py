@@ -3087,6 +3087,23 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
         return proc.returncode, payload
 
+    def _copy_fixture_with_link_pattern(self, eval_dir: Path, bad_pattern: str) -> Path:
+        """A throwaway copy of `eval_dir` with every link_targets_exist
+        check's link_pattern replaced by `bad_pattern` — the checked-in
+        fixture.yaml is never touched.
+        """
+        tmp_eval_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp_eval_dir, ignore_errors=True)
+        shutil.copytree(eval_dir, tmp_eval_dir, dirs_exist_ok=True)
+        fixture_path = tmp_eval_dir / "fixture.yaml"
+        fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+        mutated = [c for c in fixture["objective_checks"] if c["type"] == "link_targets_exist"]
+        self.assertTrue(mutated, "no link_targets_exist check found to mutate")
+        for check in mutated:
+            check["link_pattern"] = bad_pattern
+        fixture_path.write_text(yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
+        return tmp_eval_dir
+
     def _link_retry_sh(self, ws: Path, link_comment: str) -> None:
         path = ws / "scripts" / "retry.sh"
         text = path.read_text(encoding="utf-8")
@@ -3309,6 +3326,37 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self._apply_correct_existing(ws_correct)
         code, payload = self._run_cli(ADRS_EXISTING_DIR, ws_correct)
         self.assertEqual(code, 0, payload)
+
+    def test_cli_survives_a_link_pattern_with_an_unbalanced_paren(self):
+        # S2 (round 3): an unbalanced paren makes link_pattern fail to
+        # compile (re.error) — this used to crash run_eval.py with a raw
+        # traceback and no JSON on stdout, the same defect class round 2's
+        # S4 fixed for file_count.
+        tmp_eval_dir = self._copy_fixture_with_link_pattern(
+            ADRS_EXISTING_DIR, r'\[[0-9]{4}\]\(([0-9]{4}-[a-z0-9-]+\.md')
+        ws = self._ws(tmp_eval_dir)
+        self._apply_correct_existing(ws)
+        code, payload = self._run_cli(tmp_eval_dir, ws)
+        self.assertEqual(code, 1, payload)
+        self.assertIn("checks", payload, payload)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"])
+        self.assertIn("does not compile", by_id["readme-index-links-resolve"]["detail"])
+
+    def test_cli_survives_a_link_pattern_with_no_capture_group(self):
+        # S2 (round 3): a link_pattern with no capture group compiles fine
+        # but crashes at m.group(1) with an IndexError — again no JSON on
+        # stdout, the twin dodge to the unbalanced-paren case above.
+        tmp_eval_dir = self._copy_fixture_with_link_pattern(
+            ADRS_EXISTING_DIR, r'[0-9]{4}-[a-z0-9-]+\.md')
+        ws = self._ws(tmp_eval_dir)
+        self._apply_correct_existing(ws)
+        code, payload = self._run_cli(tmp_eval_dir, ws)
+        self.assertEqual(code, 1, payload)
+        self.assertIn("checks", payload, payload)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"])
+        self.assertIn("capture group", by_id["readme-index-links-resolve"]["detail"])
 
     def test_cli_objective_only_ignores_stale_registry_env_vars(self):
         # N3: --arm objective-only never installs a skill, so it shouldn't

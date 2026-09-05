@@ -1139,12 +1139,22 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
     text or bytes, never whether a captured path names a file that actually
     exists — so an index row or a comment naming a slug nothing wrote is
     invisible to both.
+
+    A `link_pattern` that fails to compile, or that compiles but has no
+    capture group, is a fixture config mistake, not a crash: each returns
+    `(False, ...)` naming the specific problem, before any file is scanned.
     """
     if not link_pattern:
         return (False, "link_targets_exist check names no link_pattern")
     if not base:
         return (False, "link_targets_exist check names no base directory")
-    regex = re.compile(link_pattern)
+    try:
+        regex = re.compile(link_pattern)
+    except re.error as exc:
+        return (False, f"link_targets_exist link_pattern does not compile: {exc}")
+    if regex.groups < 1:
+        return (False, "link_targets_exist link_pattern has no capture group "
+                "to name the linked path")
     base_dir = os.path.join(workspace, base)
     missing, checked = [], []
     for pattern in patterns:
