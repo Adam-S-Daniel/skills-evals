@@ -10,6 +10,7 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import hashlib
 import itertools
 import json
 import os
@@ -2675,6 +2676,64 @@ class DirListingMatchesCheckTests(unittest.TestCase):
         self.assertIn("unexpected: notesXtxt", detail)
 
 
+class FileDigestsMatchCheckTests(unittest.TestCase):
+    """objective.file_digests_match, exercised directly against tiny workspaces."""
+
+    def _ws(self, files: dict[str, bytes]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for name, data in files.items():
+            (ws / name).write_bytes(data)
+        return ws
+
+    def test_matching_single_path_passes(self):
+        ws = self._ws({"a.pdf": b"hello"})
+        digest = hashlib.sha256(b"hello").hexdigest()
+        passed, detail = objective.file_digests_match(str(ws), ["a.pdf"], sha256=digest)
+        self.assertTrue(passed, detail)
+
+    def test_wrong_digest_fails(self):
+        ws = self._ws({"a.pdf": b"hello"})
+        wrong = hashlib.sha256(b"goodbye").hexdigest()
+        passed, detail = objective.file_digests_match(str(ws), ["a.pdf"], sha256=wrong)
+        self.assertFalse(passed)
+        self.assertIn("a.pdf", detail)
+
+    def test_missing_path_fails(self):
+        ws = self._ws({})
+        digest = hashlib.sha256(b"hello").hexdigest()
+        passed, detail = objective.file_digests_match(str(ws), ["a.pdf"], sha256=digest)
+        self.assertFalse(passed)
+        self.assertIn("not found", detail)
+
+    def test_two_paths_both_matching_the_same_digest_pass(self):
+        ws = self._ws({"a.pdf": b"same", "a (2).pdf": b"same"})
+        digest = hashlib.sha256(b"same").hexdigest()
+        passed, detail = objective.file_digests_match(
+            str(ws), ["a.pdf", "a (2).pdf"], sha256=digest)
+        self.assertTrue(passed, detail)
+
+    def test_two_paths_where_only_one_matches_fails(self):
+        ws = self._ws({"a.pdf": b"same", "a (2).pdf": b"different"})
+        digest = hashlib.sha256(b"same").hexdigest()
+        passed, detail = objective.file_digests_match(
+            str(ws), ["a.pdf", "a (2).pdf"], sha256=digest)
+        self.assertFalse(passed)
+        self.assertIn("a (2).pdf", detail)
+
+    def test_no_paths_is_an_error(self):
+        ws = self._ws({})
+        passed, detail = objective.file_digests_match(str(ws), [], sha256="ab")
+        self.assertFalse(passed)
+        self.assertIn("at least one path", detail)
+
+    def test_missing_sha256_is_an_error(self):
+        ws = self._ws({"a.pdf": b"hello"})
+        passed, detail = objective.file_digests_match(str(ws), ["a.pdf"])
+        self.assertFalse(passed)
+        self.assertIn("sha256", detail)
+
+
 class FilesUnchangedByDigestCheckTests(unittest.TestCase):
     """objective.files_unchanged(by="digest"), against tiny workspaces."""
 
@@ -2895,7 +2954,8 @@ class TestIssue82(unittest.TestCase):
         for dimension in weights:
             self.assertIn(dimension, fixture["judge_rubric"])
         checks_by_type = {c["type"] for c in fixture["objective_checks"]}
-        self.assertEqual(checks_by_type, {"dir_listing_matches", "files_unchanged"})
+        self.assertEqual(checks_by_type,
+                         {"dir_listing_matches", "files_unchanged", "file_digests_match"})
 
     def test_fixture_requires_pins_pypdf_with_a_publish_date(self):
         fixture = run_eval.load_fixture(RENAME_DIR)
@@ -2986,6 +3046,66 @@ class TestIssue82(unittest.TestCase):
             path.write_bytes(path.read_bytes() + b"\n%tampered\n")
         by_id = self._run(mutate)
         self.assertFalse(by_id["inbox-content-preserved"]["passed"])
+
+    # -- per-file digest checks: the bag-of-names/bag-of-digests blind spot --
+
+    def test_swapping_the_statement_and_invoice_names_fools_only_the_bag_checks(self):
+        # A cross-wired swap (each document's bytes under the OTHER's target
+        # name) leaves the same six names and the same six digests present,
+        # so the whole-listing and digest-bag checks are blind to it. The
+        # per-file digest checks pin one document's digest to its own name
+        # and must catch it.
+        def mutate(ws):
+            self._rename_correctly(ws)
+            inbox = ws / "inbox"
+            stmt = inbox / self.ORIGINAL_TO_CORRECT["Scan_20260205_081533.pdf"]
+            inv = inbox / self.ORIGINAL_TO_CORRECT["Scan_20260301_114022.pdf"]
+            tmp = inbox / "tmp-swap.pdf"
+            stmt.rename(tmp)
+            inv.rename(stmt)
+            tmp.rename(inv)
+        by_id = self._run(mutate)
+        self.assertTrue(by_id["inbox-renamed-per-convention"]["passed"],
+                        by_id["inbox-renamed-per-convention"]["detail"])
+        self.assertTrue(by_id["inbox-content-preserved"]["passed"],
+                        by_id["inbox-content-preserved"]["detail"])
+        self.assertFalse(by_id["statement-date-ranged"]["passed"])
+        self.assertFalse(by_id["invoice-dated-from-body"]["passed"])
+        self.assertTrue(by_id["receipt-left-alone"]["passed"])
+        self.assertTrue(by_id["image-only-scan-left-alone"]["passed"])
+        self.assertTrue(by_id["duplicate-bills-disambiguated"]["passed"])
+
+    def test_swapping_the_two_disambiguated_bill_copies_still_passes(self):
+        # The two bill copies are byte-identical, so swapping which physical
+        # file sits under the plain name vs. the " (2)" name is not a real
+        # defect — the per-file check must not false-fail on it.
+        def mutate(ws):
+            self._rename_correctly(ws)
+            inbox = ws / "inbox"
+            plain = inbox / "20260303-Bill-Example Utilities Ltd-Account 9002.pdf"
+            dup = inbox / "20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf"
+            tmp = inbox / "tmp-swap.pdf"
+            plain.rename(tmp)
+            dup.rename(plain)
+            tmp.rename(dup)
+        by_id = self._run(mutate)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_five_of_six_correct_fails_exactly_one_per_file_check_plus_the_listing(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            inbox = ws / "inbox"
+            # Undo just the statement's rename; the other five stay correct.
+            (inbox / self.ORIGINAL_TO_CORRECT["Scan_20260205_081533.pdf"]).rename(
+                inbox / "Scan_20260205_081533.pdf")
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
+        self.assertFalse(by_id["statement-date-ranged"]["passed"])
+        for check_id in ("inbox-content-preserved", "invoice-dated-from-body",
+                        "receipt-left-alone", "image-only-scan-left-alone",
+                        "duplicate-bills-disambiguated"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
 
     # -- CLI-level: the objective-only exit code -------------------------
 

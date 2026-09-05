@@ -133,6 +133,45 @@ objective_checks:
     paths: ["inbox/*.pdf"]
     by: digest
 
+  # Both checks above are a bag of names and a bag of digests: swapping
+  # which document's bytes end up under which target name (e.g. giving the
+  # statement's content the invoice's target name and vice versa) leaves
+  # both the exact-listing check and the digest-bag check passing, since
+  # the same six names and the same six digests are all still present,
+  # just cross-wired. These five checks each pin ONE document's known
+  # digest to its own specific target name(s), closing that gap.
+  - id: statement-date-ranged
+    description: The statement's own bytes end up under the range-dated name
+    type: file_digests_match
+    paths: ["inbox/20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf"]
+    sha256: dd5e599bd8ff6ebba2c564159dd37569d0c09024d4dd2e73e37484c538709b34
+
+  - id: invoice-dated-from-body
+    description: The invoice's own bytes end up under its body-date name
+    type: file_digests_match
+    paths: ["inbox/20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf"]
+    sha256: a2e94c95b3f1a81f3ca1c8b83b76a6f2a117ddf8482ffb2c9c89835d10a3c9f4
+
+  - id: receipt-left-alone
+    description: The already-conventional receipt keeps its own bytes under its own name
+    type: file_digests_match
+    paths: ["inbox/20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf"]
+    sha256: 7d4502e83af46c8d1bf673ac1803fc6927e625c984afa3a8b6fb565694a09dda
+
+  - id: image-only-scan-left-alone
+    description: The image-only scan keeps its own bytes under its original scanner name
+    type: file_digests_match
+    paths: ["inbox/Scan_20260118_161230.pdf"]
+    sha256: 502f95ac78e98ad46cd94613fe7d4240f83fe4260124bed6f317223c7b772106
+
+  - id: duplicate-bills-disambiguated
+    description: Both disambiguated bill copies still carry the bill's own bytes
+    type: file_digests_match
+    paths:
+      - "inbox/20260303-Bill-Example Utilities Ltd-Account 9002.pdf"
+      - "inbox/20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf"
+    sha256: 88daa346f2812f9a7c857c80724d7f93ea2f67d99dc08a12f4e56dc241b4cea0
+
 # Judge scoring: 3 dimensions, 0-10 each. The exact resulting file names are
 # already decided objectively above, so the judge is left the things that
 # genuinely need judgement: whether the agent's PROCESS matched the skill's

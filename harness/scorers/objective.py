@@ -495,6 +495,37 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
             else f"listing differs: {actual} != {expected}")
 
 
+def file_digests_match(workspace: str, patterns: list[str],
+                       sha256: str | None = None) -> tuple[bool, str]:
+    """Every path in `patterns` (workspace-relative, NOT a glob) must exist
+    and its content must hash to the exact `sha256` hex digest given.
+
+    Unlike `files_unchanged(by="digest")`, which compares a MULTISET of
+    digests against the seed with no fixed identity, this pins one exact,
+    known-in-advance digest to one or more named paths — "this specific
+    document's bytes ended up at this specific final name." More than one
+    path is for a disambiguated pair that is expected to still be
+    byte-identical copies of the SAME document (e.g. `foo.pdf` and
+    `foo (2).pdf`), not two different documents.
+    """
+    if not patterns:
+        return (False, "file_digests_match: at least one path is required")
+    if not sha256:
+        return (False, "file_digests_match: sha256 is required")
+    problems = []
+    for rel in patterns:
+        full = os.path.join(workspace, rel)
+        if not os.path.isfile(full):
+            problems.append(f"{rel}: not found")
+            continue
+        with open(full, "rb") as f:
+            digest = hashlib.sha256(f.read()).hexdigest()
+        if digest != sha256:
+            problems.append(f"{rel}: digest {digest} != expected {sha256}")
+    return (not problems, f"{', '.join(patterns)}: digest matches" if not problems
+            else "; ".join(problems))
+
+
 def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
     """Concatenate every file the patterns match; return (text, relative paths)."""
     chunks, names = [], []
@@ -561,6 +592,7 @@ CHECKS = {
     "required_checks_early_skip": required_checks_early_skip,
     "event_only_workflows_unfiltered": event_only_workflows_unfiltered,
     "files_unchanged": files_unchanged,
+    "file_digests_match": file_digests_match,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
     "dir_listing_matches": dir_listing_matches,
@@ -603,6 +635,8 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["expected"] = check.get("expected")
             kwargs["expected_file"] = check.get("expected_file")
             kwargs["ignore"] = check.get("ignore")
+        elif check["type"] == "file_digests_match":
+            kwargs["sha256"] = check.get("sha256")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
