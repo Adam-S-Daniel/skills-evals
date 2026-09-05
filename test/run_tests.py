@@ -3994,6 +3994,27 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertIn("`evals/writing-adrs/` (issue #80)", design_text)
 
     # ======================================================================
+    # N5: the two fixtures' scope notes disagreed about direction — both sit
+    # before objective_checks: (i.e. the named paths are always BELOW the
+    # note in the file), but bootstrap's said "above".
+    # ======================================================================
+
+    def test_scope_note_direction_agrees_in_both_fixtures(self):
+        directions = {}
+        for eval_dir in (ADRS_BOOTSTRAP_DIR, ADRS_EXISTING_DIR):
+            lines = (eval_dir / "fixture.yaml").read_text(encoding="utf-8").splitlines()
+            # Comment lines wrap, so join them before matching rather than
+            # assuming "named" and "above"/"below" share one physical line.
+            normalized = " ".join(line.lstrip("#").strip()
+                                  for line in lines if line.startswith("#"))
+            m = re.search(r"the paths named (above|below)", normalized)
+            self.assertIsNotNone(m, f"{eval_dir.name}: scope note direction not found")
+            directions[eval_dir.name] = m.group(1)
+        self.assertEqual(directions["bootstrap"], directions["existing-convention"],
+                         directions)
+        self.assertEqual(directions["bootstrap"], "below")
+
+    # ======================================================================
     # N1: both seeds' retry.sh cited a 2026-06-02 outage / PR #142; issue #80
     # says 2026-03 / PR #41.
     # ======================================================================

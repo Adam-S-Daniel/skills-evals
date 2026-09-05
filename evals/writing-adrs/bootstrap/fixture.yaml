@@ -10,7 +10,7 @@
 # second ADR for the CHANGELOG's routine fact.
 #
 # Scope note (round 2, N4): the objective column only asserts on the paths
-# named above. A brand-new, unrelated file (e.g. a stray NOTES.md nothing
+# named below. A brand-new, unrelated file (e.g. a stray NOTES.md nothing
 # here names) is not caught by any objective_check and is not this
 # fixture's business to catch — that's the judge rubric's restraint
 # dimension.
