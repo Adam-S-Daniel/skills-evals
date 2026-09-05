@@ -158,7 +158,17 @@ def read_json(path: str | Path | None) -> tuple[dict | None, str | None]:
     try:
         with open(p, encoding="utf-8") as f:
             document = json.load(f)
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+    # `RecursionError` as well as the parse/IO errors (N4, #129 review
+    # round 7): a deeply nested document — 100k open brackets is enough —
+    # exhausts the decoder's stack rather than failing to parse, and used
+    # to escape as a traceback carrying the runner's absolute paths, where
+    # this module's docstring promises a one-line named message about
+    # every untrusted input. `ValueError` covers `json.JSONDecodeError`
+    # and `UnicodeDecodeError` (both subclasses) and anything else the
+    # decoder raises for a value it cannot represent; both are named
+    # anyway, because which one fired is the useful half of the message.
+    except (json.JSONDecodeError, UnicodeDecodeError, ValueError, OSError,
+            RecursionError) as exc:
         return None, f"{p.name} is present but unreadable ({type(exc).__name__})"
     if not isinstance(document, dict):
         return None, f"{p.name} is not a JSON object"
