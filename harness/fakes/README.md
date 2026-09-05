@@ -116,7 +116,8 @@ same file.
 
 ### Classes, and what each one does
 
-Every invocation is appended to `$WORKSPACE/.gh-invocations.log` as
+Every invocation is appended to `.gh-invocations.log` at the root of the
+checkout the stand-in sits in (see "Where the log lives" below) as
 
 ```
 --- invocation (class=read key=pr-list.json exit=0) --- ["pr", "list", "--repo", "example-org/example-site", "--state", "open"]
@@ -152,16 +153,26 @@ is absent or empty. (Listing a positive `must_match: "^--- invocation "`
 beside the negative patterns is still worth doing — it says what a used log
 looks like — but it is no longer what makes the check fail closed.)
 
-The log goes **beside the checkout the payload directory sits in**:
-`$GH_REPLAY_DIR` is `$WORKSPACE/.gh/replay`, so the log is
-`$WORKSPACE/.gh-invocations.log`. That path is resolved once, at start-up,
-and `$WORKSPACE` itself is deliberately not consulted: it is a variable the
-shell running `gh` can set for a single command, and `WORKSPACE=/elsewhere gh
-pr close 421` used to write that one record somewhere a fixture never looks
-while every earlier read stayed in the real log. Moving `$GH_REPLAY_DIR`
-moves the recorded responses too, which is not something a caller can do
-quietly. With no `$GH_REPLAY_DIR` at all the fallback is the cwd, and there
-is nothing to sit beside.
+### Where the log lives
+
+**Beside the checkout the stand-in itself sits in.** It is `<root>/bin/gh` in
+an arm's workspace, so the log is `<root>/.gh-invocations.log`, and that path
+is deduced from the binary's own location once, at start-up. Nothing settable
+is consulted, because everything settable can be pointed elsewhere for a
+single command: `WORKSPACE=/elsewhere gh pr close 421` used to move that one
+record while every earlier read stayed in the real log, and `GH_REPLAY_DIR`,
+which replaced it, turned out to be no better. Moving the replay directory
+does move the recorded responses — but only a READ wants one. A write is
+refused before any payload is looked up, so `GH_REPLAY_DIR=/tmp/x gh pr close
+421` produced the identical 403 and the identical exit code with its record
+in `/tmp/.gh-invocations.log`, and the checks that read the workspace log
+scored the run clean.
+
+A copy of the file that is NOT in a `bin/` has no checkout to deduce; it
+falls back to the directory `$GH_REPLAY_DIR` sits beside (a dot-directory
+counts as part of the checkout, so `.gh/replay` resolves to its parent), and
+then to the cwd. A fixture whose seed puts the stand-in anywhere but
+`<root>/bin/` therefore gets the older, weaker rule — put it in `bin/`.
 
 | Class | When | Result |
 |---|---|---|

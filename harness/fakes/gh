@@ -388,20 +388,27 @@ def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
 def resolve_log_dir() -> str:
     """Where `.gh-invocations.log` goes, settled once, at start-up.
 
-    The checkout the replay directory sits in — and deliberately NOT
-    `$WORKSPACE`, which used to win when it was set. Both `$WORKSPACE` and
-    the cwd are things the shell running this can point somewhere else for
-    one command, and a record that can be moved out of the tree for one
-    command is not a record: everything written before the move still sits
-    in the file a reader looks at, so only the moved call goes missing.
-    `$GH_REPLAY_DIR` cannot be moved without also moving the responses,
-    which is a change the caller cannot hide.
+    Deduced from THIS FILE's own location: run as `<root>/bin/gh`, it
+    records into `<root>`, whatever the cwd is and whatever the environment
+    says. Nothing settable is consulted, because everything settable can be
+    pointed somewhere else for a single command — `$WORKSPACE` and the cwd
+    plainly, and `$GH_REPLAY_DIR` too, which was thought immune on the
+    grounds that moving it moves the recorded responses with it. It does,
+    for a read. A write is refused before any response is looked up, so it
+    had nothing to lose: `GH_REPLAY_DIR=/elsewhere gh pr close 7` moved that
+    one record out of the tree a reader looks at while every earlier read
+    stayed in it — and a record that can be moved for one command is not a
+    record.
 
-    A replay directory may live in a dot-directory (`.gh/replay`) so the
-    checkout still reads as an ordinary one; the log belongs beside the
-    checkout, not inside it. With no replay directory at all there is
-    nothing to sit beside, and the cwd is the last resort.
+    A copy that is NOT in a `bin/` has no checkout to deduce, so it falls
+    back to where the recorded responses sit. Those may live in a
+    dot-directory (`.gh/replay`) so the checkout still reads as an ordinary
+    one; the log belongs beside the checkout, not inside it. With no
+    responses named either, the cwd is the last resort.
     """
+    here = os.path.dirname(os.path.realpath(__file__))
+    if os.path.basename(here) == "bin":
+        return os.path.dirname(here)
     payloads = os.environ.get("GH_REPLAY_DIR")
     if payloads:
         parent = os.path.dirname(os.path.abspath(payloads))
