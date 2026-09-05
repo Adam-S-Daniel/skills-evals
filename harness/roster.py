@@ -815,7 +815,15 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
             if parsed is None:
                 skipped += 1
                 continue
-            by_id[entry["id"]] = today if parsed > now else entry["last_seen"]
+            # The PARSED date, re-rendered — never the raw string (N1,
+            # #129 review round 7). `parse_ts` strips its input before
+            # comparing it against `now`, but the raw value used to be
+            # stored here and republished verbatim, so a `\r\n` wrapped
+            # around a date reached roster/latest.json on the public
+            # branch as literal control characters. Same fix
+            # `source.census_at` already had.
+            by_id[entry["id"]] = (today if parsed > now
+                                  else parsed.strftime("%Y-%m-%d"))
             continue
         skipped += 1
     if migrated:

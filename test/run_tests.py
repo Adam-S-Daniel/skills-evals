@@ -7485,5 +7485,105 @@ class TestIssue67Review7(unittest.TestCase):
         # all 500 slots with `a0000-...` plants — every api id is evicted
         # and the superset assertion goes red.
 
+    # --- N1: `catalogue_seen[].last_seen` is republished NORMALIZED ------
+
+    def test_a_last_seen_with_control_characters_is_republished_normalized(self):
+        """`parse_ts` strips a `last_seen` before comparing it against
+        `now`, but the entry was stored — and republished to the public
+        branch — as the raw string it came in as, so a `\\r\\n` around a
+        date landed in `roster/latest.json` verbatim. The same fix
+        `source.census_at` already had (N8, round 6)."""
+        plant = "claude-sonnet-9-9"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "\r\n2026-09-01T00:00:00Z\r\n"}]}
+        result = self._compute(models=TestIssue67._models_doc(), census=None,
+                               previous=previous)
+        entry = next(e for e in result["catalogue_seen"] if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-01")
+        for e in result["catalogue_seen"]:
+            self.assertNotIn("\r", e["last_seen"])
+            self.assertNotIn("\n", e["last_seen"])
+        # Mutation check (manual): storing `entry["last_seen"]` instead of
+        # `parsed.strftime("%Y-%m-%d")` republishes the raw string — red.
+
+    # --- N2: `source.census_at` is converted to UTC before it is rendered
+
+    def test_census_at_is_converted_to_utc_before_it_is_rendered(self):
+        """`strftime("...Z")` on an offset-aware timestamp published the
+        LOCAL wall clock with a `Z` on the end — five hours wrong here, and
+        canonical-looking, which is worse than obviously wrong."""
+        census = TestIssue67._census_doc(generated_at="2026-09-03T00:00:00+05:00")
+        result = self._compute(census=census, previous=None)
+        self.assertEqual(result["source"]["census_at"], "2026-09-02T19:00:00Z")
+        # Mutation check (manual): dropping the
+        # `.astimezone(timezone.utc)` publishes "2026-09-03T00:00:00Z" —
+        # red.
+
+    # --- N3: `_format_share`'s last-resort fallback is checked too -------
+
+    def test_the_share_fallback_is_checked_against_the_bar_as_well(self):
+        """`_format_share` escalated 1, 2, 3, 4, 6 decimals against the
+        bar and then returned `:.6g` UNCHECKED. A share of 1.99999975%
+        renders as "2" there, so the reason read "below the 2% exit bar
+        (2% of rankable census usage)" — a sentence that contradicts
+        itself. Measured through `compute_roster`: 7,999,999 of
+        400,000,000 exit-window turns."""
+        counts = {
+            "claude-sonnet-4-6": dict(
+                [(w, 1_000_000) for w in self.W[:7]] + [(self.W[7], 999_999)]),
+            "claude-sonnet-5": {w: 10_000_000 for w in self.W},
+            "claude-opus-5": {w: 10_000_000 for w in self.W},
+            "claude-opus-4-8": {w: 10_000_000 for w in self.W},
+            "claude-haiku-4-5": {w: 10_000_000 for w in self.W},
+            "claude-fable-5-1": dict(
+                [(w, 9_000_000) for w in self.W[:7]] + [(self.W[7], 9_000_001)]),
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        result = self._compute(census=census, previous=previous)
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == "claude-sonnet-4-6")
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertNotIn("(2% of", entry["reason"],
+                         "the rendered share must not equal the bar it is "
+                         "said to be below")
+        self.assertIn("1.99999975", entry["reason"])
+        # Mutation check (manual): returning `f"{value:.6g}"` unchecked
+        # renders "2%" against the 2% bar — red.
+
+    # --- N4: a RecursionError from json.load is a named one-liner -------
+
+    def test_a_deeply_nested_previous_roster_is_named_not_traced(self):
+        """`read_json` caught `(json.JSONDecodeError, OSError,
+        UnicodeDecodeError)`; a deeply nested document raises
+        `RecursionError` instead, which escaped as a traceback carrying
+        the runner's absolute paths where the module docstring promises a
+        one-line named message. Driven through `main()`, with files on
+        disk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(TestIssue67._models_doc()),
+                              encoding="utf-8")
+            previous = Path(tmp) / "previous.json"
+            previous.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--previous", str(previous),
+                    "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            err = stderr.getvalue()
+            self.assertEqual(rc, 0, stdout.getvalue() + err)
+            self.assertIn("previous.json is present but unreadable", err)
+            self.assertIn("RecursionError", err)
+            self.assertNotIn("Traceback", err)
+            self.assertTrue(out.is_file())
+        # Mutation check (manual): narrowing the `except` back to
+        # `(json.JSONDecodeError, OSError, UnicodeDecodeError)` lets the
+        # RecursionError propagate out of `main()` — the test errors.
+
 if __name__ == "__main__":
     unittest.main()
