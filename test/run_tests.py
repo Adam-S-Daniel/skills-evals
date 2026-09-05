@@ -2842,6 +2842,35 @@ class TestIssue85(unittest.TestCase):
         self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
                          by_id["third-party-pins-match-pins-md"]["detail"])
 
+    def test_pins_match_reference_fails_on_row_with_wrong_cell_count(self):
+        """Round 4, N5: `PINS_TABLE_ROW_RE` used to require EXACTLY 3 cells
+        (4 pipe characters) to match at all, so a row with too few or too
+        many cells failed to match entirely and vanished from the
+        requirement set — the same silent-drop bug N-4 (round 3) already
+        fixed for a malformed sha VALUE, but for cell SHAPE instead.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        bad_rows = (
+            "| actions/labeler | " + "d" * 40 + " |",               # 2 cells
+            "| actions/labeler | v5 | " + "d" * 40 + " | extra |",  # 4 cells
+        )
+        for bad_row in bad_rows:
+            with tempfile.TemporaryDirectory() as tmp:
+                ws = self._seed_copy(tmp)
+                self._audited(ws)
+                pins = ws / "PINS.md"
+                text = pins.read_text(encoding="utf-8")
+                text = text.rstrip("\n") + f"\n{bad_row}\n"
+                pins.write_text(text, encoding="utf-8")
+                ci_text = (ws / ".github" / "workflows" / "ci.yml").read_text(
+                    encoding="utf-8")
+                by_id = self._checks(ws, seed)
+            self.assertNotIn("actions/labeler", ci_text)
+            self.assertFalse(
+                by_id["third-party-pins-match-pins-md"]["passed"],
+                f"{bad_row!r}: "
+                f"{by_id['third-party-pins-match-pins-md']['detail']}")
+
     def test_pins_match_reference_glob_skips_non_files(self):
         """Round 3, N-4: `pins_match_reference`'s glob loop had no
         `os.path.isfile` guard — unlike `file_matches`'s `_read_matched` —

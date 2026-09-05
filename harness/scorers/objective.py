@@ -265,13 +265,13 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
             else "; ".join(bad))
 
 
-# Any 3-cell table row — deliberately NOT anchored to a 40-hex last cell, so
-# a row with a malformed (e.g. shortened) sha is still recognised as a row
-# rather than silently failing to match at all. The sha cell is validated
-# separately in _load_pins_reference, so a malformed one is reported instead
-# of just vanishing.
-PINS_TABLE_ROW_RE = re.compile(
-    r"^\|\s*([^\|]+?)\s*\|\s*[^\|]+?\s*\|\s*([^\|]+?)\s*\|\s*$")
+# Any table-shaped row, of ANY cell count — deliberately not anchored to
+# exactly 3 cells (nor to a 40-hex last cell), so a row with the wrong
+# number of cells, or a malformed (e.g. shortened) sha, is still recognised
+# as a row rather than silently failing to match at all. Cell count and the
+# sha cell are both validated separately in _load_pins_reference, so either
+# kind of malformed row is reported instead of just vanishing.
+PINS_TABLE_ROW_RE = re.compile(r"^\|(.+)\|\s*$")
 # The markdown alignment row under a table header (`|---|---|---|`, optional
 # `:` for alignment) — a table-shaped row with no meaningful cell content,
 # never a pin.
@@ -287,14 +287,16 @@ def _load_pins_reference(workspace: str, reference: str) -> tuple[dict[str, str]
     file's own leaf content is the right tool, unlike locating a `uses:`
     node in a workflow (which _uses_value_nodes does via a real YAML parse).
 
-    A table-shaped row (three pipe-delimited cells) whose sha cell is not a
-    valid 40-hex value is reported as malformed rather than silently
-    dropped: `PINS_TABLE_ROW_RE` used to require the sha cell to already be
-    valid hex, so a shortened sha just failed to match at all and the action
-    vanished from the requirement set entirely — indistinguishable from the
-    action never having been listed. The header row (`| Action | Tag | SHA
-    |`) and the markdown alignment row beneath it are table-shaped too, so
-    both are recognised and skipped explicitly rather than by accident.
+    A table-shaped row whose sha cell is not a valid 40-hex value, OR whose
+    cell count isn't exactly 3 (a dropped Tag column, a stray extra column),
+    is reported as malformed rather than silently dropped: `PINS_TABLE_ROW_RE`
+    used to require BOTH the sha cell to already be valid hex AND exactly 3
+    cells to match at all, so either kind of malformed row just failed to
+    match and the action vanished from the requirement set entirely —
+    indistinguishable from the action never having been listed. The header
+    row (`| Action | Tag | SHA |`) and the markdown alignment row beneath it
+    are table-shaped too, so both are recognised and skipped explicitly
+    rather than by accident.
     """
     try:
         with open(os.path.join(workspace, reference), encoding="utf-8") as f:
@@ -309,8 +311,13 @@ def _load_pins_reference(workspace: str, reference: str) -> tuple[dict[str, str]
         m = PINS_TABLE_ROW_RE.match(line)
         if not m:
             continue
-        action, sha = m.group(1), m.group(2)
-        if action.strip().casefold() == "action":
+        cells = [cell.strip() for cell in m.group(1).split("|")]
+        if len(cells) != 3:
+            malformed.append(f"{reference}: row has {len(cells)} cell(s), "
+                            f"expected 3: {line.strip()!r}")
+            continue
+        action, _tag_cell, sha = cells
+        if action.casefold() == "action":
             continue  # header row
         if SHA_RE.match(sha):
             out[action] = sha
