@@ -3797,20 +3797,34 @@ jobs:
 
     @staticmethod
     def _stray_comment_lines(text: str) -> list[str]:
-        """Lines carrying a `#` token outside the `inputs:` mapping.
+        """Lines carrying a `#` token outside an input's `description:` text.
 
-        Locates the `inputs:` value node by its YAML node marks (never a
-        text search — a `#` inside one of its block-scalar descriptions is
-        real action documentation, not a lexical boundary), then lexically
-        scans every line OUTSIDE that node's line range for a stray `#`.
+        Locates every `description:` SCALAR node under `inputs:` by YAML node
+        marks (never a text search — a `#` inside one of those descriptions
+        is real action documentation, not a lexical boundary) and excludes
+        only THOSE nodes' own line ranges. Review round 4, S2: excluding the
+        whole `inputs:` mapping's line span (as an earlier version of this
+        guard did) hid a `#` comment placed between two input entries — only
+        the description text itself is legitimately allowed to carry `#`;
+        everything else inside `inputs:` (between entries, beside `required:`/
+        `default:`) is scanned like anywhere else in the file.
         """
         root = yaml.compose(text)
         assert isinstance(root, yaml.MappingNode), "expected a top-level mapping"
         inputs_value = next((v for k, v in root.value if k.value == "inputs"), None)
         assert inputs_value is not None, "expected an `inputs:` key"
-        start, end = inputs_value.start_mark.line, inputs_value.end_mark.line
+        assert isinstance(inputs_value, yaml.MappingNode), "expected `inputs:` to be a mapping"
+        excluded = []
+        for _input_key, input_body in inputs_value.value:
+            if not isinstance(input_body, yaml.MappingNode):
+                continue
+            for field_key, field_value in input_body.value:
+                if field_key.value == "description":
+                    excluded.append((field_value.start_mark.line, field_value.end_mark.line))
+        def _is_excluded(i):
+            return any(start <= i < end for start, end in excluded)
         return [line for i, line in enumerate(text.splitlines())
-               if not (start <= i < end) and "#" in line]
+               if not _is_excluded(i) and "#" in line]
 
     def test_vendored_action_seed_carries_no_comments_outside_inputs(self):
         # Review round 3, B3: the seed's vendored action.yml used to carry a
@@ -3819,11 +3833,16 @@ jobs:
         # leaking the caller-side-gating convention (and the fixture's own
         # existence) straight to the without-skill arm. The file now has
         # only name/description/inputs/runs, and a comment is allowed
-        # nowhere except inside the `inputs:` mapping's own description
-        # text (real action documentation, not eval authorship). The old
-        # guard was a three-string blocklist ("DESIGN", "if: failure()",
-        # "if: success()") that a differently-worded re-leak would sail
-        # through; this asserts the actual shape instead.
+        # nowhere except inside an input's own `description:` text (real
+        # action documentation, not eval authorship). The old guard was a
+        # three-string blocklist ("DESIGN", "if: failure()", "if:
+        # success()") that a differently-worded re-leak would sail through;
+        # this asserts the actual shape instead. (Review round 4, S2: an
+        # intermediate version of `_stray_comment_lines` excluded the WHOLE
+        # `inputs:` mapping's line span rather than only each description
+        # scalar's, so a comment between two input entries — not inside a
+        # description — went undetected; see the position-mutation test
+        # below.)
         text = self._seed_vendored_action_path().read_text(encoding="utf-8")
         doc = yaml.safe_load(text)
         self.assertEqual(set(doc.keys()), {"name", "description", "inputs", "runs"})
@@ -3840,6 +3859,73 @@ jobs:
         text = self._seed_vendored_action_path().read_text(encoding="utf-8")
         mutated = "# caller-side gating: see the skill's SKILL.md\n" + text
         self.assertNotEqual(self._stray_comment_lines(mutated), [])
+
+    # The round-2 leak text, verbatim: named the eval, the issue, and the
+    # convention under test directly to the agent.
+    _ROUND2_LEAK_LINE = "# Eval fixture note (issue #86): caller-side gating; do not 'fix' it away."
+
+    # Review round 4, S2(b): words that would tell the without-skill arm it
+    # is inside an eval fixture, or leak the caller-side-gating convention
+    # under test. The round-3 reviewer's exact pattern.
+    _LEAK_KEYWORDS_RE = re.compile(
+        r"eval|fixture|harness|issue #|gating|caller-side|DESIGN|convention|do not|don.t",
+        re.IGNORECASE)
+
+    def test_vendored_action_seed_guard_catches_a_comment_at_every_position_inside_inputs(self):
+        # Review round 4, S2: the guard used to exclude the WHOLE `inputs:`
+        # mapping's line span, so a `#` comment placed between two input
+        # entries (not inside a description block) went undetected — three
+        # of the five positions below. The fixed guard excludes only each
+        # `description:` scalar's own line range, so every position inside
+        # `inputs:` that isn't literally inside a description is scanned
+        # like anywhere else in the file. Also asserts the SAME leak text
+        # would trip the seed-wide grep test (test_seed_carries_no_...
+        # leak keywords below) at every position, since that test greps
+        # actual file content rather than replaying this insertion.
+        text = self._seed_vendored_action_path().read_text(encoding="utf-8")
+        lines = text.splitlines()
+        self.assertEqual(lines[3], "inputs:")
+        self.assertEqual(lines[4], "  mode:")
+        self.assertEqual(lines[11], "    required: true")
+        self.assertEqual(lines[12], "  marker:")
+        self.assertEqual(lines[19], "    description: |")
+        self.assertEqual(lines[42], '    default: ""')
+        self.assertEqual(lines[44], "runs:")
+
+        def insert(idx: int, indent: str) -> str:
+            mutated_lines = lines[:idx] + [indent + self._ROUND2_LEAK_LINE] + lines[idx:]
+            return "\n".join(mutated_lines) + "\n"
+
+        positions = {
+            "immediately after inputs:": insert(4, "  "),
+            "between mode: and marker:": insert(12, "  "),
+            "indented between two entries": insert(19, "      "),
+            "after the last input before runs:": insert(43, ""),
+            "end of file": text + self._ROUND2_LEAK_LINE + "\n",
+        }
+        for label, mutated in positions.items():
+            with self.subTest(position=label):
+                self.assertNotEqual(self._stray_comment_lines(mutated), [],
+                                    f"structural guard missed a comment {label}")
+                self.assertTrue(self._LEAK_KEYWORDS_RE.search(mutated),
+                                f"leak-keyword pattern missed a comment {label}")
+
+    def test_seed_carries_no_eval_authorship_leak_keywords(self):
+        # Review round 4, S2(b): walks every text file under the seed
+        # (not just the vendored action.yml) and asserts none of them admit
+        # they are a fixture, name the issue, or leak the convention under
+        # test — the structural `inputs:` guard above only covers the one
+        # vendored file; this covers the whole seed.
+        seed_dir = POST_FAILURE_COMMENT_DIR / "seed"
+        hits = []
+        for path in sorted(seed_dir.rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            match = self._LEAK_KEYWORDS_RE.search(text)
+            if match:
+                hits.append(f"{path.relative_to(POST_FAILURE_COMMENT_DIR)}: {match.group(0)!r}")
+        self.assertEqual(hits, [])
 
     def test_reintroduced_event_interpolation_in_run_fails(self):
         ws = self._correct_workspace()

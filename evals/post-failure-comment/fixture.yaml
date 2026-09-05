@@ -8,20 +8,28 @@
 skill: post-failure-comment
 registry: https://github.com/Adam-S-Daniel/cms-platform
 
-# Seed hygiene note (review round 3, B3) — why this file, not the seed, is
-# where this lives: the vendored seed/.cms-platform/.../action.yml's `mode`
-# and `marker` input DESCRIPTIONS carry the caller-side-gating contract
-# (mode is selected by the caller's own `if:` gate; two workflows must not
-# share a marker). That's fine to leave in place — it's the real action's
-# own input documentation, present in both arms regardless of which one
-# gets the skill, not authorship leaking eval context. What had to go was
-# everything outside `inputs:`: a top-of-file design-history comment and an
-# "Eval fixture note" comment that named the eval, the issue, and the
-# convention under test directly to the agent. The seed file now carries
-# only name/description/inputs/runs with no comment outside `inputs:`, and
-# test_vendored_action_seed_carries_no_comments_outside_inputs in
-# test/run_tests.py enforces the shape structurally (YAML node marks, not a
-# string blocklist) so a differently-worded re-leak can't slip back in.
+# Seed hygiene note (review round 3, B3; guards corrected round 4, S2) — why
+# this file, not the seed, is where this lives: the vendored
+# seed/.cms-platform/.../action.yml's `mode` and `marker` input DESCRIPTIONS
+# carry the caller-side-gating contract (mode is selected by the caller's own
+# `if:` gate; two workflows must not share a marker). That's fine to leave in
+# place — it's the real action's own input documentation, present in both
+# arms regardless of which one gets the skill, not authorship leaking eval
+# context. What had to go was everything outside a `description:` scalar: a
+# top-of-file design-history comment and an "Eval fixture note" comment that
+# named the eval, the issue, and the convention under test directly to the
+# agent. Two guards in test/run_tests.py now decide this, deliberately
+# narrower and broader than "no comment outside `inputs:`" respectively:
+# test_vendored_action_seed_carries_no_comments_outside_inputs asserts, via
+# YAML node marks (not a string blocklist), that this ONE file carries no `#`
+# anywhere except inside an input's own `description:` scalar text — a
+# comment between two input entries, or beside a `required:`/`default:`
+# line, is caught exactly like one outside `inputs:` entirely (round 4, S2 —
+# excluding the whole `inputs:` mapping span, as this guard used to, missed
+# exactly that shape). test_seed_carries_no_eval_authorship_leak_keywords
+# case-insensitively greps every file under the seed (not only this one) for
+# words that would tell the without-skill arm it's inside a fixture — a
+# differently-worded re-leak, in any seed file, can't slip back in.
 
 # Class A (workspace transform, per DESIGN.md's four-instrument taxonomy):
 # correctness is decidable from the resulting workflow files alone, so the
