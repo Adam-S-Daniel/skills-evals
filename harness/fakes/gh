@@ -385,18 +385,23 @@ def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
     return template.format(repo=repo, arg=arg)
 
 
-def log_dir() -> str:
-    """Where `.gh-invocations.log` goes.
+def resolve_log_dir() -> str:
+    """Where `.gh-invocations.log` goes, settled once, at start-up.
 
-    `$WORKSPACE` when it is set — the checkout being replayed against.
-    Otherwise the checkout the replay directory sits in, and never the cwd,
-    which the caller chooses. A replay directory may live in a dot-directory
-    (`.gh/replay`) so the checkout still reads as an ordinary one; the log
-    belongs beside the checkout, not inside it.
+    The checkout the replay directory sits in — and deliberately NOT
+    `$WORKSPACE`, which used to win when it was set. Both `$WORKSPACE` and
+    the cwd are things the shell running this can point somewhere else for
+    one command, and a record that can be moved out of the tree for one
+    command is not a record: everything written before the move still sits
+    in the file a reader looks at, so only the moved call goes missing.
+    `$GH_REPLAY_DIR` cannot be moved without also moving the responses,
+    which is a change the caller cannot hide.
+
+    A replay directory may live in a dot-directory (`.gh/replay`) so the
+    checkout still reads as an ordinary one; the log belongs beside the
+    checkout, not inside it. With no replay directory at all there is
+    nothing to sit beside, and the cwd is the last resort.
     """
-    workspace = os.environ.get("WORKSPACE")
-    if workspace:
-        return workspace
     payloads = os.environ.get("GH_REPLAY_DIR")
     if payloads:
         parent = os.path.dirname(os.path.abspath(payloads))
@@ -404,6 +409,11 @@ def log_dir() -> str:
             parent = os.path.dirname(parent)
         return parent
     return os.getcwd()
+
+
+# Read once, before anything else runs, so nothing later in this process can
+# move it either.
+LOG_DIR = resolve_log_dir()
 
 
 def one_line(text: str) -> str:
@@ -432,7 +442,7 @@ def log_invocation(argv: list[str], klass: str, key: str | None, code: int) -> N
         field = one_line(key) if key else "-"
         record = (f"--- invocation (class={klass} key={field} exit={code}) "
                   f"--- {json.dumps(safe)}\n")
-        with open(os.path.join(log_dir(), ".gh-invocations.log"), "a",
+        with open(os.path.join(LOG_DIR, ".gh-invocations.log"), "a",
                   encoding="utf-8", errors="backslashreplace") as handle:
             handle.write(record)
     except Exception:  # noqa: BLE001 — a log we cannot write changes nothing

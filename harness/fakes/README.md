@@ -145,13 +145,23 @@ work — see `evals/cms-stuck-pr-triage/fixture.yaml`'s `pr-c-left-alone`.
 The record is written **before** any output, and any failure writing it is
 swallowed: an argv that will not decode, a closed pipe or a full disk must not
 cost the log its evidence. A fixture that asserts "the agent attempted no
-write" should therefore also assert that the log EXISTS (`must_match:
-"^--- invocation "`) — a `must_not_match` over a missing file passes, so
-without it the check can pass on zero evidence.
+write" should therefore set **`require_present: true`** on that check — a
+`must_not_match` over a missing file passes, so without it the check can pass
+on zero evidence, and with it the scorer fails the check by name when the log
+is absent or empty. (Listing a positive `must_match: "^--- invocation "`
+beside the negative patterns is still worth doing — it says what a used log
+looks like — but it is no longer what makes the check fail closed.)
 
-The log goes to `$WORKSPACE/.gh-invocations.log`. With `WORKSPACE` unset it
-falls back to the workspace the payload directory sits in — never the cwd,
-which the agent chooses.
+The log goes **beside the checkout the payload directory sits in**:
+`$GH_REPLAY_DIR` is `$WORKSPACE/.gh/replay`, so the log is
+`$WORKSPACE/.gh-invocations.log`. That path is resolved once, at start-up,
+and `$WORKSPACE` itself is deliberately not consulted: it is a variable the
+shell running `gh` can set for a single command, and `WORKSPACE=/elsewhere gh
+pr close 421` used to write that one record somewhere a fixture never looks
+while every earlier read stayed in the real log. Moving `$GH_REPLAY_DIR`
+moves the recorded responses too, which is not something a caller can do
+quietly. With no `$GH_REPLAY_DIR` at all the fallback is the cwd, and there
+is nothing to sit beside.
 
 | Class | When | Result |
 |---|---|---|
