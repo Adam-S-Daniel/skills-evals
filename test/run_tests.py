@@ -3188,6 +3188,24 @@ class JudgeDiffTests(unittest.TestCase):
         self.assertIn("inside commit", diff)
         self.assertIn("a.txt", diff)
 
+    def test_build_judge_diff_summarizes_a_bare_clones_binary_blobs(self):
+        # N6 (round 3): an agent leaves a bare clone in the workspace
+        # (`git clone --bare`) — its loose objects (a small repo has no
+        # packs at all) get added to the bookkeeping diff as plain new
+        # files. git's own "is this binary" detection samples for a NUL
+        # byte, which a tiny zlib-compressed loose object can easily lack
+        # by chance; classified as text, its raw non-UTF-8 bytes are
+        # embedded straight into the diff and then decoded with
+        # errors="replace" (see `_git`), turning into a wall of U+FFFD
+        # replacement characters — unreadable, oversized judge input.
+        copy = self._standalone_repo("copy")
+        subprocess.run(["git", "clone", "-q", "--bare", str(copy), str(self.ws / "mirror")],
+                       check=True)
+        diff = run_eval._build_judge_diff(self.ws)
+        self.assertNotIn("�", diff)
+        self.assertIn("Binary file ", diff)
+        self.assertLess(len(diff), 40000, diff)
+
     def test_nested_repo_diff_shows_the_last_commit(self):
         copy = self._standalone_repo("copy")
         diff = run_eval._nested_repo_diff(self.ws, [copy])

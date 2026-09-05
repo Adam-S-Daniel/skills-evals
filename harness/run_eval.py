@@ -551,6 +551,56 @@ def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
     return "\n\n".join(sections)
 
 
+_DIFF_HEADER_RE = re.compile(r"^diff --git a/.* b/(.*)$")
+
+
+def _summarize_binary_blobs(workspace: Path, diff: str) -> str:
+    """Replace each changed file's diff body with a short `Binary file
+    <path> (<n> bytes)` summary when the file's actual on-disk bytes are
+    not valid UTF-8 (round 3 N6) — decided directly against the real file,
+    not trusted to git's own per-diff binary-vs-text decision.
+
+    `git diff` prints "Binary files ... differ" for most binary content,
+    but its own detection (a NUL byte within a sampled prefix) can miss a
+    genuinely binary file too small to reliably contain one by chance — a
+    git loose object is a zlib-compressed stream of a few dozen bytes for
+    a small commit, and it is exactly as likely to be free of 0x00 as any
+    other byte value. Left classified as "text", its raw non-UTF-8 bytes
+    get embedded straight into the diff; decoded with `errors="replace"`
+    (see `_git`, called with `text=True`), those become a wall of U+FFFD
+    replacement characters — unreadable, and mostly useless, judge input.
+    Deciding by UTF-8-decodability instead targets the actual failure mode
+    (the lossy text decode) rather than approximating git's own heuristic.
+    The scenario this closes: an agent leaves a bare clone in the
+    workspace (`git clone --bare checkout mirror`), and its loose objects
+    (a small repo has no packs at all) are added to the bookkeeping diff
+    as plain new files.
+    """
+    if "diff --git " not in diff:
+        return diff
+    chunks = re.split(r"(?m)^(?=diff --git )", diff)
+    out = []
+    for chunk in chunks:
+        header, _, _ = chunk.partition("\n")
+        m = _DIFF_HEADER_RE.match(header)
+        if not m:
+            out.append(chunk)
+            continue
+        path = m.group(1)
+        try:
+            data = (workspace / path).read_bytes()
+        except OSError:
+            out.append(chunk)
+            continue
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            out.append(f"{header}\nBinary file {path} ({len(data)} bytes)\n")
+        else:
+            out.append(chunk)
+    return "".join(out)
+
+
 def _build_judge_diff(workspace: Path) -> str:
     """The text handed to the judge as "what changed": the workspace's own
     bookkeeping diff, plus — for any top-level directory that is itself a
@@ -561,6 +611,7 @@ def _build_judge_diff(workspace: Path) -> str:
     """
     _git("add", "-A", cwd=workspace)
     diff = _git("diff", "--cached", "--", ".", ":!.claude", cwd=workspace).stdout
+    diff = _summarize_binary_blobs(workspace, diff)
     nested = _nested_repo_diff(workspace, _nested_repo_dirs(workspace))
     if nested:
         diff = f"{diff}\n\n# Nested repository contents (collapsed to gitlinks above)\n{nested}"
