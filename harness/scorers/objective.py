@@ -181,7 +181,8 @@ def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
 
 def platform_refs_on_tag(workspace: str, patterns: list[str],
                          platform_prefix: str | None = None,
-                         tag: str | None = None) -> tuple[bool, str]:
+                         tag: str | None = None,
+                         min_refs: int | None = None) -> tuple[bool, str]:
     """The carve-out, checked structurally: every `uses:` value node whose
     leaf names `platform_prefix` (a cross-repo reference to this account's
     own cms-platform) must carry `@<tag>` exactly — never a SHA, never a
@@ -198,11 +199,34 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
     the same pass `_mapping_value_nodes` uses) and compares each leaf node's
     own parsed `.value` against `tag` lexically — a comment is not a node,
     and YAML quoting/whitespace around a scalar is not part of its value.
+
+    `min_refs`, when given, restores the presence half a `must_match` regex
+    used to supply for free: without it, this check asserts only "every
+    platform ref FOUND is on the tag", which passes vacuously if the ref was
+    deleted, routed around (a local `./` swap), or never there in the first
+    place. `min_refs` counts platform `uses:` value nodes only — not
+    `platform_ref:` nodes, which are a separate leg entirely — so it stays a
+    structural count, not a `files_unchanged`-style presence guard: an
+    edited-but-still-correct file with the same ref count still passes.
+
+    The prefix match is case-folded on both sides: a GitHub `owner/repo`
+    path is case-insensitive, so `adam-s-daniel/cms-platform/...` is the same
+    cross-repo reference as `Adam-S-Daniel/cms-platform/...` and must not go
+    unrecognised (and uncounted) merely by casing.
+
+    An anchored/aliased `platform_ref:` (or `uses:`) is reported once, at the
+    anchor's own line, not once per alias occurrence: `yaml.compose` resolves
+    an alias to the SAME Node object as its anchor, so a value used via two
+    aliases is visited twice but is one problem, not two — the same
+    consequence `pin_comment_absent` documents for a trailing comment on an
+    alias's own line. `bad` is de-duplicated before being joined for this
+    reason.
     """
     import yaml
     if not platform_prefix or not tag:
         return (False, "platform_prefix/tag not configured")
     bad = []
+    ref_count = 0
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
             if not os.path.isfile(path):
@@ -218,17 +242,25 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
             rel = os.path.relpath(path, workspace)
             for value_node in _uses_value_nodes(doc):
                 ref = value_node.value
-                if not isinstance(ref, str) or platform_prefix not in ref:
+                if (not isinstance(ref, str)
+                        or platform_prefix.casefold() not in ref.casefold()):
                     continue
+                ref_count += 1
                 expected = ref.rsplit("@", 1)[0] + "@" + tag
                 if ref != expected:
                     lineno = value_node.start_mark.line + 1
                     bad.append(f"{rel}:{lineno} uses: {ref} (expected @{tag})")
             for value_node in _mapping_value_nodes(doc, "platform_ref"):
+                if not isinstance(value_node, yaml.ScalarNode):
+                    continue
                 if value_node.value != tag:
                     lineno = value_node.start_mark.line + 1
                     bad.append(f"{rel}:{lineno} platform_ref: {value_node.value} "
                               f"(expected {tag})")
+    if min_refs is not None and ref_count < min_refs:
+        bad.append(f"only {ref_count} platform uses: ref(s) found across "
+                  f"{patterns} (expected at least {min_refs})")
+    bad = list(dict.fromkeys(bad))
     return (not bad, f"every platform ref pinned to {tag}" if not bad
             else "; ".join(bad))
 
@@ -828,6 +860,7 @@ def run_checks(fixture: dict, workspace: str, seed: str,
         elif check["type"] == "platform_refs_on_tag":
             kwargs["platform_prefix"] = check.get("platform_prefix")
             kwargs["tag"] = check.get("tag")
+            kwargs["min_refs"] = check.get("min_refs")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

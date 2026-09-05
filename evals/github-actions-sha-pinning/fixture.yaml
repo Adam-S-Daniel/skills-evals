@@ -119,20 +119,34 @@ objective_checks:
     description: >
       The carve-out: a cross-repo reference to this account's own
       cms-platform — the reusable-workflow call in deploy.yml, the
-      composite-action call in the gate action, and the `platform_ref:`
-      input carrying the same version literal — stays pinned to the release
+      composite-action call in the gate action, and every `platform_ref:`
+      value carrying the same version literal — stays pinned to the release
       tag `v0.1.104` and must NOT be converted to a SHA, nor skewed to a
       different tag. Checked structurally (every `uses:` value node naming
       cms-platform, and every `platform_ref:` value node, compared to the
       tag literal by parsed value) rather than by regex over raw text, so a
       stale `# was ...v0.1.104` comment left above a drifted live value
       cannot satisfy it, and quoting/spacing around a correct value cannot
-      defeat it.
+      defeat it. `platform_ref:` is matched at any key depth (e.g. under
+      `env:`, or inside a `matrix: include:` entry), not just directly under
+      a job's `with:` — deliberately kept broad, since the input is a
+      version literal wherever it appears, not only in the one shape this
+      seed happens to use.
+      # min_refs is the presence half a `must_match` regex used to supply
+      # for free: without it, "every platform ref found is on the tag"
+      # passes vacuously with zero refs found (a deleted deploy.yml and/or
+      # gate action, or a cms-platform ref routed to a local `./` path).
+      # The count is 2: the reusable-workflow call in deploy.yml and the
+      # composite-action call in the gate action — `platform_ref:` values
+      # are not counted here, since a min_refs miscount on a value that has
+      # no fixed cardinality (an agent may add or drop `with:` blocks
+      # freely) would be its own false positive.
     type: platform_refs_on_tag
     paths: [".github/workflows/deploy.yml",
            ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
     platform_prefix: "Adam-S-Daniel/cms-platform/"
     tag: "v0.1.104"
+    min_refs: 2
 
   - id: local-and-docker-refs-untouched
     description: >

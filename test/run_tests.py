@@ -2913,11 +2913,6 @@ class TestIssue85(unittest.TestCase):
     # must_match. `platform_refs_on_tag` composes the tree and compares each
     # leaf node's own parsed value instead.
 
-    def test_platform_refs_on_tag_correct_audit_passes(self):
-        by_id = self._run(audited=True)
-        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
-                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
-
     def test_platform_refs_on_tag_comment_skew_on_platform_ref_fails(self):
         """A '# was platform_ref: v0.1.104' comment left above a drifted
         'platform_ref: v0.1.99' line must not satisfy the check — only the
@@ -3035,6 +3030,105 @@ class TestIssue85(unittest.TestCase):
                      "e2e-tests.yml@v0.1.104", text)
         self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
                          by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- the presence half of the old must_match, restored structurally
+    # (review round 4, B1) -- `platform_refs_on_tag` asserted only "every
+    # platform ref FOUND is on the tag", so with no platform ref found at all
+    # it passed vacuously. Deleting the platform refs (or routing around them)
+    # must fail via a `min_refs` count, not a `files_unchanged`-style presence
+    # guard (an edited-but-still-correct deploy.yml must keep passing).
+
+    def test_platform_refs_on_tag_min_refs_catches_deleted_deploy_and_gate(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_min_refs_catches_deploy_stubbed_to_a_run_step(self):
+        # The gate composite's platform ref survives, but deploy.yml's
+        # reusable-workflow call is gone — one platform ref found, not two.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                "name: Deploy\n\non:\n  push:\n    branches: [main]\n\n"
+                "jobs:\n  e2e:\n    runs-on: ubuntu-latest\n"
+                "    steps:\n      - run: echo hi\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_min_refs_catches_gate_ref_swapped_local(self):
+        # deploy.yml's reusable-workflow call survives, but the gate
+        # composite's cross-repo ref was swapped for a local `./` ref.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            gate = ws / ".github" / "actions" / "gate" / "action.yml"
+            self._replace(
+                gate,
+                "uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@v0.1.104",
+                "uses: ./.github/actions/local-recursion-gate")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_min_refs_catches_deploy_deleted_alone(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_min_refs_edited_but_correct_deploy_still_passes(self):
+        # The guardrail: min_refs counts platform uses: refs, it does not
+        # require deploy.yml to be byte-identical to the seed.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8").replace(
+                    "name: Deploy", "name: Deploy to production"),
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_correct_audit_passes_min_refs(self):
+        by_id = self._run(audited=True)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        self.assertEqual(by_id["cms-platform-refs-stay-on-tag"]["detail"],
+                         "every platform ref pinned to v0.1.104")
+
+    def test_platform_refs_on_tag_min_refs_direct_call(self):
+        """Exercises the `min_refs` kwarg directly, isolated from the fixture
+        wiring: fewer than `min_refs` platform `uses:` value nodes found
+        fails with a detail naming the count and the threshold.
+        """
+        ws = self._synthetic_ws({
+            "one.yml": "jobs:\n  a:\n    uses: Adam-S-Daniel/cms-platform/"
+                      ".github/workflows/x.yml@v1\n"})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["one.yml"], platform_prefix="Adam-S-Daniel/cms-platform/",
+            tag="v1", min_refs=2)
+        self.assertFalse(passed)
+        self.assertIn("1", detail)
+        self.assertIn("2", detail)
 
     # -- the restraint checks have teeth too ---------------------------------
 
