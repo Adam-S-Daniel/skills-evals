@@ -799,6 +799,59 @@ class FileCountCheckTests(unittest.TestCase):
         self.assertTrue(passed, detail)
         self.assertIn("1 file(s)", detail)
 
+    # --- Review round 2 on PR #136 (issue #80), item S4: three file_count
+    # residuals the round-1 guards didn't cover. ---
+
+    def test_min_zero_with_no_max_is_vacuous_and_fails(self):
+        # `min: 0` with no `max` bounds nothing — count is always >= 0 and
+        # there is no ceiling — so it passed unconditionally, same as naming
+        # neither bound. The one difference from "neither" is that a caller
+        # who wrote `min: 0` believed they were asserting something.
+        ws = self._ws(["a.md", "b.md", "c.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=0)
+        self.assertFalse(passed, detail)
+
+    def test_run_checks_min_zero_no_max_is_vacuous_and_fails(self):
+        ws = self._ws(["a.md"])
+        fixture = {"objective_checks": [
+            {"id": "count", "type": "file_count", "paths": ["*.md"], "min": 0},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(ws))}
+        self.assertFalse(by_id["count"]["passed"], by_id["count"]["detail"])
+
+    def test_string_min_bound_fails_instead_of_raising_typeerror(self):
+        ws = self._ws(["a.md", "b.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count="4")
+        self.assertFalse(passed, detail)
+        self.assertIn("int", detail.lower())
+
+    def test_run_checks_string_min_bound_fails_instead_of_raising(self):
+        # The finding's exact shape: a fixture author typo's `min: "4"`
+        # (quoted) in YAML, and run_checks must report a failed check with a
+        # named detail, not let a TypeError escape from the comparison.
+        ws = self._ws(["a.md", "b.md"])
+        fixture = {"objective_checks": [
+            {"id": "count", "type": "file_count", "paths": ["*.md"], "min": "4"},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(ws))}
+        self.assertFalse(by_id["count"]["passed"], by_id["count"]["detail"])
+        self.assertIn("int", by_id["count"]["detail"].lower())
+
+    def test_bool_min_bound_is_rejected_not_treated_as_the_integer_one(self):
+        # `min: true` sails through as `min_count=1` (bool is an int
+        # subclass in Python) — with >=1 file already present this silently
+        # "passes" a config mistake instead of naming it.
+        ws = self._ws(["a.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=True)
+        self.assertFalse(passed, detail)
+        self.assertIn("bool", detail.lower())
+
+    def test_bool_max_bound_is_rejected_not_treated_as_the_integer_one(self):
+        ws = self._ws(["a.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=1, max_count=True)
+        self.assertFalse(passed, detail)
+        self.assertIn("bool", detail.lower())
+
 
 class FakePowershellTests(unittest.TestCase):
     """The windows-elevation-from-wsl seed's stand-in powershell.exe.

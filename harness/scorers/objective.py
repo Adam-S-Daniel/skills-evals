@@ -468,13 +468,23 @@ def file_count(workspace: str, patterns: list[str], min_count: int | None = None
     every other check type here, `**` is NOT recursive — patterns are
     globbed with `glob.glob`, not `glob.glob(..., recursive=True)`.
 
-    A check naming neither bound, a negative bound, or a `max_count` below
-    `min_count` is a fixture config mistake, not a vacuous pass: each of
-    those returns `(False, ...)` with a detail naming the specific problem,
-    before any file is counted.
+    A check naming neither bound, a `min` of 0 with no `max` (equally
+    vacuous — nothing can ever fail it), a non-`int` bound, a negative
+    bound, or a `max_count` below `min_count` is a fixture config mistake,
+    not a vacuous pass: each of those returns `(False, ...)` with a detail
+    naming the specific problem, before any file is counted. `bool` is
+    rejected explicitly even though Python's `bool` is an `int` subclass —
+    `min: true` in a fixture's YAML is a typo, not a bound of 1.
     """
+    for label, value in (("min", min_count), ("max", max_count)):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+            return (False, f"file_count {label} bound must be an int, "
+                    f"got {type(value).__name__}: {value!r}")
     if min_count is None and max_count is None:
         return (False, "file_count check names neither a min nor a max bound")
+    if max_count is None and not min_count:
+        return (False, "file_count min bound is 0 with no max bound, "
+                "which passes unconditionally")
     if min_count is not None and min_count < 0:
         return (False, f"file_count min bound is negative: {min_count}")
     if max_count is not None and max_count < 0:
@@ -497,6 +507,47 @@ def file_count(workspace: str, patterns: list[str], min_count: int | None = None
             else "; ".join(problems))
 
 
+def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | None = None,
+                       base: str | None = None) -> tuple[bool, str]:
+    """Every relative path a link line names must resolve to a real file.
+
+    `link_pattern` is matched per LINE — the one place in this module where
+    a per-line (rather than whole-document) regex is the deliberate choice:
+    a link is a self-contained lexical fact on its own line, unlike the
+    multi-line heading-order checks elsewhere here — and must capture the
+    linked path in group 1. `base` is the directory (relative to the
+    workspace) that captured path resolves against, e.g. "docs/decisions"
+    for an index table whose links are relative to that folder, or "." for
+    a comment elsewhere in the repo that spells the path out in full.
+
+    Neither `file_matches` nor `files_unchanged` can express this: they see
+    text or bytes, never whether a captured path names a file that actually
+    exists — so an index row or a comment naming a slug nothing wrote is
+    invisible to both.
+    """
+    if not link_pattern:
+        return (False, "link_targets_exist check names no link_pattern")
+    if not base:
+        return (False, "link_targets_exist check names no base directory")
+    regex = re.compile(link_pattern)
+    base_dir = os.path.join(workspace, base)
+    missing, checked = [], []
+    for pattern in patterns:
+        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
+            rel = os.path.relpath(path, workspace).replace(os.sep, "/")
+            checked.append(rel)
+            with open(path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    m = regex.search(line)
+                    if m and not os.path.isfile(os.path.join(base_dir, m.group(1))):
+                        missing.append(f"{rel}: {m.group(1)}")
+    if missing:
+        return (False, "dangling link target(s): " + "; ".join(missing))
+    return (True, f"all link targets exist ({', '.join(checked) or 'no file matched'})")
+
+
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "yaml_parses": yaml_parses,
@@ -508,6 +559,7 @@ CHECKS = {
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
     "file_count": file_count,
+    "link_targets_exist": link_targets_exist,
 }
 
 
@@ -548,6 +600,9 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             # `.get("min", 0)` default silently instead of erroring.
             kwargs["min_count"] = check.get("min", check.get("min_count"))
             kwargs["max_count"] = check.get("max", check.get("max_count"))
+        elif check["type"] == "link_targets_exist":
+            kwargs["link_pattern"] = check.get("link_pattern")
+            kwargs["base"] = check.get("base")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
