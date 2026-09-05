@@ -7366,5 +7366,124 @@ class TestIssue67Review7(unittest.TestCase):
         for w in warnings:
             self.assertNotIn("0arm-599", w)
 
+    # --- S1: four of round 6's own catalogue_seen defences had no
+    # regression floor — each could be deleted with the whole suite still
+    # green. One test per defence, each red under the named mutation.
+    # (These are floors for code that is already correct, so unlike every
+    # other item in this round they are green before the change as well as
+    # after it: the mutation is what they exist to catch.)
+
+    HOSTILE_SEEN_ID = "claude-sonnet-4-5\n::error::pwned::"
+
+    def _chain(self, previous, models, runs=3, step=100):
+        """`compute_roster` fed its own published roster, `now` advancing
+        `step` days per run — how `catalogue_seen` actually round-trips."""
+        now = self.NOW
+        results = []
+        for _ in range(runs):
+            previous = roster.compute_roster(
+                models_doc=models, census_doc=None, policy=self._policy(),
+                previous=previous, now=now, warn=lambda _m: None)
+            results.append(previous)
+            now = now + timedelta(days=step)
+        return results
+
+    def test_a_future_dated_last_seen_is_clamped_and_still_ages_out(self):
+        """A `last_seen` in the future is clamped to today on read. Without
+        the clamp, `now - seen_at` is negative forever and the plant is
+        immortal: it can never age out, and it goes on being republished by
+        this harness as its own output on every later run."""
+        plant = "claude-sonnet-9-9"
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "9999-12-31"}]}
+        runs = self._chain(previous, models)
+        self.assertIn(plant, self._seen_ids(runs[0]),
+                      "the clamp keeps the entry for one age window, it does "
+                      "not drop it on sight")
+        self.assertNotIn(plant, self._seen_ids(runs[-1]),
+                         "200 days on, a plant the Models API never returned "
+                         "must be gone")
+        # Mutation check (manual): replacing the clamp
+        # (`today if parsed > now else entry["last_seen"]`) with
+        # `entry["last_seen"]` keeps `9999-12-31` verbatim, so the age
+        # check never fires and the plant survives every run — red.
+
+    def test_an_unparseable_last_seen_is_skipped_not_kept_forever(self):
+        """An entry whose `last_seen` does not parse is dropped on read,
+        with a count-only warning. Kept instead, it would read as
+        `parse_ts(...) or now` — today, every run, forever."""
+        plant = "claude-sonnet-9-9"
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "garbage"}]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertNotIn(plant, self._seen_ids(result))
+        self.assertTrue(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+        for w in warnings:
+            self.assertNotIn("garbage", w, "the warning names counts only")
+        # Mutation check (manual): dropping the `if parsed is None: ...
+        # continue` skip and guarding the comparison instead
+        # (`today if (parsed and parsed > now) else entry["last_seen"]`)
+        # stores `"garbage"`, which `_update_catalogue_seen` then reads as
+        # `parse_ts(...) or now` — today — so the plant never ages out and
+        # is republished forever: the first assertion goes red.
+
+    def test_a_hostile_id_in_the_dict_shape_is_skipped_too(self):
+        """The bare-string shape was shape-checked and the `{id, last_seen}`
+        shape was as well, but only the bare string had a test. An id
+        carrying a newline and a `::` workflow command reaches
+        `catalogue_seen`, which is published verbatim to the public
+        `eval-results` branch and read back next run."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.HOSTILE_SEEN_ID, "last_seen": self._days_ago(1)}]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertNotIn(self.HOSTILE_SEEN_ID, self._seen_ids(result))
+        for entry in result["catalogue_seen"]:
+            self.assertNotIn("::", entry["id"])
+            self.assertNotIn("\n", entry["id"])
+        self.assertTrue(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+        for w in warnings:
+            self.assertNotIn("pwned", w, "the warning names counts only")
+        # Mutation check (manual): dropping
+        # `and PREVIOUS_ARM_ID_RE.match(entry["id"])` from the dict branch
+        # of `_clean_catalogue_seen` republishes the hostile id into
+        # `catalogue_seen` — red.
+
+    def test_the_cap_never_evicts_a_live_id_even_for_lower_sorting_plants(self):
+        """The cap's live-id exemption, exercised with plants that sort
+        BEFORE every api id and carry the same `last_seen` (today) — so
+        neither the id order nor the age order would spare the real
+        catalogue. `catalogue_seen` must stay a superset of `api_ids`:
+        `usage_share` and `_is_attributable` both rely on it."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen":
+                    [f"a0000-{i:03d}" for i in range(600)]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        api_ids = {m["id"] for m in models["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(result),
+                             "the cap must never evict this run's own live ids")
+        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        for w in warnings:
+            self.assertNotIn("a0000-599", w)
+        # Mutation check (manual): dropping the live/historical split
+        # (`kept = <survivors, newest first, id ascending>[:CAP]`) fills
+        # all 500 slots with `a0000-...` plants — every api id is evicted
+        # and the superset assertion goes red.
+
 if __name__ == "__main__":
     unittest.main()
