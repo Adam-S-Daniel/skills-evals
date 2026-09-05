@@ -758,28 +758,84 @@ def _clean_counts(counts, warn) -> dict:
     return cleaned
 
 
-def _census_relevance(count_keys):
-    """A predicate: does the census name this id, under EITHER spelling?
+def _relevance(api_ids, count_keys, seat_aliases=None, live_order=()):
+    """A predicate: do the LIVE CATALOGUE or the CENSUS name this id?
 
     The one question both caps below order by, so they answer it the same
-    way and one mutation cannot quietly change only one of them. Three
-    routes, and each has its own regression floor (A3, #129 review round
-    8): the census names the id outright; the census names a DATED
-    spelling of it (`named_bases`); or the id is itself a dated spelling
-    of something the census names.
+    way and one mutation cannot quietly change only one of them.
+
+    THE INVARIANT (B1, #129 review round 9): an entry that neither the live
+    catalogue nor the census names, under any spelling, never outranks one
+    that either names.
+
+    Relevance is EXACT MEMBERSHIP in data the previous roster does not
+    write, and nothing else. Three routes:
+
+    (a) the id is a census key exactly (`model_id in count_keys`);
+    (b) the id is a live catalogue id (`model_id in api_ids`);
+    (c) the census or the catalogue relates it to one of those through the
+        ALIAS relation, computed from those two documents alone:
+        (c1) a census key is a dated spelling OF it (`named_bases`) — the
+             "vice versa" half of a dated/undated pair, which is how a
+             since-retired model whose census usage is recorded under a
+             dated key stays relevant; and
+        (c2) the PRODUCTION alias map — `_usage_alias_map` built from the
+             live catalogue and the census keys ONLY, never from
+             `previous.json` — maps it onto a census key, which is how the
+             bare alias that a live DATED snapshot claims stays relevant
+             even though no document spells that alias out.
+
+    WHERE THE LINE IS, because this is the fourth round the caps have been
+    keyed on the wrong thing: THE ENTRY'S OWN SPELLING IS NEVER TESTED.
+    Round 8 asked whether the census named the id "under either spelling"
+    and answered it by running `SNAPSHOT_SUFFIX` over THE ENTRY —
+    `<entry> == <census key>-<eight digits>` — which wants eight DIGITS,
+    not a date, and `PREVIOUS_ARM_ID_RE` accepts the result. So anyone who
+    could write `previous.json` and knew ONE census key (every live model
+    id is one, and `usage/latest.json` and `roster/latest.json` both sit
+    on the same public branch) minted `<census key>-00000000` …
+    `-00000499` and the predicate called all five hundred of them
+    census-named: measured through `main()`, 500 such plants evicted the
+    one genuinely since-retired id beside them, took its 8,000 turns out
+    of the usage denominator, and published "carries 100.0% of rankable
+    census usage" about a model whose true share was 800 of 8,800 —
+    9.09%. The same plants spelled as dated versions of the VICTIM's own
+    id did it too, and so did the bare-string migration shape.
+
+    (c1) and (c2) are the SAME alias relation read in the other direction,
+    and neither is forgeable, because neither ranges over anything the
+    previous roster writes: `named_bases` is a set the CENSUS fixes (a
+    planter cannot add a census key, so it cannot add a member), and the
+    production map's domain is the live catalogue, the census keys, and
+    the bare aliases live dated snapshots claim — all bounded by documents
+    the planter does not write. What round 8 had instead ranged over the
+    ENTRIES, one census key yielding unlimited members.
+
+    Round 6 keyed the cap on the id, round 7 on `last_seen`, round 8 on a
+    predicate over the id — each on something the planter writes. This
+    keys it on the two documents the planter does not.
+
+    `seat_aliases`/`live_order` default to the catalogue-only map and to
+    no ordering, which is enough for routes (a), (b) and (c1) and for
+    every fold that does not need this run's capability order.
     """
-    named = set(count_keys)
+    live = {i for i in api_ids if isinstance(i, str)}
+    named = {k for k in count_keys if isinstance(k, str)}
     named_bases = set()
     for key in named:
         match = SNAPSHOT_SUFFIX.match(key)
         if match:
             named_bases.add(match.group("base"))
+    production = _usage_alias_map(
+        api_ids, sorted(named),
+        alias_map(api_ids) if seat_aliases is None else seat_aliases,
+        list(live_order))
 
     def names(model_id: str) -> bool:
-        if model_id in named or model_id in named_bases:
-            return True
-        match = SNAPSHOT_SUFFIX.match(model_id)
-        return bool(match) and match.group("base") in named
+        return (model_id in named                                    # (a)
+                or model_id in live                                  # (b)
+                or model_id in named_bases                           # (c1)
+                or production.get(model_id, model_id) in named)      # (c2)
 
     return names
 
@@ -789,8 +845,8 @@ def _census_relevance(count_keys):
 PREVIOUS_ARMS_CAP = 500
 
 
-def _clean_previous_arms(previous, warn, api_ids=(),
-                         count_keys=()) -> tuple[list[str], list[str]]:
+def _clean_previous_arms(previous, warn,
+                         relevant=None) -> tuple[list[str], list[str]]:
     """(reported, carried) — the previous roster's arm ids, twice over.
 
     A malformed entry is skipped, not fatal.
@@ -816,14 +872,16 @@ def _clean_previous_arms(previous, warn, api_ids=(),
     dropped id.
 
     Past the cap, RELEVANCE decides who survives, not spelling (S3, #129
-    review round 7). An id this run can actually say something about — one
-    the Models API still lists (`api_ids`), or one the census names
-    (`count_keys`, either spelling of a dated/undated pair) — is kept ahead
-    of filler, and only then does the id order break ties. The plain
-    `sorted(ids)[:PREVIOUS_ARMS_CAP]` this replaces had the same
-    alphabetical-head shape S2 fixes for `catalogue_seen`. Both arguments
-    default to empty, which reduces to the old spelling-only order for a
-    caller with no context to give.
+    review round 7; B1, round 9). An id this run can actually say something
+    about — see `_relevance`, whose whole answer is exact membership in the
+    live catalogue and the census keys — is kept ahead of filler, and only
+    then does the id order break ties. THE INVARIANT, the same one written
+    over the `catalogue_seen` cap: an entry that neither the live catalogue
+    nor the census names, under any spelling, never outranks one that
+    either names. The plain `sorted(ids)[:PREVIOUS_ARMS_CAP]` this replaces
+    had the same alphabetical-head shape S2 fixes for `catalogue_seen`.
+    `relevant` defaults to None, which reduces to the old spelling-only
+    order for a caller with no context to give.
 
     THE CAP GOVERNS ONLY WHAT IS CARRIED FORWARD (F3, #129 review round
     8) — hence the two lists. A real departed arm with ZERO census turns
@@ -878,17 +936,12 @@ def _clean_previous_arms(previous, warn, api_ids=(),
     carried = ids
     if len(ids) > PREVIOUS_ARMS_CAP:
         dropped = len(ids) - PREVIOUS_ARMS_CAP
-        live = set(api_ids)
-        names = _census_relevance(count_keys)
-
-        def _relevant(model_id: str) -> bool:
-            return model_id in live or names(model_id)
-
-        # `not _relevant(...)` first: False sorts before True, so relevant
-        # ids head the list and the id order only breaks ties inside each
+        names = relevant or (lambda _model_id: False)
+        # `not names(...)` first: False sorts before True, so relevant ids
+        # head the list and the id order only breaks ties inside each
         # group — deterministic either way.
         carried = sorted(ids,
-                         key=lambda i: (not _relevant(i), i))[:PREVIOUS_ARMS_CAP]
+                         key=lambda i: (not names(i), i))[:PREVIOUS_ARMS_CAP]
         warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
              f"the {PREVIOUS_ARMS_CAP}-entry cap")
     return ids, carried
@@ -998,7 +1051,7 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
 
 
 def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
-                           policy: dict, warn, count_keys=()) -> list[dict]:
+                           policy: dict, warn, relevant=None) -> list[dict]:
     """This run's `catalogue_seen` history: refresh, evict, cap.
 
     Every id THIS run's Models API actually listed gets its `last_seen`
@@ -1023,11 +1076,11 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     The cap NEVER evicts one of this run's own live `api_ids` — only
     accumulated history beyond them — so `catalogue_seen` stays a
     superset of `api_ids`, the property `usage_share`'s docstring and
-    `compute_roster`'s callers rely on. Past that, `count_keys` (this
-    run's census keys, the same argument `_clean_previous_arms` takes)
-    decides who survives, ahead of any date — see the invariant written
-    over the sort below, and note that eviction there is PERMANENT for
-    the same reason ageing out is not a repair.
+    `compute_roster`'s callers rely on. Past that, `relevant` (the same
+    predicate `_clean_previous_arms` takes — see `_relevance`) decides who
+    survives, ahead of any date — see the invariant written over the sort
+    below, and note that eviction there is PERMANENT for the same reason
+    ageing out is not a repair.
     """
     today = _as_date(now)
     by_id = {e["id"]: e["last_seen"] for e in previous_entries}
@@ -1048,23 +1101,30 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     api_id_set = set(api_ids)
     live = sorted(i for i in survivors if i in api_id_set)
     # THE INVARIANT the cap's order has to satisfy (F1, #129 review round
-    # 8): who survives is decided by data the previous roster does not
-    # control — the live catalogue and the census — never by a field the
-    # previous roster asserts about itself. An entry the census names
-    # outlives any number of entries the census does not name, whatever
-    # their dates or ids. Within entries the census does not name, order
-    # is only a tie-break and a planter may win it, because those entries
-    # move no share.
+    # 8; B1, round 9): AN ENTRY THAT NEITHER THE LIVE CATALOGUE NOR THE
+    # CENSUS NAMES, UNDER ANY SPELLING, NEVER OUTRANKS ONE THAT EITHER
+    # NAMES. Who survives is decided by data the previous roster does not
+    # write — the live catalogue and the census — never by anything the
+    # previous roster asserts about itself, and never by how an entry is
+    # spelled. Within entries neither document names, order is only a
+    # tie-break and a planter may win it, because those entries move no
+    # share.
     #
-    # Age alone does not satisfy it, and neither does spelling. Round 6
-    # sorted by id, and `PREVIOUS_ARM_ID_RE` accepts a leading digit, so
-    # 500 low-sorting ids evicted a real since-retired model by nothing
-    # but its spelling. Round 7 sorted by `last_seen` — but the planter
-    # writes `last_seen` too: a future date clamps to today and every bare
-    # string migrates stamped today, so 498 entries dated today, or 500
-    # bare strings, still evicted it. Either way its turns left the usage
-    # denominator and an unrelated model was published as carrying 100.0%
-    # of census usage where it really carried 9.09%.
+    # Age does not satisfy it, spelling does not satisfy it, and neither
+    # does a predicate over the spelling. Round 6 sorted by id, and
+    # `PREVIOUS_ARM_ID_RE` accepts a leading digit, so 500 low-sorting ids
+    # evicted a real since-retired model by nothing but its spelling.
+    # Round 7 sorted by `last_seen` — but the planter writes `last_seen`
+    # too: a future date clamps to today and every bare string migrates
+    # stamped today, so 498 entries dated today, or 500 bare strings,
+    # still evicted it. Round 8 put census relevance first but decided it
+    # by SPELLING (`SNAPSHOT_SUFFIX` wants eight DIGITS, not a date), so
+    # 500 ids spelled `<census key>-00000000` … `-00000499` — or spelled
+    # as dated versions of the victim's own id — read as census-named and
+    # evicted it again. Every one of those keyed the cap on something the
+    # planter writes. Either way its turns left the usage denominator and
+    # an unrelated model was published as carrying 100.0% of census usage
+    # where it really carried 9.09%.
     #
     # EVICTION IS PERMANENT. The next run's `previous.json` is this run's
     # output, so an id dropped here is gone from the history for good —
@@ -1074,8 +1134,9 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     #
     # Three stable sorts rather than one composite key, least significant
     # first: id ascending, then `last_seen` descending (leaving ids
-    # ascending within one date), then census relevance (False sorts
-    # first, so named entries head the list). An unparseable `last_seen`
+    # ascending within one date), then relevance (False sorts first, so
+    # entries the catalogue or the census names head the list — see
+    # `_relevance`). An unparseable `last_seen`
     # sorts as the OLDEST moment there is, never as `now` (A2, round 8):
     # a value this module cannot read asserts nothing, and must not
     # outrank an entry that carries a real date. That branch is a FLOOR
@@ -1083,7 +1144,7 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     # date through `_as_date` before this runs, so everything reaching
     # here parses — which is exactly why it must not read as today: that
     # is the assumption `strftime`'s unpadded year quietly falsified.
-    names = _census_relevance(count_keys)
+    names = relevant or (lambda _model_id: False)
     historical = sorted(i for i in survivors if i not in api_id_set)
     historical.sort(key=lambda i: parse_ts(survivors[i]) or _LAST_SEEN_FLOOR,
                     reverse=True)
@@ -1250,36 +1311,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
     counts = _clean_counts((census_doc or {}).get("counts"), warn)
 
-    # Computed before the alias maps below: USAGE attribution (B1, #129
-    # review round 6) needs both a previous roster's arm ids and its
-    # catalogue history to fold a previous arm published under a DATED id
-    # that has since left the API, whose usage the census records under
-    # the UNDATED alias — see the `aliases` comment just below.
-    #
-    # Two lists, and which one each reader wants is the whole of F3 (#129
-    # review round 8): `previous_arms` is every arm the previous roster
-    # named, and is what `added_since_last`/`retired_since_last` compare
-    # against, so a departed arm is reported whether or not this run can
-    # say anything about it. `carried_arms` is that list capped, and is
-    # what attribution, the alias map and the hold-over check read — the
-    # cap bounds what is carried forward, nothing else.
-    previous_arms, carried_arms = _clean_previous_arms(previous, warn,
-                                                       api_ids=api_ids,
-                                                       count_keys=counts.keys())
-
-    # The union of every id the Models API has EVER listed across runs: this
-    # run's api ids plus whatever the previous roster already accumulated,
-    # refreshed/aged/capped by `_update_catalogue_seen` (S3, #129 review
-    # round 6). Read back next run as `previous`'s own `catalogue_seen` —
-    # see `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history
-    # means. `catalogue_seen_entries` is the PUBLISHED `{id, last_seen}`
-    # shape; `catalogue_seen` stays a plain set of ids for every downstream
-    # membership check (`_is_attributable`, `_fold_set`'s callers, etc.).
-    catalogue_seen_entries = _update_catalogue_seen(
-        api_ids, _clean_catalogue_seen(previous, warn, now), now, policy, warn,
-        count_keys=counts.keys())
-    catalogue_seen = {e["id"] for e in catalogue_seen_entries}
-
     # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
     # an alias the catalogue actually offers — an alias that exists solely as
     # an old census key is not a model anyone can run, so `seat_aliases`
@@ -1307,13 +1338,53 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
     available = [m for m in ranked if m["id"] not in snapshots]
     available.sort(key=lambda m: _rank(m, rungs))
+    live_order = [m["id"] for m in available]
 
-    # Built AFTER `available` is ordered: rule (3) of `_usage_alias_map`
-    # needs this run's own capability order to decide which live snapshot a
-    # bare alias that is not itself in the catalogue names.
+    # Both caps below order by ONE predicate, built from the live catalogue
+    # and this run's census keys and from nothing else — never from
+    # `previous.json` (B1, #129 review round 9). Computed here rather than
+    # inside either cap because it needs `live_order`, this run's own
+    # capability order, for the alias-map route; see `_relevance` for the
+    # invariant it exists to hold.
+    relevant = _relevance(api_ids, counts.keys(), seat_aliases, live_order)
+
+    # Computed before the wide alias map below: USAGE attribution (B1,
+    # #129 review round 6) needs both a previous roster's arm ids and its
+    # catalogue history to fold a previous arm published under a DATED id
+    # that has since left the API, whose usage the census records under
+    # the UNDATED alias — see the two-alias-maps comment above.
+    #
+    # Two lists, and which one each reader wants is the whole of F3 (#129
+    # review round 8): `previous_arms` is every arm the previous roster
+    # named, and is what `added_since_last`/`retired_since_last` compare
+    # against, so a departed arm is reported whether or not this run can
+    # say anything about it. `carried_arms` is that list capped, and is
+    # what attribution, the alias map and the hold-over check read — the
+    # cap bounds what is carried forward, nothing else.
+    previous_arms, carried_arms = _clean_previous_arms(previous, warn,
+                                                       relevant=relevant)
+
+    # The union of every id the Models API has EVER listed across runs: this
+    # run's api ids plus whatever the previous roster already accumulated,
+    # refreshed/aged/capped by `_update_catalogue_seen` (S3, #129 review
+    # round 6). Read back next run as `previous`'s own `catalogue_seen` —
+    # see `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history
+    # means. `catalogue_seen_entries` is the PUBLISHED `{id, last_seen}`
+    # shape; `catalogue_seen` stays a plain set of ids for every downstream
+    # membership check (`_is_attributable`, `_fold_set`'s callers, etc.).
+    catalogue_seen_entries = _update_catalogue_seen(
+        api_ids, _clean_catalogue_seen(previous, warn, now), now, policy, warn,
+        relevant=relevant)
+    catalogue_seen = {e["id"] for e in catalogue_seen_entries}
+
+    # Built AFTER `available` is ordered and the two capped lists exist:
+    # rule (3) of `_usage_alias_map` needs this run's own capability order
+    # to decide which live snapshot a bare alias that is not itself in the
+    # catalogue names, and the wide map folds over what the caps carried
+    # forward.
     aliases = _usage_alias_map(
         api_ids, list(counts) + carried_arms + list(catalogue_seen),
-        seat_aliases, [m["id"] for m in available])
+        seat_aliases, live_order)
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])

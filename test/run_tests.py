@@ -11117,11 +11117,16 @@ class TestIssue67Review8(unittest.TestCase):
                          "the older snapshot has no turns of its own")
 
     def test_a_departed_arm_named_by_a_dated_census_key_survives_the_cap(self):
-        """MUTATION: `named_bases = set()` in `_census_relevance`. A
-        departed arm whose census key is a DATED spelling of it is relevant
-        only through that set; capped out, its 8000 turns leave the usage
-        denominator and the live model is published as carrying 100.0% of
-        census usage where it really carries 9.09%."""
+        """MUTATION: dropping route (c1) (`named_bases = set()`) from
+        `_relevance`. A departed arm whose census key is a DATED spelling
+        of it is relevant only through that set; capped out, its 8000
+        turns leave the usage denominator and the live model is published
+        as carrying 100.0% of census usage where it really carries 9.09%.
+
+        The set is CENSUS-derived — a planter cannot add a census key, so
+        it cannot add a member — which is why B1 (#129 review round 9)
+        kept this direction of the fold and deleted the other one; see
+        `_relevance`."""
         previous = {"arms": [{"id": i, "reason": "filler"}
                              for i in self.ARM_FILLERS] +
                             [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
@@ -11137,26 +11142,46 @@ class TestIssue67Review8(unittest.TestCase):
         self.assertNotIn("carries", reason)
         self.assertIn("newest", reason)
 
-    def test_a_dated_departed_arm_whose_base_the_census_names_survives(self):
-        """MUTATION: `return False` for the last branch of
-        `_census_relevance` — the arm is itself a DATED spelling of an id
-        the census names bare. Same consequence as above, reached through
-        the other direction of the same fold."""
+    def test_a_dated_arm_gets_no_relevance_from_its_own_spelling(self):
+        """WAS the floor for `_census_relevance`'s third route — the arm is
+        itself a DATED spelling of an id the census names bare. B1 (#129
+        review round 9) DELETED that route, and this test records why, and
+        what deleting it cost.
+
+        The route ran `SNAPSHOT_SUFFIX` over THE ENTRY, and eight digits
+        are not a date: an arm spelled `<census key>-20250101` and a plant
+        spelled `<census key>-00000042` are the same shape to it, so the
+        route that kept this arm is the route that let 500 planted entries
+        evict a real since-retired id and publish "carries 100.0%" for a
+        true 9.09% — TestIssue67Review9's rows A-C measure exactly that.
+        The arm therefore now shares the fate F3 already recorded for a
+        departed arm with no census turns at all: past the cap nothing in
+        the data tells it apart from filler.
+
+        THE COST IS BOUNDED TO THE CAP. Below it (the second half here)
+        the arm is carried whatever its spelling, and its 8000 turns still
+        count. Above it, this test is the CANARY: it goes red the moment a
+        predicate over the entry's own spelling comes back."""
         dated_arm = f"{self.A3_DEPARTED}-20250101"
-        previous = {"arms": [{"id": i, "reason": "filler"}
-                             for i in self.ARM_FILLERS] +
-                            [{"id": dated_arm, "reason": "was an arm"}]}
         census = TestIssue67._census_doc(counts={
             self.A3_DEPARTED: {self.W[0]: 8000},
             "claude-sonnet-5": {self.W[0]: 800}})
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, published, _, _ = self._run_main(
-                tmp, self._two_model_catalogue(), census=census,
-                previous=previous)
-        self.assertEqual(rc, 0)
-        reason = self._reason(published, "claude-sonnet-5")
-        self.assertNotIn("carries", reason)
-        self.assertIn("newest", reason)
+        for fillers, expect, forbid in ((self.ARM_FILLERS, "carries 100.0%",
+                                         "newest"),
+                                        (self.ARM_FILLERS[:400], "newest",
+                                         "carries")):
+            previous = {"arms": [{"id": i, "reason": "filler"}
+                                 for i in fillers] +
+                                [{"id": dated_arm, "reason": "was an arm"}]}
+            with self.subTest(fillers=len(fillers)):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, _, _ = self._run_main(
+                        tmp, self._two_model_catalogue(), census=census,
+                        previous=previous)
+                self.assertEqual(rc, 0)
+                reason = self._reason(published, "claude-sonnet-5")
+                self.assertIn(expect, reason)
+                self.assertNotIn(forbid, reason)
 
     def test_a_live_previous_arm_survives_the_cap_and_is_held_over(self):
         """MUTATION: dropping `api_ids=api_ids` from the
@@ -11374,6 +11399,457 @@ class TestIssue67Review8(unittest.TestCase):
         # renders "1.9999998999999999%" — red. Restoring round 7's
         # UNCHECKED `:.6g` renders "2%" against the 2% bar, which
         # TestIssue67Review7's own N3 test still catches.
+
+
+class TestIssue67Review9(unittest.TestCase):
+    """Round 9 fixes for #67 (PR #129 review round 9), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review8, reusing their canned
+    documents rather than subclassing — run_tests.py's class-per-review-round
+    convention. Every model id below is TEST FIXTURE data; the policy code
+    under test carries none (`test_no_model_ids_are_hardcoded_outside_fixtures`
+    is the guard), and the family words the random scenarios build ids out of
+    are read from the policy ladder rather than restated here.
+
+    Every scenario is driven through `compute_roster` or through `main()`
+    with files on disk, the way eval.yml invokes it. `main()` reads the wall
+    clock, so `_run_main` freezes it: the ISO-week windows, the census
+    freshness window and the cooling-off are all undecidable against a
+    moving `now`, and DESIGN.md's "hermetic, always" rule applies to time as
+    much as to network.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        """The shipped policy with a 0% entry bar, so EVERY available model
+        publishes its measured share in words — the only way to read the
+        numerators off the roster the production code actually produces."""
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    @classmethod
+    def _run_main(cls, tmp, models, census=None, previous=None, policy=None):
+        """`roster.main()` — eval.yml's own entry point — over files on
+        disk, with `now` frozen. `policy`, when given, is written out as a
+        real policy FILE and passed with `--policy`, so a test-only bar
+        still travels the production path. Returns (rc, published, stdout,
+        stderr); `published` is None when main() refused to write."""
+        tmp = Path(tmp)
+        models_path = tmp / "models.json"
+        models_path.write_text(json.dumps(models), encoding="utf-8")
+        policy_path = cls.POLICY
+        if policy is not None:
+            policy_path = tmp / "policy.yml"
+            policy_path.write_text(yaml.safe_dump(policy), encoding="utf-8")
+        out = tmp / "roster" / "latest.json"
+        argv = ["roster.py", "--models", str(models_path), "--policy",
+                str(policy_path), "--out", str(out)]
+        if census is not None:
+            census_path = tmp / "census.json"
+            census_path.write_text(json.dumps(census), encoding="utf-8")
+            argv += ["--census", str(census_path)]
+        if previous is not None:
+            previous_path = tmp / "previous.json"
+            previous_path.write_text(json.dumps(previous), encoding="utf-8")
+            argv += ["--previous", str(previous_path)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(roster, "datetime", cls._FrozenNow), \
+             contextlib.redirect_stdout(stdout), \
+             contextlib.redirect_stderr(stderr):
+            rc = roster.main()
+        published = (json.loads(out.read_text(encoding="utf-8"))
+                     if out.is_file() else None)
+        return rc, published, stdout.getvalue(), stderr.getvalue()
+
+    # --- B1: relevance is EXACT MEMBERSHIP in data the previous roster
+    # does not write ------------------------------------------------------
+    #
+    # THE INVARIANT: an entry that neither the live catalogue nor the census
+    # names, under any spelling, never outranks one that either names.
+    #
+    # Round 8's `_census_relevance` decided "the census names this" by
+    # SPELLING: `SNAPSHOT_SUFFIX` wants eight DIGITS, not a date, and
+    # `PREVIOUS_ARM_ID_RE` accepts the result — so anyone who can write
+    # `previous.json` and knows ONE census key (every live model id is one,
+    # and `usage/latest.json` and `roster/latest.json` are both public on
+    # `eval-results`) mints five hundred ids the predicate calls
+    # census-named. Round 6 keyed the cap on the id, round 7 on `last_seen`,
+    # round 8 on a predicate over the id — each on something the planter
+    # writes. The rows below are the three spellings that reached it.
+
+    B1_REAL = "claude-sonnet-4-9"
+    B1_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _b1_census(cls):
+        """The real since-retired model carries 8000 of the window's 8800
+        rankable turns; the live model carries 800 — a true 9.09%."""
+        return TestIssue67._census_doc(counts={
+            cls.B1_REAL: {cls.W[0]: 8000},
+            cls.B1_LIVE: {cls.W[0]: 800}})
+
+    def _assert_the_named_history_survived(self, published):
+        # `assertTrue` over `assertIn`: a failure here would otherwise dump
+        # 500 plant ids into the log.
+        self.assertTrue(self.B1_REAL in self._seen_ids(published),
+                        "an entry the census names outlives entries neither "
+                        "the catalogue nor the census names, however spelled")
+        reason = self._reason(published, self.B1_LIVE)
+        self.assertIn("carries 9.1%", reason,
+                      "800 of 8800 rankable turns is 9.09%")
+        self.assertNotIn("100.0%", reason)
+        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+
+    def test_dated_spellings_of_a_census_key_do_not_evict_named_history(self):
+        """Row A, through `main()` with files on disk: 500 plants spelled
+        `<census key>-00000000` … `-00000499` — eight DIGITS, which
+        `SNAPSHOT_SUFFIX` cannot tell from a date — dated today, against one
+        entry the census names outright, seen four days ago."""
+        plants = [f"{self.B1_LIVE}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+        # Mutation check (manual): restoring `_census_relevance`'s
+        # `SNAPSHOT_SUFFIX` route calls every plant census-named, so they
+        # tie with the real entry on relevance and win on `last_seen` —
+        # the real id is evicted, its 8000 turns leave the denominator and
+        # the live model is published "carries 100.0%": red.
+
+    def test_bare_string_dated_spellings_do_not_evict_named_history(self):
+        """Row B: the same 500 ids in the BARE-STRING shape `catalogue_seen`
+        used to publish. Every bare string migrates stamped today, because
+        seeing it is the only evidence there is — so on a migration run the
+        date order decides nothing at all and only relevance is left."""
+        plants = [f"{self.B1_LIVE}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    list(plants) +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+        # Mutation check (manual): as above — red.
+
+    def test_dated_spellings_of_the_victims_own_id_do_not_evict_it(self):
+        """Row C, the sharpest of the three: the plants are dated spellings
+        of the VICTIM'S OWN id, so the predicate that called them
+        census-named was reading the victim's own census key back."""
+        plants = [f"{self.B1_REAL}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+        # Mutation check (manual): as above — red.
+
+    def test_plants_the_census_never_names_still_do_not_evict_it(self):
+        """Row D, the round-8 control, restated against the new predicate
+        and against the ID order as well: `0plant-NNNN` sorts BEFORE the
+        real id and is dated today, so neither half of the tie-break would
+        spare the real entry — only relevance does."""
+        plants = [f"0plant-{i:04d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+
+    def test_the_eviction_does_not_become_permanent_across_two_runs(self):
+        """Eviction here is PERMANENT — the next run's `previous.json` is
+        this run's own output — so run 1's mistake used to be republished
+        for good. Both runs through `main()` with files on disk: run 2
+        reads run 1's published roster and must still name the real
+        entry and still publish its true 9.1%."""
+        plants = [f"{self.B1_LIVE}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, _ = self._run_main(
+                first, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+            self.assertEqual(rc, 0)
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._two_model_catalogue(), census=self._b1_census(),
+                previous=run1, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(run2)
+        # Mutation check (manual): as above — run 1 evicts the real entry,
+        # run 2 reads run 1's own output back and publishes "carries
+        # 100.0%" a second time: red.
+
+    # The SAME predicate governs the previous-arms cap, so one mutation
+    # cannot quietly change only one of the two.
+
+    B1_ARM_PLANTS = [f"claude-haiku-4-5-{i:08d}" for i in range(500)]
+
+    def test_the_previous_arms_cap_keeps_the_arm_the_census_names(self):
+        """500 plants spelled as dated versions of a LIVE catalogue id —
+        census-named under the old predicate, and sorting ahead of the real
+        departed arm by id — against one departed arm the census names
+        outright. 8000 of the window's 9000 rankable turns are that arm's;
+        capping it out takes them off the denominator and publishes the
+        live model at 80.0% for a true 8.9%."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.B1_ARM_PLANTS] +
+                            [{"id": self.B1_REAL, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            self.B1_REAL: {self.W[0]: 8000},
+            self.B1_LIVE: {self.W[0]: 800},
+            "claude-haiku-4-5": {self.W[0]: 200}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, self.B1_LIVE)
+        self.assertIn("carries 8.9%", reason, "800 of 9000 rankable turns")
+        self.assertNotIn("80.0%", reason)
+        # Mutation check (manual): restoring the `SNAPSHOT_SUFFIX` route
+        # makes all 501 arms relevant, the plants win the id tie-break,
+        # the real arm is capped out of `carried_arms`, its 8000 turns stop
+        # being attributable and the reason reads "carries 80.0%" — red.
+
+    # --- B1, the other direction: the alias-map route must SURVIVE -------
+    #
+    # Relevance is exact membership in the live catalogue, in the census
+    # keys, or in what the PRODUCTION alias map — built from those two and
+    # nothing else — relates them to. That last route is not decoration:
+    # it is what keeps A1's organic two-run chain working once the cap
+    # actually fires.
+
+    C_BASE = "claude-haiku-4"
+    C_OLD = "claude-haiku-4-20250101"
+    C_LIVE = "claude-haiku-4-20260601"
+    C_NEXT = "claude-haiku-5"
+
+    @classmethod
+    def _c_models(cls):
+        """Run 2's catalogue in A1's chain: the bare alias has gone,
+        replaced by a dated snapshot of it (roster-policy.yml's own
+        documented shape), with a newer model beside it in the same tier so
+        the snapshot can only be seated on measured usage."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.C_LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls.C_NEXT, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _c_census(cls):
+        """5000 of the window's 5300 rankable turns recorded under the
+        OLDER dated spelling, which has left the API; 300 on a live model.
+        The live snapshot also carries a row of its own, OUTSIDE the
+        window — enough for the production alias map to relate the bare
+        alias to a census key, not enough to move a share."""
+        return TestIssue67._census_doc(counts={
+            cls.C_OLD: {cls.W[0]: 5000},
+            cls.C_LIVE: {"2026-W20": 700},
+            "claude-sonnet-5": {cls.W[0]: 300}})
+
+    def test_a_bare_alias_a_live_snapshot_claims_survives_the_cap(self):
+        """A1's chain with the cap firing: the bare alias sits in
+        `catalogue_seen` (run 1's catalogue listed it, BY DESIGN), it is
+        neither a live id nor a census key, and it is the only thing that
+        folds the older dated census key onto the live snapshot. 500 plants
+        dated today must not evict it, and the snapshot must still be
+        seated on its own 94.3%."""
+        plants = [f"zplant-{i:03d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.C_BASE, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._c_models(), census=self._c_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertTrue(self.C_BASE in self._seen_ids(published),
+                        "the bare alias the live snapshot claims is named "
+                        "by the catalogue through the production alias map")
+        self.assertIn(self.C_LIVE, self._arm_ids(published),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, two hops away")
+        self.assertIn("94.3%", self._reason(published, self.C_LIVE))
+        # Mutation check (manual): dropping the alias-map route from the
+        # relevance predicate leaves the bare alias unnamed, the plants
+        # evict it, the older dated census key stops folding, its 5000
+        # turns leave every numerator and the live snapshot is not seated
+        # at all — red.
+
+    # The property behind all of the above, over random catalogues,
+    # censuses and plant sets. `_plant_scenario` decides which entries are
+    # NAMED from the catalogue and census it just built, never by asking
+    # the code under test, and draws every plant from ids that are neither
+    # a live id nor a census key.
+
+    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired")
+
+    @classmethod
+    def _plant_scenario(cls, rng):
+        """(models_doc, census_doc, previous, history) for one random run.
+
+        `history` is the set of `catalogue_seen` entries the live catalogue
+        or the census names, minus this run's own live ids (which the cap
+        never touches anyway). Every OTHER entry is a plant, in one of the
+        four spellings a planter can reach: a bare id nothing relates to
+        anything; a dated spelling of a census key with a REAL date; the
+        same with `00000000`-style digits, which `SNAPSHOT_SUFFIX` cannot
+        tell from a date; and a dated spelling of one of the named entries
+        — the victim's own id.
+        """
+        words = roster.tier_words(cls._policy())
+        models = []
+        counts = {}
+        history = set()
+        for index in range(rng.randint(3, 4)):
+            base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
+            snaps = [f"{base}-2026{month:02d}01" for month in (1, 4, 6)]
+            # Family 0 is always live, so every scenario has a catalogue
+            # this policy can seat something out of; family 1 is always
+            # retired, so every scenario has at least one entry only the
+            # census names — the entry the plants are trying to evict.
+            shape = ("bare-live" if index == 0
+                     else "retired" if index == 1
+                     else rng.choice(cls._PLANT_SHAPES))
+            if shape == "bare-live":
+                models.append(cls._model(base, "2025-06-01T00:00:00Z"))
+                if rng.random() < 0.7:
+                    counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+            elif shape == "dated-only-live":
+                live = snaps[:rng.randint(1, 3)]
+                models += [cls._model(sid, "2026-01-01T00:00:00Z")
+                           for sid in live]
+                if rng.random() < 0.7:
+                    # `live[-1]` is the NEWEST live snapshot, which is the
+                    # one the production alias map lets claim the bare
+                    # alias — so the bare alias is named through that map
+                    # and through nothing else.
+                    counts[live[-1]] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                    history.add(base)
+            else:
+                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+        live_ids = {m["id"] for m in models}
+        counts.setdefault(sorted(live_ids)[0], {cls.W[0]: 500})
+        history.update(i for i in counts if i not in live_ids)
+        keys = sorted(counts)
+        seeds = sorted(history) or keys
+        plants = set()
+        # Deliberately more DATED plants than the cap has room for: under
+        # the predicate this replaces every one of them read as
+        # census-named, so it is the dated spellings alone that have to
+        # lose to the named entries, not a shortage of them.
+        for i in range(600):
+            style = 0 if i % 15 == 0 else (i % 3) + 1
+            if style == 0:
+                plant = f"plant-{i:04d}"
+            elif style == 1:
+                plant = (f"{rng.choice(keys)}-2025"
+                         f"{rng.randint(1, 12):02d}{rng.randint(1, 28):02d}")
+            elif style == 2:
+                plant = f"{rng.choice(keys)}-{i:08d}"
+            else:
+                plant = f"{rng.choice(seeds)}-{i:08d}"
+            if plant not in counts and plant not in live_ids:
+                plants.add(plant)
+        # The named entries are the OLDER ones and the plants the newer
+        # ones, so a date order alone would evict exactly the entries this
+        # property is about.
+        entries = ([{"id": i, "last_seen": cls._days_ago(rng.randint(20, 60))}
+                    for i in sorted(history)] +
+                   [{"id": i, "last_seen": cls._days_ago(rng.randint(0, 2))}
+                    for i in sorted(plants)])
+        rng.shuffle(entries)
+        return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
+                TestIssue67._census_doc(counts=counts),
+                {"arms": [], "catalogue_seen": entries}, history)
+
+    def test_every_named_entry_survives_the_cap_over_random_plant_sets(self):
+        """3 seeds x 400 scenarios through `compute_roster`: whatever the
+        plants are spelled like, every entry the live catalogue or the
+        census names survives the cap. The named set is two orders of
+        magnitude under the cap in every scenario, so nothing but relevance
+        can decide who is evicted."""
+        checked = 0
+        evicting = 0
+        for seed in (670901, 670902, 670903):
+            rng = random.Random(seed)
+            for index in range(400):
+                models, census, previous, history = self._plant_scenario(rng)
+                api_ids = {m["id"] for m in models["models"]}
+                wanted = history | api_ids
+                self.assertLessEqual(len(wanted), roster.CATALOGUE_SEEN_CAP)
+                self.assertTrue(history, "the scenario protects nothing")
+                result = roster.compute_roster(
+                    models_doc=models, census_doc=census,
+                    policy=self._policy(), previous=previous, now=self.NOW,
+                    warn=lambda _m: None)
+                survivors = self._seen_ids(result)
+                with self.subTest(seed=seed, scenario=index):
+                    self.assertEqual(sorted(wanted - survivors), [],
+                                     "an entry the catalogue or the census "
+                                     "names was evicted by plants")
+                    self.assertLessEqual(len(survivors),
+                                         roster.CATALOGUE_SEEN_CAP)
+                # Self-check: the cap has to have actually evicted
+                # something, or the property has no teeth on this seed.
+                if len(previous["catalogue_seen"]) + len(api_ids) > \
+                        roster.CATALOGUE_SEEN_CAP:
+                    evicting += 1
+                checked += 1
+        self.assertEqual(checked, 1200)
+        self.assertGreater(evicting, 1000,
+                           "the cap did not fire in enough scenarios: the "
+                           "property has no teeth on these seeds")
+        # Mutation check (manual): restoring the `SNAPSHOT_SUFFIX` route
+        # makes the dated plants relevant, so they tie with the named
+        # entries and win on `last_seen` — named entries are evicted: red.
+        # Feeding the entries' own ids into the relevance inputs (relevance
+        # derived from `previous.json` rather than from the catalogue and
+        # the census) makes EVERY entry relevant, with the same
+        # consequence — also red.
+
 
 if __name__ == "__main__":
     unittest.main()
