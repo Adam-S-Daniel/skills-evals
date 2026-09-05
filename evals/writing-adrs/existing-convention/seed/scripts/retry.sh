@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # retry.sh: retry a transient command failure with capped exponential backoff.
 #
-# Added after the 2026-06-02 outage (PR #142): a single 503 from
+# Added after the 2026-03 outage (PR #41): a single 503 from
 # https://example.com/api/orders was retried in a tight loop with no cap and
 # no delay, pinning a worker for 40 minutes and starving the queue behind it.
 # Retrying forever with a fixed delay was ruled out - it would have masked
