@@ -5351,6 +5351,25 @@ class TestIssue67Review4(unittest.TestCase):
                 api_ids=api_ids, previous_arms=set())
             self.assertEqual(ranked_total, 0, alias)
 
+    # --- item 3: CENSUS_UNRANKED's published reason must name the
+    # unattributable cause too, not only "the tier ladder cannot place" ---
+
+    def test_census_unranked_reason_names_the_unattributable_cause_too(self):
+        """For a census whose only in-window usage is a proxy alias, the
+        ladder DID place it (`rung_of` ranks it) — `_is_attributable`
+        excludes it, a different fact entirely. The old CENSUS_UNRANKED
+        wording named only `other` and 'an id the tier ladder cannot
+        place', which is false for this case and does not name the real
+        cause."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-proxy-route": {w: 500 for w in self.W[:4]}}
+        result = self._compute(census=TestIssue67._census_doc(counts=counts),
+                               previous=previous)
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("neither the Models API nor the previous roster "
+                      "attributes", reason)
+
 
 if __name__ == "__main__":
     unittest.main()

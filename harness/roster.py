@@ -525,10 +525,12 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
     a hand edit — every week then falls outside the window while the age
     check reads as fresh), a census older than the freshness window, a
     census that is present and current and simply holds nothing for these
-    weeks, and a census that holds usage but none of it is usage the tier
-    ladder can rank (every count fell under `other` or an unranked id). Each
-    says so in its own words, because "fell back to newest per tier" without
-    the cause is a roster nobody can debug.
+    weeks, and a census that holds usage but none of it is usage this policy
+    can rank (every count fell under `other`, an unranked id, or an id
+    ranked but unattributable — a proxy alias, say, which the ladder DOES
+    place but which names no real catalogue model or previous arm; see
+    `_is_attributable`). Each says so in its own words, because "fell back
+    to newest per tier" without the cause is a roster nobody can debug.
     """
     if census_problem:
         # `read_json`'s message already names the file and the exception
@@ -552,7 +554,9 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
     if ranked_total == 0:
         return False, ("census published but holds no usage this policy can "
                        "rank over the window (every count in these weeks is "
-                       "`other` or an id the tier ladder cannot place)"), \
+                       "`other`, an id the tier ladder cannot place, or an id "
+                       "neither the Models API nor the previous roster "
+                       "attributes)"), \
             CENSUS_UNRANKED
     return True, "", CENSUS_FRESH
 
