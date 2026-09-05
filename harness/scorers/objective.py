@@ -320,7 +320,8 @@ def _load_pins_reference(workspace: str, reference: str) -> tuple[dict[str, str]
 
 
 def pins_match_reference(workspace: str, patterns: list[str],
-                         reference: str | None = None) -> tuple[bool, str]:
+                         reference: str | None = None,
+                         platform_prefix: str | None = None) -> tuple[bool, str]:
     """Every action a reference file (PINS.md) lists is pinned, in the given
     files, to exactly the SHA that reference gives it — not merely a
     40-hex-character value that happens to be present.
@@ -347,6 +348,15 @@ def pins_match_reference(workspace: str, patterns: list[str],
     ADDED third-party action PINS.md never named, however well-formed its
     SHA, would score a perfect run simply by being absent from the table
     this check otherwise iterates.
+
+    `platform_prefix`, when given, excludes a cross-repo reference to this
+    account's own platform repo from that closure: PINS.md is a third-party
+    pin ledger, and a platform ref staying on its release tag is
+    `platform_refs_on_tag`'s business, checked separately (with its own
+    `min_refs` presence guard) against the very same files. Without the
+    exclusion, an agent that reorganises which file carries the platform
+    ref (e.g. consolidating a job into the file this check scans) would be
+    failed here too, for a carve-out this check does not police.
 
     A malformed row in the reference file itself (a table-shaped row whose
     sha cell isn't valid 40-hex) fails the check directly rather than
@@ -378,6 +388,9 @@ def pins_match_reference(workspace: str, patterns: list[str],
                 ref = value_node.value
                 if not isinstance(ref, str) or not _is_remote_action(ref):
                     continue
+                if (platform_prefix
+                        and platform_prefix.casefold() in ref.casefold()):
+                    continue  # platform_refs_on_tag's business, not ours
                 action, _, ref_val = ref.partition("@")
                 lineno = value_node.start_mark.line + 1
                 if action in found:
@@ -857,6 +870,7 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                 kwargs["transcript"] = transcript
         elif check["type"] == "pins_match_reference":
             kwargs["reference"] = check.get("reference")
+            kwargs["platform_prefix"] = check.get("platform_prefix")
         elif check["type"] == "platform_refs_on_tag":
             kwargs["platform_prefix"] = check.get("platform_prefix")
             kwargs["tag"] = check.get("tag")

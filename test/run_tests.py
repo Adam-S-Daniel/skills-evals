@@ -2858,6 +2858,27 @@ class TestIssue85(unittest.TestCase):
                 str(ws), [".github/workflows/ci.yml*"], reference="PINS.md")
         self.assertTrue(passed, detail)
 
+    def test_pins_match_reference_skips_platform_refs_in_closure(self):
+        """Round 4, N4: an agent that consolidates deploy.yml's job into
+        ci.yml adds a cms-platform `uses:` ref to the very file this check
+        scans. PINS.md carries no row for a platform ref — that is
+        `platform_refs_on_tag`'s business, not this check's — so the
+        closure leg must not flag it as an undeclared action.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  e2e:\n    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/workflows/e2e-tests.yml@v0.1.104\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
+                        by_id["third-party-pins-match-pins-md"]["detail"])
+
     # -- the platform_ref: input is bound too (review round 2, N2) -----------
 
     def test_platform_ref_input_rewritten_to_sha_fails(self):

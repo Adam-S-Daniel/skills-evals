@@ -101,9 +101,16 @@ objective_checks:
       passes the shape check above; and an action missing its `uses:` line
       entirely (e.g. a stub reduced to a comment naming it) must fail too,
       not pass vacuously.
+      # platform_prefix excludes a cms-platform ref from this check's
+      # closure leg (round 4, N4, see the sibling cms-platform-refs-stay-
+      # on-tag check's own note above): PINS.md is a third-party ledger, and
+      # a platform ref staying on its tag is that check's business, not
+      # this one's — an agent that moves the platform ref into whichever
+      # file this check scans must not be failed twice for one carve-out.
     type: pins_match_reference
     paths: [".github/workflows/ci.yml"]
     reference: "PINS.md"
+    platform_prefix: "Adam-S-Daniel/cms-platform/"
 
   - id: no-trailing-comments
     description: >
