@@ -11924,6 +11924,56 @@ class TestIssue67Review9(unittest.TestCase):
         # OverflowError escapes `main()` and the test errors out — while
         # leaving this one green, which is the pair's whole point.
 
+    # --- S2(a): a regression FLOOR for the alias map's composition -------
+    #
+    # `_usage_alias_map` follows each chain to its end with a `while`, and
+    # round 8's A1 tests pin TWO hops. Nothing pinned more than two: the
+    # mutation `while` -> `if` left the whole suite green while changing
+    # behaviour. This is that floor, and it is a floor rather than a
+    # red-first fix — the code is already right.
+
+    S2_KEY = "claude-haiku-4-20250101-20260101"
+    S2_MID = "claude-haiku-4-20250101"
+    S2_BASE = "claude-haiku-4"
+    S2_LIVE = "claude-haiku-4-20260601"
+    S2_NEXT = "claude-haiku-5"
+
+    def test_a_three_hop_census_key_still_reaches_the_live_snapshot(self):
+        """MUTATION: `while` -> `if` in `_usage_alias_map`'s composition
+        step. Three hops, each supplied by a different input, the way a
+        real chain accumulates: the census key is a dated spelling of a
+        `catalogue_seen` entry, that entry is a dated spelling of a
+        previous arm, and that arm is the bare alias the live snapshot
+        claims. Every consumer folds exactly once, so a chain the map
+        stops following early lands its turns on an id that is
+        attributable (it is in `catalogue_seen`) and in nobody's
+        numerator: the denominator keeps them and the model whose work
+        they are is not seated at all."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(self.S2_LIVE, "2026-06-01T00:00:00Z"),
+            self._model(self.S2_NEXT, "2026-07-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts={
+            self.S2_KEY: {self.W[0]: 5000},
+            "claude-sonnet-5": {self.W[0]: 300}})
+        previous = {"arms": [{"id": self.S2_BASE, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.S2_MID, "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.S2_LIVE, self._arm_ids(published),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, three hops away")
+        self.assertIn("94.3%", self._reason(published, self.S2_LIVE))
+        # And the map really did need all three hops: the two ids in the
+        # middle of the chain hold no seat of their own.
+        self.assertNotIn(self.S2_MID, self._arm_ids(published))
+        self.assertNotIn(self.S2_BASE, self._arm_ids(published))
+
 
 if __name__ == "__main__":
     unittest.main()
