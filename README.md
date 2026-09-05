@@ -334,9 +334,14 @@ counted under `other`. `test_census_emits_only_model_week_counts_and_leaks
 _nothing` is the guard, and it stays. The census runs on a durable machine, not
 in CI (a runner has no transcripts): it is **step 6 of the Tier-3 account-store
 Routine** (`evals/propagation/ROUTINE.md`), best-effort, publishing
-`usage/latest.json` to `eval-results` in the same commit as the audit. When it
-is absent, stale, future-dated or empty over the window, the roster falls back
-to newest-per-tier and says which of those it was, in every arm's reason.
+`usage/latest.json` to `eval-results` in the same commit as the audit.
+`harness/roster.py`'s `_census_verdict` recognizes eight distinct ways there
+is no usable evidence — present but unreadable, absent, future-dated, stale,
+published but empty over the window, published but holding no usage the
+tier ladder can rank or attribute, and holding some but under either the
+absolute or the relative rankable-usage floor — and in every one the roster
+falls back to newest-per-tier and says, in every arm's reason, which of
+those it was.
 
 **What moved since last time.** The published roster carries `previous_state`
 — `compared` (a previous roster was read and diffed against), `none` (first

@@ -29,7 +29,12 @@ Output — roster/latest.json on `eval-results`:
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
    compared_to_previous: bool, previous_state: "compared"|"none"|"unavailable",
-   retired_since_last: [...], added_since_last: [...]}
+   retired_since_last: [...], added_since_last: [...],
+   catalogue_seen: [{id, last_seen}, ...]}
+
+`catalogue_seen` is read back next run as `previous`'s own field of the same
+name (property 5, DESIGN.md) — it round-trips through this same untrusted
+branch, aged and capped; see `_update_catalogue_seen`.
 
 Every entry carries its reason IN WORDS. The explorer tool renders them, and a
 roster nobody can explain is one nobody will override when it is wrong.
@@ -456,11 +461,13 @@ def _clean_models(models_doc: dict, warn) -> list[dict]:
 
     The id is shape-checked with `PREVIOUS_ARM_ID_RE`, the same shape
     `_clean_previous_arms` requires: an id this loose (or a bare type check
-    alone) reaches `unranked`/`excluded`/`catalogue_seen` and from there
-    render_summary's Markdown, which eval.yml prints to stdout — where
-    GitHub parses `::` workflow commands. A hostile id is dropped the same
-    way a bad-shaped `entry` is, and the warning names no value — only the
-    count.
+    alone) reaches `unranked`/`excluded` and from there render_summary's
+    Markdown, which eval.yml prints to stdout — where GitHub parses `::`
+    workflow commands — or reaches `catalogue_seen`, published verbatim to
+    the public `eval-results` branch and read back as `previous`'s own
+    `catalogue_seen` next run (`catalogue_seen` does not itself reach
+    render_summary's Markdown). A hostile id is dropped the same way a
+    bad-shaped `entry` is, and the warning names no value — only the count.
     """
     entries = (models_doc or {}).get("models")
     if not isinstance(entries, list):

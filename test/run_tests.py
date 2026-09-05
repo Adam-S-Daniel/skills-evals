@@ -5696,10 +5696,12 @@ class TestIssue67Review5(unittest.TestCase):
             self.assertNotIn(hostile, w)
 
         result2 = self._compute(models=models, previous=previous)
+        # `catalogue_seen` itself never reaches render_summary's Markdown
+        # (N2, #129 review round 6) — its safety property is the round
+        # trip above (published, read back, re-published), not a summary
+        # check, which would pass here whether or not the hostile entry
+        # were sanitized.
         self.assertNotIn(hostile, [e["id"] for e in result2["catalogue_seen"]])
-        summary = roster.render_summary(result2)
-        self.assertNotIn("::error::", summary)
-        self.assertNotIn(hostile, summary)
 
     # --- S1: the min_ranked_turns floor must apply PER WINDOW, not only
     # over the 8-week union -------------------------------------------------
@@ -5762,9 +5764,12 @@ class TestIssue67Review5(unittest.TestCase):
 
     def test_malformed_model_id_in_the_models_document_is_dropped_with_a_warning(self):
         """A models.json entry carrying a hostile id (a newline and an
-        `::error::` line) must not reach `unranked`/`excluded`/
-        `catalogue_seen`, and from there render_summary's Markdown, which
-        eval.yml prints to stdout."""
+        `::error::` line) must not reach `unranked`/`excluded` — and from
+        there render_summary's Markdown, which eval.yml prints to stdout
+        — or `catalogue_seen` (checked separately below: `catalogue_seen`
+        never itself reaches render_summary's Markdown, so a summary
+        check would not exercise its own sanitization — N2, #129 review
+        round 6)."""
         hostile = "claude-opus-4\n::error::pwned::"
         models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
             self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
