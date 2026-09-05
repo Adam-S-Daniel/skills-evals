@@ -70,7 +70,9 @@ objective_checks:
     description: >
       e2e-tests.yml's `e2e` job calls the composite with `if: failure()`,
       mode: post, and a real log-file/marker/title — the single-job shape
-      from the skill's caller convention.
+      from the skill's caller convention. Also asserts the job is in scope
+      for `pull-requests: write` (workflow- or job-level) — the skill's own
+      "most subtle and most common" pitfall, and objectively decidable.
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml"]
     uses_suffix: "/post-failure-comment"
@@ -79,6 +81,8 @@ objective_checks:
     with_present: ["log-file", "marker", "title"]
     with_equals:
       mode: post
+    job_permissions_include:
+      pull-requests: write
 
   - id: e2e-resolve-step
     description: e2e-tests.yml's `e2e` job resolves the comment on success.
@@ -91,25 +95,19 @@ objective_checks:
     with_equals:
       mode: resolve
 
-  - id: e2e-cms-platform-checked-out-on-a-tag
-    description: >
-      The composite lives at ./.cms-platform/..., so e2e-tests.yml must check
-      the platform out itself, pinned to a release TAG — the one carve-out
-      from the fleet's SHA-pinning rule, so a bare SHA here is wrong too, not
-      just an unpinned branch.
-    type: workflow_step_uses
-    paths: [".github/workflows/e2e-tests.yml"]
-    uses_suffix: "actions/checkout"
-    with_equals:
-      repository: Adam-S-Daniel/cms-platform
-    with_tag_ref: ref
-
   - id: visual-regression-report-job-shape
     description: >
       The multi-job workflow's failure-comment calls live in a final job that
       always runs regardless of the upstream jobs' outcome and depends on them
       — the `needs:` + `if: always()` shape (job.status/failure()/success()
       only reflect the FINALIZE job's own state, never the matrix's).
+      `job_if_equals` normalizes an outer `${{ ... }}` wrapper and whitespace
+      before comparing, so the skill's own `if: ${{ always() }}` spelling (and
+      the unwrapped `always()`) both satisfy this — but NOT `!cancelled()`:
+      close in effect (the job still runs unless the run itself was
+      cancelled) but a different expression, and this check asserts exact
+      equality with what the skill actually prescribes, not every
+      semantically-similar gate nobody wrote.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
@@ -121,7 +119,13 @@ objective_checks:
     description: >
       The report job's post call gates on `needs.<job>.result`, not
       `job.status` or a bare `failure()` (which would read the report job's
-      own trivial status, not the matrix's).
+      own trivial status, not the matrix's). `log-file` must point at a path
+      an `actions/download-artifact` step in the SAME job downloaded to —
+      the log was captured on the chromium/firefox runner, a different
+      filesystem than the report job's, so a `log-file:` naming a path with
+      no artifact transport into this job is unreachable at runtime, not
+      merely unverified. Also asserts the job is in scope for
+      `pull-requests: write`.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
@@ -130,6 +134,9 @@ objective_checks:
     with_present: ["log-file", "marker", "title"]
     with_equals:
       mode: post
+    job_permissions_include:
+      pull-requests: write
+    log_file_matches_download: true
 
   - id: visual-regression-resolve-step
     description: The report job resolves the comment when neither upstream job failed.
@@ -142,20 +149,33 @@ objective_checks:
     with_equals:
       mode: resolve
 
-  - id: visual-regression-cms-platform-checked-out-on-a-tag
-    description: Same platform-checkout requirement as e2e-tests.yml, independently.
-    type: workflow_step_uses
-    paths: [".github/workflows/visual-regression.yml"]
-    uses_suffix: "actions/checkout"
-    with_equals:
-      repository: Adam-S-Daniel/cms-platform
-    with_tag_ref: ref
+  - id: post-failure-comment-reference-valid
+    description: >
+      Every step calling the composite resolves it either as the vendored
+      LOCAL path (any `./...` ref — the skill's condition 3 only requires
+      the action's directory be present, not any particular checkout shape)
+      or as a REMOTE `Adam-S-Daniel/cms-platform/...@<tag>` ref pinned to a
+      release tag, never a bare 40-hex SHA (the one carve-out from the
+      fleet's general SHA-pinning rule). If a checkout of cms-platform
+      exists anywhere in the workflow, its `ref:` must be tag-shaped too —
+      but no checkout is REQUIRED, since the remote form needs none and the
+      skill never prescribes a checkout as the only way to reach the action.
+      Replaces two earlier per-file checks that both demanded a checkout
+      step with a non-SHA `ref:` — an implementation the skill never
+      prescribes — and rejected the vendored local path and the literal
+      remote-tag carve-out, the two shapes the issue actually allows.
+    type: post_failure_comment_reference_valid
+    paths: [".github/workflows/e2e-tests.yml", ".github/workflows/visual-regression.yml"]
 
   - id: markers-unique-per-workflow
     description: >
       No two DIFFERENT workflows share a marker (they would clobber each
       other's comments) — a `post`/`resolve` pair in the SAME workflow
-      sharing one marker is the correct dedup key, not a collision.
+      sharing one marker is the correct dedup key, not a collision. Passes
+      VACUOUSLY on the pristine seed (it has zero post-failure-comment steps,
+      so zero markers to collide) — it only starts asserting anything once
+      at least one workflow calls the composite, which every other check
+      above already requires anyway.
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml", ".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
@@ -170,6 +190,21 @@ objective_checks:
     type: no_event_interpolation_in_run
     paths: [".github/workflows/*.yml"]
 
+  - id: cms-platform-vendored-contract-unchanged
+    description: >
+      The vendored .cms-platform/ action contract must be byte-identical to
+      the seed — restraint means leaving the composite's OWN contract alone,
+      never proposing a "fix" to it (the judge's restraint clause and the
+      skill's second "pattern that does not work" — moving the gate inside
+      the action — both hinge on this actually being enforced). `paths`
+      names the exact seed file rather than a `.cms-platform/**` glob:
+      Python's `glob` does not descend a wildcard into a dot-prefixed
+      directory like `.github`, so a `**` pattern here would silently match
+      nothing below `.cms-platform/` and this check would vacuously pass no
+      matter what the agent did to the vendored file.
+    type: files_unchanged
+    paths: [".cms-platform/.github/actions/post-failure-comment/action.yml"]
+
 # Judge scoring: 3 dimensions, 0-10 each, dictated to match judge.weights'
 # keys exactly. Everything decidable from the workflow files alone is
 # checked objectively above; the judge is left only what needs judgement.
@@ -181,10 +216,10 @@ judge_rubric: >
   workflow's shape (a bare `failure()`/`success()` for the single-job
   workflow, `needs.<job>.result` for the multi-job one — never `job.status`,
   which the skill documents as silently expanding to an empty string inside
-  the action's own `with:` block), a real captured log path, a marker unique
-  per workflow, and `pull-requests: write` granted wherever the composite is
-  called. Cap this dimension at 4 if either of the skill's documented "don't
-  repeat" patterns appears anywhere in the result.
+  the action's own `with:` block), a real captured log path, and a marker
+  unique per workflow. (`pull-requests: write` is checked objectively above,
+  not judged here.) Cap this dimension at 4 if either of the skill's
+  documented "don't repeat" patterns appears anywhere in the result.
   (2) gitleaks_explanation — since nothing objective here can see WHY the
   wiring is safe, does the agent's reply explain that every comment posted
   through the composite is scrubbed via its bundled gitleaks pass-through,

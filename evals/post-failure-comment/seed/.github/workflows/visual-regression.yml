@@ -17,6 +17,12 @@ jobs:
       - run: npm ci
       - name: Run chromium visual tests
         run: npx playwright test --project=chromium 2>&1 | tee /tmp/visual-chromium.log
+      - name: Upload chromium log
+        if: always()
+        uses: actions/upload-artifact@3f832d3a3f1fbec2a489d057331b0da7b9a07a05
+        with:
+          name: visual-chromium-log
+          path: /tmp/visual-chromium.log
 
   firefox:
     runs-on: ubuntu-latest
@@ -28,3 +34,9 @@ jobs:
       - run: npm ci
       - name: Run firefox visual tests
         run: npx playwright test --project=firefox 2>&1 | tee /tmp/visual-firefox.log
+      - name: Upload firefox log
+        if: always()
+        uses: actions/upload-artifact@3f832d3a3f1fbec2a489d057331b0da7b9a07a05
+        with:
+          name: visual-firefox-log
+          path: /tmp/visual-firefox.log

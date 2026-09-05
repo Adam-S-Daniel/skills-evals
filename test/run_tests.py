@@ -2711,6 +2711,189 @@ class TestIssue86(unittest.TestCase):
             with_equals={"repository": "Adam-S-Daniel/cms-platform"}, with_tag_ref="ref")
         self.assertFalse(passed)
 
+    def test_with_tag_ref_rejects_refs_heads_feature_branch_and_yaml_float(self):
+        # `_looks_like_a_tag` used to be a five-name blocklist: `refs/heads/main`,
+        # `my-feature-branch` and `1.10` (a YAML float once unquoted — PyYAML
+        # parses it as 1.1, dropping the trailing zero) all passed as tags.
+        def wf_with_ref(ref):
+            return ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+                    "      - uses: actions/checkout@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+                    "        with:\n"
+                    "          repository: Adam-S-Daniel/cms-platform\n"
+                    f"          ref: {ref}\n")
+        for ref in ("refs/heads/main", "my-feature-branch", "1.10"):
+            ws = self._ws({".github/workflows/w.yml": wf_with_ref(ref)})
+            passed, detail = objective.workflow_step_uses(
+                str(ws), self.PATTERNS, uses_suffix="actions/checkout",
+                with_equals={"repository": "Adam-S-Daniel/cms-platform"}, with_tag_ref="ref")
+            self.assertFalse(passed, f"ref={ref!r} should not look like a tag: {detail}")
+
+    # ---- workflow_step_uses: job_if_equals normalization (issue #86 review) --
+
+    JOB_ALWAYS_WF = (
+        "on:\n  pull_request:\njobs:\n"
+        "  report:\n    needs: [chromium, firefox]\n    if: {if_expr}\n"
+        "    runs-on: ubuntu-latest\n    steps:\n"
+        "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+        "        with:\n          mode: post\n"
+    )
+
+    def test_job_if_equals_accepts_bare_and_wrapped_always(self):
+        for if_expr in ("always()", "${{ always() }}", "${{always()}}"):
+            wf = self.JOB_ALWAYS_WF.format(if_expr=if_expr)
+            ws = self._ws({".github/workflows/w.yml": wf})
+            passed, detail = objective.workflow_step_uses(
+                str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="report",
+                job_if_equals="always()")
+            self.assertTrue(passed, f"if_expr={if_expr!r}: {detail}")
+
+    def test_job_if_equals_rejects_success(self):
+        wf = self.JOB_ALWAYS_WF.format(if_expr="success()")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="report",
+            job_if_equals="always()")
+        self.assertFalse(passed)
+
+    # ---- workflow_step_uses: job_permissions_include (issue #86 review, S1) -
+
+    def test_job_permissions_include_from_workflow_level(self):
+        wf = ("on:\n  pull_request:\npermissions:\n  contents: read\n  pull-requests: write\n"
+             "jobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        if: failure()\n        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="e2e",
+            job_permissions_include={"pull-requests": "write"})
+        self.assertTrue(passed, detail)
+
+    def test_job_permissions_include_from_job_level_overrides_workflow_level(self):
+        # Job-level permissions REPLACE workflow-level ones in real GitHub
+        # Actions, they don't merge — the workflow here grants nothing, so
+        # this only passes if the job's OWN block is what gets read.
+        wf = ("on:\n  pull_request:\npermissions:\n  contents: read\n"
+             "jobs:\n  report:\n    permissions:\n      contents: read\n"
+             "      pull-requests: write\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        if: failure()\n        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="report",
+            job_permissions_include={"pull-requests": "write"})
+        self.assertTrue(passed, detail)
+
+    def test_job_permissions_include_missing_everywhere_fails(self):
+        wf = ("on:\n  pull_request:\npermissions:\n  contents: read\n"
+             "jobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        if: failure()\n        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="e2e",
+            job_permissions_include={"pull-requests": "write"})
+        self.assertFalse(passed)
+
+    # ---- workflow_step_uses: uses_suffix must be a true suffix (S3) --------
+
+    def test_uses_suffix_does_not_match_unrelated_action(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: actions/setup-node@0d8272df0b6587bb41dfe4211061c1d8a3370a1f\n"
+             "        with:\n          node-version: \"20\"\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment")
+        self.assertFalse(passed, detail)
+
+    def test_uses_suffix_requires_true_suffix_not_substring(self):
+        # A ref that CONTAINS "/post-failure-comment" as a substring but
+        # does not END with it — catches a regression where `endswith` gets
+        # swapped for a substring test (`uses_suffix in ref`).
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./actions/post-failure-comment-legacy\n"
+             "        if: failure()\n        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment")
+        self.assertFalse(passed, detail)
+
+    def test_min_matches_requires_at_least_that_many(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        if: failure()\n        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", min_matches=2)
+        self.assertFalse(passed, detail)
+
+    # ---- post_failure_comment_reference_valid: direct unit tests (B2) -----
+
+    def test_reference_valid_accepts_vendored_local_path(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.post_failure_comment_reference_valid(str(ws), self.PATTERNS)
+        self.assertTrue(passed, detail)
+
+    def test_reference_valid_accepts_remote_tag_pin(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: Adam-S-Daniel/cms-platform/.github/actions/post-failure-comment@v0.1.106\n"
+             "        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.post_failure_comment_reference_valid(str(ws), self.PATTERNS)
+        self.assertTrue(passed, detail)
+
+    def test_reference_valid_rejects_remote_sha_pin(self):
+        # This is the one carve-out from the fleet's general SHA-pinning
+        # rule — a bare SHA here is the WRONG shape, not merely unpinned.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: Adam-S-Daniel/cms-platform/.github/actions/post-failure-comment"
+             "@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+             "        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.post_failure_comment_reference_valid(str(ws), self.PATTERNS)
+        self.assertFalse(passed)
+
+    def test_reference_valid_rejects_branch_checkout_of_cms_platform(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: actions/checkout@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+             "        with:\n"
+             "          repository: Adam-S-Daniel/cms-platform\n"
+             "          ref: refs/heads/main\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.post_failure_comment_reference_valid(str(ws), self.PATTERNS)
+        self.assertFalse(passed, detail)
+
+    def test_reference_valid_accepts_tag_checkout_of_cms_platform(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: actions/checkout@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+             "        with:\n"
+             "          repository: Adam-S-Daniel/cms-platform\n"
+             "          ref: v0.1.106\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.post_failure_comment_reference_valid(str(ws), self.PATTERNS)
+        self.assertTrue(passed, detail)
+
+    # ---- run_checks: unknown constraint keys must not be dropped silently -
+
+    def test_run_checks_raises_on_unknown_workflow_step_uses_key(self):
+        fixture = {"objective_checks": [{
+            "id": "typo-check", "type": "workflow_step_uses",
+            "paths": [".github/workflows/*.yml"],
+            "uses_suffix": "/post-failure-comment",
+            "job_ifequals": "always()",  # typo for job_if_equals
+        }]}
+        ws = self._ws({".github/workflows/w.yml":
+                       "on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n"
+                       "    steps: []\n"})
+        with self.assertRaises(ValueError):
+            objective.run_checks(fixture, str(ws), str(ws))
+
     def test_unique_with_key_allows_same_marker_within_one_file(self):
         wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
              "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
@@ -2872,12 +3055,18 @@ jobs:
           ref: v0.1.106
           path: .cms-platform
 
+      - name: Download chromium log
+        uses: actions/download-artifact@f15be6a370550efbce577bfc58e3be84d2d43ab9
+        with:
+          name: visual-chromium-log
+          path: /tmp/logs
+
       - name: Post failure summary
         if: ${{ contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}
         uses: ./.cms-platform/.github/actions/post-failure-comment
         with:
           mode: post
-          log-file: /tmp/visual-chromium.log
+          log-file: /tmp/logs/visual-chromium.log
           marker: visual-regression-failure-summary
           title: Visual regression
 
@@ -2972,7 +3161,116 @@ jobs:
         self.assertIn("ref: v0.1.106", text)
         path.write_text(text.replace("ref: v0.1.106", "ref: main"), encoding="utf-8")
         by_id = self._check_fixture(ws)
-        self.assertFalse(by_id["e2e-cms-platform-checked-out-on-a-tag"]["passed"])
+        self.assertFalse(by_id["post-failure-comment-reference-valid"]["passed"])
+
+    def test_vendored_local_path_scores_full_marks(self):
+        # Review round 1, B2: the vendored `./.cms-platform/...` local path is
+        # a shape the skill's own condition 3 explicitly allows (it only
+        # requires the action's directory be present) — the correct
+        # workspace already uses it, so this is the same assertion as
+        # test_hand_written_correct_workspace_passes_every_check, named for
+        # the specific regression it guards.
+        by_id = self._check_fixture(self._correct_workspace())
+        self.assertTrue(by_id["post-failure-comment-reference-valid"]["passed"],
+                        by_id["post-failure-comment-reference-valid"]["detail"])
+
+    def test_remote_tag_pin_scores_full_marks(self):
+        # Review round 1, B2: the literal remote carve-out
+        # (`Adam-S-Daniel/cms-platform/...@<tag>`) is the OTHER shape the
+        # issue allows and needs no local checkout of the platform at all —
+        # both cms-platform checkout steps are dropped here, and every other
+        # check (post/resolve steps, permissions, markers, interpolation)
+        # must still pass unchanged.
+        ws = self._correct_workspace()
+        for rel in ("e2e-tests.yml", "visual-regression.yml"):
+            path = ws / ".github" / "workflows" / rel
+            text = path.read_text(encoding="utf-8")
+            text = text.replace(
+                "      - uses: actions/checkout@b95a8788078d258779e994565cf6eef663ff911e\n"
+                "        with:\n"
+                "          repository: Adam-S-Daniel/cms-platform\n"
+                "          ref: v0.1.106\n"
+                "          path: .cms-platform\n\n",
+                "")
+            text = text.replace(
+                "./.cms-platform/.github/actions/post-failure-comment",
+                "Adam-S-Daniel/cms-platform/.github/actions/post-failure-comment@v0.1.106")
+            path.write_text(text, encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_pull_requests_write_stripped_fails_permission_checks(self):
+        # Review round 1, S1: stripping `pull-requests: write` everywhere
+        # used to still score full marks — the seed already sets
+        # visual-regression.yml to `contents: read` only, so the without_skill
+        # arm's most common miss went entirely unchecked.
+        ws = self._correct_workspace()
+        e2e_path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        e2e_path.write_text(
+            e2e_path.read_text(encoding="utf-8").replace(
+                "permissions:\n  contents: read\n  pull-requests: write\n",
+                "permissions:\n  contents: read\n"),
+            encoding="utf-8")
+        vr_path = ws / ".github" / "workflows" / "visual-regression.yml"
+        vr_path.write_text(
+            vr_path.read_text(encoding="utf-8").replace(
+                "    permissions:\n      contents: read\n      pull-requests: write\n",
+                "    permissions:\n      contents: read\n"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["e2e-post-step"]["passed"])
+        self.assertFalse(by_id["visual-regression-post-step"]["passed"])
+
+    def test_log_file_pointing_outside_downloaded_artifact_fails(self):
+        # Review round 1, S4: the report job runs on a different runner than
+        # the matrix job that wrote the log, so a log-file path with no
+        # matching download-artifact step is unreachable at runtime, not
+        # merely unverified.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("log-file: /tmp/logs/visual-chromium.log", text)
+        path.write_text(text.replace(
+            "log-file: /tmp/logs/visual-chromium.log",
+            "log-file: /tmp/visual-chromium.log"), encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["visual-regression-post-step"]["passed"])
+
+    def test_editing_vendored_contract_fails(self):
+        # Review round 1, S5: nothing objectively protected the vendored
+        # action contract before — appending a line to it used to still
+        # score full marks, even though the judge's restraint clause and the
+        # skill's "don't move the gate inside the action" pattern both hinge
+        # on it staying untouched.
+        ws = self._correct_workspace()
+        vendored = (ws / ".cms-platform" / ".github" / "actions" /
+                   "post-failure-comment" / "action.yml")
+        vendored.write_text(vendored.read_text(encoding="utf-8") + "\n# tampered\n",
+                            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["cms-platform-vendored-contract-unchanged"]["passed"])
+
+    def test_vendored_action_has_no_design_history_or_stray_gating_guidance(self):
+        # Review round 1, B3: the seed's vendored action.yml used to keep the
+        # real file's "DESIGN (v3)" comment block, which handed the
+        # without-skill arm the caller-side-gating convention the skill
+        # exists to teach. The mode/marker input DESCRIPTIONS are still
+        # allowed to carry that contract — this only checks OUTSIDE them.
+        path = (POST_FAILURE_COMMENT_DIR / "seed" / ".cms-platform" / ".github" /
+               "actions" / "post-failure-comment" / "action.yml")
+        text = path.read_text(encoding="utf-8")
+        self.assertNotIn("DESIGN", text)
+        before_inputs, sep, rest = text.partition("\ninputs:\n")
+        self.assertEqual(sep, "\ninputs:\n", "expected an `inputs:` block")
+        _inputs_block, sep2, after_inputs = rest.partition("\nruns:\n")
+        self.assertEqual(sep2, "\nruns:\n", "expected a `runs:` block")
+        outside_inputs = before_inputs + "\nruns:\n" + after_inputs
+        self.assertNotIn("if: failure()", outside_inputs)
+        self.assertNotIn("if: success()", outside_inputs)
+        # ...but the contract itself must still be there, inside inputs.
+        self.assertIn("if: failure()", text)
+        self.assertIn("if: success()", text)
 
     def test_reintroduced_event_interpolation_in_run_fails(self):
         ws = self._correct_workspace()

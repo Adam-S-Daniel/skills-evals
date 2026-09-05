@@ -6,20 +6,19 @@
 # .github/actions/post-failure-comment/action.yml (contract only, for
 # this eval's fixture to read offline — this file is not fetched over
 # the network at eval-run time).
-#
-# DESIGN (v3): caller-side gating. Earlier versions tried to
-# detect job state inside the action via `${{ job.status }}` and
-# `failure()` / `success()` — both proved unreliable in this
-# composite context (no comment landed across multiple runs).
-# v3 makes the action mode-driven and pushes the gate to the
-# CALLER, where `failure()` / `success()` are the canonical,
-# well-tested workflow primitives. Result: two call sites per
-# workflow (one for failure, one for resolve), but the action
-# itself is dumb and reliable.
 
 name: Post failure summary to PR
 description: Scrub a Playwright log via gitleaks and post (or resolve) a PR failure-summary comment.
 
+# Eval fixture note (issue #86): the `mode` and `marker` input
+# DESCRIPTIONS below carry the caller-side-gating contract this eval
+# tests for (mode is selected by the caller's own `if:` gate; two
+# workflows must not share a marker). That's the allowed subset of
+# the real action's convention docs — do not "fix" it away by trimming
+# these descriptions down to bare types. Only the top-of-file
+# design-history comment (the caller-side-gating rationale, the "two
+# call sites per workflow" line) was removed here, because it handed
+# the without-skill arm the same convention the skill exists to teach.
 inputs:
   mode:
     description: |

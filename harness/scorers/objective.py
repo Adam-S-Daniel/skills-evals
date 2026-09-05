@@ -456,19 +456,34 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
 # Structural workflow-step checks (issue #86, post-failure-comment)
 # --------------------------------------------------------------------------
 
-# A ref that is neither a 40-hex commit SHA nor an obviously-floating branch
-# name. Doesn't have to be semver-shaped — this only needs to reject the two
-# things that would defeat "pin to a release": an unpinned floating branch,
-# and (the opposite mistake) a full commit SHA, which is what the fleet's
-# general SHA-pinning rule would produce if applied to the one ref carved out
-# of it (an own-account cms-platform ref, which stays on its release tag).
-_FLOATING_REF_NAMES = {"main", "master", "head", "latest", "trunk"}
+# A tag shape: optional `v` then a digit. Doesn't have to be semver-shaped —
+# this only needs to reject the things that would defeat "pin to a release":
+# an unpinned floating branch (by name or `refs/heads/...`), a full commit
+# SHA (the opposite mistake — what the fleet's general SHA-pinning rule would
+# produce if applied to the one ref carved out of it, an own-account
+# cms-platform ref, which stays on its release tag instead), and a YAML
+# scalar that was never a ref to begin with.
+_TAG_SHAPE_RE = re.compile(r"^v?\d")
 
 
-def _looks_like_a_tag(ref: str) -> bool:
-    if not ref or SHA_RE.match(ref):
+def _looks_like_a_tag(value) -> bool:
+    """Is this ref shaped like a release tag?
+
+    Takes the RAW parsed YAML value, not a pre-stringified one: an unquoted
+    `ref: 1.10` parses as the float 1.1 (PyYAML drops the trailing zero), and
+    the value coming back as a non-string scalar at all is itself proof it
+    was never written as a tag — stringifying first would erase that and let
+    the mangled "1.1" slip through the shape check below. `refs/heads/...` is
+    rejected explicitly, on top of the `^v?\\d` shape requirement, since a
+    branch ref under that prefix is exactly the floating-ref mistake this
+    exists to catch.
+    """
+    if not isinstance(value, str):
         return False
-    return ref.lower() not in _FLOATING_REF_NAMES
+    ref = value.strip()
+    if not ref or SHA_RE.match(ref) or ref.startswith("refs/heads/"):
+        return False
+    return bool(_TAG_SHAPE_RE.match(ref))
 
 
 def _stringify_if(value) -> str:
@@ -480,6 +495,28 @@ def _stringify_if(value) -> str:
     if value is None:
         return ""
     return str(value)
+
+
+_WRAPPED_EXPR_RE = re.compile(r"^\$\{\{\s*(.*?)\s*\}\}$", re.DOTALL)
+
+
+def _normalize_expr(value) -> str:
+    """An `if:` leaf, normalized for EXACT-match comparison (`job_if_equals`):
+    strip a single outer `${{ ... }}` wrapper and surrounding whitespace, so
+    `always()`, `${{ always() }}` and `${{always()}}` all compare equal — the
+    skill's own workflow snippets wrap every `if:` in `${{ }}` for style
+    consistency, so a skill-faithful `if: ${{ always() }}` must not fail a
+    check written against the bare `always()` spelling.
+
+    Deliberately does NOT treat `!cancelled()` as equivalent to `always()`:
+    close in effect for a job that must run regardless of the upstream
+    matrix's outcome, but a different expression — `job_if_equals` asserts
+    exact equality with what the skill actually prescribes, not semantic
+    equivalence with every plausible variant nobody wrote.
+    """
+    s = _stringify_if(value).strip()
+    m = _WRAPPED_EXPR_RE.match(s)
+    return m.group(1) if m else s
 
 
 def _iter_workflow_steps(doc: dict):
@@ -508,15 +545,36 @@ def _job_matches(job_id: str, job: dict, job_selector: str | None) -> bool:
     return isinstance(job.get("name"), str) and job["name"] == job_selector
 
 
+def _job_download_artifact_paths(job_body: dict) -> list[str]:
+    """Every `path:` an `actions/download-artifact` step in this job wrote to,
+    in step order. Structural: walks `steps:`, only a matched step's
+    `with.path` leaf is read as a string.
+    """
+    paths = []
+    for step in job_body.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        uses = step.get("uses")
+        if not isinstance(uses, str) or not uses.split("@", 1)[0].endswith("download-artifact"):
+            continue
+        with_block = step.get("with") if isinstance(step.get("with"), dict) else {}
+        path = with_block.get("path")
+        if isinstance(path, str) and path:
+            paths.append(path.rstrip("/"))
+    return paths
+
+
 def workflow_step_uses(workspace: str, patterns: list[str], *,
                        uses_suffix: str | None = None,
                        job: str | None = None,
                        job_if_equals: str | None = None,
                        job_needs_nonempty: bool = False,
+                       job_permissions_include: dict | None = None,
                        if_contains: str | None = None,
                        with_present: list[str] | None = None,
                        with_equals: dict | None = None,
                        with_tag_ref: str | None = None,
+                       log_file_matches_download: bool = False,
                        unique_with_key: str | None = None,
                        min_matches: int = 1) -> tuple[bool, str]:
     """Structural assertions over parsed workflow YAML: does at least
@@ -531,7 +589,24 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     VALUE (a leaf string) get a plain string test — e.g. `if_contains`,
     `with_equals`, `with_tag_ref` — which is the "leaf strings tested
     lexically" half of the house rule, not a shortcut around the structural
-    half.
+    half. `job_if_equals` compares against `_normalize_expr`, not the raw
+    `if:` string, so a skill-faithful `if: ${{ always() }}` matches a check
+    written against the bare `always()` spelling.
+
+    `job_permissions_include` asserts a `{perm: value}` mapping is in scope
+    for the qualifying step's job: the job's OWN `permissions:` block if it
+    declares one (job-level permissions REPLACE workflow-level ones in real
+    GitHub Actions — they do not merge), else the workflow-level
+    `permissions:` block. This is how `pull-requests: write` — the skill's
+    own "most subtle and most common" pitfall — becomes a decidable fact
+    instead of something left entirely to the judge.
+
+    `log_file_matches_download` requires the qualifying step's `with.log-file`
+    value to fall under a path an `actions/download-artifact` step earlier in
+    the SAME job downloaded to — in a multi-job workflow the log is captured
+    on a different runner (the matrix job), so a `log-file:` naming a path
+    with no artifact transport into the calling job is unreachable at
+    runtime, not merely unverified.
 
     `unique_with_key` switches to a second mode instead of the match/count
     check above: collect every `uses_suffix`-matching step's `with[key]`
@@ -541,8 +616,17 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     in the SAME workflow under the SAME marker (that's the dedup key, not a
     collision) — only two DIFFERENT workflows sharing one marker is the
     clobbering bug.
+
+    Caution for fixture authors: this function fails OPEN on a workflow file
+    `_load_workflows` could not parse (`doc is None` — silently skipped,
+    contributing zero matches rather than a problem) and never walks a job's
+    own `uses:` (a reusable-workflow call, `jobs.<id>: {uses: ./other.yml}`,
+    has no `steps:` at all) — only step-level `uses:` inside a job's
+    `steps:` list. Pair this check with `yaml_parses` on the same `paths` so
+    an unparseable file fails loudly instead of reading as "no matching step,
+    as expected."
     """
-    matches = []  # (rel, job_id, job, step) for every uses_suffix-matching step
+    matches = []  # (rel, doc, job_id, job, step) for every uses_suffix-matching step
     for rel, doc in _load_workflows(workspace, patterns):
         if doc is None:
             continue
@@ -553,11 +637,11 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             ref = uses.split("@", 1)[0]
             if uses_suffix is not None and not ref.endswith(uses_suffix):
                 continue
-            matches.append((rel, job_id, job_body, step))
+            matches.append((rel, doc, job_id, job_body, step))
 
     if unique_with_key is not None:
         by_value: dict[str, set[str]] = {}
-        for rel, _job_id, _job_body, step in matches:
+        for rel, _doc, _job_id, _job_body, step in matches:
             with_block = step.get("with")
             if not isinstance(with_block, dict):
                 continue
@@ -573,16 +657,22 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                       f"({len(by_value)} value(s) seen)")
 
     qualifying = []
-    for rel, job_id, job_body, step in matches:
+    for rel, doc, job_id, job_body, step in matches:
         if job is not None and not _job_matches(job_id, job_body, job):
             continue
-        if job_if_equals is not None and _stringify_if(job_body.get("if")) != job_if_equals:
+        if job_if_equals is not None and _normalize_expr(job_body.get("if")) != job_if_equals:
             continue
         if job_needs_nonempty:
             needs = job_body.get("needs")
             has_needs = (isinstance(needs, str) and bool(needs)) or \
                        (isinstance(needs, list) and len(needs) > 0)
             if not has_needs:
+                continue
+        if job_permissions_include:
+            perms = job_body.get("permissions")
+            if not isinstance(perms, dict):
+                perms = doc.get("permissions") if isinstance(doc.get("permissions"), dict) else {}
+            if any(perms.get(k) != v for k, v in job_permissions_include.items()):
                 continue
         if if_contains is not None and if_contains not in _stringify_if(step.get("if")):
             continue
@@ -591,8 +681,15 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             continue
         if with_equals and any(with_block.get(k) != v for k, v in with_equals.items()):
             continue
-        if with_tag_ref is not None and not _looks_like_a_tag(str(with_block.get(with_tag_ref) or "")):
+        if with_tag_ref is not None and not _looks_like_a_tag(with_block.get(with_tag_ref)):
             continue
+        if log_file_matches_download:
+            log_file = with_block.get("log-file")
+            download_paths = _job_download_artifact_paths(job_body)
+            if not isinstance(log_file, str) or not log_file or not any(
+                log_file == p or log_file.startswith(p + "/") for p in download_paths
+            ):
+                continue
         qualifying.append((rel, job_id))
 
     if len(qualifying) >= min_matches:
@@ -625,6 +722,12 @@ def no_event_interpolation_in_run(workspace: str, patterns: list[str]) -> tuple[
     never a raw line scan of the file, which cannot tell a `run:` body apart
     from a comment, a `with:` block, or an unrelated string elsewhere in the
     same document.
+
+    Fails OPEN on a workflow `_load_workflows` could not parse (silently
+    skipped — zero problems found there reads the same as "no interpolation
+    found"), and never walks a job's own `uses:` for a reusable-workflow call
+    (such a job has no `steps:`, hence no `run:`, so nothing here would see
+    one anyway). Pair with `yaml_parses` on the same `paths` for the former.
     """
     problems = []
     for rel, doc in _load_workflows(workspace, patterns):
@@ -642,6 +745,70 @@ def no_event_interpolation_in_run(workspace: str, patterns: list[str]) -> tuple[
             if not problems else "; ".join(problems))
 
 
+# owner/repo prefix for the one carve-out from the fleet's SHA-pinning rule:
+# a ref into this account's own cms-platform, which stays on its release tag.
+_CMS_PLATFORM_REMOTE_PREFIX = "Adam-S-Daniel/cms-platform/"
+
+
+def post_failure_comment_reference_valid(workspace: str, patterns: list[str], *,
+                                         uses_suffix: str = "/post-failure-comment"
+                                         ) -> tuple[bool, str]:
+    """Every step that calls the failure-comment composite resolves it one of
+    two ways the issue actually allows — never merely a shape the skill
+    doesn't happen to prescribe:
+
+    - the vendored LOCAL path (any `./...` ref ending in `uses_suffix` — the
+      skill's condition 3 only requires the action's directory be present,
+      not any particular checkout shape), or
+    - a REMOTE `Adam-S-Daniel/cms-platform/...@<tag>` ref, pinned to a
+      release TAG — never a bare 40-hex commit SHA, which is what the
+      fleet's general SHA-pinning rule would (wrongly) produce here, since
+      this is the one ref AGENTS.md carves out to stay on its tag instead.
+
+    If the workflow ALSO checks cms-platform out via `actions/checkout`
+    (`with.repository: Adam-S-Daniel/cms-platform`) — which the remote form
+    doesn't need at all — that checkout's `ref:` must be tag-shaped too, for
+    the same reason. A checkout is never REQUIRED by this check: an earlier
+    version of it demanded one and rejected both shapes the issue actually
+    allows (the vendored local path, and the literal remote-tag carve-out)
+    for the sole reason that neither happens to check anything out.
+    """
+    problems = []
+    checked_any = False
+    for rel, doc in _load_workflows(workspace, patterns):
+        if doc is None:
+            continue
+        for job_id, _job_body, step in _iter_workflow_steps(doc):
+            uses = step.get("uses")
+            if not isinstance(uses, str):
+                continue
+            ref, _, version = uses.partition("@")
+            if ref.endswith(uses_suffix):
+                checked_any = True
+                if ref.startswith("./"):
+                    continue
+                if not ref.startswith(_CMS_PLATFORM_REMOTE_PREFIX):
+                    problems.append(f"{rel}:{job_id}: `uses: {uses}` is neither the "
+                                    f"vendored local path nor a "
+                                    f"{_CMS_PLATFORM_REMOTE_PREFIX}...@<tag> ref")
+                elif not _looks_like_a_tag(version):
+                    problems.append(f"{rel}:{job_id}: `uses: {uses}` must be pinned "
+                                    f"to a release tag, not {version!r}")
+            elif ref.endswith("actions/checkout"):
+                with_block = step.get("with") if isinstance(step.get("with"), dict) else {}
+                if with_block.get("repository") == "Adam-S-Daniel/cms-platform":
+                    checkout_ref = with_block.get("ref")
+                    if not _looks_like_a_tag(checkout_ref):
+                        problems.append(f"{rel}:{job_id}: cms-platform checkout "
+                                        f"`ref:` {checkout_ref!r} is not tag-shaped")
+    if not checked_any:
+        problems.append(f"no step found with a `uses:` ending {uses_suffix!r}")
+    return (not problems,
+            "post-failure-comment resolved via the vendored local path or a "
+            "tag-pinned remote ref, and any cms-platform checkout is tag-pinned"
+            if not problems else "; ".join(problems))
+
+
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "yaml_parses": yaml_parses,
@@ -654,6 +821,15 @@ CHECKS = {
     "transcript_matches": transcript_matches,
     "workflow_step_uses": workflow_step_uses,
     "no_event_interpolation_in_run": no_event_interpolation_in_run,
+    "post_failure_comment_reference_valid": post_failure_comment_reference_valid,
+}
+
+
+_CHECK_META_KEYS = {"id", "description", "type", "paths"}
+_WORKFLOW_STEP_USES_KEYS = {
+    "uses_suffix", "job", "job_if_equals", "job_needs_nonempty",
+    "job_permissions_include", "if_contains", "with_present", "with_equals",
+    "with_tag_ref", "log_file_matches_download", "unique_with_key", "min_matches",
 }
 
 
@@ -667,6 +843,12 @@ def run_checks(fixture: dict, workspace: str, seed: str,
     took the network opt-in that existed only for it. Offline is therefore not
     a mode here, it is the only behaviour. A future network-dependent check
     reintroduces an opt-in deliberately, and defaults it off.
+
+    A `workflow_step_uses` check's keys are validated against a fixed set
+    before running: an unrecognized key (a typo like `job_ifequals`) raises
+    rather than being silently dropped from `kwargs` — dropped, the fixture
+    would run a WEAKER check than written and still report green, which is
+    worse than failing loudly at load time.
     """
     results = []
     for check in fixture.get("objective_checks", []):
@@ -688,11 +870,16 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
         elif check["type"] == "workflow_step_uses":
-            for key in ("uses_suffix", "job", "job_if_equals", "job_needs_nonempty",
-                       "if_contains", "with_present", "with_equals", "with_tag_ref",
-                       "unique_with_key", "min_matches"):
+            extra = set(check) - _CHECK_META_KEYS - _WORKFLOW_STEP_USES_KEYS
+            if extra:
+                raise ValueError(f"unknown workflow_step_uses constraint key(s) in "
+                                f"check {check.get('id')!r}: {sorted(extra)}")
+            for key in _WORKFLOW_STEP_USES_KEYS:
                 if key in check:
                     kwargs[key] = check[key]
+        elif check["type"] == "post_failure_comment_reference_valid":
+            if "uses_suffix" in check:
+                kwargs["uses_suffix"] = check["uses_suffix"]
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
