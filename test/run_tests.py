@@ -2817,6 +2817,45 @@ class TestIssue82(unittest.TestCase):
         b = (inbox / "Scan_20260306_071455.pdf").read_bytes()
         self.assertEqual(a, b)
 
+    # -- byte-level equivalents of the pypdf-gated tests below, so this
+    # coverage runs even where pypdf isn't installed (CI installs pyyaml
+    # only; the pypdf-gated tests below are always skipped there). Reads
+    # the uncompressed content streams directly: make_pdfs.py writes every
+    # stream with no /Filter, so the text it wrote is literal bytes in the
+    # committed file.
+
+    def test_image_only_pdf_has_no_text_showing_operator_or_font_byte_level(self):
+        data = (RENAME_DIR / "seed" / "inbox" / "Scan_20260118_161230.pdf").read_bytes()
+        for token in (b"Tj", b"TJ", b"BT", b"/Font"):
+            self.assertNotIn(token, data)
+
+    def test_invoice_stream_carries_the_body_date_not_the_decoy_byte_level(self):
+        data = (RENAME_DIR / "seed" / "inbox" / "Scan_20260301_114022.pdf").read_bytes()
+        self.assertIn(b"February 14, 2026", data)
+        self.assertNotIn(b"20260301", data)
+
+    def test_statement_stream_carries_the_billing_period_byte_level(self):
+        data = (RENAME_DIR / "seed" / "inbox" / "Scan_20260205_081533.pdf").read_bytes()
+        self.assertIn(b"1 Jan 2026 to 31 Jan 2026", data)
+
+    def test_generator_reproduces_the_committed_pdfs_byte_for_byte(self):
+        # Catches generator/seed drift: someone edits make_pdfs.py's
+        # SAMPLE lines without regenerating and re-committing seed/inbox/.
+        inbox = RENAME_DIR / "seed" / "inbox"
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_inbox = Path(tmp) / "inbox"
+            proc = subprocess.run(
+                [sys.executable, str(RENAME_DIR / "make_pdfs.py"),
+                 "--out-dir", str(tmp_inbox)],
+                capture_output=True, text=True)
+            self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+            committed = sorted(p.name for p in inbox.iterdir())
+            generated = sorted(p.name for p in tmp_inbox.iterdir())
+            self.assertEqual(committed, generated)
+            for name in committed:
+                self.assertEqual((inbox / name).read_bytes(),
+                                 (tmp_inbox / name).read_bytes(), name)
+
     def test_image_only_pdf_has_no_extractable_text(self):
         pypdf = _import_pypdf_or_skip()
         reader = pypdf.PdfReader(str(RENAME_DIR / "seed" / "inbox" / "Scan_20260118_161230.pdf"))
