@@ -4582,10 +4582,26 @@ class TestIssue81(unittest.TestCase):
         self.assertIn("cover-letter/references/in-voice.md", scanned)
 
     def test_the_fixture_list_is_read_off_the_disk(self):
+        # The denominator for every loop in this class: an empty FIXTURES
+        # would make each of them pass vacuously.
         self.assertTrue(self.FIXTURES, "no fixture directories found on disk")
-        self.assertEqual(self.FIXTURES, self._fixture_names())
         for name in self.FIXTURES:
             self.assertTrue((self.STYLE_DIR / name / "fixture.yaml").is_file())
+        # And the list is a WALK rather than a tuple written out here: a
+        # fourth fixture planted beside the three is in it, the way its
+        # sibling above plants one for the marker scan. The whole test used
+        # to be `assertEqual(self.FIXTURES, self._fixture_names())`, which
+        # cannot fail — both sides are the same glob over the same
+        # directory, so a hardcoded list would have satisfied it.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            fourth = planted / "cover-letter"
+            fourth.mkdir()
+            (fourth / "fixture.yaml").write_text("skill: adam-writing-style\n",
+                                                 encoding="utf-8")
+            self.assertEqual(self._fixture_names(planted),
+                             tuple(sorted(self.FIXTURES + ("cover-letter",))))
 
     def test_each_fixture_records_its_seeds_fiction_where_the_agent_cannot_see(self):
         # The marker left seed/, so the record moves to the one file that
