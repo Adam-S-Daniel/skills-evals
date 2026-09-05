@@ -25,7 +25,7 @@ prod-loop	Run prod-mutate playground loop	2026-09-02T06:04:20.4402219Z [deploy-q
 prod-loop	Run prod-mutate playground loop	2026-09-02T06:09:20.5518830Z [deploy-queue] deploy-production lane idle (in-flight: 0, queued: 0); extending 300s (extension 5/6)
 prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7734120Z   1) [chromium-desktop-1080] › e2e/cms-prod-mutate.spec.js:71:3 › prod playground publish reaches the live URL
 prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7736611Z
-prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7739004Z     Error: Timed out waiting for the URL to reflect the change. Waited 1806s, but the cms PR #418 had NOT MERGED yet — PR #418 has not merged although all 13 check-run(s) on its head sha are green — it is awaiting the merge mechanism (auto-merge / nudge). An unmerged PR cannot have a deploy, so the deploy chain is NOT the failing leg here (#118). Check the pill state for in-flight clues.
+prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7739004Z     Error: Timed out waiting for the URL to reflect the change. Waited 1806s, but the cms PR #418 had NOT MERGED yet — PR #418 has not merged although all 13 check-run(s) on its head sha are green — it is awaiting the merge mechanism (auto-merge / nudge). An unmerged PR cannot have a deploy, so the deploy chain is NOT the failing leg here. Check the pill state for in-flight clues.
 prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7741330Z
 prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7743918Z     verdict: pr-awaiting-required-check  pr=418  autoMerge=true  labels=[automated-test, cms/ready]
 prod-loop	Run prod-mutate playground loop	2026-09-02T06:13:58.7746201Z

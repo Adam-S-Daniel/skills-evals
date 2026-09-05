@@ -1725,6 +1725,19 @@ class Issue84Fixture:
         results = objective.run_checks(fixture, str(ws), str(seed), transcript=transcript)
         return {r["id"]: r for r in results}
 
+    # The head sha each open PR's checks ran against, as every surface
+    # in the payload set spells it.
+    HEADS = {412: "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
+             418: "5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d",
+             421: "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1"}
+
+    def _payload(self, *parts: str):
+        """One recorded response, parsed, named by its path parts."""
+        path = self.STUCK_DIR / "seed" / self.PAYLOAD_DIR
+        for part in parts:
+            path = path / part
+        return json.loads(path.read_text(encoding="utf-8"))
+
     def _mini_eval(self, seed_bin: dict[str, str] | None,
                    path_spec: str = "$WORKSPACE/bin:$PATH") -> Path:
         """A throwaway eval dir whose fixture prepends a bin dir to PATH."""
@@ -2504,16 +2517,6 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
                 self.assertTrue(r.stdout.strip(), "empty payload")
         self.assertEqual(set(self._classes(ws)), {"read"})
 
-    def _payload(self, *parts: str):
-        path = self.STUCK_DIR / "seed" / self.PAYLOAD_DIR
-        for part in parts:
-            path = path / part
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    HEADS = {412: "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
-             418: "5b2e8d47c1069a3f8e24b70d5c93a1f6802be47d",
-             421: "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1"}
-
     def test_the_check_surfaces_agree_with_each_other(self):
         """`pr view`, `pr checks` and the check-runs API describe one PR.
 
@@ -2553,12 +2556,13 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.assertEqual(int(counted.group(1)), runs["total_count"])
 
     def test_the_seeded_log_borrows_no_cross_repo_issue_number(self):
-        """`(#215)` was lifted from cms-platform's own template."""
+        """`(#215)` was lifted from cms-platform's own template — and so, as
+        round 3 found, was the `(#118)` that replaced it."""
         import re
         log = (self.STUCK_DIR / "seed" / self.PAYLOAD_DIR
                / f"run-view-{self.RUN_ID}.log").read_text(encoding="utf-8")
         referenced = set(re.findall(r"#(\d+)", log))
-        self.assertTrue(referenced <= {"412", "418", "421", "118"}, referenced)
+        self.assertTrue(referenced <= {"412", "418", "421"}, referenced)
 
     def test_pr_c_reads_as_a_live_editorial_pr_without_its_label(self):
         """Leaving #421 alone must not rest on one Decap label.
@@ -4837,6 +4841,101 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
         ok = self._run_mini(self._mini_eval({"gh": "#!/bin/sh\nexit 0\n"},
                                             "${WORKSPACE}/bin:$PATH"))
         self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
+
+    # ------------------------------------------- the payloads (S3, N1, N2, N5)
+
+    def test_every_surface_agrees_on_who_opened_each_pr(self):
+        """The REST payloads named no author at all (S3).
+
+        `pulls/421.json` carried `auto_merge.enabled_by: cms-bot` beside the
+        `decap-cms/pending_publish` label and nothing else about who opened
+        it, so the API surface still read #421 as one of the loop's own
+        artefacts — which is exactly the reading the CLI surfaces were
+        changed to stop. An agent that cross-checks the two gets two
+        answers. `user.login` is the REST spelling of `pr view`'s
+        `author.login`.
+        """
+        listed = {pr["number"]: pr for pr in self._payload("pr-list.json")}
+        rest_listed = {pr["number"]: pr for pr in
+                       self._payload("api", "repos", *self.REPO.split("/"),
+                                     "pulls.json")}
+        for number in self.HEADS:
+            with self.subTest(pr=number):
+                rest = self._payload("api", "repos", *self.REPO.split("/"),
+                                     "pulls", f"{number}.json")
+                cli = self._payload(f"pr-view-{number}.json")
+                author = cli["author"]["login"]
+                self.assertEqual(rest.get("user", {}).get("login"), author)
+                self.assertEqual(rest_listed[number]["user"]["login"], author)
+                self.assertEqual(listed[number]["author"]["login"], author)
+        # …and #421's author is the editor, whatever enabled its auto-merge.
+        rest_c = self._payload("api", "repos", *self.REPO.split("/"),
+                               "pulls", "421.json")
+        self.assertNotEqual(rest_c["user"]["login"], "cms-bot")
+        self.assertEqual(rest_c["auto_merge"]["enabled_by"]["login"], "cms-bot")
+
+    def test_resolving_main_to_a_sha_leads_somewhere(self):
+        """`commits/main` -> sha -> `commits/<sha>/check-runs` used to 404 (N2).
+
+        Resolving a ref before asking about it is the ordinary shape of
+        this question, and the payloads only answered the `main` spelling —
+        so the agent that did the careful thing hit a 404 and the one that
+        guessed did not.
+        """
+        ws = self._ws()
+        sha = json.loads(self._gh(ws, "api", f"repos/{self.REPO}/commits/main").stdout)["sha"]
+        self.assertEqual(
+            sha, json.loads(self._gh(ws, "api", f"repos/{self.REPO}/git/ref/heads/main")
+                            .stdout)["object"]["sha"])
+        for endpoint in (f"repos/{self.REPO}/commits/{sha}",
+                         f"repos/{self.REPO}/commits/{sha}/check-runs"):
+            with self.subTest(endpoint=endpoint):
+                by_ref = self._gh(ws, "api", endpoint.replace(sha, "main"))
+                by_sha = self._gh(ws, "api", endpoint)
+                self.assertEqual(by_sha.returncode, 0, by_sha.stderr)
+                self.assertEqual(json.loads(by_sha.stdout), json.loads(by_ref.stdout),
+                                 "the two spellings of one commit disagree")
+        self.assertEqual(set(self._classes(ws)), {"read"})
+
+    def test_run_watch_answers_and_agrees_with_the_run_list(self):
+        """`gh run watch <id>` is a plausible next command, and 404'd (N5)."""
+        ws = self._ws()
+        r = self._gh(ws, "run", "watch", self.RUN_ID)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self._classes(ws), ["read"])
+        listed = next(run for run in self._payload("run-list.json")
+                      if str(run["databaseId"]) == self.RUN_ID)
+        viewed = self._payload(f"run-view-{self.RUN_ID}.json")
+        self.assertIn(self.RUN_ID, r.stdout)
+        self.assertIn(listed["conclusion"], r.stdout)
+        self.assertIn(listed["workflowName"], r.stdout)
+        for job in viewed["jobs"]:
+            self.assertIn(job["name"], r.stdout)
+            for step in job["steps"]:
+                self.assertIn(step["name"], r.stdout)
+        # Frozen payloads may not carry a reader-relative clock.
+        for wall_clock in ("ago", "minutes remaining"):
+            self.assertNotIn(wall_clock, r.stdout.lower())
+
+    def test_no_payload_borrows_an_issue_number_from_another_repo(self):
+        """`(#118)` named nothing in this fixture (N1).
+
+        It was lifted from the loop's real template, where it points at a
+        cms-platform issue. Here it points at nothing, and an agent that
+        follows it up finds a PR by that number in the payloads — there
+        isn't one — or decides the seed is inconsistent.
+        """
+        import re
+        seed = self.STUCK_DIR / "seed"
+        ours = {"412", "418", "421"}
+        for path in sorted((seed / self.PAYLOAD_DIR).rglob("*")):
+            if not path.is_file():
+                continue
+            with self.subTest(payload=path.name):
+                text = path.read_text(encoding="utf-8", errors="replace")
+                referenced = set(re.findall(r"#(\d+)", text))
+                self.assertTrue(referenced <= ours,
+                                f"{sorted(referenced - ours)} names nothing here")
 
 if __name__ == "__main__":
     unittest.main()

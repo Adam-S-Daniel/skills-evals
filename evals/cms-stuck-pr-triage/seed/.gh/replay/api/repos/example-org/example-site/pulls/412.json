@@ -2,6 +2,7 @@
   "number": 412,
   "state": "open",
   "title": "Create Post “Spring release notes”",
+  "user": { "login": "cms-bot", "type": "User" },
   "created_at": "2026-08-30T09:14:22Z",
   "updated_at": "2026-08-30T09:41:07Z",
   "merged": false,

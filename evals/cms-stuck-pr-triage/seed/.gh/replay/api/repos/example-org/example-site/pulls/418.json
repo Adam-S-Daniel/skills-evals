@@ -2,6 +2,7 @@
   "number": 418,
   "state": "open",
   "title": "Update Post “Canary post”",
+  "user": { "login": "cms-bot", "type": "User" },
   "created_at": "2026-08-28T05:03:11Z",
   "updated_at": "2026-09-02T05:44:19Z",
   "merged": false,
