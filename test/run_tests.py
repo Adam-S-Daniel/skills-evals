@@ -5897,6 +5897,34 @@ class TestIssue67Review5(unittest.TestCase):
         # The real policy file must itself validate cleanly.
         roster.validate_policy(base)
 
+    def test_validate_policy_requires_a_well_formed_tiers_ladder(self):
+        """N6 (#129 review round 6): `validate_policy` checked numeric
+        thresholds only — a policy missing `tiers` (or with a malformed
+        one) sailed through and KeyErrored deep inside `tier_rungs`
+        instead of failing loudly, by name, at the same point every other
+        bad threshold does."""
+        base = dict(self._policy())
+        for bad, label in (
+            (None, "missing"), ([], "empty list"), ("sonnet", "not a list"),
+            ([""], "empty string rung"), ([[]], "empty peer list"),
+            ([["sonnet", 5]], "non-string peer"), ([123], "non-string rung"),
+        ):
+            policy = dict(base)
+            if label == "missing":
+                del policy["tiers"]
+            else:
+                policy["tiers"] = bad
+            with self.subTest(bad=label):
+                with self.assertRaises(ValueError) as ctx:
+                    roster.validate_policy(policy)
+                self.assertIn("tiers", str(ctx.exception))
+        # The real policy file's tiers must validate cleanly.
+        roster.validate_policy(base)
+        # Mutation check (manual): removing the `tiers` check from
+        # `validate_policy` turns every subTest above red — `tiers`
+        # sails through unvalidated and `tier_rungs` KeyErrors instead
+        # (for the "missing" case) or misbehaves silently.
+
 
 class TestIssue67Review6(unittest.TestCase):
     """Round 6 fixes for #67 (PR #129 review round 6), one test per fix.

@@ -99,10 +99,29 @@ _THRESHOLD_CHECKS = {
 }
 
 
+def _valid_tier_rung(rung) -> bool:
+    """A rung is a non-empty string, or a non-empty list of non-empty
+    strings (peers ranking identically — see `tier_rungs`)."""
+    if isinstance(rung, str):
+        return bool(rung)
+    if isinstance(rung, list):
+        return bool(rung) and all(isinstance(word, str) and word for word in rung)
+    return False
+
+
 def validate_policy(policy: dict) -> None:
     """Raise `ValueError`, naming the offending key, for a missing,
-    wrong-typed, `None`, or out-of-range threshold. Called from `main()`
-    before any of `evals/roster-policy.yml` reaches `compute_roster`."""
+    wrong-typed, `None`, or out-of-range threshold, or a malformed
+    `tiers` ladder. Called from `main()` before any of
+    `evals/roster-policy.yml` reaches `compute_roster`.
+
+    `tiers` is not a numeric threshold, so it lived outside
+    `_THRESHOLD_CHECKS` and a missing or malformed one sailed through
+    unvalidated (N6, #129 review round 6) — `tier_rungs` then KeyErrored
+    on a missing key, or silently misbehaved on a malformed rung, instead
+    of failing loudly and by name at the same point every other bad
+    threshold does.
+    """
     if not isinstance(policy, dict):
         raise ValueError("roster policy is not a mapping")
     for key, check in _THRESHOLD_CHECKS.items():
@@ -110,6 +129,11 @@ def validate_policy(policy: dict) -> None:
             raise ValueError(f"roster policy is missing `{key}`")
         if not check(policy[key]):
             raise ValueError(f"roster policy `{key}` is invalid: {policy[key]!r}")
+    if "tiers" not in policy:
+        raise ValueError("roster policy is missing `tiers`")
+    tiers = policy["tiers"]
+    if not (isinstance(tiers, list) and tiers and all(_valid_tier_rung(r) for r in tiers)):
+        raise ValueError(f"roster policy `tiers` is invalid: {tiers!r}")
 
 
 def read_json(path: str | Path | None) -> tuple[dict | None, str | None]:
