@@ -376,9 +376,18 @@ Five properties are load-bearing and should survive any rework:
    undo that, because the harness's own prior output had already carried
    it forward. A second, independent migration applies here too: the field
    used to publish as a bare list of id strings with no age at all; that
-   shape is still accepted on read for one run and rewritten with
-   `last_seen` = that run's date, since seeing the bare string is the only
-   evidence there is.
+   shape is still accepted on read — on every read, since this harness
+   always republishes the dict shape — and rewritten with `last_seen` =
+   that run's date, since seeing the bare string is the only evidence
+   there is.
+
+   **Ageing out is not a repair.** It ends a plant's future effect, but
+   it does not undo a retirement the plant already caused: a model whose
+   measured share the fabricated usage pushed under the exit bar is
+   retired, and by the time the plant expires that model is no longer a
+   previous arm, so the exit bar no longer applies to it and a dozen turns
+   a week never re-seats it. It returns only by clearing the ENTRY bar, by
+   being the newest in its tier, or by hand.
 
 Thresholds, and the reasoning behind the numbers, belong in an ADR —
 [#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the

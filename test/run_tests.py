@@ -7585,5 +7585,52 @@ class TestIssue67Review7(unittest.TestCase):
         # `(json.JSONDecodeError, OSError, UnicodeDecodeError)` lets the
         # RecursionError propagate out of `main()` — the test errors.
 
+    # --- N5-N8: four claims the code does not make good on ---------------
+
+    ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
+
+    def test_the_migration_docstring_does_not_promise_a_one_run_window(self):
+        """`_clean_catalogue_seen` said the bare-string shape is accepted
+        "for ONE migration run". Nothing enforces that and nothing needs
+        to — what is true is that the shape is accepted on read and always
+        republished in the `{id, last_seen}` shape."""
+        doc = roster._clean_catalogue_seen.__doc__
+        self.assertNotIn("for ONE migration run", doc)
+        self.assertIn("republish", doc.lower())
+
+    def test_the_ageing_docs_say_a_retirement_is_not_undone(self):
+        """A planted `catalogue_seen` entry ages out — but a retirement its
+        fabricated usage already caused is not undone: the retired model is
+        no longer a previous arm, so a trickle of real usage never
+        re-seats it. Property 5 has to say so; ageing out reads as a full
+        repair otherwise."""
+        design = (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+        marker = design.split("## Model roster")[1].split("## Out of scope")[0]
+        self.assertIn("does not undo a retirement", marker)
+        self.assertIn("does not undo a retirement",
+                      roster._update_catalogue_seen.__doc__)
+
+    def test_the_module_docstring_forbids_the_environment_and_stray_stdout(self):
+        """eval.yml's roster step exports the Models API bearer for
+        `refresh_models.py` and runs this module in the SAME shell, so the
+        credential IS in this process's environment; the step's stdout goes
+        to the job summary and the public log. Neither fact is visible from
+        inside this file, so the rule it implies has to be written down."""
+        doc = roster.__doc__
+        self.assertIn("never read the environment", doc)
+        self.assertIn("render_summary", doc)
+        self.assertNotIn("os.environ", self.ROSTER_SRC.read_text(encoding="utf-8")
+                         .split('"""', 2)[2],
+                         "roster.py reads the environment outside its docstring")
+
+    def test_the_dedup_comment_names_what_actually_bounds_the_work(self):
+        """The O(1) set dedup has no deterministic regression floor — its
+        only symptom is wall-clock time. What bounds the work is the
+        500-entry cap; the comment should say which of the two is load
+        bearing, so a later reader does not treat a timing test as the
+        missing floor."""
+        doc = roster._clean_previous_arms.__doc__
+        self.assertIn("constant-factor courtesy", doc)
+
 if __name__ == "__main__":
     unittest.main()

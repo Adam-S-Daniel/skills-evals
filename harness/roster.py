@@ -43,6 +43,16 @@ a judge that is also an arm, and it cannot do that by reading prose.
 
 NO MODEL ID APPEARS IN THIS FILE. Tier comes from the family word in the id
 itself, matched against the ladder in roster-policy.yml.
+
+This module must never read the environment, and must print nothing to
+stdout but `render_summary`'s Markdown (N7, #129 review round 7). Neither
+rule is visible from inside this file, which is why they are written here.
+eval.yml's roster step exports the Models API bearer for
+`scripts/refresh_models.py` and runs this module in the SAME shell, so that
+credential IS in this process's environment even though nothing here wants
+it; and that step's stdout goes to `$GITHUB_STEP_SUMMARY` and the public
+job log, so anything else printed there is published. "A pure function over
+files" is the property that makes both rules free to keep.
 """
 
 from __future__ import annotations
@@ -716,7 +726,13 @@ def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]
     Dedup is a SET membership test, not `entry not in ids` over the
     growing output list — the latter is O(n^2) and measured at 5.4s for
     40,000 entries, 37s for 100,000, publishing a 2.7MB roster with no
-    warning at all. The accepted list is also capped at
+    warning at all. It has no deterministic regression floor and is not
+    getting one: its only symptom is wall-clock time, and a timing
+    assertion is a flaky test, not a floor (N8, #129 review round 7). What
+    actually BOUNDS the work here is the cap below — the dedup is a
+    constant-factor courtesy on the way to it, keeping the scan linear
+    rather than quadratic while the input is still unbounded. The accepted
+    list is also capped at
     `PREVIOUS_ARMS_CAP`, and the warning names the dropped COUNT, never a
     dropped id.
 
@@ -791,8 +807,15 @@ CATALOGUE_SEEN_CAP = 500
 def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
     """The previous roster's `catalogue_seen` history, as `{"id",
     "last_seen"}` entries (S3, #129 review round 6). Accepts the bare
-    string shape this field used to publish, for ONE migration run: a
-    bare string carries no age information at all, so it is rewritten
+    string shape this field used to publish — on EVERY read, not for a
+    bounded number of runs (N5, #129 review round 7: the docstring used to
+    promise "one migration run", which nothing enforces and nothing needs
+    to). What is actually true is that the shape is accepted on read and
+    always REPUBLISHED in the `{id, last_seen}` shape, so after this
+    harness's own first run the bare string can only ever come back from a
+    producer this harness does not control — which is exactly the untrusted
+    input the rest of this function is about. A bare string carries no age
+    information at all, so it is rewritten
     with `last_seen` = today — seeing it in a previous roster is the
     only evidence there is, and treating it as "seen today" costs at
     most one extra `catalogue_seen_max_age_days` window before an id
@@ -868,6 +891,15 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     branch, per the module docstring) that the Models API never actually
     returns has no way to get its `last_seen` refreshed, so it ages out
     on its own; reverting the plant on the branch is not even necessary.
+
+    Ageing out ends a plant's future effect. It
+    does not undo a retirement the plant already caused (N6, #129 review
+    round 7): a model whose measured share the fabricated usage pushed
+    under the exit bar is retired, and by the time the plant expires that
+    model is no longer a previous arm at all — so the exit bar no longer
+    applies to it, and a trickle of real usage (a dozen turns a week, say)
+    never re-seats it. It comes back only by clearing the ENTRY bar, by
+    being the newest in its tier, or by hand.
 
     The cap NEVER evicts one of this run's own live `api_ids` — only
     accumulated history beyond them — so `catalogue_seen` stays a
