@@ -849,6 +849,15 @@ class _Relevance:
             group = self.fold(key)
             self._group_turns[group] = self._group_turns.get(group, 0) + turns
 
+    @property
+    def census_is_silent(self) -> bool:
+        """No census key carries in-window turns, so the census names
+        nothing and the caps have no trusted order to evict by — see
+        `_clean_previous_arms` and `_update_catalogue_seen`, which stop
+        evicting entirely rather than fall back to one the input writes
+        (A, #129 review round 10)."""
+        return not self._turns
+
     def fold(self, model_id: str) -> str:
         """The production alias map applied to `_base(model_id)`.
 
@@ -959,10 +968,13 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     and the bare aliases live dated snapshots claim, all bounded by those
     same two documents. Nothing here reads `previous.json`.
 
-    A CENSUS KEY WITH ZERO IN-WINDOW TURNS NAMES NOTHING, which is why the
-    caller passes turn TOTALS rather than keys: a census padded with 600
-    keys carrying only out-of-window usage used to hand 600 plants named
-    after them a relevance the census had no evidence for.
+    A CENSUS KEY WITH ZERO IN-WINDOW TURNS NAMES NOTHING (A, #129 review
+    round 10), which is why the caller passes turn TOTALS rather than
+    keys: a census padded with 600 keys carrying only out-of-window usage
+    used to hand 600 plants named after them a relevance the census had no
+    evidence for. When no key has in-window turns at all, the census names
+    nothing, `census_is_silent` is true, and the caps stop evicting rather
+    than fall back to an order the input writes.
 
     ROUTE (c1) OF ROUND 9 IS SUBSUMED, not dropped: a bare arm `X` beside a
     dated census key `X-YYYYMMDD` is in that key\'s fold group, and absent
@@ -983,6 +995,36 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
 #: N3 (#129 review round 6): the same cap `CATALOGUE_SEEN_CAP` applies to
 #: `catalogue_seen`, sized the same way — see that constant's own comment.
 PREVIOUS_ARMS_CAP = 500
+
+#: The ONE bound left when the census names nothing and neither cap
+#: therefore evicts (A, #129 review round 10). Both caps exist to bound an
+#: unbounded public input; with no trusted order to evict by, the honest
+#: answer is to carry everything, and past this to refuse to publish at
+#: all rather than fall back to an order the input writes.
+#:
+#: 10,000, chosen against the two costs `_clean_previous_arms` measured for
+#: F3 (#129 review round 8) and stopping short of BOTH: a roughly
+#: 16,000-entry `arms` list crosses GitHub's 1 MiB cap on a step summary,
+#: past which the roster summary is simply not rendered for the humans
+#: reading the run; a roughly 1,000,000-entry one crosses GitHub's 100 MB
+#: file limit, at which the whole results/badge commit step fails and takes
+#: the run's badge with it. A refusal here is a named one-line message and
+#: a nonzero exit; those two are a silently missing summary and a failed
+#: push that has nothing to do with the roster. 10,000 is also twenty times
+#: the 500 either cap allows when the census CAN order them, so no honest
+#: history reaches it. MEASURED at the ceiling, both lists full: a 1.61 MB
+#: `roster/latest.json` and a 0.60 MB step summary, in 0.17s — inside the
+#: 1 MiB summary cap and two orders of magnitude inside the 100 MB file
+#: limit, which is the property the number is picked for.
+UNCAPPED_CARRY_CEILING = 10_000
+
+
+class RosterRefusal(Exception):
+    """Refuse to publish, rather than publish a roster whose contents an
+    untrusted input decided. Raised by the caps, caught by `main()`, which
+    prints it and exits nonzero. The message names counts only — never an
+    id, never a value — like every other warning about an untrusted input.
+    """
 
 
 def _clean_previous_arms(previous, warn,
@@ -1024,6 +1066,12 @@ def _clean_previous_arms(previous, warn,
     replaces had the same alphabetical-head shape S2 fixes for
     `catalogue_seen`. `relevant` defaults to None, which reduces to the old
     spelling-only order for a caller with no context to give.
+
+    WHEN THE CENSUS NAMES NOTHING AT ALL — no key with in-window turns —
+    this cap does not evict (A, round 10): every tier is empty, so what
+    would decide is `last_seen` and the id, both of them written by
+    whoever writes `previous.json`. See `UNCAPPED_CARRY_CEILING` for the
+    one bound that is left.
 
     THE CAP GOVERNS ONLY WHAT IS CARRIED FORWARD (F3, #129 review round
     8) — hence the two lists. A real departed arm with ZERO census turns
@@ -1088,7 +1136,23 @@ def _clean_previous_arms(previous, warn,
         warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
              f"not an object with a well-formed model-id-shaped `id`")
     carried = ids
-    if len(ids) > PREVIOUS_ARMS_CAP:
+    if relevant is not None and relevant.census_is_silent:
+        # THE CENSUS NAMES NOTHING, so there is no trusted order to evict
+        # by and this cap does not evict (A, #129 review round 10). What
+        # is left is `last_seen` and the id, both of them written by
+        # whoever writes `previous.json` — which is how 500 plants dated
+        # today evicted an 8,000-turn arm in run 1 and made run 2, reading
+        # run 1's own output back, publish a permanent false 100.0%. The
+        # ceiling is the only bound left, and past it this refuses to
+        # publish rather than pick 500 of them by an order the planter
+        # chose.
+        if len(ids) > UNCAPPED_CARRY_CEILING:
+            raise RosterRefusal(
+                f"refusing to publish: the census names no in-window usage, so "
+                f"the previous roster's `arms` cannot be ordered by anything "
+                f"the input does not write, and it holds {len(ids)} entries — "
+                f"past the {UNCAPPED_CARRY_CEILING}-entry ceiling")
+    elif len(ids) > PREVIOUS_ARMS_CAP:
         dropped = len(ids) - PREVIOUS_ARMS_CAP
         order = (relevant.rank(ids) if relevant is not None
                  else _no_relevance_order(ids))
@@ -1265,7 +1329,9 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     below as well: every census key with in-window turns that any entry
     folds onto keeps at least one entry that folds onto it, and an entry
     that neither the live catalogue nor the census names, under any
-    spelling, never outranks one that either names.
+    spelling, never outranks one that either names. When the census names
+    nothing at all — no key with in-window turns — the cap does not evict;
+    see `UNCAPPED_CARRY_CEILING`.
     """
     today = _as_date(now)
     by_id = {e["id"]: e["last_seen"] for e in previous_entries}
@@ -1331,11 +1397,28 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     # `last_seen` is gone from the order entirely: the previous roster
     # writes it, it never decided anything the id did not already decide,
     # and a rung after a total order cannot fire.
-    order = (relevant.rank(historical) if relevant is not None
-             else _no_relevance_order(historical))
-    historical.sort(key=lambda i: order[i])
-    room = max(0, CATALOGUE_SEEN_CAP - len(live))
-    kept = live + historical[:room]
+    if relevant is not None and relevant.census_is_silent:
+        # THE CENSUS NAMES NOTHING this window — absent, empty, the wrong
+        # type, or padded with keys whose usage all falls outside the
+        # window — so every tier above is empty and the order that is left
+        # is one the input writes (A, #129 review round 10). Carry
+        # everything instead: an unbounded history is a size problem, and
+        # a permanent eviction decided by a planter is a correctness one.
+        # The ceiling is the only bound left, and past it this refuses to
+        # publish rather than keep 500 entries the planter chose.
+        if len(survivors) > UNCAPPED_CARRY_CEILING:
+            raise RosterRefusal(
+                f"refusing to publish: the census names no in-window usage, so "
+                f"`catalogue_seen` cannot be ordered by anything the input does "
+                f"not write, and it holds {len(survivors)} entries — past the "
+                f"{UNCAPPED_CARRY_CEILING}-entry ceiling")
+        kept = live + historical
+    else:
+        order = (relevant.rank(historical) if relevant is not None
+                 else _no_relevance_order(historical))
+        historical.sort(key=lambda i: order[i])
+        room = max(0, CATALOGUE_SEEN_CAP - len(live))
+        kept = live + historical[:room]
     dropped = len(survivors) - len(kept)
     if dropped:
         warn(f"catalogue_seen: dropped {dropped} entry/entries past the "
@@ -1578,6 +1661,17 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         api_ids, _clean_catalogue_seen(previous, warn, now), now, policy, warn,
         relevant=relevant)
     catalogue_seen = {e["id"] for e in catalogue_seen_entries}
+
+    # ONE count-only line for the state both caps just took (A, #129
+    # review round 10), emitted here because it is a fact about the run
+    # rather than about either list, and only when a cap would otherwise
+    # have fired — a five-entry history carried "uncapped" is not news.
+    if relevant.census_is_silent and (len(carried_arms) > PREVIOUS_ARMS_CAP
+                                      or len(catalogue_seen_entries)
+                                      > CATALOGUE_SEEN_CAP):
+        warn(f"census carries no in-window usage; catalogue_seen and arms "
+             f"carried uncapped "
+             f"({len(carried_arms) + len(catalogue_seen_entries)} entries)")
 
     # Built AFTER `available` is ordered and the two capped lists exist:
     # rule (3) of `_usage_alias_map` needs this run's own capability order
@@ -2016,16 +2110,24 @@ def main() -> int:
     if previous_problem:
         _stderr(previous_problem)
 
-    roster = compute_roster(
-        models_doc=models_doc,
-        census_doc=census_doc,
-        policy=policy,
-        previous=previous_doc,
-        now=datetime.now(timezone.utc),
-        admin_doc=load_json(args.admin_report),
-        census_problem=census_problem,
-        previous_problem=previous_problem,
-    )
+    try:
+        roster = compute_roster(
+            models_doc=models_doc,
+            census_doc=census_doc,
+            policy=policy,
+            previous=previous_doc,
+            now=datetime.now(timezone.utc),
+            admin_doc=load_json(args.admin_report),
+            census_problem=census_problem,
+            previous_problem=previous_problem,
+        )
+    except RosterRefusal as exc:
+        # Named, one line, counts only — the same treatment every other
+        # untrusted input gets, and a distinct rc from the "no arms"
+        # refusal below so eval.yml can tell the two apart. Nothing is
+        # written, so the last good roster stands.
+        print(str(exc), file=sys.stderr)
+        return 4
 
     if not roster["arms"]:
         # A roster with no arms is not a roster. It used to exit 0 and publish

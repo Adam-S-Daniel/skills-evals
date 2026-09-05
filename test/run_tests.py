@@ -8589,12 +8589,21 @@ class TestIssue67Review6(unittest.TestCase):
         """N3, merged into S3's rewrite: `catalogue_seen` accepts at most
         500 entries (relevance-ordered head kept), past which the warning
         names only the count — not one dropped id, which would be a value
-        from an untrusted branch reaching a log."""
+        from an untrusted branch reaching a log.
+
+        The canned census is here for A (#129 review round 10): a census
+        with no in-window usage at all names nothing, so there is no
+        trusted order to evict by and the cap deliberately stops evicting
+        (see `UNCAPPED_CARRY_CEILING`). The bound this test is about is the
+        one that applies when the census CAN order the entries; none of the
+        600 plants is named by that census, so the cap still has to fire on
+        them."""
         previous = {"arms": [], "catalogue_seen": sorted(
             f"claude-sonnet-{i}-9" for i in range(600))}
         warnings = []
         result = roster.compute_roster(
-            models_doc=TestIssue67._models_doc(), census_doc=None,
+            models_doc=TestIssue67._models_doc(),
+            census_doc=TestIssue67._census_doc(),
             policy=self._policy(), previous=previous, now=self.NOW,
             warn=warnings.append)
         self.assertLessEqual(len(result["catalogue_seen"]), 500)
@@ -8618,12 +8627,18 @@ class TestIssue67Review6(unittest.TestCase):
         F3 (round 8) moved what the cap bounds: it trims the set carried
         forward for attribution, and says so in a count-only warning,
         while `retired_since_last` reports every arm the previous roster
-        named — so 600 arms are 600 retirements and 100 dropped."""
+        named — so 600 arms are 600 retirements and 100 dropped.
+
+        The canned census is here for A (round 10), for the same reason as
+        the sibling test above: with no in-window usage the census names
+        nothing, and a cap with no trusted order to evict by does not
+        evict."""
         previous = {"arms": [{"id": f"claude-sonnet-{i}-9", "reason": "x"}
                              for i in range(600)]}
         warnings = []
         result = roster.compute_roster(
-            models_doc=TestIssue67._models_doc(), census_doc=None,
+            models_doc=TestIssue67._models_doc(),
+            census_doc=TestIssue67._census_doc(),
             policy=self._policy(), previous=previous, now=self.NOW,
             warn=warnings.append)
         retired_ids = {r["id"] for r in result["retired_since_last"]}
@@ -13981,12 +13996,20 @@ class TestIssue67Review7(unittest.TestCase):
         filler arms still trim the carried-forward set to 500, with a
         count-only warning naming the 100 dropped. F3 (round 8) is what
         moved `retired_since_last` out from under that bound — every arm
-        the previous roster named is reported."""
+        the previous roster named is reported.
+
+        "Nothing is relevant" means nothing in THIS list; the census still
+        has to name something, or there is no trusted order to evict by
+        and the cap does not evict at all (A, #129 review round 10 —
+        TestIssue67Review10 carries that row). The census here names one
+        live model none of the 600 fillers relates to."""
         previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
                              for i in range(600)]}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {self.W[0]: 800}})
         warnings = []
         result = self._compute(models=self._capped_history_models(),
-                               census=None, previous=previous,
+                               census=census, previous=previous,
                                warn=warnings.append)
         self.assertEqual(len(result["retired_since_last"]), 600)
         capped = [w for w in warnings if "cap" in w and "arms" in w]
@@ -14095,13 +14118,18 @@ class TestIssue67Review7(unittest.TestCase):
         BEFORE every api id and carry the same `last_seen` (today) — so
         neither the id order nor the age order would spare the real
         catalogue. `catalogue_seen` must stay a superset of `api_ids`:
-        `usage_share` and `_is_attributable` both rely on it."""
+        `usage_share` and `_is_attributable` both rely on it.
+
+        The canned census is here for A (round 10): a census naming no
+        in-window usage names nothing, and the cap then does not evict at
+        all, so the exemption this test is about would never be reached."""
         models = TestIssue67._models_doc()
         previous = {"arms": [], "catalogue_seen":
                     [f"a0000-{i:03d}" for i in range(600)]}
         warnings = []
         result = roster.compute_roster(
-            models_doc=models, census_doc=None, policy=self._policy(),
+            models_doc=models, census_doc=TestIssue67._census_doc(),
+            policy=self._policy(),
             previous=previous, now=self.NOW, warn=warnings.append)
         api_ids = {m["id"] for m in models["models"]}
         self.assertLessEqual(api_ids, self._seen_ids(result),
@@ -14935,8 +14963,17 @@ class TestIssue67Review8(unittest.TestCase):
         previous = {"arms": [{"id": i, "reason": "filler"}
                              for i in self.ARM_FILLERS] +
                             [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        # A census the cap can order by but the POLICY cannot rank: every
+        # turn is on an id carrying no family word from the ladder, so the
+        # census names something (the cap fires — A, #129 review round 10,
+        # or a census with no in-window usage would stop it evicting at
+        # all) while `ranked_total` stays 0, which is what leaves the arm
+        # with no evidence to retire it.
+        census = TestIssue67._census_doc(counts={
+            "some-routing-proxy": {self.W[0]: 5000}})
         with tempfile.TemporaryDirectory() as tmp:
-            rc, published, _, _ = self._run_main(tmp, models, previous=previous)
+            rc, published, _, _ = self._run_main(tmp, models, census=census,
+                                                 previous=previous)
         self.assertEqual(rc, 0)
         self.assertIn("claude-sonnet-4-6", self._arm_ids(published))
         self.assertIn("no evidence to retire it",
@@ -14955,11 +14992,17 @@ class TestIssue67Review8(unittest.TestCase):
         backward = {"arms": [], "catalogue_seen":
                     [{"id": i, "last_seen": same_day}
                      for i in reversed(plants)]}
+        # A census that names something, or the cap does not evict at all
+        # and there is no tie left to break (A, #129 review round 10). It
+        # names none of the plants, so the slice is still a tie.
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {self.W[0]: 800}})
         published = []
         for previous in (forward, forward, backward):
             with tempfile.TemporaryDirectory() as tmp:
                 rc, result, _, _ = self._run_main(
-                    tmp, self._two_model_catalogue(), previous=previous)
+                    tmp, self._two_model_catalogue(), census=census,
+                    previous=previous)
             self.assertEqual(rc, 0)
             published.append(sorted(self._seen_ids(result)))
         self.assertEqual(published[0], published[1],
@@ -16164,6 +16207,212 @@ class TestIssue67Review10(unittest.TestCase):
         # the 120-day-old entry, its 900,000 turns leave the denominator,
         # the census reads as unrankable and claude-sonnet-5's reason is
         # the newest-per-tier fallback with no share in it at all: red.
+
+    # --- A: a census that names nothing gives the caps no order to evict
+    # by, so they do not evict ---------------------------------------------
+    #
+    # PRE-EXISTING on 5d1f00a, and reachable without a hostile census at
+    # all: eval.yml materializes `census.json` with `git show ... || true`,
+    # which leaves an EMPTY file behind before the census job has ever run.
+    # With no census the tiers are all empty, and what was left to order by
+    # was `last_seen` and the id — both written by whoever writes
+    # `previous.json`. Measured through `main()` twice over: 500
+    # `0plant-NNNN` entries dated today evicted the 8,000-turn
+    # `claude-sonnet-4-9` in run 1, and run 2 — reading run 1\'s own
+    # published roster back, with a perfectly healthy census — published
+    # `claude-sonnet-5 carries 100.0%` for a true 9.09%. Eviction is
+    # PERMANENT, so that is not a transient wrong answer.
+
+    A_VICTIM = "claude-sonnet-4-9"
+    A_LIVE = "claude-sonnet-5"
+    A_PLANTS = [f"0plant-{i:04d}" for i in range(500)]
+
+    @classmethod
+    def _a_healthy_census(cls):
+        """8000 of the window\'s 8800 rankable turns are the victim\'s — a
+        true 9.09% for the live model, under the 10% entry bar, so it
+        rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.A_VICTIM: {cls.W[0]: 8000},
+            cls.A_LIVE: {cls.W[0]: 800}})
+
+    @classmethod
+    def _a_previous(cls):
+        return {"arms": [], "catalogue_seen":
+                [{"id": i, "last_seen": cls._days_ago(0)} for i in cls.A_PLANTS]
+                + [{"id": cls.A_VICTIM, "last_seen": cls._days_ago(4)}]}
+
+    #: The four shapes a census can take that name NOTHING for this window.
+    #: `None` is `--census` omitted altogether, which is also what an empty
+    #: file left by `git show ... || true` reduces to (`read_json` returns
+    #: no document for a zero-length file).
+    @classmethod
+    def _a_silent_censuses(cls):
+        padded = {i: {"2020-W01": 1000} for i in cls.A_PLANTS}
+        padded.update({f"0pad-{i:04d}": {"2020-W01": 1000} for i in range(100)})
+        return (
+            ("absent", None),
+            ("counts: {}", TestIssue67._census_doc(counts={})),
+            ("counts: [] (wrong type)",
+             {"generated_at": "2026-09-04T06:00:00Z", "weeks": cls.W,
+              "counts": []}),
+            ("600 keys, every turn out of window",
+             TestIssue67._census_doc(counts=padded)),
+        )
+
+    def _a_two_runs(self, census):
+        """Run 1 with `census`, run 2 from run 1\'s own roster with a
+        healthy one — how `catalogue_seen` actually round-trips."""
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, err = self._run_main(
+                first, self._two_model_catalogue(), census=census,
+                previous=self._a_previous())
+            self.assertEqual(rc, 0)
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._two_model_catalogue(),
+                census=self._a_healthy_census(), previous=run1)
+        self.assertEqual(rc, 0)
+        return run1, run2, err
+
+    def test_a_census_that_names_nothing_does_not_evict(self):
+        """The four rows, each through `main()` twice. The victim survives
+        run 1, and run 2 publishes the true share — which at 9.09% is under
+        the entry bar, so the live model rides in on newest-in-tier."""
+        for label, census in self._a_silent_censuses():
+            with self.subTest(census=label):
+                run1, run2, err = self._a_two_runs(census)
+                self.assertIn(self.A_VICTIM, self._seen_ids(run1),
+                              "nothing may be evicted by an order the "
+                              "previous roster itself writes")
+                reason = self._reason(run2, self.A_LIVE)
+                self.assertIn("newest model in the sonnet tier", reason)
+                self.assertNotIn("100.0%", reason)
+                warnings = [line for line in err.splitlines()
+                            if line.startswith("roster: ")]
+                uncapped = [w for w in warnings if "uncapped" in w]
+                self.assertEqual(len(uncapped), 1, warnings)
+                self.assertIn("503 entries", uncapped[0])
+                for w in warnings:
+                    for value in ("0plant-499", self.A_VICTIM, "0pad-099"):
+                        self.assertNotIn(value, w,
+                                         "the warning names counts only")
+        # Mutation check (manual): dropping the `census_is_silent` branch
+        # from either cap puts the 500 plants back ahead of the victim on
+        # the id order, run 1 evicts it, and run 2 publishes "carries
+        # 100.0%" — red on all four rows. (Ordering a tier by `last_seen`
+        # first cannot be measured HERE: with no census to name anything,
+        # the order is never reached at all. That mutation is red under
+        # `test_a_tier_is_ordered_by_census_turns_not_by_last_seen`, which
+        # is the same defence measured where it can fire.)
+
+    def test_the_control_still_caps_when_the_census_names_the_victim(self):
+        """The control: a census that DOES name the victim leaves the cap
+        firing exactly as before — 501 historical entries against a
+        498-slot cap, the victim kept on tier 1 and three plants dropped
+        with a count-only warning. Without this row the four above would
+        be satisfied by never capping anything at all."""
+        run1, run2, err = self._a_two_runs(self._a_healthy_census())
+        self.assertIn(self.A_VICTIM, self._seen_ids(run1))
+        self.assertEqual(len(run1["catalogue_seen"]), 500)
+        self.assertIn("newest model in the sonnet tier",
+                      self._reason(run2, self.A_LIVE))
+        warnings = [line for line in err.splitlines()
+                    if line.startswith("roster: ")]
+        self.assertEqual([w for w in warnings if "uncapped" in w], [])
+        self.assertTrue([w for w in warnings if "past the 500-entry cap" in w],
+                        warnings)
+
+    def test_a_census_naming_more_keys_than_the_cap_keeps_the_biggest(self):
+        """MEASURED, because the tiers alone do not say what happens when
+        tier 1 ALONE overflows the cap: a census naming 601 ids, every one
+        of them in history, with the victim carrying 8,000 turns against
+        600 keys carrying 3 each. All 601 are tier 1, so the turn order
+        inside the tier is the whole of the answer — the victim heads it,
+        497 of the 600 low-turn keys are kept, and 103 are dropped."""
+        others = [f"claude-opus-3-{i:03d}" for i in range(600)]
+        counts = {i: {self.W[0]: 3} for i in others}
+        counts[self.A_VICTIM] = {self.W[0]: 8000}
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(10)}
+                     for i in others + [self.A_VICTIM]]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=self._two_model_catalogue(),
+            census_doc=TestIssue67._census_doc(counts=counts),
+            policy=self._policy(), previous=previous, now=self.NOW,
+            warn=warnings.append)
+        seen = self._seen_ids(result)
+        self.assertIn(self.A_VICTIM, seen,
+                      "the entry carrying 8,000 of the window's 9,800 turns "
+                      "heads its own tier")
+        self.assertEqual(len(result["catalogue_seen"]), 500)
+        self.assertEqual(len([i for i in others if i in seen]), 497)
+        self.assertTrue([w for w in warnings if "dropped 103" in w], warnings)
+
+    # The one bound left once the caps stop evicting. Past it the run
+    # refuses to publish, by name and with a count, rather than keep 500
+    # entries a planter chose — see `UNCAPPED_CARRY_CEILING` for why the
+    # number is 10,000 and what it was measured against.
+
+    def test_past_the_ceiling_the_run_refuses_to_publish(self):
+        for label, previous in (
+                ("catalogue_seen", {"arms": [], "catalogue_seen": [
+                    {"id": f"0plant-{i:06d}", "last_seen": self._days_ago(1)}
+                    for i in range(roster.UNCAPPED_CARRY_CEILING + 1)]}),
+                ("arms", {"arms": [{"id": f"0arm-{i:06d}", "reason": "filler"}
+                                   for i in
+                                   range(roster.UNCAPPED_CARRY_CEILING + 1)],
+                          "catalogue_seen": []})):
+            with self.subTest(list=label):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, _, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 4, err)
+                self.assertIsNone(published,
+                                  "nothing is written, so the last good "
+                                  "roster stands")
+                self.assertIn("refusing to publish", err)
+                self.assertIn(str(roster.UNCAPPED_CARRY_CEILING), err)
+                self.assertNotIn("Traceback", err)
+                self.assertNotIn("0plant-000500", err)
+                self.assertNotIn("0arm-000500", err)
+
+    def test_just_under_the_ceiling_publishes_with_one_count_only_warning(self):
+        """The other side of the same line, and the measurement the
+        ceiling is picked from: both lists carried whole, one count-only
+        warning, and a published roster well inside GitHub\'s own limits."""
+        size = roster.UNCAPPED_CARRY_CEILING - 2
+        previous = {"arms": [{"id": f"0arm-{i:06d}", "reason": "filler"}
+                             for i in range(size)],
+                    "catalogue_seen": [
+                        {"id": f"0plant-{i:06d}", "last_seen": self._days_ago(1)}
+                        for i in range(size)]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, stdout, err = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            written = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(len(published["catalogue_seen"]), size + 2)
+        self.assertEqual(len(published["retired_since_last"]), size)
+        uncapped = [line for line in err.splitlines() if "uncapped" in line]
+        self.assertEqual(len(uncapped), 1, err)
+        # The count is what was CARRIED: `size` arms plus `size` history
+        # entries plus this run's own two live catalogue ids, which the
+        # cap never touches.
+        self.assertIn(f"({2 * size + 2} entries)", uncapped[0])
+        # GitHub refuses a push carrying a file over 100 MB, and truncates
+        # a step summary over 1 MiB. Neither is reachable below the
+        # ceiling, which is the whole reason for the number.
+        self.assertLess(len(written), 100 * 1024 * 1024)
+        self.assertLess(len(stdout), 1024 * 1024)
+        # Mutation check (manual): raising the ceiling past a million lets
+        # the same input publish a roster GitHub will refuse to push, and
+        # `test_past_the_ceiling_the_run_refuses_to_publish` goes red.
 
 
 if __name__ == "__main__":
