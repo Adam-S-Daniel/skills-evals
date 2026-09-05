@@ -11083,11 +11083,21 @@ class TestIssue67Review8(unittest.TestCase):
     #
     # A REPEAT of round 7's own should-fix ("four of S3's defences have no
     # regression floor"), on this round's defences. Six mutations left the
-    # suite at 411 green while changing behaviour; five are pinned below,
-    # and the sixth — the cap sort's `or now`, replaced by a floor under
-    # A2 — is pinned by
-    # `test_five_hundred_year_one_plants_do_not_evict_real_history`.
-    # Each test names its mutation, is red under it, and green otherwise.
+    # suite at 411 green while changing behaviour; five are pinned below.
+    # Each of those names its mutation, is red under it, and green
+    # otherwise.
+    #
+    # The sixth — the cap sort's `or now`, replaced by `_LAST_SEEN_FLOOR`
+    # under A2 — is an EQUIVALENT MUTANT: unreachable because
+    # `_clean_catalogue_seen` re-renders every date through `_as_date`
+    # before the cap ever runs, so nothing arriving there fails to parse.
+    # Restoring `or now` leaves the whole suite green,
+    # `test_five_hundred_year_one_plants_do_not_evict_real_history`
+    # included (measured, #129 review round 9 — round 8's comment here
+    # claimed that test pinned it, and it does not). Nothing pins it and
+    # nothing can; roster.py's own comment over the sort says so
+    # correctly, and calls the branch a floor rather than a live one. Do
+    # not invent a test for an unreachable branch.
 
     ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
     A3_DEPARTED = "claude-sonnet-4-9"
