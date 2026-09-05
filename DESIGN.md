@@ -197,6 +197,20 @@ Not every skill takes the same eval, and some take none. Classify first:
   prefer pairwise preference against committed reference samples over
   absolute rubric scores. Expect noise; run more trials. Candidates:
   `adam-writing-style`, `finding-unknowns`.
+
+  A Class C fixture says so in its `judge:` block: `mode: pairwise` plus
+  `references:` ({name, path} entries, relative to the fixture dir — a path
+  that climbs out of it is refused, because a yardstick from elsewhere on
+  the machine is neither reviewable nor reproducible). The judge is shown
+  the writing under test beside those references, blind: every draft is
+  normalised to the same line shape (a hard-wrapped reference beside an
+  unwrapped reply is separable without reading a word), fenced with a
+  per-call nonce so nothing inside a draft can pose as the prompt, and
+  shuffled systematically per trial so no draft keeps a slot. The score IS
+  the rank, 1 = best; `weights:` is an absolute-mode idea and is rejected
+  here rather than half-honoured. `timeout_s:` (default 120) bounds the
+  call, and a timeout is recorded as a judge error, never as a score.
+  `harness/scorers/judge.py` documents the returned shape.
 - **D. Wrong instrument entirely** — record the decision in the
   non-coverage table below instead of leaving a silent gap.
 

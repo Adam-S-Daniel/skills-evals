@@ -2094,7 +2094,10 @@ class TestIssue63Review(unittest.TestCase):
 
     def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
         registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        fixture_dirs = sorted((REPO_ROOT / "evals").glob("*/fixture.yaml"))
+        # `**` rather than `*`: #81's fixtures live one level deeper
+        # (evals/adam-writing-style/<fixture>/), and a glob that stopped at
+        # the first level checked every fixture except the newest ones.
+        fixture_dirs = sorted((REPO_ROOT / "evals").glob("**/fixture.yaml"))
         checked = 0
         for fixture_path in fixture_dirs:
             fixture = run_eval.load_fixture(fixture_path.parent)
@@ -2573,8 +2576,9 @@ class TestIssue81(unittest.TestCase):
 
     - The three fixtures are separate, individually runnable eval dirs
       (`evals/adam-writing-style/<fixture>/`), because the multi-fixture
-      runner (#66) has not landed. Nothing here globs `evals/*/fixture.yaml`
-      — that glob is one level shallower than these fixtures live.
+      runner (#66) has not landed. They sit one level deeper than the
+      fixtures that predate them, so the repo-wide checks glob
+      `evals/**/fixture.yaml`; a `*` there silently skipped these three.
     - Every objective check is `transcript_matches`. The writing IS the
       transcript; there is no workspace transform to inspect, and a regex
       deciding code structure is exactly what the harness rules forbid.
@@ -2713,8 +2717,16 @@ class TestIssue81(unittest.TestCase):
         ("I think it might possibly be the case that...") as an example of
         stacked hedging rather than as a banned phrase. Four words separates
         the two cleanly ("deep expertise in" is the longest real term).
+
+        A heading that is not there returns nothing rather than raising:
+        the callers already print "the section's shape changed" and name
+        what they parsed, and an IndexError from this line beat that
+        diagnostic to the punch while saying nothing.
         """
-        body = skill_md.split(f"### {heading}", 1)[1].split("\n###", 1)[0]
+        parts = skill_md.split(f"### {heading}", 1)
+        if len(parts) < 2:
+            return []
+        body = parts[1].split("\n###", 1)[0]
         flat = " ".join(body.split())
         return [t for t in re.findall(r'"([^"]+)"', flat) if len(t.split()) <= 4]
 
@@ -2757,6 +2769,37 @@ class TestIssue81(unittest.TestCase):
                         any(re.search(p, term) for p in patterns),
                         f"{name} bans none of {patterns!r} for the skill's "
                         f"avoid-list term {term!r}")
+
+    def test_quoted_terms_survives_a_missing_heading(self):
+        # The diagnostic path: a SKILL.md whose sections were renamed must
+        # reach the callers' "the section's shape changed" message.
+        self.assertEqual(
+            self._quoted_terms("# A SKILL.md\n\n### Some other heading\n\n"
+                               '- "leverage"\n', "Avoid (almost always)"), [])
+
+    def test_every_avoid_pattern_still_bans_a_term_the_skill_lists(self):
+        # The other direction of the drift check. A term REMOVED from the
+        # skill leaves its regex behind in the fixtures, still failing
+        # drafts over a word the skill no longer minds — which a floor on
+        # the term count cannot see. The two sets are compared both ways.
+        skill_md = self._skill_md()
+        if skill_md is None:
+            reason = ("no adam-writing-style SKILL.md in the resolved "
+                      "agentskills checkout — skipping the avoid-list "
+                      "leftover check")
+            print(reason)
+            self.skipTest(reason)
+        terms = self._quoted_terms(skill_md, "Avoid (almost always)")
+        self.assertGreaterEqual(len(terms), 10,
+                                f"parsed only {terms!r} out of the avoid list "
+                                "— the section's shape changed")
+        for name in self.FIXTURES:
+            for pattern in self._avoid_patterns(name):
+                with self.subTest(fixture=name, pattern=pattern):
+                    self.assertTrue(
+                        any(re.search(pattern, term) for term in terms),
+                        f"{name}'s /{pattern}/ bans nothing on the skill's "
+                        f"avoid list {terms!r}")
 
     def test_no_use_freely_term_is_banned_by_a_fixture(self):
         # The mirror image: an over-broad avoid regex that swallowed one of

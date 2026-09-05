@@ -42,6 +42,12 @@ evals/
   propagation/             # skill-delivery probes (issue #17)
     fixture.yaml           # arms, bundle, collision skill, staleness budget
     ROUTINE.md             # the Tier-3 scheduled session, and why it is session-bound
+  adam-writing-style/      # Class C pilot (issue #81): three writing fixtures,
+    README.md              # one dir each (recruiter-reply/, proposal-bio/,
+    <fixture>/             # self-appraisal-opening/), every one a runnable
+      fixture.yaml         # eval dir of its own — judge.mode: pairwise
+      seed/                # the material the writing is drawn from
+      references/          # the committed drafts the judge ranks against
 scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
@@ -115,6 +121,33 @@ mix of the legacy `plugins/<skill>/skills/<skill>/` shape and the bundled
 and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
 code path. It then copies that resolved directory (the one containing
 `SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
+
+### The `judge:` block
+
+A fixture's `judge:` block picks the instrument and pins its model:
+
+| Key | Meaning |
+| --- | --- |
+| `model` | the judge's model, pinned strong (DESIGN.md's harness-wide rule) |
+| `timeout_s` | seconds before the judge call is abandoned (default 120); a timeout is recorded as a judge error, never as a score |
+| `weights` | absolute mode only: dimension name -> weight, used to recompute `overall` as a weighted mean. Rejected in pairwise mode rather than half-honoured |
+| `mode` | `absolute` (default) or `pairwise` |
+| `references` | pairwise only: `{name, path}` entries, paths relative to the fixture dir and refused if they climb out of it |
+
+`mode: absolute` is every fixture before #81: the judge sees the rubric, the
+transcript and the workspace diff, and returns per-dimension scores.
+`mode: pairwise` (Class C, DESIGN.md) shows the judge the writing under test
+together with the fixture's committed reference samples — blind, fenced, and
+shuffled per trial — and the score IS the rank, 1 = best. An unknown mode is
+an error rather than a silent fall back to absolute.
+
+> [!NOTE]
+> `run_eval.py` does not read `judge.mode` yet: it still calls
+> `judge.score()` with the arguments it knew before #81, so a pairwise
+> fixture run through the runner today is scored by the absolute judge.
+> `harness/scorers/judge.py`'s `score_fixture()` is the seam that fixes it;
+> moving `_run_arm` onto it (plus a trial loop and a rank column in
+> `_render_report`) is the work that remains.
 
 ## Guidance-bridge canary
 
