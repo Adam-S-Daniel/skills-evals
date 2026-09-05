@@ -17,8 +17,10 @@
 # count words, and objective.py is not this fixture's to extend. The judge's
 # register dimension carries it.
 #
-# Every check below reads only the agent's non-quoted lines: material the
-# agent quoted back is not the agent's writing.
+# Every check below reads the agent's final reply with the material it
+# quoted removed (objective.strip_quoted): a `>` blockquote at any legal
+# indent and anything inside a fenced block is not the agent's writing.
+# A reply quoted in its entirety is scored whole.
 #
 # Known failure mode — commentary. What the agent wraps around the
 # paragraph is scored as if it were the paragraph: "I kept it free of
@@ -53,17 +55,17 @@ objective_checks:
     description: None of the skill's avoid-list buzzwords survived into the bio
     type: transcript_matches
     must_not_match:
-      - '(?im)^(?!>).*\bleverag(?:e|es|ed|ing)\b'
-      - '(?im)^(?!>).*\bsynerg(?:y|ies|istic)\b'
-      - '(?im)^(?!>).*\brobust(?:ly|ness)?\b'
-      - '(?im)^(?!>).*\bbest[- ]in[- ]class\b'
-      - '(?im)^(?!>).*\bworld[- ]class\b'
-      - '(?im)^(?!>).*\bdeep[- ]dives?\b'
-      - '(?im)^(?!>).*\bdeep expertise in\b'
-      - '(?im)^(?!>).*\bthought[- ]leader(?:ship)?s?\b'
-      - '(?im)^(?!>).*\bcircl(?:e|es|ed|ing) back\b'
-      - '(?im)^(?!>).*\btouch(?:es|ed|ing)? base\b'
-      - '(?im)^(?!>).*\bping me\b'
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[- ]in[- ]class\b'
+      - '(?i)\bworld[- ]class\b'
+      - '(?i)\bdeep[- ]dives?\b'
+      - '(?i)\bdeep expertise in\b'
+      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
+      - '(?i)\btouch(?:es|ed|ing)? base\b'
+      - '(?i)\bping me\b'
 
   # Core move 8: third person. Both halves are kept — a bio with no
   # third-person subject at all is as wrong as one that slips into "I", and
@@ -84,15 +86,16 @@ objective_checks:
     description: The bio is written in the third person, with no first-person "I"
     type: transcript_matches
     must_match:
-      - '(?m)^(?!>).*\b(?:[Hh]e|[Hh]is|[Tt]hey|[Tt]heir|Adam|Daniel)\b'
+      - '\b(?:[Hh]e|[Hh]is|[Tt]hey|[Tt]heir|Adam|Daniel)\b'
     must_not_match:
-      - '(?m)^(?!>).*\bI\b'
+      - '\bI\b'
 
   # Core move 3, in the bio register: concrete employer-and-dates structure
   # and the named standard, not "extensive accessibility experience". Both
-  # facts are in background.md; neither is asked for. Non-quoted lines
-  # only: a quoted "no room for the 2019-2024 dates" note underneath a bio
-  # that omits them used to satisfy this check on the agent's behalf.
+  # facts are in background.md; neither is asked for. Quoted material is
+  # stripped first: a quoted "no room for the 2019-2024 dates" note
+  # underneath a bio that omits them used to satisfy this check on the
+  # agent's behalf.
   #
   # Both patterns accept the phrasings a sixty-word budget actually
   # produces: "2019-24" as well as "2019-2024", and "Sections 508 and 504"
@@ -101,10 +104,10 @@ objective_checks:
     description: The bio carries the employment dates and the named accessibility standard
     type: transcript_matches
     must_match:
-      - '(?m)^(?!>).*\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
+      - '\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
       # Case-sensitive on purpose: the skill's spelling rules say "Section
       # 508", capital S, never abbreviated.
-      - '(?m)^(?!>).*\bSections? 508\b'
+      - '\bSections? 508\b'
 
 judge_rubric: >
   Rank the drafts best to worst as a key-personnel paragraph for a public

@@ -68,11 +68,21 @@ thing under test.
 Everything else — the sixty-word budget, whether the em dashes land at the
 right joints, whether the warmth is real — is the judge's.
 
-Every pattern reads only the agent's **non-quoted** lines (`(?m)^(?!>)`),
-and the greeting and the hedge only its first non-quoted paragraph: a reply
-that quotes the cold email back was otherwise scored on the recruiter's
-words — her "I think your background lines up well" satisfied the hedge
-check, and her signature satisfied the greeting.
+Every check reads the agent's reply with the material it **quoted**
+removed, and the greeting and the hedge only its opening: a reply that
+quotes the cold email back was otherwise scored on the recruiter's words —
+her "I think your background lines up well" satisfied the hedge check, and
+her signature satisfied the greeting.
+
+The stripping is one pre-pass (`objective.strip_quoted`), not an anchor per
+pattern. The anchor it replaced (`(?m)^(?!>)`, written out 47 times) only
+ever saw a line whose *first* character is `>`, so a fenced code block and
+a blockquote indented one to three spaces — legal Markdown, and what a
+model actually writes — walked past all 47. A reply quoted in its
+**entirety** is scored whole: otherwise a draft could switch the avoid-list
+ban off by wrapping itself in `> `, and every calibration example in
+SKILL.md is a `>` blockquote, so the with-skill arm is the one most likely
+to mirror the shape.
 
 The known failure mode in the other direction stays, and each fixture's
 header records it: commentary the agent wraps *around* the writing is

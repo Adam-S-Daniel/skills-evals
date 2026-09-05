@@ -407,6 +407,54 @@ def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
     return "\n".join(chunks), names
 
 
+# Quoted material is not the agent's writing. A reply that pastes the seed
+# notes back — as a Markdown blockquote, or inside a fenced code block —
+# is not being specific, greeting anyone or hedging when the thing a check
+# looks for appears only in what it quoted.
+#
+# This used to be 47 hand-written `^(?!>)` anchors, one per pattern, and
+# each of them only ever saw a line whose FIRST character is `>`: a fence,
+# or a blockquote indented one to three spaces (still a blockquote to every
+# Markdown renderer), walked straight past all 47.
+_QUOTE_LINE_RE = re.compile(r"^ {0,3}>")
+_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+
+
+def strip_quoted(text: str) -> str:
+    """`text` with block quotes and fenced blocks removed.
+
+    Blockquote lines (`>` after up to three spaces of indent — CommonMark's
+    limit) and everything from an opening ``` / ~~~ fence through its
+    closing fence are dropped. An unclosed fence runs to the end, as it does
+    in CommonMark.
+
+    A reply that is quoted in its ENTIRETY gets the whole text back
+    unchanged. That is the point of the fallback rather than an accident of
+    it: with the residue empty, a `must_not_match` ban would pass on a reply
+    that had merely wrapped itself in `> `, which makes the ban switchable
+    off by the thing being scored. Every calibration example in
+    `adam-writing-style`'s SKILL.md is a `>` blockquote, so the arm with the
+    skill installed is the one most likely to mirror the shape.
+    """
+    kept: list[str] = []
+    fence: str | None = None
+    for line in (text or "").splitlines():
+        if fence is None:
+            opened = _FENCE_RE.match(line)
+            if opened:
+                fence = opened.group(1)
+                continue
+            if _QUOTE_LINE_RE.match(line):
+                continue
+            kept.append(line)
+            continue
+        bare = line.strip()
+        if bare and set(bare) == {fence[0]} and len(bare) >= len(fence):
+            fence = None
+    residue = "\n".join(kept)
+    return residue if residue.strip() else text
+
+
 def _text_matches(text: str, must_match: list[str], must_not_match: list[str],
                   subject: str) -> tuple[bool, str]:
     """Shared body of file_matches / transcript_matches.
@@ -446,10 +494,17 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     objective-only mode there is no transcript and the check fails saying so
     — a missing transcript is not a passing one. `patterns` is accepted for
     signature parity with every other check and ignored.
+
+    Quoted material is stripped first (see `strip_quoted`): what the agent
+    quoted back is the seed's writing, not the agent's. A consequence worth
+    knowing before writing a new `transcript_matches` check: a fact the
+    agent states ONLY inside a fenced code block is not seen, so a fixture
+    that wants an exact command line back must ask for it in prose too.
     """
     if transcript is None:
         return (False, "no transcript (objective-only run, or the agent produced none)")
-    return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
+    return _text_matches(strip_quoted(transcript), must_match or [],
+                         must_not_match or [], "transcript")
 
 
 CHECKS = {

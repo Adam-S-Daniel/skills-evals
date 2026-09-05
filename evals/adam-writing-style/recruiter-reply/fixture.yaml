@@ -20,7 +20,7 @@
 # agent's workspace, so a reference in there would hand the agent the answer.
 #
 # Known failure mode — commentary. Every check reads the agent's whole
-# final reply minus its quoted lines, so anything the agent wraps around
+# final reply minus the material it quoted, so anything the agent wraps around
 # the writing is scored as if it were the writing: "I kept it free of
 # 'leverage'" fails no-avoid-list-words, and an unquoted trailing note that
 # supplies a fact the reply itself omitted passes cites-both-facts. The
@@ -59,35 +59,40 @@ objective_checks:
   # agentskills checkout at TEST time and fails if a term there is not
   # covered here, so the two cannot drift apart.
   #
-  # Every pattern only looks at non-quoted lines, here and below: a reply
+  # Nothing below carries a quote anchor of its own any more. Quoted
+  # material — a `>` blockquote at any legal indent, or a fenced block — is
+  # stripped once, for every pattern, by objective.strip_quoted: a reply
   # that quotes the recruiter's email back is not using her words as its
-  # own, and the seed material is not the agent's writing.
+  # own, and the seed material is not the agent's writing. A reply that is
+  # quoted in its ENTIRETY is scored whole, so a ban cannot be switched off
+  # by wrapping the thing being scored in `> `.
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the reply
     type: transcript_matches
     must_not_match:
-      - '(?im)^(?!>).*\bleverag(?:e|es|ed|ing)\b'
-      - '(?im)^(?!>).*\bsynerg(?:y|ies|istic)\b'
-      - '(?im)^(?!>).*\brobust(?:ly|ness)?\b'
-      - '(?im)^(?!>).*\bbest[- ]in[- ]class\b'
-      - '(?im)^(?!>).*\bworld[- ]class\b'
-      - '(?im)^(?!>).*\bdeep[- ]dives?\b'
-      - '(?im)^(?!>).*\bdeep expertise in\b'
-      - '(?im)^(?!>).*\bthought[- ]leader(?:ship)?s?\b'
-      - '(?im)^(?!>).*\bcircl(?:e|es|ed|ing) back\b'
-      - '(?im)^(?!>).*\btouch(?:es|ed|ing)? base\b'
-      - '(?im)^(?!>).*\bping me\b'
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[- ]in[- ]class\b'
+      - '(?i)\bworld[- ]class\b'
+      - '(?i)\bdeep[- ]dives?\b'
+      - '(?i)\bdeep expertise in\b'
+      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
+      - '(?i)\btouch(?:es|ed|ing)? base\b'
+      - '(?i)\bping me\b'
 
   # Core move 1: greet warmly, by name — in the greeting, not anywhere in
-  # the reply. Anchored to the first non-quoted paragraph: a reply that
-  # greets nobody and quotes her signature underneath used to pass on the
-  # name in that footer. Leading quoted lines are skipped, then the name
-  # must appear within the first three non-quoted lines.
+  # the reply. Anchored to the opening: a reply that greets nobody and
+  # quotes her signature underneath used to pass on the name in that
+  # footer, and the quoted footer is not part of the text this pattern
+  # sees. Leading blank lines are skipped, then the name must appear
+  # within the first three lines of the reply's own text.
   - id: greets-the-recruiter-by-name
     description: The reply greets the recruiter by name in its opening
     type: transcript_matches
     must_match:
-      - '\A(?:>[^\n]*\n|[ \t]*\n)*(?:(?!>)[^\n]*\n){0,2}(?!>)[^\n]*\bDana\b'
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,2}[^\n]*\bDana\b'
 
   # Core move 2: open with a hedge or apology. Any of the skill's shapes
   # counts, but it has to be the AGENT'S and it has to be near the top. The
@@ -109,7 +114,7 @@ objective_checks:
     description: The reply opens with one of the skill's hedges rather than an assertion
     type: transcript_matches
     must_match:
-      - '\A(?:>[^\n]*\n|[ \t]*\n)*(?:(?!>)[^\n]*\n){0,5}(?!>)(?:[^\n]*?[.!?—][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,5}(?:[^\n]*?[.!?—][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
 
   # Core move 3: be specific — paste the ID verbatim, name the date. Both
   # facts are in the seed material; neither is asked for. Anchored to
@@ -120,8 +125,8 @@ objective_checks:
     description: The reply quotes the requisition number and the contract end date
     type: transcript_matches
     must_match:
-      - '(?m)^(?!>).*\bREQ-4417\b'
-      - '(?im)^(?!>).*\bMarch 2027\b'
+      - '\bREQ-4417\b'
+      - '(?i)\bMarch 2027\b'
 
 # Pairwise: the judge ranks this reply against the two committed references
 # without being told which is which, and the rank is the score. The

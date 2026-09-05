@@ -10,8 +10,10 @@
 # The quarter, the repository name and every number in notes.md are
 # invented; no real employer, coworker or system appears.
 #
-# Every check below reads only the agent's non-quoted lines: material the
-# agent quoted back is not the agent's writing.
+# Every check below reads the agent's final reply with the material it
+# quoted removed (objective.strip_quoted): a `>` blockquote at any legal
+# indent and anything inside a fenced block is not the agent's writing.
+# A reply quoted in its entirety is scored whole.
 #
 # Known failure mode — commentary. What the agent wraps around the
 # paragraph is scored as if it were the paragraph, so "I kept it free of
@@ -46,17 +48,17 @@ objective_checks:
     description: None of the skill's avoid-list buzzwords survived into the paragraph
     type: transcript_matches
     must_not_match:
-      - '(?im)^(?!>).*\bleverag(?:e|es|ed|ing)\b'
-      - '(?im)^(?!>).*\bsynerg(?:y|ies|istic)\b'
-      - '(?im)^(?!>).*\brobust(?:ly|ness)?\b'
-      - '(?im)^(?!>).*\bbest[- ]in[- ]class\b'
-      - '(?im)^(?!>).*\bworld[- ]class\b'
-      - '(?im)^(?!>).*\bdeep[- ]dives?\b'
-      - '(?im)^(?!>).*\bdeep expertise in\b'
-      - '(?im)^(?!>).*\bthought[- ]leader(?:ship)?s?\b'
-      - '(?im)^(?!>).*\bcircl(?:e|es|ed|ing) back\b'
-      - '(?im)^(?!>).*\btouch(?:es|ed|ing)? base\b'
-      - '(?im)^(?!>).*\bping me\b'
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[- ]in[- ]class\b'
+      - '(?i)\bworld[- ]class\b'
+      - '(?i)\bdeep[- ]dives?\b'
+      - '(?i)\bdeep expertise in\b'
+      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
+      - '(?i)\btouch(?:es|ed|ing)? base\b'
+      - '(?i)\bping me\b'
 
   # Core move 9: first person. The must_not_match pattern catches the
   # specific failure a third-person draft shows — narrating the writer's own
@@ -74,14 +76,14 @@ objective_checks:
     description: The paragraph is written in the first person, not narrated about Adam
     type: transcript_matches
     must_match:
-      - '(?m)^(?!>).*\bI\b'
+      - '\bI\b'
     must_not_match:
-      - '(?im)^(?!>).*\bAdam(?: Daniel)?\s+(?:led|built|delivered|stood|drove|owned|shipped|spent|took|closed|cut|reduced|ran)\b'
+      - '(?i)\bAdam(?: Daniel)?\s+(?:led|built|delivered|stood|drove|owned|shipped|spent|took|closed|cut|reduced|ran)\b'
 
   # Core move 3 again, in the eval register: the named thing and the number,
   # not "improved our deployment tooling". Both facts are in notes.md;
-  # neither is asked for. Non-quoted lines only — a note the agent quoted
-  # back is not the agent being specific.
+  # neither is asked for. Quoted material is stripped first — a note the
+  # agent quoted back is not the agent being specific.
   #
   # The number pattern used to require "26" adjacent to "min", which misses
   # the natural phrasings: "from 26 to 9 minutes", "26-minute", "26 min".
@@ -90,8 +92,8 @@ objective_checks:
     description: The paragraph names the repository and the pipeline number from the notes
     type: transcript_matches
     must_match:
-      - '(?m)^(?!>).*\bdeploy-scaffold\b'
-      - '(?m)^(?!>).*\b26\b(?=[^.\n]*\bmin)'
+      - '\bdeploy-scaffold\b'
+      - '\b26\b(?=[^.\n]*\bmin)'
 
 judge_rubric: >
   Rank the drafts best to worst as the narrative opening of a performance
