@@ -912,6 +912,18 @@ def _clean_previous_arms(previous, warn,
     the next run's `previous.json` is the small roster this harness
     itself publishes, not the planted one.
 
+    WHERE THOSE TWO NUMBERS LAND, which the sizes alone do not say (N2,
+    #129 review round 9). The Markdown goes to `$GITHUB_STEP_SUMMARY`
+    (eval.yml's roster step pipes `render_summary`'s stdout there), and
+    GitHub caps a step's summary at 1 MiB — crossed at roughly 16,000
+    planted arms, past which the roster summary is simply not rendered
+    for the humans reading the run, while the job itself still succeeds.
+    The JSON goes to `roster/latest.json`, committed to `eval-results`,
+    and GitHub refuses a push containing a file over 100 MB — reached at
+    roughly a million arms, at which point the whole results/badge commit
+    step fails, taking the run's badge and results with it even though
+    neither has anything to do with the roster.
+
     A size cap would not buy the invariant back — it would only move the
     number at which a real retirement can be hidden, from 501 planted
     entries to whatever the new cap is, and hiding it is the failure
