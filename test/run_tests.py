@@ -2566,6 +2566,21 @@ class TestIssue74(unittest.TestCase):
         # apart from a real comment start.
         self.assertFalse(by_id["commit-signing-safe-for-ci"]["passed"])
 
+    def test_s2_known_limitation_paragraph_documents_the_first_hash_blind_spot(self):
+        # Round-5 N2: this paragraph's own claim was unpinned as prose —
+        # deleting it left the suite green, since only its behavior is
+        # pinned (by the test above and test_s2_live_set_plus_e_wrapper_
+        # still_fails). Pin the operative words the ~1989-style way.
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        start = text.index("# Known limitation:")
+        end = text.index("objective_checks:")
+        paragraph = text[start:end]
+        self.assertIn("FIRST", paragraph)
+        self.assertIn("quoted", paragraph)
+        self.assertIn("fail-open", paragraph)
+        self.assertIn("commit-signing-safe-for-ci", paragraph)
+        self.assertIn("set -e", paragraph)
+
     # -- Round-4 review S3: process-substitution-error-propagates's third
     # must_match alternative lost its trailing `$`, so it matched on the
     # mere PRESENCE of "gh run watch" text with no requirement to reach end
