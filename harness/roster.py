@@ -398,6 +398,15 @@ def _clean_counts(counts, warn) -> dict:
             if not isinstance(week, str):
                 bad_cells += 1
                 continue
+            # `bool` is an `int` SUBCLASS in Python — `int(True)` is `1`,
+            # `int(False)` is `0` — so a census cell holding the JSON
+            # literal `true`/`false` sailed through every check below and
+            # silently became a real count instead of being rejected as
+            # the wrong shape. Checked before `isinstance(n, float)` too:
+            # neither branch below would otherwise catch it.
+            if isinstance(n, bool):
+                bad_cells += 1
+                continue
             # `int(float('inf'))` raises OverflowError, not TypeError or
             # ValueError — an uncaught OverflowError used to exit this
             # script by traceback on a census cell of `1e400` (which JSON
@@ -438,8 +447,13 @@ def _clean_counts(counts, warn) -> dict:
         warn(f"census `counts`: skipped {bad_rows} row(s) that are not "
              f"model -> {{week: count}}")
     if bad_cells:
+        # "not a usable count", not "not a number": a negative value and one
+        # above MAX_WEEKLY_TURNS both ARE numbers — they are rejected for
+        # being out of range, a boolean for being the wrong type entirely,
+        # and only a genuinely non-numeric/non-finite cell for failing to
+        # parse as a number at all. One wording covers all four honestly.
         warn(f"census `counts`: skipped {bad_cells} weekly count(s) that are "
-             f"not a number")
+             f"not a usable count")
     return cleaned
 
 

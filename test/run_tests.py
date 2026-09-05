@@ -3601,7 +3601,7 @@ exit 0
                                "2026-W34": float("nan"),
                                "2026-W33": 50}}, notes.append)
         self.assertEqual(cleaned, {"claude-opus-5": {"2026-W33": 50}})
-        self.assertTrue(any("number" in n for n in notes), notes)
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
 
     def test_main_does_not_crash_on_a_non_finite_census_count(self):
         """End-to-end: Python's `json` module accepts the bare `Infinity`
@@ -3636,7 +3636,7 @@ exit 0
         cleaned = roster._clean_counts(
             {"claude-opus-5": {"2026-W36": -99, "2026-W35": 50}}, notes.append)
         self.assertEqual(cleaned, {"claude-opus-5": {"2026-W35": 50}})
-        self.assertTrue(any("number" in n for n in notes), notes)
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
 
     def test_a_cancelling_pair_does_not_net_to_a_smaller_share(self):
         """A `+100`/`-100` pair on the same model used to sum straight into
@@ -5114,7 +5114,7 @@ class TestIssue67Review3(unittest.TestCase):
             {"claude-opus-5": {"2026-W36": 1e308, "2026-W35": huge_int,
                                "2026-W34": 50}}, notes.append)
         self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
-        self.assertTrue(any("number" in n for n in notes), notes)
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
 
     def test_usage_share_does_not_overflow_on_a_huge_count(self):
         """usage_share is called directly by other tests on hand-built
@@ -5459,6 +5459,32 @@ class TestIssue67Review4(unittest.TestCase):
         summary = roster.render_summary(result)
         self.assertNotIn("::error::", summary)
         self.assertNotIn(hostile_id, summary)
+
+    # --- item 7 (nit): _clean_counts must reject JSON booleans, and its
+    # bad-cell warning must cover more than "not a number" -----------------
+
+    def test_clean_counts_rejects_json_booleans(self):
+        """`bool` is an `int` subclass in Python — `int(True)` is `1`,
+        `int(False)` is `0` — so a census cell holding the JSON literal
+        `true`/`false` silently coerced into a real count instead of being
+        rejected as the wrong shape."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": True, "2026-W35": False,
+                               "2026-W34": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_clean_counts_bad_cell_warning_covers_more_than_not_a_number(self):
+        """The bad-cell warning said "not a number", but a negative count
+        and a count above MAX_WEEKLY_TURNS both ARE numbers — they are
+        rejected for being out of range, not for failing to parse as a
+        number at all. "not a usable count" covers every rejection reason
+        (non-numeric, boolean, negative, out of range) accurately."""
+        notes = []
+        roster._clean_counts({"claude-opus-5": {"2026-W36": -5}}, notes.append)
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+        self.assertFalse(any("not a number" in n for n in notes), notes)
 
 
 if __name__ == "__main__":
