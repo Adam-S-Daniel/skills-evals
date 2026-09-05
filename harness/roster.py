@@ -484,6 +484,15 @@ def _fold_set(ids: set[str], aliases: dict) -> set[str]:
     return {aliases.get(i, i) for i in ids}
 
 
+#: What `_format_share` says about a nonzero share too small for any of
+#: its fixed rungs to render as anything but zero (N3, #129 review round
+#: 9). Prose, deliberately: it cannot be read as a number equal to any
+#: bar, where the scientific-notation rendering it replaces both could and
+#: told the reader nothing useful. One decimal place past the smallest
+#: fixed rung (`:.6f`), so the two never disagree.
+_SHARE_FLOOR_TEXT = "under 0.000001"
+
+
 def _format_share(value: float, bar: float, *, under: bool = False) -> str:
     """A share percentage, rendered against its own bar.
 
@@ -510,23 +519,42 @@ def _format_share(value: float, bar: float, *, under: bool = False) -> str:
     (2% of rankable census usage)" — a sentence that contradicts itself
     about a share that really is under the bar.
 
-    The last rung is `repr`, not `:.17g` (F4, #129 review round 8).
-    Seventeen significant digits round-trip any float, but they are not
-    the SHORTEST decimal that does: `:.17g` of a share of 1.9999999
+    The last numeric rung is `repr`, not `:.17g` (F4, #129 review round
+    8). Seventeen significant digits round-trip any float, but they are
+    not the SHORTEST decimal that does: `:.17g` of a share of 1.9999999
     renders "1.9999998999999999", which is unreadable and wrong-looking
     about a number the reason quotes exactly, where `repr` gives
     "1.9999999" — the shortest string that reads back as the same float,
     so it satisfies `float(text) != bar` just as reliably.
+
+    NO RENDERING CARRIES SCIENTIFIC NOTATION (N3, #129 review round 9).
+    Both of the last two rungs produce it for a small enough share —
+    `:.6g` and `repr` of 1e-9 are both "1e-09" — so a published reason
+    read "below the 2% exit bar (1e-09% of rankable census usage)", and
+    "1e-09%" is not a quantity a reader can weigh against a 2% bar at a
+    glance. A rung that renders an exponent is skipped, and a share too
+    small for every FIXED rung to be anything but zero falls through to
+    `_SHARE_FLOOR_TEXT` — "under 0.000001", one decimal place past the
+    smallest fixed rung. That is prose rather than a number, so it can
+    never read as equal to the bar in any direction, which is the F4
+    property it has to keep. The trailing `fixed[-1]` is not that case:
+    it is the one where the value is large enough to render but every
+    rendering equals the bar, which no caller can reach — `under=True` is
+    only ever asked about a share strictly under its bar — and which
+    would be worse served by a floor than by the number itself.
     """
     if not under:
         return f"{value:.1f}"
     ladder = [f"{value:.{spec}}"
               for spec in ("1f", "2f", "3f", "4f", "6f", "6g")]
     ladder.append(repr(value))
-    for text in ladder:
+    fixed = [text for text in ladder if "e" not in text and "E" not in text]
+    for text in fixed:
         if float(text) != bar and (value == 0 or float(text) != 0.0):
             return text
-    return ladder[-1]
+    if value and all(float(text) == 0.0 for text in fixed):
+        return _SHARE_FLOOR_TEXT
+    return fixed[-1]
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],

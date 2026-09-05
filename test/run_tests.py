@@ -12048,6 +12048,88 @@ class TestIssue67Review9(unittest.TestCase):
         # tier, ... days old" with no census-quality sentence at all —
         # red on all three assertions.
 
+    # --- N3: no published reason carries scientific notation -------------
+    #
+    # Pre-existing, and identical on both of this branch's earlier heads.
+    # `_format_share`'s `6g` and `repr` rungs render a very small share in
+    # SCIENTIFIC notation, so a reason read "below the 2% exit bar
+    # (1e-09% of rankable census usage)". THE INVARIANT: no published
+    # reason carries scientific notation; a share too small for the fixed
+    # rungs renders as a fixed-point FLOOR that can never read as equal to
+    # the bar.
+
+    #: In the catalogue, so the retirement reaches the EXIT-BAR branch and
+    #: quotes a share at all — a departed id retires with "no longer
+    #: returned by the Models API" and never renders one.
+    N3_ARM = "claude-sonnet-4-6"
+    N3_BULK = ("claude-sonnet-5", "claude-opus-5", "claude-opus-4-8")
+    #: Scientific notation, and only that — the floor rendering the fix
+    #: introduces is prose ("under 0.000001") and carries a bare `e` of
+    #: its own, so a plain "no letter e" check would reject the fix.
+    _EXPONENT = re.compile(r"[0-9][eE][-+]?[0-9]")
+
+    def test_a_vanishing_share_renders_as_a_floor_not_in_scientific_notation(self):
+        """Measured through `main()` with files on disk: one turn against
+        240,000,000 over the exit window is a share of 4.1666e-07%, which
+        every fixed rung rounds to zero and `6g` used to render as
+        `4.16667e-07`."""
+        counts = {i: {w: 10_000_000 for w in self.W} for i in self.N3_BULK}
+        counts[self.N3_ARM] = {self.W[0]: 1}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": self.N3_ARM, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, TestIssue67._models_doc(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(r for r in published["retired_since_last"]
+                     if r["id"] == self.N3_ARM)
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertIsNone(self._EXPONENT.search(entry["reason"]),
+                          "no published reason carries scientific notation")
+        self.assertIn("under 0.000001%", entry["reason"])
+        # Mutation check (manual): restoring the `6g`/`repr` rungs without
+        # the floor renders "(4.16667e-07% of rankable census usage)" —
+        # red.
+
+    def test_the_smallest_shares_render_without_scientific_notation(self):
+        """The values from the finding, straight at `_format_share`: a
+        share that is nonzero but far below any fixed rendering must still
+        say something a reader can weigh against a bar, and must not say
+        it in scientific notation."""
+        for value in (1e-9, 1e-300, 4.94e-324, 5e-7):
+            with self.subTest(value=value):
+                text = roster._format_share(value, 2, under=True)
+                self.assertIsNone(self._EXPONENT.search(text), text)
+                self.assertEqual(text, "under 0.000001")
+
+    def test_no_rendering_equals_its_bar_or_uses_scientific_notation(self):
+        """The F4 property, swept over bars in BOTH directions: whatever
+        the bar, a rendering never reads as equal to it in the "below"
+        direction, never reads as "0" about a nonzero share, and never
+        carries an exponent."""
+        bars = (0, 0.5, 1, 2, 10, 100)
+        values = (0.0, 4.94e-324, 1e-300, 1e-9, 1e-6, 0.004, 0.04, 1.96,
+                  1.9999, 1.99999975, 1.9999999, 2.0, 9.09, 10.0, 64.5,
+                  99.9999999, 100.0)
+        for bar in bars:
+            for value in values:
+                with self.subTest(bar=bar, value=value):
+                    for under in (False, True):
+                        text = roster._format_share(value, bar, under=under)
+                        self.assertIsNone(self._EXPONENT.search(text), text)
+                        try:
+                            parsed = float(text)
+                        except ValueError:
+                            # The floor rung is not a number at all, so it
+                            # cannot read as equal to any bar.
+                            self.assertTrue(under and 0 < value < 1e-6, text)
+                            continue
+                        if under and value < bar:
+                            self.assertNotEqual(parsed, bar, text)
+                            if value > 0:
+                                self.assertNotEqual(parsed, 0.0, text)
+
 
 if __name__ == "__main__":
     unittest.main()
