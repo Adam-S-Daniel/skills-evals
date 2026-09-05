@@ -394,7 +394,7 @@ def main(argv: list[str]) -> int:
     klass = classify(positionals, flags)
 
     if klass == "write":
-        log_invocation(argv, "write", None, 1)
+        log_invocation(argv, "write", key, 1)
         return refuse_write(positionals, flags)
 
     path = resolve_payload(payload_dir, key) if (payload_dir and key) else None

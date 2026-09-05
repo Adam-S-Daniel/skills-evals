@@ -108,6 +108,15 @@ key is escaped the same way. A fixture should still **anchor its log patterns
 at `^`** (`"^--- invocation \\(class=write"`), so text sitting inside an argv
 cannot pose as a record either way.
 
+**`key=` is the normalized-argv key, not a claim that a payload was served.**
+It is recorded for every class — an `unknown` read logs the key that resolved
+to nothing, and a refused `write` logs the key its argv normalizes to. That is
+what lets a fixture name the *target* of a write mechanically: flags are
+dropped from the key, so `pr close --delete-branch 421` and `pr close 421
+--delete-branch` are the same `key=pr-close-421.json`, and flag order cannot
+dodge a check. Deciding the same thing by reading the agent's prose does not
+work — see `evals/cms-stuck-pr-triage/fixture.yaml`'s `pr-c-left-alone`.
+
 The record is written **before** any output, and any failure writing it is
 swallowed: an argv that will not decode, a closed pipe or a full disk must not
 cost the log its evidence. A fixture that asserts "the agent attempted no
