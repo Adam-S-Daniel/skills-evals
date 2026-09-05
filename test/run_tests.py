@@ -3157,39 +3157,90 @@ class TestIssue81(unittest.TestCase):
                                      f"{name}'s {which} reference leaks into "
                                      "the seed the agent starts from")
 
+    # The guardrail from the issue: this repo is public and fixtures are
+    # committed. No real recruiter, employer or client; example.com /
+    # example.net addresses only; no credential anywhere.
+    _ALLOWED_HOSTS = ("example.com", "example.net")
+    _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
+    _URL_RE = re.compile(r"https?://([^\s/)\"'>]+)")
+    _SECRET_RE = re.compile(
+        r"(?i)\b(?:password|passwd|api[_-]?key|secret|token|bearer)s?\s*[:=]"
+        r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
+    _PHONE_RE = re.compile(r"\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b")
+    # Links into this account's own repositories are exempt, and only
+    # those: `registry:` names the real registry repo, and the fixtures'
+    # README links this repo's issue tracker. The fiction rule is about
+    # MATERIAL — people, employers, addresses — and neither is that. A
+    # github.com link to anyone else still trips the scan.
+    _OWN_REPO_LINK_RE = re.compile(
+        r"https://github\.com/Adam-S-Daniel/[^\s)\"'>]*", re.I)
+
+    @classmethod
+    def _host_allowed(cls, host: str) -> bool:
+        # `endswith(allowed)` alone would pass "notexample.com".
+        host = host.lower().rstrip(".")
+        return any(host == domain or host.endswith("." + domain)
+                   for domain in cls._ALLOWED_HOSTS)
+
+    @classmethod
+    def _fiction_problems(cls, root) -> tuple[list[str], list[str]]:
+        """(problems, files actually read) for everything under `root`.
+
+        The whole directory, in one walk. It used to iterate the three
+        fixture dirs, which left this directory's own README.md unscanned —
+        an `api_key:` line in it kept the suite green.
+        """
+        root = Path(root)
+        problems, scanned = [], []
+        for path in sorted(root.rglob("*")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            scanned.append(rel)
+            text = cls._OWN_REPO_LINK_RE.sub(
+                "", path.read_text(encoding="utf-8", errors="replace"))
+            problems += [f"{rel}: address at {host}"
+                         for host in cls._EMAIL_RE.findall(text)
+                         if not cls._host_allowed(host)]
+            problems += [f"{rel}: URL host {host}"
+                         for host in cls._URL_RE.findall(text)
+                         if not cls._host_allowed(host)]
+            if cls._SECRET_RE.search(text):
+                problems.append(f"{rel}: looks like a credential")
+            if cls._PHONE_RE.search(text):
+                problems.append(f"{rel}: looks like a phone number")
+        return problems, scanned
+
     def test_fixtures_are_fictional_and_carry_no_credentials(self):
-        # The guardrail from the issue: this repo is public and fixtures are
-        # committed. No real recruiter, employer or client; example.com /
-        # example.net addresses only; no credential anywhere.
-        allowed = ("example.com", "example.net")
-        email_re = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
-        url_re = re.compile(r"https?://([^\s/)\"'>]+)")
-        secret_re = re.compile(
-            r"(?i)\b(?:password|passwd|api[_-]?key|secret|token|bearer)s?\s*[:=]"
-            r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
-        phone_re = re.compile(r"\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b")
+        problems, scanned = self._fiction_problems(self.STYLE_DIR)
+        self.assertEqual(problems, [])
+        self.assertIn("README.md", scanned)
         for name in self.FIXTURES:
-            for path in sorted((self.STYLE_DIR / name).rglob("*")):
-                if not path.is_file():
-                    continue
-                rel = path.relative_to(self.STYLE_DIR)
-                text = path.read_text(encoding="utf-8", errors="replace")
-                if path.name == "fixture.yaml":
-                    # `registry:` names the real registry repo on github.com;
-                    # everything else in the file is still scanned.
-                    text = re.sub(r"^registry:.*$", "", text, flags=re.M)
-                with self.subTest(path=str(rel)):
-                    for host in email_re.findall(text):
-                        self.assertIn(host.lower(), allowed,
-                                      f"{rel}: address at {host}")
-                    for host in url_re.findall(text):
-                        self.assertTrue(
-                            host.lower().rstrip(".").endswith(allowed),
-                            f"{rel}: URL host {host}")
-                    self.assertIsNone(secret_re.search(text),
-                                      f"{rel}: looks like a credential")
-                    self.assertIsNone(phone_re.search(text),
-                                      f"{rel}: looks like a phone number")
+            self.assertIn(f"{name}/fixture.yaml", scanned)
+            self.assertIn(f"{name}/references/in-voice.md", scanned)
+
+    def test_the_fiction_scan_covers_this_directorys_own_readme(self):
+        # Planted in a copy, because the point is that the WALK reaches the
+        # README — not that the matcher works when handed its text.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            with (planted / "README.md").open("a", encoding="utf-8") as f:
+                f.write("\napi_key: hunter2\n"
+                        "See https://notexample.com/adam for the real one.\n")
+            problems, _ = self._fiction_problems(planted)
+        self.assertIn("README.md: looks like a credential", problems)
+        self.assertIn("README.md: URL host notexample.com", problems)
+
+    def test_the_host_check_is_not_a_bare_suffix_match(self):
+        for host in ("example.com", "EXAMPLE.NET", "mail.example.com",
+                     "example.com."):
+            with self.subTest(host=host):
+                self.assertTrue(self._host_allowed(host))
+        for host in ("notexample.com", "example.com.attacker.test",
+                     "example.org", "github.com"):
+            with self.subTest(host=host):
+                self.assertFalse(self._host_allowed(host))
 
     def test_objective_only_on_the_pristine_seed_fails_loudly(self):
         # The documented asymmetry, in the one shape a transcript-only
