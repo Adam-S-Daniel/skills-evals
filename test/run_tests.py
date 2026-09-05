@@ -2591,7 +2591,7 @@ class TestIssue67Review(unittest.TestCase):
                   "claude-zephyr-1": {w: 1000 for w in self.W[:4]}}
         result = self._compute(census=self._census_doc(counts=counts))
         self.assertIn("claude-sonnet-5", self._arm_ids(result))
-        self.assertIn("100.0% of census usage", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("100.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
 
     # --- S7: what was excluded from the arm set, and why -----------------
 
@@ -2668,7 +2668,7 @@ class TestIssue67Review(unittest.TestCase):
                   "claude-haiku-4-5": {w: 100 for w in self.W[:4]}}
         result = self._compute(models=self._with_snapshot(),
                                census=self._census_doc(counts=counts))
-        self.assertIn("50.0% of census usage", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("50.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
 
     def test_version_components_sort_numerically_not_lexicographically(self):
         """`claude-x-4-10` supersedes `claude-x-4-9`; a string sort says the
@@ -2733,7 +2733,7 @@ class TestIssue67Review(unittest.TestCase):
         result, notes = self._warned(census_doc=self._census_doc(counts=counts))
         # "100" coerces; None does not, and neither crashes the run.
         self.assertIn("claude-sonnet-5", self._arm_ids(result))
-        self.assertIn("100.0% of census usage", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("100.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
         self.assertTrue(any("census" in n for n in notes), notes)
         for note in notes:
             self.assertNotIn("\n", note)
@@ -5369,6 +5369,53 @@ class TestIssue67Review4(unittest.TestCase):
         self.assertIn("no evidence to retire it", reason)
         self.assertIn("neither the Models API nor the previous roster "
                       "attributes", reason)
+
+    # --- item 4 (nit): every share-percentage reason must say "of
+    # rankable census usage" — the denominator is ranked, attributable
+    # usage, not literally everything the census recorded -----------------
+
+    def test_share_reasons_say_rankable_census_usage_not_census_usage(self):
+        result = self._compute()
+        entry_reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("of rankable census usage", entry_reason)
+        self.assertNotIn("% of census usage", entry_reason)
+
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"},
+                             {"id": "claude-opus-4-8", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {w: 100 for w in self.W},
+            "claude-sonnet-4-6": {w: 10 for w in self.W},
+            "claude-opus-4-8": {self.W[7]: 2},
+        })
+        result2 = self._compute(census=census, previous=previous)
+        held_reason = self._reason(result2, "claude-sonnet-4-6")
+        self.assertIn("of rankable census usage", held_reason)
+        self.assertNotIn("% of census usage", held_reason)
+
+        retired = {r["id"]: r["reason"] for r in result2["retired_since_last"]}
+        self.assertIn("rankable census usage", retired["claude-opus-4-8"])
+
+    def test_a_tiny_ranked_count_dominated_by_other_does_not_retire_a_previous_arm(self):
+        """Item 4 (nit): the census can hold a handful of genuinely-ranked,
+        attributable turns swamped by literally everything else being
+        `other` (a fleet almost entirely routed through Bedrock/Vertex, say,
+        with one stray direct-API turn). `ranked_total > 0` alone used to
+        read as CENSUS_FRESH; below the `min_ranked_turns` floor it must
+        fall back the same way an entirely-unranked census does, so a
+        previous arm with no counted usage of its own is held, not retired
+        at a false 0.0%.
+        """
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"other": {w: 100000 for w in self.W},
+                  "claude-haiku-4-5": {self.W[0]: 1}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertEqual(result["retired_since_last"], [])
 
 
 if __name__ == "__main__":

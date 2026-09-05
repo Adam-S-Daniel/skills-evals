@@ -517,7 +517,7 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
                     census_problem: str | None = None):
     """(usable, note, code) — is there usage evidence for the window, and why not.
 
-    Six ways to have none, and they are NOT the same fact: a file that is
+    Seven ways to have none, and they are NOT the same fact: a file that is
     present but failed to parse (distinct from nothing being published at
     all — `read_json` already tells the two apart, but `main()` used to
     collapse them by discarding the problem and passing `census_doc=None`
@@ -525,12 +525,16 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
     a hand edit — every week then falls outside the window while the age
     check reads as fresh), a census older than the freshness window, a
     census that is present and current and simply holds nothing for these
-    weeks, and a census that holds usage but none of it is usage this policy
-    can rank (every count fell under `other`, an unranked id, or an id
-    ranked but unattributable — a proxy alias, say, which the ladder DOES
-    place but which names no real catalogue model or previous arm; see
-    `_is_attributable`). Each says so in its own words, because "fell back
-    to newest per tier" without the cause is a roster nobody can debug.
+    weeks, a census that holds usage but none of it is usage this policy can
+    rank (every count fell under `other`, an unranked id, or an id ranked
+    but unattributable — a proxy alias, say, which the ladder DOES place but
+    which names no real catalogue model or previous arm; see
+    `_is_attributable`), and a census whose ranked, attributable total is
+    nonzero but still under `policy["min_ranked_turns"]` — almost the whole
+    fleet routed through `other` with a handful of stray ranked turns is not
+    evidence of anything, even though `ranked_total == 0` alone would not
+    have caught it. Each says so in its own words, because "fell back to
+    newest per tier" without the cause is a roster nobody can debug.
     """
     if census_problem:
         # `read_json`'s message already names the file and the exception
@@ -557,6 +561,12 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
                        "`other`, an id the tier ladder cannot place, or an id "
                        "neither the Models API nor the previous roster "
                        "attributes)"), \
+            CENSUS_UNRANKED
+    if ranked_total < policy["min_ranked_turns"]:
+        return False, (f"census published but holds only {ranked_total} "
+                       f"rankable, attributable turn(s) over the window — "
+                       f"under the {policy['min_ranked_turns']}-turn floor, "
+                       f"too little to be evidence of anything"), \
             CENSUS_UNRANKED
     return True, "", CENSUS_FRESH
 
@@ -642,7 +652,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             share = usage_share(counts, model_id, enter_weeks, rungs, aliases,
                                api_ids=api_ids, previous_arms=previous_arms)
             if share >= policy["arm_enter_usage_pct"]:
-                reason = (f"carries {share:.1f}% of census usage over the last "
+                reason = (f"carries {share:.1f}% of rankable census usage over the last "
                           f"{policy['arm_enter_window_weeks']} weeks "
                           f"(at or above the {policy['arm_enter_usage_pct']}% entry bar)")
         if reason is None and is_newest and old_enough:
@@ -656,7 +666,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                                   api_ids=api_ids, previous_arms=previous_arms)
                 if held >= policy["arm_exit_usage_pct"]:
                     reason = (f"held over from the previous roster: still "
-                              f"{held:.1f}% of census usage over the last "
+                              f"{held:.1f}% of rankable census usage over the last "
                               f"{policy['arm_exit_window_weeks']} weeks (at or above "
                               f"the {policy['arm_exit_usage_pct']}% exit bar)")
             else:
@@ -789,7 +799,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
                                   api_ids=api_ids, previous_arms=previous_arms)
                 why = (f"below the {policy['arm_exit_usage_pct']}% exit bar for the last "
-                       f"{policy['arm_exit_window_weeks']} weeks ({held:.1f}%)")
+                       f"{policy['arm_exit_window_weeks']} weeks "
+                       f"({held:.1f}% of rankable census usage)")
             retired.append({"id": model_id, "reason": why})
 
     # Three states, not two: `previous is not None` alone collapses "the

@@ -71,3 +71,12 @@ arm_exit_window_weeks: 8
 # reason — degrading loudly rather than publishing a stale-usage roster that
 # looks exactly like a fresh one.
 census_max_age_days: 14
+
+# A census can hold a nonzero ranked, attributable total that is still not
+# enough to be evidence of anything — almost the whole fleet routed through
+# Bedrock/Vertex/a proxy (landing under `other`) with one stray direct-API
+# turn leaves `ranked_total` at 1, which used to read as CENSUS_FRESH and
+# could retire a previous arm with no counted usage of its own at a false
+# 0.0%. Below this many ranked, attributable turns over the window, the
+# census falls back the same way an entirely-unranked one does.
+min_ranked_turns: 20
