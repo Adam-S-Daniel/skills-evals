@@ -465,18 +465,76 @@ class TestIssue97(unittest.TestCase):
         self.assertIsNone(info["verdict"])
         self.assertFalse((config / "CLAUDE.md").exists())
 
+    def _stand_in_home(self) -> Path:
+        """A temp directory standing in for the operator's HOME, carrying a
+        user memory file — so the refusal branch can be exercised against
+        something shaped exactly like the real `~/.claude` and made of
+        nothing real.
+        """
+        home = Path(tempfile.mkdtemp(prefix="guidance-standin-home-"))
+        self.addCleanup(shutil.rmtree, home, ignore_errors=True)
+        (home / ".claude").mkdir()
+        (home / ".claude" / "CLAUDE.md").write_text(
+            "# a stand-in for the operator's own global memory\n\nkeep me\n",
+            encoding="utf-8")
+        return home
+
+    def test_refuse_real_config_dir_rejects_both_of_its_arguments(self):
+        # `_refuse_real_config_dir` is pure — it resolves paths, compares, and
+        # either raises or returns — so it can be asserted on directly, with
+        # no function that can write anywhere near the assertion. Both
+        # arguments are checked, and both spellings of the home (the home
+        # itself and its `.claude`) are refused.
+        home = self._stand_in_home()
+        scratch = Path(tempfile.mkdtemp(prefix="guidance-refuse-pure-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        with mock.patch.object(guidance.os.path, "expanduser",
+                               lambda p: str(home) if p == "~" else p):
+            for dest, given_home, what in (
+                    (home / ".claude", scratch, "config dir"),
+                    (home, scratch, "config dir"),
+                    (scratch, home, "HOME"),
+                    (scratch, home / ".claude", "HOME")):
+                with self.subTest(dest=str(dest), home=str(given_home)):
+                    with self.assertRaises(guidance.GuidanceError) as ctx:
+                        guidance._refuse_real_config_dir(dest, given_home)
+                    self.assertIn("refusing", str(ctx.exception))
+                    self.assertIn(what, str(ctx.exception))
+            # And the ordinary case is allowed through, so the assertions
+            # above are not vacuously true of every input.
+            guidance._refuse_real_config_dir(scratch / "config", scratch / "home")
+
     def test_delivery_refuses_the_real_config_dir(self):
+        # NOTHING REAL IS IN REACH HERE, deliberately. This test used to hand
+        # the operator's own `~/.claude` to the real `deliver()` with only the
+        # production refusal between it and their user memory — so the
+        # standard mutation for a defensive branch (delete the guard, run the
+        # suite) DESTROYED a 56 KB `~/.claude/CLAUDE.md`, replacing it with
+        # this test's own `payload="anything\n"` inside a fleet-guidance
+        # block. The refusal is resolved against a PATCHED home instead: the
+        # same production branch executes, over a stand-in home whose memory
+        # file is asserted byte-identical afterwards — which stays true even
+        # when the guard is reverted, because a reverted guard can then only
+        # write into the stand-in.
         root = self._checkout()
-        real_home = Path(os.path.expanduser("~")).resolve()
+        home = self._stand_in_home()
+        memory = home / ".claude" / "CLAUDE.md"
+        before = memory.read_bytes()
         scratch = Path(tempfile.mkdtemp(prefix="guidance-refuse-"))
         self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
-        for dest, home in ((real_home / ".claude", scratch), (scratch, real_home)):
-            with self.subTest(dest=str(dest)):
-                with self.assertRaises(guidance.GuidanceError) as ctx:
-                    guidance.deliver(root, scratch=scratch, dest_dir=dest,
-                                     home=home, payload="anything\n")
-                self.assertIn("refusing", str(ctx.exception))
+        with mock.patch.object(guidance.os.path, "expanduser",
+                               lambda p: str(home) if p == "~" else p):
+            for dest, given_home in ((home / ".claude", scratch), (scratch, home)):
+                with self.subTest(dest=str(dest)):
+                    with self.assertRaises(guidance.GuidanceError) as ctx:
+                        guidance.deliver(root, scratch=scratch, dest_dir=dest,
+                                         home=given_home, payload="anything\n")
+                    self.assertIn("refusing", str(ctx.exception))
         self.assertFalse((scratch / "CLAUDE.md").exists())
+        self.assertEqual(
+            memory.read_bytes(), before,
+            "the stand-in user memory must be byte-identical — this is the "
+            "assertion that has to survive the revert-the-guard mutation")
 
     # ------------------------------------------------------------------
     # Item 5 — the environment allowlist
