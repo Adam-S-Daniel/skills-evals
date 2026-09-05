@@ -30,6 +30,18 @@ from pathlib import Path
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
+
+class CandidateRejected(ValueError):
+    """The draft under test cannot be shown to the judge at all.
+
+    A ValueError like the rest of this module's shape complaints, so an
+    existing caller is unaffected — but a named one, because these two
+    causes are the CANDIDATE's doing rather than the judge's or the CLI's,
+    and a caller that records every judge exception as one undifferentiated
+    error cannot otherwise tell "the agent wrote something unrenderable"
+    apart from "the judge timed out".
+    """
+
 # The identity of the draft under test among the pairwise candidates. The
 # judge never sees it — every draft is reduced to an opaque label — but the
 # caller needs it back to find that draft's rank in the returned ranking.
@@ -119,7 +131,9 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     transcript length because it concatenates N drafts. In argv that ceiling
     surfaced as an uncaught `OSError: Argument list too long` — straight
     through the contract above. Every OSError is translated too, so a
-    missing or unexecutable CLI reads the same way to a caller.
+    missing or unexecutable CLI reads the same way to a caller, and so is
+    the UnicodeEncodeError a prompt carrying a lone surrogate raises on the
+    way into the child's stdin.
     """
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
           "--output-format", "json", "--permission-mode", "bypassPermissions"]
@@ -133,6 +147,14 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
         raise RuntimeError(f"judge CLI call timed out after {timeout}s") from e
     except OSError as e:
         raise RuntimeError(f"judge CLI call could not be run: {e}") from e
+    except UnicodeEncodeError as e:
+        # A transcript can carry a lone surrogate — a reply decoded with
+        # errors="surrogateescape", or a byte run that is not valid UTF-8 —
+        # and encoding it for the child's stdin raises. UnicodeEncodeError
+        # is a ValueError, so without this it left through the contract
+        # above and crashed the run instead of being recorded.
+        raise RuntimeError(
+            f"judge CLI call could not encode its prompt: {e}") from e
 
     if result.returncode != 0:
         raise RuntimeError(
@@ -496,12 +518,12 @@ def _draft_block(label: str, text: str, nonce: str) -> str:
     """
     lowered = text.lower()
     if "</draft" in lowered:
-        raise ValueError(
+        raise CandidateRejected(
             f"draft {label!r} contains the closing draft fence "
             f"{_DRAFT_CLOSE!r}: it could end its own block and address the "
             "judge as prose")
     if nonce in text:
-        raise ValueError(
+        raise CandidateRejected(
             f"draft {label!r} contains this call's draft-fence nonce: it "
             "could forge a fence of its own")
     return f'<draft id="{label}" nonce="{nonce}">\n{text}\n{_DRAFT_CLOSE}'
@@ -581,6 +603,15 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
     Raises RuntimeError if the judge CLI call fails (callers record a judge
     error), and ValueError if the judge's reply is not a complete ranking of
     exactly the labels it was given, with dimension scores for each.
+
+    Two of the failures here are the CANDIDATE's doing rather than the
+    judge's, and both raise `CandidateRejected` (a ValueError) so a caller
+    can tell them apart from a judge that misbehaved: a draft containing the
+    closing draft fence `</draft>`, and a draft containing this call's
+    fence nonce. Both mean the same thing — the draft could end its own
+    block and address the judge as prose — and there is no safe way to
+    render one, so the call fails rather than guessing. Recorded as a plain
+    judge error they are indistinguishable from a CLI timeout.
     """
     ordered = blind_order(candidate_text, references, trial_index, scope)
     prompt = _build_pairwise_prompt(rubric, ordered, dimensions)
@@ -606,8 +637,20 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
     if not isinstance(raw_dimensions, dict):
         raise ValueError(
             f"judge output missing/malformed 'dimensions': {raw_dimensions!r}")
-    raw_dimensions = {str(label).strip().upper(): dims
-                      for label, dims in raw_dimensions.items()}
+    # Normalised into a lookup one at a time rather than by comprehension:
+    # a judge answering both "A" and "a" scored one draft twice, and a
+    # comprehension collapses that into a single entry with the last write
+    # winning — half the judge's scoring gone without a word.
+    normalised: dict[str, object] = {}
+    for label, dims in raw_dimensions.items():
+        key = str(label).strip().upper()
+        if key in normalised:
+            raise ValueError(
+                f"judge scored draft {key!r} twice (as {label!r} and "
+                "another spelling of the same label): which set of scores "
+                "it meant is not decidable")
+        normalised[key] = dims
+    raw_dimensions = normalised
     by_label: dict[str, list] = {}
     for label in labels:
         dims = raw_dimensions.get(label)
@@ -623,7 +666,13 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
                     f"number: {dim!r}")
             # The rubric asks for 0-10. An 11 is not a score, and a NaN
             # poisons every mean it reaches without ever comparing unequal.
-            if not math.isfinite(dim["score"]) or not 0 <= dim["score"] <= 10:
+            # The RANGE is tested first and on its own: math.isfinite() on
+            # an int too large to have a float (a judge answering 10**400)
+            # raises OverflowError instead of answering, past this
+            # function's documented RuntimeError/ValueError contract. NaN
+            # and the infinities fail the comparison anyway — every
+            # comparison against NaN is False.
+            if not 0 <= dim["score"] <= 10:
                 raise ValueError(
                     f"judge dimension score for draft {label!r} is off the "
                     f"0-10 scale: {dim!r}")

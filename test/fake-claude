@@ -25,15 +25,19 @@ Mode "echo_prompt" reports how the prompt reached it — stdin byte count and
 digest, and the argv it was handed — so a test can prove the judge prompt
 travels on stdin rather than in an argument vector Linux caps at 128 KB.
 
-Six modes serve the pairwise judge (skills-evals#81): "judge_pairwise"
+Eight modes serve the pairwise judge (skills-evals#81): "judge_pairwise"
 returns a canned ranking of three blind draft labels plus per-draft
 dimension scores; "judge_pairwise_incomplete" drops a label from the
 ranking and "judge_pairwise_unknown_label" invents one;
 "judge_pairwise_sloppy_labels" answers in lower case with stray padding
 (the labels are still the ones it was given, so the scorer must normalise
 rather than reject); and "judge_pairwise_score_out_of_range" /
-"judge_pairwise_score_nan" put an 11 and a NaN on the 0-10 scale, so the
-scorer's validation has something to reject. The canned ranking is fixed while the
+"judge_pairwise_score_nan" / "judge_pairwise_score_huge" put an 11, a NaN
+and a 10**400 on the 0-10 scale, so the scorer's validation has something
+to reject (the last has no float, so testing it with math.isfinite raises
+rather than answering); and "judge_pairwise_duplicate_labels" scores one
+draft twice, once in each case, which label normalisation used to collapse
+into a single entry. The canned ranking is fixed while the
 LABEL each draft carries is shuffled per trial by the scorer, which is what
 lets a test read the shuffle back out of the resulting rank.
 
@@ -180,7 +184,8 @@ def main() -> int:
 
     if MODE in ("judge_pairwise", "judge_pairwise_incomplete",
                 "judge_pairwise_unknown_label", "judge_pairwise_sloppy_labels",
-                "judge_pairwise_score_out_of_range", "judge_pairwise_score_nan"):
+                "judge_pairwise_score_out_of_range", "judge_pairwise_score_nan",
+                "judge_pairwise_score_huge", "judge_pairwise_duplicate_labels"):
         ranking = list(PAIRWISE_RANKING)
         dimensions = PAIRWISE_DIMENSIONS_BY_LABEL
         if MODE == "judge_pairwise_incomplete":
@@ -194,10 +199,21 @@ def main() -> int:
             dimensions = {label.lower(): dims
                           for label, dims in dimensions.items()}
         elif MODE in ("judge_pairwise_score_out_of_range",
-                      "judge_pairwise_score_nan"):
-            bad = 11 if MODE.endswith("out_of_range") else float("nan")
+                      "judge_pairwise_score_nan", "judge_pairwise_score_huge"):
+            # 10**400 is the one that is not merely out of range: it has no
+            # float, so math.isfinite() on it raises OverflowError instead
+            # of answering.
+            bad = {"judge_pairwise_score_out_of_range": 11,
+                   "judge_pairwise_score_nan": float("nan"),
+                   "judge_pairwise_score_huge": 10 ** 400}[MODE]
             dimensions = {label: [dict(dims[0], score=bad), *dims[1:]]
                           for label, dims in dimensions.items()}
+        elif MODE == "judge_pairwise_duplicate_labels":
+            # A judge that scores the same draft twice, once in each case.
+            # Normalising the labels collapsed the two into one entry with
+            # the last write winning, silently.
+            dimensions = dict(dimensions,
+                              a=[dict(d, score=0) for d in dimensions["A"]])
         emit({
             "result": json.dumps({"ranking": ranking,
                                   "dimensions": dimensions}),
