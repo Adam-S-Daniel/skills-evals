@@ -5419,6 +5419,42 @@ class TestIssue67Review4(unittest.TestCase):
         self.assertTrue(any("not a usable count" in n for n in notes), notes)
         self.assertFalse(any("not a number" in n for n in notes), notes)
 
+    # --- item 10: model_usage_census.py's lazy PyYAML import has a test for
+    # main()'s own `--out` guard, but not for `--help` — the case the
+    # laziness exists to fix in the first place ---------------------------
+
+    def test_census_help_succeeds_with_pyyaml_unimportable(self):
+        """`_require_model_id_re()` is called only when actually building a
+        census; `--help` is handled by argparse inside `parser.parse_args()`
+        and exits before that call is ever reached. A machine with no
+        PyYAML installed at all must still get `--help` — this is the case
+        the lazy import exists to fix, and it had no test of its own."""
+        saved = {name: sys.modules.get(name) for name in ("yaml", "roster")}
+        saved_re = model_usage_census.MODEL_ID_RE
+        for name in ("yaml", "roster"):
+            sys.modules.pop(name, None)
+        sys.modules["yaml"] = None
+        model_usage_census.MODEL_ID_RE = None
+        try:
+            argv = ["model_usage_census.py", "--help"]
+            out = io.StringIO()
+            err = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(out), \
+                 contextlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as ctx:
+                    model_usage_census.main()
+        finally:
+            for name, mod in saved.items():
+                if mod is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = mod
+            model_usage_census.MODEL_ID_RE = saved_re
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("usage:", out.getvalue().lower())
+        self.assertNotIn("Traceback", err.getvalue())
+
 
 if __name__ == "__main__":
     unittest.main()
