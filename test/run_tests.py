@@ -4382,6 +4382,21 @@ class TestIssue81(unittest.TestCase):
             + "\n  ```"),
     }
 
+    def test_a_table_leaves_no_pipes_behind_in_the_residue(self):
+        # A row's `|` is the table's wrapper. Left in, the trailing one
+        # becomes its own pure-punctuation "sentence": nothing the agent
+        # wrote, and one line of the four-line opening window each — enough
+        # to push a genuine reply's hedge out of it when the table sits
+        # above the reply.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        table = self._repaste(self._seed_text("recruiter-reply"),
+                              "markdown-table")
+        draft = self._reference("recruiter-reply", "in-voice").strip()
+        residue = objective.strip_seed_material(table + "\n\n" + draft, seed)
+        self.assertNotIn("|", residue)
+        self._assert_all_pass("recruiter-reply", table + "\n\n" + draft,
+                              "a table of her material above the reply")
+
     def test_an_indented_deliverable_is_still_the_deliverable(self):
         reply = self._reference("recruiter-reply", "in-voice").strip()
         for shape, indent in sorted(self._INDENTED_SHAPES.items()):

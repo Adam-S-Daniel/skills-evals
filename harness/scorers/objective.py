@@ -637,6 +637,9 @@ _HTML_BLOCK_CLOSE_RE = re.compile(rf"^\s*</({_HTML_BLOCK_TAG})\s*>\s*$", re.I)
 # A Markdown table's alignment row: pipes, dashes and colons only. It is the
 # table's own scaffolding, like a fence delimiter, and carries no words.
 _TABLE_RULE_RE = re.compile(r"^[^\S\n]*\|[-:|\s]*\|[^\S\n]*$")
+# A table ROW, which is a deliberate line rather than a wrapped one. Shared
+# with `wrapping.TABLE_ROW_RE` so the two readings cannot drift.
+_TABLE_ROW_RE = wrapping.TABLE_ROW_RE
 
 # Characters that take up no width and can hide a banned term inside a word,
 # or break a paste into pieces the seed index cannot match: the soft hyphen,
@@ -720,6 +723,11 @@ def _strip_wrapper(line: str) -> tuple[str, bool]:
     stripped = stripped.strip()
     bare = _BARE_WRAPPER_TAG_RE.sub("", stripped).strip()
     return bare, bool(stripped) and not bare
+
+
+def _strip_table_pipes(line: str) -> str:
+    """A table row's cell separators turned back into spaces."""
+    return line.replace("|", " ").strip() if _TABLE_ROW_RE.match(line) else line
 
 
 def _dequote(line: str) -> str:
@@ -971,8 +979,15 @@ def strip_seed_material(text: str, seed: str | None) -> str:
             # already said the block is a quotation, so a short sentence in
             # it needs only to be the seed's.
             quoted = all(i in marked for i in source)
+            # Pipes are a table's wrapper, and they come off HERE rather
+            # than with the rest: `wrapping.unwrap_indices` reads them to
+            # tell a row from a wrapped line, and a row's trailing `|`
+            # left behind afterwards is its own pure-punctuation
+            # "sentence" — noise the agent did not write, occupying a line
+            # of the opening window.
+            logical = " ".join(_strip_table_pipes(payload[i]) for i in source)
             line = []
-            for sentence in _sentences(" ".join(payload[i] for i in source)):
+            for sentence in _sentences(logical):
                 key = _key(sentence)
                 line.append({
                     "text": sentence,
