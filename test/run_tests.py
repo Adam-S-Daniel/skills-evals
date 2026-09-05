@@ -3581,9 +3581,11 @@ class TestIssue85(unittest.TestCase):
     def test_deploy_and_gate_tripwires_fail_when_their_files_are_absent(self):
         """Confirms file_matches fails CLOSED (not vacuously, not erroring)
         when the target file is simply absent — the primitive both new
-        tripwires depend on. Reuses the seed's own gate/action.yml text as
-        the must_match token so this is a targeted regression, not a
-        restatement of file_matches' own generic behaviour.
+        tripwires depend on. Runs the shipped fixture.yaml's own must_match
+        tokens (via run_eval.load_fixture + objective.run_checks) against a
+        workspace where the two files are simply gone, so this is a
+        targeted regression on the real config, not a hand-built stand-in
+        for file_matches' own generic behaviour.
         """
         seed = GHA_SHA_PINNING_DIR / "seed"
         with tempfile.TemporaryDirectory() as tmp:
@@ -3595,6 +3597,108 @@ class TestIssue85(unittest.TestCase):
         for check_id in ("deploy-workflow-not-deleted", "gate-action-not-deleted"):
             self.assertFalse(by_id[check_id]["passed"])
             self.assertIn("no file matched", by_id[check_id]["detail"])
+
+    # -- the tripwires certify presence, not shape (round 7, F1) -------------
+    #
+    # THE INVARIANT: an existence tripwire certifies exactly one thing, that
+    # the file is present and still carries the platform call it is named
+    # for. It never constrains anything a correct audit may edit — a job
+    # key, a `with:` block, the owner's letter case. Before this round,
+    # deploy-workflow-not-deleted's must_match carried three tokens (the
+    # repo path, `platform_ref:`, `e2e:`) and gate-action-not-deleted's
+    # carried two (the repo path, `runs:`) — so a correct audit that merely
+    # touched one of those literal strings failed the tripwire even though
+    # nothing was deleted. Reduced to the one repo-path token, case-
+    # insensitive, below.
+
+    def test_deploy_tripwire_survives_a_renamed_job_key(self):
+        """The bug this fixes: on c85667c, renaming deploy.yml's `e2e:` job
+        to `end-to-end:` — a legitimate audit edit that touches nothing the
+        tripwire should care about — failed deploy-workflow-not-deleted with
+        `lacks /e2e:/`, even though the file exists and still calls
+        cms-platform. Confirmed by running this exact mutation against
+        c85667c's fixture.yaml: only deploy-workflow-not-deleted failed (of
+        ten), with that exact detail. Must now pass every check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "  e2e:\n", "  end-to-end:\n")
+            by_id = self._checks(ws, seed)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_deploy_tripwire_survives_a_lowercased_owner_on_the_tag(self):
+        """The bug this fixes: on c85667c, lowercasing the owner in deploy.yml's
+        own cms-platform ref (`Adam-S-Daniel` -> `adam-s-daniel`, tag
+        unchanged) failed deploy-workflow-not-deleted with a `lacks
+        /Adam-S-Daniel.../` detail, even though cms-platform-refs-stay-on-tag
+        already casefolds this exact ref and passes it — a GitHub owner/repo
+        path is case-insensitive, so this is not a violation the tripwire
+        should be able to raise on its own. Confirmed by running this exact
+        mutation against c85667c's fixture.yaml: only deploy-workflow-not-
+        deleted failed (of ten), with that exact detail. Must now pass every
+        check — there is nothing here for any check to flag.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(
+                deploy,
+                "uses: Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml@v0.1.104",
+                "uses: adam-s-daniel/cms-platform/.github/workflows/e2e-tests.yml@v0.1.104")
+            by_id = self._checks(ws, seed)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_deploy_tripwire_survives_the_with_block_dropped(self):
+        """The bug this fixes: on c85667c, dropping deploy.yml's `with:
+        platform_ref: v0.1.104` block while leaving the `uses:` ref intact
+        failed deploy-workflow-not-deleted with `lacks /platform_ref:/`, even
+        though nothing was deleted. `min_refs` on cms-platform-refs-stay-on-
+        tag counts `uses:` value nodes only, never `platform_ref:` nodes (see
+        that check's own docstring), so removing this `with:` block does not
+        move that count either — measured here: it stays green throughout.
+        Confirmed by running this exact mutation against c85667c's
+        fixture.yaml: only deploy-workflow-not-deleted failed (of ten), with
+        that exact detail. Must now pass every check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "    with:\n      platform_ref: v0.1.104\n", "")
+            by_id = self._checks(ws, seed)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_deploy_and_gate_tripwires_must_match_is_a_single_case_insensitive_token(self):
+        """Pins the fix's own shape: each tripwire's must_match is now
+        exactly one pattern, the repo path up to and excluding `@`, opening
+        with the `(?i)` inline flag. Fails on c85667c, where
+        deploy-workflow-not-deleted carried three tokens and
+        gate-action-not-deleted carried two, none case-insensitive.
+        """
+        fixture = run_eval.load_fixture(GHA_SHA_PINNING_DIR)
+        by_id = {c["id"]: c for c in fixture["objective_checks"]}
+        deploy_tokens = by_id["deploy-workflow-not-deleted"]["must_match"]
+        gate_tokens = by_id["gate-action-not-deleted"]["must_match"]
+        self.assertEqual(len(deploy_tokens), 1, deploy_tokens)
+        self.assertEqual(len(gate_tokens), 1, gate_tokens)
+        self.assertTrue(deploy_tokens[0].startswith("(?i)"), deploy_tokens[0])
+        self.assertTrue(gate_tokens[0].startswith("(?i)"), gate_tokens[0])
+        self.assertIn("Adam-S-Daniel/cms-platform/", deploy_tokens[0])
+        self.assertIn("Adam-S-Daniel/cms-platform/", gate_tokens[0])
+        self.assertNotIn("@", deploy_tokens[0])
+        self.assertNotIn("@", gate_tokens[0])
 
     def test_correct_audit_passes_all_ten_objective_checks(self):
         by_id = self._run(audited=True)

@@ -179,15 +179,21 @@ objective_checks:
     type: platform_refs_on_tag
     paths: [".github/workflows/ci.yml", ".github/workflows/deploy.yml",
            ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
-    # paths names deploy.yml literally: a rename to deploy.yaml (or moving
-    # the gate composite's action.yml to action.yaml) stops this check from
-    # seeing that file's platform ref(s) at all, and a stray SHA or skewed
-    # tag left behind by such a rename would go unpoliced by this check —
-    # `ci-workflow-not-deleted`/`workflows-still-parse` do not cover it
-    # either. Nor is a brand NEW workflow file (say `release.yml`), outside
-    # these literal paths entirely: a cms-platform ref SHA-pinned there is
-    # not policed objectively either (round 6, N4) — pre-existing, and left
-    # to the judge's restraint dimension, same as the rename case.
+    # paths names deploy.yml literally, with no `.yaml` counterpart: a
+    # rename to deploy.yaml stops THIS check from seeing that file's
+    # platform ref(s) at all, and a stray SHA or skewed tag left behind by
+    # such a rename would go unpoliced here too. The gate composite is
+    # different (round 7, N2, corrected): its glob already covers both
+    # spellings (`.github/actions/*/action.yml` and `.../action.yaml`), so
+    # renaming action.yml to action.yaml does NOT hide its ref from this
+    # check — the carve-out still finds and validates it. Either rename
+    # DOES fail its own file_matches existence tripwire, though
+    # (`deploy-workflow-not-deleted` / `gate-action-not-deleted`), since
+    # each names its one literal filename, no glob. Nor is a brand NEW
+    # workflow file (say `release.yml`), outside these literal paths
+    # entirely: a cms-platform ref SHA-pinned there is not policed
+    # objectively either (round 6, N4) — pre-existing, and left to the
+    # judge's restraint dimension, same as the deploy.yml rename case.
     #
     # ci.yml is one of these paths too (S1(a), round 6, N2): an
     # expression-valued `platform_ref: ${{ inputs.platform_ref }}` written
@@ -218,7 +224,10 @@ objective_checks:
       ci.yml still exists and still carries the four actions it started
       with (actions/checkout, actions/setup-node, actions/upload-artifact,
       actions/cache) — otherwise every glob-driven check above passes
-      vacuously against a deleted file.
+      vacuously against a deleted file. The id names the common cause
+      (deletion), not the only one: an edit that leaves the file in place
+      but strips one of the four names (e.g. folding a step into another
+      job under a different action) fires this same tripwire.
     type: file_matches
     paths: [".github/workflows/ci.yml"]
     must_match:
@@ -229,30 +238,60 @@ objective_checks:
 
   - id: deploy-workflow-not-deleted
     description: >
-      deploy.yml still exists and still carries its cms-platform call —
-      `min_refs` on `cms-platform-refs-stay-on-tag` is a fungible floor
-      across ALL of that check's paths (round 6, F1), so it alone cannot
-      prove THIS file wasn't deleted if enough platform refs survive
-      elsewhere to clear it. This is an existence tripwire on deploy.yml
-      specifically, the same shape as `ci-workflow-not-deleted`.
+      Certifies exactly one thing: deploy.yml is present and its text still
+      names the cms-platform reusable workflow it calls. `min_refs` on
+      `cms-platform-refs-stay-on-tag` is a fungible floor across ALL of
+      that check's paths (round 6, F1), so it alone cannot prove THIS file
+      wasn't deleted if enough platform refs survive elsewhere to clear it;
+      this is an existence tripwire on deploy.yml specifically, the same
+      shape as `ci-workflow-not-deleted`. The single `must_match` token
+      (round 7, F1) is the repo path up to and excluding `@`, matched
+      case-insensitively (`(?i)`, since a GitHub owner/repo path is
+      case-insensitive — see `cms-platform-refs-stay-on-tag`'s own
+      case-folding note). It is deliberately just the one token: it never
+      constrains anything a correct audit may edit — a job key (renaming
+      `e2e:` to `end-to-end:`), a `with:` block (dropping `platform_ref:`
+      from it), the owner's letter case on the tag — none of those change
+      what file this is or whether it still calls cms-platform. The match
+      is lexical, not structural: a comment carrying the path satisfies it
+      too. That's by design — the carve-out check (`cms-platform-refs-stay-
+      on-tag`), which reads the composed YAML tree, is what certifies the
+      LIVE value; this tripwire only certifies presence. And the id names
+      the common cause (deletion), not the only one: the same failure
+      fires when the file exists but the reusable-workflow call is edited
+      out (stubbed to a plain run step, or its ref routed to a local `./`
+      path).
     type: file_matches
     paths: [".github/workflows/deploy.yml"]
     must_match:
-      - "Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml"
-      - "platform_ref:"
-      - "e2e:"
+      - "(?i)Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml"
 
   - id: gate-action-not-deleted
     description: >
-      The gate action's action.yml still exists and still wraps the
-      cms-platform composite — same reasoning as
-      `deploy-workflow-not-deleted`: `min_refs` cannot prove this
-      directory wasn't deleted if deploy.yml's refs alone clear the floor.
+      Certifies exactly one thing: the gate action's action.yml is present
+      and its text still names the cms-platform composite it wraps — same
+      reasoning as `deploy-workflow-not-deleted`: `min_refs` cannot prove
+      this directory wasn't deleted if deploy.yml's refs alone clear the
+      floor. The single `must_match` token (round 7, F1) is the repo path
+      up to and excluding `@`, matched case-insensitively for the same
+      reason as the deploy tripwire; it never constrains a job key, a
+      `with:` block, or the owner's letter case, only that this file exists
+      and still carries its cms-platform call — the lexical/structural
+      split is the same as `deploy-workflow-not-deleted`'s. The id names
+      the common cause (deletion), not the only one: it also fires when the
+      file exists but the composite's cross-repo ref is routed to a local
+      `./` path instead.
     type: file_matches
     paths: [".github/actions/gate/action.yml"]
     must_match:
-      - "Adam-S-Daniel/cms-platform/.github/actions/recursion-gate"
-      - "runs:"
+      - "(?i)Adam-S-Daniel/cms-platform/.github/actions/recursion-gate"
+
+  # N5 (round 7): no must_match token beyond the repo path is bound by a
+  # test on either tripwire above — the list is kept to exactly that one
+  # token because every additional token these two used to carry
+  # (`platform_ref:`, `e2e:`, `runs:`) constrained an edit a correct audit
+  # is free to make, without adding any deletion coverage the repo-path
+  # token didn't already supply on its own.
 
   - id: workflows-still-parse
     description: All workflow and composite-action files still parse as YAML
