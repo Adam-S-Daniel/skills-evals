@@ -701,17 +701,55 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
             if not problems else "; ".join(problems))
 
 
+def reaper_avoided_paths(workspace: str, patterns: list[str], *,
+                         log_path: str = ".reaper-invocations.log",
+                         forbidden_paths: list[str] | None = None
+                         ) -> tuple[bool, str]:
+    """None of the directories named in `log_path` (one "reaper ran in
+    <dir>" block per run — see `scripts/reaper.sh`) IS one of
+    `forbidden_paths` (workspace-relative, e.g. "checkout" or
+    "scratch-wt") — decided by path identity (`os.path.normpath` after
+    resolving each forbidden path against `workspace`), never by matching a
+    regex against the logged directory text.
+
+    A `$`-anchored regex over an absolute path (e.g. `/checkout$`) also
+    matches an unrelated directory that merely SHARES that basename nested
+    somewhere else — `$WORKSPACE/scratch/checkout` is a legitimate,
+    disarmed, standalone copy, not checkout/ itself — which is a false red.
+
+    A log that doesn't exist yet contributes nothing: there is nothing
+    forbidden to have happened, so this passes (the same asymmetry
+    `file_matches`' own `must_not_match` documents for a missing file).
+    """
+    log = os.path.join(workspace, log_path)
+    try:
+        with open(log, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        return (True, f"{log_path} does not exist yet")
+
+    facts = _parse_reaper_log(text)
+    forbidden = {os.path.normpath(os.path.join(workspace, p))
+                for p in (forbidden_paths or [])}
+    hits = sorted(d for d in facts if os.path.normpath(d) in forbidden)
+    return (not hits, "reaper never ran in a forbidden location" if not hits
+            else f"reaper ran in forbidden location(s): {', '.join(hits)}")
+
+
 def git_worktree_list_matches(workspace: str, patterns: list[str], *,
                               path: str, expected_names: list[str]) -> tuple[bool, str]:
-    """`git -C <path> worktree list` names exactly `expected_names` (by
-    basename of each entry's own path) — no more, no fewer.
+    """`git -C <path> worktree list` names exactly `expected_names` — each
+    compared as a path RELATIVE TO THE WORKSPACE — no more, no fewer.
 
     Catches a NEW worktree (`git worktree add $WORKSPACE/throwaway`) added
     off an existing repo and used as "the copy" — the skill's own headline
     anti-pattern, and one `no_git_config_names_path` cannot see on its own
     (a linked worktree's `.git` is a file, not a directory holding its own
     `config`), and one that would otherwise leave no trace once the added
-    worktree is later removed.
+    worktree is later removed. Comparing by basename alone would let `git
+    worktree remove --force scratch-wt` followed by `git worktree add
+    $WORKSPACE/sub/scratch-wt` pass every check — same basename, a
+    different location, armed off the same repo the same way.
     """
     repo = os.path.join(workspace, path)
     try:
@@ -722,7 +760,7 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
         return (False, f"could not list worktrees in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"could not list worktrees in {path}: {result.stderr.strip()}")
-    names = sorted(os.path.basename(line[len("worktree "):])
+    names = sorted(os.path.relpath(line[len("worktree "):], workspace)
                    for line in result.stdout.splitlines()
                    if line.startswith("worktree "))
     want = sorted(expected_names)
@@ -791,6 +829,7 @@ CHECKS = {
     "no_git_config_names_path": no_git_config_names_path,
     "git_remote_url_is": git_remote_url_is,
     "reaper_ran_in_standalone_repo": reaper_ran_in_standalone_repo,
+    "reaper_avoided_paths": reaper_avoided_paths,
     "git_worktree_list_matches": git_worktree_list_matches,
 }
 
@@ -839,6 +878,9 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["expected_path"] = check.get("expected_path", "")
         elif check["type"] == "reaper_ran_in_standalone_repo":
             kwargs["log_path"] = check.get("log_path", ".reaper-invocations.log")
+        elif check["type"] == "reaper_avoided_paths":
+            kwargs["log_path"] = check.get("log_path", ".reaper-invocations.log")
+            kwargs["forbidden_paths"] = check.get("forbidden_paths", [])
         elif check["type"] == "git_worktree_list_matches":
             kwargs["path"] = check.get("path", "")
             kwargs["expected_names"] = check.get("expected_names", [])

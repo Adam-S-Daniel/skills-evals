@@ -479,11 +479,16 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
 
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    """Run git in `cwd` with a fixed local identity (don't rely on global config)."""
+    """Run git in `cwd` with a fixed local identity (don't rely on global
+    config). `errors="replace"` — a workspace an agent has been let loose in
+    can carry non-UTF-8 bytes git itself doesn't treat as binary (its own
+    heuristic only looks for a NUL byte early in the content), and a diff or
+    log that embeds them raw must not crash the whole run over it.
+    """
     return subprocess.run(
         ["git", "-c", "user.email=skills-evals@local",
          "-c", "user.name=skills-evals harness", *args],
-        cwd=cwd, check=True, capture_output=True, text=True,
+        cwd=cwd, check=True, capture_output=True, text=True, errors="replace",
     )
 
 
@@ -522,7 +527,7 @@ def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
         rel = d.relative_to(workspace)
         log = subprocess.run(
             ["git", "-C", str(d), "log", "--stat", "-p", "-1", "--format=%H %s"],
-            capture_output=True, text=True, timeout=10)
+            capture_output=True, text=True, errors="replace", timeout=10)
         if log.returncode != 0 or not log.stdout.strip():
             sections.append(f"=== {rel} (no commits) ===")
         else:

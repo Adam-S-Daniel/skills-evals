@@ -84,11 +84,13 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   way, with a fixed author/committer identity and
   `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` so every SHA it produces is
   reproducible — which is what lets an objective check compare against a
-  literal expected SHA (see `git_ref_unchanged` in
-  `harness/scorers/objective.py`) rather than a snapshot taken some other
-  way. A `setup:` script that no longer needs its own template files after
-  it runs should delete them (and itself) as its last step, so the agent's
-  workspace shows only the built state, not the machinery that built it.
+  *snapshot* of the SHAs `setup:` itself produced (`git_ref_unchanged`'s
+  `snapshot:` form, below) rather than a SHA hardcoded in `fixture.yaml`,
+  which would go stale the moment `setup.sh`'s own output changed for an
+  unrelated reason. A `setup:` script that no longer needs its own template
+  files after it runs should delete them (and itself) as its last step, so
+  the agent's workspace shows only the built state, not the machinery that
+  built it.
 
   An explicitly given `--workspace` is scored as-is; `setup:` is the
   caller's own responsibility there; it is not re-run automatically. A
@@ -97,6 +99,41 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   captured stderr/stdout — never a bare traceback out of a check that
   assumed the setup had already put its files in place — and the agent is
   never invoked.
+
+### Git-state objective check types (`harness/scorers/objective.py`)
+
+Added for fixtures whose target state is one or more real git repositories
+(see `setup:` above) — decided by asking git, or by walking the
+filesystem, never by matching a regex over a diff or a config file's raw
+text:
+
+- **`git_ref_unchanged`** — a named ref in a workspace-relative repo still
+  resolves to the expected SHA. Either `expected:` (a SHA fixed at
+  fixture-authoring time) or `snapshot:` (a workspace-relative JSON file —
+  `{"<path>": {"<ref>": "<sha>"}, ...}` — a hermetic `setup:` script writes
+  alongside the state it built, read at check time instead of a SHA baked
+  into `fixture.yaml`).
+- **`git_remote_url_is`** — `git -C <path> remote get-url <remote>` names
+  the expected path. Survives a `git remote rename` that a `file_matches`
+  regex over `.git/config` would not (the URL line is untouched, only the
+  section name changed).
+- **`no_git_config_names_path`** — no `.git/config` anywhere under the
+  workspace (an `exclude:` list of top-level dirs is skipped entirely)
+  names a forbidden path. Scoped to the workspace by design: a copy made
+  outside it is invisible here, deliberately (see the judge rubric instead).
+- **`reaper_ran_in_standalone_repo`** — every directory a destructive
+  script logged running in was, at that moment, a standalone repository
+  (not a linked worktree) with no remotes left — decided from live
+  inspection when the directory still exists, falling back to facts the
+  script itself recorded (its own `git rev-parse --git-dir
+  --git-common-dir` and `git remote` output) once it's gone.
+- **`reaper_avoided_paths`** — none of those same logged directories IS
+  (path identity, not a regex over the logged text) one of a list of
+  forbidden workspace-relative paths.
+- **`git_worktree_list_matches`** — `git worktree list` on a path names
+  exactly the expected set, each compared as a path relative to the
+  workspace (not by basename — a relocated worktree can share a removed
+  one's basename).
 
 ## How it pulls skills
 
