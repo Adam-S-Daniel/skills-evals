@@ -431,6 +431,13 @@ def files_unchanged(workspace: str, patterns: list[str],
             if not problems else "; ".join(problems))
 
 
+def _capped_join(names: list[str], limit: int = 40) -> str:
+    """", "-join, but a huge listing doesn't dump every name into `detail`."""
+    if len(names) <= limit:
+        return ", ".join(names)
+    return f"{', '.join(names[:limit])}, and {len(names) - limit} more"
+
+
 def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str] | None = None,
                         expected_file: str | None = None, seed: str | None = None,
                         ignore: list[str] | None = None) -> tuple[bool, str]:
@@ -460,7 +467,13 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
     if len(patterns) != 1:
         return (False, f"dir_listing_matches takes exactly one directory, got {patterns!r}")
     directory = patterns[0]
+    if os.path.isabs(directory):
+        return (False, f"{directory}: must be a workspace-relative path, not absolute")
+    workspace_real = os.path.realpath(workspace)
     target = os.path.join(workspace, directory)
+    target_real = os.path.realpath(target)
+    if os.path.commonpath([workspace_real, target_real]) != workspace_real:
+        return (False, f"{directory}: resolves outside the workspace")
     if not os.path.isdir(target):
         return (False, f"{directory}: not a directory")
     actual = sorted(os.listdir(target))
@@ -488,11 +501,11 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
     extra = sorted(set(actual) - set(expected))
     problems = []
     if missing:
-        problems.append("missing: " + ", ".join(missing))
+        problems.append("missing: " + _capped_join(missing))
     if extra:
-        problems.append("unexpected: " + ", ".join(extra))
+        problems.append("unexpected: " + _capped_join(extra))
     return (False, "; ".join(problems) if problems
-            else f"listing differs: {actual} != {expected}")
+            else f"listing differs: {_capped_join(actual)} != {_capped_join(expected)}")
 
 
 def file_digests_match(workspace: str, patterns: list[str],

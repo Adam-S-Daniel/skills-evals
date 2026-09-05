@@ -2635,6 +2635,27 @@ class DirListingMatchesCheckTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("not a directory", detail)
 
+    def test_absolute_directory_path_is_rejected(self):
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(str(ws), ["/etc"], expected=[])
+        self.assertFalse(passed)
+        self.assertIn("absolute", detail)
+
+    def test_directory_path_escaping_the_workspace_is_rejected(self):
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(str(ws), [".."], expected=[])
+        self.assertFalse(passed)
+        self.assertIn("outside", detail)
+
+    def test_large_mismatched_listing_is_capped_in_detail(self):
+        names = [f"f{i}.pdf" for i in range(50)]
+        ws = self._ws(names)
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["completely-different.pdf"])
+        self.assertFalse(passed)
+        self.assertIn("more", detail)
+        self.assertLess(len(detail), 2000)
+
     def test_ignore_glob_excludes_matching_names_from_the_listing(self):
         ws = self._ws(["a.pdf", "pdf-rename-log-2026-09-05.csv"])
         passed, detail = objective.dir_listing_matches(
