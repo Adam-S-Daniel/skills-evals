@@ -1252,6 +1252,18 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
     seed = args.eval_dir / "seed"
 
     if args.arm == "objective-only":
+        # N-f. A guidance fixture's checks are PER ARM, so a top-level
+        # `objective_checks:` is usually absent — and `run_checks` over zero
+        # checks printed `{"checks": []}` and exited 0, which reads as "every
+        # check passed". Say so instead. This is the convention
+        # check-guidance-coverage.js states in its own header: an empty
+        # measurement is not a passing one.
+        if not fixture.get("objective_checks"):
+            print(f"{args.eval_dir / 'fixture.yaml'} declares no top-level "
+                  "`objective_checks:` — objective-only has nothing to score. "
+                  "A guidance fixture's checks are per arm; run it with "
+                  "`--arm both` (or a named arm) instead.")
+            return 2
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp) / "ws"
             if seed.is_dir():

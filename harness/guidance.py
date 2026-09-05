@@ -77,7 +77,6 @@ import sys
 from pathlib import Path
 
 import yaml
-from markdown_it import MarkdownIt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_canary  # noqa: E402  — run_leg is the probe the guard reuses
@@ -216,6 +215,28 @@ def find_row(manifest: list[dict], section_id: str, guidance_dir: Path) -> dict:
 # extent + payload assembly (pure)
 
 
+def _markdown_it():
+    """markdown-it-py, imported HERE and not at module scope.
+
+    run_eval.py imports this module unconditionally, for every subject — so a
+    module-scope `from markdown_it import MarkdownIt` made a SKILL fixture's
+    `--arm objective-only` run die with a bare ImportError traceback on a
+    machine without the parser, for a code path that never parses markdown at
+    all. Imported at the one call site that needs it, and the failure names
+    the pip line instead of a traceback.
+    """
+    try:
+        from markdown_it import MarkdownIt
+    except ImportError as exc:
+        raise GuidanceError(
+            "the guidance subject locates a section's extent with a real "
+            "markdown parse and needs markdown-it-py: "
+            "`pip install markdown-it-py==4.2.0` (pinned exact — a floating "
+            f"parser version could silently change what a `section` arm "
+            f"delivers). Import failed: {exc}") from exc
+    return MarkdownIt()
+
+
 def h2_extents(text: str) -> list[dict]:
     """Every level-2 heading in `text` as {heading, start, end} CHARACTER
     offsets, the extent running from the heading line through the line before
@@ -248,7 +269,7 @@ def h2_extents(text: str) -> list[dict]:
     def offset_at(index: int) -> int:
         return line_start[index] if index < len(lines) else len(text)
 
-    tokens = MarkdownIt().parse(text)
+    tokens = _markdown_it().parse(text)
     raw = []
     for i, token in enumerate(tokens):
         if token.type == "heading_open" and token.tag == "h2":

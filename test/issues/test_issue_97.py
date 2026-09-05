@@ -1408,6 +1408,58 @@ class TestIssue97(unittest.TestCase):
     def _delivery_fixture(self) -> dict:
         return yaml.safe_load((DELIVERY_DIR / "fixture.yaml").read_text(encoding="utf-8"))
 
+    def test_objective_only_on_a_guidance_fixture_exits_2_not_zero_checks(self):
+        # N-f. A guidance fixture's checks are per arm, so a top-level
+        # `objective_checks:` is normally absent — and `run_checks` over zero
+        # checks printed `{"checks": []}` and exited 0, which reads as "every
+        # check passed". An empty measurement is not a passing one.
+        rc, out = self._run_main([DELIVERY_DIR, "--arm", "objective-only"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("objective_checks", out)
+        self.assertIn("per arm", out)
+        self.assertNotIn('"checks": []', out)
+
+    def test_objective_only_still_scores_a_guidance_fixture_that_has_checks(self):
+        # The other side: the branch is about ABSENT checks, not about the
+        # subject. A guidance fixture that does declare top-level checks is
+        # scored exactly as before.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-objonly-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        eval_dir = self._guidance_fixture(tmp, objective_checks=[
+            {"id": "seed-clean", "type": "file_matches",
+             "must_not_match": ["zzz-never-appears"]}])
+        rc, out = self._run_main([eval_dir, "--arm", "objective-only"])
+        self.assertEqual(rc, 0, out)
+        self.assertIn('"checks"', out)
+        self.assertIn("seed-clean", out)
+
+    def test_a_skill_objective_only_run_survives_a_missing_markdown_it(self):
+        # N-g. run_eval imports guidance for every subject, and guidance used
+        # to import markdown_it at MODULE scope — so a skill fixture's
+        # objective-only run died with a bare ImportError traceback on a
+        # machine without the parser, for a code path that never parses
+        # markdown. The import is at its one call site now.
+        skill_dir = REPO_ROOT / "evals" / "workflow-path-audit"
+        baseline, _ = self._run_main([skill_dir, "--arm", "objective-only"])
+        blocked = dict(sys.modules)
+        blocked["markdown_it"] = None
+        with mock.patch.dict(sys.modules, blocked, clear=True):
+            with self.assertRaises(ImportError):
+                import markdown_it  # noqa: F401
+            rc, out = self._run_main([skill_dir, "--arm", "objective-only"])
+        self.assertEqual(rc, baseline,
+                         "a skill fixture's objective-only run must not "
+                         f"depend on markdown-it-py\n{out[-1500:]}")
+        self.assertNotIn("Traceback", out)
+
+    def test_the_extent_parser_names_the_pip_line_when_it_cannot_import(self):
+        blocked = dict(sys.modules)
+        blocked["markdown_it"] = None
+        with mock.patch.dict(sys.modules, blocked, clear=True):
+            with self.assertRaises(guidance.GuidanceError) as ctx:
+                guidance.h2_extents("# T\n\n## A\n\nbody\n")
+        self.assertIn("markdown-it-py==4.2.0", str(ctx.exception))
+
     def test_the_delivery_fixture_declares_one_arm_per_mode(self):
         fixture = self._delivery_fixture()
         self.assertEqual(fixture["subject"], "guidance")
