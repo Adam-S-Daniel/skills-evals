@@ -978,6 +978,83 @@ class TestIssue97(unittest.TestCase):
                          "test/run_tests.py must define USER_MEMORY_ENV as "
                          f"{MEMORY_ENV!r}")
 
+    # ------------------------------------------------------------------
+    # A2 — a timeout knob is a positive number, or it is absent
+    #
+    # `(fixture.get("guard") or {}).get("timeout_s", 300)` and
+    # `fixture.get("timeout_s", 600)` return the VALUE when the key is
+    # present, so an explicit YAML null (`guard:\n  timeout_s:`) yielded None
+    # and `subprocess.run(timeout=None)` waited forever — measured against a
+    # fake CLI that never returns; the only backstop in CI is the 45-minute
+    # job kill, with no summary and no artifact. A string yielded a TypeError
+    # traceback and rc 1, outside the GuidanceError contract (rc 2, a named
+    # message, no traceback).
+    # ------------------------------------------------------------------
+
+    # Long enough that a run which reaches the CLI at all does not finish
+    # inside this test's own patience — so a regression shows up as the outer
+    # timeout firing, never as a passing test.
+    HANG = {"FAKE_CLAUDE_MODE": "timeout", "FAKE_CLAUDE_SLEEP": "600"}
+
+    def _timeout_fixture(self, tmp: Path, **overrides) -> Path:
+        return self._guidance_fixture(tmp, env=dict(self.HANG), **overrides)
+
+    def test_a_null_or_bad_timeout_is_a_named_configuration_error(self):
+        root = self._checkout()
+        for label, overrides in (
+                ("guard.timeout_s: null", {"guard": {"timeout_s": None}}),
+                ("guard.timeout_s: abc", {"guard": {"timeout_s": "abc"}}),
+                ("guard.timeout_s: 0", {"guard": {"timeout_s": 0}}),
+                ("guard.timeout_s: -1", {"guard": {"timeout_s": -1}}),
+                ("timeout_s: null", {"timeout_s": None}),
+                ("timeout_s: abc", {"timeout_s": "abc"}),
+                ("timeout_s: 0", {"timeout_s": 0}),
+                ("timeout_s: -1", {"timeout_s": -1}),
+                ("setup_timeout_s: null", {"setup_timeout_s": None}),
+                ("judge.timeout_s: null", {"judge": {"timeout_s": None}}),
+        ):
+            with self.subTest(label=label):
+                tmp = Path(tempfile.mkdtemp(prefix="guidance-timeout-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                eval_dir = self._timeout_fixture(tmp, **overrides)
+                rc, out = self._run_main(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", tmp / "results", "--no-judge"])
+                self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                self.assertIn("positive number", out, f"{label}: {out}")
+                self.assertIn("timeout_s", out, f"{label}: {out}")
+                self.assertNotIn("Traceback", out, f"{label}: {out}")
+
+    def test_a_valid_timeout_still_runs_the_arm(self):
+        # The other side: a well-formed knob is untouched by the check. Uses
+        # the ordinary probe CLI, not the hanging one.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-timeout-ok-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(tmp, timeout_s=3,
+                                          guard={"timeout_s": 3})
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--results-dir", tmp / "results", "--no-judge"])
+        self.assertEqual(rc, 0, out)
+
+    def test_a_skill_fixtures_timeout_knob_is_checked_the_same_way(self):
+        # The same null hole is pre-existing on the skill leg (main's
+        # `args.timeout or fixture.get("timeout_s", 600)`), so the check runs
+        # at fixture load, before either subject branches.
+        tmp = Path(tempfile.mkdtemp(prefix="skill-timeout-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        eval_dir = tmp / "eval"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(
+            {"skill": "a-skill", "prompt": "do the thing", "timeout_s": None},
+            sort_keys=False), encoding="utf-8")
+        rc, out = self._run_main([eval_dir, "--arm", "without_skill",
+                                  "--results-dir", tmp / "results", "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("positive number", out)
+        self.assertNotIn("Traceback", out)
+
     def test_unknown_section_id_through_main_exits_2_naming_the_manifest(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-badid-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)

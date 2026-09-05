@@ -48,6 +48,53 @@ def load_fixture(eval_dir: Path) -> dict:
         return yaml.safe_load(f)
 
 
+# Every timeout knob a fixture can set, as (key, path-to-its-mapping). Each is
+# read with `.get(key, <default>)`, which returns the VALUE whenever the key is
+# PRESENT — so an explicit YAML null (`guard:` / `  timeout_s:`) yielded None
+# and `subprocess.run(timeout=None)` waited forever: measured against a CLI
+# that never returns, the only backstop in CI is the 45-minute job kill, with
+# no summary and no artifact written. A string yielded a TypeError traceback
+# and rc 1, outside the "configuration problem" contract (rc 2, a named
+# message, no traceback).
+TIMEOUT_KNOBS = (
+    ("timeout_s", ()),           # the agent leg, both subjects
+    ("setup_timeout_s", ()),     # the fixture's `setup:` hook
+    ("timeout_s", ("guard",)),   # the guidance subject's per-arm delivery guard
+    ("timeout_s", ("judge",)),   # the judge call
+)
+
+
+def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
+    """Coerce-and-check every timeout knob ONCE, at fixture load, before any
+    subject branch or subprocess. Absent is fine — the caller's default
+    applies, and a fixture with a valid or absent knob is untouched by this,
+    so every committed fixture scores byte-identically.
+    """
+    for key, parents in TIMEOUT_KNOBS:
+        node = fixture
+        for parent in parents:
+            node = node.get(parent) if isinstance(node, dict) else None
+            if not isinstance(node, dict):
+                node = {}
+                break
+        if not isinstance(node, dict) or key not in node:
+            continue
+        value = node[key]
+        where = ".".join(parents + (key,))
+        # `bool` is an `int` in Python; `timeout_s: true` is not a duration.
+        ok = (not isinstance(value, bool) and isinstance(value, (int, float))
+              and value == value and value not in (float("inf"),
+                                                   float("-inf"))
+              and value > 0)
+        if not ok:
+            raise guidance.GuidanceError(
+                f"{fixture_path}: `{where}` must be a positive number of "
+                f"seconds, got {value!r}. An explicit YAML null here means "
+                "\"no timeout\" — a run that hangs until the job is killed, "
+                "with no summary and no artifact. Omit the key to take the "
+                "default instead.")
+
+
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"
 
 _REQUIRED_REGISTRY_FIELDS = ("name", "url", "layout")
@@ -1264,6 +1311,11 @@ def main() -> int:
     args = parser.parse_args()
 
     fixture = load_fixture(args.eval_dir)
+    try:
+        validate_timeouts(fixture, args.eval_dir / "fixture.yaml")
+    except guidance.GuidanceError as exc:
+        print(f"fixture configuration error: {exc}")
+        return 2
     seed = args.eval_dir / "seed"
 
     # Two subjects: a skill copied into the workspace (the original, and
