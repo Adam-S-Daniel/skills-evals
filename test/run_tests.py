@@ -6325,6 +6325,26 @@ class TestIssue67Review6(unittest.TestCase):
         # Mutation check (manual): reverting the bar's format spec to
         # `:.0f` renders "0% relative floor" — red.
 
+    # --- N8: source.census_at must publish the PARSED timestamp,
+    # re-rendered, not the raw string ------------------------------------
+
+    def test_census_at_publishes_the_parsed_timestamp_not_the_raw_string(self):
+        """`parse_ts` strips a census `generated_at` before comparing it
+        against `now`, but `source.census_at` used to publish the RAW
+        string verbatim — a trailing newline or `\\r` would reach
+        `latest.json`, summary.md, and eval.yml's stdout as a literal
+        control character."""
+        census = TestIssue67._census_doc(generated_at="2026-09-03T00:00:00Z\n")
+        result = self._compute(census=census, previous=None)
+        self.assertEqual(result["source"]["census_at"], "2026-09-03T00:00:00Z")
+        summary = roster.render_summary(result)
+        self.assertNotIn("\n\n·", summary)
+        self.assertNotIn("Z\n`", summary)
+        # Mutation check (manual): reverting `census_at_published` to
+        # `(census_doc or {}).get("generated_at")` (the raw string)
+        # republishes the trailing newline — the assertEqual above
+        # turns red.
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1025,9 +1025,17 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # one". A stale or future-dated census was not read, so it records
     # nothing. Branches on the verdict CODE, not on the reason string's
     # prefix — a human-facing sentence is not a stable thing to match on.
-    census_at_published = ((census_doc or {}).get("generated_at")
-                           if census_code in CENSUS_PUBLISHED_CODES
-                           else None)
+    # Published as the PARSED timestamp, re-rendered (N8, #129 review round
+    # 6) — not the raw string: `parse_ts` strips it before ever comparing
+    # it against `now`, but the raw value used to be published verbatim,
+    # so a trailing newline or `\r` reached latest.json, summary.md, and
+    # eval.yml's stdout as a literal control character. A published code
+    # only ever follows a successful parse (see `_census_verdict`), so
+    # this re-parse cannot fail here.
+    census_at_parsed = (parse_ts((census_doc or {}).get("generated_at"))
+                        if census_code in CENSUS_PUBLISHED_CODES else None)
+    census_at_published = (census_at_parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
+                           if census_at_parsed else None)
 
     newest_by_rung: dict[int, str] = {}
     for model in available:  # sorted weakest-first, oldest-first within a rung
