@@ -85,9 +85,13 @@ objective_checks:
     description: >
       e2e-tests.yml's `e2e` job calls the composite with `if: failure()`,
       mode: post, and a real log-file/marker/title — the single-job shape
-      from the skill's caller convention. Also asserts the job is in scope
-      for `pull-requests: write` (workflow- or job-level) — the skill's own
-      "most subtle and most common" pitfall, and objectively decidable.
+      from the skill's caller convention. `log_file_matches_tee` requires
+      `log-file` to name the actual `tee` target an earlier `run:` step in
+      the SAME job wrote to (SKILL.md's `2>&1 | tee /tmp/<log>.log`
+      idiom), not merely any non-empty string. Also asserts the job is in
+      scope for `pull-requests: write` (workflow- or job-level) — the
+      skill's own "most subtle and most common" pitfall, and objectively
+      decidable.
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml"]
     uses_suffix: "/post-failure-comment"
@@ -98,6 +102,7 @@ objective_checks:
       mode: post
     job_permissions_include:
       pull-requests: write
+    log_file_matches_tee: true
 
   - id: e2e-resolve-step
     description: e2e-tests.yml's `e2e` job resolves the comment on success.

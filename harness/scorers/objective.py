@@ -631,6 +631,36 @@ def _gates_on_outcome(step_if: str, outcome: str) -> bool:
     return False
 
 
+# The log-capture idiom SKILL.md's own snippets prescribe:
+# `... 2>&1 | tee /tmp/<log>.log`. Matches `tee` and, loosely, `tee -a`.
+_TEE_TARGET_RE = re.compile(r"\btee\s+(?:-a\s+)?(\S+)")
+
+
+def _job_tee_targets(job_body: dict, before_index: int | None = None) -> list[str]:
+    """Every path a `tee` invocation in this job's `run:` steps wrote to, in
+    step order. Lexical, on purpose, once the step is already selected
+    structurally: only a matched step's `run:` leaf STRING is scanned for
+    `tee <path>`, never a raw scan of the whole file.
+
+    `before_index`, when given, limits the walk to steps strictly BEFORE
+    that position — mirrors `_job_download_artifact_paths`'s ordering
+    guarantee: a `tee` that runs later hasn't captured anything yet by the
+    time an earlier step's `log-file:` would need it.
+    """
+    steps = job_body.get("steps") or []
+    if before_index is not None:
+        steps = steps[:before_index]
+    targets = []
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        run_body = step.get("run")
+        if not isinstance(run_body, str):
+            continue
+        targets.extend(_TEE_TARGET_RE.findall(run_body))
+    return targets
+
+
 def _job_download_artifact_paths(job_body: dict, before_index: int | None = None) -> list[str]:
     """Every location an `actions/download-artifact` step in this job
     extracted to, in step order. Structural: walks `steps:`, only a matched
@@ -694,6 +724,7 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                        with_equals: dict | None = None,
                        with_tag_ref: str | None = None,
                        log_file_matches_download: bool = False,
+                       log_file_matches_tee: bool = False,
                        unique_with_key: str | None = None,
                        min_matches: int = 1) -> tuple[bool, str]:
     """Structural assertions over parsed workflow YAML: does at least
@@ -741,6 +772,13 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     on a different runner (the matrix job), so a `log-file:` naming a path
     with no artifact transport into the calling job is unreachable at
     runtime, not merely unverified.
+
+    `log_file_matches_tee` requires the qualifying step's `with.log-file`
+    value to EQUAL a path an earlier `run:` step in the SAME job actually
+    `tee`'d to — for the single-job shape, where the log is captured with
+    `... 2>&1 | tee /tmp/<log>.log` in the same job that calls the
+    composite, `log-file: /tmp/whatever-else.log` is any-non-empty-string
+    correct today but points at a file that was never written.
 
     `unique_with_key` switches to a second mode instead of the match/count
     check above: collect every `uses_suffix`-matching step's `with[key]`
@@ -825,6 +863,11 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             log_file = with_block.get("log-file")
             download_paths = _job_download_artifact_paths(job_body, before_index=step_index)
             if not _log_file_reachable(log_file, download_paths):
+                continue
+        if log_file_matches_tee:
+            log_file = with_block.get("log-file")
+            tee_targets = _job_tee_targets(job_body, before_index=step_index)
+            if not isinstance(log_file, str) or log_file not in tee_targets:
                 continue
         qualifying.append((rel, job_id))
 
@@ -966,8 +1009,8 @@ _CHECK_META_KEYS = {"id", "description", "type", "paths"}
 _WORKFLOW_STEP_USES_KEYS = {
     "uses_suffix", "job", "job_if_equals", "job_needs_nonempty",
     "job_permissions_include", "if_contains", "if_gates_on_outcome", "with_present",
-    "with_equals", "with_tag_ref", "log_file_matches_download", "unique_with_key",
-    "min_matches",
+    "with_equals", "with_tag_ref", "log_file_matches_download", "log_file_matches_tee",
+    "unique_with_key", "min_matches",
 }
 
 

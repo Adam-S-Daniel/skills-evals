@@ -2955,6 +2955,48 @@ class TestIssue86(unittest.TestCase):
             with_equals={"mode": "post"}, log_file_matches_download=True)
         self.assertFalse(passed)
 
+    # ---- workflow_step_uses: log_file_matches_tee (issue #86 review round 3,
+    # N9) --------------------------------------------------------------------
+
+    def test_log_file_matches_tee_accepts_the_actual_tee_target(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - name: Run tests\n"
+             "        run: npx playwright test 2>&1 | tee /tmp/e2e.log\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          log-file: /tmp/e2e.log\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_tee=True)
+        self.assertTrue(passed, detail)
+
+    def test_log_file_matches_tee_rejects_an_unrelated_path(self):
+        # N9: any non-empty log-file used to satisfy this check — a path
+        # that was never actually `tee`'d must fail.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - name: Run tests\n"
+             "        run: npx playwright test 2>&1 | tee /tmp/e2e.log\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n"
+             "          log-file: /tmp/somewhere-else.log\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_tee=True)
+        self.assertFalse(passed)
+
+    def test_log_file_matches_tee_ignores_a_later_tee_step(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          log-file: /tmp/e2e.log\n"
+             "      - name: Run tests\n"
+             "        run: npx playwright test 2>&1 | tee /tmp/e2e.log\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_tee=True)
+        self.assertFalse(passed)
+
     # ---- workflow_step_uses: uses_suffix must be a true suffix (S3) --------
 
     def test_uses_suffix_does_not_match_unrelated_action(self):
@@ -3460,6 +3502,20 @@ jobs:
             "log-file: /tmp/visual-chromium.log"), encoding="utf-8")
         by_id = self._check_fixture(ws)
         self.assertFalse(by_id["visual-regression-post-step"]["passed"])
+
+    def test_e2e_log_file_not_matching_tee_target_fails(self):
+        # Review round 3, N9: e2e-post-step's log-file used to accept ANY
+        # non-empty string — a path that was never actually `tee`'d in the
+        # same job must fail.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("log-file: /tmp/e2e.log", text)
+        path.write_text(text.replace(
+            "log-file: /tmp/e2e.log", "log-file: /tmp/somewhere-else.log"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["e2e-post-step"]["passed"])
 
     def test_editing_vendored_contract_fails(self):
         # Review round 1, S5: nothing objectively protected the vendored
