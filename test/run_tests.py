@@ -4587,6 +4587,102 @@ class TestIssue81(unittest.TestCase):
                                              transcript="Hi Dana,\n")
                 self.assertIn("strip_seed", str(ctx.exception))
 
+    # N1 (round 5): both of those errors reached the CLI as an uncaught
+    # traceback and exit 1 — the code a legitimately FAILING eval returns —
+    # where every other fixture error is a named line and exit 2. Driven
+    # through the real `run_eval.py` on a throwaway copy of the fixture, so
+    # what is measured is the process a CI job actually runs.
+
+    def _throwaway_fixture(self, tmp: str, name: str, mutate) -> Path:
+        eval_dir = Path(tmp) / name
+        shutil.copytree(self.STYLE_DIR / name, eval_dir)
+        path = eval_dir / "fixture.yaml"
+        doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+        mutate(doc, eval_dir)
+        path.write_text(yaml.safe_dump(doc, allow_unicode=True, sort_keys=False),
+                        encoding="utf-8")
+        return eval_dir
+
+    def _run_cli(self, eval_dir: Path, results: Path, *extra):
+        return subprocess.run(
+            [sys.executable, str(REPO_ROOT / "harness" / "run_eval.py"),
+             str(eval_dir), "--arm", "objective-only",
+             "--results-dir", str(results), *extra],
+            capture_output=True, text=True, cwd=str(REPO_ROOT))
+
+    def test_a_non_boolean_strip_seed_exits_2_with_a_named_line(self):
+        def mutate(doc, _dir):
+            doc["objective_checks"][0]["strip_seed"] = "no"
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._throwaway_fixture(tmp, "recruiter-reply", mutate)
+            results = Path(tmp) / "results"
+            proc = self._run_cli(eval_dir, results)
+            output = proc.stdout + proc.stderr
+            self.assertEqual(proc.returncode, 2, output)
+            self.assertIn("invalid_fixture:", output)
+            self.assertIn("strip_seed", output)
+            self.assertNotIn("Traceback", output)
+            # Artifacts, as for every other fixture-level refusal: the
+            # reason is in `results/`, not only in whoever's terminal.
+            reports = sorted(results.rglob("report.md"))
+            summaries = sorted(results.rglob("summary.json"))
+            self.assertTrue(reports, "no report.md written")
+            self.assertTrue(summaries, "no summary.json written")
+            self.assertIn("invalid_fixture",
+                          reports[0].read_text(encoding="utf-8"))
+            self.assertEqual(
+                json.loads(summaries[0].read_text(encoding="utf-8"))
+                ["error"]["type"], "invalid_fixture")
+
+    def test_an_oversized_seed_file_is_an_arm_error_not_a_crash(self):
+        # The other `FixtureError`. It cannot fire on the objective-only
+        # path — with no transcript no check ever builds the provenance
+        # index — so the site where it really escaped is `_run_arm`, which
+        # HAS a transcript. Driven through `_run_arm` with the agent
+        # stubbed, the way this file already drives the other arm-level
+        # fixture errors, and the seed file written rather than declared so
+        # the cap is the real one.
+        seed_text = "the engagement is contracted through March 2027. "
+        with tempfile.TemporaryDirectory() as tmp:
+            seed = Path(tmp) / "seed"
+            shutil.copytree(self.STYLE_DIR / "recruiter-reply" / "seed", seed)
+            (seed / "huge.md").write_text(
+                seed_text * ((objective._SEED_READ_CAP // len(seed_text)) + 8),
+                encoding="utf-8")
+            fixture = copy.deepcopy(self._fixture("recruiter-reply"))
+            registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+            args = argparse.Namespace(model=None, timeout=30,
+                                      results_dir=Path(tmp) / "results",
+                                      no_judge=True)
+            with mock.patch.object(
+                    run_eval, "run_agent",
+                    return_value={"transcript": "Hi Dana,\n\nSorry.\n",
+                                  "raw": "", "cost_usd": 0, "num_turns": 1,
+                                  "duration_ms": 1, "usage": {}}):
+                result = run_eval._run_arm("with_skill", fixture, seed,
+                                           registries, args,
+                                           "20260101T000000Z")
+            self.assertIsNotNone(result["error"], result)
+            self.assertEqual(result["error"]["type"], "invalid_fixture")
+            self.assertIn("huge.md", result["error"]["detail"])
+            self.assertIn("provenance read cap", result["error"]["detail"])
+            # And the artifacts a runner-level refusal leaves, so the arm
+            # is not silently absent from `results/`.
+            summaries = sorted((Path(tmp) / "results").rglob("summary.json"))
+            self.assertTrue(summaries, "no summary.json written")
+            self.assertEqual(
+                json.loads(summaries[0].read_text(encoding="utf-8"))
+                ["error"]["type"], "invalid_fixture")
+
+    def test_a_sound_fixture_still_exits_1_on_the_pristine_seed(self):
+        # The floor under both: exit 2 means "this fixture could not be
+        # scored", and a fixture that scores and FAILS must still be exit 1.
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(tmp) / "results"
+            proc = self._run_cli(self.STYLE_DIR / "recruiter-reply", results)
+            self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+            self.assertNotIn("invalid_fixture", proc.stdout + proc.stderr)
+
     def test_a_real_boolean_still_works_both_ways(self):
         # The other direction, so the guard is not just "raise on
         # everything": `false` turns the pre-pass off and the seed's own

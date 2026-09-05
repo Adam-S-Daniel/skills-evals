@@ -794,8 +794,24 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "duration_ms": result.get("duration_ms"),
                 "usage": result.get("usage"),
             }
-            objective_checks = objective.run_checks(
-                fixture, str(workspace), str(seed), transcript=result.get("transcript"))
+            # The SAME fixture errors the objective-only path names, at the
+            # one call site that has a transcript and so is the only place
+            # `SeedTooLarge` can actually fire: an uncaught one here came
+            # out of the list comprehension in `main` as a traceback and
+            # exit 1, losing both arms' artifacts with it. Recorded as an
+            # arm error, in the shape `run_setup` already uses, which
+            # `main` turns into exit 2.
+            try:
+                objective_checks = objective.run_checks(
+                    fixture, str(workspace), str(seed),
+                    transcript=result.get("transcript"))
+            except objective.FixtureError as exc:
+                error = {"type": "invalid_fixture", "detail": str(exc)}
+                _write_summary(args.results_dir, fixture["skill"], arm_name,
+                               timestamp, error, agent_summary, None, None, raw)
+                return {"arm": arm_name, "error": error,
+                        "agent": agent_summary, "objective_checks": None,
+                        "judge": None}
 
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
@@ -986,21 +1002,37 @@ def main() -> int:
         return 2
 
     if args.arm == "objective-only":
-        if args.workspace:
-            # An explicitly given workspace is scored as-is — the caller's
-            # own responsibility to have already run any `setup:` themselves
-            # (or to be scoring a hand-built workspace that never needed it).
-            workspace = args.workspace
-            results = objective.run_checks(fixture, str(workspace), str(seed))
-        else:
-            with tempfile.TemporaryDirectory() as tmp:
-                workspace = Path(tmp) / "ws"
-                shutil.copytree(seed, workspace)
-                setup_error = run_setup(workspace, fixture)
-                if setup_error is not None:
-                    print(f"setup failed: {setup_error['detail']}")
-                    return 2
-                results = objective.run_checks(fixture, str(workspace), str(seed))
+        # `objective.FixtureError` — a `strip_seed:` written as anything but
+        # a boolean, a seed file over the provenance read cap — is a fixture
+        # error, and every other fixture error here is a named line and exit
+        # 2. These two came out as an uncaught traceback and exit 1, which
+        # is the code a legitimately FAILING eval returns: a fixture that
+        # could not be scored at all was indistinguishable, to a CI job
+        # reading the exit code, from one whose agent wrote a bad reply.
+        try:
+            if args.workspace:
+                # An explicitly given workspace is scored as-is — the
+                # caller's own responsibility to have already run any
+                # `setup:` themselves (or to be scoring a hand-built
+                # workspace that never needed it).
+                workspace = args.workspace
+                results = objective.run_checks(fixture, str(workspace),
+                                               str(seed))
+            else:
+                with tempfile.TemporaryDirectory() as tmp:
+                    workspace = Path(tmp) / "ws"
+                    shutil.copytree(seed, workspace)
+                    setup_error = run_setup(workspace, fixture)
+                    if setup_error is not None:
+                        print(f"setup failed: {setup_error['detail']}")
+                        return 2
+                    results = objective.run_checks(fixture, str(workspace),
+                                                   str(seed))
+        except objective.FixtureError as exc:
+            # `SeedTooLarge` is a `FixtureError`, so one clause covers both.
+            print(f"invalid_fixture: {exc}")
+            _write_pre_run_error(args, fixture, "invalid_fixture", str(exc))
+            return 2
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
                           "checks": results}, indent=2))
