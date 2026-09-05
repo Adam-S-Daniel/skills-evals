@@ -2729,6 +2729,22 @@ class TestIssue86(unittest.TestCase):
                 with_equals={"repository": "Adam-S-Daniel/cms-platform"}, with_tag_ref="ref")
             self.assertFalse(passed, f"ref={ref!r} should not look like a tag: {detail}")
 
+    def test_with_tag_ref_accepts_fully_qualified_refs_tags_prefix(self):
+        # Review round 3, N5: a fully-qualified `refs/tags/v0.1.106` is
+        # exactly as pinned as the short `v0.1.106` form GitHub Actions also
+        # accepts there — it must pass the same shape test, not be rejected
+        # as if it were a floating ref.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: actions/checkout@deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n"
+             "        with:\n"
+             "          repository: Adam-S-Daniel/cms-platform\n"
+             "          ref: refs/tags/v0.1.106\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="actions/checkout",
+            with_equals={"repository": "Adam-S-Daniel/cms-platform"}, with_tag_ref="ref")
+        self.assertTrue(passed, detail)
+
     # ---- workflow_step_uses: job_if_equals normalization (issue #86 review) --
 
     JOB_ALWAYS_WF = (

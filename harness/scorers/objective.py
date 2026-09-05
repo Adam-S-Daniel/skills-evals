@@ -476,13 +476,18 @@ def _looks_like_a_tag(value) -> bool:
     the mangled "1.1" slip through the shape check below. `refs/heads/...` is
     rejected explicitly, on top of the `^v?\\d` shape requirement, since a
     branch ref under that prefix is exactly the floating-ref mistake this
-    exists to catch.
+    exists to catch. A leading `refs/tags/` is stripped before the shape
+    test — GitHub Actions accepts a fully-qualified tag ref there and it's
+    exactly as pinned as the short form, so `refs/tags/v0.1.106` must pass
+    the same as `v0.1.106`.
     """
     if not isinstance(value, str):
         return False
     ref = value.strip()
     if not ref or SHA_RE.match(ref) or ref.startswith("refs/heads/"):
         return False
+    if ref.startswith("refs/tags/"):
+        ref = ref[len("refs/tags/"):]
     return bool(_TAG_SHAPE_RE.match(ref))
 
 
