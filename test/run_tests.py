@@ -8439,5 +8439,43 @@ class TestIssue67Review8(unittest.TestCase):
         for line in capped:
             self.assertNotIn("0arm-599", line)
 
+    # --- F2: `catalogue_seen[].last_seen` is converted to UTC before it
+    # is rendered ---------------------------------------------------------
+    #
+    # `parse_ts` keeps whatever offset the entry carried, so re-rendering
+    # it with `strftime("%Y-%m-%d")` published the LOCAL date: a day early
+    # west of UTC, a day late east of it. The sibling `source.census_at`
+    # rendering already converts (N2, round 7); this one did not, and a
+    # date that is off by one ages out a day early or a day late.
+
+    def test_a_last_seen_west_of_utc_is_not_published_a_day_early(self):
+        """`2026-09-01T23:00:00-08:00` is `2026-09-02` in UTC."""
+        plant = "claude-opus-3-1"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "2026-09-01T23:00:00-08:00"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(e for e in published["catalogue_seen"]
+                     if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-02")
+        # Mutation check (manual): dropping the `.astimezone(timezone.utc)`
+        # from `_as_date` publishes "2026-09-01" — red.
+
+    def test_a_last_seen_east_of_utc_is_not_published_a_day_late(self):
+        """`2026-09-02T01:00:00+05:00` is `2026-09-01` in UTC."""
+        plant = "claude-opus-3-2"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "2026-09-02T01:00:00+05:00"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(e for e in published["catalogue_seen"]
+                     if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-01")
+        # Mutation check (manual): as above — publishes "2026-09-02", red.
+
 if __name__ == "__main__":
     unittest.main()
