@@ -74,7 +74,11 @@
 #   calls share the token). Dispatches from non-main refs get no
 #   credential — the rule's sub claim matches ref:refs/heads/main only —
 #   which also supersedes the old maintainer-branch trust widening
-#   caveat. Cost: a full run is 2 agent arms + 2 judge calls. The fixture
+#   caveat. Cost depends on the fixture: a skill A/B is 2 agent arms +
+#   2 judge calls; a guidance dispatch is one agent call AND one tool-free
+#   guard probe per declared arm, which is 5 + 5 for the delivery canary. The
+#   report's cost column counts the SCORED leg only — the guard probes are
+#   real calls and are not in it. The fixture
 #   pins a mid-tier agent and a strong judge — carried over unchanged from
 #   the predecessor fixture — which puts a run at ~$0.30–0.90, i.e.
 #   ~$1.50–4/month at weekly cadence. Unpinning any of them would make the
@@ -161,7 +165,14 @@ concurrency:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # 2 arms x 10 min agent budget + judges + setup
+    # 45 min covers the widest committed shape, not just the 2-arm skill
+    # A/B: a guidance fixture spends (agent budget + guard budget) per
+    # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
+    # five-arm fixture that inherited the defaults instead (600 + 300 s)
+    # would need 75 min and not fit —
+    # test_every_guidance_fixture_fits_inside_the_workflow_job_timeout is
+    # what catches that, over every guidance fixture under evals/.
+    timeout-minutes: 45
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

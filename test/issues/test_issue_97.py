@@ -1773,6 +1773,46 @@ class TestIssue97(unittest.TestCase):
                     f"{(proc.stdout + proc.stderr)[:400]}")
                 self.assertEqual(proc.selected, target)
 
+    def test_the_rejection_listing_does_not_word_split_or_glob(self):
+        # N-d. The rejection branch used `printf '  %s\n' $committed`,
+        # UNQUOTED: a committed path carrying a space is split across two
+        # lines and one carrying a glob character is expanded against the
+        # working directory, so the operator is shown a list that is not the
+        # list the gate matched against. Driven through the real `run:` block
+        # over a synthetic evals/ tree that carries both shapes.
+        tmp = Path(tempfile.mkdtemp(prefix="eval-listing-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        awkward = ("two words", "star*dir", "bracket[1]")
+        for name in (*awkward, "workflow-path-audit"):
+            d = tmp / "evals" / name
+            d.mkdir(parents=True)
+            (d / "fixture.yaml").write_text("subject: skill\n", encoding="utf-8")
+        # Something for a glob to expand ONTO, so an unquoted printf visibly
+        # produces a different list rather than the pattern itself.
+        (tmp / "stardir-decoy").mkdir()
+        proc = self._run_validation({"inputs": {"fixture": "evals/nope"}},
+                                    cwd=tmp)
+        self.assertEqual(proc.returncode, 1)
+        output = proc.stdout + proc.stderr
+        listed = [line.strip() for line in output.splitlines()
+                  if line.startswith("  evals/")]
+        self.assertEqual(
+            sorted(listed),
+            sorted(f"evals/{name}" for name in (*awkward, "workflow-path-audit")),
+            "every committed path must be listed once, intact — no word "
+            f"splitting, no globbing\n{output}")
+
+    def test_the_gate_says_committed_means_present_in_this_checkout(self):
+        # N-i. "Committed" is the set `find` returns, not `git ls-files`: an
+        # untracked fixture directory or a symlinked fixture.yaml is accepted
+        # too. Equivalent in the fresh CI checkout this workflow runs in. The
+        # choice made is to SAY so rather than switch to `git ls-files`.
+        header = self._eval_header_prose()
+        self.assertIn("present in this checkout", header)
+        step = self._validation_script()
+        self.assertIn("find evals", step)
+        self.assertNotIn("git ls-files", step)
+
     def test_agent_guidance_is_checked_out_side_by_side_without_credentials(self):
         checkout = next(
             s for s in self._eval_steps()
@@ -2056,15 +2096,77 @@ class TestIssue97(unittest.TestCase):
                                             "objective_check": []}}}, "both")
         self.assertIn("objective_check", str(ctx.exception))
 
-    def test_the_delivery_canary_fits_inside_the_workflow_job_timeout(self):
-        fixture = self._delivery_fixture()
+    # N-c. The default budgets a fixture inherits when it omits the knobs:
+    # `args.timeout or fixture.get("timeout_s", 600)` on the agent leg, and
+    # `(fixture.get("guard") or {}).get("timeout_s", 300)` on the guard leg.
+    # A five-arm fixture that inherits both needs 5 x 900 s = 75 min and does
+    # NOT fit in eval.yml's 45.
+    DEFAULT_AGENT_BUDGET_S = 600
+    DEFAULT_GUARD_BUDGET_S = 300
+
+    @classmethod
+    def _guidance_fixture_budget(cls, fixture: dict) -> tuple[int, int]:
+        """(per-arm seconds, arm count) for a guidance fixture, defaults and
+        all — a fixture that omits the knobs is the expensive case, not a free
+        one."""
+        agent = fixture.get("timeout_s", cls.DEFAULT_AGENT_BUDGET_S)
+        guard = (fixture.get("guard") or {}).get(
+            "timeout_s", cls.DEFAULT_GUARD_BUDGET_S)
+        arms = fixture.get("arms")
+        count = len(arms) if isinstance(arms, dict) and arms else 2
+        return agent + guard, count
+
+    def test_every_guidance_fixture_fits_inside_the_workflow_job_timeout(self):
+        # Generalised from the delivery canary alone: any guidance fixture
+        # under evals/ is dispatchable, and one that inherits the default
+        # budgets across five arms would blow the job timeout with no summary
+        # and no artifact — the failure mode that is hardest to read in CI.
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         job_budget_s = doc["jobs"]["eval"]["timeout-minutes"] * 60
-        per_arm = fixture["timeout_s"] + fixture["guard"]["timeout_s"]
-        worst_case = per_arm * len(fixture["arms"])
-        self.assertLess(
-            worst_case, job_budget_s * 0.75,
-            f"five arms x (agent {fixture['timeout_s']}s + guard "
-            f"{fixture['guard']['timeout_s']}s) = {worst_case}s does not leave "
-            f"room inside eval.yml's {job_budget_s}s job timeout for setup, "
-            "the CLI install and the badge commit")
+        checked = 0
+        for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
+            fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if fixture.get("subject") != "guidance":
+                continue
+            checked += 1
+            per_arm, arms = self._guidance_fixture_budget(fixture)
+            worst_case = per_arm * arms
+            with self.subTest(fixture=str(path.parent.relative_to(REPO_ROOT))):
+                self.assertLess(
+                    worst_case, job_budget_s * 0.75,
+                    f"{path.parent.relative_to(REPO_ROOT)}: {arms} arms x "
+                    f"(agent + guard = {per_arm}s) = {worst_case}s does not "
+                    f"leave room inside eval.yml's {job_budget_s}s job timeout "
+                    "for setup, the CLI install and the badge commit. A "
+                    "fixture that omits `timeout_s:`/`guard.timeout_s:` "
+                    f"inherits {self.DEFAULT_AGENT_BUDGET_S} + "
+                    f"{self.DEFAULT_GUARD_BUDGET_S}s per arm.")
+        self.assertGreater(checked, 0,
+                           "no committed guidance fixture — this test would "
+                           "pass vacuously")
+
+    def test_the_job_timeout_comment_accounts_for_a_guidance_dispatch(self):
+        # The two comments the round-1 review found stale: both described a
+        # 2-arm skill A/B only, and a guidance dispatch is one agent call AND
+        # one guard probe per declared arm.
+        header = self._eval_header_prose().lower()
+        self.assertTrue("guard probe" in header,
+                        "the cost paragraph must say a guidance dispatch also "
+                        "spends a guard probe per arm")
+        self.assertFalse(
+            "a full run is 2 agent arms + 2 judge calls" in header,
+            "that describes a skill A/B only; a guidance dispatch is one "
+            "agent call AND one guard probe per declared arm")
+        self.assertTrue(
+            "scored leg" in header,
+            "the header must say the report's cost column counts the scored "
+            "leg only — the guard probes are real calls and are not in it")
+        text = EVAL_WORKFLOW.read_text(encoding="utf-8")
+        comment = text[:text.index("    timeout-minutes: 45")]
+        self.assertFalse(
+            "2 arms x 10 min agent budget + judges + setup" in text,
+            "the stale timeout-minutes comment must be gone")
+        self.assertTrue("per\n    # DECLARED arm" in comment,
+                        "the timeout-minutes comment must account for a "
+                        "guidance fixture's per-declared-arm budget")
+

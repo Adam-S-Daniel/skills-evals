@@ -2108,7 +2108,9 @@ class TestIssue63Review(unittest.TestCase):
 
     def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
         registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        fixture_dirs = sorted((REPO_ROOT / "evals").glob("*/fixture.yaml"))
+        # `**`, not `*`: fixtures nest now (evals/guidance/_delivery), and a
+        # single-level glob would quietly stop covering them.
+        fixture_dirs = sorted((REPO_ROOT / "evals").glob("**/fixture.yaml"))
         checked = 0
         for fixture_path in fixture_dirs:
             fixture = run_eval.load_fixture(fixture_path.parent)
