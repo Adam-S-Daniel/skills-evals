@@ -1051,10 +1051,16 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 # "not enough evidence to act on" gap as the stale case
                 # above, just scoped to this window rather than the whole
                 # census. Names WHICH floor held, absolute checked first
-                # (matching _census_verdict's own ordering): unreachable
-                # under evals/roster-policy.yml's shipped numbers (see the
-                # comment above `enter_raw_total`/`exit_raw_total`), so
-                # this text is exercised only by a test-only policy.
+                # (matching _census_verdict's own ordering).
+                #
+                # N5 (#129 review round 6): unreachable under
+                # evals/roster-policy.yml's shipped numbers (see the
+                # comment above `enter_raw_total`/`exit_raw_total`) — kept
+                # rather than deleted, and made reachable and pinned by
+                # TestIssue67Review6's two exit-side floor-note tests via
+                # a test-only policy whose exit window is shorter than its
+                # enter one, so this text is not dead code with no test
+                # able to reach it.
                 if exit_ranked_total < policy["min_ranked_turns"]:
                     floor_note = (f"an exit-window ranked, attributable total "
                                  f"of {exit_ranked_total} turn(s) over the "
