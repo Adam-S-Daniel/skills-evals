@@ -760,6 +760,103 @@ class TestIssue97(unittest.TestCase):
         self.assertIsNone(summary["judge"])
         self.assertEqual(summary["error"]["type"], "guard_miss")
 
+    # ------------------------------------------------------------------
+    # A3 — a delivery that did not happen is not a guard question
+    #
+    # `deliver()` already computed `installed` — an OFFLINE proof that the
+    # marked block reached the config dir — and `_run_guidance_arm` never read
+    # it, nor the hook's returncode. Measured with a hook that prints
+    # `fleet-guidance: current` and writes nothing: the run spent a real guard
+    # call and reported `guard_miss`, the AMBIGUOUS message ("delivered but
+    # not read, or never delivered"), for the one case that is unambiguous and
+    # free to detect.
+    # ------------------------------------------------------------------
+
+    SABOTAGED_HOOK = (
+        "#!/usr/bin/env bash\n"
+        "# Prints the success verdict and installs nothing.\n"
+        "echo 'fleet-guidance: current'\n"
+    )
+    FAILING_HOOK = (
+        "#!/usr/bin/env bash\n"
+        "echo 'fleet-guidance: DEGRADED — synthetic failure' >&2\n"
+        "exit 1\n"
+    )
+
+    def _checkout_with_hook(self, source: str) -> Path:
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        hook = root / ".claude" / "hooks" / "fleet-memory.sh"
+        hook.write_text(source, encoding="utf-8")
+        hook.chmod(0o755)
+        return root
+
+    def _delivery_failure_run(self, prefix: str, hook_source: str):
+        tmp = Path(tempfile.mkdtemp(prefix=prefix))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout_with_hook(hook_source)
+        log = tmp / "argv.jsonl"
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "guidance_probe",
+                      "FAKE_CLAUDE_ARGV_LOG": str(log)})
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "with_guidance",
+                                  "--guidance", root, "--results-dir", results,
+                                  "--no-judge"])
+        return rc, out, results, log
+
+    def test_a_hook_that_installs_nothing_is_delivery_failed_not_guard_miss(self):
+        rc, out, results, log = self._delivery_failure_run(
+            "guidance-sabotage-", self.SABOTAGED_HOOK)
+        self.assertEqual(rc, 2, out)
+        summary = self._summary(results, "guidance/alpha", "with_guidance")
+        self.assertEqual(
+            summary["error"]["type"], "delivery_failed",
+            "an arm whose payload provably never reached its config dir is a "
+            "DELIVERY failure, not the ambiguous guard_miss")
+        self.assertFalse(summary["installed"])
+        self.assertEqual(summary["hook_returncode"], 0,
+                         "this hook exits 0 — it is `installed` that is false")
+        self.assertIsNone(summary["guard"],
+                          "no guard call is made once delivery is known to "
+                          "have failed")
+        self.assertIsNone(summary["objective_checks"])
+        self.assertIsNone(summary["judge"])
+        self.assertFalse(
+            log.exists() and self._argv_lines(log),
+            "a delivery that provably did not happen must cost ZERO CLI "
+            "invocations — the proof is offline and free")
+
+    def test_a_hook_that_exits_nonzero_is_delivery_failed(self):
+        rc, out, results, log = self._delivery_failure_run(
+            "guidance-hookfail-", self.FAILING_HOOK)
+        self.assertEqual(rc, 2, out)
+        summary = self._summary(results, "guidance/alpha", "with_guidance")
+        self.assertEqual(summary["error"]["type"], "delivery_failed")
+        self.assertEqual(summary["hook_returncode"], 1)
+        self.assertIsNone(summary["guard"])
+        self.assertFalse(log.exists() and self._argv_lines(log))
+
+    def test_an_honest_hook_records_installed_and_still_scores(self):
+        # The other side: the real hook installs, `installed` and the hook's
+        # returncode land in the arm's `extra` either way, and the run scores
+        # exactly as it did before.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-installed-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(tmp)
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "with_guidance",
+                                  "--guidance", root, "--results-dir", results,
+                                  "--no-judge"])
+        self.assertEqual(rc, 0, out)
+        summary = self._summary(results, "guidance/alpha", "with_guidance")
+        self.assertTrue(summary["installed"])
+        self.assertEqual(summary["hook_returncode"], 0)
+        self.assertIsNone(summary["error"])
+        self.assertIsNotNone(summary["objective_checks"])
+
     def test_a_contaminated_control_arm_is_inconclusive_and_exits_2(self):
         # The trap this whole subject exists for: on a machine carrying the
         # fleet hook, ~/.claude/CLAUDE.md IS the guidance, so a `none` arm can

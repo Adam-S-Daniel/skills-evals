@@ -369,7 +369,10 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     _refuse_real_config_dir(dest_dir, home)
     dest = dest_dir / "CLAUDE.md"
     if not payload:
-        return {"bytes": 0, "verdict": None, "installed": False, "dest": str(dest)}
+        # The hook is not run at all, so there is no returncode to report and
+        # nothing was asked of it — `installed` False here is not a failure.
+        return {"bytes": 0, "verdict": None, "installed": False,
+                "returncode": None, "dest": str(dest)}
 
     hook = guidance_dir / HOOK_REL
     if not hook.is_file():
@@ -396,8 +399,15 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     lines = [line for line in proc.stdout.splitlines() if line.strip()]
     verdict = lines[-1] if lines else ""
     installed = dest.is_file() and BEGIN_MARK in dest.read_text(encoding="utf-8")
+    # `installed` is an OFFLINE proof that the marked block reached the config
+    # dir, and `returncode` is the hook's own verdict. Both are returned so a
+    # caller can refuse to spend a guard call on an arm whose delivery already
+    # provably failed — a sabotaged hook that prints `fleet-guidance: current`
+    # and writes nothing exits 0 and says the right words, and only these two
+    # facts catch it.
     return {"bytes": len(payload.encode("utf-8")), "verdict": verdict,
-            "installed": installed, "dest": str(dest)}
+            "installed": installed, "returncode": proc.returncode,
+            "dest": str(dest)}
 
 
 def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,

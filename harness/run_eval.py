@@ -1035,6 +1035,33 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             dest_dir=config if delivery == "user" else workspace)
         env = guidance.agent_env(workspace=workspace, home=home, tmpdir=tmpdir,
                                  config_dir=config, env_spec=fixture.get("env"))
+        # A delivery that provably did not happen is not a guard question.
+        # `installed` and the hook's returncode are offline and free; the
+        # guard costs a real model call and can only answer the AMBIGUOUS
+        # "the probe did not see the token" — which is what a sabotaged hook
+        # (prints `fleet-guidance: current`, writes nothing, exits 0) used to
+        # get reported as. Both facts land in the arm's `extra` either way.
+        extra = {"subject": "guidance", "section": ctx["section"],
+                 "mode": arm["mode"], "bytes": info["bytes"],
+                 "delivery": delivery, "hook_verdict": info["verdict"],
+                 "installed": info["installed"],
+                 "hook_returncode": info["returncode"], "guard": None}
+        if info["returncode"] is not None and (
+                not info["installed"] or info["returncode"] != 0):
+            error = {"type": "delivery_failed",
+                     "detail": (
+                         f"the hook exited {info['returncode']} and the marked "
+                         f"block is {'present' if info['installed'] else 'ABSENT'} "
+                         f"in {info['dest']} — this arm was never delivered "
+                         "its payload, so nothing about it is measurable; no "
+                         "guard call was made and no score is written")}
+            _write_summary(args.results_dir, None, arm["name"], timestamp,
+                           error, None, None, None, None,
+                           key=ctx["key"], extra=extra)
+            return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                    "agent": None, "objective_checks": None, "judge": None,
+                    "guard": None, "inconclusive": True}
+
         setting_sources = guidance.SETTING_SOURCES[delivery]
         # The guard's preflight model: the fixture's own `model:` pin when it
         # has one, else the CLI's default. When the model roster (#67) lands,
@@ -1047,10 +1074,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             setting_sources=setting_sources, model=preflight_model,
             timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
-        extra = {"subject": "guidance", "section": ctx["section"],
-                 "mode": arm["mode"], "bytes": info["bytes"],
-                 "delivery": delivery, "guard": guard,
-                 "hook_verdict": info["verdict"]}
+        extra["guard"] = guard
 
         if not guard["ok"]:
             error = _guard_error(guard)
@@ -1246,11 +1270,15 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
         f.write(report)
 
     inconclusive = [s for s in arm_summaries if s["inconclusive"]]
-    for s in inconclusive:
-        guard = s["guard"]
-        print(f"INCONCLUSIVE {s['arm']} (mode {s['mode']}): guard expected "
-              f"{guard['expected']}, observed {guard['observed']} — "
-              f"{s['error']['detail']}")
+    for arm_summary in inconclusive:
+        guard = arm_summary["guard"]
+        # A `delivery_failed` arm never reached the guard, so there is no
+        # expected/observed pair to report — only the delivery's own detail.
+        preamble = (f"guard expected {guard['expected']}, observed "
+                    f"{guard['observed']} — ") if guard else "delivery — "
+        print(f"INCONCLUSIVE {arm_summary['arm']} (mode "
+              f"{arm_summary['mode']}): {preamble}"
+              f"{arm_summary['error']['detail']}")
     if inconclusive:
         print("INCONCLUSIVE: at least one arm could not prove its delivery; "
               "no score was written for it. This is never a PASS and never a "
