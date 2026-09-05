@@ -966,10 +966,20 @@ def guidance_arms(fixture: dict, arm_flag: str, ablation: bool = False) -> list[
             raise guidance.GuidanceError(
                 f"`ablation: {modes}` names the same mode twice")
     else:
-        declared = fixture.get("arms") or DEFAULT_GUIDANCE_ARMS
+        # ABSENT means "take the default pair". PRESENT means "these are my
+        # arms", and an empty, null or non-mapping value is a fixture error —
+        # `fixture.get("arms") or DEFAULT_GUIDANCE_ARMS` made the check below
+        # dead code, so `arms: {}`, `arms:` and `arms: []` all silently ran
+        # somebody else's `section`/`none` pair under this fixture's name.
+        declared = (DEFAULT_GUIDANCE_ARMS if "arms" not in fixture
+                    else fixture["arms"])
         if not isinstance(declared, dict) or not declared:
             raise guidance.GuidanceError(
-                "`arms:` must be a mapping of arm name -> {mode: ...}")
+                "`arms:` must be a mapping of arm name -> {mode: ...}, and a "
+                f"non-empty one; got {declared!r}. Omit the key entirely to "
+                "take the default "
+                f"{'/'.join(a['mode'] for a in DEFAULT_GUIDANCE_ARMS.values())}"
+                " pair.")
     arms = [_validate_arm_entry(name, entry) for name, entry in declared.items()]
     if arm_flag in ("both", "all"):
         return arms

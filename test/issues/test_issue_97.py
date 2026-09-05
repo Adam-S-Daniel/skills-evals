@@ -680,7 +680,7 @@ class TestIssue97(unittest.TestCase):
 
     def _guidance_fixture(self, tmp: Path, **overrides) -> Path:
         eval_dir = tmp / "eval"
-        eval_dir.mkdir(parents=True)
+        eval_dir.mkdir(parents=True, exist_ok=True)
         fixture = {
             "subject": "guidance",
             "section": "alpha",
@@ -1815,6 +1815,44 @@ class TestIssue97(unittest.TestCase):
                       False)
         self.assertRegex(guidance_checkout["uses"],
                          r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+
+    # ------------------------------------------------------------------
+    # A5 — an EMPTY `arms:` is a fixture error, not the default pair
+    #
+    # `declared = fixture.get("arms") or DEFAULT_GUIDANCE_ARMS` made the
+    # `not declared` guard on the next line dead code: `arms: {}`, `arms:` and
+    # `arms: []` are all falsy, so all three silently ran the default
+    # `section`/`none` pair under the fixture's own name — a fixture that
+    # declared arms and got someone else's.
+    # ------------------------------------------------------------------
+
+    def test_an_empty_or_null_or_list_arms_key_is_rejected_not_defaulted(self):
+        for label, arms in (("{}", {}), ("null", None), ("[]", []),
+                            ("[a]", ["with_guidance"]), ("a string", "both")):
+            with self.subTest(arms=label):
+                with self.assertRaises(guidance.GuidanceError) as ctx:
+                    run_eval.guidance_arms({"arms": arms}, "both")
+                self.assertIn("arms:", str(ctx.exception))
+
+    def test_an_absent_arms_key_still_takes_the_default_pair(self):
+        arms = run_eval.guidance_arms({}, "both")
+        self.assertEqual([(a["name"], a["mode"]) for a in arms],
+                         [("with_guidance", "section"),
+                          ("without_guidance", "none")])
+
+    def test_an_empty_arms_key_is_rejected_through_main_too(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-emptyarms-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        for label, arms in (("{}", {}), ("null", None), ("[]", [])):
+            with self.subTest(arms=label):
+                eval_dir = self._guidance_fixture(tmp / label, arms=arms)
+                rc, out = self._run_main(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", tmp / label / "results", "--no-judge"])
+                self.assertEqual(rc, 2, out)
+                self.assertIn("arms:", out)
+                self.assertNotIn("Traceback", out)
 
     def test_an_arm_with_an_unknown_key_is_rejected_at_load_time(self):
         with self.assertRaises(guidance.GuidanceError) as ctx:
