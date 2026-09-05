@@ -835,7 +835,21 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
              f"the {policy['catalogue_seen_max_age_days']}-day window")
     api_id_set = set(api_ids)
     live = sorted(i for i in survivors if i in api_id_set)
+    # The cap evicts the OLDEST accumulated history first, by `last_seen`,
+    # tie-broken by id — not the alphabetically-last id (S2, #129 review
+    # round 7). `PREVIOUS_ARM_ID_RE` accepts a leading digit, so 500
+    # low-sorting valid-shaped ids used to push a real since-retired model
+    # out of history by nothing but its spelling; its turns then left the
+    # usage denominator and an unrelated model was published as carrying
+    # 100.0% of census usage where it really carried 9.09%. Age is the only
+    # property this field is about, and it is the one the cap sorts on.
+    # Two stable sorts rather than one composite key: id ascending first,
+    # then `last_seen` descending, which leaves ids in ascending order
+    # within one date. An unparseable `last_seen` reads as `now` — the same
+    # benefit of the doubt the age check above gives it — though
+    # `_clean_catalogue_seen` normalizes every date before this runs.
     historical = sorted(i for i in survivors if i not in api_id_set)
+    historical.sort(key=lambda i: parse_ts(survivors[i]) or now, reverse=True)
     room = max(0, CATALOGUE_SEEN_CAP - len(live))
     kept = live + historical[:room]
     dropped = len(survivors) - len(kept)

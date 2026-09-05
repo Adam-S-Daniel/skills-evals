@@ -135,10 +135,19 @@ min_ranked_share: 0.01
 # one-time plant cannot persist indefinitely. This run's own live ids are
 # never aged out by this (they get `last_seen` = today every run) — only
 # accumulated history can. See also the length cap in roster.py's
-# `CATALOGUE_SEEN_CAP` (currently 500 entries, oldest-by-id-sorted-out
-# first among non-live entries; this run's own live ids are exempt from
-# it too). The previous roster's `arms` list is capped the same way, at
-# the same 500, by roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round
-# 6) — neither list has any other bound on how large a public branch
-# could otherwise grow it.
+# `CATALOGUE_SEEN_CAP` (currently 500 entries). Past it, the entries
+# dropped are the oldest by `last_seen` first, tie-broken by id — NOT the
+# alphabetically-last ids, which is what the code used to do and this
+# comment used to describe: a previous-arm id may begin with a digit, so
+# 500 low-sorting planted ids could evict a real since-retired model from
+# history by nothing but its spelling, take its turns out of the usage
+# denominator, and publish a false 100.0% share for an unrelated model
+# (S2, #129 review round 7). This run's own live ids are exempt from the
+# cap entirely. The previous roster's `arms` list is capped at the same
+# 500, by roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round 6),
+# keeping the ids this run can actually say something about — one the
+# Models API still lists, or one the census names — ahead of filler, so
+# the cap cannot silently omit a real retirement from the roster's
+# `retired_since_last` report (S3, round 7). Neither list has any other
+# bound on how large a public branch could otherwise grow it.
 catalogue_seen_max_age_days: 180

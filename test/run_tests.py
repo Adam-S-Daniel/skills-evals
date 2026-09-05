@@ -7236,5 +7236,83 @@ class TestIssue67Review7(unittest.TestCase):
         # makes catalogue 0's two snapshots report 100.0% each — 200.0% of
         # one denominator — red.
 
+    # --- S2: the `catalogue_seen` cap evicts the OLDEST entry, not the
+    # lowest-sorting id ---------------------------------------------------
+    #
+    # `historical = sorted(...)` then `kept = live + historical[:room]`
+    # evicted by ALPHABETICAL id, and `PREVIOUS_ARM_ID_RE` allows a leading
+    # digit — so 500 low-sorting valid-shaped ids pushed a real
+    # since-retired model out of history, took its turns out of the
+    # denominator, and published a false 100.0% share for an unrelated
+    # model. Age is the property the field is about; the cap now agrees
+    # with it.
+
+    CAP_PLANTS = [f"0plant-{i:03d}" for i in range(500)]
+    RETIRED_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _capped_history_previous(cls):
+        """500 low-sorting plants, all within the age window, beside ONE
+        real since-retired model seen a day ago. 501 historical entries
+        against a 500-entry cap: exactly one thing has to go."""
+        stale = cls._days_ago(100)
+        return {"arms": [], "catalogue_seen":
+                [{"id": i, "last_seen": stale} for i in cls.CAP_PLANTS] +
+                [{"id": cls.RETIRED_REAL, "last_seen": cls._days_ago(1)}]}
+
+    @classmethod
+    def _capped_history_models(cls):
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+
+    def test_the_cap_keeps_a_recent_history_entry_over_five_hundred_stale_ones(self):
+        warnings = []
+        result = self._compute(models=self._capped_history_models(),
+                               census=None,
+                               previous=self._capped_history_previous(),
+                               warn=warnings.append)
+        seen = self._seen_ids(result)
+        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        self.assertIn(self.RETIRED_REAL, seen,
+                      "the entry seen a day ago must outlive 500 entries "
+                      "seen 100 days ago, whatever they sort like")
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            for plant in ("0plant-499", self.RETIRED_REAL):
+                self.assertNotIn(plant, w, "the cap warning names counts only")
+        # Mutation check (manual): reverting the historical order to a
+        # plain `sorted(...)` by id drops `claude-sonnet-4-9` (the single
+        # alphabetically-last entry) instead of a stale plant — red.
+
+    def test_an_alphabetically_evicted_history_entry_falsifies_a_published_share(self):
+        """The measured consequence, through `compute_roster`: the real
+        since-retired model carries 8000 of the window's 8800 rankable
+        turns. Evicted from history by 500 low-sorting plants, its turns
+        leave the denominator and `claude-sonnet-5` is published as
+        carrying 100.0% of census usage where it really carries 9.09%
+        — under the 10% entry bar, so it rides in on newest-in-tier
+        instead and says so."""
+        census = TestIssue67._census_doc(counts={
+            self.RETIRED_REAL: {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        result = self._compute(models=self._capped_history_models(),
+                               census=census,
+                               previous=self._capped_history_previous())
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+        self.assertIn(self.RETIRED_REAL, self._seen_ids(result))
+        # Mutation check (manual): reverting to `sorted(...)` by id evicts
+        # `claude-sonnet-4-9`, and claude-sonnet-5's reason becomes
+        # "carries 100.0% of rankable census usage ..." — red.
+
+    def test_the_policy_describes_the_cap_the_code_implements(self):
+        text = self.POLICY.read_text(encoding="utf-8")
+        self.assertNotIn("oldest-by-id-sorted-out", text,
+                         "the cap evicts by `last_seen`, not by id order")
+        self.assertIn("oldest by `last_seen`", text)
+
 if __name__ == "__main__":
     unittest.main()
