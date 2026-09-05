@@ -44,7 +44,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import math
 import re
 import sys
 from datetime import datetime, timedelta, timezone
@@ -74,6 +73,37 @@ def _stderr(message: str) -> None:
 def load_policy(path: str | Path) -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
+
+
+#: Every numeric threshold roster.py reads from evals/roster-policy.yml,
+#: with the check each one must pass. A missing, wrong-typed, or negative
+#: value used to reach `compute_roster` unchecked and either KeyError deep
+#: inside it or silently miscompute (a string threshold, say, compares
+#: correctly against nothing) — `_validate_policy` fails loudly, naming the
+#: key, before any of that.
+_THRESHOLD_CHECKS = {
+    "cooling_off_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
+    "arm_enter_usage_pct": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0,
+    "arm_enter_window_weeks": lambda v: isinstance(v, int) and not isinstance(v, bool) and v > 0,
+    "arm_exit_usage_pct": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and v >= 0,
+    "arm_exit_window_weeks": lambda v: isinstance(v, int) and not isinstance(v, bool) and v > 0,
+    "census_max_age_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
+    "min_ranked_turns": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
+    "min_ranked_share": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1,
+}
+
+
+def validate_policy(policy: dict) -> None:
+    """Raise `ValueError`, naming the offending key, for a missing,
+    wrong-typed, `None`, or out-of-range threshold. Called from `main()`
+    before any of `evals/roster-policy.yml` reaches `compute_roster`."""
+    if not isinstance(policy, dict):
+        raise ValueError("roster policy is not a mapping")
+    for key, check in _THRESHOLD_CHECKS.items():
+        if key not in policy:
+            raise ValueError(f"roster policy is missing `{key}`")
+        if not check(policy[key]):
+            raise ValueError(f"roster policy `{key}` is invalid: {policy[key]!r}")
 
 
 def read_json(path: str | Path | None) -> tuple[dict | None, str | None]:
@@ -146,26 +176,6 @@ def rung_label(rungs: list[list[str]], index: int) -> str:
     return "/".join(rungs[index])
 
 
-def _canonical_id_re(rungs: list[list[str]]) -> re.Pattern:
-    """The shape of an id the ladder recognizes as a genuine model — retired
-    or not — as opposed to a proxy/routing alias that merely pastes a family
-    word onto unrelated segments.
-
-    `claude-<family word>-<digits>(-<digits>)*(-<8-digit date>)?`: a bare
-    version id, a multi-part version, and a dated snapshot of either all
-    match — every real shape the ladder's own family words plus a numeric
-    version can produce. A routing alias that pastes a family word onto
-    NON-numeric segments, or that does not start with `claude-` at all,
-    does not — see `_is_attributable`, and TestIssue67Review4's worked
-    examples for both shapes.
-    """
-    words = "|".join(re.escape(w) for rung in rungs for w in rung)
-    # `\Z`, not `$`: `$` also matches just before a trailing newline, which
-    # would let an otherwise-canonical id with one appended slip through —
-    # the same footgun model_usage_census.py's own MODEL_ID_RE documents.
-    return re.compile(rf"^claude-(?:{words})-\d+(?:-\d+)*(?:-[0-9]{{8}})?\Z")
-
-
 #: A SAFETY shape for a previous-arm id, not a "is this a real model" check
 #: — that's `rung_of`/`unranked_ids`, applied elsewhere, and deliberately
 #: NOT required here: a previous arm whose family word has since left the
@@ -196,17 +206,19 @@ def alias_map(ids) -> dict[str, str]:
 
 def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
                      api_ids_folded: set[str] | None,
-                     canonical_id_re: re.Pattern,
-                     previous_arms: set[str]) -> bool:
-    """Whether a census key names something the catalogue (or a previous
-    roster) can actually credit: an id currently in the Models API catalogue
-    — checked BOTH unfolded (`candidate`, verbatim) and folded (`folded`,
-    so a dated snapshot's usage still counts under its alias) — or a
-    previous roster's arm, checked the same two ways. `api_ids=None` means
-    "no catalogue context was given" — every caller inside compute_roster
-    always gives one; the handful of tests that call usage_share()/
-    _in_window_totals() directly, on already-real ids, with no context at
-    all, get the old unfiltered behavior instead of an empty catalogue.
+                     previous_arms: set[str], previous_arms_folded: set[str],
+                     catalogue_seen: set[str]) -> bool:
+    """Whether a census key names something this harness can actually
+    credit: an id currently in the Models API catalogue — checked BOTH
+    unfolded (`candidate`, verbatim) and folded (`folded`, so a dated
+    snapshot's usage still counts under its alias) — or a previous
+    roster's arm, checked the same two ways, or an id `catalogue_seen`
+    says this harness has observed the Models API list at some point in
+    its history. `api_ids=None` means "no catalogue context was given" —
+    every caller inside compute_roster always gives one; the handful of
+    tests that call usage_share()/_in_window_totals() directly, on
+    already-real ids, with no context at all, get the old unfiltered
+    behavior instead of an empty catalogue.
 
     `folded in api_ids` alone is not enough: it only credits a candidate
     whose ALIAS is itself a bare catalogue id. A catalogue that publishes
@@ -220,6 +232,14 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     api_ids_folded` (`api_ids` run through the SAME alias map) closes the
     same gap from the other side: a candidate recorded under the bare alias
     now matches the api id's own folded spelling too.
+
+    `previous_arms_folded` (`previous_arms` run through the SAME alias map)
+    is the missing sibling of `api_ids_folded`, for the same reason: a
+    previous arm published under a DATED id, whose usage the census records
+    under the UNDATED alias, matches neither `candidate in previous_arms`
+    nor `folded in previous_arms` (the alias, unfolded, is not the dated
+    id) — measured: dropping 5000 real turns from the denominator and
+    inflating an unrelated model's share from ~2.0% to a false ~97.09%.
 
     Being ranked (a recognised family word in the id) is necessary but NOT
     sufficient: a proxy or routing alias can paste extra segments onto a
@@ -238,28 +258,58 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     equals, an api id or a previous arm under either spelling —
     TestIssue67Review4 carries the regression floor for that.
 
-    `canonical_id_re` (see `_canonical_id_re`) is a THIRD, independent route
-    to attribution: a real model that has left the Models API and was never
-    a previous arm matches neither `api_ids` nor `previous_arms` under any
-    spelling, yet the usage it carries is real work that happened — the
-    property `usage_share`'s own docstring states. Checked on both spellings
-    for the same reason as the other two checks (a since-retired DATED
-    snapshot is canonical-shaped too). A proxy/routing alias does not match
-    this shape either (see TestIssue67Review4's regression floor for round
-    3, exercised again here against this specific new path).
+    `catalogue_seen` is a THIRD, independent route to attribution, and
+    replaces round 4's `_canonical_id_re` (an id-SHAPE check, withdrawn):
+    shape cannot tell a since-retired real model from a plausibly-named
+    proxy, and it shipped with three holes — a Unicode decimal digit in the
+    version segment matched `\\d` and could false-retire a real arm; the
+    pre-#67 legacy id shape (family word AFTER a leading numeric segment,
+    rather than right after `claude-`) never matched at all, starving a
+    since-retired legacy model out of the denominator; and a plausible but
+    entirely invented version number, in no catalogue and never an arm,
+    was attributed outright. TestIssue67Review5 carries the worked examples
+    for all three. `catalogue_seen` is EVIDENCE instead of shape: the union of
+    every id the Models API has ever listed across runs (see
+    `compute_roster`), so a real model that has left the Models API and
+    was never a previous arm is still credited for as long as this
+    harness's own history has actually observed it — the property
+    `usage_share`'s own docstring states — while a proxy/routing alias
+    that merely carries a family word was never a catalogue id and so
+    never enters `catalogue_seen` in the first place. FIRST-RUN CAVEAT:
+    with no history yet (`catalogue_seen` empty, e.g. a genuine first run,
+    or a previous roster that could not be read), a model retired before
+    this harness ever observed it is unattributable — there is no evidence
+    to credit, only the shape it USED to have, which is exactly the
+    unreliable signal this replaces.
     """
     if api_ids is None:
         return True
     return (candidate in api_ids or folded in api_ids
            or folded in (api_ids_folded or ())
            or candidate in previous_arms or folded in previous_arms
-           or bool(canonical_id_re.match(candidate))
-           or bool(canonical_id_re.match(folded)))
+           or candidate in previous_arms_folded or folded in previous_arms_folded
+           or candidate in catalogue_seen or folded in catalogue_seen)
+
+
+def _fold_set(ids: set[str], aliases: dict) -> set[str]:
+    """`ids` run through `aliases` — the recurring "fold a set the same way
+    a single id gets folded" step `api_ids_folded` and `previous_arms_folded`
+    both are."""
+    return {aliases.get(i, i) for i in ids}
+
+
+def _format_share(value: float, bar: float) -> str:
+    """A share percentage, rendered against its own bar: one decimal place,
+    unless rounding to one decimal would land exactly ON the bar and read
+    as self-contradictory next to a "below"/"under" comparison — "below the
+    2% exit bar (2.0%)" at a true 1.96%. Two decimals in that case only."""
+    one = f"{value:.1f}"
+    return f"{value:.2f}" if float(one) == bar else one
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],
                 rungs: list[list[str]], aliases: dict | None = None,
-                api_ids=None, previous_arms=None) -> float:
+                api_ids=None, previous_arms=None, catalogue_seen=None) -> float:
     """Percent of RANKED, ATTRIBUTABLE census usage over `weeks` that
     `model_id` carries.
 
@@ -272,27 +322,32 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     every ranked model under the entry bar (measured: a model at 60 turns a
     week computed at 5.7% against 1000 unranked turns a week).
 
-    `api_ids`/`previous_arms`, when given, ALSO exclude a ranked-but-
-    unattributable key — see `_is_attributable`. That exclusion is
-    deliberately narrower than "not currently in the catalogue": a
-    since-retired id that is CANONICALLY SHAPED like a real model on the
-    ladder (`_canonical_id_re`) still counts here, which is what keeps the
-    "including ones the Models API no longer lists" property above actually
-    true rather than only in the docstring — only a proxy/routing alias that
-    merely carries a family word is excluded. Every call inside
-    compute_roster gives both `api_ids` and `previous_arms`; omitted (both
-    default None), the denominator is every ranked key regardless of
-    catalogue membership, the pre-#67-review-round-3 behavior a few direct
-    tests of the raw arithmetic rely on.
+    `api_ids`/`previous_arms`/`catalogue_seen`, when given, ALSO exclude a
+    ranked-but-unattributable key — see `_is_attributable`. That exclusion
+    is deliberately narrower than "not currently in the catalogue": a
+    since-retired id this harness's own history has actually seen in the
+    Models API (`catalogue_seen`) still counts here, which is what keeps
+    the "including ones the Models API no longer lists" property above
+    actually true rather than only in the docstring — only a proxy/routing
+    alias that merely carries a family word is excluded, because it was
+    never a catalogue id and so never entered `catalogue_seen` either.
+    FIRST-RUN CAVEAT: with no `catalogue_seen` history yet, a model retired
+    before this harness's first run is unattributable — its usage silently
+    drops from the denominator until a run observes it directly (see
+    `_is_attributable`). Every call inside compute_roster gives `api_ids`
+    and `previous_arms`; omitted (both default None), the denominator is
+    every ranked key regardless of catalogue membership, the
+    pre-#67-review-round-3 behavior a few direct tests of the raw
+    arithmetic rely on.
 
     A dated snapshot's usage is folded onto its alias — one model, one share.
     """
     aliases = aliases or {}
     api_ids_set = None if api_ids is None else set(api_ids)
-    api_ids_folded = (None if api_ids_set is None
-                      else {aliases.get(i, i) for i in api_ids_set})
-    canonical_id_re = _canonical_id_re(rungs)
+    api_ids_folded = None if api_ids_set is None else _fold_set(api_ids_set, aliases)
     previous_arms_set = set(previous_arms) if previous_arms else set()
+    previous_arms_folded = _fold_set(previous_arms_set, aliases)
+    catalogue_seen_set = set(catalogue_seen) if catalogue_seen else set()
     wanted = set(weeks)
     target = aliases.get(model_id, model_id)
     total = 0
@@ -302,7 +357,8 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
             continue
         folded = aliases.get(candidate, candidate)
         if not _is_attributable(candidate, folded, api_ids_set, api_ids_folded,
-                                canonical_id_re, previous_arms_set):
+                                previous_arms_set, previous_arms_folded,
+                                catalogue_seen_set):
             continue
         for week, n in (by_week or {}).items():
             if week in wanted:
@@ -321,12 +377,15 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     # without ever needing `mine` or `total` to fit in a float individually,
     # unlike `100.0 * mine`, which converts `mine` to a float FIRST and
     # overflows to `inf` near the top of a float's range. It is NOT safe on
-    # its own for a FLOAT cell bypassing `_clean_counts` (a `1e308` cell
-    # gives `nan`: `100 * 1e308` itself overflows to `inf` under float
-    # arithmetic) or for an int pair whose quotient is itself too large to
-    # represent as a float (raises OverflowError converting it) — neither
-    # shape is reachable through compute_roster's own int-coerced, bounded
-    # cells, only through a hand-built dict a test constructs directly.
+    # its own for a FLOAT cell bypassing `_clean_counts`: ONE cell around
+    # `1e308` overflows just `100 * mine` to `inf`, dividing out to `inf`
+    # (published as "carries inf% of census usage"); TWO such cells can
+    # additionally overflow `total` itself (their sum, `2e308`, is also
+    # past a float's max) to `inf`, and `inf / inf` is `nan`. Nor is it safe
+    # for an int pair whose quotient is itself too large to represent as a
+    # float (raises OverflowError converting it) — none of these shapes are
+    # reachable through compute_roster's own int-coerced, bounded cells,
+    # only through a hand-built dict a test constructs directly.
     return 0.0 if total == 0 else (100 * mine) / total
 
 
@@ -354,11 +413,20 @@ def _rank(model: dict, rungs: list[list[str]]) -> tuple:
 
 
 def _clean_models(models_doc: dict, warn) -> list[dict]:
-    """Model entries that are dicts with a string `id`. Everything else named.
+    """Model entries that are dicts with a well-formed, string `id`.
+    Everything else named.
 
     The Models API is trusted; the FILE is not — it is written by another job
     and read off a public branch, and a `models` list holding a string or an
     entry with no id used to raise a TypeError three frames down.
+
+    The id is shape-checked with `PREVIOUS_ARM_ID_RE`, the same shape
+    `_clean_previous_arms` requires: an id this loose (or a bare type check
+    alone) reaches `unranked`/`excluded`/`catalogue_seen` and from there
+    render_summary's Markdown, which eval.yml prints to stdout — where
+    GitHub parses `::` workflow commands. A hostile id is dropped the same
+    way a bad-shaped `entry` is, and the warning names no value — only the
+    count.
     """
     entries = (models_doc or {}).get("models")
     if not isinstance(entries, list):
@@ -366,13 +434,20 @@ def _clean_models(models_doc: dict, warn) -> list[dict]:
         return []
     clean = []
     skipped = 0
+    malformed = 0
     for entry in entries:
-        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry["id"]:
-            clean.append(entry)
-        else:
+        if not (isinstance(entry, dict) and isinstance(entry.get("id"), str)
+                and entry["id"]):
             skipped += 1
+        elif not PREVIOUS_ARM_ID_RE.match(entry["id"]):
+            malformed += 1
+        else:
+            clean.append(entry)
     if skipped:
         warn(f"models document: skipped {skipped} entry/entries without a string `id`")
+    if malformed:
+        warn(f"models document: skipped {malformed} entry/entries with a "
+             f"malformed model-id-shaped `id`")
     return clean
 
 
@@ -384,7 +459,7 @@ MAX_WEEKLY_TURNS = 10 ** 7
 
 
 def _clean_counts(counts, warn) -> dict:
-    """{model: {week: int}}, coerced. Nothing that fails coercion is counted.
+    """{model: {week: int}}, validated. Nothing that fails validation is counted.
 
     No offending VALUE is ever quoted back: the census is public, and an old
     census on the branch predates the key allowlist that keeps it that way.
@@ -409,26 +484,25 @@ def _clean_counts(counts, warn) -> dict:
             # `int(False)` is `0` — so a census cell holding the JSON
             # literal `true`/`false` sailed through every check below and
             # silently became a real count instead of being rejected as
-            # the wrong shape. Checked before `isinstance(n, float)` too:
-            # neither branch below would otherwise catch it.
+            # the wrong shape. Checked before `isinstance(n, int)` too:
+            # that check alone would not otherwise catch it.
             if isinstance(n, bool):
                 bad_cells += 1
                 continue
-            # `int(float('inf'))` raises OverflowError, not TypeError or
-            # ValueError — an uncaught OverflowError used to exit this
-            # script by traceback on a census cell of `1e400` (which JSON
-            # overflows to inf) or the literal `Infinity`/`NaN`, both of
-            # which Python's `json` module accepts by default. Rejecting
-            # non-finite floats before `int()` catches it without relying on
-            # the exception ever firing.
-            if isinstance(n, float) and not math.isfinite(n):
+            # An actual `int`, nothing coerced to one. `int(n)` used to
+            # accept far more than a real census cell (a JSON number) ever
+            # produces: `int(1.9)` silently truncates a float instead of
+            # rejecting it; `int("5")` accepts a JSON STRING; `int("5_0")`
+            # is `50` (Python's int() honors the digit-group underscore
+            # numeric-literal syntax inside a string); `int("٥")` is `5`
+            # (int() accepts non-ASCII Unicode decimal digits). None of
+            # these is a value `json.load` ever hands back for a JSON
+            # number — every one is a distinct, silent, wrong-typed cell
+            # that used to become a real count.
+            if not isinstance(n, int):
                 bad_cells += 1
                 continue
-            try:
-                value = int(n)
-            except (TypeError, ValueError, OverflowError):
-                bad_cells += 1
-                continue
+            value = n
             # A negative count is not a real turn tally — accepting it at
             # face value let it sum straight into usage_share's totals
             # (a `-99` cell once yielded a 'carries 10000.0%' reason, and a
@@ -497,17 +571,48 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     return ids
 
 
+def _clean_catalogue_seen(previous, warn) -> list[str]:
+    """The previous roster's `catalogue_seen` list: every model id the
+    Models API has ever listed across runs, as of the last published
+    roster. A malformed entry is skipped, not fatal — same treatment as
+    `_clean_previous_arms`, and for the same reason: this is read off a
+    public branch, and every id from it is interpolated verbatim into
+    render_summary's Markdown, which eval.yml prints to stdout.
+    """
+    if previous is None:
+        return []
+    entries = previous.get("catalogue_seen") if isinstance(previous, dict) else None
+    if entries is None:
+        return []
+    if not isinstance(entries, list):
+        warn("previous roster: `catalogue_seen` is not a list; starting empty")
+        return []
+    ids = []
+    skipped = 0
+    for entry in entries:
+        if isinstance(entry, str) and entry and PREVIOUS_ARM_ID_RE.match(entry):
+            if entry not in ids:
+                ids.append(entry)
+        else:
+            skipped += 1
+    if skipped:
+        warn(f"previous roster: skipped {skipped} `catalogue_seen` entry/entries "
+             f"that are not a well-formed model-id-shaped string")
+    return ids
+
+
 def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
                       aliases: dict | None = None, api_ids=None,
-                      previous_arms=None) -> tuple[int, int]:
+                      previous_arms=None, catalogue_seen=None) -> tuple[int, int]:
     """(raw_total, ranked_total) of census usage over `weeks`.
 
     `ranked_total` mirrors `usage_share`'s own denominator — it excludes
     `other`, every id the tier ladder cannot place, and (when `api_ids`/
-    `previous_arms` are given, as every call inside compute_roster does —
-    see `_is_attributable`) every ranked-but-unattributable key such as a
-    proxy alias that merely carries a family word without being a real
-    catalogue model or a previous arm. Computed once and handed to
+    `previous_arms`/`catalogue_seen` are given, as every call inside
+    compute_roster does — see `_is_attributable`) every ranked-but-
+    unattributable key such as a proxy alias that merely carries a family
+    word without being a real catalogue model, a previous arm, or an id
+    this harness's own history has observed. Computed once and handed to
     `_census_verdict`, so its "is there usage evidence" check agrees with
     the number every arm's share is actually divided by, rather than
     reading raw counts that can be nonzero while the ranked denominator is
@@ -517,10 +622,10 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
     """
     aliases = aliases or {}
     api_ids_set = None if api_ids is None else set(api_ids)
-    api_ids_folded = (None if api_ids_set is None
-                      else {aliases.get(i, i) for i in api_ids_set})
-    canonical_id_re = _canonical_id_re(rungs)
+    api_ids_folded = None if api_ids_set is None else _fold_set(api_ids_set, aliases)
     previous_arms_set = set(previous_arms) if previous_arms else set()
+    previous_arms_folded = _fold_set(previous_arms_set, aliases)
+    catalogue_seen_set = set(catalogue_seen) if catalogue_seen else set()
     raw_total = 0
     ranked_total = 0
     for candidate, by_week in (counts or {}).items():
@@ -528,8 +633,8 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
         if ranked:
             folded = aliases.get(candidate, candidate)
             ranked = _is_attributable(candidate, folded, api_ids_set,
-                                      api_ids_folded, canonical_id_re,
-                                      previous_arms_set)
+                                      api_ids_folded, previous_arms_set,
+                                      previous_arms_folded, catalogue_seen_set)
         for week, n in (by_week or {}).items():
             if week in weeks:
                 raw_total += n
@@ -560,7 +665,7 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
                     census_problem: str | None = None):
     """(usable, note, code) — is there usage evidence for the window, and why not.
 
-    Seven ways to have none, and they are NOT the same fact: a file that is
+    Eight ways to have none, and they are NOT the same fact: a file that is
     present but failed to parse (distinct from nothing being published at
     all — `read_json` already tells the two apart, but `main()` used to
     collapse them by discarding the problem and passing `census_doc=None`
@@ -572,12 +677,18 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
     rank (every count fell under `other`, an unranked id, or an id ranked
     but unattributable — a proxy alias, say, which the ladder DOES place but
     which names no real catalogue model or previous arm; see
-    `_is_attributable`), and a census whose ranked, attributable total is
+    `_is_attributable`), a census whose ranked, attributable total is
     nonzero but still under `policy["min_ranked_turns"]` — almost the whole
     fleet routed through `other` with a handful of stray ranked turns is not
     evidence of anything, even though `ranked_total == 0` alone would not
-    have caught it. Each says so in its own words, because "fell back to
-    newest per tier" without the cause is a roster nobody can debug.
+    have caught it — and a census whose ranked total clears that ABSOLUTE
+    floor yet is still a vanishing fraction of the raw window total: the
+    absolute floor alone let `{other: 100000/wk, some-model: 20 turns
+    total}` read as usable evidence over 800,020 raw turns, retiring a
+    previous arm with no counted usage of its own at a literal 0.0%.
+    `policy["min_ranked_share"]` is that RELATIVE guard. Each says so in its
+    own words, because "fell back to newest per tier" without the cause is
+    a roster nobody can debug.
     """
     if census_problem:
         # `read_json`'s message already names the file and the exception
@@ -611,6 +722,14 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
                        f"under the {policy['min_ranked_turns']}-turn floor, "
                        f"too little to be evidence of anything"), \
             CENSUS_UNRANKED
+    if ranked_total < policy["min_ranked_share"] * raw_total:
+        pct = 100 * ranked_total / raw_total
+        return False, (f"census published but only {ranked_total} of "
+                       f"{raw_total} raw turns over the window are rankable, "
+                       f"attributable usage ({pct:.2f}% — under the "
+                       f"{100 * policy['min_ranked_share']:.0f}% relative "
+                       f"floor), too little to be evidence of anything"), \
+            CENSUS_UNRANKED
     return True, "", CENSUS_FRESH
 
 
@@ -636,7 +755,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # an alias the catalogue actually offers — an alias that exists solely as
     # an old census key is not a model anyone can run. USAGE folds over both,
     # so a seat keeps the usage recorded under either spelling of itself.
-    # This is a SEPARATE mechanism from _is_attributable's canonical-shape
+    # This is a SEPARATE mechanism from _is_attributable's catalogue_seen
     # check: that one credits a since-retired real id's own usage even when
     # neither of ITS spellings ever held (or holds) a seat at all.
     seat_aliases = alias_map(api_ids)
@@ -653,15 +772,43 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # previous_arms too — see _is_attributable.
     previous_arms = _clean_previous_arms(previous, warn)
 
+    # The union of every id the Models API has EVER listed across runs: this
+    # run's api ids plus whatever the previous roster already accumulated.
+    # Read back next run as `previous`'s own `catalogue_seen` — see
+    # `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history means.
+    catalogue_seen = sorted(set(api_ids) | set(_clean_catalogue_seen(previous, warn)))
+
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])
     window_union = set(enter_weeks) | set(exit_weeks)
     raw_total, ranked_total = _in_window_totals(
         counts, window_union, rungs, aliases=aliases,
-        api_ids=api_ids, previous_arms=previous_arms)
+        api_ids=api_ids, previous_arms=previous_arms,
+        catalogue_seen=catalogue_seen)
     usable, stale_note, census_code = _census_verdict(
         census_doc, raw_total, ranked_total, policy, now,
         census_problem=census_problem)
+    # The absolute/relative floor above is measured over the 8-week UNION,
+    # which answers "is there fresh evidence at all". Seating and retiring
+    # are separate questions, each measured over its OWN window: the 4-week
+    # enter window is a strict subset of the union here, so a handful of
+    # ranked turns can clear the union floor while the enter window itself
+    # carries next to none — one lone turn there used to compute a 100.0%
+    # entry share and seat a non-newest model on it. Gating each window's
+    # share check on that window's OWN ranked total (not the union's) is
+    # what stops that; kept symmetric for the exit side even though, for
+    # this policy's numbers (exit >= enter weeks), the exit window IS the
+    # union and this is a no-op today — nothing guarantees that relation.
+    _, enter_ranked_total = _in_window_totals(
+        counts, set(enter_weeks), rungs, aliases=aliases,
+        api_ids=api_ids, previous_arms=previous_arms,
+        catalogue_seen=catalogue_seen)
+    _, exit_ranked_total = _in_window_totals(
+        counts, set(exit_weeks), rungs, aliases=aliases,
+        api_ids=api_ids, previous_arms=previous_arms,
+        catalogue_seen=catalogue_seen)
+    enter_usable = usable and enter_ranked_total >= policy["min_ranked_turns"]
+    exit_usable = usable and exit_ranked_total >= policy["min_ranked_turns"]
     # Provenance: the timestamp of the census this roster actually read. A
     # census that was published and simply held nothing usable for these
     # weeks HAS a timestamp worth recording — dropping it made "we read a
@@ -691,11 +838,13 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         old_enough = age_days is not None and age_days >= policy["cooling_off_days"]
 
         reason = None
-        if usable:
+        if enter_usable:
             share = usage_share(counts, model_id, enter_weeks, rungs, aliases,
-                               api_ids=api_ids, previous_arms=previous_arms)
+                               api_ids=api_ids, previous_arms=previous_arms,
+                               catalogue_seen=catalogue_seen)
             if share >= policy["arm_enter_usage_pct"]:
-                reason = (f"carries {share:.1f}% of rankable census usage over the last "
+                reason = (f"carries {_format_share(share, policy['arm_enter_usage_pct'])}% "
+                          f"of rankable census usage over the last "
                           f"{policy['arm_enter_window_weeks']} weeks "
                           f"(at or above the {policy['arm_enter_usage_pct']}% entry bar)")
         if reason is None and is_newest and old_enough:
@@ -704,15 +853,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             reason = (newest_words if usable
                       else f"{stale_note}; fell back to newest per tier — {newest_words}")
         if reason is None and model_id in previous_arms:
-            if usable:
-                held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
-                                  api_ids=api_ids, previous_arms=previous_arms)
-                if held >= policy["arm_exit_usage_pct"]:
-                    reason = (f"held over from the previous roster: still "
-                              f"{held:.1f}% of rankable census usage over the last "
-                              f"{policy['arm_exit_window_weeks']} weeks (at or above "
-                              f"the {policy['arm_exit_usage_pct']}% exit bar)")
-            else:
+            if not usable:
                 # Staleness is not evidence of disuse. Retiring a previous arm
                 # because nobody published a census retires it on NO evidence
                 # — measured: an arm at 33% usage dropped when the census was
@@ -720,6 +861,28 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 # a model that left the Models API, handled below.
                 reason = (f"held over from the previous roster: {stale_note}, so "
                           f"there is no evidence to retire it")
+            elif not exit_usable:
+                # The census is fresh overall, but the EXIT window's own
+                # ranked total is under the floor — the same "not enough
+                # evidence to act on" gap as the stale case above, just
+                # scoped to this window rather than the whole census.
+                floor_note = (f"an exit-window ranked, attributable total of "
+                             f"{exit_ranked_total} turn(s) over the last "
+                             f"{policy['arm_exit_window_weeks']} weeks is under "
+                             f"the {policy['min_ranked_turns']}-turn floor, too "
+                             f"little to be evidence of anything")
+                reason = (f"held over from the previous roster: {floor_note}, so "
+                          f"there is no evidence to retire it")
+            else:
+                held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
+                                  api_ids=api_ids, previous_arms=previous_arms,
+                                  catalogue_seen=catalogue_seen)
+                if held >= policy["arm_exit_usage_pct"]:
+                    reason = (f"held over from the previous roster: still "
+                              f"{_format_share(held, policy['arm_exit_usage_pct'])}% "
+                              f"of rankable census usage over the last "
+                              f"{policy['arm_exit_window_weeks']} weeks (at or above "
+                              f"the {policy['arm_exit_usage_pct']}% exit bar)")
         if reason:
             arms.append({"id": model_id, "reason": reason})
         elif created is None:
@@ -835,15 +998,23 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             elif model_id in snapshots:
                 why = (f"collapsed onto its undated alias `{snapshots[model_id]}`, "
                        f"which holds the seat")
-            elif not usable:
-                why = (f"{stale_note}; the fallback roster is newest-per-tier and "
-                       f"this model is not the newest in its tier")
             else:
+                # Never `not usable` (nor `not exit_usable`) here: the arms
+                # loop above gives every previous arm still in `available`
+                # an unconditional "no evidence to retire it" reason in
+                # both of those cases, which keeps it IN `arm_ids` — so a
+                # previous arm reaching this `else` with `model_id not in
+                # arm_ids` has always been genuinely measured against the
+                # exit bar and found below it. (A prior revision carried a
+                # dead `elif not usable:` branch here for exactly the case
+                # this comment rules out; it could never execute.)
                 held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
-                                  api_ids=api_ids, previous_arms=previous_arms)
+                                  api_ids=api_ids, previous_arms=previous_arms,
+                                  catalogue_seen=catalogue_seen)
                 why = (f"below the {policy['arm_exit_usage_pct']}% exit bar for the last "
                        f"{policy['arm_exit_window_weeks']} weeks "
-                       f"({held:.1f}% of rankable census usage)")
+                       f"({_format_share(held, policy['arm_exit_usage_pct'])}% of "
+                       f"rankable census usage)")
             retired.append({"id": model_id, "reason": why})
 
     # Three states, not two: `previous is not None` alone collapses "the
@@ -872,6 +1043,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         "previous_state": previous_state,
         "retired_since_last": retired,
         "added_since_last": added,
+        "catalogue_seen": catalogue_seen,
     }
 
 
@@ -948,6 +1120,13 @@ def main() -> int:
         print(problem or f"no models document at {args.models}", file=sys.stderr)
         return 1
 
+    policy = load_policy(args.policy)
+    try:
+        validate_policy(policy)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+
     census_doc, census_problem = read_json(args.census)
     if census_problem:
         _stderr(census_problem)
@@ -958,7 +1137,7 @@ def main() -> int:
     roster = compute_roster(
         models_doc=models_doc,
         census_doc=census_doc,
-        policy=load_policy(args.policy),
+        policy=policy,
         previous=previous_doc,
         now=datetime.now(timezone.utc),
         admin_doc=load_json(args.admin_report),

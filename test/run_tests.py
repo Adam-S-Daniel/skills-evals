@@ -2155,11 +2155,14 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(policy["arm_exit_usage_pct"], 2)
         self.assertEqual(policy["arm_exit_window_weeks"], 8)
         self.assertEqual(policy["census_max_age_days"], 14)
+        self.assertEqual(policy["min_ranked_turns"], 20)
+        self.assertEqual(policy["min_ranked_share"], 0.01)
         self.assertEqual(roster.tier_rungs(policy),
                          [["haiku"], ["sonnet"], ["opus"], ["fable", "mythos"]],
                          "a rung may name peers that rank identically")
         self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
                                   "sub-issue until the ADR itself exists")
+        roster.validate_policy(policy)  # the real policy file must validate
 
     #: Anything a maintainer marks with this on the SAME LINE is allowed to
     #: carry a model id, and each file gets at most one. The marker is the
@@ -2746,14 +2749,22 @@ class TestIssue67Review(unittest.TestCase):
                 self.assertNotIn("\n", note, "one line, never a traceback")
                 self.assertIn("models", note)
 
-    def test_census_counts_that_are_not_numbers_are_coerced_or_dropped(self):
+    def test_census_counts_that_are_not_actual_ints_are_dropped_not_coerced(self):
+        """A census cell must be an actual `int` — not a numeral STRING, not
+        `None`. (N2, #129 review round 5: `_clean_counts` used to run every
+        cell through Python's `int()`, which coerces far more than a real
+        JSON number ever needs — see `_clean_counts`'s own comment.) Every
+        one of these weeks is dropped, and the run does not crash."""
         counts = {"claude-sonnet-5": {w: "100" for w in self.W[:4]},
                   "claude-opus-5": {w: None for w in self.W[:4]},
                   "claude-haiku-4-5": "not a mapping at all"}
         result, notes = self._warned(census_doc=self._census_doc(counts=counts))
-        # "100" coerces; None does not, and neither crashes the run.
-        self.assertIn("claude-sonnet-5", self._arm_ids(result))
-        self.assertIn("100.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
+        # Every cell is dropped, so the census reads as empty over the
+        # window and every arm falls back to newest-per-tier — NOT to a
+        # coerced "100.0%" usage share.
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("fell back to newest per tier", reason)
+        self.assertNotIn("100.0%", reason)
         self.assertTrue(any("census" in n for n in notes), notes)
         for note in notes:
             self.assertNotIn("\n", note)
@@ -4375,8 +4386,13 @@ class TestIssue63Review(unittest.TestCase):
             run_eval._validate_registry_paths(registries)
         msg = str(ctx.exception)
         self.assertIn("cms-platform", msg)
-        self.assertIn("does-not-exist-anywhere", msg)
         self.assertIn("--registry flag", msg)
+        # The resolved absolute PATH must not reach the message (item 6,
+        # #129 review round 4's treatment of this same class of detail,
+        # applied here too — N6, round 5): only the registry's name and
+        # override source.
+        self.assertNotIn(str(bad_path), msg)
+        self.assertNotIn("does-not-exist-anywhere", msg)
 
     def test_unoverridden_sibling_default_is_not_eagerly_validated(self):
         # agentskills-private has no sibling checkout in this environment and
@@ -4850,6 +4866,13 @@ class TestIssue63Round2(unittest.TestCase):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_install_failed")
+            # The skill name, not the destination's absolute workspace path
+            # (S5, #129 review round 5) — this detail reaches summary.json,
+            # which eval.yml commits to the public eval-results branch.
+            self.assertIn("some-skill/ already exists in the seed workspace",
+                          result["detail"])
+            self.assertIn("FileExistsError", result["detail"])
+            self.assertNotIn(str(workspace), result["detail"])
 
             # Case 2: a seed shipping `.claude/skills` itself as a regular
             # FILE (not a directory) — os.makedirs (inside shutil.copytree)
@@ -4865,6 +4888,10 @@ class TestIssue63Round2(unittest.TestCase):
                 result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
             self.assertIn("error", result2)
             self.assertEqual(result2["error"], "skill_install_failed")
+            self.assertIn("some-skill/ already exists in the seed workspace",
+                          result2["detail"])
+            self.assertIn("NotADirectoryError", result2["detail"])
+            self.assertNotIn(str(workspace2), result2["detail"])
 
     # --- N4: a repeated --registry NAME= for the same name must raise, not
     # silently last-win ---
@@ -5229,15 +5256,36 @@ class TestIssue67Review4(unittest.TestCase):
         self.assertNotIn("claude-sonnet-4-9-20260101", retired,
                          f"a model carrying ~100000 turns under its own "
                          f"alias must not be retired: {retired}")
+        # S3 (#129 review round 5): this test passed even before item 1's
+        # fix existed, rescued by the `min_ranked_turns` floor's "no
+        # evidence to retire it" bailout rather than by a genuine usage
+        # measurement — the floor's own reason names "floor", never
+        # "rankable census usage". Pin the ARM's actual reason so a
+        # regression that breaks the real attribution path but leaves the
+        # floor rescuing it by coincidence still shows red here.
+        reason = self._reason(result, "claude-sonnet-4-9-20260101")
+        self.assertIn("rankable census usage", reason)
+        self.assertNotIn("floor", reason)
 
-    def test_proxy_alias_with_family_word_stays_unattributable(self):
-        """(c) Regression floor for round 3: a pure proxy/routing alias that
-        merely carries a family word — not a real catalogue id under any
-        spelling, and not a previous arm under any spelling — must still
-        read as zero ranked usage after the fix widens attribution. The fix
-        must not admit MORE than intended."""
+    def test_proxy_and_implausible_aliases_stay_unattributable(self):
+        """Every shape a proxy/routing layer — or a plausible-looking fake
+        version that was never a real catalogue id — can carry: `rung_of()`
+        ranks all of these (a recognised family word is present), yet none
+        is a real catalogue id or a previous arm under any spelling, and
+        none was ever in `catalogue_seen` either (it is built only from
+        real Models API responses). Regression floor for round 3's
+        proxy-alias fix, and for round 5's withdrawal of the canonical-
+        shape route: the last three entries are exactly the three holes
+        that route shipped with (see `_is_attributable`'s docstring) —
+        a Unicode decimal digit in the version segment, a plausible but
+        entirely invented version number, and a region-suffixed alias.
+        (Consolidates what were two near-duplicate tests, N7 — one for a
+        bare `api_ids`/`previous_arms` and one adding `previous_arms`; both
+        asserted the identical `ranked_total == 0` outcome.)
+        """
         rungs = roster.tier_rungs(self._policy())
-        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route"):
+        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route",
+                      "claude-sonnet-9-9", "claude-opus-٤", "claude-opus-4-eu"):
             cleaned = roster._clean_counts(
                 {alias: {self.W[0]: 500}}, lambda _m: None)
             api_ids = {"claude-opus-4-8"}
@@ -5248,62 +5296,59 @@ class TestIssue67Review4(unittest.TestCase):
                 api_ids=api_ids, previous_arms=previous_arms)
             self.assertEqual(ranked_total, 0, alias)
 
-    # --- item 2: a since-retired real model id must still count in the
-    # usage denominator — attribution by canonical ladder SHAPE, not only
-    # by catalogue/previous-arm membership. A proxy alias must not gain
-    # this path just because it carries a family word. --------------------
+    # --- item 1 (design decision, #129 review round 5): a since-retired
+    # real model id must still count in the usage denominator — attribution
+    # by catalogue HISTORY (`catalogue_seen`), not id SHAPE. A proxy alias
+    # must not gain a seat just because it carries a family word. ---------
 
-    def test_a_since_retired_real_model_still_counts_in_the_denominator(self):
+    def test_a_since_retired_real_model_still_counts_via_catalogue_seen(self):
         """`claude-opus-4-8` leaves the Models API and was never a previous
         arm. Its 1000-turns/week usage is real work that happened, and
-        DESIGN.md's own property says it belongs in the denominator. Before
-        this fix, item 1 alone still excluded it (neither a bare/folded api
-        id nor a previous arm), starving the denominator down to
-        `claude-sonnet-4-6`'s own usage and inflating its measured share
-        from ~5.66% (correctly below the 10% entry bar) to a false 100%,
-        seating it as a paid arm on no real evidence.
+        DESIGN.md's own property says it belongs in the denominator. Round
+        4 attributed it by id SHAPE (`_canonical_id_re`, withdrawn in round
+        5 for the reasons in `_is_attributable`'s docstring); the
+        replacement is catalogue HISTORY — a previous run's published
+        roster recorded seeing `claude-opus-4-8` in the Models API, so it
+        rides in `catalogue_seen` this run even with no census usage of its
+        own and no seat. Without either mechanism, item 1 alone still
+        excludes it (neither a bare/folded api id nor a previous arm),
+        starving the denominator down to `claude-sonnet-4-6`'s own usage
+        and inflating its measured share from ~5.66% (correctly below the
+        10% entry bar) to a false 100%, seating it as a paid arm on no real
+        evidence.
         """
         rungs = roster.tier_rungs(self._policy())
         counts = {"claude-sonnet-4-6": {w: 60 for w in self.W},
                   "claude-opus-4-8": {w: 1000 for w in self.W}}
         cleaned = roster._clean_counts(counts, lambda _m: None)
         api_ids = {"claude-sonnet-4-6"}  # opus-4-8 dropped from the catalogue
+        catalogue_seen = {"claude-sonnet-4-6", "claude-opus-4-8"}
         aliases = roster.alias_map(list(api_ids) + list(cleaned))
         share = roster.usage_share(
             cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
-            api_ids=api_ids, previous_arms=set())
+            api_ids=api_ids, previous_arms=set(), catalogue_seen=catalogue_seen)
         self.assertAlmostEqual(share, 100 * 240 / 4240, places=6)
         self.assertLess(share, 10.0,
                         "below the 10% entry bar — opus-4-8's usage must "
                         "still be in the denominator")
 
-        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
-            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
-        ]}
+        # End to end: `claude-sonnet-5` (the DEFAULT fixture's newer sonnet)
+        # stays in the catalogue so `claude-sonnet-4-6` is NOT the newest in
+        # its tier — its only possible route to a seat is the usage share
+        # above, which must legitimately fail, so the assertion below is
+        # unconditional (N5, #129 review round 5 — the round 4 version of
+        # this test only checked the reason's wording IF the model ended up
+        # seated, which a regression could dodge simply by also breaking
+        # the newest-in-tier fallback in a way that happened to keep this
+        # model out of `arms`).
+        models = TestIssue67._models_doc(drop={"claude-opus-4-8"})
         census = TestIssue67._census_doc(counts=counts)
-        result = self._compute(models=models, census=census, previous=None)
-        if "claude-sonnet-4-6" in self._arm_ids(result):
-            reason = self._reason(result, "claude-sonnet-4-6")
-            self.assertNotIn("100.0%", reason)
-            self.assertIn("newest", reason.lower(),
-                         "must be seated on newest-in-tier grounds, not a "
-                         "false usage share")
-
-    def test_a_proxy_alias_does_not_gain_a_seat_from_the_canonical_shape_check(self):
-        """The canonical-shape widening in the test above must not also
-        admit a proxy/routing alias that merely pastes a family word onto
-        unrelated segments — the round-3 regression floor, once more,
-        against the NEW attribution path specifically."""
-        rungs = roster.tier_rungs(self._policy())
-        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route"):
-            cleaned = roster._clean_counts(
-                {alias: {self.W[0]: 500}}, lambda _m: None)
-            api_ids = {"claude-opus-4-8"}
-            aliases = roster.alias_map(list(api_ids) + list(cleaned))
-            raw_total, ranked_total = roster._in_window_totals(
-                cleaned, set(self.W[:1]), rungs, aliases=aliases,
-                api_ids=api_ids, previous_arms=set())
-            self.assertEqual(ranked_total, 0, alias)
+        previous = {"arms": [], "catalogue_seen": ["claude-opus-4-8"]}
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "opus-4-8's usage must count in the denominator, "
+                         "keeping sonnet-4-6's share below the entry bar "
+                         "rather than seating it at a false 100%")
 
     # --- item 3: CENSUS_UNRANKED's published reason must name the
     # unattributable cause too, not only "the tier ladder cannot place" ---
@@ -5454,6 +5499,309 @@ class TestIssue67Review4(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 0)
         self.assertIn("usage:", out.getvalue().lower())
         self.assertNotIn("Traceback", err.getvalue())
+
+
+class TestIssue67Review5(unittest.TestCase):
+    """Round 5 fixes for #67 (PR #129 review round 5), one test per item.
+    See run_tests.py's class-per-review-round convention (TestIssue67Review,
+    TestIssue67Review2, TestIssue67Review3, TestIssue67Review4) — a SIBLING
+    of TestIssue67, reusing its canned documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- design decision: catalogue_seen replaces _canonical_id_re -------
+
+    def test_legacy_shaped_previously_seen_model_is_attributed_via_catalogue_seen(self):
+        """A pre-#67 legacy-shaped id (family word AFTER a leading numeric
+        segment, e.g. a `claude-3-...` id) that has since left the Models
+        API is attributable when this harness's own history says it was
+        once in the catalogue — `catalogue_seen`, not id SHAPE. The
+        withdrawn `_canonical_id_re` never matched this shape at all (its
+        pattern required the family word immediately after `claude-`), so
+        this legacy model would have been starved out of the denominator
+        even under round 4's code; `catalogue_seen` fixes it a different
+        way — by evidence, not shape.
+        """
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+            self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
+        ]}
+        legacy_id = "claude-3-opus-202" + "40229"  # kept out of one literal
+        previous = {"arms": [], "catalogue_seen": [legacy_id]}
+        counts = {legacy_id: {w: 112 for w in self.W[:4]},
+                  "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "sonnet-4-6 is not newest (sonnet-5-0 is) and its "
+                         "real ~9.68% share must not seat it")
+
+        rungs = roster.tier_rungs(self._policy())
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        api_ids = {m["id"] for m in models["models"]}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
+            api_ids=api_ids, previous_arms=set(),
+            catalogue_seen={legacy_id} | api_ids)
+        self.assertAlmostEqual(share, 100 * 48 / 496, places=2)
+        self.assertAlmostEqual(share, 9.68, places=2)
+
+        # Mutation check (manual, not automated): deleting the
+        # `catalogue_seen` clause from `_is_attributable` drops the legacy
+        # id's 448 turns from the denominator, leaving sonnet-4-6 at a
+        # false 48/48 = 100.0% and seating it — turning the `assertNotIn`
+        # above red.
+
+    def test_legacy_shaped_model_with_no_catalogue_history_documents_the_first_run_caveat(self):
+        """Same scenario, but `catalogue_seen` starts EMPTY — the
+        documented first-run caveat: with no history yet, a model retired
+        before this harness's first run is unattributable, and its usage
+        silently drops from the denominator. This is expected, current
+        behavior, not a bug — see `_is_attributable`'s docstring and
+        DESIGN.md's roster properties."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+            self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
+        ]}
+        legacy_id = "claude-3-opus-202" + "40229"
+        previous = {"arms": [], "catalogue_seen": []}
+        counts = {legacy_id: {w: 112 for w in self.W[:4]},
+                  "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertIn("claude-sonnet-4-6", self._arm_ids(result))
+        self.assertIn("100.0%", self._reason(result, "claude-sonnet-4-6"))
+
+    def test_previous_arm_alias_usage_counts_via_previous_arms_folded(self):
+        """A previous arm published under a DATED id, since retired from
+        the Models API, whose real usage the census records under its
+        UNDATED alias: `previous_arms_folded` — the missing sibling of
+        `api_ids_folded` — is what keeps those turns in the denominator.
+        Without it, the same 5000 turns silently drop out, shrinking the
+        denominator from 5103 to 103 and inflating `claude-sonnet-5`'s own
+        100 turns from a real ~1.96% to a false ~97.09%.
+        """
+        rungs = roster.tier_rungs(self._policy())
+        counts_raw = {
+            "claude-sonnet-4-9": {self.W[0]: 5000},  # previous arm's usage, undated alias
+            "claude-sonnet-5": {self.W[0]: 100},
+            "claude-haiku-4-5": {self.W[0]: 3},
+        }
+        cleaned = roster._clean_counts(counts_raw, lambda _m: None)
+        api_ids = {"claude-sonnet-5", "claude-haiku-4-5"}  # the dated arm has left the API
+        previous_arms = {"claude-sonnet-4-9-20260101"}
+        aliases = roster.alias_map(list(api_ids) + list(previous_arms) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-5", self.W[:1], rungs, aliases,
+            api_ids=api_ids, previous_arms=previous_arms)
+        self.assertAlmostEqual(share, 100 * 100 / 5103, places=2)
+        self.assertLess(share, 2.0)
+        # Mutation check (manual): removing the `previous_arms_folded`
+        # clause from `_is_attributable` drops the 5000-turn candidate,
+        # changing the computed share to 100*100/103 ≈ 97.09 — turning the
+        # `assertAlmostEqual` above red.
+
+    def test_catalogue_seen_round_trips_through_the_published_roster(self):
+        """`catalogue_seen` is the union of api ids seen this run and
+        whatever the previous roster already accumulated, sorted and
+        deduplicated, and it is shape-checked before being read back —
+        the same `_clean_previous_arms`-style treatment as `arms`,
+        including the count-only warning on a hostile entry."""
+        models = TestIssue67._models_doc()
+        result = self._compute(models=models, previous=None)
+        api_ids = {m["id"] for m in models["models"]}
+        self.assertEqual(set(result["catalogue_seen"]), api_ids)
+        self.assertEqual(result["catalogue_seen"], sorted(set(result["catalogue_seen"])))
+
+        hostile = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [], "catalogue_seen": result["catalogue_seen"] +
+                   [hostile, 123, None]}
+        warnings = []
+        roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertTrue(
+            any("catalogue_seen" in w and "skipped" in w for w in warnings),
+            warnings)
+        for w in warnings:
+            self.assertNotIn(hostile, w)
+
+        result2 = self._compute(models=models, previous=previous)
+        self.assertNotIn(hostile, result2["catalogue_seen"])
+        summary = roster.render_summary(result2)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile, summary)
+
+    # --- S1: the min_ranked_turns floor must apply PER WINDOW, not only
+    # over the 8-week union -------------------------------------------------
+
+    def test_min_ranked_turns_floor_applies_to_the_enter_window_on_its_own(self):
+        """30 ranked turns in weeks 5-8 (outside the 4-week enter window)
+        clear the union floor, while the enter window itself carries a
+        single turn — that one turn used to compute a 100.0% entry share
+        and seat `claude-sonnet-4-6` (not the newest in its tier; the
+        DEFAULT fixture's `claude-sonnet-5` is), on evidence of a single
+        turn.
+        """
+        counts = {
+            "claude-sonnet-4-6": {self.W[0]: 1},                     # enter window: 1 turn
+            "claude-opus-5": {w: 6 for w in self.W[4:8]},             # weeks 5-8: 24 turns
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=None)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "one turn inside a 4-turn-total enter window must "
+                         "not clear the 20-turn floor just because weeks "
+                         "5-8 do")
+        # Mutation check (manual): gating the entry share check on the
+        # union's `usable` alone (reverting `enter_usable` back to
+        # `usable`) seats claude-sonnet-4-6 at "100.0%" here — red.
+
+    # --- S2: an absolute floor alone is not enough; a RELATIVE guard too ---
+
+    def test_min_ranked_share_holds_a_previous_arm_at_the_absolute_floor(self):
+        """`other` dominates the window (100000 turns/week for 8 weeks) with
+        exactly `min_ranked_turns` (20) genuinely ranked turns on a
+        DIFFERENT model — the absolute floor alone reads this as usable
+        evidence and retires `claude-opus-4-8` (no counted usage of its
+        own) at a literal 0.0% against 800,020 raw turns. The relative
+        floor (`min_ranked_share`) must hold it instead."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"other": {w: 100000 for w in self.W},
+                  "claude-haiku-4-5": {self.W[0]: 20}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_min_ranked_share_does_not_hold_a_genuinely_ranked_census(self):
+        """A census that is genuinely ranked over a meaningful share of the
+        raw window total must not be held back by the new relative guard —
+        retirement proceeds normally."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-5": {w: 100 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("exit bar", retired["claude-opus-4-8"])
+
+    # --- S4: a models.json entry's id must be shape-checked too -----------
+
+    def test_malformed_model_id_in_the_models_document_is_dropped_with_a_warning(self):
+        """A models.json entry carrying a hostile id (a newline and an
+        `::error::` line) must not reach `unranked`/`excluded`/
+        `catalogue_seen`, and from there render_summary's Markdown, which
+        eval.yml prints to stdout."""
+        hostile = "claude-opus-4\n::error::pwned::"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model(hostile, "2026-01-01T00:00:00Z"),
+        ]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=None, now=self.NOW, warn=warnings.append)
+        self.assertTrue(any("malformed model-id-shaped" in w for w in warnings), warnings)
+        self.assertNotIn(hostile, result["catalogue_seen"])
+        for entries in (result["arms"], result["unranked"], result["excluded"]):
+            self.assertNotIn(hostile, [e["id"] for e in entries])
+        summary = roster.render_summary(result)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile, summary)
+
+    # --- S6: the `\Z` anchor in PREVIOUS_ARM_ID_RE, pinned ------------------
+
+    def test_previous_arm_id_re_rejects_a_trailing_newline(self):
+        """`$` also matches just before a trailing newline; `\\Z` does not.
+        Reverting the anchor to `$` would let `claude-opus-4\\n` through as
+        a "well-formed" id."""
+        self.assertIsNone(roster.PREVIOUS_ARM_ID_RE.match("claude-opus-4\n"))
+        self.assertIsNotNone(roster.PREVIOUS_ARM_ID_RE.match("claude-opus-4"))
+
+    # --- N1: a rounded share must not contradict its own bar ---------------
+
+    def test_retirement_reason_uses_two_decimals_when_one_would_touch_the_bar(self):
+        """A previous arm at a true 1.96% exit-window share rounds to
+        "2.0%" at one decimal — "below the 2% exit bar (2.0%)" reads as
+        self-contradictory. Two decimals only when the tie actually
+        happens."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-opus-4-8": {self.W[0]: 98},
+                  "claude-sonnet-5": {self.W[0]: 4902}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("1.96%", retired["claude-opus-4-8"])
+        self.assertNotIn("2.0%", retired["claude-opus-4-8"])
+
+    # --- N2: _clean_counts must require an actual int, not a coercible
+    # string/float --------------------------------------------------------
+
+    def test_clean_counts_requires_actual_ints_not_coercible_strings_or_floats(self):
+        """`1.9` (a float) silently truncated to `1`; `"5"` (a JSON string)
+        parsed as `5`; `"5_0"` parsed as `50` (Python's `int()` honors the
+        digit-group underscore numeric-literal syntax inside a string);
+        `"٥"` (an Arabic-Indic digit) parsed as `5` (`int()` accepts
+        non-ASCII Unicode decimal digits). None of these is a value
+        `json.load` ever hands back for a JSON number."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": 1.9, "2026-W35": "5",
+                               "2026-W34": "5_0", "2026-W33": "٥",
+                               "2026-W32": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W32": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    # --- N4: min_ranked_turns/min_ranked_share validated with the other
+    # thresholds -------------------------------------------------------------
+
+    def test_roster_policy_is_the_single_source_of_thresholds(self):
+        base = dict(self._policy())
+        for key in ("min_ranked_turns", "min_ranked_share", "cooling_off_days",
+                   "arm_enter_usage_pct", "arm_exit_window_weeks"):
+            for bad, label in ((None, "missing"), ("20", "string"),
+                              (-5, "negative"), (None, "None")):
+                policy = dict(base)
+                if label == "missing":
+                    del policy[key]
+                else:
+                    policy[key] = bad
+                with self.subTest(key=key, bad=label):
+                    with self.assertRaises(ValueError) as ctx:
+                        roster.validate_policy(policy)
+                    self.assertIn(key, str(ctx.exception))
+        # min_ranked_share also has an upper bound: a share above 1 (100%)
+        # is not a fraction.
+        policy = dict(base)
+        policy["min_ranked_share"] = 1.5
+        with self.assertRaises(ValueError) as ctx:
+            roster.validate_policy(policy)
+        self.assertIn("min_ranked_share", str(ctx.exception))
+        # The real policy file must itself validate cleanly.
+        roster.validate_policy(base)
 
 
 if __name__ == "__main__":

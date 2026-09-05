@@ -282,8 +282,8 @@ def _validate_registry_paths(registries: dict[str, dict]) -> None:
             continue
         if not entry["path"].is_dir():
             raise ValueError(
-                f"registry {name!r} ({entry['source']}) resolves to "
-                f"{entry['path']}, which is not a directory")
+                f"registry {name!r} ({entry['source']}) does not resolve "
+                f"to a directory")
 
 
 def registry_for_url(registries: dict[str, dict], url: str) -> dict:
@@ -545,9 +545,13 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # NotADirectoryError (a seed shipping .claude/skills itself as a
             # regular FILE, so os.makedirs can't create skill_dest under it)
             # both land here — both are a seed/workspace layout problem, not
-            # something to raise out of run_agent's "nothing is raised" contract.
+            # something to raise out of run_agent's "nothing is raised"
+            # contract. The skill name, not `skill_dest`'s absolute
+            # workspace path — this detail reaches summary.json, which
+            # eval.yml commits to the public eval-results branch.
             return {"error": "skill_install_failed",
-                    "detail": f"{skill_dest} already exists in the seed: {exc}"}
+                    "detail": f"{skill}/ already exists in the seed workspace "
+                              f"({type(exc).__name__})"}
 
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
            "--output-format", "json", "--permission-mode", "bypassPermissions",

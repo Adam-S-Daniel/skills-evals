@@ -47,6 +47,18 @@ tiers:
 # undated alias is itself in the catalogue; a catalogue that publishes only
 # dated ids has nothing to collapse onto and every id stands on its own.
 
+# A since-retired model's usage still counts toward the denominator when
+# this harness's own history says it was once in the catalogue: the
+# published roster carries `catalogue_seen`, the union of every id the
+# Models API has ever listed across runs. A model's usage stops counting
+# only once no run has ever observed it — FIRST-RUN CAVEAT: with no
+# `catalogue_seen` history yet (a genuine first run, or a previous roster
+# that could not be read), a model retired before this harness's first run
+# is unattributable, and its usage silently drops from the denominator
+# until a run observes it directly. An earlier approach inferred this from
+# the id's SHAPE instead; withdrawn because shape cannot tell a
+# since-retired real model from a plausibly-named proxy alias.
+
 # A model becomes an arm if it carries at least this share of census usage
 # over the trailing window...
 arm_enter_usage_pct: 10
@@ -78,5 +90,18 @@ census_max_age_days: 14
 # turn leaves `ranked_total` at 1, which used to read as CENSUS_FRESH and
 # could retire a previous arm with no counted usage of its own at a false
 # 0.0%. Below this many ranked, attributable turns over the window, the
-# census falls back the same way an entirely-unranked one does.
+# census falls back the same way an entirely-unranked one does. Applied per
+# window, not only over the 8-week union: a handful of ranked turns can
+# clear this floor over the union while the 4-week enter window carries
+# next to none of them, which used to compute a false 100.0% entry share on
+# one lone turn.
 min_ranked_turns: 20
+
+# ...and a RELATIVE floor beside the absolute one above: the ranked,
+# attributable total must also be at least this fraction of the RAW window
+# total. The absolute floor alone passes `{other: 100000/wk, some-model: 20
+# turns total}` as usable evidence over 800,020 raw turns — 20 turns clears
+# min_ranked_turns while being a vanishing fraction of what the fleet
+# actually did, which used to retire a previous arm with no counted usage
+# of its own at a literal 0.0%.
+min_ranked_share: 0.01

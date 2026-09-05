@@ -323,7 +323,7 @@ feature is `scripts/refresh_models.py`; the usage side is
 has no transcripts) as a best-effort passenger on the Tier-3 account-store
 Routine.
 
-Three properties are load-bearing and should survive any rework:
+Five properties are load-bearing and should survive any rework:
 
 1. **No model id in the machinery.** Tier comes from the family word in a
    model's own id, matched against a ladder in `evals/roster-policy.yml`. A
@@ -340,6 +340,20 @@ Three properties are load-bearing and should survive any rework:
    exists but could not be read this run) — collapsing the last two into one
    boolean once let the rendered summary claim "no change since the last
    run" about a comparison that never happened.
+5. **A since-retired model counts by catalogue HISTORY, not id shape.** The
+   published roster carries `catalogue_seen`: the union of every model id
+   the Models API has ever listed across runs. A model that has left the
+   API but that this harness has actually observed before still counts in
+   the usage denominator — real work that happened does not stop counting
+   just because the model is gone. An earlier approach inferred this from
+   the id's SHAPE instead (a family word plus a numeric version); that was
+   withdrawn because shape cannot distinguish a since-retired real model
+   from a plausibly-named proxy alias, and it missed the pre-#67 legacy id
+   shape entirely. **First-run caveat:** with no `catalogue_seen` history
+   yet (a genuine first run, or a previous roster that could not be read),
+   a model retired before this harness ever observed it is unattributable
+   — its usage silently drops from the denominator until a run observes it
+   directly.
 
 Thresholds, and the reasoning behind the numbers, belong in an ADR —
 [#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the
