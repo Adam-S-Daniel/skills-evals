@@ -2536,6 +2536,35 @@ class TestIssue74(unittest.TestCase):
         self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
                         by_id["gh-api-failure-not-swallowed"]["detail"])
 
+    # -- Round-6 review C: alternative 4's end anchor was dodged by putting
+    # ANOTHER statement after the swallow. `out=$(gh api …) || out="";
+    # echo "continuing"` scored 11/11 — the reassignment is still the
+    # swallow, it just is not the last thing on the line any more.
+    # Pre-existing, not introduced this round. The anchor now tolerates one
+    # following `;`/`&` statement, so the swallow is caught wherever the
+    # line goes next, while a fallback that assigns a real value stays
+    # legal. --
+
+    def test_c_gh_api_empty_reassignment_before_another_statement_fails(self):
+        call = ('out=$(gh api "repos/${REPO}/pulls?state=merged" '
+                "--jq '.[].title')")
+        evasions = (
+            f'{call} || out=""; echo "continuing"',
+            f'{call} || out="" && echo "continuing"',
+            f'{call} || out= ;',
+        )
+        for evasion in evasions:
+            with self.subTest(evasion=evasion):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "collect.sh"
+                text = path.read_text(encoding="utf-8")
+                path.write_text(text.replace(self.GH_API_FIXED_BLOCK, evasion),
+                                encoding="utf-8")
+                result = self._run(ws)["gh-api-failure-not-swallowed"]
+                self.assertFalse(result["passed"])
+                self.assertIn(r"\w+=", result["detail"])
+
     # -- Round-6 review F2 (FOURTH consecutive round on this same paragraph).
     # Rounds 3, 4 and 5 each rewrote it as prose and each rewrite introduced
     # a fresh over-claim; round 5's said a suppression is forbidden only "as
@@ -2631,8 +2660,9 @@ class TestIssue74(unittest.TestCase):
                               "the TestIssue74 test that measures it")
 
         # (b) the operative words, and the ordinals the bullets assert.
-        for word in ("LINE-LOCAL", "FILE-SCOPED", "WHEREVER", "line-local",
-                     "file-scoped", "set +e", "gh api"):
+        for word in ("LINE-LOCAL", "FILE-SCOPED", "END-ANCHORED", "WHEREVER",
+                     "line-local", "file-scoped", "set +e", "gh api",
+                     "`;`/`&`"):
             with self.subTest(word=word):
                 self.assertIn(word, comment)
 

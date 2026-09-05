@@ -193,10 +193,15 @@ objective_checks:
   #     `… 2>/dev/null) || out=$(cat cache)` are both caught even though
   #     neither suppression is the last thing on its line —
   #     test_gh_api_swallow_anywhere_on_the_line_fails
-  #   - alternative 4 is the one END-ANCHORED ban: it fires only when the
+  #   - alternative 4 is the one END-ANCHORED ban: it fires when the
   #     empty-string or bare reassignment is the last thing on the line,
   #     before an optional trailing comment —
   #     test_s1_gh_api_empty_string_reassignment_swallow_fails
+  #   - that end anchor reaches past one following `;`/`&` statement, so
+  #     `|| out=""; echo "continuing"`, `|| out="" && echo …` and
+  #     `|| out= ;` are caught too — the reassignment is still the swallow,
+  #     it just is not the last thing on the line —
+  #     test_c_gh_api_empty_reassignment_before_another_statement_fails
   #   - a fallback that assigns a real value rather than emptying `out`
   #     (`|| out=$(cat cache)`) is not a swallow and stays legal —
   #     test_s1_gh_api_genuine_fallback_on_same_line_stays_legal
@@ -233,7 +238,7 @@ objective_checks:
       - '^[^#\n]*gh api[^#\n]*\|\|\s*(true|:|echo)[^#\n]*'
       - '^[^#\n]*gh api[^#\n]*2>\s*/dev/null[^#\n]*'
       - '^[^#\n]*\bset \+e\b[^#\n]*'
-      - '^[^#\n]*gh api[^#\n]*\|\|\s*\w+=(""|'''')?\s*(#.*)?$'
+      - '^[^#\n]*gh api[^#\n]*\|\|\s*\w+=(""|'''')?\s*([;&][^#\n]*)?(#.*)?$'
 
   # Finding 4: `git commit` with no git identity configured fails with exit
   # 128 on any runner that lacks a global user.name/user.email. `--local` and
