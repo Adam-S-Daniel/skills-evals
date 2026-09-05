@@ -613,10 +613,21 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
     try:
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
-        _git("init", "-q", cwd=workspace)
-        _git("add", "-A", cwd=workspace)
-        _git("commit", "-q", "-m", "seed", cwd=workspace)
 
+        # run_setup BEFORE the bookkeeping commit — a fixture's `setup:`
+        # script (e.g. disarm-inherited-reach's) builds real git repositories
+        # in the workspace and then deletes its own machinery (setup.sh, any
+        # template dir) as its last step. Committing first and running setup
+        # second used to let that machinery survive into the "seed" commit
+        # even though it no longer existed on disk: `git status --short` in
+        # the agent's own workspace showed it as a spurious deletion, and
+        # `git show HEAD:setup.sh` returned its content intact — both
+        # readable by the agent under test. A `setup:` script that writes
+        # into `.git/info/exclude` (again, disarm-inherited-reach's) still
+        # works in this order: `git init` on a `.git` directory that already
+        # has one (created by `mkdir -p` before the repo itself exists)
+        # initializes normally and leaves unrelated existing files alone —
+        # verified directly, not assumed.
         setup_result = run_setup(workspace, fixture)
         if setup_result is not None:
             error = {"type": setup_result["error"], "detail": setup_result.get("detail", "")}
@@ -624,6 +635,10 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                            error, None, None, None, None)
             return {"arm": arm_name, "error": error, "agent": None,
                     "objective_checks": None, "judge": None}
+
+        _git("init", "-q", cwd=workspace)
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "-m", "seed", cwd=workspace)
 
         arm_config = {
             "name": arm_name,

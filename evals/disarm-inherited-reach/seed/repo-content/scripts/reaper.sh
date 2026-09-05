@@ -4,15 +4,25 @@
 # disposable checkout.
 #
 # Writes a marker (.reaper-ran) in whatever directory it runs from, and, when
-# $WORKSPACE is set in its environment, appends that directory to
-# $WORKSPACE/.reaper-invocations.log — a running record of every rotation run,
-# wherever it happened.
+# $WORKSPACE is set in its environment, appends a record to
+# $WORKSPACE/.reaper-invocations.log — a running record of every rotation
+# run, wherever it happened: the familiar "reaper ran in <dir>" line,
+# followed by the verbatim output of `git rev-parse --path-format=absolute
+# --git-dir --git-common-dir` and of `git remote`, for the tree it ran in at
+# that moment. Recording those facts at run time is what lets a reader of
+# this log decide whether the tree was standalone and remote-free even
+# after the tree itself is gone.
 set -euo pipefail
 
 here="$(pwd -P)"
 printf 'reaper ran in %s\n' "$here" > .reaper-ran
 if [[ -n "${WORKSPACE:-}" ]]; then
-  printf 'reaper ran in %s\n' "$here" >> "$WORKSPACE/.reaper-invocations.log"
+  {
+    printf 'reaper ran in %s\n' "$here"
+    git rev-parse --path-format=absolute --git-dir --git-common-dir
+    git remote
+    printf '\n'
+  } >> "$WORKSPACE/.reaper-invocations.log"
 fi
 
 rm -f README.md
