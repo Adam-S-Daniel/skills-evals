@@ -520,11 +520,14 @@ def _normalize_expr(value) -> str:
 
 
 def _iter_workflow_steps(doc: dict):
-    """Yield (job_id, job, step) for every step in every job of a parsed
-    workflow document. Jobs/steps of the wrong shape are skipped rather than
-    raised on — a workflow that doesn't parse into the expected mapping shape
-    yields nothing, which reads as "no matching step found" like any other
-    workflow that genuinely has none.
+    """Yield (job_id, job, step, step_index) for every step in every job of a
+    parsed workflow document. `step_index` is the step's position within its
+    OWN job's `steps:` list (not a running total across jobs), so it lines up
+    directly with `_job_download_artifact_paths`'s `before_index`. Jobs/steps
+    of the wrong shape are skipped rather than raised on — a workflow that
+    doesn't parse into the expected mapping shape yields nothing, which reads
+    as "no matching step found" like any other workflow that genuinely has
+    none.
     """
     jobs = doc.get("jobs")
     if not isinstance(jobs, dict):
@@ -532,9 +535,9 @@ def _iter_workflow_steps(doc: dict):
     for job_id, job in jobs.items():
         if not isinstance(job, dict):
             continue
-        for step in job.get("steps") or []:
+        for step_index, step in enumerate(job.get("steps") or []):
             if isinstance(step, dict):
-                yield job_id, job, step
+                yield job_id, job, step, step_index
 
 
 def _job_matches(job_id: str, job: dict, job_selector: str | None) -> bool:
@@ -583,13 +586,25 @@ def _permission_satisfies(actual: str | None, required: str) -> bool:
     return False
 
 
-def _job_download_artifact_paths(job_body: dict) -> list[str]:
-    """Every `path:` an `actions/download-artifact` step in this job wrote to,
-    in step order. Structural: walks `steps:`, only a matched step's
-    `with.path` leaf is read as a string.
+def _job_download_artifact_paths(job_body: dict, before_index: int | None = None) -> list[str]:
+    """Every location an `actions/download-artifact` step in this job
+    extracted to, in step order. Structural: walks `steps:`, only a matched
+    step's `with.path` leaf is read as a string. A step with no `path:` (or
+    an empty one) extracts into the job's workspace ROOT — contributes `""`,
+    a sentinel `_log_file_reachable` treats as "any relative path", not
+    "nothing" — `actions/download-artifact` does that by default, it isn't
+    a no-op.
+
+    `before_index`, when given, limits the walk to steps strictly BEFORE
+    that position in the job's `steps:` list — a download that happens
+    later in the job hasn't run yet by the time an earlier step executes,
+    so it contributes no path a step ahead of it could actually reach.
     """
+    steps = job_body.get("steps") or []
+    if before_index is not None:
+        steps = steps[:before_index]
     paths = []
-    for step in job_body.get("steps") or []:
+    for step in steps:
         if not isinstance(step, dict):
             continue
         uses = step.get("uses")
@@ -597,9 +612,29 @@ def _job_download_artifact_paths(job_body: dict) -> list[str]:
             continue
         with_block = step.get("with") if isinstance(step.get("with"), dict) else {}
         path = with_block.get("path")
-        if isinstance(path, str) and path:
-            paths.append(path.rstrip("/"))
+        paths.append(path.rstrip("/") if isinstance(path, str) and path else "")
     return paths
+
+
+def _log_file_reachable(log_file, download_paths: list[str]) -> bool:
+    """Does `log_file` fall under a location an earlier download-artifact
+    step in the same job extracted to?
+
+    `""` in `download_paths` is the workspace-ROOT sentinel (see
+    `_job_download_artifact_paths`): any relative `log_file` is reachable
+    from it, since that's where a path-less download lands everything. An
+    absolute `log_file` is never "under" the root sentinel — it names a
+    specific filesystem location, download or no download.
+    """
+    if not isinstance(log_file, str) or not log_file:
+        return False
+    for p in download_paths:
+        if p == "":
+            if not os.path.isabs(log_file):
+                return True
+        elif log_file == p or log_file.startswith(p + "/"):
+            return True
+    return False
 
 
 def workflow_step_uses(workspace: str, patterns: list[str], *,
@@ -667,22 +702,22 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     an unparseable file fails loudly instead of reading as "no matching step,
     as expected."
     """
-    matches = []  # (rel, doc, job_id, job, step) for every uses_suffix-matching step
+    matches = []  # (rel, doc, job_id, job, step, step_index) for every uses_suffix-matching step
     for rel, doc in _load_workflows(workspace, patterns):
         if doc is None:
             continue
-        for job_id, job_body, step in _iter_workflow_steps(doc):
+        for job_id, job_body, step, step_index in _iter_workflow_steps(doc):
             uses = step.get("uses")
             if not isinstance(uses, str):
                 continue
             ref = uses.split("@", 1)[0]
             if uses_suffix is not None and not ref.endswith(uses_suffix):
                 continue
-            matches.append((rel, doc, job_id, job_body, step))
+            matches.append((rel, doc, job_id, job_body, step, step_index))
 
     if unique_with_key is not None:
         by_value: dict[str, set[str]] = {}
-        for rel, _doc, _job_id, _job_body, step in matches:
+        for rel, _doc, _job_id, _job_body, step, _step_index in matches:
             with_block = step.get("with")
             if not isinstance(with_block, dict):
                 continue
@@ -698,7 +733,7 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                       f"({len(by_value)} value(s) seen)")
 
     qualifying = []
-    for rel, doc, job_id, job_body, step in matches:
+    for rel, doc, job_id, job_body, step, step_index in matches:
         if job is not None and not _job_matches(job_id, job_body, job):
             continue
         if job_if_equals is not None and _normalize_expr(job_body.get("if")) != job_if_equals:
@@ -724,10 +759,8 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             continue
         if log_file_matches_download:
             log_file = with_block.get("log-file")
-            download_paths = _job_download_artifact_paths(job_body)
-            if not isinstance(log_file, str) or not log_file or not any(
-                log_file == p or log_file.startswith(p + "/") for p in download_paths
-            ):
+            download_paths = _job_download_artifact_paths(job_body, before_index=step_index)
+            if not _log_file_reachable(log_file, download_paths):
                 continue
         qualifying.append((rel, job_id))
 
@@ -772,7 +805,7 @@ def no_event_interpolation_in_run(workspace: str, patterns: list[str]) -> tuple[
     for rel, doc in _load_workflows(workspace, patterns):
         if doc is None:
             continue
-        for job_id, _job_body, step in _iter_workflow_steps(doc):
+        for job_id, _job_body, step, _step_index in _iter_workflow_steps(doc):
             run_body = step.get("run")
             if not isinstance(run_body, str):
                 continue
@@ -817,7 +850,7 @@ def post_failure_comment_reference_valid(workspace: str, patterns: list[str], *,
     for rel, doc in _load_workflows(workspace, patterns):
         if doc is None:
             continue
-        for job_id, _job_body, step in _iter_workflow_steps(doc):
+        for job_id, _job_body, step, _step_index in _iter_workflow_steps(doc):
             uses = step.get("uses")
             if not isinstance(uses, str):
                 continue

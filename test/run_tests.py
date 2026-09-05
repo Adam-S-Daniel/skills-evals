@@ -2849,6 +2849,72 @@ class TestIssue86(unittest.TestCase):
             job_permissions_include={"pull-requests": "write"})
         self.assertFalse(passed)
 
+    # ---- workflow_step_uses: log_file_matches_download step order + a
+    # path-less download's root target (issue #86 review round 3, N3/N4) ----
+
+    def test_log_file_matches_download_ignores_a_later_download_step(self):
+        # N3: a download-artifact step placed AFTER the composite call must
+        # not satisfy the check — the log can't have landed yet by the time
+        # the earlier step runs.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          log-file: /tmp/logs/x.log\n"
+             "      - name: Download log\n"
+             "        uses: actions/download-artifact@f15be6a370550efbce577bfc58e3be84d2d43ab9\n"
+             "        with:\n          path: /tmp/logs\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_download=True)
+        self.assertFalse(passed, detail)
+
+    def test_log_file_matches_download_accepts_an_earlier_download_step(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - name: Download log\n"
+             "        uses: actions/download-artifact@f15be6a370550efbce577bfc58e3be84d2d43ab9\n"
+             "        with:\n          path: /tmp/logs\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          log-file: /tmp/logs/x.log\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_download=True)
+        self.assertTrue(passed, detail)
+
+    def test_log_file_matches_download_with_no_path_extracts_to_root(self):
+        # N4: `actions/download-artifact` with no `path:` extracts into the
+        # job's workspace root, not nowhere — a relative log-file must be
+        # accepted as reachable, not treated as unreachable because no
+        # step's `with.path` literally equals a prefix of it.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - name: Download log\n"
+             "        uses: actions/download-artifact@f15be6a370550efbce577bfc58e3be84d2d43ab9\n"
+             "        with:\n          name: visual-chromium-log\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          log-file: visual-chromium.log\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_download=True)
+        self.assertTrue(passed, detail)
+
+    def test_log_file_matches_download_root_does_not_reach_an_unrelated_absolute_path(self):
+        # A path-less download landing in the job's workspace root doesn't
+        # make an unrelated ABSOLUTE log-file path reachable — root is not
+        # "anything goes", it only clears a genuinely relative path.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - name: Download log\n"
+             "        uses: actions/download-artifact@f15be6a370550efbce577bfc58e3be84d2d43ab9\n"
+             "        with:\n          name: visual-chromium-log\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n"
+             "          log-file: /tmp/somewhere-else.log\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, log_file_matches_download=True)
+        self.assertFalse(passed)
+
     # ---- workflow_step_uses: uses_suffix must be a true suffix (S3) --------
 
     def test_uses_suffix_does_not_match_unrelated_action(self):
