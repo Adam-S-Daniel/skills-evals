@@ -2655,6 +2655,16 @@ class DirListingMatchesCheckTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("unexpected: archive", detail)
 
+    def test_expected_file_with_invalid_utf8_fails_clearly_instead_of_raising(self):
+        ws = self._ws(["a.pdf"])
+        seed = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, seed, ignore_errors=True)
+        (seed / "expected.txt").write_bytes(b"\xff\xfe not valid utf-8\n")
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected_file="expected.txt", seed=str(seed))
+        self.assertFalse(passed)
+        self.assertIn("expected.txt", detail)
+
     def test_ignore_is_matched_as_a_glob_not_a_regex(self):
         # "." in a glob is literal; a naive `re.match` of the raw pattern
         # would treat it as "any character" and wrongly swallow this file.

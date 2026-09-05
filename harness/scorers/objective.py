@@ -476,7 +476,7 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
         try:
             with open(os.path.join(seed, expected_file), encoding="utf-8") as f:
                 expected = [line.strip() for line in f if line.strip()]
-        except OSError as exc:
+        except (OSError, UnicodeDecodeError) as exc:
             return (False, f"{expected_file}: {exc}")
     elif expected is None:
         return (False, "dir_listing_matches: expected or expected_file is required")
