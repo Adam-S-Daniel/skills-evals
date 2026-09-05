@@ -109,18 +109,30 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
 
     Shared by both modes, so a judge invocation is spelled exactly once.
     Raises RuntimeError for anything that is the CLI's fault — timeout,
-    nonzero exit, unparseable outer JSON. That is NOT caught here; callers
-    must catch it and record a judge error rather than crash the run.
+    nonzero exit, the process refusing to start, unparseable outer JSON.
+    That is NOT caught here; callers must catch it and record a judge error
+    rather than crash the run.
+
+    The prompt goes in on STDIN, not in argv: `claude -p` with no positional
+    prompt reads it from there, and Linux caps a single argument at 128 KB
+    (MAX_ARG_STRLEN), which a pairwise prompt reaches at 1/N of the
+    transcript length because it concatenates N drafts. In argv that ceiling
+    surfaced as an uncaught `OSError: Argument list too long` — straight
+    through the contract above. Every OSError is translated too, so a
+    missing or unexecutable CLI reads the same way to a caller.
     """
-    cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
+    cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
           "--output-format", "json", "--permission-mode", "bypassPermissions"]
     if model:
         cmd += ["--model", model]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(cmd, input=prompt, capture_output=True,
+                                text=True, timeout=timeout)
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"judge CLI call timed out after {timeout}s") from e
+    except OSError as e:
+        raise RuntimeError(f"judge CLI call could not be run: {e}") from e
 
     if result.returncode != 0:
         raise RuntimeError(

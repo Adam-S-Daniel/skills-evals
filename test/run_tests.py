@@ -10,6 +10,7 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import hashlib
 import itertools
 import json
 import math
@@ -3130,6 +3131,48 @@ class TestIssue81(unittest.TestCase):
             [c["identity"] for c in
              judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)],
             ["reference:generic", "reference:in-voice", "agent"])
+
+    # ------------------------------------------------------------------
+    # how the prompt reaches the judge CLI
+    # ------------------------------------------------------------------
+
+    def test_judge_prompt_travels_on_stdin_not_argv(self):
+        # Linux caps a single argument at 128 KB (MAX_ARG_STRLEN), and a
+        # pairwise prompt concatenates N drafts, so it hits that wall at 1/N
+        # of the transcript length a caller would expect. In argv the failure
+        # was an uncaught OSError, straight through the "callers catch
+        # RuntimeError" contract.
+        prompt = "judge this draft.\n" + ("x" * 500_000)
+        with tempfile.TemporaryDirectory() as tmp:
+            shim = Path(tmp) / "claude"
+            shutil.copy2(FAKE_CLAUDE, shim)
+            shim.chmod(0o755)
+            env = {"PATH": f"{tmp}{os.pathsep}{os.environ['PATH']}",
+                   "FAKE_CLAUDE_MODE": "echo_prompt"}
+            # CLAUDE_BIN unset on purpose: this also covers the default,
+            # `claude` resolved off PATH.
+            with mock.patch.dict(os.environ, env):
+                os.environ.pop("CLAUDE_BIN", None)
+                reported = json.loads(
+                    judge._run_judge_cli(prompt, model=None, timeout=60))
+        self.assertEqual(reported["stdin_bytes"], len(prompt.encode("utf-8")))
+        self.assertEqual(reported["stdin_sha256"],
+                         hashlib.sha256(prompt.encode("utf-8")).hexdigest())
+        # Nothing prompt-sized went through the argument vector.
+        self.assertLess(reported["argv_max_len"], 200, reported["argv"])
+        self.assertNotIn("-p", [a for a in reported["argv"]
+                                if a.startswith("x" * 10)])
+        self.assertIn("-p", reported["argv"])
+
+    def test_judge_cli_reports_an_oserror_as_a_runtimeerror(self):
+        # The contract callers rely on: everything that is the CLI's fault
+        # arrives as RuntimeError, so run_eval records a judge error instead
+        # of crashing the run.
+        with mock.patch("subprocess.run",
+                        side_effect=OSError(7, "Argument list too long")):
+            with self.assertRaises(RuntimeError) as ctx:
+                judge._run_judge_cli("prompt", model=None, timeout=5)
+        self.assertIn("Argument list too long", str(ctx.exception))
 
     # A model's reply, in the shape a model's reply actually has: one long
     # line per paragraph. Every committed reference is hard-wrapped at 74-77

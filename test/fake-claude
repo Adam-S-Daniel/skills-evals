@@ -21,6 +21,10 @@ subprocess invocations inside a single run.
 Mode "agent_env" replies with a JSON snapshot of the probe variables the
 harness's agent_env() is expected to have set (SKILLS_EVALS_PROBE, PATH).
 
+Mode "echo_prompt" reports how the prompt reached it — stdin byte count and
+digest, and the argv it was handed — so a test can prove the judge prompt
+travels on stdin rather than in an argument vector Linux caps at 128 KB.
+
 Three modes serve the pairwise judge (skills-evals#81): "judge_pairwise"
 returns a canned ranking of three blind draft labels plus per-draft
 dimension scores; "judge_pairwise_incomplete" drops a label from the
@@ -46,6 +50,7 @@ Three modes simulate harness/run_canary.py's guidance-bridge canary:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -186,6 +191,22 @@ def main() -> int:
             "duration_ms": 900,
             "session_id": "fake-session",
         })
+        return 0
+
+    if MODE == "echo_prompt":
+        # Reports how the prompt arrived rather than answering it, so a test
+        # can see that a 500 KB judge prompt travelled on stdin and not in
+        # argv (Linux caps a single argument at 128 KB — the harness used to
+        # die there with an uncaught OSError).
+        stdin_text = "" if sys.stdin.isatty() else sys.stdin.read()
+        emit({"result": json.dumps({
+                  "stdin_bytes": len(stdin_text.encode("utf-8")),
+                  "stdin_sha256": hashlib.sha256(
+                      stdin_text.encode("utf-8")).hexdigest(),
+                  "argv": sys.argv[1:],
+                  "argv_max_len": max([len(a) for a in sys.argv[1:]] or [0])}),
+              "is_error": False, "usage": USAGE, "total_cost_usd": 0.01,
+              "num_turns": 1, "duration_ms": 100, "session_id": "fake-session"})
         return 0
 
     if MODE == "agent_env":
