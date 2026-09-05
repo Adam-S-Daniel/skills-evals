@@ -11,6 +11,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -452,6 +453,79 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
 
 
+# --------------------------------------------------------------------------
+# Git-state checks (git state is read with git commands / the filesystem,
+# never decided by regex over file content)
+# --------------------------------------------------------------------------
+
+def git_ref_unchanged(workspace: str, patterns: list[str], *,
+                      path: str, ref: str, expected: str) -> tuple[bool, str]:
+    """The named ref in the git repository at `path` (workspace-relative)
+    still resolves to `expected` — a SHA fixed at fixture-authoring time
+    (deterministic given a fixed author/committer identity and
+    GIT_AUTHOR_DATE/GIT_COMMITTER_DATE at setup time), so a repo nothing has
+    touched always reproduces the same value.
+
+    This catches an in-place mutation of a tree the task never asked for —
+    a stray commit landing on a ref that should have stayed put — even when
+    nothing about the tree's *files* changed enough for a content diff to
+    show it (a `--allow-empty` commit, say, or one that nets out to the same
+    file contents on disk).
+    """
+    repo = os.path.join(workspace, path)
+    try:
+        result = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", ref],
+                                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return (False, f"could not resolve {ref!r} in {path}: {exc}")
+    if result.returncode != 0:
+        return (False, f"could not resolve {ref!r} in {path}: "
+                       f"{result.stderr.strip() or 'not a git repository'}")
+    actual = result.stdout.strip()
+    return (actual == expected, f"{path}@{ref} unchanged ({actual})"
+            if actual == expected
+            else f"{path}@{ref} changed: expected {expected}, got {actual}")
+
+
+def no_git_config_names_path(workspace: str, patterns: list[str], *,
+                             forbidden_path: str,
+                             exclude: list[str] | None = None) -> tuple[bool, str]:
+    """Walk every `.git/config` file under the workspace — skipping any
+    top-level directory named in `exclude` (a legitimate checkout that is
+    SUPPOSED to still name `forbidden_path`, e.g. a real clone of it) — and
+    assert none of them names `forbidden_path`.
+
+    Reads each config file directly off disk rather than shelling out to
+    `git remote`/`git config`, so a directory that merely looks like a git
+    dir (or one `git` itself would refuse to operate in) is still caught.
+    `forbidden_path` is checked both as given and resolved to an absolute
+    path under `workspace`, since a `git clone`/`remote add` records
+    whatever path form it was given.
+    """
+    exclude = set(exclude or [])
+    ws = os.path.abspath(workspace)
+    needles = {forbidden_path, os.path.abspath(os.path.join(ws, forbidden_path))}
+    hits = []
+    for root, dirs, files in os.walk(ws):
+        rel_root = os.path.relpath(root, ws)
+        top = rel_root.split(os.sep, 1)[0] if rel_root != "." else ""
+        if top in exclude:
+            dirs[:] = []
+            continue
+        if os.path.basename(root) == ".git" and "config" in files:
+            config_path = os.path.join(root, "config")
+            try:
+                with open(config_path, encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
+            if any(needle in text for needle in needles):
+                hits.append(os.path.relpath(config_path, ws))
+    return (not hits, f"no .git/config outside {sorted(exclude) or '(nothing excluded)'} "
+                      f"names {forbidden_path!r}" if not hits
+            else f"{forbidden_path!r} found in: {', '.join(sorted(hits))}")
+
+
 CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "yaml_parses": yaml_parses,
@@ -462,6 +536,8 @@ CHECKS = {
     "files_unchanged": files_unchanged,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
+    "git_ref_unchanged": git_ref_unchanged,
+    "no_git_config_names_path": no_git_config_names_path,
 }
 
 
@@ -495,6 +571,13 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "git_ref_unchanged":
+            kwargs["path"] = check.get("path", "")
+            kwargs["ref"] = check.get("ref", "HEAD")
+            kwargs["expected"] = check.get("expected", "")
+        elif check["type"] == "no_git_config_names_path":
+            kwargs["forbidden_path"] = check.get("forbidden_path", "")
+            kwargs["exclude"] = check.get("exclude", [])
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

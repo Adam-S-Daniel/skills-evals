@@ -348,6 +348,45 @@ def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     return env
 
 
+def run_setup(workspace: Path, fixture: dict) -> dict | None:
+    """Run the fixture's `setup:` command, if any, in the workspace before
+    anything else touches it — before the agent, and before objective-only
+    scoring of a freshly copied seed.
+
+    Some fixtures need to build state a checked-in seed can't hold cleanly
+    (nested git repositories, for instance: a bare repo and a clone of it
+    committed as literal files would embed one git checkout inside another,
+    which `git add -A` on the harness's own bookkeeping commit treats as a
+    submodule boundary rather than plain files). `setup:` names a shell
+    command, run with `cwd=workspace` and `$WORKSPACE` (plus any other
+    `$VAR`) expanded the same way `env:` values are (see `agent_env`), so a
+    fixture can write `bash $WORKSPACE/setup.sh` or a bare `bash setup.sh`
+    interchangeably.
+
+    Returns `None` when the fixture has no `setup:` (every existing fixture)
+    or the command exits 0. Otherwise returns a `{"error": "setup_failed",
+    "detail": ...}` dict — the same error-dict convention `run_agent` uses —
+    so a failing setup script fails the arm/run with a named error and a
+    captured stderr/stdout tail, never a bare traceback out of a check that
+    assumed setup had already put its files in place.
+    """
+    setup_cmd = fixture.get("setup")
+    if not setup_cmd:
+        return None
+    cmd = os.path.expandvars(str(setup_cmd)).replace("$WORKSPACE", str(workspace))
+    timeout = fixture.get("setup_timeout_s", 60)
+    try:
+        result = subprocess.run(["bash", "-c", cmd], cwd=workspace,
+                                capture_output=True, text=True, timeout=timeout,
+                                env=agent_env(workspace, fixture.get("env")))
+    except subprocess.TimeoutExpired:
+        return {"error": "setup_failed", "detail": f"setup timed out after {timeout}s"}
+    if result.returncode != 0:
+        return {"error": "setup_failed",
+                "detail": result.stderr.strip() or result.stdout.strip()}
+    return None
+
+
 def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     """Run the agent under test (the Claude Code CLI, headless) on the workspace.
 
@@ -518,6 +557,14 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         _git("init", "-q", cwd=workspace)
         _git("add", "-A", cwd=workspace)
         _git("commit", "-q", "-m", "seed", cwd=workspace)
+
+        setup_result = run_setup(workspace, fixture)
+        if setup_result is not None:
+            error = {"type": setup_result["error"], "detail": setup_result.get("detail", "")}
+            _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                           error, None, None, None, None)
+            return {"arm": arm_name, "error": error, "agent": None,
+                    "objective_checks": None, "judge": None}
 
         arm_config = {
             "name": arm_name,
@@ -690,12 +737,19 @@ def main() -> int:
 
     if args.arm == "objective-only":
         if args.workspace:
+            # An explicitly given workspace is scored as-is — the caller's
+            # own responsibility to have already run any `setup:` themselves
+            # (or to be scoring a hand-built workspace that never needed it).
             workspace = args.workspace
             results = objective.run_checks(fixture, str(workspace), str(seed))
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 workspace = Path(tmp) / "ws"
                 shutil.copytree(seed, workspace)
+                setup_error = run_setup(workspace, fixture)
+                if setup_error is not None:
+                    print(f"setup failed: {setup_error['detail']}")
+                    return 2
                 results = objective.run_checks(fixture, str(workspace), str(seed))
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,

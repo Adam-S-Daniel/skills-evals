@@ -58,6 +58,46 @@ skills-evals/
   results/                 # summaries committed; raw transcripts gitignored
 ```
 
+## Fixture schema: `fixture.yaml`
+
+Fields a fixture may set, beyond the ones the reference eval below already
+shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
+`objective_checks`, `judge_rubric`, `env`, `timeout_s`):
+
+- **`setup:`** (optional) — a shell command, run once in the workspace
+  before anything else touches it: before the agent (`with_skill`/
+  `without_skill`/`both`), and before objective-only scoring of a freshly
+  copied seed (`--arm objective-only` without an explicit `--workspace`).
+  Runs with `cwd` set to the workspace and `$WORKSPACE` (plus any other
+  `$VAR`) expanded the same way `env:` values are — `setup: "bash
+  $WORKSPACE/setup.sh"` and a bare `setup: "bash setup.sh"` are
+  equivalent, since `cwd` is already the workspace.
+
+  Use it when a seed can't hold its target state as literal checked-in
+  files — the motivating case is a fixture that needs one or more real git
+  repositories present in the workspace: committing a built repo (complete
+  with its own `.git/`) as literal seed files would make it an *embedded*
+  repository from the harness's own bookkeeping commit's point of view
+  (`git add -A` treats a nested `.git` as a submodule boundary, not plain
+  files to add). `evals/disarm-inherited-reach/seed/setup.sh` builds a bare
+  "production" repository, a real clone of it, and a linked worktree this
+  way, with a fixed author/committer identity and
+  `GIT_AUTHOR_DATE`/`GIT_COMMITTER_DATE` so every SHA it produces is
+  reproducible — which is what lets an objective check compare against a
+  literal expected SHA (see `git_ref_unchanged` in
+  `harness/scorers/objective.py`) rather than a snapshot taken some other
+  way. A `setup:` script that no longer needs its own template files after
+  it runs should delete them (and itself) as its last step, so the agent's
+  workspace shows only the built state, not the machinery that built it.
+
+  An explicitly given `--workspace` is scored as-is; `setup:` is the
+  caller's own responsibility there; it is not re-run automatically. A
+  nonzero exit (or a `setup_timeout_s:`-bounded timeout, default 60s)
+  fails the whole arm/run with a named `setup_failed` error carrying the
+  captured stderr/stdout — never a bare traceback out of a check that
+  assumed the setup had already put its files in place — and the agent is
+  never invoked.
+
 ## How it pulls skills
 
 Two modes:
