@@ -3607,6 +3607,32 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertIn("writing-adrs/", readme_text)
 
     # ======================================================================
+    # N1: both seeds' retry.sh cited a 2026-06-02 outage / PR #142; issue #80
+    # says 2026-03 / PR #41.
+    # ======================================================================
+
+    def test_retry_sh_cites_the_issues_outage_date_and_pr_in_both_seeds(self):
+        for eval_dir in (ADRS_BOOTSTRAP_DIR, ADRS_EXISTING_DIR):
+            with self.subTest(eval_dir=eval_dir.name):
+                text = (eval_dir / "seed" / "scripts" / "retry.sh").read_text(
+                    encoding="utf-8")
+                self.assertIn("2026-03", text)
+                self.assertIn("PR #41", text)
+                self.assertNotIn("2026-06-02", text)
+                self.assertNotIn("PR #142", text)
+
+    # ======================================================================
+    # N6: both seeds' scripts/retry.sh were mode 100644; every other seed's
+    # scripts are 100755.
+    # ======================================================================
+
+    def test_retry_sh_is_executable_in_both_seeds(self):
+        for eval_dir in (ADRS_BOOTSTRAP_DIR, ADRS_EXISTING_DIR):
+            with self.subTest(eval_dir=eval_dir.name):
+                path = eval_dir / "seed" / "scripts" / "retry.sh"
+                self.assertTrue(os.access(path, os.X_OK), f"{path} is not executable")
+
+    # ======================================================================
     # N7: the two seeds must stay byte-identical except for what each
     # fixture's premise changes (existing-convention already has
     # docs/decisions/, and its AGENTS.md already carries the ADR pointer).
