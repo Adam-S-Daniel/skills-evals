@@ -79,6 +79,16 @@ arms:
 # bug to fix here). The same blind spot has a fail-open twin: a banned
 # token that lands after a quoted '#' can likewise evade a must_not_match,
 # e.g. `echo "phase #1"; set -e` evades decoy 2's ban on a live `set -e`.
+# A quoted-`|` has the same problem, fail-closed this time: the
+# `[^#\n|]*` runs of process-substitution-error-propagates's pipe-free
+# alternative read a `|` inside a quoted string as a pipe, so
+# `gh run watch "$RUN_ID" || { echo "see: a|b" >&2; exit 1; }` — the
+# skill's own §3 idiom, a correct fix — fails that check because of a
+# character in its error message. Newly reachable: before round-5 F1
+# added the `(\|\|[^#\n|]*)*` tolerance, no `||` handler satisfied that
+# alternative at all, quoted pipe or not. Documented, not treated as a
+# bug to fix here —
+# test_n_b_quoted_pipe_in_watch_handler_is_a_known_false_negative.
 objective_checks:
   - id: workflow-yaml-parses
     description: The release workflow still parses as YAML

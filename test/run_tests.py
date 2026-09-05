@@ -2865,6 +2865,47 @@ class TestIssue74(unittest.TestCase):
         # apart from a real comment start.
         self.assertFalse(by_id["commit-signing-safe-for-ci"]["passed"])
 
+    # -- Round-6 review N-b: the quoted-'#' blind spot has a quoted-`|`
+    # twin, and it is fail-CLOSED. A `|` inside a quoted string reads as a
+    # pipe to the `[^#\n|]*` runs of the pipe-free alternative, so the
+    # skill's own §3 handler is rejected when its message happens to carry
+    # one. Newly reachable: before round-5 F1 added the
+    # `(\|\|[^#\n|]*)*` tolerance, that alternative was
+    # `^[^#\n|]*\bgh run watch\b[^#\n|]*(\s*#.*)?$` and NO `||` handler
+    # satisfied it, quoted pipe or not. Documented as a known false
+    # negative rather than a silent one, the same way the quoted-'#' case
+    # is. --
+
+    def test_n_b_quoted_pipe_in_watch_handler_is_a_known_false_negative(self):
+        handlers = (
+            ('|| { echo "see: a|b" >&2; exit 1; }', False),
+            ('|| { echo "see: a b" >&2; exit 1; }', True),
+        )
+        for handler, expected in handlers:
+            with self.subTest(handler=handler):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "publish.sh"
+                text = path.read_text(encoding="utf-8")
+                text = text.replace(
+                    'watch_output=$(gh run watch "$RUN_ID")\n'
+                    'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" '
+                    '| tail -n 5)',
+                    f'gh run watch "$RUN_ID" {handler}')
+                path.write_text(text, encoding="utf-8")
+                by_id = self._run(ws)
+                result = by_id["process-substitution-error-propagates"]
+                self.assertEqual(result["passed"], expected, result["detail"])
+                if not expected:
+                    # Fails on must_match, not must_not_match: a correct fix
+                    # rejected, not a dodge caught.
+                    self.assertIn("lacks", result["detail"])
+                # The blind spot is confined to this one check.
+                for check_id, other in by_id.items():
+                    if check_id != "process-substitution-error-propagates":
+                        self.assertTrue(other["passed"],
+                                        f"{check_id}: {other['detail']}")
+
     def test_s2_known_limitation_paragraph_documents_the_first_hash_blind_spot(self):
         # Round-5 N2: this paragraph's own claim was unpinned as prose —
         # deleting it left the suite green, since only its behavior is
@@ -2879,6 +2920,16 @@ class TestIssue74(unittest.TestCase):
         self.assertIn("fail-open", paragraph)
         self.assertIn("commit-signing-safe-for-ci", paragraph)
         self.assertIn("set -e", paragraph)
+        # Round-6 N-b: the quoted-`|` twin, documented beside it.
+        for word in ("quoted-`|`", "fail-closed",
+                     "process-substitution-error-propagates"):
+            with self.subTest(word=word):
+                self.assertIn(word, paragraph)
+        defined = self._test_issue_74_method_names()
+        cited = re.findall(r"\btest_[A-Za-z0-9_]+", paragraph)
+        self.assertTrue(cited, paragraph)
+        self.assertEqual(sorted({n for n in cited if n not in defined}), [],
+                         "cited test name(s) are not methods of TestIssue74")
 
     # -- Round-4 review S3: process-substitution-error-propagates's third
     # must_match alternative lost its trailing `$`, so it matched on the
