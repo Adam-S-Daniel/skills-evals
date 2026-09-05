@@ -6038,5 +6038,53 @@ class TestIssue82(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+# ---------------------------------------------------------------------------
+# Per-issue test discovery (#97)
+#
+# Every fixture PR used to append its tests to the bottom of THIS file, so
+# every fixture PR conflicted with every other one at the same append points.
+# A test module dropped into test/issues/ as `test_issue_<n>.py` is now picked
+# up here instead, and a PR that adds one touches no shared file at all.
+# Classes already in this file stay exactly where they are — nothing was
+# moved — and the runner still prints ONE total for the whole suite, because
+# the discovered modules are loaded into the same TestSuite rather than run as
+# a second pass.
+
+DISCOVERY_DIR = TEST_DIR / "issues"
+DISCOVERY_PATTERN = "test_issue_*.py"
+
+
+def build_suite() -> unittest.TestSuite:
+    """This module's own classes plus every discovered test/issues/ module.
+
+    `top_level_dir` is the discovery dir itself, so a discovered module is
+    imported as a plain top-level module (`test_issue_97`) and the directory
+    needs no `__init__.py`. A module that fails to IMPORT is not silently
+    skipped: unittest turns it into a synthetic failing test, which is exactly
+    the loud behaviour a broken new file should get.
+    """
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    suite.addTests(loader.loadTestsFromModule(sys.modules[__name__]))
+    if DISCOVERY_DIR.is_dir():
+        suite.addTests(loader.discover(
+            str(DISCOVERY_DIR), pattern=DISCOVERY_PATTERN,
+            top_level_dir=str(DISCOVERY_DIR)))
+    return suite
+
+
+def main() -> int:
+    # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) still goes
+    # through unittest.main, which addresses only this module's own classes —
+    # a discovered module is run by name with `python3 test/issues/<file>.py`.
+    # The no-argument invocation, which is the one ci.yml makes, is the whole
+    # suite.
+    if len(sys.argv) > 1:
+        unittest.main(module=sys.modules[__name__], argv=sys.argv)
+        return 0
+    result = unittest.TextTestRunner(verbosity=1).run(build_suite())
+    return 0 if result.wasSuccessful() else 1
+
+
 if __name__ == "__main__":
-    unittest.main()
+    raise SystemExit(main())
