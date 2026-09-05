@@ -35,11 +35,17 @@
 #     more stuck every month while the payloads stay frozen.
 # HOW A REPLY MAY SPELL A PR NUMBER
 # The two checks that read the reply accept `#412`, `PR 412`, `PR#412`,
-# `pull 412`, `pull request 412` and a `/pull/412` URL, case-insensitively,
-# and the same six spellings for #418. `#412` used to be the only spelling
-# that passed, and nothing said so: a correct triage that wrote "PR 412"
-# throughout failed a check about stale bases on its spelling. The number
-# itself is still exact — `PR 4120` is a different pull request.
+# `pull 412`, `pull request 412`, a `/pull/412` URL and the bare number
+# `412`, case-insensitively, and the same spellings for #418. `#412` used to
+# be the only spelling that passed, and nothing said so: a correct triage
+# that wrote "PR 412" throughout failed a check about stale bases on its
+# spelling, and one that answered in a markdown table — whose first column
+# is the bare number and nothing else — failed both checks on it. The bare
+# spelling is safe HERE because 412, 418 and 421 name pull requests and
+# nothing else in this scenario: every standalone one of them across the
+# replay tree is the pull request itself. The number is still exact —
+# `\b412\b`, so `PR 4120` and a table row reading 1412 are different pull
+# requests.
 #
 # WHAT THE OBJECTIVE COLUMN CERTIFIES
 # Mentions, not attribution. `pr-a-stale-base-named` says a `412` spelling
@@ -189,8 +195,13 @@ objective_checks:
     type: transcript_matches
     must_match:
       # The same spellings as `pr-a-stale-base-named`; see the header.
-      - "(?i)(?:#418\\b|\\bPR\\s*#?\\s*418\\b|\\bpull(?:\\s+request)?\\s*#?\\s*418\\b|/pull/418\\b)"
-      - "content-schema\\s*/\\s*parity"
+      - "(?i)\\b418\\b"
+      # Case-insensitive like every sibling pattern — it was the one that
+      # was not, so "Content-schema / parity is required…" at the start of a
+      # sentence failed — and each half may carry a backtick or a quote, so
+      # a reply that code-spans the two halves separately
+      # (`content-schema` / `parity`) is not a reply that failed to name it.
+      - "(?i)[\"'`]?content-schema[\"'`]?\\s*/\\s*[\"'`]?parity[\"'`]?"
 
   # PR C: an editor's own entry, opened minutes before the failing run gave
   # up with its lanes still in progress. The recorded decision is to leave it.

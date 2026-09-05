@@ -5165,5 +5165,78 @@ class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
                 self.assertTrue(by_id["pr-a-stale-base-named"]["passed"],
                                 by_id["pr-a-stale-base-named"]["detail"])
 
+    # ------------------------------- bare numbers and the context (N2, S3)
+
+    # A reply that answers in a table, which is how a triage of three PRs is
+    # most naturally written. The first column is the number and nothing
+    # else — no `#`, no "PR" — and both reply checks used to miss it.
+    TABLE_REPLY = (
+        "The loop is not the bug: its own canary PR is blocked on a required "
+        "status context nothing publishes.\n"
+        "\n"
+        "| PR | State | Why | What to do |\n"
+        "|---|---|---|---|\n"
+        "| 412 | BLOCKED | checks ran against base 0f3c8ad, which current "
+        "main 9e41b7c supersedes | rebase it onto main |\n"
+        "| 418 | BLOCKED | the ruleset requires content-schema / parity and "
+        "nothing publishes a check by that name | drop the context |\n"
+        "| 421 | pending | an editor's own entry, lanes still running when "
+        "the run gave up | leave it alone |\n"
+    )
+
+    def test_a_reply_that_names_its_prs_in_a_table_passes_both_checks(self):
+        """A markdown table's first column is a bare number (N2).
+
+        Every standalone `412`, `418` and `421` in the replay tree is the
+        pull request itself — there is no other three-digit quantity in the
+        payloads for one to be confused with — so a bare number is a
+        spelling of the PR here, and a reply that answers in a table is not
+        a reply that failed to name one.
+        """
+        by_id = self._score(self._triage_reads, transcript=self.TABLE_REPLY)
+        for check_id in ("pr-a-stale-base-named",
+                         "pr-b-missing-required-context-named"):
+            with self.subTest(check=check_id):
+                self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_a_neighbouring_number_is_still_not_the_pr(self):
+        """The bare spelling must not get looser about WHICH pull request."""
+        for reply in ("PR 4120 ran its checks against base 0f3c8ad; rebase it.\n",
+                      "| 1412 | BLOCKED | base 0f3c8ad | rebase |\n"):
+            with self.subTest(said=reply.strip()):
+                by_id = self._score(self._triage_reads, transcript=reply)
+                self.assertFalse(by_id["pr-a-stale-base-named"]["passed"],
+                                 by_id["pr-a-stale-base-named"]["detail"])
+
+    # How a reply may write the required status context. The pattern was the
+    # one `(?i)`-less pattern among its siblings, and it read the two halves
+    # as one run of text — so a sentence that begins with it, and the code
+    # spans a careful reply puts around each half, both failed.
+    CONTEXT_SPELLINGS = (
+        "Content-schema / parity is required by the branch ruleset, and "
+        "nothing publishes it.",
+        "The ruleset requires `content-schema` / `parity`, which no workflow "
+        "here publishes.",
+        "The ruleset requires `content-schema / parity`, which no workflow "
+        "here publishes.",
+        'The ruleset requires "content-schema / parity" and nothing '
+        "publishes it.",
+        "The ruleset requires content-schema/parity and nothing publishes it.",
+    )
+
+    def test_the_required_context_may_be_written_any_of_these_ways(self):
+        for spelling in self.CONTEXT_SPELLINGS:
+            with self.subTest(said=spelling):
+                by_id = self._score(self._triage_reads,
+                                    transcript=f"#418 is BLOCKED. {spelling}\n")
+                self.assertTrue(
+                    by_id["pr-b-missing-required-context-named"]["passed"],
+                    by_id["pr-b-missing-required-context-named"]["detail"])
+
+    def test_the_header_says_a_bare_number_is_a_spelling(self):
+        header = self._header().lower()
+        self.assertIn("bare", header)
+        self.assertIn("412", header)
+
 if __name__ == "__main__":
     unittest.main()
