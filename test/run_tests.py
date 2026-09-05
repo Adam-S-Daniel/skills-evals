@@ -45,7 +45,7 @@ RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
-from scorers import invisibles, judge, objective  # noqa: E402
+from scorers import invisibles, judge, objective, wrapping  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import make_badge  # noqa: E402
@@ -3901,6 +3901,126 @@ class TestIssue81(unittest.TestCase):
             judge._normalize_draft_text(
                 self._HYPERLINKED_DRAFT).endswith("Thanks,\nAdam Daniel"),
             judge._normalize_draft_text(self._HYPERLINKED_DRAFT))
+
+    # S1 (round 5): `wrap_width` fell back to the draft's LONGEST LINE
+    # whenever no paragraph reached three lines — which is the long-URL
+    # defect the median was introduced to fix, arriving through the back
+    # door. A reply hard-wrapped at about 62 whose paragraphs all come out
+    # two lines long, carrying one careers URL, measured through the
+    # production path (`blind_order` -> `_build_pairwise_prompt`, trial 0)
+    # as 12 lines with hard wraps of 63 and 66 surviving, beside two
+    # references of 10 lines with none: a line-shape tell, deterministic,
+    # on every trial. The two ragged drafts are the other half — a
+    # hand-wrapped 58/69/49 paragraph has a median of 65, so its
+    # 58-character line did not read as full and one wrap survived.
+    _TWO_LINE_PARAGRAPH_DRAFT = (
+        "Hi Dana,\n"
+        "\n"
+        "Sorry for the slow reply — and thanks for reaching out directly\n"
+        "rather than through a form.\n"
+        "\n"
+        "I am going to pass on REQ-4417, and the posting is here:\n"
+        "https://careers.example.com/northgate-bell/staff-platform-engineer"
+        "/requisition-4417/apply\n"
+        "\n"
+        "My engagement here is contracted through March 2027, so the timing\n"
+        "is not close for me.\n"
+        "\n"
+        "Thanks,\n"
+        "Adam Daniel\n")
+
+    _RAGGED_DRAFTS = {
+        "58/69/49": (
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply — I am going to pass on REQ-4417.\n"
+            "My engagement here is contracted through March 2027, so the "
+            "timing is\n"
+            "not close, and three days on site would not work.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+        "55/66/30": (
+            "Hi Dana,\n\n"
+            "Sorry for the slow reply — passing on REQ-4417 for now.\n"
+            "My engagement here is contracted through March 2027 and three "
+            "days\n"
+            "on site would not work for me.\n\n"
+            "Thanks,\nAdam Daniel\n"),
+    }
+
+    @classmethod
+    def _surviving_wraps(cls, draft: str) -> int:
+        """Non-final lines long enough to have been wraps, not choices."""
+        return sum(1 for paragraph in draft.split("\n\n")
+                   for line in paragraph.split("\n")[:-1]
+                   if len(line) > cls.DELIBERATE_LINE
+                   and not judge._LIST_ITEM_RE.match(line))
+
+    def _line_shapes(self, candidate: str, name: str = "recruiter-reply"):
+        """{identity: (lines, surviving wraps)} through the production path."""
+        fixture = self._fixture(name)
+        references = judge.load_references(self.STYLE_DIR / name,
+                                           fixture["judge"])
+        ordered = judge.blind_order(candidate, references, 0)
+        prompt = judge._build_pairwise_prompt(fixture["judge_rubric"], ordered)
+        by_label = {c["label"]: c["identity"] for c in ordered}
+        shapes = {}
+        for label, body in re.findall(
+                r'<draft id="([A-Z])" nonce="[0-9a-f]{16}">\n(.*?)\n</draft>',
+                prompt, re.S):
+            shapes[by_label[label]] = (len(body.splitlines()),
+                                       self._surviving_wraps(body))
+        return shapes
+
+    def test_a_two_line_paragraph_draft_is_not_separable_by_line_shape(self):
+        shapes = self._line_shapes(self._TWO_LINE_PARAGRAPH_DRAFT)
+        self.assertEqual(len(shapes), 3, shapes)
+        for identity, (_, wraps) in sorted(shapes.items()):
+            self.assertEqual(wraps, 0,
+                             f"{identity}: hard wraps survived: {shapes}")
+        counts = {lines for lines, _ in shapes.values()}
+        self.assertEqual(len(counts), 1,
+                         f"the drafts are separable by line count: {shapes}")
+
+    def test_a_ragged_draft_is_not_separable_by_line_shape(self):
+        for label, draft in sorted(self._RAGGED_DRAFTS.items()):
+            with self.subTest(columns=label):
+                shapes = self._line_shapes(draft)
+                for identity, (_, wraps) in sorted(shapes.items()):
+                    self.assertEqual(
+                        wraps, 0, f"{identity}: hard wraps survived: {shapes}")
+
+    def test_the_signoff_survives_the_new_width(self):
+        # The fix is not "join everything" wearing a different hat: a
+        # deliberately short line is never full enough to trigger a join.
+        for draft in (self._TWO_LINE_PARAGRAPH_DRAFT,
+                      *self._RAGGED_DRAFTS.values(),
+                      self._HYPERLINKED_DRAFT):
+            with self.subTest(draft=draft.splitlines()[2][:40]):
+                self.assertTrue(
+                    judge._normalize_draft_text(draft).endswith(
+                        "Thanks,\nAdam Daniel"),
+                    judge._normalize_draft_text(draft))
+
+    def test_every_reference_rewrapped_from_40_to_120_normalises_flat(self):
+        # The regression floor: whatever the width rule is, the six
+        # committed references must come out of it with no wrap surviving,
+        # at every column a writer might have used. 486 cells.
+        columns = 0
+        for path in sorted(self.STYLE_DIR.glob("*/references/*.md")):
+            text = judge.strip_fiction_marker(
+                path.read_text(encoding="utf-8"))
+            paragraphs = [" ".join(block) for block in wrapping.paragraphs(
+                [line.strip() for line in text.strip().splitlines()])]
+            for width in range(40, 121):
+                columns += 1
+                rewrapped = "\n\n".join(
+                    "\n".join(textwrap.wrap(paragraph, width))
+                    for paragraph in paragraphs)
+                with self.subTest(reference=path.parent.parent.name + "/"
+                                  + path.stem, width=width):
+                    self.assertEqual(
+                        self._surviving_wraps(
+                            judge._normalize_draft_text(rewrapped)), 0)
+        self.assertEqual(columns, 486)
 
     def test_pairwise_normalisation_keeps_paragraphs_and_drops_wrapping(self):
         wrapped = "Hi Dana,\n\nSorry for the slow\nreply  — passing   on\nREQ-4417.\n"
