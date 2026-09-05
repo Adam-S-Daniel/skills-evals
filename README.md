@@ -33,12 +33,21 @@ evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
     seed/                  # workspace the agent starts from (unfiltered workflows)
+  github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
+    fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
+    seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
+  post-failure-comment/    # A/B eval, Class A: wire CI failures into the platform's composite
+    fixture.yaml           # prompt, structural workflow-step checks, judge rubric
+    seed/                  # two Playwright workflows + a vendored cms-platform action contract
   windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
     fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
     seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe
   writing-adrs/            # A/B eval, Class A (format half): two fixtures
     bootstrap/             # no docs/decisions/ yet — bootstrap the folder
     existing-convention/   # docs/decisions/ already has a house format
+  rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
+    fixture.yaml           # prompt, objective checks (listing + content digests), rubric
+    seed/inbox/            # six committed PDFs built by ../make_pdfs.py
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
