@@ -493,26 +493,33 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
 
 
 def _nested_repo_dirs(workspace: Path) -> list[Path]:
-    """Top-level directories in `workspace` that are themselves a git
-    repository (standalone, or a linked worktree) — the workspace's own
+    """Every directory anywhere under `workspace` (any depth, not just the
+    top level — a copy at `$WORKSPACE/scratch/throwaway` is just as
+    gitlink-collapsed as one directly under the workspace) that is itself a
+    git repository (standalone, or a linked worktree) — the workspace's own
     bookkeeping repo (see `_run_arm`) collapses each to a single gitlink
     line in `git diff`, hiding exactly what changed inside from the judge.
-    `workspace/.git` (the bookkeeping repo itself) and `.claude` (skill
-    install noise) are excluded. A bare repository (e.g. a fixture's
-    `prod.git`) has no nested `.git` marker of its own — the directory IS
-    the git dir — so it is never picked up here; its raw internals
-    (objects, hooks/*.sample) are excluded from the bookkeeping repo
-    entirely instead (see `evals/disarm-inherited-reach/seed/setup.sh`'s
-    `.git/info/exclude` entry) since they are not a working tree to show a
-    patch for.
+    `.git` and `.claude` directories are pruned from the walk wherever they
+    appear (not just at the top), and a nested repo's own working tree is
+    not walked into any further once found — its last commit is what
+    `_nested_repo_diff` shows, not a search for repos nested inside it. A
+    bare repository (e.g. a fixture's `prod.git`) has no nested `.git`
+    marker of its own — the directory IS the git dir — so it is never
+    picked up here; its raw internals (objects, hooks/*.sample) are
+    excluded from the bookkeeping repo entirely instead (see
+    `evals/disarm-inherited-reach/seed/setup.sh`'s `.git/info/exclude`
+    entry) since they are not a working tree to show a patch for.
     """
     out = []
-    for entry in sorted(workspace.iterdir()):
-        if entry.name in (".git", ".claude"):
+    for root, dirs, _files in os.walk(workspace):
+        dirs[:] = [d for d in dirs if d not in (".git", ".claude")]
+        root_path = Path(root)
+        if root_path == workspace:
             continue
-        if (entry / ".git").exists():
-            out.append(entry)
-    return out
+        if (root_path / ".git").exists():
+            out.append(root_path)
+            dirs[:] = []
+    return sorted(out)
 
 
 def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:

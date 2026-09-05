@@ -561,7 +561,12 @@ def git_remote_url_is(workspace: str, patterns: list[str], *,
                        f"{result.stderr.strip() or 'git remote get-url failed'}")
     actual = result.stdout.strip()
     target = os.path.join(workspace, expected_path)
-    ok = (os.path.normpath(os.path.abspath(actual)) == os.path.normpath(target)
+    # A relative recorded URL is resolved against the WORKSPACE, not
+    # os.path.abspath's default (the calling process's own cwd) — otherwise
+    # whether this passes depends on where the harness/test process itself
+    # happened to be invoked from, not on the tree being inspected.
+    actual_abs = actual if os.path.isabs(actual) else os.path.join(workspace, actual)
+    ok = (os.path.normpath(actual_abs) == os.path.normpath(target)
           or actual.rstrip("/") == expected_path.rstrip("/"))
     return (ok, f"{path} remote {remote!r} -> {actual}" if ok
             else f"{path} remote {remote!r} -> {actual}, expected {target}")
@@ -768,6 +773,19 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
             else f"worktrees in {path}: expected {want}, got {names}")
 
 
+def _looks_like_a_git_dir(root: str) -> bool:
+    """`root` is a directory shape that holds its OWN git config: a
+    standalone `.git`, a bare repo's `<name>.git` (its basename also ends
+    in `.git`), or a submodule's own git-dir under `.git/modules/<name>`
+    (nested submodules included — `.git/modules/<name>/modules/<name2>`).
+    """
+    if os.path.basename(root).endswith(".git"):
+        return True
+    parts = root.split(os.sep)
+    return any(parts[i] == ".git" and parts[i + 1] == "modules"
+              for i in range(len(parts) - 1))
+
+
 def no_git_config_names_path(workspace: str, patterns: list[str], *,
                              forbidden_path: str,
                              exclude: list[str] | None = None) -> tuple[bool, str]:
@@ -782,6 +800,13 @@ def no_git_config_names_path(workspace: str, patterns: list[str], *,
     `forbidden_path` is checked both as given and resolved to an absolute
     path under `workspace`, since a `git clone`/`remote add` records
     whatever path form it was given.
+
+    A git-dir isn't always literally named `.git`: a bare repository's own
+    config sits directly at `<name>.git/config` (the directory IS the git
+    dir, no nested `.git` marker at all), and a submodule's own git-dir
+    sits at `.git/modules/<name>/config` (named after the submodule, not
+    `.git`). Both shapes are treated as git-dirs here alongside plain
+    `.git`.
 
     Scope, deliberately: this only ever walks inside `workspace`. A copy made
     OUTSIDE it — `/tmp/scratch`, a sibling directory, anywhere off the
@@ -801,7 +826,7 @@ def no_git_config_names_path(workspace: str, patterns: list[str], *,
         if top in exclude:
             dirs[:] = []
             continue
-        if os.path.basename(root) == ".git" and "config" in files:
+        if _looks_like_a_git_dir(root) and "config" in files:
             config_path = os.path.join(root, "config")
             try:
                 with open(config_path, encoding="utf-8", errors="replace") as f:
