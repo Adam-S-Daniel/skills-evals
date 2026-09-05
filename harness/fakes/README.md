@@ -90,10 +90,22 @@ same file.
   shorthands in `ATTACHED_VALUE_FLAGS`. Boolean flags are listed explicitly in
   `BOOLEAN_FLAGS` so `run view --log 12` cannot swallow the run id.
 - **A shorthand whose meaning differs per subcommand must be written
-  long-form.** `-w` is boolean `--web` on `gh pr view` but `--workflow <name>`
-  on `gh run list`; a flat global set gets one of them wrong whichever way it
-  is listed, so such shorthands are in neither set and a fixture writes
-  `--workflow` / `--web` in full. The same applies to `-i`.
+  long-form, unless one subcommand owns it.** `-w` is boolean `--web` on
+  `gh pr view` but `--workflow <name>` on `gh run list`; a flat global set
+  gets one of them wrong whichever way it is listed, so such shorthands are
+  in neither set and a fixture writes `--workflow` / `--web` in full. Where
+  naming the subcommand settles it, `SUBCOMMAND_BOOLEAN_FLAGS` does that
+  instead: `-i` is boolean `--include` on `gh api` and `--interval
+  <duration>` on `gh pr checks`, so it is boolean under `api` and takes its
+  value everywhere else. Listed globally it swallowed the duration; omitted
+  entirely it swallowed the endpoint, and `gh api -i repos/…` 404'd.
+- **A flag given twice is last-wins, as in gh.** `-X GET -X POST` POSTs,
+  because both tokens bind one variable — and a shorthand binds the same
+  variable as its long form, so `-X POST --method GET` is a GET. Shorthands
+  whose long form is consulted (`-X`, `-R`, `-f`, `-F`) are normalized to it
+  at parse time, which is what keeps the two spellings in one argv-ordered
+  list. Taking the FIRST value classed `-X GET -X POST` a read and let the
+  mutation through unrecorded.
 - A `.json` key falls back to a `.txt` payload, so a command whose real output
   is plain text (`gh auth status`, `gh pr diff`) gets a file named for what it
   holds. The key does not change — only which file backs it.
@@ -146,6 +158,18 @@ which the agent chooses.
 | `read` | a non-mutating call with a payload | the payload on stdout, exit 0 |
 | `write` | `pr merge`, `pr close`, `workflow run`, `run rerun`, `gh api -X POST/PATCH/PUT/DELETE`, `gh api -f/-F/--input` with no method, plus the verbs that would write the arm's workspace or reach the network (`pr checkout`, `repo clone`, `run download`, `release download`, `issue develop`) | a real-shaped `HTTP 403: Resource not accessible by personal access token`, exit 1. Nothing is ever mutated |
 | `unknown` | a read with no payload | `gh: Not Found (HTTP 404)`, exit 1 |
+
+`gh api graphql` is decided by its DOCUMENT, not by its method or its body
+flags: every graphql call is a POST on the wire, so `-f query=query{…}` is a
+`read` and `-f query=mutation{…}` is a `write`. A document the fake cannot
+read (`-F query=@file.graphql`, or no `query=` field) counts as no mutation,
+so an ordinary read is never refused.
+
+`--` ends gh's own flag parsing, but not this one's reading of intent: on
+`gh api -- <endpoint> -X POST` the tokens behind the `--` are still scanned
+for a method and body fields, so the call is classed `write`. The payload key
+is unaffected — it is built from the endpoint, which is the first positional
+either way.
 
 **`class=write` records INTENT, not what the fake would have done.** Some of
 those verbs are plain reads against the API — `gh release download` is one —

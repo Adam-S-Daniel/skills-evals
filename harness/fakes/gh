@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 
 # Flags that take no value. Everything else that looks like a flag consumes
@@ -51,10 +52,11 @@ import sys
 # run id as `--log`'s value and key to a different payload than
 # `run view 4471182930 --log`.
 #
-# A shorthand whose meaning DIFFERS per subcommand cannot live here: `-w` is
-# boolean `--web` on `gh pr view` but `--workflow <name>` on `gh run list`,
-# and a flat set gets one of them wrong whichever way it is listed. Such
-# shorthands are deliberately absent; write them long-form.
+# A shorthand whose meaning DIFFERS per subcommand cannot live in this flat
+# set: `-w` is boolean `--web` on `gh pr view` but `--workflow <name>` on
+# `gh run list`, and a flat set gets one of them wrong whichever way it is
+# listed. Such shorthands are deliberately absent; write them long-form, or
+# give them a subcommand below.
 BOOLEAN_FLAGS = {
     "-h", "--help", "--version", "--verbose", "-y", "--yes",
     "--log", "--log-failed", "--failed", "--exit-status", "--web", "--watch",
@@ -62,6 +64,28 @@ BOOLEAN_FLAGS = {
     "--delete-branch", "--delete-local", "--comments", "--draft",
     "--paginate", "--include", "--silent", "--slurp", "--force",
     "--fill", "--no-maintainer-edit", "--dry-run", "--preview",
+}
+
+# …and where one subcommand is the whole answer, it says so here instead of
+# giving up on the shorthand. `-i` is boolean `--include` on `gh api` and
+# `--interval <duration>` on `gh pr checks`; listed globally it swallows the
+# duration, omitted entirely it swallows the endpoint and a plain
+# `gh api -i repos/…` 404s. Keyed by the FIRST positional, which is the
+# command every one of these belongs to.
+SUBCOMMAND_BOOLEAN_FLAGS = {
+    "api": {"-i"},
+}
+
+# The long flag each shorthand IS. gh binds both spellings to one variable,
+# so `-X GET --method POST` is one flag given twice and the last one wins —
+# which is only decidable if they land in the same bucket. Only the
+# shorthands whose long form is consulted below are listed: the rest still
+# take their value, they just keep their own name.
+SHORTHAND_ALIASES = {
+    "-X": "--method",
+    "-R": "--repo",
+    "-f": "--raw-field",
+    "-F": "--field",
 }
 
 # Shorthands that take a value and that gh also accepts ATTACHED (`-XPOST`,
@@ -72,7 +96,8 @@ BOOLEAN_FLAGS = {
 ATTACHED_VALUE_FLAGS = ("-X", "-f", "-F", "-R", "-H", "-q", "-b", "-t", "-L")
 
 # Flags whose presence makes a `gh api` call a write even without -X.
-API_BODY_FLAGS = {"-f", "--raw-field", "-F", "--field", "--input"}
+# Long spellings only: `-f`/`-F` are normalized to them at parse time.
+API_BODY_FLAGS = {"--raw-field", "--field", "--input"}
 WRITE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
 
 # Verbs that mutate REMOTE state. A pair in neither this set nor the one
@@ -160,7 +185,13 @@ def parse_argv(argv: list[str]) -> tuple[list[str], dict[str, list]]:
     argv ORDER irrelevant: `pr list --repo X --state open` and
     `pr list --state open --repo X` normalize to the same positionals.
     `--flag=value` is one token, `-Xvalue` is split into flag and value, and
-    a boolean flag never eats a positional.
+    a boolean flag never eats a positional. A shorthand that gh binds to a
+    long flag is recorded under the LONG name (see `SHORTHAND_ALIASES`), so
+    the two spellings of one flag stay in argv order in one list.
+
+    Which flags are boolean depends on the command: `SUBCOMMAND_BOOLEAN_FLAGS`
+    is consulted against the first positional seen so far, which is the
+    command itself (`gh api -i …`).
     """
     positionals: list[str] = []
     flags: dict[str, list] = {}
@@ -173,31 +204,42 @@ def parse_argv(argv: list[str]) -> tuple[list[str], dict[str, list]]:
         if arg.startswith("-") and arg != "-":
             attached = split_attached(arg)
             if attached:
-                flags.setdefault(attached[0], []).append(attached[1])
+                flags.setdefault(SHORTHAND_ALIASES.get(attached[0], attached[0]),
+                                 []).append(attached[1])
                 i += 1
                 continue
             name, eq, value = arg.partition("=")
+            key = SHORTHAND_ALIASES.get(name, name)
+            booleans = BOOLEAN_FLAGS | SUBCOMMAND_BOOLEAN_FLAGS.get(
+                positionals[0] if positionals else "", set())
             if eq:
-                flags.setdefault(name, []).append(value)
-            elif name in BOOLEAN_FLAGS:
-                flags.setdefault(name, []).append(True)
+                flags.setdefault(key, []).append(value)
+            elif name in booleans:
+                flags.setdefault(key, []).append(True)
             elif i + 1 < len(argv) and not argv[i + 1].startswith("-"):
-                flags.setdefault(name, []).append(argv[i + 1])
+                flags.setdefault(key, []).append(argv[i + 1])
                 i += 1
             else:
-                flags.setdefault(name, []).append(True)
+                flags.setdefault(key, []).append(True)
         else:
             positionals.append(arg)
         i += 1
     return positionals, flags
 
 
-def first(flags: dict[str, list], *names: str) -> str | None:
-    """The first value given for any of `names`, or None."""
+def last(flags: dict[str, list], *names: str) -> str | None:
+    """The LAST value given for any of `names`, or None.
+
+    gh is last-wins: `-X GET -X POST` sends the POST, because both tokens
+    bind one variable and the second assignment overwrites the first. Taking
+    the FIRST value classed that call `read` and let a mutation through
+    unrecorded. Shorthands are normalized to their long spelling in
+    `parse_argv`, so "last" is unambiguous within one name.
+    """
     for name in names:
-        for value in flags.get(name, []):
-            if value is not True:
-                return str(value)
+        values = [value for value in flags.get(name, []) if value is not True]
+        if values:
+            return str(values[-1])
     return None
 
 
@@ -256,28 +298,85 @@ def resolve_payload(payload_dir: str, key: str) -> str | None:
     return None
 
 
+def api_flags(positionals: list[str], flags: dict[str, list]) -> dict[str, list]:
+    """`flags`, plus anything flag-shaped written after a `--`.
+
+    `--` ends gh's own flag parsing, so `gh api -- <endpoint> -X POST` is
+    not a POST as far as gh is concerned — but it is one the caller reached
+    for, and the class records INTENT, so classification reads behind the
+    `--` too. Only classification: the payload key is built from the
+    endpoint, which is the first positional either way. The trailing values
+    are appended, so last-wins still means what it says.
+    """
+    if len(positionals) <= 2:
+        return flags
+    _, trailing = parse_argv(positionals[2:])
+    merged = {name: list(values) for name, values in flags.items()}
+    for name, values in trailing.items():
+        merged.setdefault(name, []).extend(values)
+    return merged
+
+
+# A GraphQL document declares its operation; `mutation` is the only one that
+# writes. (`query` and `subscription` do not, and an anonymous `{ … }`
+# document is a query.)
+GRAPHQL_MUTATION_RE = re.compile(r"\bmutation\b")
+
+
+def graphql_mutates(flags: dict[str, list]) -> bool:
+    """Does the `query=` field of a `gh api graphql` call declare a mutation?
+
+    Conservative in the direction that matters: a document this cannot read
+    (`-F query=@file.graphql`, or no query field at all) counts as no
+    mutation, so an ordinary read is never refused with a 403 nobody meant
+    to provoke. What has to be caught here says `mutation` in the document.
+    """
+    for name in ("--raw-field", "--field"):
+        for value in flags.get(name, []):
+            if value is True:
+                continue
+            field, _, document = str(value).partition("=")
+            if field.strip() == "query" and GRAPHQL_MUTATION_RE.search(document):
+                return True
+    return False
+
+
 def classify(positionals: list[str], flags: dict[str, list]) -> str:
     """`write` if this invocation would mutate anything, else `read`."""
     if not positionals:
         return "read"
     if positionals[0] == "api":
-        method = first(flags, "-X", "--method")
-        if method is not None:
-            # An explicit method decides it on its own. `-X GET … -f k=v` is
-            # gh's documented read idiom (on GET the fields go to the query
-            # string, not a body), so the body flags must not override it.
-            return "write" if method.upper() in WRITE_METHODS else "read"
-        # No method: gh implies POST as soon as a body field is present.
-        if any(name in flags for name in API_BODY_FLAGS):
-            return "write"
-        return "read"
+        return classify_api(positionals, api_flags(positionals, flags))
     pair = (positionals[0], positionals[1] if len(positionals) > 1 else "")
     return "write" if pair in WRITE_SUBCOMMANDS else "read"
 
 
+def classify_api(positionals: list[str], flags: dict[str, list]) -> str:
+    """`gh api`'s own class, from its endpoint, method and body fields."""
+    endpoint = (positionals[1].split("?", 1)[0].strip("/")
+                if len(positionals) > 1 else "")
+    if endpoint == "graphql":
+        # Every graphql call is a POST on the wire, so the method says
+        # nothing about it and the body flags say only that a document was
+        # handed over. The DOCUMENT decides: `-f query=query{…}` reads a
+        # merge state and nothing more, and answering that with a 403 would
+        # be this file's mistake, not the caller's.
+        return "write" if graphql_mutates(flags) else "read"
+    method = last(flags, "--method")
+    if method is not None:
+        # An explicit method decides it on its own. `-X GET … -f k=v` is
+        # gh's documented read idiom (on GET the fields go to the query
+        # string, not a body), so the body flags must not override it.
+        return "write" if method.upper() in WRITE_METHODS else "read"
+    # No method: gh implies POST as soon as a body field is present.
+    if any(name in flags for name in API_BODY_FLAGS):
+        return "write"
+    return "read"
+
+
 def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
     """The API URL path a refused write would have hit."""
-    repo = first(flags, "--repo", "-R") or os.environ.get("GH_REPO", "OWNER/REPO")
+    repo = last(flags, "--repo") or os.environ.get("GH_REPO", "OWNER/REPO")
     if positionals and positionals[0] == "api":
         return positionals[1].split("?", 1)[0].strip("/") if len(positionals) > 1 else "graphql"
     pair = (positionals[0], positionals[1] if len(positionals) > 1 else "")
