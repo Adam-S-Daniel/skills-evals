@@ -437,6 +437,38 @@ def file_matches(workspace: str, patterns: list[str], must_match=None,
     return _text_matches(text, must_match or [], must_not_match or [], subject)
 
 
+def _strip_full_line_comments(text: str) -> str:
+    """Drop every line whose first non-whitespace character is `#`.
+
+    A narrow, line-oriented filter — not a YAML or shell parser — sufficient
+    to stop a `must_not_match` check reading a comment that merely MENTIONS
+    forbidden text (e.g. `# no longer using: gh pr comment` left behind
+    after removing the block it describes) as the forbidden thing still
+    being there. Leaves a trailing same-line comment and genuine `run:`
+    block content untouched — this is a lexical convenience for a check
+    that already only tests a leaf VALUE (file content) as a plain string,
+    not a shortcut around parsing anything that decides which step or job
+    is in play.
+    """
+    return "\n".join(line for line in text.splitlines() if not line.lstrip().startswith("#"))
+
+
+def file_matches_excluding_comments(workspace: str, patterns: list[str], must_match=None,
+                                    must_not_match=None) -> tuple[bool, str]:
+    """`file_matches`, but every whole-comment line is dropped first.
+
+    Use this instead of `file_matches` when `must_not_match` targets code
+    that a correct answer might legitimately still MENTION in a comment
+    after removing it — otherwise a right answer that explains what it did
+    fails the same check that a wrong answer (which left the code itself in
+    place) would fail, for an unrelated reason.
+    """
+    text, names = _read_matched(workspace, patterns)
+    text = _strip_full_line_comments(text)
+    subject = ", ".join(names) if names else f"no file matched {patterns}"
+    return _text_matches(text, must_match or [], must_not_match or [], subject)
+
+
 def transcript_matches(workspace: str, patterns: list[str], must_match=None,
                        must_not_match=None, transcript=None) -> tuple[bool, str]:
     """Regex assertions over the agent's final reply.
@@ -998,6 +1030,7 @@ CHECKS = {
     "event_only_workflows_unfiltered": event_only_workflows_unfiltered,
     "files_unchanged": files_unchanged,
     "file_matches": file_matches,
+    "file_matches_excluding_comments": file_matches_excluding_comments,
     "transcript_matches": transcript_matches,
     "workflow_step_uses": workflow_step_uses,
     "no_event_interpolation_in_run": no_event_interpolation_in_run,
@@ -1024,6 +1057,7 @@ _WORKFLOW_STEP_USES_KEYS = {
 _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
     "file_matches": {"must_match", "must_not_match"},
+    "file_matches_excluding_comments": {"must_match", "must_not_match"},
     "transcript_matches": {"must_match", "must_not_match"},
     "workflow_step_uses": _WORKFLOW_STEP_USES_KEYS,
     "post_failure_comment_reference_valid": {"uses_suffix"},

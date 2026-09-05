@@ -3181,6 +3181,24 @@ class TestIssue86(unittest.TestCase):
         passed, detail = objective.no_event_interpolation_in_run(str(ws), self.PATTERNS)
         self.assertTrue(passed, detail)
 
+    # ---- file_matches_excluding_comments (issue #86 review round 3, N11) --
+
+    def test_file_matches_excluding_comments_ignores_a_whole_comment_line(self):
+        ws = self._ws({".github/workflows/w.yml":
+                       "on:\n  pull_request:\n# no longer using: gh pr comment\n"
+                       "jobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps: []\n"})
+        passed, detail = objective.file_matches_excluding_comments(
+            str(ws), self.PATTERNS, must_not_match=["gh pr comment"])
+        self.assertTrue(passed, detail)
+
+    def test_file_matches_excluding_comments_still_catches_real_content(self):
+        ws = self._ws({".github/workflows/w.yml":
+                       "on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n"
+                       "    steps:\n      - run: gh pr comment 1 --body hi\n"})
+        passed, _ = objective.file_matches_excluding_comments(
+            str(ws), self.PATTERNS, must_not_match=["gh pr comment"])
+        self.assertFalse(passed)
+
     # ---- Fixture-level: evals/post-failure-comment -----------------------
 
     # A hand-written, fully-correct rework of the seed's two Playwright
@@ -3618,6 +3636,23 @@ jobs:
         self.assertFalse(by_id["no-event-or-input-interpolation-in-run"]["passed"])
         self.assertIn("github.event.pull_request.title",
                       by_id["no-event-or-input-interpolation-in-run"]["detail"])
+
+    def test_explanatory_comment_mentioning_removed_block_still_passes(self):
+        # Review round 3, N11: e2e-inline-block-removed used to false-fail a
+        # right answer that leaves a `#` comment explaining what it
+        # replaced — the same check a wrong answer (which left the block
+        # itself) would fail, for an unrelated reason.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            "      - name: Post failure summary\n",
+            "      # replaces the old inline `gh pr comment` block\n"
+            "      - name: Post failure summary\n")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertTrue(by_id["e2e-inline-block-removed"]["passed"],
+                        by_id["e2e-inline-block-removed"]["detail"])
 
     def test_run_eval_objective_only_exits_1_on_seed_and_0_on_correct(self):
         cmd_seed = [sys.executable, str(HARNESS_DIR / "run_eval.py"),

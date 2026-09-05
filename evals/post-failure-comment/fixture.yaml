@@ -74,8 +74,13 @@ objective_checks:
     description: >
       The pre-composite ad hoc block (raw `gh pr comment`, the log
       interpolated straight into the shell command, no marker, no gitleaks)
-      is gone from e2e-tests.yml, not merely left alongside the composite call.
-    type: file_matches
+      is gone from e2e-tests.yml, not merely left alongside the composite
+      call. Whole-comment lines are excluded before matching (issue #86
+      review round 3, N11) — a correct answer that leaves a `#` comment
+      MENTIONING the removed block (e.g. explaining what it replaced) must
+      not fail the same check a wrong answer, which left the code itself in
+      place, would fail.
+    type: file_matches_excluding_comments
     paths: [".github/workflows/e2e-tests.yml"]
     must_not_match:
       - "gh pr comment"
