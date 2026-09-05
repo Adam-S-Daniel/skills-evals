@@ -1128,7 +1128,13 @@ class TestIssue74(unittest.TestCase):
         # `|| true` instead of configuring git identity. Must still fail —
         # otherwise the check can be gamed by the exact anti-pattern the
         # skill's "Commands with Suppressed Errors" item warns against.
+        # Identity is fixed FIRST (as _apply_copy_I/O do for their own
+        # findings), so it's the dodge pattern itself that's asserted to
+        # fail, not the pristine seed's pre-existing missing-identity
+        # failure (round-2 review item 5 — this test used to pass vacuously
+        # against the untouched pristine seed).
         ws = self._ws()
+        self._fix_all(ws)
         path = ws / "scripts" / "bump.sh"
         text = path.read_text(encoding="utf-8")
         text = text.replace(
