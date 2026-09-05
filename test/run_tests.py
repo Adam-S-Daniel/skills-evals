@@ -4037,7 +4037,8 @@ class CiDispatchTests(unittest.TestCase):
     # Both events carry this list and the workflow's own header requires them
     # kept in step; spelling it out here is what makes "in step" checkable.
     SALIENT = [".github/workflows/ci.yml", ".github/workflows/eval.yml",
-               "evals/**", "harness/**", "scripts/**", "test/**", "README.md"]
+               "evals/**", "harness/**", "scripts/**", "test/**", "README.md",
+               "DESIGN.md"]
 
     def _triggers(self) -> dict:
         # A real parser, never a line scan: a bare `on:` key is the YAML 1.1
@@ -4073,6 +4074,68 @@ class CiDispatchTests(unittest.TestCase):
                          "push is pinned to main: without the branch filter "
                          "every push to a pull-request branch ran `test` twice "
                          "(observed on 82596ff, 03:38:30 and 03:39:14)")
+
+    @staticmethod
+    def _root_markdown_reads(source: str) -> set[str]:
+        """AST walk (never a regex over the file) for every root-level
+        Markdown file THIS test module itself reads: `REPO_ROOT / "<name>.md"`
+        (a BinOp division whose immediate left operand is the bare name
+        `REPO_ROOT` and whose right operand is a string constant ending in
+        `.md`), plus the equivalent-spelling forms `REPO_ROOT.joinpath("<name>.md")`
+        and `os.path.join(REPO_ROOT, "<name>.md")` (Call nodes). Nested joins
+        (`REPO_ROOT / "evals" / "x.md"`) are deliberately NOT matched — those
+        already live under a directory glob in SALIENT, this only closes the
+        gap for a bare root file joined directly onto REPO_ROOT.
+        """
+        tree = ast.parse(source)
+        found: set[str] = set()
+        for node in ast.walk(tree):
+            if (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
+                    and isinstance(node.left, ast.Name) and node.left.id == "REPO_ROOT"
+                    and isinstance(node.right, ast.Constant)
+                    and isinstance(node.right.value, str)
+                    and node.right.value.endswith(".md")):
+                found.add(node.right.value)
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "joinpath"
+                    and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "REPO_ROOT"):
+                found.update(a.value for a in node.args
+                            if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                            and a.value.endswith(".md"))
+            elif (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "join"
+                    and any(isinstance(a, ast.Name) and a.id == "REPO_ROOT" for a in node.args)):
+                found.update(a.value for a in node.args
+                            if isinstance(a, ast.Constant) and isinstance(a.value, str)
+                            and a.value.endswith(".md"))
+        return found
+
+    def test_every_root_markdown_file_this_suite_reads_is_salient(self):
+        # Round 4, F1: round 3's S5 made this suite read DESIGN.md
+        # (test_design_doc_no_longer_lists_writing_adrs_as_a_class_a_candidate)
+        # while ci.yml's paths: filter excluded it — a DESIGN.md-only pull
+        # request that broke the guard the test enforces would match none of
+        # the globs, so CI would never run and the guard would never execute
+        # on the exact PR that defeats it. This closes the CLASS rather than
+        # re-naming the one file: it scans this module's OWN source (see
+        # _root_markdown_reads' docstring for exactly what the AST walk
+        # covers) for every root-level Markdown file the suite reads, and
+        # asserts each one is in both SALIENT and both of ci.yml's paths:
+        # blocks — so the next file this suite starts reading fails LOUDLY
+        # here instead of silently joining DESIGN.md's blind spot.
+        found = self._root_markdown_reads((TEST_DIR / "run_tests.py").read_text(encoding="utf-8"))
+        self.assertTrue(found, "the AST walk found no REPO_ROOT / \"*.md\" read at "
+                        "all — it may have drifted from how this file spells that")
+        triggers = self._triggers()
+        for name in sorted(found):
+            self.assertIn(name, self.SALIENT,
+                          f"{name} is read by this suite but is missing from "
+                          "CiDispatchTests.SALIENT")
+            for event in ("pull_request", "push"):
+                self.assertIn(name, triggers[event]["paths"],
+                              f"{name} is read by this suite but is missing from "
+                              f"ci.yml's {event} paths: filter")
 
     def test_checks_out_agentskills_side_by_side_for_the_agreement_test(self):
         # TestIssue63::test_registries_agree_with_agentskills_own_file skips
