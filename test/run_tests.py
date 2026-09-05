@@ -5978,6 +5978,88 @@ class TestIssue67Review6(unittest.TestCase):
         self.assertNotIn("candidate in api_ids", body)
         self.assertNotIn("candidate in previous_arms or", body)
 
+    # --- S1: the relative min_ranked_share floor must apply PER WINDOW,
+    # not only over the 8-week union -----------------------------------
+
+    def test_min_ranked_share_floor_applies_to_the_enter_window_on_its_own(self):
+        """`other` dominates weeks 1-4 (the enter window) while a real
+        model's usage sits in weeks 5-8 (inside the union, outside the
+        enter window) — together they clear the UNION's relative floor
+        (100,025 of 4,100,025), but the enter window's OWN 25 ranked
+        turns against 4,000,025 raw ones fail its own relative floor.
+        Before this fix, only the ABSOLUTE per-window floor existed
+        (round 5), and 25 >= 20 cleared it — computing a false 100.0%
+        entry share for `claude-sonnet-4-6`, which is not the newest in
+        its tier (`claude-sonnet-5` is, in the DEFAULT fixture)."""
+        counts = {
+            "other": {w: 1_000_000 for w in self.W[:4]},
+            "claude-sonnet-4-6": {self.W[0]: 25},
+            "claude-opus-5": {w: 25_000 for w in self.W[4:8]},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=None)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "25 ranked turns against 4,000,025 raw ones in "
+                         "the enter window must not clear the relative "
+                         "floor just because weeks 5-8 do")
+        # Mutation check (manual): dropping the
+        # `enter_ranked_total >= policy["min_ranked_share"] *
+        # enter_raw_total` clause from `enter_usable` (reverting to the
+        # absolute-only check) seats claude-sonnet-4-6 at "carries
+        # 100.0%" here — red.
+
+    # --- N5 / S1: the exit-side per-window gate is unreachable under the
+    # SHIPPED policy (arm_exit_window_weeks >= arm_enter_window_weeks
+    # makes the exit window the union); a test-only policy with a
+    # shorter exit window makes it reachable and pins both branches of
+    # the widened floor note. ------------------------------------------
+
+    @staticmethod
+    def _short_exit_policy():
+        policy = dict(TestIssue67Review6._policy())
+        policy["arm_exit_window_weeks"] = 2
+        return policy
+
+    def test_exit_side_floor_note_names_the_absolute_floor(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-5": {self.W[2]: 30, self.W[3]: 30}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=census,
+            policy=self._short_exit_policy(), previous=previous, now=self.NOW)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("0 turn(s)", reason)
+        self.assertIn("turn floor", reason)
+        self.assertNotIn("relative floor", reason)
+
+    def test_exit_side_floor_note_names_the_relative_floor(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {
+            "other": {self.W[0]: 1500, self.W[1]: 1500},
+            "claude-opus-4-8": {self.W[0]: 13, self.W[1]: 12},
+            "claude-sonnet-5": {self.W[2]: 250, self.W[3]: 250},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=census,
+            policy=self._short_exit_policy(), previous=previous, now=self.NOW)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("relative floor for this window", reason)
+        self.assertNotIn("turn floor", reason)
+        # Mutation check (manual, both tests above): reverting
+        # `exit_usable` to its pre-S1 absolute-only definition, or
+        # deleting the `elif not exit_usable:` branch outright, turns
+        # these red — the first because the relative-cause test's 25
+        # exit-window turns clear the absolute floor alone (`exit_usable`
+        # would read True, giving opus-4-8 a "held over ... still X%"
+        # reason via the usage_share branch instead), the second because
+        # opus-4-8 would fall through to the "below the exit bar" branch
+        # and be retired instead of held.
+
 
 if __name__ == "__main__":
     unittest.main()

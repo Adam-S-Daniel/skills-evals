@@ -821,21 +821,34 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # enter window is a strict subset of the union here, so a handful of
     # ranked turns can clear the union floor while the enter window itself
     # carries next to none — one lone turn there used to compute a 100.0%
-    # entry share and seat a non-newest model on it. Gating each window's
-    # share check on that window's OWN ranked total (not the union's) is
-    # what stops that; kept symmetric for the exit side even though, for
-    # this policy's numbers (exit >= enter weeks), the exit window IS the
-    # union and this is a no-op today — nothing guarantees that relation.
-    _, enter_ranked_total = _in_window_totals(
+    # entry share and seat a non-newest model on it (the ABSOLUTE floor,
+    # applied per window). The RELATIVE floor (S1, #129 review round 6)
+    # needs the same per-window treatment: an enter window dominated by
+    # `other` can clear the union's relative floor on OTHER weeks' ranked
+    # usage while carrying almost none of its own — measured: `other` at
+    # 1,000,000/week for the enter window's weeks plus a real model
+    # elsewhere in the union cleared the union's 100,025-of-4,100,025
+    # relative floor while the enter window itself held 25 ranked turns
+    # against 4,000,025 raw ones, computing a false 100.0% entry share.
+    # Kept symmetric for the exit side even though, for this policy's
+    # shipped numbers (arm_exit_window_weeks >= arm_enter_window_weeks),
+    # the exit window IS the union and both `exit_usable` floors are
+    # always identical to `usable`'s own — nothing guarantees that
+    # relation stays true if the numbers ever change, and
+    # TestIssue67Review6 exercises the exit-side branch below with a
+    # test-only policy whose exit window is shorter than its enter one.
+    enter_raw_total, enter_ranked_total = _in_window_totals(
         counts, set(enter_weeks), rungs, aliases=aliases,
         api_ids=api_ids, previous_arms=previous_arms,
         catalogue_seen=catalogue_seen)
-    _, exit_ranked_total = _in_window_totals(
+    exit_raw_total, exit_ranked_total = _in_window_totals(
         counts, set(exit_weeks), rungs, aliases=aliases,
         api_ids=api_ids, previous_arms=previous_arms,
         catalogue_seen=catalogue_seen)
-    enter_usable = usable and enter_ranked_total >= policy["min_ranked_turns"]
-    exit_usable = usable and exit_ranked_total >= policy["min_ranked_turns"]
+    enter_usable = (usable and enter_ranked_total >= policy["min_ranked_turns"]
+                   and enter_ranked_total >= policy["min_ranked_share"] * enter_raw_total)
+    exit_usable = (usable and exit_ranked_total >= policy["min_ranked_turns"]
+                  and exit_ranked_total >= policy["min_ranked_share"] * exit_raw_total)
     # Provenance: the timestamp of the census this roster actually read. A
     # census that was published and simply held nothing usable for these
     # weeks HAS a timestamp worth recording — dropping it made "we read a
@@ -890,14 +903,32 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                           f"there is no evidence to retire it")
             elif not exit_usable:
                 # The census is fresh overall, but the EXIT window's own
-                # ranked total is under the floor — the same "not enough
-                # evidence to act on" gap as the stale case above, just
-                # scoped to this window rather than the whole census.
-                floor_note = (f"an exit-window ranked, attributable total of "
-                             f"{exit_ranked_total} turn(s) over the last "
-                             f"{policy['arm_exit_window_weeks']} weeks is under "
-                             f"the {policy['min_ranked_turns']}-turn floor, too "
-                             f"little to be evidence of anything")
+                # ranked total is under one of the two floors — the same
+                # "not enough evidence to act on" gap as the stale case
+                # above, just scoped to this window rather than the whole
+                # census. Names WHICH floor held, absolute checked first
+                # (matching _census_verdict's own ordering): unreachable
+                # under evals/roster-policy.yml's shipped numbers (see the
+                # comment above `enter_raw_total`/`exit_raw_total`), so
+                # this text is exercised only by a test-only policy.
+                if exit_ranked_total < policy["min_ranked_turns"]:
+                    floor_note = (f"an exit-window ranked, attributable total "
+                                 f"of {exit_ranked_total} turn(s) over the "
+                                 f"last {policy['arm_exit_window_weeks']} "
+                                 f"weeks is under the "
+                                 f"{policy['min_ranked_turns']}-turn floor, "
+                                 f"too little to be evidence of anything")
+                else:
+                    pct = (100 * exit_ranked_total / exit_raw_total
+                          if exit_raw_total else 0.0)
+                    bar = 100 * policy["min_ranked_share"]
+                    floor_note = (f"only {exit_ranked_total} of "
+                                 f"{exit_raw_total} raw turns over the last "
+                                 f"{policy['arm_exit_window_weeks']} weeks are "
+                                 f"rankable, attributable usage "
+                                 f"({_format_share(pct, bar)}% — under the "
+                                 f"{bar:g}% relative floor for this window), "
+                                 f"too little to be evidence of anything")
                 reason = (f"held over from the previous roster: {floor_note}, so "
                           f"there is no evidence to retire it")
             else:
