@@ -853,7 +853,8 @@ class TestIssue74(unittest.TestCase):
         "grep-q-avoids-broken-pipe",
         "gh-api-failure-not-swallowed",
         "git-identity-configured",
-        "version-read-does-not-depend-on-jq",
+        "jq-guaranteed-or-replaced",
+        "version-read-does-not-depend-on-unguarded-jq",
         "commit-signing-safe-for-ci",
     )
     DECOY_IDS = ("decoy-optional-cleanup-untouched", "decoy-existing-set-e-untouched")
@@ -1294,8 +1295,8 @@ class TestIssue74(unittest.TestCase):
             "      - name: Bump version")
         workflow.write_text(text, encoding="utf-8")
         by_id = self._run(ws)
-        self.assertTrue(by_id["version-read-does-not-depend-on-jq"]["passed"],
-                        by_id["version-read-does-not-depend-on-jq"]["detail"])
+        for check_id in ("jq-guaranteed-or-replaced", "version-read-does-not-depend-on-unguarded-jq"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
 
     def test_b4_jq_kept_and_not_installed_fails(self):
         # Reviewer's copy E.
@@ -1306,14 +1307,83 @@ class TestIssue74(unittest.TestCase):
         text = text.replace(self.JQ_FIXED_LINE, self.JQ_LINE)
         bump.write_text(text, encoding="utf-8")
         by_id = self._run(ws)
-        self.assertFalse(by_id["version-read-does-not-depend-on-jq"]["passed"])
+        for check_id in ("jq-guaranteed-or-replaced", "version-read-does-not-depend-on-unguarded-jq"):
+            self.assertFalse(by_id[check_id]["passed"])
 
     def test_b4_deleting_bump_sh_outright_fails(self):
         ws = self._ws()
         self._fix_all(ws)
         (ws / "scripts" / "bump.sh").unlink()
         by_id = self._run(ws)
-        self.assertFalse(by_id["version-read-does-not-depend-on-jq"]["passed"])
+        # jq-guaranteed-or-replaced trivially passes (no jq mention anywhere
+        # once bump.sh is gone) — it's version-read-does-not-depend-on-
+        # unguarded-jq's must_match that catches the deleted version-read
+        # logic, so deleting bump.sh cannot pass by leaving nothing to
+        # violate.
+        self.assertFalse(by_id["version-read-does-not-depend-on-unguarded-jq"]["passed"])
+
+    # -- item 2 (round-2 review): the old single jq check decided "is jq
+    # installed" via a forward-only lookahead from the usage position, so
+    # order (and SKILL.md's own guard-and-exit remedy, which has no install
+    # marker at all) broke it. The two replacement checks are existence-only
+    # and order-independent; the two tests below prove that. --
+
+    def _bump_with_jq_guard(self, ws: Path, guard_line: str, guard_before: bool) -> None:
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        if guard_before:
+            text = text.replace(self.JQ_LINE, f"{guard_line}\n{self.JQ_LINE}")
+        else:
+            text = text.replace(self.JQ_LINE, f"{self.JQ_LINE}\n{guard_line}")
+        path.write_text(text, encoding="utf-8")
+
+    def test_jq_guard_install_correctly_ordered_before_usage_passes(self):
+        ws = self._ws()
+        self._fix_collect(ws)
+        self._fix_bump(ws)
+        text = (ws / "scripts" / "bump.sh").read_text(encoding="utf-8")
+        text = text.replace(self.JQ_FIXED_LINE, self.JQ_LINE)
+        (ws / "scripts" / "bump.sh").write_text(text, encoding="utf-8")
+        self._bump_with_jq_guard(
+            ws, 'command -v jq >/dev/null || sudo apt-get install -y jq', guard_before=True)
+        self._fix_publish(ws)
+        by_id = self._run(ws)
+        for check_id in ("jq-guaranteed-or-replaced", "version-read-does-not-depend-on-unguarded-jq"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_jq_guard_install_wrong_order_after_usage_is_left_to_the_judge(self):
+        # The lexical check cannot see order, so this passes lexically either
+        # way — order correctness is the judge's call, not asserted here.
+        ws = self._ws()
+        self._fix_collect(ws)
+        self._fix_bump(ws)
+        text = (ws / "scripts" / "bump.sh").read_text(encoding="utf-8")
+        text = text.replace(self.JQ_FIXED_LINE, self.JQ_LINE)
+        (ws / "scripts" / "bump.sh").write_text(text, encoding="utf-8")
+        self._bump_with_jq_guard(
+            ws, 'command -v jq >/dev/null || sudo apt-get install -y jq', guard_before=False)
+        self._fix_publish(ws)
+        by_id = self._run(ws)
+        for check_id in ("jq-guaranteed-or-replaced", "version-read-does-not-depend-on-unguarded-jq"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_jq_skill_guard_and_exit_form_passes(self):
+        # SKILL.md item 6's own remedy: guard-and-exit, no install marker at
+        # all. The old check flagged this as an unguarded usage since it has
+        # no install/uses: marker; it must pass.
+        ws = self._ws()
+        self._fix_collect(ws)
+        self._fix_bump(ws)
+        text = (ws / "scripts" / "bump.sh").read_text(encoding="utf-8")
+        text = text.replace(self.JQ_FIXED_LINE, self.JQ_LINE)
+        (ws / "scripts" / "bump.sh").write_text(text, encoding="utf-8")
+        self._bump_with_jq_guard(
+            ws, 'command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }',
+            guard_before=True)
+        self._fix_publish(ws)
+        by_id = self._run(ws)
+        for check_id in ("jq-guaranteed-or-replaced", "version-read-does-not-depend-on-unguarded-jq"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
 
     # -- B5: every must_not_match must ignore comment text. --
 
@@ -1424,6 +1494,339 @@ class TestIssue74(unittest.TestCase):
         self.assertEqual(returncode, 1)
         by_id = {c["id"]: c for c in payload["checks"]}
         self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    # -- Round-2 review item 1: gh-api-failure-not-swallowed lost its
+    # must_match in the round-1 fix commit, so three dodges passed: masking
+    # the failure with `|| echo ""` instead of `|| true`, wrapping the call
+    # in `set +e` / `set -e` to disable errexit around it, and deleting the
+    # call outright. must_match now requires the call itself to survive, and
+    # the forbidden set covers `|| echo` and `set +e` too. --
+
+    def test_gh_api_or_echo_dodge_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\' || echo "")')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_gh_api_set_plus_e_wrapper_dodge_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'set +e\n'
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\')\n'
+            'set -e')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_gh_api_deleted_outright_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(self.GH_API_FIXED_BLOCK, 'out=""')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_gh_api_unrelated_or_out_empty_elsewhere_still_passes(self):
+        # Proves the widened forbidden patterns stay anchored to the gh api
+        # line itself: an unrelated `|| out=""` fallback for a different
+        # command, coincidentally reusing the name "out", must not trip it.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text += '\nfallback=$(echo unrelated) || out=""\n'
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    # -- Round-2 review item 3: process-substitution-error-propagates evaded
+    # detection two ways: a space after `<(` dodged the must_not_match regex
+    # while the pipe-free line satisfied a must_match alternative, and
+    # deleting the call while leaving a comment mentioning "gh run watch"
+    # also satisfied that same alternative. --
+
+    def test_process_substitution_space_after_paren_still_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'mapfile -t WATCH_LOG < <( gh run watch "$RUN_ID")')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["process-substitution-error-propagates"]["passed"])
+
+    def test_process_substitution_removed_call_with_comment_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            '# removed the gh run watch call\n'
+            'WATCH_LOG=()')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["process-substitution-error-propagates"]["passed"])
+
+    # -- Round-2 review item 4 (round-1 B2, still PARTIAL): must_not_match
+    # was only anchored on the side before the anchor token, so a TRAILING
+    # comment on an already-fixed live line ("out=$(gh api ...)  # dropped
+    # the || true: ...") still tripped it, since [^\n]* between the token and
+    # the forbidden text could cross into the comment. Both sides are now
+    # [^#\n]*, so the match can't reach past a live line's own `#`. --
+
+    def test_trailing_comment_on_fixed_gh_run_watch_line_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n',
+            'watch_output=$(gh run watch "$RUN_ID")  '
+            '# dropped the pipe: subshell errors were invisible to set -e\n')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    def test_trailing_comment_on_fixed_gh_api_line_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\')'
+            '  # dropped the || true: a failed call must abort')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    def test_trailing_comment_on_fixed_git_commit_line_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'git commit -m "chore: bump version to ${NEXT_VERSION}"',
+            'git commit -m "chore: bump version to ${NEXT_VERSION}"'
+            '  # dropped the || true: a failed commit must abort')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["git-identity-configured"]["passed"],
+                        by_id["git-identity-configured"]["detail"])
+
+    def test_fixture_header_states_both_sided_comment_anchoring(self):
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        self.assertNotIn("is anchored to a\n# non-comment prefix", text)
+        self.assertIn("pre-comment portion of the line", text)
+
+    # -- Round-2 review item 6: grep-q-avoids-broken-pipe pinned one exact
+    # spelling of the fix. Any pipe-free consumption of $build_log is
+    # accepted: a here-string (braced or not), a [[ ... ]] glob test, a case
+    # statement, or grep against a file it was written to. This finding is
+    # off-skill (mined from the incident record, not SKILL.md), recorded in
+    # the fixture header and excluded from the rubric's Correctness cap. --
+
+    def test_grep_q_braced_here_string_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            'grep -q "Successfully published" <<< "${build_log}"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["grep-q-avoids-broken-pipe"]["passed"],
+                        by_id["grep-q-avoids-broken-pipe"]["detail"])
+
+    def test_grep_q_bracket_glob_test_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            '[[ "$build_log" == *"Successfully published"* ]]')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["grep-q-avoids-broken-pipe"]["passed"],
+                        by_id["grep-q-avoids-broken-pipe"]["detail"])
+
+    def test_grep_q_case_statement_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            'case "$build_log" in\n'
+            '    *"Successfully published"*) ;;\n'
+            '    *) exit 1 ;;\n'
+            'esac')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["grep-q-avoids-broken-pipe"]["passed"],
+                        by_id["grep-q-avoids-broken-pipe"]["detail"])
+
+    def test_grep_q_file_argument_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            'log_file="/tmp/build-log.$$"\n'
+            'printf \'%s\\n\' "$build_log" > "$log_file"\n'
+            'grep -q "Successfully published" "$log_file"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["grep-q-avoids-broken-pipe"]["passed"],
+                        by_id["grep-q-avoids-broken-pipe"]["detail"])
+
+    def test_grep_q_leftover_piped_line_not_removed_fails(self):
+        # A correct fix added alongside the original buggy line, which was
+        # never deleted — must still fail (must_not_match is what catches
+        # it; must_match alone would be satisfied by the added correct line).
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            'echo "$build_log" | grep -q "Successfully published"\n'
+            'grep -q "Successfully published" <<< "$build_log"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["grep-q-avoids-broken-pipe"]["passed"])
+
+    def test_grep_q_check_deleted_entirely_fails(self):
+        # The build_log check is removed rather than fixed; must_not_match
+        # alone would pass this vacuously (no piped form left) — must_match
+        # is what catches the missing verification.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace('grep -q "Successfully published" <<< "$build_log"\n', '')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["grep-q-avoids-broken-pipe"]["passed"])
+
+    def test_grep_q_finding_documented_as_off_skill_in_fixture_header(self):
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        self.assertIn("off-skill", text.lower())
+        self.assertIn("#74", text)
+
+    def test_rubric_does_not_cap_correctness_on_the_off_skill_finding(self):
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        rubric = fixture["judge_rubric"]
+        self.assertIn("off-skill", rubric.lower())
+        self.assertIn("does not cap", rubric.lower())
+
+    # -- Round-2 review item 7 (round-1 S5, still PARTIAL): seven
+    # single-pattern fixture mutations left the suite green. Several are
+    # proven by tests already above (item 1's deleted-call test, item 3's
+    # two tests, the rewritten commit-suppression test); the two below round
+    # out decoy-2's must_match and are also exercised by the yaml_parses
+    # test in the next section. See the final report for the mutation
+    # proof runs (temporarily dropping each pattern and re-running these). --
+
+    def test_decoy_2_typo_missing_errexit_fails(self):
+        # "set -uo pipefail" (missing the "e") isn't a bare "set -e", so the
+        # must_not_match half is silent — only decoy-2's must_match
+        # (^set -euo pipefail$) catches the corrupted line.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("set -euo pipefail\n", "set -uo pipefail\n")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["decoy-existing-set-e-untouched"]["passed"])
+
+    # -- Round-2 review item 10 (and item 7 mutation 6): yaml_parses had no
+    # teeth in the suite — nothing exercised it against genuinely broken
+    # YAML, so pointing its glob at a non-matching pattern stayed invisible.
+
+    def test_workflow_yaml_parses_catches_broken_yaml(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / ".github" / "workflows" / "release.yml"
+        text = path.read_text(encoding="utf-8")
+        text += "\n  broken: [unterminated\n"
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["workflow-yaml-parses"]["passed"])
+
+    # -- Round-2 review item 8 (nit): the `git -c user.name=... -c
+    # user.email=... -c commit.gpgsign=false commit ...` one-shot idiom, and
+    # `git commit --no-gpg-sign`, are both legitimate and must pass. --
+
+    def _fix_bump_with_git_dash_c(self, ws: Path) -> None:
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(self.JQ_LINE, self.JQ_FIXED_LINE)
+        text = text.replace(
+            'git commit -m "chore: bump version to ${NEXT_VERSION}"',
+            'git -c user.name="release-bot" -c user.email="release-bot@example.com" '
+            '-c commit.gpgsign=false commit -m "chore: bump version to ${NEXT_VERSION}"')
+        path.write_text(text, encoding="utf-8")
+
+    def test_git_dash_c_idiom_satisfies_identity_and_signing_checks(self):
+        ws = self._ws()
+        self._fix_publish(ws)
+        self._fix_collect(ws)
+        self._fix_bump_with_git_dash_c(ws)
+        by_id = self._run(ws)
+        for check_id in ("git-identity-configured", "commit-signing-safe-for-ci"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_no_gpg_sign_flag_satisfies_signing_check(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'git commit -m "chore: bump version to ${NEXT_VERSION}"',
+            'git commit --no-gpg-sign -m "chore: bump version to ${NEXT_VERSION}"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["commit-signing-safe-for-ci"]["passed"],
+                        by_id["commit-signing-safe-for-ci"]["detail"])
+
+    # -- Round-2 review item 9 (nit): VERSION\s*=.*package\.json was
+    # case-sensitive; a lowercase `version=` assignment must still count. --
+
+    def test_lowercase_version_assignment_satisfies_version_read_check(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(self.JQ_FIXED_LINE, self.JQ_FIXED_LINE.replace("VERSION=", "version="))
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["version-read-does-not-depend-on-unguarded-jq"]["passed"],
+                        by_id["version-read-does-not-depend-on-unguarded-jq"]["detail"])
 
     # -- S4: the seed reads in-world, with no mention of the eval. --
 

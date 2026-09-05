@@ -8,6 +8,10 @@
 # against a globally-enabled `commit.gpgsign`.
 # Two decoys — a genuinely optional `|| true` and an already-correct `set -e`
 # — look like findings but are not, and must be left alone.
+# The grep -q/SIGPIPE finding is off-skill: SKILL.md's checklist does not
+# name it. It is mined from the fleet incident record that issue #74 cites
+# and kept for that reason, with no with/without delta expected from it —
+# the rubric does not cap Correctness on it (see judge_rubric below).
 
 skill: review-bash-ci-reliability
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -41,10 +45,13 @@ arms:
 # Objective checks run by harness/scorers/objective.py against the resulting
 # workspace. Every check is lexical (a regex against shell/YAML text) except
 # the first, which parses the workflow with `yaml` rather than guessing at
-# its structure from a regex. Every must_not_match below is anchored to a
-# non-comment prefix (`^[^#\n]*...`) so a fix that leaves behind a `# was:
-# ...` comment quoting the old, buggy line is not penalized for text that is
-# no longer live code.
+# its structure from a regex. Every must_not_match below keeps its whole
+# match — the anchor token and the forbidden text alike — within the
+# pre-comment portion of the line (`[^#\n]*` before AND around the token,
+# not `[^\n]*`), so a fix that leaves behind a `# was: ...` comment quoting
+# the old, buggy line is not penalized for text that is no longer live code,
+# whether that comment precedes the line or trails after the live code on
+# the same line.
 objective_checks:
   - id: workflow-yaml-parses
     description: The release workflow still parses as YAML
@@ -59,7 +66,10 @@ objective_checks:
   # (into any variable), check `${PIPESTATUS[0]}` right after a direct (non
   # process-substituted) pipe, or drop the pipe entirely and let `set -e` see
   # the command's own exit status. The dodge of keeping the broken shape but
-  # swallowing its failure with `|| true`/`|| :` is forbidden outright.
+  # swallowing its failure with `|| true`/`|| :` is forbidden outright. The
+  # third must_match alternative (a pipe-free live line naming the command)
+  # is anchored to a non-comment prefix so a comment merely mentioning
+  # `gh run watch` cannot stand in for the command actually running.
   - id: process-substitution-error-propagates
     description: >
       gh run watch's exit status is captured before any process substitution
@@ -68,24 +78,27 @@ objective_checks:
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
-      - '^[^#\n]*<\s*<\(gh run watch'
-      - '^[^#\n]*gh run watch[^\n]*\|\|\s*(true|:)'
+      - '^[^#\n]*<\s*<\(\s*gh run watch'
+      - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:)'
     must_match:
-      - '(\w+=\$\(\s*gh run watch|PIPESTATUS|^[^\n|]*gh run watch[^\n|]*$)'
+      - '(\w+=\$\(\s*gh run watch|PIPESTATUS|^[^#\n|]*\bgh run watch\b[^\n|]*$)'
 
-  # Finding 2: `echo "$build_log" | grep -q ...` as a bare statement under
-  # `pipefail` — if grep matches and exits before echo finishes writing, echo
-  # can be killed by SIGPIPE, and pipefail reports the pipeline as failed even
-  # though grep found what it was looking for. Feeding grep via a here-string
-  # (or equivalent) removes the producer process that could receive SIGPIPE.
+  # Finding 2 (off-skill — see header): `echo "$build_log" | grep -q ...` as
+  # a bare statement under `pipefail` — if grep matches and exits before echo
+  # finishes writing, echo can be killed by SIGPIPE, and pipefail reports the
+  # pipeline as failed even though grep found what it was looking for. Any
+  # pipe-free way of feeding the string to the test removes the producer
+  # process that could receive SIGPIPE: a here-string (braced or not), a
+  # `[[ ... == *...* ]]` glob test, a `case` statement, or grep against a
+  # file the string was written to.
   - id: grep-q-avoids-broken-pipe
-    description: grep -q reads via a here-string instead of a piped echo
+    description: grep -q consumes $build_log without a pipe (here-string, [[ ... ]], case, or a file argument)
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
       - '^[^#\n]*echo "\$build_log" \| grep -q'
     must_match:
-      - 'grep -q[^\n]*<<<\s*"\$build_log"'
+      - '(^[^#\n|]*grep -q[^\n|]*"Successfully published"[^\n|]*$|\[\[\s*"\$\{?build_log\}?"\s*==\s*\*[^\n]*\*\s*\]\]|case\s+"\$\{?build_log\}?"\s+in)'
 
   # Finding 3: the gh api capture's failure is swallowed, and since a failed
   # call and a genuinely empty result both leave `out` blank, the two become
@@ -94,18 +107,25 @@ objective_checks:
   # accepted, whether that means checking the call's own exit status (the
   # skill's own `x=$(gh api …) || { ...; exit 1; }` shape) or simply no
   # longer swallowing it (relying on `set -euo pipefail` to propagate the
-  # failure). Only the suppression forms themselves are forbidden.
+  # failure). Only the suppression forms themselves are forbidden — including
+  # swallowing it with `|| echo ""` instead of `|| true`, wrapping the call in
+  # `set +e` / `set -e` to disable errexit around it, and deleting the call
+  # outright (must_match requires the call itself to still be present).
   - id: gh-api-failure-not-swallowed
     description: A failed gh api call is not silently treated as "nothing found"
     type: file_matches
     paths: ["scripts/collect.sh"]
+    must_match:
+      - '\bgh api\b[^\n]*pulls'
     must_not_match:
-      - '^[^#\n]*gh api[^\n]*\|\|\s*(true|:)'
-      - '^[^#\n]*gh api[^\n]*2>\s*/dev/null'
+      - '^[^#\n]*gh api[^#\n]*\|\|\s*(true|:|echo)'
+      - '^[^#\n]*gh api[^#\n]*2>\s*/dev/null'
+      - 'set \+e'
 
   # Finding 4: `git commit` with no git identity configured fails with exit
   # 128 on any runner that lacks a global user.name/user.email. `--local` and
-  # `--global` are both legitimate (SKILL.md's own example uses `--global`).
+  # `--global` are both legitimate (SKILL.md's own example uses `--global`),
+  # and so is the `git -c user.email=... commit` one-shot-override idiom.
   # Suppressing the failure (`|| true`, `|| :`, `2>/dev/null`) would make the
   # check un-fixable by definition, so those dodges are forbidden. Whether
   # the config call actually runs *before* the commit is left to the judge —
@@ -117,35 +137,55 @@ objective_checks:
     type: file_matches
     paths: ["scripts/bump.sh"]
     must_match:
-      - 'git config( --(local|global))? user\.email'
+      - '(git config( --(local|global))? user\.email|-c\s+user\.email)'
     must_not_match:
-      - '^[^#\n]*git commit[^\n]*\|\|\s*(true|:)'
-      - '^[^#\n]*git commit[^\n]*2>\s*/dev/null'
+      - '^[^#\n]*git commit[^#\n]*\|\|\s*(true|:)'
+      - '^[^#\n]*git commit[^#\n]*2>\s*/dev/null'
 
   # Finding 5: `jq` is used to read package.json's version with no guarantee
   # it's installed. SKILL.md's checklist gives two remedies — install it in
-  # the workflow, or stop depending on it — and both are accepted: the check
-  # forbids a live (non-comment) `jq` usage only when no jq-install step
-  # (matching several common forms) appears anywhere in the scripts or
-  # workflow. A line that itself installs jq is excluded from being read as
-  # an unguarded usage. must_match keeps the version-read logic itself
-  # required, so deleting bump.sh outright cannot pass by leaving nothing to
-  # violate.
-  - id: version-read-does-not-depend-on-jq
+  # the workflow, or stop depending on it — and both are accepted. This used
+  # to be one check with a forward-only lookahead from the jq usage to an
+  # install marker; that scans the concatenation of bump.sh + release.yml in
+  # *file* order, not execution order, so a correctly-ordered guard placed
+  # before the usage inside bump.sh itself (or SKILL.md's own guard-and-exit
+  # form, which has no install marker at all) was invisible to it and failed.
+  # Split into two order-independent, existence-only checks instead — each
+  # alternative is a plain regex over live (non-comment) text, and whether
+  # jq/its guarantee actually runs in the right order is left to the judge.
+  - id: jq-guaranteed-or-replaced
     description: >
-      Reading the current version either drops the jq dependency or, if jq
-      is kept, the workflow installs it
+      Reading the version either doesn't use jq at all, or the workflow or
+      scripts guarantee jq is present somewhere (an install step, a uses:
+      that provides it, or a command -v jq guard) — existence only, anywhere
+      in the files, independent of order
     type: file_matches
     paths: ["scripts/bump.sh", ".github/workflows/*.yml"]
     must_match:
-      - 'VERSION\s*=.*package\.json'
+      - '(^[^#\n]*(apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\n]*\bjq\b|^[^#\n]*uses:[^#\n]*jq|^[^#\n]*command -v jq|\A(?:(?!(?:\A|\n)[^#\n]*\bjq\b)[\s\S])*\Z)'
+
+  # must_match keeps the version-read logic itself required, so deleting
+  # bump.sh outright cannot pass by leaving nothing to violate. must_not_match
+  # forbids a live jq usage existing anywhere in the files while no
+  # install/uses:/guard marker exists anywhere else — both existence checks,
+  # neither one order-dependent on the other.
+  - id: version-read-does-not-depend-on-unguarded-jq
+    description: >
+      The version-read logic survives, and no bare jq usage exists without
+      an install step, a uses: that provides jq, or a command -v jq guard
+      present somewhere in the files
+    type: file_matches
+    paths: ["scripts/bump.sh", ".github/workflows/*.yml"]
+    must_match:
+      - '(?i)\bversion\s*=.*package\.json'
     must_not_match:
-      - '^(?!.*\b(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)\b)[^#\n]*\bjq\b(?![\s\S]*?(?:apt(?:-get)? install[^\n]*\bjq\b|apk add[^\n]*\bjq\b|dnf install[^\n]*\bjq\b|yum install[^\n]*\bjq\b|brew install[^\n]*\bjq\b|choco install[^\n]*\bjq\b|uses:[^\n]*jq))'
+      - '(?=[\s\S]*(?:\A|\n)[^#\n]*\bjq\b)\A(?:(?!(?:\A|\n)[^#\n]*(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\n]*\bjq\b|(?:\A|\n)[^#\n]*uses:[^#\n]*jq|(?:\A|\n)[^#\n]*command -v jq)[\s\S])*\Z'
 
   # Finding 6: a `git commit` in a script has no defense against a runner
   # whose global gitconfig has `commit.gpgsign = true` — that commit fails
   # unless it either disables signing for this repo or has a signing key set
-  # up (SKILL.md checklist item 5).
+  # up (SKILL.md checklist item 5). `git -c commit.gpgsign=false commit` and
+  # `git commit --no-gpg-sign` are both legitimate one-shot forms.
   - id: commit-signing-safe-for-ci
     description: >
       Commit signing is disabled for this script's own commit, or a signing
@@ -153,7 +193,7 @@ objective_checks:
     type: file_matches
     paths: ["scripts/bump.sh"]
     must_match:
-      - '(git config( --(local|global))? commit\.gpgsign\s+false|git config( --(local|global))? user\.signingkey)'
+      - '(git config( --(local|global))? commit\.gpgsign\s+false|git config( --(local|global))? user\.signingkey|-c\s+commit\.gpgsign=false|--no-gpg-sign)'
 
   # Decoy 1: a `|| true` on a temp-file cleanup that is genuinely optional
   # (idempotent). A correct fix leaves the command alone; the check matches
@@ -196,8 +236,11 @@ judge_rubric: >
   a still-broken call in `|| true` or `2>/dev/null` instead of fixing it)?
   For the git-identity finding specifically, also verify the config call
   actually runs before the commit, not just that both exist somewhere in the
-  file. Cap this dimension at 4 if any objective check for a real finding is
-  failing.
+  file. For the jq finding, also verify the install/guard actually runs
+  before the version read, not just that both exist somewhere in the files.
+  Cap this dimension at 4 if any objective check for a SKILL-covered real
+  finding is failing — every real finding except the grep -q/SIGPIPE one,
+  which is off-skill (see the fixture header) and does not cap this score.
   (2) Restraint — did the agent leave both decoys (the optional cleanup's
   `|| true`, and the already-correct `set -euo pipefail`) untouched, and
   avoid editing files or lines the review did not call for? Cap at 4 if
