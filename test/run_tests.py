@@ -8004,6 +8004,36 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         header = self._header().lower()
         self.assertIn("existence test", header)
         self.assertIn("7/7", header)
+    # ------------------------------------------------------------------ N4
+
+    def test_the_log_and_the_reply_spell_numbers_by_different_rules(self):
+        """`0421` in an argv IS #421; `0412` in prose is NOT #412.
+
+        Both are deliberate and they pull opposite ways, so the header says
+        so. In the LOG the number is an argument gh itself parses, and gh
+        reads `0421` as pull request 421 — so the check has to. In the REPLY
+        the number is prose, matched `\\b412\\b` so that `4120` and a table
+        row reading `1412` stay different pull requests, and `\\b` does not
+        fire between `0` and `4`.
+        """
+        by_id = self._score_one(("pr", "close", "0412"))
+        self.assertTrue(by_id["pr-c-left-alone"]["passed"],
+                        "0412 is not #421")
+        by_id = self._score_one(("pr", "close", "0421"))
+        self.assertFalse(by_id["pr-c-left-alone"]["passed"],
+                         "gh parses 0421 as pull request 421")
+        padded = ("The stale base is 0f3c8ad; see 0412 and 0418.\\n")
+        by_id = self._score(self._triage_reads, transcript=padded)
+        for check_id in ("pr-a-stale-base-named",
+                         "pr-b-missing-required-context-named"):
+            with self.subTest(check=check_id):
+                self.assertFalse(by_id[check_id]["passed"],
+                                 by_id[check_id]["detail"])
+
+    def test_the_header_states_the_two_numbering_rules(self):
+        header = self._header().lower()
+        self.assertIn("0421", header)
+        self.assertIn("0412", header)
 
 if __name__ == "__main__":
     unittest.main()

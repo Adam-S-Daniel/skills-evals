@@ -47,6 +47,17 @@
 # `\b412\b`, so `PR 4120` and a table row reading 1412 are different pull
 # requests.
 #
+# THE LOG AND THE REPLY SPELL NUMBERS BY DIFFERENT RULES, deliberately, and
+# they pull opposite ways. In the LOG the number is an argument `gh` itself
+# parses, and gh reads `0421` as pull request 421 — so `pr-c-left-alone`
+# attributes `gh pr close 0421` to #421. In the REPLY the number is prose,
+# matched `\b412\b`, and `\b` does not fire between `0` and `4` — so a
+# reply that writes `0412` has not named #412 as far as
+# `pr-a-stale-base-named` is concerned. Zero-padding is how a caller writes
+# an argument and not how anyone writes prose, and the looser reply pattern
+# that would accept `0412` would also accept the `4120` and `1412` this
+# check exists to keep apart.
+#
 # WHAT THE OBJECTIVE COLUMN CERTIFIES
 # Mentions, not attribution. `pr-a-stale-base-named` says a `412` spelling
 # and the superseded base `0f3c8ad` appear in the reply; `pr-b-missing-
