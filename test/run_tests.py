@@ -8034,6 +8034,51 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         header = self._header().lower()
         self.assertIn("0421", header)
         self.assertIn("0412", header)
+    # ------------------------------------------------------------------ N5
+
+    # Every Bourne-family shell on this machine. A shell that is not
+    # installed is skipped; at least one must be.
+    SHELLS = ("sh", "dash", "bash", "ksh", "zsh")
+
+    def test_feeding_the_binary_to_a_shell_records_nothing(self):
+        """`sh bin/gh pr close 421` must not make it invoke ITSELF.
+
+        A shell handed this file runs it line by line, and a docstring line
+        is not a comment to a shell. Backticks in the module docstring were
+        command substitutions: measured under bash, `sh bin/gh pr close 421`
+        wrote FOUR records — three bare reads and one
+        `class=write key=- exit=1` from the `gh api -X POST` inside the
+        prose — none of which the caller ran. Whatever the shell prints, the
+        log must be exactly as it was.
+        """
+        ran = 0
+        for shell in self.SHELLS:
+            if shutil.which(shell) is None:
+                continue
+            ran += 1
+            with self.subTest(shell=shell):
+                ws = self._ws()
+                self._invoke(ws, [ws / "bin" / "gh", "run", "view",
+                                  self.RUN_ID, "--log"])
+                before = self._log(ws)
+                # stdin closed and a timeout: a shell handed a Python file
+                # can end up reading stdin (this one's own `-` handling
+                # among the reasons), and a hung shell is not a verdict.
+                subprocess.run([shell, "bin/gh", "pr", "close", "421"],
+                               cwd=str(ws), stdin=subprocess.DEVNULL,
+                               capture_output=True, text=True, timeout=30,
+                               env=self._arm_env(ws))
+                self.assertEqual(self._log(ws), before,
+                                 f"{shell} made it record something")
+        self.assertGreater(ran, 0, "no Bourne-family shell to test with")
+
+    def test_the_module_docstring_carries_no_shell_active_sequence(self):
+        """The rule, not just the one instance of it that was measured."""
+        text = self.FAKE_GH.read_text(encoding="utf-8")
+        docstring = text.split('"""', 2)[1]
+        for sequence in ("`", "$(", "${"):
+            with self.subTest(sequence=sequence):
+                self.assertNotIn(sequence, docstring)
 
 if __name__ == "__main__":
     unittest.main()

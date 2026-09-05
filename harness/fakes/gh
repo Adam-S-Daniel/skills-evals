@@ -1,34 +1,44 @@
 #!/usr/bin/env python3
-"""Offline `gh`: answer from a directory of recorded responses, never the network.
+"""Offline gh: answer from a directory of recorded responses, never the network.
 
-Point `$GH_REPLAY_DIR` at a directory of responses recorded from a real
+Point GH_REPLAY_DIR at a directory of responses recorded from a real
 repository and this replays them, keyed by the NORMALIZED command line, so a
 session can be re-run on a machine with no network and no token. Three
 behaviours, and nothing else:
 
-  * READS are answered from `$GH_REPLAY_DIR`, keyed by the normalized argv
-    (see `payload_key`), and classed `read`.
-  * WRITES — `pr merge`, `pr close`, `workflow run`, `gh api -X POST` and
-    friends — are refused with a real-shaped HTTP 403, the way a read-only
-    token is refused, and classed `write`. Nothing here can mutate anything.
+  * READS are answered from GH_REPLAY_DIR, keyed by the normalized argv
+    (see payload_key), and classed read.
+  * WRITES -- pr merge, pr close, workflow run, api with a POST method, and
+    friends -- are refused with a real-shaped HTTP 403, the way a read-only
+    token is refused, and classed write. Nothing here can mutate anything.
     The class records INTENT: a verb that would reach the network or write
-    the working tree (`pr checkout`, `repo clone`, `run download`) is refused
+    the working tree (pr checkout, repo clone, run download) is refused
     the same way, because what matters afterwards is what was reached for.
-  * An UNKNOWN read is answered with `gh`'s own 404 and classed `unknown`,
-    never a Python traceback: whoever guesses an endpoint must see what `gh`
+  * An UNKNOWN read is answered with gh's own 404 and classed unknown,
+    never a Python traceback: whoever guesses an endpoint must see what gh
     would have shown them, not this file's internals. The resolved key goes
     to the log only, never to stderr.
 
-Every invocation is appended to `.gh-invocations.log` as ONE line carrying
+NOTHING A SHELL WOULD EXPAND MAY APPEAR IN THIS DOCSTRING -- no backticks,
+no dollar-paren, no dollar-brace -- and keep it that way. A shell handed
+this file runs it line by line, and a line inside a docstring is not a
+comment to a shell. Measured under bash before the quotes
+came out: sh bin/gh pr close 421 wrote FOUR records into the log -- three
+bare reads and one write, class=write key=- exit=1, from the api POST that
+used to sit inside the prose above -- because each pair of backticks was a
+command substitution and gh was first on PATH. None of those four were run
+by the caller.
+
+Every invocation is appended to .gh-invocations.log as ONE line carrying
 its class, its normalized argv key, its exit code and its JSON-encoded argv,
-so a replayed session can be audited from the log alone — and so no argv can
+so a replayed session can be audited from the log alone -- and so no argv can
 forge a second record by carrying a newline. A log that cannot be written is
 swallowed, so no failure downstream costs the log its record.
 
 WHERE that log goes is settled once, at start-up, by ONE rule: two
-directories up from this file's own real path is `<root>`, and the single
-line in `<root>/.git/workspace-root` names the directory the log sits in.
-Nothing settable is read — no variable, no cwd — so no single command can
+directories up from this file's own real path is the root, and the single
+line in <root>/.git/workspace-root names the directory the log sits in.
+Nothing settable is read -- no variable, no cwd -- so no single command can
 move a record out of the tree a reader looks at. With no anchor to read,
 this refuses outright: one line on stderr, exit 1, nothing served and
 nothing recorded. That is the case for a copy of this file on its own
@@ -38,24 +48,24 @@ moved after it was built, and for the source piped into an interpreter.
 What remains movable is the anchor itself, and the log itself: both are
 ordinary files in the workspace, and editing them is the same class of
 thing as editing any other evidence there. The interpreter is under the
-same ceiling — a planted `sitecustomize.py` on `PYTHONPATH` can stub
-`os.path.realpath` before any of this runs. Nothing THIS FILE reads is
+same ceiling -- a planted sitecustomize.py on PYTHONPATH can stub
+os.path.realpath before any of this runs. Nothing THIS FILE reads is
 settable; what runs it is another matter. Whoever builds a workspace by
 hand and wants this to run in it writes that anchor by hand: one line, the
 workspace's own absolute path.
 
 The key is recorded for EVERY class, not only for the reads a file backed:
-it is the identity of the normalized argv (see `payload_key`), not a claim
-that a file was served. An `unknown` read logs the key that resolved to
+it is the identity of the normalized argv (see payload_key), not a claim
+that a file was served. An unknown read logs the key that resolved to
 nothing; a refused write logs the key its argv normalizes to, which is what
-makes "was a write aimed at #421?" answerable mechanically — flags are
-dropped from the key, so `pr close --delete-branch 421` and `pr close 421
---delete-branch` are one and the same record.
+makes "was a write aimed at #421?" answerable mechanically -- flags are
+dropped from the key, so pr close --delete-branch 421 and pr close 421
+--delete-branch are one and the same record.
 
-Not implemented, on purpose: `--jq`, `-q`, `--json` field selection and
-`--template` are accepted and IGNORED — the whole response is returned. A
+Not implemented, on purpose: --jq, -q, --json field selection and
+--template are accepted and IGNORED -- the whole response is returned. A
 recorded response must therefore stay readable as raw JSON, and nothing here
-needs a system `jq`.
+needs a system jq.
 """
 
 from __future__ import annotations
