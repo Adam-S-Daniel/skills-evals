@@ -71,16 +71,48 @@ objective_checks:
   # Nothing below carries a quote anchor of its own any more. Every check
   # here sets `strip_seed: true`, and objective.strip_seed_material does
   # the work once, for every pattern, on PROVENANCE rather than on markup,
-  # a SENTENCE at a time and after hard wrapping is undone: the seed is
-  # committed, so her sentences are hers in whatever shape they are pasted
-  # back — re-wrapped, joined onto one line, re-punctuated, run through a
-  # table, salted with invisibles — and every other sentence is the
-  # agent's writing however it chose to format it. What is left is
-  # unwrapped and unquoted, so a reply the agent handed back inside a `> `
-  # block — the shape every calibration example in SKILL.md has — is
-  # scored as the prose it is, and its bans fire. A reply that is nothing
-  # but her email has an empty residue and fails its must_match checks,
-  # which is the right answer for a reply that wrote nothing.
+  # a SENTENCE at a time and after hard wrapping is undone.
+  #
+  # THE RULE. A sentence is hers when its words are hers: when it is one of
+  # her sentences whole, when it is one long enough contiguous run of the
+  # seed's own text, or when at least 0.75 of its words lie inside runs of
+  # six or more consecutive words of hers (objective._SEED_COVERAGE_RUN and
+  # _SEED_COVERAGE, measured — see the constants). A sentence shorter than
+  # the 24-character floor is never taken by the coverage rule alone, which
+  # is what keeps the agent's own "Thanks," and its own sign-off its own.
+  #
+  # THE SHAPES THAT ARE COVERED are the ones test/run_tests.py::TestIssue81
+  # actually measures, and no more: the round-3 transcript and the round-4
+  # four-line quote verbatim; the seed flattened with " and " where every
+  # ". " was; the space after every full stop deleted; "She wrote: " in
+  # front of each of her sentences; two of her clauses joined by a
+  # connective of the agent's; a footnote definition, a Markdown link and
+  # an image carrying one of her sentences; a bulleted list of sub-floor
+  # fragments beside a long line of the agent's; and one mid-word invisible
+  # from each class the fold covers. Twenty-nine shapes over the three
+  # fixtures, every one of them failing cites-both-facts
+  # (test_every_paste_shape_fails_cites_both_facts), against sixteen
+  # genuine drafts and the three in-voice references at every wrap column
+  # from 38 to 100, every one of them ALL-PASS
+  # (test_every_genuine_draft_passes_every_check).
+  #
+  # THE CEILING, which is real and is not fixed. Below the coverage floor a
+  # sentence is the agent's BY RULE, so a paste diluted with enough of the
+  # agent's own words in the SAME sentence survives by design — that is the
+  # price of deciding authorship by the words rather than by the markup.
+  # And coverage is a test over words as they are spelled: a paste
+  # re-spelled in Cyrillic homoglyphs everywhere except the fact tokens is
+  # not the seed's words in any byte sense and passes all three rules,
+  # because NFKC maps compatibility forms and not confusables. That is the
+  # one shape provenance cannot see. The pairwise judge is the backstop for
+  # both, and it is not wired into run_eval until #97.
+  #
+  # What is left is unwrapped and unquoted, so a reply the agent handed
+  # back inside a `> ` block — the shape every calibration example in
+  # SKILL.md has — is scored as the prose it is, and its bans fire. A reply
+  # that is nothing but her email has an empty residue and fails its
+  # must_match checks, which is the right answer for a reply that wrote
+  # nothing.
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the reply
     type: transcript_matches
@@ -145,11 +177,15 @@ objective_checks:
       - '\A(?:[ \t]*\n)*(?:[^\n]*\n(?:[ \t]*\n)*){0,3}(?:[^\n]*?[.!?—,;:][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
 
   # Core move 3: be specific — paste the ID verbatim, name the date. Both
-  # facts are in the seed material; neither is asked for. Her own lines
-  # are stripped first: a reply that pastes her email back carries
-  # REQ-4417 in that paste, and a line the agent merely echoed is not the
-  # agent being specific. A SENTENCE the agent built around the ID is,
-  # and still counts — the sentence is not one of her lines.
+  # facts are in the seed material; neither is asked for. Her own material
+  # is stripped first, so what this check guarantees is narrower than "the
+  # agent was specific": a sentence whose words are hers by the rule above
+  # cannot supply either fact, however the paste was reshaped, and a
+  # sentence the agent built around the ID out of its own words can and
+  # does. Between the two sits the sentence the rule cannot call — one
+  # diluted below the coverage floor with the agent's own words — and that
+  # one still counts as the agent being specific. The check is a floor
+  # under echoing, not a proof of composition.
   - id: cites-both-facts
     description: The reply quotes the requisition number and the contract end date
     type: transcript_matches

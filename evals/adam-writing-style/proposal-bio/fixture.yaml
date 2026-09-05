@@ -25,14 +25,38 @@
 # Every check below sets `strip_seed: true`, so it reads the agent's final
 # reply with the SEED's own material removed (objective.strip_seed_material)
 # and everything else unwrapped and unquoted. Provenance decides that, not
-# markup, a SENTENCE at a time and after hard wrapping is undone: a
-# sentence that is the background note's is not the agent's writing in whatever
-# shape it is pasted back — re-wrapped, joined onto one line, re-punctuated, tabled,
-# salted with invisibles — and a paragraph the agent chose to present as a
-# blockquote or inside a fence is still the agent's writing and is scored
-# as prose. A sentence the agent COMPOSED out of the seed's phrases carries
-# a word order the seed does not have, so it is the agent's and stays. A
-# reply that is nothing but the quoted material has an empty residue, so
+# markup, a SENTENCE at a time and after hard wrapping is undone.
+#
+# THE RULE. A sentence is the background note's when its WORDS are: when it is one
+# of the seed's sentences whole, when it is one long enough contiguous run
+# of the seed's own text, or when at least 0.75 of its words lie inside
+# runs of six or more consecutive words of the seed's
+# (objective._SEED_COVERAGE_RUN and _SEED_COVERAGE, measured). A sentence
+# the agent COMPOSED out of the seed's phrases used to be the agent's on
+# the strength of a word order the seed does not have; it is not any more,
+# because re-ordering the seed's words is not writing. A sentence shorter
+# than the 24-character floor is never taken by the coverage rule alone. A
+# paragraph the agent chose to present as a blockquote or inside a fence is
+# still the agent's writing and is scored as prose.
+#
+# THE SHAPES COVERED are the twenty-nine the paste battery in
+# test/run_tests.py::TestIssue81 measures — the seed flattened with " and "
+# for every ". ", the space after every full stop deleted, "She wrote: "
+# prefixes, two clauses joined by the agent's connective, footnote, link
+# and image containers, sub-floor bullets beside a long line of the
+# agent's, and mid-word invisibles — each failing cites-both-facts, against
+# sixteen genuine drafts and the in-voice references at every wrap column
+# from 38 to 100, each ALL-PASS.
+#
+# THE CEILING. Below the coverage floor a sentence is the agent's BY RULE,
+# so a paste diluted with enough of the agent's own words in the same
+# sentence survives by design; and a paste re-spelled in Cyrillic
+# homoglyphs except for the fact tokens passes every rule, because NFKC
+# does not map confusables. The pairwise judge is the backstop for both,
+# and it is not wired into run_eval until #97. See
+# recruiter-reply/fixture.yaml, which carries this in full.
+#
+# A reply that is nothing but the quoted material has an empty residue, so
 # its must_match checks fail, which is the right answer for a reply that
 # wrote nothing.
 #

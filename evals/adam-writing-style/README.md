@@ -158,15 +158,30 @@ check failing a transcript that put it in a ```powershell fence. Only these
 three fixtures set `strip_seed`, and it has to be a real boolean — a
 `strip_seed: "no"` read by truthiness turned the pre-pass *on*.
 
-**What it does not do**, stated because all three limits are real:
+**What it does not do**, stated because every limit below is real and measured:
 
 - A fact the agent restates in **its own sentence** is its own writing and
   is scored, even though the fact is in the seed. "REQ-4417 is not going to
   work for me" counts; the recruiter's sentence carrying REQ-4417 does not.
-  That is the point, not a leak. By the same rule a sentence the agent
-  **composed** out of the seed's phrases — two seed runs joined by its own
-  connective, a seed clause inside its own sentence — carries a word order
-  the seed does not have and stays.
+  That is the point, not a leak. A sentence the agent **composed** out of
+  the seed's phrases used to count too — two seed runs joined by its own
+  connective carries a word order the seed does not have, and for four
+  rounds that made it the agent's. It does not any more: authorship is
+  decided by how MUCH of the sentence is the seed's (at least 0.75 of its
+  words inside runs of six or more consecutive seed words), not by whether
+  the seed's words arrived in one piece, because re-ordering someone
+  else's words is not writing.
+- **Below the coverage floor the sentence is the agent's by rule**, so a
+  paste diluted with enough of the agent's own words *in the same sentence*
+  survives by design. That is the price of deciding authorship by the words
+  rather than by the markup, and it is a floor under echoing rather than a
+  proof that the agent composed anything.
+- A paste **re-spelled in confusable characters** — Cyrillic homoglyphs
+  everywhere except the fact tokens — is not the seed's words in any byte
+  sense and passes all three rules. NFKC normalises compatibility forms,
+  not confusables. It is the one shape provenance cannot see. The pairwise
+  judge is the backstop for this and for the dilution above, and it is not
+  wired into `run_eval` until #97.
 - A sentence that reproduces the seed's own words **end to end** is the
   seed's even where the skill told the agent to write exactly that: core
   move 8's plain certifications listing has one natural phrasing, and the

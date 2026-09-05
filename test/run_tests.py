@@ -3078,6 +3078,100 @@ class TestIssue81(unittest.TestCase):
             encoding="utf-8").split())
         self.assertIn("That is the paragraph he asked for.", readme)
 
+    # S4 (round 5): three documents asserted properties measured false.
+    # The recruiter-reply header said her sentences were hers "in whatever
+    # shape they are pasted back", which four rounds of escapes disproved;
+    # the other two headers said a sentence COMPOSED out of the seed's
+    # phrases carries a word order the seed does not have "so it is the
+    # agent's and stays", which is the rule design decision 3 reversed;
+    # and the README's first limit said the same. Pinned here the way
+    # earlier rounds pinned headers, because a claim about what the scorer
+    # guarantees is the part of a fixture a reader trusts without running
+    # anything.
+
+    @staticmethod
+    def _flat_comment_text(path) -> str:
+        """A YAML header's comment prose, markers off and whitespace flat."""
+        return " ".join(" ".join(
+            line.lstrip().lstrip("#").strip()
+            for line in path.read_text(encoding="utf-8").splitlines()).split())
+
+    def test_the_headers_state_the_rule_the_scorer_applies(self):
+        flat = {name: self._flat_comment_text(
+            self.STYLE_DIR / name / "fixture.yaml") for name in self.FIXTURES}
+        # The claim that was false, gone from all three.
+        for name, text in flat.items():
+            with self.subTest(fixture=name, claim="in whatever shape"):
+                self.assertNotIn("in whatever shape", text)
+            with self.subTest(fixture=name, claim="composed ... and stays"):
+                self.assertNotIn("so it is the agent's and stays", text)
+        # The rule, with its two constants, in every header — the numbers
+        # spelled as the header spells them, so a change to either constant
+        # that leaves the prose behind fails here.
+        run = str(objective._SEED_COVERAGE_RUN)
+        floor = str(objective._SEED_COVERAGE)
+        self.assertEqual((run, floor), ("6", "0.75"),
+                         "the constants moved; the headers say six and 0.75")
+        for name, text in flat.items():
+            with self.subTest(fixture=name):
+                self.assertIn("at least 0.75 of its words lie inside runs of "
+                              "six or more consecutive words", text)
+                self.assertIn("_SEED_COVERAGE_RUN", text)
+                self.assertIn(str(objective._SEED_MATERIAL_FLOOR), text)
+        # The ceiling, in every header: dilution, homoglyphs, and the judge
+        # named as the backstop that is not wired yet.
+        for name, text in flat.items():
+            with self.subTest(fixture=name, part="ceiling"):
+                self.assertIn("homoglyph", text.lower())
+                self.assertIn("NFKC", text)
+                self.assertIn("diluted with enough of the agent's own words",
+                              text)
+                self.assertIn("#97", text)
+
+    def test_the_recruiter_header_names_the_shapes_it_covers(self):
+        # The operative words: the header claims coverage of the shapes the
+        # battery measures and no others, and it names the two batteries by
+        # the tests that run them.
+        flat = self._flat_comment_text(
+            self.STYLE_DIR / "recruiter-reply" / "fixture.yaml")
+        for phrase in (
+                "the round-3 transcript and the round-4 four-line quote "
+                "verbatim",
+                "Twenty-nine shapes over the three fixtures",
+                "test_every_paste_shape_fails_cites_both_facts",
+                "test_every_genuine_draft_passes_every_check",
+                "every wrap column from 38 to 100"):
+            with self.subTest(phrase=phrase[:40]):
+                self.assertIn(phrase, flat)
+        # And the number is the number: twenty-nine is what the battery has.
+        shapes = sum(len(self._paste_battery(name, self._seed_text(name)))
+                     for name in self.FIXTURES)
+        self.assertEqual(shapes, 29, "the header's count is out of date")
+        drafts = len(self._genuine_battery())
+        self.assertEqual(drafts, 16, "the header's count is out of date")
+        # cites-both-facts no longer claims to prove composition.
+        self.assertNotIn("a line the agent merely echoed is not the agent "
+                         "being specific", flat)
+        self.assertIn("The check is a floor under echoing, not a proof of "
+                      "composition.", flat)
+
+    def test_the_readme_states_the_same_limits(self):
+        readme = " ".join((self.STYLE_DIR / "README.md").read_text(
+            encoding="utf-8").split())
+        self.assertNotIn("carries a word order the seed does not have and "
+                         "stays", readme)
+        for phrase in (
+                "at least 0.75 of its words inside runs of six or more "
+                "consecutive seed words",
+                "re-ordering someone else's words is not writing",
+                "Below the coverage floor the sentence is the agent's by "
+                "rule",
+                "re-spelled in confusable characters",
+                "NFKC normalises compatibility forms, not confusables",
+                "not wired into `run_eval` until #97"):
+            with self.subTest(phrase=phrase[:40]):
+                self.assertIn(phrase, readme)
+
     def test_every_brief_asks_for_the_text_alone(self):
         # The mitigation for both directions above: nothing wrapped around
         # the writing, and nothing quoted back.
