@@ -19,12 +19,17 @@
 #
 # Every check below sets `strip_seed: true`, so it reads the agent's final
 # reply with the SEED's own material removed (objective.strip_seed_material)
-# and everything else unquoted. Provenance decides that, not markup: a line
-# that is notes.md's is not the agent's writing however it is pasted back,
-# and a paragraph the agent chose to present as a blockquote or inside a
-# fence is still the agent's writing and is scored as prose. A reply that
-# is nothing but the quoted notes has an empty residue, so its must_match
-# checks fail, which is the right answer for a reply that wrote nothing.
+# and everything else unwrapped and unquoted. Provenance decides that, not
+# markup, a SENTENCE at a time and after hard wrapping is undone: a
+# sentence that is notes.md's is not the agent's writing in whatever
+# shape it is pasted back — re-wrapped, joined onto one line, re-punctuated, tabled,
+# salted with invisibles — and a paragraph the agent chose to present as a
+# blockquote or inside a fence is still the agent's writing and is scored
+# as prose. A sentence the agent COMPOSED out of the seed's phrases carries
+# a word order the seed does not have, so it is the agent's and stays. A
+# reply that is nothing but the quoted material has an empty residue, so
+# its must_match checks fail, which is the right answer for a reply that
+# wrote nothing.
 #
 # Known failure mode — commentary. What the agent wraps around the
 # paragraph is the agent's writing, so it is scored as if it were the
@@ -107,6 +112,13 @@ objective_checks:
   # neither is asked for. The seed's own lines are stripped first — a note
   # the agent pasted back is not the agent being specific.
   #
+  # `deploy-scaffold` is hyphenated, and a hard wrap breaks a line at a
+  # hyphen as readily as at a space: at thirteen of the columns between 38
+  # and 100 the reference wraps to `deploy-` / `scaffold`, the unwrap
+  # rejoins it with the space every other join uses, and a pattern demanding
+  # the two halves be adjacent read the fact as absent. `\s*` on either side
+  # of the hyphen, the same allowance the two-word facts already carry.
+  #
   # The number pattern used to require "26" adjacent to "min", which misses
   # the natural phrasings: "from 26 to 9 minutes", "26-minute", "26 min".
   # It asks for the two in the same sentence, in EITHER order: as a
@@ -119,7 +131,7 @@ objective_checks:
     type: transcript_matches
     strip_seed: true
     must_match:
-      - '\bdeploy-scaffold\b'
+      - '\bdeploy\s*-\s*scaffold\b'
       - '(?:\b26\b[^.]{0,80}\bmin|\bmin\w*[^.]{0,80}\b26\b)'
 
 judge_rubric: >

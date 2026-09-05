@@ -21,6 +21,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import textwrap
 import unittest
 import yaml
 from pathlib import Path
@@ -4033,9 +4034,15 @@ class TestIssue81(unittest.TestCase):
 
     def test_a_wholly_quoted_draft_cannot_switch_the_avoid_list_off(self):
         # The blocker. A ban must not be switchable off by the thing being
-        # scored, so when stripping the quoted material leaves nothing at
-        # all the whole reply is scored — which is what the identical
-        # unquoted draft gets, asserted alongside so the two cannot drift.
+        # scored — and it is not, because a draft the agent WROTE is not
+        # seed material whatever it wrapped around it, so `> ` marks come
+        # off and the whole draft is still there when the bans run. There is
+        # no whole-reply fallback behind that and there must not be one: a
+        # reply that is nothing but the quoted SEED has an empty residue and
+        # fails its must_match checks, which is the right answer for a reply
+        # that wrote nothing (test_a_wholly_quoted_seed_cites_nothing). The
+        # identical unquoted draft is asserted alongside so the two cannot
+        # drift apart.
         for name, draft in sorted(self._WHOLLY_QUOTED.items()):
             with self.subTest(fixture=name, style="unquoted"):
                 self.assertFalse(
@@ -4097,6 +4104,349 @@ class TestIssue81(unittest.TestCase):
                     with self.subTest(fixture=name, pattern=pattern):
                         self.assertNotIn("(?!>)", pattern)
 
+
+
+
+    # ------------------------------------------------------------------
+    # wrapper comes off; everything else is the agent's text
+    # ------------------------------------------------------------------
+
+    # S1, measured: a line whose only content was a tag used to be deleted
+    # whole, attribute values included. Appending one of these to a genuine
+    # reply switched `no-avoid-list-words` off — a ban a draft can turn off
+    # by carrying it inside a tag is not a ban.
+    _TAG_LINES_THAT_ARE_TEXT = (
+        '<span title="we can leverage this and circle back">',
+        '<img alt="a robust synergy deep dive">',
+        "<!-- we can leverage this -->",
+        '<pre class="note">we should circle back on this</pre>',
+    )
+
+    def test_a_tag_carrying_words_is_the_agents_writing(self):
+        reply = self._reference("recruiter-reply", "in-voice").strip()
+        for line in self._TAG_LINES_THAT_ARE_TEXT:
+            with self.subTest(line=line):
+                by_id = self._score("recruiter-reply",
+                                    reply + "\n\n" + line + "\n")
+                self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
+
+    def test_a_bare_wrapper_tag_is_still_only_wrapper(self):
+        # The other direction, so the fix is not "keep every tag": a tag
+        # from the wrapper set carrying NO attributes is markup the agent
+        # wrapped around something, and it leaves nothing behind.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        for line in ("<blockquote>", "</details>", "<pre>", "<br/>",
+                     "<code>", "</blockquote>"):
+            with self.subTest(line=line):
+                self.assertEqual(
+                    objective.strip_seed_material(line + "\n", seed), "")
+
+    def test_a_tag_inside_a_line_does_not_shorten_it_onto_a_seed_line(self):
+        # The same bug from the other end: a general tag strip inside the
+        # normalisation let `I<...> was looking for platform engineers with`
+        # read as her line and be dropped whole, taking the agent's `I` and
+        # the banned words with it.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        line = "I<leverage synergy robust> was looking for platform engineers"
+        self.assertEqual(
+            objective.strip_seed_material(line + "\n", seed), line)
+
+    # S2, measured on four unmarked shapes: her signature line shortened to
+    # 20 characters by the tag strip, survived the paste, and satisfied
+    # `greets-the-recruiter-by-name` on the recruiter's own `From:` header.
+    def test_her_own_email_never_greets_her(self):
+        cold = (self.STYLE_DIR / "recruiter-reply" / "seed" / "inbox"
+                / "cold-email.md").read_text(encoding="utf-8")
+        shapes = {
+            "verbatim": cold,
+            "indented": "\n".join("    " + line if line.strip() else line
+                                   for line in cold.splitlines()),
+            "lazy continuation": "\n".join(
+                ("> " + line) if i == 0 else line
+                for i, line in enumerate(cold.splitlines())),
+            "unterminated fence": "```\n" + cold,
+        }
+        for shape, pasted in sorted(shapes.items()):
+            for label, transcript in (("alone", pasted),
+                                      ("with a filler",
+                                       pasted + "\n\n" + self._CONTENTLESS)):
+                with self.subTest(shape=shape, transcript=label):
+                    by_id = self._score("recruiter-reply", transcript)
+                    self.assertFalse(
+                        by_id["greets-the-recruiter-by-name"]["passed"],
+                        f"{shape} {label}: her own header greeted her")
+
+    # S3, measured: one to three spaces, a tab, `>` with two spaces after
+    # it, a list item, or a fence inside a list item each cost the committed
+    # reply `opens-with-a-hedge` — the marker regex allowed three columns of
+    # indent and the unwrap saw none of the rest.
+    _INDENTED_SHAPES = {
+        "one space": lambda t: "\n".join(" " + l if l.strip() else l
+                                          for l in t.splitlines()),
+        "two spaces": lambda t: "\n".join("  " + l if l.strip() else l
+                                           for l in t.splitlines()),
+        "three spaces": lambda t: "\n".join("   " + l if l.strip() else l
+                                             for l in t.splitlines()),
+        "a tab": lambda t: "\n".join("\t" + l if l.strip() else l
+                                      for l in t.splitlines()),
+        "quote plus two spaces": lambda t: "\n".join(
+            ">  " + l if l.strip() else ">" for l in t.splitlines()),
+        "inside a list item": lambda t: "- Draft:\n" + "\n".join(
+            "  " + l if l.strip() else l for l in t.splitlines()),
+        "an indented fence in a list item": lambda t: (
+            "- Draft:\n\n  ```\n"
+            + "\n".join("  " + l if l.strip() else l for l in t.splitlines())
+            + "\n  ```"),
+    }
+
+    def test_an_indented_deliverable_is_still_the_deliverable(self):
+        reply = self._reference("recruiter-reply", "in-voice").strip()
+        for shape, indent in sorted(self._INDENTED_SHAPES.items()):
+            with self.subTest(shape=shape):
+                self._assert_all_pass("recruiter-reply", indent(reply),
+                                      f"the in-voice reply, {shape}")
+
+    # ------------------------------------------------------------------
+    # the verdict on a genuine reply does not depend on its wrap column
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _rewrap(text: str, width: int) -> str:
+        """`text` with every paragraph re-wrapped at `width` columns."""
+        out = []
+        for paragraph in re.split(r"\n\s*\n", text.strip()):
+            flat = " ".join(line.strip() for line in paragraph.splitlines())
+            out.append("\n".join(textwrap.wrap(flat, width)))
+        return "\n\n".join(out) + "\n"
+
+    # Every column from the narrowest anyone wraps at to wider than any
+    # reference is written at. B2 measured the committed proposal-bio
+    # reference losing a line of ITS OWN at 38, 40, 42, 44, 46, 60 and 62,
+    # and a third-person bio in the seed's own phrasing failing
+    # `cites-both-facts` at 33 of these 63 columns while the identical text
+    # on one line passed every check.
+    WRAP_COLUMNS = range(38, 101)
+
+    def test_the_verdict_is_the_same_at_every_wrap_column(self):
+        for name in self.FIXTURES:
+            reference = self._reference(name, "in-voice")
+            verdicts = {}
+            for width in self.WRAP_COLUMNS:
+                by_id = self._score(name, self._rewrap(reference, width))
+                failed = tuple(sorted(check for check, r in by_id.items()
+                                      if not r["passed"]))
+                verdicts.setdefault(failed, []).append(width)
+            self.assertEqual(
+                list(verdicts), [()],
+                f"{name}: the in-voice reference's verdict depends on its "
+                f"wrap column: {verdicts}")
+
+    # A third-person bio in the register core move 8 asks for, phrased close
+    # enough to the background note that a 72-column wrap lands where the
+    # note's own line ends do. Two of ITS OWN lines used to be deleted for
+    # it — `deployment pipeline behind eleven state agency websites, and ran
+    # the` and the line under it — while the same text on one line kept
+    # everything.
+    _BIO_WRAPPED_LIKE_THE_SEED = (
+        "Adam Daniel leads the delivery-infrastructure group at a mid-size "
+        "civic technology consultancy. At Halyard Civic Data (2019–2024) he "
+        "rebuilt the deployment pipeline behind eleven state agency "
+        "websites, and ran the accessibility remediation program that took "
+        "all eleven to a clean Section 508 audit. Certifications: AWS "
+        "Solutions Architect – Professional, CISSP.")
+
+    def test_a_bio_wrapped_where_the_seed_wraps_keeps_its_own_words(self):
+        seed = str(self.STYLE_DIR / "proposal-bio" / "seed")
+        residues = set()
+        for width in self.WRAP_COLUMNS:
+            wrapped = "\n".join(
+                textwrap.wrap(self._BIO_WRAPPED_LIKE_THE_SEED, width)) + "\n"
+            with self.subTest(width=width):
+                self._assert_all_pass("proposal-bio", wrapped,
+                                      f"a third-person bio wrapped at {width}")
+                residue = objective.strip_seed_material(wrapped, seed)
+                # Every word of the sentence the agent COMPOSED survives —
+                # it is the agent's however close to the note it reads,
+                # because the note has no sentence with these words in this
+                # order.
+                self.assertIn("deployment pipeline behind eleven state "
+                              "agency websites", " ".join(residue.split()))
+                # Hyphen spacing folded: a wrap can fall at a hyphen, and
+                # the rejoin puts the space every other rejoin uses there.
+                # It changes no verdict — the provenance key drops the
+                # hyphen with the rest of the punctuation, and every
+                # fixture pattern that spans one allows `\s*` around it
+                # (self-appraisal-opening's `deploy\s*-\s*scaffold`).
+                residues.add(re.sub(r"\s*-\s*", "-",
+                                    " ".join(residue.split())))
+        self.assertEqual(len(residues), 1,
+                         f"the residue depends on the wrap column: {residues}")
+
+    def test_a_certifications_line_costs_the_bio_nothing(self):
+        # Core move 8 tells the writer to end on a plain certifications
+        # listing, and there is one way to write this one, so the sentence
+        # the skill asks for and the sentence the note carries are the same
+        # sentence. Provenance calls it the note's — the documented cost of
+        # deciding authorship by the words rather than the markup. What it
+        # must not do is cost the bio a check, and it does not: nothing any
+        # check looks for is only in a line the agent could have copied.
+        self._assert_all_pass("proposal-bio", self._BIO_BY_SURNAME_ONLY,
+                              "a plain certifications line at the end")
+        # And a certifications sentence the agent COMPOSED is its own
+        # writing, whole, in the residue.
+        seed = str(self.STYLE_DIR / "proposal-bio" / "seed")
+        composed = ("He holds the AWS Solutions Architect – Professional "
+                    "certification and the CISSP.")
+        self.assertIn(composed,
+                      objective.strip_seed_material(composed + "\n", seed))
+
+    # ------------------------------------------------------------------
+    # the unit of provenance is the SENTENCE, not the line
+    # ------------------------------------------------------------------
+    #
+    # B1, measured across three rounds: a line is not a unit of anything.
+    # The same words re-broken across different lines are a different set of
+    # lines, so a paste re-wrapped, re-selected onto one line, punctuated,
+    # run through a Markdown table or salted with invisibles walked past a
+    # per-line scan — and `_quote_seed` below could not catch any of it,
+    # because it builds every shape out of the seed's OWN `splitlines()`.
+    #
+    # These shapes are the opposite: they flatten the material first and
+    # re-break it somewhere else, so not one line of the paste is a line of
+    # the seed. They are computed from the committed seed at test time
+    # rather than pasted in as constants, so a seed that drifts is still
+    # measured against itself.
+
+    _INVISIBLES = ("\u2062", "\u034f", "\ufe0f", "\u180e")
+
+    REPASTE_SHAPES = ("re-wrapped-40", "re-wrapped-96", "joined-onto-one-line",
+                      "four-line-quote", "seven-line-quote",
+                      "punctuation-edited", "markdown-table",
+                      "invisible-perturbed")
+
+    @staticmethod
+    def _seed_sentences(text: str) -> list[str]:
+        """The seed's sentences, with its own line breaks folded out."""
+        flat = re.sub(r"\s+", " ", text)
+        return [part.strip()
+                for part in re.split(r"(?<=[.!?])\s+", flat) if part.strip()]
+
+    @classmethod
+    def _repaste(cls, text: str, shape: str) -> str:
+        """The seed's material, re-broken so no LINE of it is a seed line."""
+        sentences = cls._seed_sentences(text)
+        flat = " ".join(sentences)
+        if shape == "re-wrapped-40":
+            return "\n".join("> " + line for line in textwrap.wrap(flat, 40))
+        if shape == "re-wrapped-96":
+            return "\n".join(textwrap.wrap(flat, 96))
+        if shape == "joined-onto-one-line":
+            return flat
+        if shape in ("four-line-quote", "seven-line-quote"):
+            lines = 4 if shape.startswith("four") else 7
+            return "\n".join("> " + line for line in
+                              textwrap.wrap(flat, len(flat) // lines + 1))
+        if shape == "punctuation-edited":
+            # Every terminal mark swapped for a `!`, at a line break that
+            # falls nowhere near where a sentence ends: the sentence split
+            # lands mid-clause and every piece it makes is short.
+            return "\n".join(line.rstrip(".,;:") + "!"
+                              for line in textwrap.wrap(flat, 55))
+        if shape == "markdown-table":
+            return "\n".join(["| Detail |", "| --- |"]
+                              + ["| " + s + " |" for s in sentences])
+        if shape == "invisible-perturbed":
+            return "\n".join(
+                line[:4] + cls._INVISIBLES[i % len(cls._INVISIBLES)] + line[4:]
+                for i, line in enumerate(textwrap.wrap(flat, 62)))
+        raise AssertionError(f"unknown repaste shape {shape!r}")
+
+    # A filler that carries the fixture's REGISTER marker — the pronoun, the
+    # greeting, the hedge — and not one fact. It is what turns a paste into
+    # an ALL-PASS: every check the paste cannot satisfy on its own, the
+    # filler satisfies, and the two facts come out of the material. Round 4
+    # measured 20 of these 24 cells ALL-PASS.
+    _REGISTER_FILLER = {
+        "recruiter-reply": "Hi Dana,\n\nSorry — here is the text you asked "
+                           "for.\n",
+        "proposal-bio": "That is the paragraph he asked for.\n",
+        "self-appraisal-opening": "I hope that works for the form.\n",
+    }
+
+    _CONTENTLESS = ("Here is the text you asked for, ready to drop straight "
+                    "in.\nLet me know if you would like it a little "
+                    "shorter.\n")
+
+    def test_a_repasted_seed_cites_nothing_however_it_is_re_broken(self):
+        # The blocker, both directions of the table: the paste alone, and
+        # the paste under a filler that supplies every register marker the
+        # checks want. `cites-both-facts` is asserted by name rather than as
+        # "something failed", which a register check happens to satisfy for
+        # reasons that have nothing to do with provenance.
+        for name in self.FIXTURES:
+            material = self._seed_text(name)
+            for shape in self.REPASTE_SHAPES:
+                paste = self._repaste(material, shape)
+                for label, transcript in (
+                        ("alone", paste),
+                        ("under a contentless filler",
+                         paste + "\n\n" + self._CONTENTLESS),
+                        ("under a register filler",
+                         self._REGISTER_FILLER[name] + "\n" + paste),
+                ):
+                    with self.subTest(fixture=name, shape=shape, with_=label):
+                        by_id = self._score(name, transcript)
+                        self.assertFalse(
+                            by_id["cites-both-facts"]["passed"],
+                            f"{name}/{shape} {label}: the re-broken paste "
+                            "supplied the facts")
+                        self.assertTrue(
+                            any(not r["passed"] for r in by_id.values()),
+                            f"{name}/{shape} {label}: a paste passed every "
+                            "objective check")
+
+    def test_a_wholly_quoted_seed_cites_nothing(self):
+        # The deletion S4 found nothing killing: restoring a whole-reply
+        # fallback (score the untouched transcript when the residue comes
+        # out empty) left the suite green while a reply that is nothing but
+        # the material regained `cites-both-facts`.
+        for name in self.FIXTURES:
+            material = self._seed_text(name)
+            for style in self.QUOTE_STYLES:
+                with self.subTest(fixture=name, style=style):
+                    by_id = self._score(name, self._quote(material, style))
+                    self.assertFalse(by_id["cites-both-facts"]["passed"],
+                                     f"{name}/{style}: a wholly quoted seed "
+                                     "cited the facts")
+
+    def test_each_half_of_the_provenance_rule_is_load_bearing(self):
+        # Both clauses of the rule, exercised by a case only that clause
+        # catches. Deleting either used to leave the suite green.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        # A contiguous RUN that is not a whole seed sentence: the middle of
+        # her paragraph, cut at neither end on a sentence boundary.
+        run = ("filling a Staff Platform Engineer role for a client of ours "
+               "— requisition REQ-4417")
+        self.assertEqual(objective.strip_seed_material(run + "\n", seed), "")
+        # A whole seed SENTENCE, too short for the run floor: an exact
+        # sentence match is the stronger evidence, so it goes on the lower
+        # floor. Read off the committed seed rather than typed here, and
+        # asserted to exist, so a seed that drifts fails loudly instead of
+        # leaving this half of the rule untested.
+        appraisal = str(self.STYLE_DIR / "self-appraisal-opening" / "seed")
+        below_the_run_floor = sorted(
+            key for key in objective._seed_index(appraisal)[0]
+            if objective._SEED_SENTENCE_FLOOR <= len(key)
+            < objective._SEED_MATERIAL_FLOOR)
+        self.assertTrue(
+            below_the_run_floor,
+            "no seed sentence sits between the two floors any more, so "
+            "nothing here exercises the whole-sentence half of the rule")
+        for key in below_the_run_floor:
+            with self.subTest(sentence=key):
+                self.assertEqual(
+                    objective.strip_seed_material(key + "\n", appraisal), "")
+
     # ------------------------------------------------------------------
     # provenance: the seed is known, so what came from it can be named
     # ------------------------------------------------------------------
@@ -4116,6 +4466,7 @@ class TestIssue81(unittest.TestCase):
 
     SEED_QUOTE_SHAPES = (
         "blockquote", "blockquote-indented-1", "blockquote-indented-3",
+        "blockquote-indented-5", "blockquote-wide-marker",
         "blockquote-nbsp", "blockquote-nested", "fence-backtick",
         "fence-backtick-info", "fence-tilde", "fence-unterminated",
         "indented-block", "lazy-continuation", "fence-inside-a-blockquote",
@@ -4135,6 +4486,15 @@ class TestIssue81(unittest.TestCase):
         if shape == "blockquote-indented-3":
             # Three spaces is still a blockquote to every Markdown renderer.
             return "\n".join("   > " + line for line in lines)
+        if shape == "blockquote-indented-5":
+            # Five is a code block to a renderer and a quotation to a
+            # reader. The marker pattern used to stop at three columns, so
+            # the quote was not marked and its short lines stayed behind.
+            return "\n".join("     > " + line for line in lines)
+        if shape == "blockquote-wide-marker":
+            # A model lines its quote up under something; the marker used
+            # to allow exactly one space after the `>`.
+            return "\n".join(">   " + line for line in lines)
         if shape == "blockquote-nbsp":
             return "\n".join("\u00a0> " + line for line in lines)
         if shape == "blockquote-nested":
@@ -4288,6 +4648,19 @@ class TestIssue81(unittest.TestCase):
                             "Here is the draft:\n\n" + quoted)
         self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
 
+    def test_a_run_has_to_line_up_on_word_boundaries(self):
+        # An unpadded substring test matches "ana Whitcombe ..." inside
+        # "Dana Whitcombe ...", which is a fragment of a word rather than a
+        # run of the seed's text — and a fragment of a word is not
+        # something the seed can be said to have written.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        aligned = "Dana Whitcombe, Senior Technical Recruiter"
+        self.assertEqual(objective.strip_seed_material(aligned + "\n", seed),
+                         "")
+        self.assertEqual(
+            objective.strip_seed_material(aligned[1:] + "\n", seed),
+            aligned[1:])
+
     def test_a_short_seed_line_reused_in_the_agents_own_prose_survives(self):
         # The floor on the seed-line index: a line the agent could plausibly
         # have written itself is never claimed by the seed. "Thanks," and a
@@ -4311,10 +4684,14 @@ class TestIssue81(unittest.TestCase):
             "week on site would be a stretch even after that.\n"
             "\n"
             "Thanks,\nAdam Daniel\n")
-        # Not one of these lines is a seed line, though every fact in them is.
+        # Not one of these SENTENCES is the seed's, though every fact in
+        # them is. Compared word by word rather than byte for byte: the
+        # residue is unwrapped, because the provenance decision is taken
+        # after hard wrapping is undone and there is no reason to put the
+        # wrap back afterwards.
         seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
-        self.assertEqual(objective.strip_seed_material(own_words, seed).strip(),
-                         own_words.strip())
+        self.assertEqual(objective.strip_seed_material(own_words, seed).split(),
+                         own_words.split())
         self._assert_all_pass("recruiter-reply", own_words,
                               "the facts in the agent's own sentences")
 

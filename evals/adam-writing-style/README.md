@@ -104,37 +104,79 @@ is, so the `with_skill` arm is the one most likely to hand its reply back
 in that shape.
 
 What separates the two is not markup. It is **provenance**: `seed/` is
-committed material this harness reads, so the lines that came from it can
-be named in any shape they are pasted back in, and every other line is the
-agent's writing however it chose to format it. Concretely: each seed line
-of at least 24 characters (and any run of at least that much of the seed's
-own text) is dropped wherever it appears; a fenced, HTML-wrapped or
-blockquoted block whose every line is seed text goes whole, short lines
-included; and what survives is **unquoted**, so a reply inside `> ` or a
-fence is scored as the prose it is. Both `must_match` and `must_not_match`
-run over that residue, so a reply that is nothing but the quoted material
-fails its `must_match` checks — the right answer for a reply that wrote
-nothing — while a reply the agent merely wrapped in `> ` stays, and its
-bans fire.
+committed material this harness reads, so the material that came from it
+can be named in any shape it is pasted back in, and everything else is the
+agent's writing however it chose to format it.
+
+**The unit of provenance is the sentence**, and the decision is taken
+*after* hard wrapping is undone. It used to be the line, and a line is not
+a unit of anything: the same words re-broken across different lines are a
+different set of lines, so a paste re-wrapped, re-selected onto one line,
+punctuated with a trailing `!`, run through a Markdown table or salted
+with one invisible character per line walked straight past the scan — and
+in the other direction a genuine third-person bio hard-wrapped at 72 lost
+two of *its own* lines, because a wrap landed where the background note's
+line ends do.
+
+In order:
+
+1. **Invisibles fold out** — zero-width characters, soft hyphens,
+   variation selectors, the Mongolian vowel separator and the rest.
+2. **Wrapper comes off, and only wrapper**: leading whitespace, `>` runs
+   with any number of spaces after them, list markers, fence delimiters, a
+   table's alignment row, and the bare tags `blockquote`, `details`,
+   `summary`, `pre`, `code`, `div`, `p`, `br` when they carry **no
+   attributes**. Everything else is the agent's text and stays exactly as
+   it arrived — an HTML comment, a tag outside that set, a tag with
+   attributes, and its attribute values with it.
+3. **Hard wrapping is undone**, paragraph by paragraph, by the same
+   `harness/scorers/wrapping.py` helpers the judge normalises drafts with,
+   so the judge and the objective column cannot read one draft two ways.
+4. **Each line splits into sentences** at `.`, `!`, `?` and `;` followed by
+   whitespace, and at the line break that ends a list item or a table row.
+5. **A sentence is the seed's** when its word key — casefolded,
+   punctuation dropped, whitespace collapsed — is a contiguous run of some
+   seed file's own text and at least 24 characters, or *is* one of the
+   seed's sentences whole and at least 12 (an exact sentence match is
+   stronger evidence than a substring, so it earns the lower floor). A
+   maximal run of consecutive sentences that are all the seed's goes whole
+   when the run carries at least one piece above the floor: that is what a
+   paste is, and the short pieces inside it came with it. Inside a
+   **marked** quotation — a fence, an HTML wrapper, a `>` run — there is no
+   floor at all, because the markup has already said the block is a
+   quotation.
+6. **The residue is what is left**, and both `must_match` and
+   `must_not_match` are scored over it. A reply that is nothing but the
+   material has an empty residue and fails its `must_match` checks — the
+   right answer for a reply that wrote nothing — while a reply the agent
+   merely wrapped in `> ` stays, unwrapped, and its bans fire.
 
 **It is opt-in, per check.** A global pre-pass narrowed an unrelated
 shipped fixture: `windows-elevation-from-wsl` asks the reply to hand over a
 command, the command is in the seed, and stripping it left the handoff
 check failing a transcript that put it in a ```powershell fence. Only these
-three fixtures set `strip_seed`.
+three fixtures set `strip_seed`, and it has to be a real boolean — a
+`strip_seed: "no"` read by truthiness turned the pre-pass *on*.
 
-**What it does not do**, stated because both limits are real:
+**What it does not do**, stated because all three limits are real:
 
 - A fact the agent restates in **its own sentence** is its own writing and
   is scored, even though the fact is in the seed. "REQ-4417 is not going to
-  work for me" counts; the recruiter's line carrying REQ-4417 does not.
-  That is the point, not a leak.
-- A seed line **shorter than 24 characters** is not stripped, so an
-  *unmarked* verbatim paste leaves "Best regards," and a bare name behind.
-  The floor is what keeps the agent's own "Thanks," and its own sign-off
-  from being claimed by the seed; a paste that marks itself as a quotation
-  (a blockquote, a fence, an HTML wrapper) is dropped whole and leaves
-  nothing.
+  work for me" counts; the recruiter's sentence carrying REQ-4417 does not.
+  That is the point, not a leak. By the same rule a sentence the agent
+  **composed** out of the seed's phrases — two seed runs joined by its own
+  connective, a seed clause inside its own sentence — carries a word order
+  the seed does not have and stays.
+- A sentence that reproduces the seed's own words **end to end** is the
+  seed's even where the skill told the agent to write exactly that: core
+  move 8's plain certifications listing has one natural phrasing, and the
+  background note carries it. It costs no check — nothing a check looks for
+  is only in a line the agent could have copied — and the judge reads the
+  draft, not the residue.
+- Anything **shorter than the floors** is the agent's, so an *unmarked*
+  paste can leave a bare name behind when nothing around it is long enough
+  to anchor the run. The floors are what keep the agent's own "Thanks," and
+  its own sign-off from being claimed by the seed.
 
 The known failure mode in the other direction stays, and each fixture's
 header records it: commentary the agent wraps *around* the writing really

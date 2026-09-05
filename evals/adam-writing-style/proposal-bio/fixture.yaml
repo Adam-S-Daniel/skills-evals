@@ -24,11 +24,15 @@
 #
 # Every check below sets `strip_seed: true`, so it reads the agent's final
 # reply with the SEED's own material removed (objective.strip_seed_material)
-# and everything else unquoted. Provenance decides that, not markup: a line
-# that is the background note's is not the agent's writing however it is
-# pasted back, and a paragraph the agent chose to present as a blockquote
-# or inside a fence is still the agent's writing and is scored as prose.
-# A reply that is nothing but the quoted material has an empty residue, so
+# and everything else unwrapped and unquoted. Provenance decides that, not
+# markup, a SENTENCE at a time and after hard wrapping is undone: a
+# sentence that is the background note's is not the agent's writing in whatever
+# shape it is pasted back — re-wrapped, joined onto one line, re-punctuated, tabled,
+# salted with invisibles — and a paragraph the agent chose to present as a
+# blockquote or inside a fence is still the agent's writing and is scored
+# as prose. A sentence the agent COMPOSED out of the seed's phrases carries
+# a word order the seed does not have, so it is the agent's and stays. A
+# reply that is nothing but the quoted material has an empty residue, so
 # its must_match checks fail, which is the right answer for a reply that
 # wrote nothing.
 #

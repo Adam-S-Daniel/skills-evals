@@ -108,14 +108,27 @@ def unwrap_block(lines: list[str], width: float) -> list[str]:
     appended onto a growing string: `out[-1] += ...` is quadratic in the
     paragraph's length, and a 12 MB draft took 94 seconds in it.
     """
-    joined: list[list[str]] = [[lines[0]]]
-    for previous, line in zip(lines, lines[1:]):
+    return [" ".join(lines[i] for i in part)
+            for part in unwrap_indices(lines, width)]
+
+
+def unwrap_indices(lines: list[str], width: float) -> list[list[int]]:
+    """`unwrap_block`'s grouping, as indices into `lines`.
+
+    The same reconstruction, handed back as the mapping rather than the
+    joined text, for the caller that has to know which SOURCE lines a
+    logical line came from — `objective.strip_seed_material` reads the
+    floor it applies to a sentence off whether every line behind it sat
+    inside a marked quotation.
+    """
+    groups: list[list[int]] = [[0]]
+    for index, (previous, line) in enumerate(zip(lines, lines[1:]), start=1):
         first_word = line.split(" ", 1)[0]
         wrapped = len(previous) + 1 + len(first_word) > width
         if (wrapped and not LIST_ITEM_RE.match(line)
                 and not TABLE_ROW_RE.match(line)
                 and not TABLE_ROW_RE.match(previous)):
-            joined[-1].append(line)
+            groups[-1].append(index)
         else:
-            joined.append([line])
-    return [" ".join(part) for part in joined]
+            groups.append([index])
+    return groups

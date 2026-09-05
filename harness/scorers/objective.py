@@ -15,6 +15,8 @@ import os
 import re
 from collections import Counter
 
+from . import wrapping
+
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -574,43 +576,158 @@ def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
 #   hand its reply back inside one.
 #
 # What separates the two is not markup. It is PROVENANCE: the seed is
-# committed material this harness can read, so the lines that came from it
-# can be named exactly, in any shape they are pasted back in — and every
-# other line is the agent's writing, however it chose to format it.
+# committed material this harness can read, so the material that came from
+# it can be named exactly, in any shape it is pasted back in — and
+# everything else is the agent's writing, however it chose to format it.
+#
+# The UNIT of provenance is the SENTENCE, and the decision is taken after
+# hard wrapping is undone. It used to be the LINE, and a line is not a unit
+# of anything: the same words re-broken across different lines were a
+# different set of lines, so a paste re-wrapped, re-selected, punctuated,
+# tabled or salted with invisibles walked past the scan; and a genuine
+# paragraph hard-wrapped at 72 lost two of ITS OWN lines because a wrap
+# happened to land where the seed's line ends did.
 
-# The floor on a seed line. Shorter than this and the agent could plausibly
-# have written it itself: "Thanks," and a bare name are in every reply and
-# in some seeds, and claiming them for the seed would take the agent's own
-# sign-off away from it. The cost is the documented limit — an UNMARKED
-# verbatim paste leaves its short lines behind.
-_SEED_LINE_FLOOR = 24
+# The floor on a piece of seed material. A sentence shorter than this the
+# agent could plausibly have written itself: "Thanks," and a bare name are
+# in every reply and in some seeds, and claiming them for the seed would
+# take the agent's own sign-off away from it. Inside a MARKED quotation
+# there is no floor — the markup already says the block is a quotation, so
+# a short sentence in it needs only to be the seed's.
+_SEED_MATERIAL_FLOOR = 24
 
-# One blockquote marker: up to three columns of whitespace (NBSP included —
-# CommonMark would not, but a model writes one), a `>`, and the space after
-# it. Applied repeatedly, so `> > ` unwraps too.
-_QUOTE_MARKER_RE = re.compile(r"^[^\S\n]{0,3}>[^\S\n]?")
-_FENCE_RE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
-_HTML_TAG_RE = re.compile(r"<[^<>]*>")
-_LIST_MARKER_RE = re.compile(r"^\s*(?:[-*+\u2022]|\d+[.)])\s+")
+# The floor on a piece of seed material matched WHOLE — a sentence of the
+# seed's, reproduced end to end. Lower than the run floor on purpose: an
+# exact sentence match is far stronger evidence of a paste than the same
+# number of characters appearing as a fragment of a longer seed sentence,
+# which prose about the same subject arrives at by accident. Still well
+# above "Thanks," and a bare name, which is what the floor exists for.
+_SEED_SENTENCE_FLOOR = 12
+
+# A blockquote marker: any indent, a `>`, and any run of spaces after it.
+# Applied repeatedly, so `> > ` and `>  ` unwrap too. Unlimited indent on
+# purpose — an indented deliverable is still the deliverable, and one to
+# three spaces (or a tab) in front of a reply used to cost it the checks
+# its own opening satisfies.
+_QUOTE_MARKER_RE = re.compile(r"^[^\S\n]*>[^\S\n]*")
+_FENCE_RE = re.compile(r"^[^\S\n]*(`{3,}|~{3,})")
+_LIST_MARKER_RE = re.compile(r"^[^\S\n]*(?:[-*+•]|\d+[.)])[^\S\n]+")
+
+# The tags that are WRAPPER and nothing else, and only when they carry no
+# attributes. A bare `<blockquote>`, `</details>` or `<pre>` is markup the
+# agent wrapped around something; `<span title="we can leverage this">`,
+# `<img alt="...synergy...">` and `<!-- circle back -->` are text the agent
+# WROTE, attribute values included, and each of those used to switch the
+# avoid-list ban off by the simple trick of being a line with a tag on it.
+# A tag outside this set, or one carrying an attribute, stays exactly as it
+# arrived — including mid-line, where a general tag strip once let
+# `I<leverage synergy robust> was looking...` normalise onto a seed line and
+# be dropped whole.
+_WRAPPER_TAGS = ("blockquote", "details", "summary", "pre", "code", "div",
+                 "p", "br")
+_BARE_WRAPPER_TAG_RE = re.compile(
+    r"</?(?:" + "|".join(_WRAPPER_TAGS) + r")\s*/?>", re.I)
+# The block wrappers that bracket a quotation. `<summary>` is the LABEL on a
+# `<details>` rather than part of what it discloses, but the label's TEXT is
+# still the agent's, so it is not a delimiter: only its tags come off.
 _HTML_BLOCK_TAG = r"blockquote|details|pre"
-_HTML_BLOCK_OPEN_RE = re.compile(rf"^\s*<({_HTML_BLOCK_TAG})\b[^<>]*>\s*$", re.I)
+_HTML_BLOCK_OPEN_RE = re.compile(rf"^\s*<({_HTML_BLOCK_TAG})\s*>\s*$", re.I)
 _HTML_BLOCK_CLOSE_RE = re.compile(rf"^\s*</({_HTML_BLOCK_TAG})\s*>\s*$", re.I)
-# `<summary>` is the label on a `<details>`, not part of what it discloses,
-# so it counts as wrapper rather than as content: a `<details>` holding
-# nothing but the seed is still entirely the seed with one of these on top.
-_HTML_SUMMARY_RE = re.compile(r"^\s*<summary\b[^<>]*>.*</summary>\s*$", re.I)
-_HTML_ONLY_LINE_RE = re.compile(r"^\s*(?:<[^<>]*>\s*)+$")
 
-# Characters that take up no width and can hide a banned term inside a word:
-# the soft hyphen, the zero-width and bidi marks, the BOM, a stray NUL, and
-# the two blank glyphs `\s` does not match (Braille blank, Hangul filler).
-# `lever\u00adage` and `deep\u200b dive` read as the banned terms and are
-# scored as them.
-_INVISIBLE_RE = re.compile("[\u00ad\u200b-\u200f\u2060\u2800\u3164\ufeff\x00]")
+# A Markdown table's alignment row: pipes, dashes and colons only. It is the
+# table's own scaffolding, like a fence delimiter, and carries no words.
+_TABLE_RULE_RE = re.compile(r"^[^\S\n]*\|[-:|\s]*\|[^\S\n]*$")
+
+# Characters that take up no width and can hide a banned term inside a word,
+# or break a paste into pieces the seed index cannot match: the soft hyphen,
+# the zero-width and bidi marks, the invisible operators, the combining
+# grapheme joiner, the Mongolian vowel separator, the variation selectors,
+# the BOM, a stray NUL, and the two blank glyphs `\s` does not match
+# (Braille blank, Hangul filler). `lever­age` and `deep​ dive` read
+# to the operator as the banned terms and are scored as them, and one
+# U+2062 per line no longer buys a paste its provenance back.
+_INVISIBLE_RE = re.compile(
+    "[­͏؜᠋-᠎​-‏⁠-⁤"
+    "⁪-⁯⠀ㅤ︀-️﻿ﾠ\x00]")
+
+# A sentence ends at `.`, `!`, `?` or `;` FOLLOWED BY WHITESPACE, or at the
+# end of a line. The trailing-whitespace requirement is what keeps
+# `dana.whitcombe@example.com` in one piece; the line boundary is what ends
+# a list item and a table row, neither of which is punctuated.
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?;])[^\S\n]+")
+
+# Everything that is not a letter, a digit or a space, dropped before two
+# pieces of text are compared. Provenance is about WORDS: a paste that
+# swapped every full stop for an exclamation mark, or ran the material
+# through a Markdown table, is the same material.
+_UNWORD_RE = re.compile(r"[^\w\s]|_", re.UNICODE)
 
 
-def _unquote(line: str) -> str:
-    """`line` with its leading blockquote markers removed, however nested."""
+class FixtureError(ValueError):
+    """A fixture asks for something this scorer cannot honour as written."""
+
+
+class SeedTooLarge(FixtureError):
+    """A seed file is bigger than the provenance index will read.
+
+    Named rather than silent: a truncated index answers "not the seed's" for
+    every sentence past the cap, which reads as the agent having written the
+    material it actually pasted.
+    """
+
+
+# The provenance index reads at most this much of any one seed file. A cap
+# is needed because the index is rebuilt per check and holds each file's
+# whole text casefolded; a MiB is far above any writing fixture's seed (the
+# largest in this repo is under 2 KB) and far below a file worth holding.
+# Past it the read RAISES rather than truncating — see `SeedTooLarge`.
+_SEED_READ_CAP = 1 << 20
+
+def _key(text: str) -> str:
+    """`text` reduced to the words in it.
+
+    Casefolded, every character that is not a letter, a digit or a space
+    dropped, whitespace collapsed. Two pieces of text with the same key say
+    the same thing: provenance is about WORDS, so a paste that swapped every
+    full stop for an exclamation mark, ran the material through a Markdown
+    table, or re-wrapped it at a different column is the same material.
+    """
+    return re.sub(r"\s+", " ", _UNWORD_RE.sub(" ", text.casefold())).strip()
+
+
+def _sentences(line: str) -> list[str]:
+    """One logical line split into the sentences it carries."""
+    return [part.strip() for part in _SENTENCE_SPLIT_RE.split(line)
+            if part.strip()]
+
+
+def _strip_wrapper(line: str) -> tuple[str, bool]:
+    """(`line` with its wrapper removed, was it wrapper and nothing else?).
+
+    Wrapper is leading whitespace, `>` runs with any number of spaces after
+    them, list markers, and the bare tags in `_WRAPPER_TAGS`. Everything
+    else is the agent's text and stays exactly as it arrived — an HTML
+    comment, a tag outside that set, a tag carrying attributes, and the
+    attribute values with it.
+    """
+    stripped = line
+    while True:
+        shorter = _LIST_MARKER_RE.sub("", _QUOTE_MARKER_RE.sub(
+            "", stripped, count=1), count=1)
+        if shorter == stripped:
+            break
+        stripped = shorter
+    stripped = stripped.strip()
+    bare = _BARE_WRAPPER_TAG_RE.sub("", stripped).strip()
+    return bare, bool(stripped) and not bare
+
+
+def _dequote(line: str) -> str:
+    """`line` with its blockquote markers removed, however nested.
+
+    Tags and fence delimiters stay: this is what the block scan reads, and a
+    fence or an HTML wrapper inside a `> ` quote has to still look like one.
+    """
     while True:
         shorter = _QUOTE_MARKER_RE.sub("", line, count=1)
         if shorter == line:
@@ -618,65 +735,93 @@ def _unquote(line: str) -> str:
         line = shorter
 
 
-def _normalise(line: str) -> str:
-    """One line reduced to the form two copies of the same text share.
-
-    HTML tags, list markers and indentation go; runs of whitespace collapse;
-    case is folded. Two lines with the same normalised form say the same
-    thing, whatever wrapper either of them arrived in.
-    """
-    line = _HTML_TAG_RE.sub(" ", line)
-    while True:
-        shorter = _LIST_MARKER_RE.sub("", line, count=1)
-        if shorter == line:
-            break
-        line = shorter
-    return re.sub(r"\s+", " ", line).strip().casefold()
-
-
-def _seed_index(seed: str | None) -> tuple[set[str], str]:
-    """(the seed's long lines, the seed's whole text) — both normalised.
+def _seed_index(seed: str | None) -> tuple[set[str], list[str]]:
+    """(the seed's sentences, one word-key per seed FILE) — all as keys.
 
     Every text file under `seed` is read; a file carrying a NUL in its first
-    megabyte is taken for a binary and skipped, which is how the fake
-    binaries a Class B seed ships stay out of the index. The whole text is
-    each file's lines joined by a space and the FILES joined by a newline,
-    so a transcript line can match across a wrap the agent re-flowed but
-    never across a file boundary that was never adjacent to begin with.
+    `_SEED_READ_CAP` bytes is taken for a binary and skipped, which is how
+    the fake binaries a Class B seed ships stay out of the index. Each
+    file's wrapper-stripped lines are joined by a space before the key is
+    taken, so a sentence the seed hard-wrapped is one run in the index; the
+    files are kept APART, so a run can never span a boundary that was never
+    adjacent to begin with.
     """
-    lines: set[str] = set()
+    sentences: set[str] = set()
     wholes: list[str] = []
     if not seed or not os.path.isdir(seed):
-        return lines, ""
+        return sentences, wholes
     for root, dirs, files in os.walk(seed):
         dirs.sort()
         for name in sorted(files):
+            path = os.path.join(root, name)
             try:
-                with open(os.path.join(root, name), "rb") as f:
-                    raw = f.read(1 << 20)
+                with open(path, "rb") as f:
+                    raw = f.read(_SEED_READ_CAP + 1)
             except OSError:
                 continue
             if b"\x00" in raw:
                 continue
+            if len(raw) > _SEED_READ_CAP:
+                raise SeedTooLarge(
+                    f"seed file {os.path.relpath(path, seed)!r} is larger "
+                    f"than the {_SEED_READ_CAP}-byte provenance read cap: a "
+                    "truncated index would call the material past the cap "
+                    "the agent's own writing")
+            text = _INVISIBLE_RE.sub("", raw.decode("utf-8", errors="replace"))
             here = []
-            for line in raw.decode("utf-8", errors="replace").splitlines():
-                norm = _normalise(_unquote(line))
-                if not norm:
+            for line in text.splitlines():
+                if _FENCE_RE.match(line) or _TABLE_RULE_RE.match(line):
                     continue
-                here.append(norm)
-                if len(norm) >= _SEED_LINE_FLOOR:
-                    lines.add(norm)
-            if here:
-                wholes.append(" ".join(here))
-    return lines, "\n".join(wholes)
+                body, only_wrapper = _strip_wrapper(line)
+                if body and not only_wrapper:
+                    here.append(body)
+            if not here:
+                continue
+            flat = " ".join(here)
+            wholes.append(_key(flat))
+            sentences.update(key for key in map(_key, _sentences(flat)) if key)
+    return sentences, wholes
 
 
-def _wrapped_blocks(content: list[str]) -> list[tuple[int, int, set[int]]]:
-    """(first, last, delimiter indices) for every fenced or HTML-wrapped block.
+def _is_seed_material(key: str, index: tuple[set[str], list[str]],
+                      run_floor: int, sentence_floor: int) -> bool:
+    """Is this sentence the SEED's rather than the agent's?
+
+    Two ways to be, with different floors because they are different
+    strengths of evidence:
+
+    - it is a contiguous run of some seed file's own text, and long enough
+      (`run_floor`) that the agent could not plausibly have arrived at those
+      words in that order by writing about the same subject;
+    - it IS one of the seed's sentences, whole. An exact sentence match is
+      much stronger evidence than a substring, so it earns a lower floor
+      (`sentence_floor`) — a short line of the seed's, reproduced end to
+      end, is a paste where the same words as a fragment of a longer seed
+      sentence would not be.
+
+    Neither can fire on a sentence carrying a word the seed does not have in
+    that position: both are exact comparisons over the word key.
+    """
+    sentences, wholes = index
+    if not key:
+        return False
+    if len(key) >= sentence_floor and key in sentences:
+        return True
+    # Padded on both sides so a run has to line up on WORD boundaries: an
+    # unpadded substring test matches "ana whitcombe" inside "dana
+    # whitcombe", which is a fragment of a word rather than a run of the
+    # seed's text.
+    padded = f" {key} "
+    return (len(key) >= run_floor
+            and any(padded in f" {whole} " for whole in wholes))
+
+
+def _wrapped_blocks(content: list[str]) -> list[tuple[int, int]]:
+    """(first, last) for every fenced or HTML-wrapped block.
 
     An unclosed fence or tag runs to the end, as it does in CommonMark.
     """
-    out: list[tuple[int, int, set[int]]] = []
+    out: list[tuple[int, int]] = []
     i = 0
     while i < len(content):
         opened = _FENCE_RE.match(content[i])
@@ -702,93 +847,173 @@ def _wrapped_blocks(content: list[str]) -> list[tuple[int, int, set[int]]]:
         j = i + 1
         while j < len(content) and not closer(content[j]):
             j += 1
-        delimiters = {i} | ({j} if j < len(content) else set())
         end = min(j, len(content) - 1)
-        delimiters |= {k for k in range(i + 1, end + 1)
-                       if _HTML_SUMMARY_RE.match(content[k])}
-        out.append((i, end, delimiters))
+        out.append((i, end))
         i = end + 1
     return out
 
 
-def _quote_runs(raw: list[str]) -> list[tuple[int, int, set[int]]]:
-    """(first, last, no delimiters) for every run of blockquote lines."""
+def _quote_runs(raw: list[str]) -> list[tuple[int, int]]:
+    """(first, last) for every run of blockquote lines."""
     out, start = [], None
     for i, line in enumerate(raw):
         if _QUOTE_MARKER_RE.match(line):
             if start is None:
                 start = i
         elif start is not None:
-            out.append((start, i - 1, set()))
+            out.append((start, i - 1))
             start = None
     if start is not None:
-        out.append((start, len(raw) - 1, set()))
+        out.append((start, len(raw) - 1))
     return out
 
-
 def strip_seed_material(text: str, seed: str | None) -> str:
-    """`text` with the fixture's own seed material removed, unquoted.
+    """`text` with the fixture's own seed material removed, unwrapped.
 
-    Two things happen, and both are decided by provenance rather than by
-    markup:
+    The unit of provenance is the SENTENCE, never the line, and the decision
+    is taken after hard wrapping is undone. In order:
 
-    - **Seed lines go.** A line whose normalised form is one of the seed's
-      lines of at least `_SEED_LINE_FLOOR` characters, or is a run of at
-      least that many characters of the seed's own text, is the material
-      rather than the agent's writing, in whatever shape it was pasted back
-      — `>` at any indent, a fence, an indented block, an HTML wrapper, a
-      lazy continuation, or nothing at all. A fenced, HTML-wrapped or
-      blockquoted block whose every line is seed text goes whole, short
-      lines included, because the block itself says it is a quotation.
-    - **Everything else stays, unwrapped.** Blockquote markers and fence
-      delimiters are dropped from the lines that survive, so a deliverable
-      the agent chose to present as a blockquote or inside a fence is
-      scored as the prose it is and the sentence anchors see it. That is
-      deliberate: every calibration example in the skill under test is a
-      blockquote, so formatting cannot be allowed to decide authorship.
+    1. **Invisibles fold out.** Zero-width characters, soft hyphens,
+       variation selectors and the rest take up no width, so they can hide a
+       banned term inside a word and break a paste into pieces no index
+       matches. They go first, everywhere.
+    2. **Wrapper comes off, and only wrapper.** Leading whitespace, `>` runs
+       with any number of spaces after them, list markers, fence delimiter
+       lines, a table's alignment row, and the bare tags in `_WRAPPER_TAGS`
+       when they carry NO attributes. Everything else is the agent's text
+       and stays exactly as it arrived — an HTML comment, a tag outside that
+       set, a tag with attributes, and its attribute values with it.
+    3. **Hard wrapping is undone**, paragraph by paragraph, by the same
+       `wrapping` helpers the judge normalises drafts with, so the two
+       cannot read the same draft differently. Table pipes are words'
+       punctuation and fall out with the rest at key time.
+    4. **Each logical line splits into sentences** at `.`, `!`, `?` and `;`
+       followed by whitespace, and at the line break that ends a list item
+       or a table row.
+    5. **A sentence is the SEED's** when its word key (casefolded,
+       punctuation dropped, whitespace collapsed) is a long enough
+       contiguous run of some seed file's own text, or IS one of the seed's
+       sentences whole — see `_is_seed_material` for why those two carry
+       different floors. Inside a MARKED quotation (a fence, an HTML
+       wrapper, a `>` run) there is no floor at all: the markup already says
+       the block is a quotation. A paragraph every sentence of which is the
+       seed's, and which carries at least one piece of seed material above
+       the floor, goes WHOLE — that is an unmarked paste, and its short
+       lines ("Hi Adam,", a bare name) came with it.
+    6. **The residue is what is left**, the kept sentences re-joined with
+       their line and paragraph breaks, and BOTH `must_match` and
+       `must_not_match` are scored over it.
 
-    The residue is what BOTH `must_match` and `must_not_match` are scored
-    over. There is no whole-reply fallback: a reply that is nothing but the
-    quoted seed has an empty residue, so its `must_match` checks fail and
-    the fixture fails, which is the right answer for a reply that wrote
-    nothing. A reply the agent merely wrapped in `> ` is not seed material,
-    stays, and its bans fire.
+    Two consequences are the point rather than side effects. A sentence the
+    agent COMPOSED from the seed's phrases — two seed runs joined by its own
+    connective, a seed clause inside its own sentence — carries a word
+    ordering the seed does not have and is the agent's writing, so it stays
+    and is scored. And a deliverable the agent chose to present as a
+    blockquote or inside a fence is not seed material either: it stays,
+    unwrapped, and its bans fire. Every calibration example in the skill
+    under test is a blockquote, so formatting cannot be allowed to decide
+    authorship.
 
-    The limit, stated because it is real: a fact the agent restates in its
-    own sentence is its own writing and is scored (the sentence is not a
-    seed line, even though the fact in it is), and an UNMARKED verbatim
-    paste leaves behind any seed line shorter than the floor.
+    There is no whole-reply fallback: a reply that is nothing but the quoted
+    seed has an empty residue, so its `must_match` checks fail and the
+    fixture fails, which is the right answer for a reply that wrote nothing.
+
+    The limit, stated because it is real: a sentence the agent built around
+    a fact is its own writing and is scored, even though the fact in it came
+    from the seed — and by the same rule, a sentence that reproduces the
+    seed's own words end to end is the seed's even when the skill told the
+    agent to write exactly that (a plain certifications listing, core move
+    8). Dropping it costs no check: the thing a check looks for is never
+    only in a line the agent could have copied.
     """
-    raw = (text or "").splitlines()
+    raw = _INVISIBLE_RE.sub("", text or "").splitlines()
     if not raw:
         return ""
-    seed_lines, whole = _seed_index(seed)
-    content = [_unquote(line) for line in raw]
-    norm = [_normalise(line) for line in content]
+    index = _seed_index(seed)
 
-    def is_seed_line(i: int) -> bool:
-        n = norm[i]
-        return bool(n) and (n in seed_lines
-                            or (len(n) >= _SEED_LINE_FLOOR and n in whole))
+    # Wrapper off, once, per line. `dequoted` keeps the tags and the fence
+    # delimiters so the block scan below can still see them; `payload` is
+    # what the agent actually wrote on that line, empty where the line was
+    # wrapper and nothing else.
+    dequoted, payload = [], []
+    for line in raw:
+        body, only_wrapper = _strip_wrapper(line)
+        dequoted.append(_dequote(line))
+        payload.append("" if (only_wrapper or _FENCE_RE.match(line)
+                              or _TABLE_RULE_RE.match(line)) else body)
 
-    def is_seed_text(i: int) -> bool:
-        # No floor inside a block: the block is already a quotation, so a
-        # short line in it needs only to be the seed's, not the agent's.
-        n = norm[i]
-        return bool(n) and (n in seed_lines or n in whole)
+    # Lines inside a marked quotation. There the floor is nil: the markup
+    # already says the block is a quotation, so a short sentence in it needs
+    # only to be the seed's, not to be beyond the agent's own reach.
+    marked: set[int] = set()
+    for start, end in _wrapped_blocks(dequoted) + _quote_runs(raw):
+        marked.update(range(start, end + 1))
 
-    drop: set[int] = set()
-    delimiters: set[int] = set()
-    for start, end, delims in _wrapped_blocks(content) + _quote_runs(raw):
-        delimiters |= delims
-        body = [i for i in range(start, end + 1) if i not in delims and norm[i]]
-        if body and all(is_seed_text(i) for i in body):
-            drop.update(range(start, end + 1))
-    for i, line in enumerate(content):
-        if (i in delimiters or is_seed_line(i)
-                or (line.strip() and _HTML_ONLY_LINE_RE.match(line))):
-            drop.add(i)
-    return "\n".join(line for i, line in enumerate(content) if i not in drop)
+    groups: list[list[int]] = []
+    current: list[int] = []
+    for i, body in enumerate(payload):
+        if body:
+            current.append(i)
+        elif current:
+            groups.append(current)
+            current = []
+    if current:
+        groups.append(current)
+
+    width = wrapping.wrap_width([[payload[i] for i in g] for g in groups])
+
+    out: list[str] = []
+    for group in groups:
+        paragraph: list[list[dict]] = []
+        for part in wrapping.unwrap_indices([payload[i] for i in group], width):
+            source = [group[k] for k in part]
+            # Inside a marked quotation there is no floor: the markup has
+            # already said the block is a quotation, so a short sentence in
+            # it needs only to be the seed's.
+            quoted = all(i in marked for i in source)
+            line = []
+            for sentence in _sentences(" ".join(payload[i] for i in source)):
+                key = _key(sentence)
+                line.append({
+                    "text": sentence,
+                    "seed": _is_seed_material(key, index, 0, 0),
+                    "above": _is_seed_material(
+                        key, index,
+                        0 if quoted else _SEED_MATERIAL_FLOOR,
+                        0 if quoted else _SEED_SENTENCE_FLOOR)})
+            paragraph.append(line)
+
+        # One rule, over the paragraph's sentences in order: a maximal RUN
+        # of consecutive sentences that are all the seed's goes whole, as
+        # long as the run carries at least one piece of seed material above
+        # the floor. A paste arrives as exactly that — a stretch of the
+        # material, nothing else in it — and the short pieces inside the
+        # stretch ("Hi Adam,", a bare name, a `To:` header, a fragment a
+        # trailing `!` chopped out of a longer sentence) came with it.
+        # Anything the agent wrote breaks the run, and a sentence carrying
+        # so much as one word the seed does not have there is not the
+        # seed's, so it breaks the run too.
+        flat = [entry for line in paragraph for entry in line]
+        i = 0
+        while i < len(flat):
+            if not flat[i]["seed"]:
+                i += 1
+                continue
+            j = i
+            while j < len(flat) and flat[j]["seed"]:
+                j += 1
+            if any(entry["above"] for entry in flat[i:j]):
+                for entry in flat[i:j]:
+                    entry["drop"] = True
+            i = j
+
+        rendered = [" ".join(entry["text"] for entry in line
+                             if not entry.get("drop"))
+                    for line in paragraph]
+        rendered = [line for line in rendered if line]
+        if rendered:
+            out.append("\n".join(rendered))
+    return "\n\n".join(out)
 
 
 def _text_matches(text: str, must_match: list[str], must_not_match: list[str],

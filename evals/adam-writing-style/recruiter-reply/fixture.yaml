@@ -70,15 +70,17 @@ objective_checks:
   #
   # Nothing below carries a quote anchor of its own any more. Every check
   # here sets `strip_seed: true`, and objective.strip_seed_material does
-  # the work once, for every pattern, on PROVENANCE rather than on markup:
-  # the seed is committed, so her email's lines are hers in whatever shape
-  # they are pasted back, and every other line is the agent's writing
-  # however it chose to format it. What is left is unquoted, so a reply the
-  # agent handed back inside a `> ` block — the shape every calibration
-  # example in SKILL.md has — is scored as the prose it is, and its bans
-  # fire. A reply that is nothing but her email has an empty residue and
-  # fails its must_match checks, which is the right answer for a reply that
-  # wrote nothing.
+  # the work once, for every pattern, on PROVENANCE rather than on markup,
+  # a SENTENCE at a time and after hard wrapping is undone: the seed is
+  # committed, so her sentences are hers in whatever shape they are pasted
+  # back — re-wrapped, joined onto one line, re-punctuated, run through a
+  # table, salted with invisibles — and every other sentence is the
+  # agent's writing however it chose to format it. What is left is
+  # unwrapped and unquoted, so a reply the agent handed back inside a `> `
+  # block — the shape every calibration example in SKILL.md has — is
+  # scored as the prose it is, and its bans fire. A reply that is nothing
+  # but her email has an empty residue and fails its must_match checks,
+  # which is the right answer for a reply that wrote nothing.
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the reply
     type: transcript_matches
