@@ -3011,6 +3011,11 @@ jobs:
           title: E2E tests
 """
 
+    # Downstream job is named `finalize` (SKILL.md's own multi-job example
+    # name), deliberately NOT `report` — the fixture's checks select this
+    # job structurally (`job_needs_nonempty`), never by a hardcoded name, so
+    # this name choice is itself a regression guard (issue #86 review round
+    # 3, N1).
     CORRECT_VISUAL_REGRESSION_WF = """name: Visual regression
 
 on:
@@ -3042,7 +3047,7 @@ jobs:
       - name: Run firefox visual tests
         run: npx playwright test --project=firefox 2>&1 | tee /tmp/visual-firefox.log
 
-  report:
+  finalize:
     needs: [chromium, firefox]
     if: always()
     runs-on: ubuntu-latest
@@ -3174,6 +3179,22 @@ jobs:
         by_id = self._check_fixture(self._correct_workspace())
         self.assertTrue(by_id["post-failure-comment-reference-valid"]["passed"],
                         by_id["post-failure-comment-reference-valid"]["detail"])
+
+    def test_downstream_job_named_finalize_scores_full_marks(self):
+        # Review round 3, N1: the multi-job checks used to hardcode
+        # `job: report`, but the seed never names that job and SKILL.md's
+        # own multi-job example calls it `finalize` — a reference-correct
+        # workspace using the skill's own name lost 3 of 12 checks. The
+        # correct workspace already names it `finalize` (see the comment on
+        # CORRECT_VISUAL_REGRESSION_WF); this asserts the specific
+        # regression rather than relying only on the general
+        # test_hand_written_correct_workspace_passes_every_check.
+        self.assertIn("\n  finalize:\n", self.CORRECT_VISUAL_REGRESSION_WF)
+        by_id = self._check_fixture(self._correct_workspace())
+        for check_id in ("visual-regression-report-job-shape",
+                        "visual-regression-post-step",
+                        "visual-regression-resolve-step"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
 
     def test_remote_tag_pin_scores_full_marks(self):
         # Review round 1, B2: the literal remote carve-out

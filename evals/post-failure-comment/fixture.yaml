@@ -126,25 +126,28 @@ objective_checks:
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
-    job: report
     job_if_equals: always()
     job_needs_nonempty: true
 
   - id: visual-regression-post-step
     description: >
-      The report job's post call gates on `needs.<job>.result`, not
-      `job.status` or a bare `failure()` (which would read the report job's
-      own trivial status, not the matrix's). `log-file` must point at a path
-      an `actions/download-artifact` step in the SAME job downloaded to —
-      the log was captured on the chromium/firefox runner, a different
-      filesystem than the report job's, so a `log-file:` naming a path with
-      no artifact transport into this job is unreachable at runtime, not
-      merely unverified. Also asserts the job is in scope for
-      `pull-requests: write`.
+      The downstream job's post call gates on `needs.<job>.result`, not
+      `job.status` or a bare `failure()` (which would read the downstream
+      job's own trivial status, not the matrix's). `log-file` must point at
+      a path an `actions/download-artifact` step in the SAME job downloaded
+      to — the log was captured on the chromium/firefox runner, a different
+      filesystem than the downstream job's, so a `log-file:` naming a path
+      with no artifact transport into this job is unreachable at runtime,
+      not merely unverified. Also asserts the job is in scope for
+      `pull-requests: write`. Selects the job structurally by
+      `job_needs_nonempty` rather than by a hardcoded name — the skill's own
+      multi-job example names it `finalize`, not `report`, and neither name
+      is prescribed, so naming one here would silently favor whichever arm
+      happens to guess it.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
-    job: report
+    job_needs_nonempty: true
     if_contains: "needs."
     with_present: ["log-file", "marker", "title"]
     with_equals:
@@ -154,11 +157,11 @@ objective_checks:
     log_file_matches_download: true
 
   - id: visual-regression-resolve-step
-    description: The report job resolves the comment when neither upstream job failed.
+    description: The downstream job resolves the comment when neither upstream job failed.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
-    job: report
+    job_needs_nonempty: true
     if_contains: "needs."
     with_present: ["marker", "title"]
     with_equals:
