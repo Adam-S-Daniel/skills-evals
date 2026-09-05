@@ -546,12 +546,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # regular FILE, so os.makedirs can't create skill_dest under it)
             # both land here — both are a seed/workspace layout problem, not
             # something to raise out of run_agent's "nothing is raised"
-            # contract. The skill name, not `skill_dest`'s absolute
-            # workspace path — this detail reaches summary.json, which
-            # eval.yml commits to the public eval-results branch.
+            # contract, but "already exists" is only true of the first one
+            # (N1, #129 review round 6) — a generic wording that names the
+            # exception type covers both honestly. The skill name, not
+            # `skill_dest`'s absolute workspace path — this detail reaches
+            # summary.json, which eval.yml commits to the public
+            # eval-results branch.
             return {"error": "skill_install_failed",
-                    "detail": f"{skill}/ already exists in the seed workspace "
-                              f"({type(exc).__name__})"}
+                    "detail": f"could not install {skill}/ into the seed "
+                              f"workspace ({type(exc).__name__})"}
 
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
            "--output-format", "json", "--permission-mode", "bypassPermissions",

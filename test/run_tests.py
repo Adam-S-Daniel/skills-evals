@@ -4869,7 +4869,10 @@ class TestIssue63Round2(unittest.TestCase):
             # The skill name, not the destination's absolute workspace path
             # (S5, #129 review round 5) — this detail reaches summary.json,
             # which eval.yml commits to the public eval-results branch.
-            self.assertIn("some-skill/ already exists in the seed workspace",
+            # Generic wording (N1, #129 review round 6): "already exists"
+            # would be false for the NotADirectoryError case below, which
+            # shares this same message.
+            self.assertIn("could not install some-skill/ into the seed workspace",
                           result["detail"])
             self.assertIn("FileExistsError", result["detail"])
             self.assertNotIn(str(workspace), result["detail"])
@@ -4888,8 +4891,12 @@ class TestIssue63Round2(unittest.TestCase):
                 result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
             self.assertIn("error", result2)
             self.assertEqual(result2["error"], "skill_install_failed")
-            self.assertIn("some-skill/ already exists in the seed workspace",
+            # N1 (#129 review round 6): "already exists" is FALSE for this
+            # case — `.claude/skills` is a file, not an existing directory
+            # — so the detail must not claim it.
+            self.assertIn("could not install some-skill/ into the seed workspace",
                           result2["detail"])
+            self.assertNotIn("already exists", result2["detail"])
             self.assertIn("NotADirectoryError", result2["detail"])
             self.assertNotIn(str(workspace2), result2["detail"])
 
