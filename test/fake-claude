@@ -25,6 +25,21 @@ harness's agent_env() is expected to have set (SKILLS_EVALS_PROBE, PATH).
 that harness/run_canary.py's `claude --version` recording call succeeds even
 when a mode simulates a failure.
 
+Two modes serve the guidance subject's per-arm delivery guard (#97):
+  - guidance_probe: loads "memory" the way the real CLI would —
+    $CLAUDE_CONFIG_DIR/CLAUDE.md when --setting-sources names `user`,
+    ./CLAUDE.md when it names `project` — and replies with the magic word it
+    finds there, or NO-MAGIC-WORD. $FAKE_CLAUDE_AMBIENT_MEMORY, when set,
+    names a file loaded REGARDLESS of the config dir: that is the contaminated
+    real ~/.claude/CLAUDE.md the guard exists to catch.
+  - guidance_blind: never sees any memory, simulating an arm whose delivery
+    silently failed.
+
+$FAKE_CLAUDE_ARGV_LOG, when set, gets one JSON line per invocation
+({argv, env_keys, cwd}) in EVERY mode, so a test can assert which
+--setting-sources an arm was invoked with and that the environment allowlist
+scrubbed what it claims to.
+
 Three modes simulate harness/run_canary.py's guidance-bridge canary:
   - canary_loader: mimics Claude Code's real memory loader — expands an
     `@AGENTS.md`-style import line in ./CLAUDE.md (outside fenced code
@@ -40,6 +55,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -87,7 +103,57 @@ def _load_claude_md() -> str:
     return content + "".join(imported)
 
 
+MAGIC_RE = re.compile(r"The magic word is (\S+?)\.")
+
+
+def _flag_value(name: str) -> str:
+    """The value of `--name VALUE` in argv, or "" — the fake CLI has to READ
+    --setting-sources to model memory loading, which is the whole point of the
+    guidance guard."""
+    if name in sys.argv:
+        index = sys.argv.index(name)
+        if index + 1 < len(sys.argv):
+            return sys.argv[index + 1]
+    return ""
+
+
+def _read_if_file(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _loaded_memory() -> str:
+    """What this invocation would have in context, per --setting-sources."""
+    sources = _flag_value("--setting-sources").split(",")
+    memory = ""
+    if "user" in sources:
+        config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
+        if config_dir:
+            memory += _read_if_file(Path(config_dir) / "CLAUDE.md")
+    if "project" in sources:
+        memory += _read_if_file(Path.cwd() / "CLAUDE.md")
+    ambient = os.environ.get("FAKE_CLAUDE_AMBIENT_MEMORY")
+    if ambient:
+        # The contamination case: a real ~/.claude/CLAUDE.md that already IS
+        # the guidance, reaching an arm that was never delivered to.
+        memory += _read_if_file(Path(ambient))
+    return memory
+
+
+def _log_argv() -> None:
+    log = os.environ.get("FAKE_CLAUDE_ARGV_LOG")
+    if not log:
+        return
+    record = {"argv": sys.argv[1:], "env_keys": sorted(os.environ),
+              "cwd": os.getcwd()}
+    with open(log, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record) + "\n")
+
+
 def main() -> int:
+    _log_argv()
     if "--version" in sys.argv:
         print("fake-claude 0.0.0 (hermetic test stub)")
         return 0
@@ -154,6 +220,13 @@ def main() -> int:
             "duration_ms": 5000,
             "session_id": "fake-session",
         })
+        return 0
+
+    if MODE in ("guidance_probe", "guidance_blind"):
+        found = None if MODE == "guidance_blind" else MAGIC_RE.search(_loaded_memory())
+        emit({"result": found.group(1) if found else "NO-MAGIC-WORD",
+             "is_error": False, "usage": USAGE, "total_cost_usd": 0.01,
+             "num_turns": 1, "duration_ms": 100, "session_id": "fake-session"})
         return 0
 
     if MODE == "canary_loader":
