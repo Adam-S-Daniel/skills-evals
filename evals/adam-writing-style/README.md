@@ -28,15 +28,24 @@ Each directory is a complete eval dir on its own — `fixture.yaml`, `seed/`,
 > **`run_eval.py` does not honour `judge.mode` yet.** The runner still calls
 > `judge.score()` with the arguments it knew before [#81], so each
 > fixture's `judge:` block reaches it without its `mode:` or its
-> `references:`. Run these
-> fixtures today and the ABSOLUTE judge scores them against a *ranking*
-> rubric, silently: measured on `recruiter-reply`, exit 0 and a report
-> reading `Judge overall | 7.5`, which is not a rank and means nothing here.
-> Until `run_eval._run_arm` calls `judge.score_fixture`, pass `--no-judge`
-> and treat the objective column as the only score this runner produces.
+> `references:`. Running these fixtures used to hand them to the ABSOLUTE
+> judge against a *ranking* rubric, silently: measured on
+> `recruiter-reply`, exit 0 and a report reading `Judge overall | 7.5`,
+> which is not a rank and means nothing here. The runner now **refuses**
+> instead — a fixture whose `judge.mode` is not `absolute` exits 2 with a
+> named `judge_mode_unsupported` error in `report.md` and `summary.json`,
+> before any arm runs — so pass `--no-judge` and treat the objective column
+> as the only score this runner produces.
 > `harness/scorers/judge.py` is complete and tested end to end
 > (`judge.score_fixture`); it is the call site that has not moved, and
-> moving it is the harness lane's change, not this fixture set's.
+> moving it is [#97]'s change, not this fixture set's.
+>
+> [#97] has a second, older gap to pick up while it is in there:
+> `run_agent` passes the prompt in **argv** with no `OSError` catch, so a
+> missing or unexecutable CLI is an uncaught traceback with no `report.md`
+> and no `summary.json` — the judge call fixed exactly this for itself
+> (stdin, and every `OSError` translated) and the agent call never
+> followed.
 
 That means three invocations by hand:
 
@@ -138,3 +147,4 @@ workspace.
 
 [#81]: https://github.com/Adam-S-Daniel/skills-evals/issues/81
 [#66]: https://github.com/Adam-S-Daniel/skills-evals/issues/66
+[#97]: https://github.com/Adam-S-Daniel/skills-evals/issues/97

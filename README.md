@@ -143,11 +143,16 @@ an error rather than a silent fall back to absolute.
 
 > [!NOTE]
 > `run_eval.py` does not read `judge.mode` yet: it still calls
-> `judge.score()` with the arguments it knew before #81, so a pairwise
-> fixture run through the runner today is scored by the absolute judge.
+> `judge.score()` with the arguments it knew before #81, so it cannot score
+> a pairwise fixture — and rather than scoring one with the absolute judge,
+> it now refuses. A fixture whose `judge.mode` is anything but `absolute`
+> exits 2 with a named `judge_mode_unsupported` error, written to
+> `report.md` and `summary.json`, before any arm runs; `--no-judge` runs it
+> with the objective column as the only score.
 > `harness/scorers/judge.py`'s `score_fixture()` is the seam that fixes it;
 > moving `_run_arm` onto it (plus a trial loop and a rank column in
-> `_render_report`) is the work that remains.
+> `_render_report`) is
+> [#97](https://github.com/Adam-S-Daniel/skills-evals/issues/97).
 
 ## Guidance-bridge canary
 

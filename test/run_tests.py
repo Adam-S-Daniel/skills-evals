@@ -4177,6 +4177,90 @@ class TestIssue81(unittest.TestCase):
             self.skipTest(reason)
         self.assertRegex(skill_md, self.CONTRACTION_RE)
 
+    # ------------------------------------------------------------------
+    # the runner refuses a mode it cannot honour
+    # ------------------------------------------------------------------
+
+    ISSUE_97 = "https://github.com/Adam-S-Daniel/skills-evals/issues/97"
+
+    def _run_eval(self, *args, mode="agent_and_judge"):
+        with tempfile.TemporaryDirectory() as tmp:
+            proc = subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                 str(self.STYLE_DIR / "recruiter-reply"), "--results-dir", tmp,
+                 *args],
+                capture_output=True, text=True, cwd=str(REPO_ROOT),
+                env={**os.environ, "CLAUDE_BIN": str(FAKE_CLAUDE),
+                     "FAKE_CLAUDE_MODE": mode})
+            artifacts = {p.relative_to(tmp).as_posix():
+                         p.read_text(encoding="utf-8")
+                         for p in sorted(Path(tmp).rglob("*"))
+                         if p.is_file()}
+        return proc, artifacts
+
+    def test_a_pairwise_fixture_with_the_judge_on_exits_2(self):
+        # It used to run both arms and score them with the ABSOLUTE judge
+        # against a ranking rubric: exit 0, "Judge overall | 7.5", and
+        # nothing in the artifact saying the number came from the wrong
+        # instrument. The runner now refuses before any arm starts.
+        proc, artifacts = self._run_eval("--arm", "without_skill")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertIn("judge_mode_unsupported", proc.stdout)
+        self.assertIn("pairwise", proc.stdout)
+        self.assertIn("--no-judge", proc.stdout)
+        self.assertIn("#97", proc.stdout)
+
+        reports = [text for name, text in artifacts.items()
+                   if name.endswith("report.md")]
+        summaries = [text for name, text in artifacts.items()
+                     if name.endswith("summary.json")]
+        self.assertTrue(reports, artifacts.keys())
+        self.assertTrue(summaries, artifacts.keys())
+        self.assertIn("judge_mode_unsupported", reports[0])
+        # No arm ran, so no judge number of any kind reached the report.
+        self.assertNotIn("7.5", reports[0])
+        self.assertEqual(json.loads(summaries[0])["error"]["type"],
+                         "judge_mode_unsupported")
+
+    def test_a_pairwise_fixture_still_runs_with_no_judge(self):
+        # The documented way to run these today, and the one the fixtures'
+        # README prints: the objective column is the only score.
+        proc, artifacts = self._run_eval("--arm", "without_skill", "--no-judge")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("judge_mode_unsupported", proc.stdout)
+        self.assertTrue([n for n in artifacts if n.endswith("report.md")],
+                        artifacts.keys())
+
+    def test_objective_only_is_not_blocked_by_the_judge_mode(self):
+        # objective-only runs no judge at all, so the guard must not fire
+        # there: these three fixtures are meant to exit 1 with "no
+        # transcript" on a pristine seed, and that is the documented
+        # asymmetry, not a runner error.
+        proc, _ = self._run_eval("--arm", "objective-only")
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        self.assertNotIn("judge_mode_unsupported", proc.stdout)
+
+    def test_the_run_eval_gap_names_the_issue_that_owns_it(self):
+        # "the issue that owns run_eval.py" named nobody and linked
+        # nothing. Every place that defers to it says #97 and links it.
+        for path in (HARNESS_DIR / "scorers" / "judge.py",
+                     REPO_ROOT / "README.md",
+                     self.STYLE_DIR / "README.md"):
+            with self.subTest(path=path.name):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("#97", text)
+                self.assertIn(self.ISSUE_97, text)
+
+    def test_the_readme_hands_run_agents_argv_gap_to_the_same_issue(self):
+        # Out of scope for #81 and older than it: run_agent passes the
+        # prompt in argv with no OSError catch, so a missing CLI is a
+        # traceback with no artifacts. Recorded where #97 will find it.
+        note = " ".join((self.STYLE_DIR / "README.md").read_text(
+            encoding="utf-8").split())
+        self.assertIn("run_agent", note)
+        self.assertIn("OSError", note)
+        self.assertIn("argv", note)
+
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it
         # back into the judge's own voice. There is no way to render that

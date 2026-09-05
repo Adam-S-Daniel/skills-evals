@@ -687,8 +687,11 @@ def score_fixture(eval_dir, fixture: dict, transcript: str,
 
     run_eval.py still calls `score()` directly with the arguments it knew
     before #81, so `judge.mode: pairwise` is inert in a real run until that
-    one call site moves here. That change belongs to the issue that owns
-    run_eval.py; #81 owns this file, and stops at the seam.
+    one call site moves here. That change belongs to #97
+    (https://github.com/Adam-S-Daniel/skills-evals/issues/97); #81 owns this file, and stops at the seam.
+    Until #97 lands, `run_eval.main` refuses a non-absolute `judge.mode`
+    outright (`judge_mode_unsupported`, exit 2) rather than scoring it with
+    the wrong instrument.
     """
     judge_cfg = fixture.get("judge") or {}
     mode = judge_cfg.get("mode", "absolute")

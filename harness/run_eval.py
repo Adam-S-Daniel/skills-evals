@@ -613,6 +613,33 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
+                         error_type: str, detail: str) -> str:
+    """Record a fixture-level error as the artifacts a run would have left.
+
+    A pre-run refusal that only printed to stdout left `results/` with
+    nothing in it, so the reason the run produced no numbers was visible
+    only to whoever watched it happen. The report and one summary.json per
+    arm carry the named error instead, in the shape `_render_report` and
+    `_write_summary` already use for an arm that failed.
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    error = {"type": error_type, "detail": detail}
+    arm_names = (["with_skill", "without_skill"] if args.arm == "both"
+                 else [args.arm])
+    for arm_name in arm_names:
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+    report = _render_report(fixture["skill"], fixture.get("prompt", ""),
+                            timestamp,
+                            [{"arm": name, "error": error} for name in arm_names])
+    report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+    return timestamp
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
@@ -666,6 +693,35 @@ def main() -> int:
     if bad_type:
         print(f"{args.eval_dir / 'fixture.yaml'} field(s) must be strings: " +
               ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
+        return 2
+
+    # A fixture whose `judge:` block asks for an instrument this runner
+    # cannot drive is refused before any arm starts, rather than scored with
+    # the wrong one. `_run_arm` still calls `judge.score()` with the three
+    # keywords it knew before #81 — no mode, no references — so a
+    # `judge.mode: pairwise` fixture used to be scored by the ABSOLUTE judge
+    # against a ranking rubric: measured on recruiter-reply, exit 0 and a
+    # report reading "Judge overall | 7.5", which is not a rank and means
+    # nothing there. Wiring `_run_arm` onto `judge.score_fixture` belongs to
+    # #97 (https://github.com/Adam-S-Daniel/skills-evals/issues/97); until
+    # then the run either passes --no-judge or does not happen.
+    #
+    # objective-only is exempt because it runs no judge at all: these
+    # fixtures are meant to exit 1 there with "no transcript", which is the
+    # documented asymmetry rather than a runner error.
+    judge_mode = (fixture.get("judge") or {}).get("mode", "absolute")
+    if (args.arm != "objective-only" and not args.no_judge
+            and judge_mode not in (None, "", "absolute")):
+        detail = (f"fixture asks for judge mode {judge_mode!r}, which "
+                  "run_eval.py cannot drive yet: it still calls "
+                  "judge.score() with the arguments it knew before #81, so "
+                  "scoring this fixture here would rank it with the "
+                  "absolute judge. Wiring the call site onto "
+                  "judge.score_fixture() is #97 "
+                  "(https://github.com/Adam-S-Daniel/skills-evals/issues/97)."
+                  " Re-run with --no-judge and read the objective column.")
+        print(f"judge_mode_unsupported: {detail}")
+        _write_pre_run_error(args, fixture, "judge_mode_unsupported", detail)
         return 2
 
     # Resolved and validated before ANY arm starts, including objective-only:
