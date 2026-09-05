@@ -4592,7 +4592,7 @@ class TestIssue81(unittest.TestCase):
                 self.assertEqual(
                     objective.strip_seed_material(line + "\n", seed), "")
 
-    # S5 (round 5): the bare-wrapper-tag substitution used to be the EMPTY
+    # S2 (round 5): the bare-wrapper-tag substitution used to be the EMPTY
     # STRING, which welds the text on either side of the tag together.
     # Measured: `We x<code>leverage this every quarter.` normalised to
     # `...xleverage...`, `\bleverage\b` stopped matching, and the reply
@@ -4623,6 +4623,46 @@ class TestIssue81(unittest.TestCase):
             with self.subTest(line=line):
                 by_id = self._score_reusing_workspace(
                     "recruiter-reply", reply + "\n\n" + line + "\n")
+                self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
+
+    def test_both_tag_readings_are_load_bearing(self):
+        """Neither reading of a bare wrapper tag can be dropped.
+
+        The mutation the round-5 brief named for this item — putting
+        `_strip_wrapper`'s `tag_gap` default back to the empty string — is
+        a NO-OP, because `transcript_matches` passes both gaps explicitly
+        and the default only ever reaches the seed index. The mutation that
+        is real is scoring ONE reading, and this runs it: with either half
+        of `_TAG_READINGS` taken away, one of the two shapes above walks
+        back through the ban. Run rather than described, so the pair cannot
+        quietly become a single reading again.
+        """
+        reply = self._reference("recruiter-reply", "in-voice").strip()
+        welded = "We x<code>leverage this every quarter."
+        split = "I would rather not lever<br>age a move right now."
+        # Which shape each single reading loses. The space reading reads
+        # `lever<br>age` as two words; the empty reading reads
+        # `x<code>leverage` as one.
+        lost = {" ": split, "": welded}
+        original = objective._TAG_READINGS
+        try:
+            for gap, escape in lost.items():
+                objective._TAG_READINGS = (gap,)
+                with self.subTest(reading=repr(gap)):
+                    by_id = self._score_reusing_workspace(
+                        "recruiter-reply", reply + "\n\n" + escape + "\n")
+                    self.assertTrue(
+                        by_id[self.AVOID_CHECK_ID]["passed"],
+                        f"reading {gap!r} was expected to lose {escape!r}")
+        finally:
+            objective._TAG_READINGS = original
+        # And with both, neither escapes — which is the state the tests
+        # above assert one shape at a time.
+        self.assertEqual(objective._TAG_READINGS, (" ", ""))
+        for escape in (welded, split):
+            with self.subTest(both=escape):
+                by_id = self._score_reusing_workspace(
+                    "recruiter-reply", reply + "\n\n" + escape + "\n")
                 self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
 
     # S5 (the code review's should-fix): `_FENCE_RE` matches only the

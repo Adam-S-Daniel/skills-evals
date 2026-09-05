@@ -1063,6 +1063,18 @@ _WRAPPER_TAGS = ("blockquote", "details", "summary", "pre", "code", "div",
                  "p", "br")
 _BARE_WRAPPER_TAG_RE = re.compile(
     r"</?(?:" + "|".join(_WRAPPER_TAGS) + r")\s*/?>", re.I)
+# What a bare wrapper tag leaves behind, and there are TWO answers because
+# a tag mid-word has two honest readings: a space, so `x<code>leverage` is
+# `x leverage` and the ban on `leverage` fires; and nothing, so
+# `lever<br>age` is `leverage` and the ban fires on that too. Neither
+# reading catches both shapes, so `transcript_matches` scores the text
+# under each and `_text_matches_any` forbids a banned pattern in ANY of
+# them. Named here rather than written inline so the mutation "score only
+# one reading" is a thing a test can DO — see
+# `TestIssue81.test_both_tag_readings_are_load_bearing`. Changing the
+# default of `_strip_wrapper` alone is not that mutation: the two readings
+# are passed explicitly, so the default only reaches the seed index.
+_TAG_READINGS = (" ", "")
 # The block wrappers that bracket a quotation. `<summary>` is the LABEL on a
 # `<details>` rather than part of what it discloses, but the label's TEXT is
 # still the agent's, so it is not a delimiter: only its tags come off.
@@ -1858,9 +1870,11 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
         # a `must_match` in one of them and forbids a `must_not_match` in
         # all of them. The two are the same string unless the reply
         # actually carries a bare wrapper tag mid-line.
-        readings = [strip_seed_material(text, seed, gap) for gap in (" ", "")]
-        if readings[1] == readings[0]:
-            readings.pop()
+        readings = []
+        for gap in _TAG_READINGS:
+            reading = strip_seed_material(text, seed, gap)
+            if reading not in readings:
+                readings.append(reading)
     return _text_matches_any(readings, must_match or [], must_not_match or [],
                              "transcript")
 
