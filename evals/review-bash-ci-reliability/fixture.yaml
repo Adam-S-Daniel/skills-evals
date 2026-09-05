@@ -56,6 +56,14 @@ arms:
 # (test_every_shell_check_alternative_is_anchored_to_non_comment_text) checks
 # this mechanically, alternative by alternative, over every file_matches
 # check in this fixture.
+# Record (round-5 N4): `main`'s file_matches_excluding_comments check
+# type is not a substitute for that rule here. It strips whole-line
+# comments only, and nothing else: a comment trailing after live code
+# on the same line survives it. It would therefore not have closed any
+# of the trailing-comment dodges this fixture's anchoring closes, in
+# either direction, so this fixture stays on file_matches plus the
+# anchoring rule above —
+# test_n_c_excluding_comments_type_would_not_close_the_trailing_dodges.
 # Deliberate exception: exactly four alternatives end in an explicit,
 # optional trailing-comment-tail group — `(\s*#.*)?$` or `(#.*)?$` — whose
 # own match extends into the comment. They are, in fixture order:

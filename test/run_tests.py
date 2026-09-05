@@ -2118,6 +2118,40 @@ class TestIssue74(unittest.TestCase):
                   if c["id"] == "grep-q-avoids-broken-pipe"]
         self.assertEqual(len(check["must_not_match"]), 2, check["must_not_match"])
 
+    # -- Round-6 review N-c: round 5's N4 asked for a record of why this
+    # fixture does not switch to main's file_matches_excluding_comments
+    # type, and the sentence never landed (zero hits for
+    # `excluding_comments` in the header). The claim is measured here, not
+    # asserted as prose: that type strips WHOLE-LINE comments only, so the
+    # trailing-comment dodges this fixture's anchoring closes would still
+    # be open under it. --
+
+    def test_n_c_excluding_comments_type_would_not_close_the_trailing_dodges(self):
+        header = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        head = header[:header.index("objective_checks:")]
+        for word in ("file_matches_excluding_comments",
+                     "strips whole-line", "comments only", "file_matches"):
+            with self.subTest(word=word):
+                self.assertIn(word, head)
+        defined = self._test_issue_74_method_names()
+        cited = re.findall(r"\btest_[A-Za-z0-9_]+", head)
+        self.assertTrue(cited, head)
+        self.assertEqual(sorted({n for n in cited if n not in defined}), [],
+                         "cited test name(s) are not methods of TestIssue74")
+
+        # Measured through the real scorer on a correct fix that leaves
+        # `# was: ...` comments trailing after the live code.
+        ws = self._ws()
+        self._apply_all_fixes_with_trailing_was_comments(ws)
+        unanchored = r'echo "\$build_log" \| grep -q'
+        passed, detail = objective.file_matches_excluding_comments(
+            str(ws), ["scripts/publish.sh"], must_not_match=[unanchored])
+        self.assertFalse(passed, detail)          # the dodge stays open
+        passed, detail = objective.file_matches(
+            str(ws), ["scripts/publish.sh"],
+            must_not_match=[r'^[^#\n]*echo "\$build_log" \| grep -q[^#\n]*'])
+        self.assertTrue(passed, detail)           # anchoring closes it
+
     # -- Round-6 review N-a: the header's comment-tail exception paragraph
     # (round-5 N3) was unpinned prose — deleting it, or letting a fifth
     # alternative grow a comment tail without being named there, left the
