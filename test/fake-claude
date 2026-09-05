@@ -25,11 +25,15 @@ Mode "echo_prompt" reports how the prompt reached it — stdin byte count and
 digest, and the argv it was handed — so a test can prove the judge prompt
 travels on stdin rather than in an argument vector Linux caps at 128 KB.
 
-Three modes serve the pairwise judge (skills-evals#81): "judge_pairwise"
+Six modes serve the pairwise judge (skills-evals#81): "judge_pairwise"
 returns a canned ranking of three blind draft labels plus per-draft
 dimension scores; "judge_pairwise_incomplete" drops a label from the
-ranking and "judge_pairwise_unknown_label" invents one, so the scorer's
-validation has something to reject. The canned ranking is fixed while the
+ranking and "judge_pairwise_unknown_label" invents one;
+"judge_pairwise_sloppy_labels" answers in lower case with stray padding
+(the labels are still the ones it was given, so the scorer must normalise
+rather than reject); and "judge_pairwise_score_out_of_range" /
+"judge_pairwise_score_nan" put an 11 and a NaN on the 0-10 scale, so the
+scorer's validation has something to reject. The canned ranking is fixed while the
 LABEL each draft carries is shuffled per trial by the scorer, which is what
 lets a test read the shuffle back out of the resulting rank.
 
@@ -175,15 +179,28 @@ def main() -> int:
         return 0
 
     if MODE in ("judge_pairwise", "judge_pairwise_incomplete",
-                "judge_pairwise_unknown_label"):
+                "judge_pairwise_unknown_label", "judge_pairwise_sloppy_labels",
+                "judge_pairwise_score_out_of_range", "judge_pairwise_score_nan"):
         ranking = list(PAIRWISE_RANKING)
+        dimensions = PAIRWISE_DIMENSIONS_BY_LABEL
         if MODE == "judge_pairwise_incomplete":
             ranking = ranking[:-1]
         elif MODE == "judge_pairwise_unknown_label":
             ranking = ranking[:-1] + ["Z"]
+        elif MODE == "judge_pairwise_sloppy_labels":
+            # A judge answering in lower case with stray padding. The labels
+            # are still exactly the ones it was handed.
+            ranking = [f" {label.lower()} " for label in ranking]
+            dimensions = {label.lower(): dims
+                          for label, dims in dimensions.items()}
+        elif MODE in ("judge_pairwise_score_out_of_range",
+                      "judge_pairwise_score_nan"):
+            bad = 11 if MODE.endswith("out_of_range") else float("nan")
+            dimensions = {label: [dict(dims[0], score=bad), *dims[1:]]
+                          for label, dims in dimensions.items()}
         emit({
             "result": json.dumps({"ranking": ranking,
-                                  "dimensions": PAIRWISE_DIMENSIONS_BY_LABEL}),
+                                  "dimensions": dimensions}),
             "is_error": False,
             "usage": USAGE,
             "total_cost_usd": 0.03,

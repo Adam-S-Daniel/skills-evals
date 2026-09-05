@@ -3297,6 +3297,25 @@ class TestIssue81(unittest.TestCase):
                                      timeout=30)
         self.assertIn("</draft", str(ctx.exception))
 
+    def test_pairwise_trial_zero_order_is_pinned_for_every_fixture(self):
+        # The reproducibility contract, held against the names the fixtures
+        # really carry. _cycle_offset seeds the shuffle from the draft
+        # IDENTITIES — "agent" plus each reference's name — so renaming a
+        # reference moves the whole cycle while editing its prose does not.
+        # A rename is allowed to fail this test; it is not allowed to move
+        # the shuffle in silence.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                fixture = self._fixture(name)
+                references = judge.load_references(self.STYLE_DIR / name,
+                                                   fixture["judge"])
+                self.assertEqual([r["name"] for r in references],
+                                 ["in-voice", "generic"])
+                self.assertEqual(
+                    [c["identity"] for c in judge.blind_order(
+                        self.UNWRAPPED_CANDIDATE, references, 0)],
+                    ["reference:generic", "reference:in-voice", "agent"])
+
     def test_pairwise_prompt_is_blind(self):
         ordered = judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)
         prompt = judge._build_pairwise_prompt("rubric text", ordered,
@@ -3349,18 +3368,85 @@ class TestIssue81(unittest.TestCase):
         self.assertIn("ranking", str(ctx.exception))
 
     def test_pairwise_needs_at_least_one_reference(self):
+        # The message matters: with the guard deleted the canned ranking
+        # trips a DIFFERENT ValueError (three labels ranked, one draft), so
+        # a bare assertRaises passes either way.
         with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                           "FAKE_CLAUDE_MODE": "judge_pairwise"}):
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ValueError) as ctx:
                 judge.score_pairwise("rubric", self.CANDIDATE, [], timeout=30)
+        self.assertIn("at least one reference", str(ctx.exception))
 
     def test_pairwise_rejects_duplicate_reference_names(self):
         duplicated = [dict(self.REFERENCES[0]), dict(self.REFERENCES[0])]
         with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                           "FAKE_CLAUDE_MODE": "judge_pairwise"}):
-            with self.assertRaises(ValueError):
+            with self.assertRaises(ValueError) as ctx:
                 judge.score_pairwise("rubric", self.CANDIDATE, duplicated,
                                      timeout=30)
+        self.assertIn("duplicate reference name", str(ctx.exception))
+
+    def test_pairwise_rejects_an_empty_draft_under_test(self):
+        # An empty arm is a run that produced nothing; ranking it hands back
+        # a rank of 3 as if the writing had been judged and found wanting.
+        # _normalize_references already refuses a blank reference for the
+        # same reason.
+        for empty in ("", "   \n\t ", None):
+            with self.subTest(candidate=repr(empty)):
+                with mock.patch.dict(
+                        os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                     "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+                    with self.assertRaises(ValueError) as ctx:
+                        judge.score_pairwise("rubric", empty, self.REFERENCES,
+                                             timeout=30)
+                self.assertIn("non-empty draft under test", str(ctx.exception))
+
+    def test_pairwise_rejects_two_identical_drafts(self):
+        # A ranking between two drafts the judge cannot tell apart is a coin
+        # flip recorded as a measurement.
+        twinned = [dict(self.REFERENCES[0]),
+                   {"name": "twin", "text": self.REFERENCES[0]["text"]}]
+        with self.assertRaises(ValueError) as ctx:
+            judge.blind_order(self.CANDIDATE, twinned, 0)
+        self.assertIn("identical", str(ctx.exception))
+        # Same for a draft under test that is a byte-for-byte copy of a
+        # reference, which is what the end-to-end test used to send.
+        with self.assertRaises(ValueError) as ctx:
+            judge.blind_order(self.REFERENCES[0]["text"], self.REFERENCES, 0)
+        self.assertIn("identical", str(ctx.exception))
+
+    def test_pairwise_normalises_the_labels_the_judge_returns(self):
+        # A judge that answers " b " for B has still ranked B first. Case
+        # and padding are not a malformed ranking.
+        sloppy = self._pairwise(mode="judge_pairwise_sloppy_labels",
+                                trial_index=0)
+        self.assertEqual(sloppy["blind_ranking"], self.CANNED_RANKING)
+        self.assertEqual(sloppy["rank"], self._pairwise(trial_index=0)["rank"])
+        self.assertEqual(sorted(sloppy["reference_dimensions"]),
+                         ["generic", "in-voice"])
+
+    def test_pairwise_rejects_a_dimension_score_off_the_scale(self):
+        # The rubric asks for 0-10. An 11 or a NaN is not a score; a NaN in
+        # particular would poison every mean it reaches, silently.
+        for mode, tell in (("judge_pairwise_score_out_of_range", "11"),
+                           ("judge_pairwise_score_nan", "nan")):
+            with self.subTest(mode=mode):
+                with self.assertRaises(ValueError) as ctx:
+                    self._pairwise(mode=mode, trial_index=0)
+                self.assertIn("0-10", str(ctx.exception))
+                self.assertIn(tell, str(ctx.exception).lower())
+
+    def test_normalize_references_rejects_an_explicitly_blank_name(self):
+        # `{"name": ""}` used to fall through to the auto-name, so the
+        # blank-name branch was unreachable and a fixture with an empty
+        # name: silently became "reference-1".
+        with self.assertRaises(ValueError) as ctx:
+            judge._normalize_references([{"name": "", "text": "some text"}])
+        self.assertIn("blank name", str(ctx.exception))
+        # A missing name still auto-names.
+        self.assertEqual(
+            [r["name"] for r in judge._normalize_references([{"text": "x"}])],
+            ["reference-1"])
 
     def test_score_dispatches_to_the_pairwise_mode(self):
         # The fixture says `judge.mode: pairwise`; score() is where that
@@ -3443,6 +3529,26 @@ class TestIssue81(unittest.TestCase):
                     self.assertTrue(
                         (self.STYLE_DIR / name / reference["path"]).is_file())
 
+    # A draft that is close to the in-voice reference without being a copy
+    # of it. Sending the reference itself — which this test used to do —
+    # puts two byte-identical drafts in front of the judge, which is a coin
+    # flip the scorer now refuses to record, and which measures nothing
+    # about the fixture either way.
+    NEAR_MISS_EDIT = {
+        "recruiter-reply": ("Sorry for the slow reply",
+                            "Sorry to be slow coming back to you"),
+        "proposal-bio": ("He holds the", "He also holds the"),
+        "self-appraisal-opening": ("Most of this quarter went to",
+                                   "Nearly all of this quarter went to"),
+    }
+
+    def _near_miss(self, name: str) -> str:
+        reference = self._reference(name, "in-voice")
+        before, after = self.NEAR_MISS_EDIT[name]
+        self.assertIn(before, reference,
+                      f"{name}: the near-miss edit no longer applies")
+        return reference.replace(before, after, 1)
+
     def test_score_fixture_ranks_every_fixture_end_to_end(self):
         # fixture.yaml -> references off disk -> blind shuffled prompt ->
         # canned ranking -> a rank, with nothing hand-assembled in between.
@@ -3451,7 +3557,7 @@ class TestIssue81(unittest.TestCase):
         for name in self.FIXTURES:
             with self.subTest(fixture=name):
                 fixture = self._fixture(name)
-                transcript = self._reference(name, "in-voice")
+                transcript = self._near_miss(name)
                 with mock.patch.dict(
                         os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
                                      "FAKE_CLAUDE_MODE": "judge_pairwise"}):

@@ -242,7 +242,11 @@ def _normalize_references(references) -> list[dict]:
         if isinstance(reference, str):
             name, text = f"reference-{i}", reference
         elif isinstance(reference, dict):
-            name = str(reference.get("name") or f"reference-{i}").strip()
+            # An explicitly empty name is a mistake worth naming, not a
+            # request for the auto-name: only an ABSENT name defaults.
+            raw_name = reference.get("name")
+            name = (f"reference-{i}" if raw_name is None
+                    else str(raw_name).strip())
             text = reference.get("text")
         else:
             raise ValueError(
@@ -280,6 +284,13 @@ def _cycle_offset(identities: list[str]) -> int:
 
     Without it trial 0 would always be the identity permutation, which puts
     the draft under test in slot A for every fixture's first trial.
+
+    The seed is the draft IDENTITIES — "agent" plus each reference's name —
+    and nothing else. Renaming a reference therefore moves the whole cycle,
+    while editing a reference's prose does not; that is deliberate (a run
+    stays reproducible while its references are being edited) but it means
+    a rename is a change to the shuffle, which
+    test_pairwise_trial_zero_order_is_pinned_for_every_fixture pins.
     """
     return _digest("skills-evals/pairwise/cycle/" + "|".join(sorted(identities)))
 
@@ -309,13 +320,27 @@ def blind_order(candidate_text: str, references: list,
     and the draft under test does not sit in the same slot every trial (so a
     judge cannot learn the slot instead of the writing).
     """
+    if not (candidate_text or "").strip():
+        raise ValueError("pairwise judging needs a non-empty draft under test")
     candidates = {AGENT_IDENTITY: {"identity": AGENT_IDENTITY,
-                                   "text": candidate_text or ""}}
+                                   "text": candidate_text}}
     for reference in _normalize_references(references):
         identity = _REFERENCE_PREFIX + reference["name"]
         candidates[identity] = {"identity": identity, "text": reference["text"]}
 
     identities = sorted(candidates)
+    # Two drafts the judge cannot tell apart make its ranking between them a
+    # coin flip, recorded as a measurement. Compared after normalisation,
+    # because that is the text the judge actually sees.
+    rendered: dict[str, str] = {}
+    for identity in identities:
+        text = _normalize_draft_text(candidates[identity]["text"])
+        if text in rendered:
+            raise ValueError(
+                f"drafts {rendered[text]!r} and {identity!r} are identical "
+                "once normalised: a ranking between them would be a coin "
+                "flip")
+        rendered[text] = identity
     # Systematic rather than random: consecutive trials always get DIFFERENT
     # permutations, and over one full cycle (n! trials) every draft sits in
     # every slot exactly the same number of times. Drawing each trial's
@@ -457,20 +482,24 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
 
     labels = [c["label"] for c in ordered]
     ranking = parsed.get("ranking")
-    # A ranking that drops, duplicates or invents a label leaves the rank
-    # undefined for somebody; recording it anyway would average a guess in
-    # with real trials.
-    if (not isinstance(ranking, list)
-            or sorted(str(label) for label in ranking) != sorted(labels)):
+    # A judge that answers " b " has still ranked B: case and padding are
+    # normalised before comparing, so only a ranking that really drops,
+    # duplicates or invents a label is rejected. Such a ranking leaves the
+    # rank undefined for somebody, and recording it anyway would average a
+    # guess in with real trials.
+    if isinstance(ranking, list):
+        ranking = [str(label).strip().upper() for label in ranking]
+    if not isinstance(ranking, list) or sorted(ranking) != sorted(labels):
         raise ValueError(
             f"judge 'ranking' must list every draft label {labels} exactly "
-            f"once, best first; got {ranking!r}")
-    ranking = [str(label) for label in ranking]
+            f"once, best first; got {parsed.get('ranking')!r}")
 
     raw_dimensions = parsed.get("dimensions")
     if not isinstance(raw_dimensions, dict):
         raise ValueError(
             f"judge output missing/malformed 'dimensions': {raw_dimensions!r}")
+    raw_dimensions = {str(label).strip().upper(): dims
+                      for label, dims in raw_dimensions.items()}
     by_label: dict[str, list] = {}
     for label in labels:
         dims = raw_dimensions.get(label)
@@ -484,6 +513,12 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
                 raise ValueError(
                     f"judge dimension score for draft {label!r} is not a "
                     f"number: {dim!r}")
+            # The rubric asks for 0-10. An 11 is not a score, and a NaN
+            # poisons every mean it reaches without ever comparing unequal.
+            if not math.isfinite(dim["score"]) or not 0 <= dim["score"] <= 10:
+                raise ValueError(
+                    f"judge dimension score for draft {label!r} is off the "
+                    f"0-10 scale: {dim!r}")
         by_label[label] = dims
 
     identity_of = {c["label"]: c["identity"] for c in ordered}
@@ -540,7 +575,8 @@ def load_references(eval_dir, judge_cfg: dict) -> list[dict]:
                 f"directory {eval_dir}")
         if not resolved.is_file():
             raise ValueError(f"reference file {resolved} not found")
-        loaded.append({"name": str(entry.get("name") or f"reference-{i}"),
+        name = entry.get("name")
+        loaded.append({"name": f"reference-{i}" if name is None else name,
                        "text": resolved.read_text(encoding="utf-8")})
     return _normalize_references(loaded)
 
