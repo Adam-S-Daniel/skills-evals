@@ -1069,3 +1069,90 @@ class TestIssue97(unittest.TestCase):
             "the header must say that write access to _agent-guidance's "
             "default branch now equals key access here — the with arm "
             "executes its content under bypassPermissions")
+
+    # ------------------------------------------------------------------
+    # Item 1 — the ablation pair, and arm/schema validation
+    # ------------------------------------------------------------------
+
+    def test_the_default_arm_pair_is_section_versus_none(self):
+        arms = run_eval.guidance_arms({}, "both")
+        self.assertEqual([(a["name"], a["mode"]) for a in arms],
+                         [("with_guidance", "section"), ("without_guidance", "none")])
+
+    def test_ablation_runs_the_fixtures_declared_second_pair(self):
+        fixture = {"ablation": ["full", "full-minus-section"]}
+        arms = run_eval.guidance_arms(fixture, "both", ablation=True)
+        self.assertEqual([(a["name"], a["mode"]) for a in arms],
+                         [("ablation_full", "full"),
+                          ("ablation_full_minus_section", "full-minus-section")])
+        # Both ablation arms are delivered arms, so both must SEE the token —
+        # the ablation asks about marginal value in situ, not about delivery.
+        for arm in arms:
+            self.assertTrue(guidance.guard_expectation(arm["mode"]))
+        for bad in ({}, {"ablation": ["full"]}, {"ablation": "full"},
+                    {"ablation": ["full", "full"]}):
+            with self.subTest(fixture=bad):
+                with self.assertRaises(guidance.GuidanceError):
+                    run_eval.guidance_arms(bad, "both", ablation=True)
+
+    def test_an_ablation_run_end_to_end_delivers_both_arms(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-ablation-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(
+            tmp, section="bravo", ablation=["full", "full-minus-section"])
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--ablation",
+                                  "--guidance", root, "--results-dir", results,
+                                  "--no-judge"])
+        self.assertEqual(rc, 0, out)
+        full = self._summary(results, "guidance/bravo", "ablation_full")
+        minus = self._summary(results, "guidance/bravo",
+                              "ablation_full_minus_section")
+        self.assertTrue(full["guard"]["ok"] and minus["guard"]["ok"])
+        self.assertGreater(full["bytes"], minus["bytes"],
+                           "the ablation arm is the corpus MINUS the section")
+
+    def test_an_arm_whose_name_disagrees_with_its_mode_is_rejected(self):
+        for arms in ({"with_guidance": {"mode": "none"}},
+                     {"without_guidance": {"mode": "section"}},
+                     {"with_guidance": {"mode": "nonsense"}},
+                     {"with_guidance": {}},
+                     {"../escape": {"mode": "section"}}):
+            with self.subTest(arms=arms):
+                with self.assertRaises(guidance.GuidanceError):
+                    run_eval.guidance_arms({"arms": arms}, "both")
+
+    def test_an_unknown_arm_name_lists_the_arms_the_fixture_declares(self):
+        with self.assertRaises(guidance.GuidanceError) as ctx:
+            run_eval.guidance_arms({}, "with_skill")
+        self.assertIn("with_guidance", str(ctx.exception))
+
+    def test_a_skill_fixture_rejects_a_guidance_arm_name(self):
+        tmp = Path(tempfile.mkdtemp(prefix="skill-arm-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        proc = subprocess.run(
+            [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+             str(REPO_ROOT / "evals" / "workflow-path-audit"),
+             "--arm", "with_guidance", "--results-dir", str(tmp)],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=120)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("not valid for a skill fixture", proc.stdout + proc.stderr)
+
+    # ------------------------------------------------------------------
+    # Item 9 — README and DESIGN say what this subject does
+    # ------------------------------------------------------------------
+
+    def test_readme_and_design_document_the_guidance_subject(self):
+        for doc_path in (REPO_ROOT / "README.md", REPO_ROOT / "DESIGN.md"):
+            text = doc_path.read_text(encoding="utf-8")
+            with self.subTest(doc=doc_path.name):
+                self.assertIn("## Guidance subject", text)
+                for mode in guidance.MODES:
+                    self.assertIn(f"`{mode}`", text,
+                                  f"{doc_path.name} must name the {mode} mode")
+                for phrase in ("INCONCLUSIVE", "CLAUDE_CONFIG_DIR",
+                               "fleet-memory"):
+                    self.assertIn(phrase, text,
+                                  f"{doc_path.name} must state the {phrase} rule")

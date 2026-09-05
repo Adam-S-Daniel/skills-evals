@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run a skill eval fixture.
+"""Run an eval fixture.
 
 Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
     python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...] [--no-judge]
+    python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
 
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
 pristine seed should FAIL the fixture's checks; a correctly reworked copy
@@ -11,6 +12,15 @@ should PASS. `--arm with_skill|without_skill|both` runs the agent under test
 (the Claude Code CLI, headless) on a fresh copy of the seed, scores it with
 the objective checks and the LLM judge, and writes a summary + report under
 `--results-dir` (default `results/`).
+
+TWO SUBJECTS. `subject: skill` (the default) copies one skill from a registry
+into `<workspace>/.claude/skills/` and runs with `--setting-sources project`.
+`subject: guidance` (#97) delivers a payload assembled from an
+`_agent-guidance` checkout into a FRESH per-arm config dir, through the real
+fleet-memory hook, and runs with `--setting-sources user,project` — with a
+magic-token guard per arm that makes a mis-delivered arm INCONCLUSIVE (exit 2)
+rather than a quiet number. See `_run_guidance` below, harness/guidance.py,
+and DESIGN.md "Guidance subject".
 """
 
 from __future__ import annotations
