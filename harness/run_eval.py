@@ -642,6 +642,11 @@ def _write_summary(results_dir: Path, skill: str, arm_name: str, timestamp: str,
             json.dump(raw, f, indent=2)
 
 
+# How much of an error detail one report table cell carries. The full
+# detail is always in summary.json; this is the reader's version.
+_REPORT_CELL_CHARS = 200
+
+
 def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[dict]) -> str:
     lines = [
         f"# Eval report: {skill}",
@@ -671,8 +676,17 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
         duration_str = str(agent.get("duration_ms")) if agent.get("duration_ms") is not None else "-"
 
         err = s.get("error")
-        # Error details can carry multiline stderr or `|`s — keep the table intact.
-        err_str = " ".join(f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")[:200] if err else ""
+        # Error details can carry multiline stderr or `|`s — keep the table
+        # intact. The cut is marked: an error cut off mid-sentence at
+        # exactly 200 characters reads as the whole error, and the reader
+        # has no way to tell there is more of it in summary.json, which
+        # keeps the detail in full.
+        err_str = ""
+        if err:
+            err_str = " ".join(
+                f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")
+            if len(err_str) > _REPORT_CELL_CHARS:
+                err_str = err_str[:_REPORT_CELL_CHARS - 1] + "…"
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")
@@ -780,8 +794,24 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "duration_ms": result.get("duration_ms"),
                 "usage": result.get("usage"),
             }
-            objective_checks = objective.run_checks(
-                fixture, str(workspace), str(seed), transcript=result.get("transcript"))
+            # The SAME fixture errors the objective-only path names, at the
+            # one call site that has a transcript and so is the only place
+            # `SeedTooLarge` can actually fire: an uncaught one here came
+            # out of the list comprehension in `main` as a traceback and
+            # exit 1, losing both arms' artifacts with it. Recorded as an
+            # arm error, in the shape `run_setup` already uses, which
+            # `main` turns into exit 2.
+            try:
+                objective_checks = objective.run_checks(
+                    fixture, str(workspace), str(seed),
+                    transcript=result.get("transcript"))
+            except objective.FixtureError as exc:
+                error = {"type": "invalid_fixture", "detail": str(exc)}
+                _write_summary(args.results_dir, fixture["skill"], arm_name,
+                               timestamp, error, agent_summary, None, None, raw)
+                return {"arm": arm_name, "error": error,
+                        "agent": agent_summary, "objective_checks": None,
+                        "judge": None}
 
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
@@ -803,6 +833,33 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "objective_checks": objective_checks, "judge": judge_result}
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
+
+def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
+                         error_type: str, detail: str) -> str:
+    """Record a fixture-level error as the artifacts a run would have left.
+
+    A pre-run refusal that only printed to stdout left `results/` with
+    nothing in it, so the reason the run produced no numbers was visible
+    only to whoever watched it happen. The report and one summary.json per
+    arm carry the named error instead, in the shape `_render_report` and
+    `_write_summary` already use for an arm that failed.
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    error = {"type": error_type, "detail": detail}
+    arm_names = (["with_skill", "without_skill"] if args.arm == "both"
+                 else [args.arm])
+    for arm_name in arm_names:
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+    report = _render_report(fixture["skill"], fixture.get("prompt", ""),
+                            timestamp,
+                            [{"arm": name, "error": error} for name in arm_names])
+    report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+    return timestamp
 
 
 def main() -> int:
@@ -860,6 +917,77 @@ def main() -> int:
               ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
         return 2
 
+    # Validated HERE, before anything derives a path from it. It used to
+    # run after the judge-mode guard below, and only for a non-objective-only
+    # arm — so a fixture carrying both `skill: ../../ESCAPED` and a judge
+    # mode this runner refuses had `_write_pre_run_error` build
+    # `<results-dir>/../../ESCAPED/<timestamp>/report.md` and write it,
+    # two directories above where the operator pointed the run. Every path
+    # this function builds comes off this name, so the check comes first
+    # and applies to every arm.
+    try:
+        _validate_skill_name(fixture["skill"])
+    except ValueError as exc:
+        print(f"invalid fixture: {exc}")
+        return 2
+
+    # `judge:` written as anything but a mapping — a list, a string, a
+    # number, a bare `true`; YAML hands over all of them — used to reach
+    # `.get("mode")` and raise an uncaught AttributeError: exit 1, a
+    # traceback, and none of the artifacts a fixture-level refusal is
+    # supposed to leave. Named and recorded like every other pre-run
+    # refusal, and for every arm: a malformed block is malformed whether or
+    # not this run would have reached the judge.
+    judge_cfg = fixture.get("judge")
+    if judge_cfg is None or judge_cfg == "":
+        judge_cfg = {}
+    if not isinstance(judge_cfg, dict):
+        detail = (f"fixture's `judge:` block is a {type(judge_cfg).__name__}, "
+                  "not a mapping: it must carry keys like `mode:`, `model:` "
+                  "and `references:`, or be left out entirely")
+        print(f"invalid_judge_block: {detail}")
+        _write_pre_run_error(args, fixture, "invalid_judge_block", detail)
+        return 2
+
+    # A fixture whose `judge:` block asks for an instrument this runner
+    # cannot drive is refused before any arm starts, rather than scored with
+    # the wrong one. `_run_arm` still calls `judge.score()` with the three
+    # keywords it knew before #81 — no mode, no references — so a
+    # `judge.mode: pairwise` fixture used to be scored by the ABSOLUTE judge
+    # against a ranking rubric: measured on recruiter-reply, exit 0 and a
+    # report reading "Judge overall | 7.5", which is not a rank and means
+    # nothing there. Wiring `_run_arm` onto `judge.score_fixture` belongs to
+    # #97 (https://github.com/Adam-S-Daniel/skills-evals/issues/97); until
+    # then the run either passes --no-judge or does not happen.
+    #
+    # The mode is casefolded, exactly as `judge.score()` casefolds it, so
+    # `mode: Absolute` is absolute rather than "a mode this runner cannot
+    # drive yet" — which said nothing true about a spelling of the mode the
+    # runner does drive.
+    #
+    # objective-only is exempt because it runs no judge at all: these
+    # fixtures are meant to exit 1 there with "no transcript", which is the
+    # documented asymmetry rather than a runner error.
+    judge_mode = judge_cfg.get("mode", "absolute")
+    normalised_mode = (judge_mode.strip().casefold()
+                       if isinstance(judge_mode, str) else judge_mode)
+    if (args.arm != "objective-only" and not args.no_judge
+            and normalised_mode not in (None, "", "absolute")):
+        # Front-loaded: `_render_report` truncates this cell to 200
+        # characters, and the three sentences of provenance that used to
+        # open it pushed the issue, its URL and the flag that makes the run
+        # work off the end of the report a reader actually sees.
+        detail = (f"cannot drive judge mode {judge_mode!r} yet: re-run with "
+                  "--no-judge and read the objective column. #97 "
+                  "https://github.com/Adam-S-Daniel/skills-evals/issues/97 "
+                  "wires the call site onto judge.score_fixture(); until "
+                  "then _run_arm still calls judge.score() with the "
+                  "arguments it knew before #81, so scoring this fixture "
+                  "here would rank it with the absolute judge.")
+        print(f"judge_mode_unsupported: {detail}")
+        _write_pre_run_error(args, fixture, "judge_mode_unsupported", detail)
+        return 2
+
     # Resolved and validated before ANY arm starts, including objective-only:
     # a bad --registry/$SKILLS_EVALS_REGISTRIES override used to be silently
     # ignored for objective-only (it never reaches resolve_registries at
@@ -873,29 +1001,38 @@ def main() -> int:
         print(f"registry configuration error: {exc}")
         return 2
 
-    if args.arm != "objective-only":
-        try:
-            _validate_skill_name(fixture["skill"])
-        except ValueError as exc:
-            print(f"invalid fixture: {exc}")
-            return 2
-
     if args.arm == "objective-only":
-        if args.workspace:
-            # An explicitly given workspace is scored as-is — the caller's
-            # own responsibility to have already run any `setup:` themselves
-            # (or to be scoring a hand-built workspace that never needed it).
-            workspace = args.workspace
-            results = objective.run_checks(fixture, str(workspace), str(seed))
-        else:
-            with tempfile.TemporaryDirectory() as tmp:
-                workspace = Path(tmp) / "ws"
-                shutil.copytree(seed, workspace)
-                setup_error = run_setup(workspace, fixture)
-                if setup_error is not None:
-                    print(f"setup failed: {setup_error['detail']}")
-                    return 2
-                results = objective.run_checks(fixture, str(workspace), str(seed))
+        # `objective.FixtureError` — a `strip_seed:` written as anything but
+        # a boolean, a seed file over the provenance read cap — is a fixture
+        # error, and every other fixture error here is a named line and exit
+        # 2. These two came out as an uncaught traceback and exit 1, which
+        # is the code a legitimately FAILING eval returns: a fixture that
+        # could not be scored at all was indistinguishable, to a CI job
+        # reading the exit code, from one whose agent wrote a bad reply.
+        try:
+            if args.workspace:
+                # An explicitly given workspace is scored as-is — the
+                # caller's own responsibility to have already run any
+                # `setup:` themselves (or to be scoring a hand-built
+                # workspace that never needed it).
+                workspace = args.workspace
+                results = objective.run_checks(fixture, str(workspace),
+                                               str(seed))
+            else:
+                with tempfile.TemporaryDirectory() as tmp:
+                    workspace = Path(tmp) / "ws"
+                    shutil.copytree(seed, workspace)
+                    setup_error = run_setup(workspace, fixture)
+                    if setup_error is not None:
+                        print(f"setup failed: {setup_error['detail']}")
+                        return 2
+                    results = objective.run_checks(fixture, str(workspace),
+                                                   str(seed))
+        except objective.FixtureError as exc:
+            # `SeedTooLarge` is a `FixtureError`, so one clause covers both.
+            print(f"invalid_fixture: {exc}")
+            _write_pre_run_error(args, fixture, "invalid_fixture", str(exc))
+            return 2
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
                           "checks": results}, indent=2))

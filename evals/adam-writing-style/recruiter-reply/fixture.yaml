@@ -1,0 +1,219 @@
+# Eval fixture: adam-writing-style — recruiter reply
+#
+# Class C (DESIGN.md, "Four instruments, one harness"): the judge carries
+# the load, the few decidable bits stay objective, and the comparison is a
+# pairwise preference against committed reference samples rather than an
+# absolute rubric score. DESIGN.md's own warning applies — expect noise
+# here, and run N >= 6 trials per arm and a multiple of 6: the shuffle
+# walks a cycle of n! = 6 permutations (this draft plus two references), so
+# a trial count that is not a whole number of cycles leaves slot balance to
+# whichever part of the cycle the run covered. N = 5 gives one slot twice,
+# another twice and the third once.
+#
+# <!-- fictional --> Everything in seed/ is invented: Dana Whitcombe,
+# Northgate Bell Talent Group and the client behind REQ-4417 are not real
+# people or companies, and the only addresses are example.com /
+# example.net. The marker sits HERE, on the file the agent never sees,
+# rather than at the top of each seed file: seed/ is copied into the
+# agent's workspace, so a marker in there tells the agent under test that
+# its own brief is invented, and makes the one candidate that echoes the
+# line the one draft the judge can pick out.
+#
+# The two facts the objective check looks for (REQ-4417, March 2027) sit in
+# the MATERIAL — the recruiter's own email and a personal note — and the
+# brief never asks for them to be quoted. That is deliberate: a brief that
+# said "cite these" would score instruction-following, which both arms pass,
+# instead of the skill's specificity move, which is the thing under test.
+#
+# References live beside this file, NOT in seed/: seed/ is copied into the
+# agent's workspace, so a reference in there would hand the agent the answer.
+#
+# Known failure mode — commentary. Every check reads the agent's whole
+# final reply minus the material it quoted, so anything the agent wraps
+# around the writing is scored as if it were the writing: "I kept it free of
+# 'leverage'" fails no-avoid-list-words, and an unquoted trailing note that
+# supplies a fact the reply itself omitted passes cites-both-facts. The
+# first direction is the one that bites, because the arm that knows the
+# avoid list is the arm that mentions it. BRIEF.md asks for the reply alone
+# with nothing before or after it and nothing quoted, which keeps it rare;
+# the judge's register dimension backstops what is left.
+
+skill: adam-writing-style
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+# Arms pinned mid-tier, judge pinned strong — DESIGN.md's harness-wide
+# rules. A ceiling-effect arm is signal-free, and an unpinned arm silently
+# tracks the CLI's default model across releases.
+model: claude-sonnet-5
+
+judge:
+  mode: pairwise
+  model: claude-opus-4-8
+  # Blind, shuffled per trial, score = rank. No `weights:` — the score is a
+  # rank, not a weighted mean, and harness/scorers/judge.py rejects a
+  # fixture that carries both rather than half-honouring it.
+  references:
+    - name: in-voice
+      path: references/in-voice.md
+    - name: generic
+      path: references/generic.md
+
+prompt: >
+  Reply to this recruiter's cold email in my voice, declining but leaving
+  the door open
+
+objective_checks:
+  # The avoid list, verbatim from the skill's "Avoid (almost always)"
+  # section. test/run_tests.py::TestIssue81 reads that section out of the
+  # agentskills checkout at TEST time and fails if a term there is not
+  # covered here, so the two cannot drift apart.
+  #
+  # Nothing below carries a quote anchor of its own any more. Every check
+  # here sets `strip_seed: true`, and objective.strip_seed_material does
+  # the work once, for every pattern, on PROVENANCE rather than on markup,
+  # a SENTENCE at a time and after hard wrapping is undone.
+  #
+  # THE RULE. A sentence is hers when its words are hers: when it is one of
+  # her sentences whole, when it is one long enough contiguous run of the
+  # seed's own text, or when at least 0.75 of its words lie inside runs of
+  # six or more consecutive words of hers (objective._SEED_COVERAGE_RUN and
+  # _SEED_COVERAGE, measured — see the constants). A sentence shorter than
+  # the 24-character floor is never taken by the coverage rule alone, which
+  # is what keeps the agent's own "Thanks," and its own sign-off its own.
+  #
+  # THE SHAPES THAT ARE COVERED are the ones test/run_tests.py::TestIssue81
+  # actually measures, and no more: the round-3 transcript and the round-4
+  # four-line quote verbatim; the seed flattened with " and " where every
+  # ". " was; the space after every full stop deleted; "She wrote: " in
+  # front of each of her sentences; two of her clauses joined by a
+  # connective of the agent's; a footnote definition, a Markdown link and
+  # an image carrying one of her sentences; a bulleted list of sub-floor
+  # fragments beside a long line of the agent's; and one mid-word invisible
+  # from each class the fold covers. Twenty-nine shapes over the three
+  # fixtures, every one of them failing cites-both-facts
+  # (test_every_paste_shape_fails_cites_both_facts), against sixteen
+  # genuine drafts and the three in-voice references at every wrap column
+  # from 38 to 100, every one of them ALL-PASS
+  # (test_every_genuine_draft_passes_every_check).
+  #
+  # THE CEILING, which is real and is not fixed. Below the coverage floor a
+  # sentence is the agent's BY RULE, so a paste diluted with enough of the
+  # agent's own words in the SAME sentence survives by design — that is the
+  # price of deciding authorship by the words rather than by the markup.
+  # And coverage is a test over words as they are spelled: a paste
+  # re-spelled in Cyrillic homoglyphs everywhere except the fact tokens is
+  # not the seed's words in any byte sense and passes all three rules,
+  # because NFKC maps compatibility forms and not confusables. That is the
+  # one shape provenance cannot see. The pairwise judge is the backstop for
+  # both, and it is not wired into run_eval until #97.
+  #
+  # What is left is unwrapped and unquoted, so a reply the agent handed
+  # back inside a `> ` block — the shape every calibration example in
+  # SKILL.md has — is scored as the prose it is, and its bans fire. A reply
+  # that is nothing but her email has an empty residue and fails its
+  # must_match checks, which is the right answer for a reply that wrote
+  # nothing.
+  - id: no-avoid-list-words
+    description: None of the skill's avoid-list buzzwords survived into the reply
+    type: transcript_matches
+    strip_seed: true
+    must_not_match:
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[-\s]+in[-\s]+class\b'
+      - '(?i)\bworld[-\s]+class\b'
+      - '(?i)\bdeep[-\s]+dives?\b'
+      - '(?i)\bdeep\s+expertise\s+in\b'
+      - '(?i)\bthought[-\s]+leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing)\s+back\b'
+      - '(?i)\btouch(?:es|ed|ing)?\s+base\b'
+      - '(?i)\bping\s+me\b'
+
+  # Core move 1: greet warmly, by name — in the greeting, not anywhere in
+  # the reply. Anchored to the opening: a reply that greets nobody and
+  # pastes her signature underneath used to pass on the name in that
+  # footer, and her signature is seed material, so it is not part of the
+  # text this pattern sees. The name must appear inside the OPENING
+  # WINDOW: the first four LINES OF TEXT of the residue — blank lines are
+  # skipped wherever they fall, not just at the front, because the
+  # pre-pass leaves a blank behind wherever it took a seed line out and a
+  # window that counted those would be measuring the stripper's
+  # leftovers. The hedge below uses the same four; they used to differ
+  # (three lines here, six there) and one of the two comments described
+  # neither.
+  - id: greets-the-recruiter-by-name
+    description: The reply greets the recruiter by name in its opening
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n(?:[ \t]*\n)*){0,3}[^\n]*\bDana\b'
+
+  # Core move 2: open with a hedge or apology. Any of the skill's shapes
+  # counts, but it has to be the AGENT'S and it has to be near the top: the
+  # same four-line opening window as the greeting above, and the hedge has
+  # to start a sentence — the skill lists these as sentence openers ("I'm
+  # guessing you're the right person", "Sorry, just realized"), and a
+  # mid-sentence "and I think" is rarely the disarming move it is after.
+  #
+  # A sentence ends at `,;:` here as well as at `.!?—`, because a greeting
+  # and its hedge are routinely one line: "Hi Dana, sorry for the slow
+  # reply", "Thanks for the note; sorry to be slow". All four of those
+  # shapes failed while the class held only `.!?—`.
+  #
+  # It used to be a flat 400-character window over the whole reply, which
+  # the recruiter's own email satisfied whenever an agent quoted it at the
+  # top: her "I think your background lines up well" is a hedge inside the
+  # window and nothing of the agent's.
+  #
+  # Residual, accepted: "I think" is still a hedge shape in an assertive
+  # sentence ("I think you'd be a great fit"). Sentence-anchoring narrows
+  # that; the judge's register dimension carries the rest.
+  - id: opens-with-a-hedge
+    description: The reply opens with one of the skill's hedges rather than an assertion
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n(?:[ \t]*\n)*){0,3}(?:[^\n]*?[.!?—,;:][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
+
+  # Core move 3: be specific — paste the ID verbatim, name the date. Both
+  # facts are in the seed material; neither is asked for. Her own material
+  # is stripped first, so what this check guarantees is narrower than "the
+  # agent was specific": a sentence whose words are hers by the rule above
+  # cannot supply either fact, however the paste was reshaped, and a
+  # sentence the agent built around the ID out of its own words can and
+  # does. Between the two sits the sentence the rule cannot call — one
+  # diluted below the coverage floor with the agent's own words — and that
+  # one still counts as the agent being specific. The check is a floor
+  # under echoing, not a proof of composition.
+  - id: cites-both-facts
+    description: The reply quotes the requisition number and the contract end date
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '\bREQ-4417\b'
+      - '(?i)\bMarch\s+2027\b'
+
+# Pairwise: the judge ranks this reply against the two committed references
+# without being told which is which, and the rank is the score. The
+# dimensions sit beside the rank as the "why". The last line is this
+# fixture's version of the harness-wide rule that a decidable failure caps
+# the judge — here it caps the rank instead of a dimension.
+judge_rubric: >
+  Rank the drafts best to worst as a reply that declines a recruiter's cold
+  approach without closing the door, judged as writing rather than
+  formatting. Score every draft 0-10 on each dimension with a one-sentence
+  rationale.
+  (1) Specificity — does the draft use the concrete material available (the
+  requisition number, the date the writer's current commitment ends, the
+  on-site expectation) instead of vague paraphrase like "my current
+  commitments"?
+  (2) Register match — warm but direct; greets by name; opens by hedging or
+  apologising rather than asserting; em dashes for asides but not in every
+  sentence; a plain sign-off; at most one exclamation mark; no "Dear" for
+  ordinary correspondence.
+  (3) Absence of corporate filler — no buzzwords, no résumé-headline
+  language, no closing "let me know if you have any questions" with nothing
+  behind it.
+  A draft that omits either concrete fact must not rank first, however well
+  it reads.

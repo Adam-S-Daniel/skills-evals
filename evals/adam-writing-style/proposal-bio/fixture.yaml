@@ -1,0 +1,185 @@
+# Eval fixture: adam-writing-style — proposal bio
+#
+# Class C, same shape as the recruiter-reply fixture in this directory: the
+# judge ranks the draft against two committed references, blind, and only
+# the decidable bits are scored objectively. Expect noise; run N >= 6 per
+# arm and a multiple of 6 — the shuffle's cycle is n! = 6 permutations, and
+# a run that is not a whole number of cycles leaves slot balance to
+# whichever part of the cycle it covered.
+#
+# The register is the point here. Core move 8 says a proposal bio drops the
+# email softeners and goes third person, factual, employer-and-dates, no
+# puff — the opposite of the self-appraisal fixture next door, which is why
+# the two are separate fixtures rather than one.
+#
+# <!-- fictional --> Harborlight Regional Library System, RFP
+# HRLS-2026-014, Halyard Civic Data and Ardith Analytics are all invented;
+# there is no real client or employer anywhere in this fixture. The marker
+# sits here rather than at the top of each seed/ file, which is copied
+# into the agent's workspace — see recruiter-reply/fixture.yaml.
+#
+# The sixty-word cap is deliberately NOT an objective check: a regex cannot
+# count words, and objective.py is not this fixture's to extend. The judge's
+# register dimension carries it.
+#
+# Every check below sets `strip_seed: true`, so it reads the agent's final
+# reply with the SEED's own material removed (objective.strip_seed_material)
+# and everything else unwrapped and unquoted. Provenance decides that, not
+# markup, a SENTENCE at a time and after hard wrapping is undone.
+#
+# THE RULE. A sentence is the background note's when its WORDS are: when it is one
+# of the seed's sentences whole, when it is one long enough contiguous run
+# of the seed's own text, or when at least 0.75 of its words lie inside
+# runs of six or more consecutive words of the seed's
+# (objective._SEED_COVERAGE_RUN and _SEED_COVERAGE, measured). A sentence
+# the agent COMPOSED out of the seed's phrases used to be the agent's on
+# the strength of a word order the seed does not have; it is not any more,
+# because re-ordering the seed's words is not writing. A sentence shorter
+# than the 24-character floor is never taken by the coverage rule alone. A
+# paragraph the agent chose to present as a blockquote or inside a fence is
+# still the agent's writing and is scored as prose.
+#
+# THE SHAPES COVERED are the twenty-nine the paste battery in
+# test/run_tests.py::TestIssue81 measures — the seed flattened with " and "
+# for every ". ", the space after every full stop deleted, "She wrote: "
+# prefixes, two clauses joined by the agent's connective, footnote, link
+# and image containers, sub-floor bullets beside a long line of the
+# agent's, and mid-word invisibles — each failing cites-both-facts, against
+# sixteen genuine drafts and the in-voice references at every wrap column
+# from 38 to 100, each ALL-PASS.
+#
+# THE CEILING. Below the coverage floor a sentence is the agent's BY RULE,
+# so a paste diluted with enough of the agent's own words in the same
+# sentence survives by design; and a paste re-spelled in Cyrillic
+# homoglyphs except for the fact tokens passes every rule, because NFKC
+# does not map confusables. The pairwise judge is the backstop for both,
+# and it is not wired into run_eval until #97. See
+# recruiter-reply/fixture.yaml, which carries this in full.
+#
+# A reply that is nothing but the quoted material has an empty residue, so
+# its must_match checks fail, which is the right answer for a reply that
+# wrote nothing.
+#
+# Known failure mode — commentary, in both directions. What the agent wraps
+# around the paragraph is the agent's writing, so it is scored as if it
+# were the paragraph. Against the arm: "I kept it free of 'leverage'" fails
+# no-avoid-list-words and "I kept it to 58 words" fails
+# bio-is-third-person, both of them checks about the bio, and it is
+# directional because the arm that knows the rules is the arm that narrates
+# them. FOR the arm: a subject-less résumé fragment followed by "That is
+# the paragraph he asked for." passes bio-is-third-person on the
+# commentary's own pronoun. BRIEF.md asks for the paragraph alone with
+# nothing before or after it; the judge backstops the rest.
+
+skill: adam-writing-style
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+model: claude-sonnet-5
+
+judge:
+  mode: pairwise
+  model: claude-opus-4-8
+  references:
+    - name: in-voice
+      path: references/in-voice.md
+    - name: generic
+      path: references/generic.md
+
+prompt: >
+  Write my 60-word bio for this proposal
+
+objective_checks:
+  # Verbatim from the skill's "Avoid (almost always)" list; kept honest by
+  # test/run_tests.py::TestIssue81, which reads that list from the registry
+  # at test time.
+  - id: no-avoid-list-words
+    description: None of the skill's avoid-list buzzwords survived into the bio
+    type: transcript_matches
+    strip_seed: true
+    must_not_match:
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[-\s]+in[-\s]+class\b'
+      - '(?i)\bworld[-\s]+class\b'
+      - '(?i)\bdeep[-\s]+dives?\b'
+      - '(?i)\bdeep\s+expertise\s+in\b'
+      - '(?i)\bthought[-\s]+leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing)\s+back\b'
+      - '(?i)\btouch(?:es|ed|ing)?\s+base\b'
+      - '(?i)\bping\s+me\b'
+
+  # Core move 8: third person. Both halves are kept — a bio with no
+  # third-person subject at all is as wrong as one that slips into "I", and
+  # checking only for the absence of "I" would pass an empty reply, which
+  # is why the must_match half stays rather than being left to the judge.
+  #
+  # What it accepts widened: it used to demand a masculine pronoun
+  # (`\b[Hh]e\b`), which fails a perfectly good surname-only bio
+  # ("...Daniel rebuilt the deployment pipeline..."). A pronoun for the
+  # subject or the subject's own name counts now.
+  #
+  # `they`/`their` are NOT on that list, though the widening once put them
+  # there: a `their` belongs to whatever noun precedes it, so a
+  # subject-less résumé fragment ("...for public-sector clients and their
+  # users") passed a check about having a subject. He/his/Adam/Daniel can
+  # only be the person.
+  #
+  # Known noise source, both ways: `\bI\b` and the third-person
+  # alternation are matched over the agent's whole final reply minus the
+  # SEED material in it, and commentary is not seed material. So an agent
+  # that wraps the paragraph in commentary of its own ("I kept it to 58
+  # words") fails a check about the bio's register — and a subject-less
+  # résumé fragment followed by "That is the paragraph he asked for."
+  # PASSES it on the commentary's own pronoun. The brief asks for the
+  # paragraph alone to keep both rare, and the judge's register dimension
+  # backstops what is left.
+  - id: bio-is-third-person
+    description: The bio is written in the third person, with no first-person "I"
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '\b(?:[Hh]e|[Hh]is|Adam|Daniel)\b'
+    must_not_match:
+      - '\bI\b'
+
+  # Core move 3, in the bio register: concrete employer-and-dates structure
+  # and the named standard, not "extensive accessibility experience". Both
+  # facts are in background.md; neither is asked for. The seed's own lines
+  # are stripped first: a bio that omits the dates and pastes the
+  # background bullet underneath used to satisfy this check on the agent's
+  # behalf.
+  #
+  # Both patterns accept the phrasings a sixty-word budget actually
+  # produces: "2019-24" as well as "2019-2024", and "Sections 504 and 508"
+  # in either order as well as "Section 508". The standard's number has to
+  # sit in the same sentence as the word, which is what `[^.]{0,80}` bounds
+  # — a bound rather than `[^.\n]*`, because a 74-column wrap puts a line
+  # break between "Section" and "508" often enough to matter and `\n` in
+  # the class made that read as absent.
+  - id: cites-both-facts
+    description: The bio carries the employment dates and the named accessibility standard
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
+      # Case-sensitive on purpose: the skill's spelling rules say "Section
+      # 508", capital S, never abbreviated.
+      - '\bSections?\b[^.]{0,80}\b508\b'
+
+judge_rubric: >
+  Rank the drafts best to worst as a key-personnel paragraph for a public
+  sector proposal, judged as writing rather than formatting. Score every
+  draft 0-10 on each dimension with a one-sentence rationale.
+  (1) Specificity — concrete employer-and-dates structure, named standards,
+  and countable scope, rather than adjectives about ability. Roughly sixty
+  words is the budget; a draft that spends it on adjectives has spent it
+  badly.
+  (2) Register match — third person throughout, factual, no email softeners
+  and no self-praise; em dashes for asides about scope or scale; any
+  certifications listed plainly at the end.
+  (3) Absence of corporate filler — no buzzwords, and none of the
+  résumé-headline vocabulary ("results-driven", "passionate", "proven track
+  record", "seasoned").
+  A draft that omits either concrete fact must not rank first, however well
+  it reads.

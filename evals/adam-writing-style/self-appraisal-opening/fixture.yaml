@@ -1,0 +1,186 @@
+# Eval fixture: adam-writing-style — self-appraisal opening
+#
+# Class C, same shape as the other two fixtures in this directory. Expect
+# noise; run N >= 6 trials per arm and a multiple of 6 — the shuffle's
+# cycle is n! = 6 permutations, and a run that is not a whole number of
+# cycles leaves slot balance to whichever part of the cycle it covered.
+#
+# The register is the mirror of the proposal bio: core move 9 says a
+# self-appraisal is first person, narrative, and generous — takes credit
+# alongside collaborators and names next quarter's goals — where the bio is
+# third person and stripped of softeners. Getting one register right and
+# the other wrong is exactly what a single merged fixture would hide.
+#
+# <!-- fictional --> The quarter, the repository name and every number in
+# seed/notes.md are invented; no real employer, coworker or system
+# appears. The marker sits here rather than at the top of each seed/ file,
+# which is copied into the agent's workspace — see
+# recruiter-reply/fixture.yaml.
+#
+# Every check below sets `strip_seed: true`, so it reads the agent's final
+# reply with the SEED's own material removed (objective.strip_seed_material)
+# and everything else unwrapped and unquoted. Provenance decides that, not
+# markup, a SENTENCE at a time and after hard wrapping is undone.
+#
+# THE RULE. A sentence is notes.md's when its WORDS are: when it is one
+# of the seed's sentences whole, when it is one long enough contiguous run
+# of the seed's own text, or when at least 0.75 of its words lie inside
+# runs of six or more consecutive words of the seed's
+# (objective._SEED_COVERAGE_RUN and _SEED_COVERAGE, measured). A sentence
+# the agent COMPOSED out of the seed's phrases used to be the agent's on
+# the strength of a word order the seed does not have; it is not any more,
+# because re-ordering the seed's words is not writing. A sentence shorter
+# than the 24-character floor is never taken by the coverage rule alone. A
+# paragraph the agent chose to present as a blockquote or inside a fence is
+# still the agent's writing and is scored as prose.
+#
+# THE SHAPES COVERED are the twenty-nine the paste battery in
+# test/run_tests.py::TestIssue81 measures — the seed flattened with " and "
+# for every ". ", the space after every full stop deleted, "She wrote: "
+# prefixes, two clauses joined by the agent's connective, footnote, link
+# and image containers, sub-floor bullets beside a long line of the
+# agent's, and mid-word invisibles — each failing cites-both-facts, against
+# sixteen genuine drafts and the in-voice references at every wrap column
+# from 38 to 100, each ALL-PASS.
+#
+# THE CEILING. Below the coverage floor a sentence is the agent's BY RULE,
+# so a paste diluted with enough of the agent's own words in the same
+# sentence survives by design; and a paste re-spelled in Cyrillic
+# homoglyphs except for the fact tokens passes every rule, because NFKC
+# does not map confusables. The pairwise judge is the backstop for both,
+# and it is not wired into run_eval until #97. See
+# recruiter-reply/fixture.yaml, which carries this in full.
+#
+# A reply that is nothing but the quoted material has an empty residue, so
+# its must_match checks fail, which is the right answer for a reply that
+# wrote nothing.
+#
+# Known failure mode — commentary. What the agent wraps around the
+# paragraph is the agent's writing, so it is scored as if it were the
+# paragraph: "I kept it free of 'leverage'" fails no-avoid-list-words, a
+# check about the writing. It is directional against the with-skill arm,
+# because the arm that knows the avoid list is the arm that mentions it.
+# BRIEF.md asks for the paragraph alone with nothing before or after it;
+# the judge backstops the rest.
+
+skill: adam-writing-style
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+model: claude-sonnet-5
+
+judge:
+  mode: pairwise
+  model: claude-opus-4-8
+  references:
+    - name: in-voice
+      path: references/in-voice.md
+    - name: generic
+      path: references/generic.md
+
+prompt: >
+  Draft the opening paragraph of my self-appraisal for this quarter from
+  these notes.
+
+objective_checks:
+  # Verbatim from the skill's "Avoid (almost always)" list; kept honest by
+  # test/run_tests.py::TestIssue81, which reads that list from the registry
+  # at test time.
+  - id: no-avoid-list-words
+    description: None of the skill's avoid-list buzzwords survived into the paragraph
+    type: transcript_matches
+    strip_seed: true
+    must_not_match:
+      - '(?i)\bleverag(?:e|es|ed|ing)\b'
+      - '(?i)\bsynerg(?:y|ies|istic)\b'
+      - '(?i)\brobust(?:ly|ness)?\b'
+      - '(?i)\bbest[-\s]+in[-\s]+class\b'
+      - '(?i)\bworld[-\s]+class\b'
+      - '(?i)\bdeep[-\s]+dives?\b'
+      - '(?i)\bdeep\s+expertise\s+in\b'
+      - '(?i)\bthought[-\s]+leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing)\s+back\b'
+      - '(?i)\btouch(?:es|ed|ing)?\s+base\b'
+      - '(?i)\bping\s+me\b'
+
+  # Core move 9: first person. The must_not_match pattern catches the
+  # specific failure a third-person draft shows — narrating the writer's own
+  # quarter about him by name — rather than banning third-person pronouns
+  # outright.
+  #
+  # Both halves were satisfiable without writing in the first person at
+  # all. The verb had to follow the name immediately, so "Adam has led the
+  # deploy-scaffold work" and "Adam again led the rollout" walked past a
+  # ban on narration; up to two words may intervene now. And `\bI\b` fires
+  # inside "I/O", so a paragraph whose only "I" was an acronym read as
+  # first person; the marker has to be a sentence subject — a word (or a
+  # contraction of one) follows it, and a slash does not precede it.
+  #
+  # Two words is the edge, and it is a real one rather than a round number:
+  # "Adam, working with the team, led the deploy-scaffold rollout" puts
+  # THREE words between the name and the verb and reads as narration about
+  # him, which is the failure this ban is for, and it walks past. Widening
+  # the gap costs more than it buys — at four or five words the pattern
+  # starts matching across a clause boundary and calls a first-person
+  # sentence that merely names a coworker ("Adam Cheng on the platform team
+  # and I led...") third-person narration, which is the register the rubric
+  # rewards. The judge's register dimension carries the rest.
+  #
+  # The `he <verb>` half is gone. It banned the sentence the rubric
+  # explicitly rewards: a first-person paragraph that credits a coworker
+  # ("a coworker deserves half of that — he built the cache fix that landed
+  # the same sprint") is generous, which is the register, and it tripped a
+  # check about first person. The name-anchored half survives because
+  # "Adam stood up deploy-scaffold" in Adam's own self-appraisal is the
+  # actual failure. With one list left there is nothing to keep aligned.
+  - id: appraisal-is-first-person
+    description: The paragraph is written in the first person, not narrated about Adam
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '(?<!/)\bI\b(?=[''’]?\w*\s+\w)'
+    must_not_match:
+      - '(?i)\bAdam(?: Daniel)?\s+(?:\w+\s+){0,2}(?:led|built|delivered|stood|drove|owned|shipped|spent|took|closed|cut|reduced|ran)\b'
+
+  # Core move 3 again, in the eval register: the named thing and the number,
+  # not "improved our deployment tooling". Both facts are in notes.md;
+  # neither is asked for. The seed's own lines are stripped first — a note
+  # the agent pasted back is not the agent being specific.
+  #
+  # `deploy-scaffold` is hyphenated, and a hard wrap breaks a line at a
+  # hyphen as readily as at a space: at thirteen of the columns between 38
+  # and 100 the reference wraps to `deploy-` / `scaffold`, the unwrap
+  # rejoins it with the space every other join uses, and a pattern demanding
+  # the two halves be adjacent read the fact as absent. `\s*` on either side
+  # of the hyphen, the same allowance the two-word facts already carry.
+  #
+  # The number pattern used to require "26" adjacent to "min", which misses
+  # the natural phrasings: "from 26 to 9 minutes", "26-minute", "26 min".
+  # It asks for the two in the same sentence, in EITHER order: as a
+  # forward-only lookahead it failed "cut the median pipeline run to 9
+  # minutes, down from 26", which states the same fact with the new number
+  # first. `[^.]{0,80}` rather than `[^.\n]*` so a hard wrap between the
+  # two words does not read as absent.
+  - id: cites-both-facts
+    description: The paragraph names the repository and the pipeline number from the notes
+    type: transcript_matches
+    strip_seed: true
+    must_match:
+      - '\bdeploy\s*-\s*scaffold\b'
+      - '(?:\b26\b[^.]{0,80}\bmin|\bmin\w*[^.]{0,80}\b26\b)'
+
+judge_rubric: >
+  Rank the drafts best to worst as the narrative opening of a performance
+  self-appraisal, judged as writing rather than formatting. Score every
+  draft 0-10 on each dimension with a one-sentence rationale.
+  (1) Specificity — named systems and real numbers from the notes, rather
+  than "significant contributions" and "meaningful efficiencies". Credit
+  shared with a collaborator where the notes say so counts here too: it is
+  a fact about the quarter, not modesty.
+  (2) Register match — first person, narrative prose rather than a bullet
+  list, generous about collaborators, and ending on what next quarter is
+  for; em dashes for asides but not in every sentence.
+  (3) Absence of corporate filler — no buzzwords, no stacked hedging, and
+  none of the annual-review vocabulary that says nothing ("strategic
+  initiatives", "cross-functionally", "positioning the team for success").
+  A draft that omits either concrete fact must not rank first, however well
+  it reads.
