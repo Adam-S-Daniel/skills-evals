@@ -143,12 +143,18 @@ objective_checks:
       `job_needs_nonempty` rather than by a hardcoded name — the skill's own
       multi-job example names it `finalize`, not `report`, and neither name
       is prescribed, so naming one here would silently favor whichever arm
-      happens to guess it.
+      happens to guess it. `if_gates_on_outcome: failure` asserts the gate
+      actually reads as "something failed" (`.result == 'failure'`,
+      `contains(needs.*.result, 'failure')`, or a negated check for
+      `'success'`) — not merely that it mentions `needs.` and the word
+      `failure` at all, which a fully INVERTED wiring (this call gated on
+      success instead) could still do (issue #86 review round 3, N6).
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
     job_needs_nonempty: true
     if_contains: "needs."
+    if_gates_on_outcome: failure
     with_present: ["log-file", "marker", "title"]
     with_equals:
       mode: post
@@ -157,12 +163,17 @@ objective_checks:
     log_file_matches_download: true
 
   - id: visual-regression-resolve-step
-    description: The downstream job resolves the comment when neither upstream job failed.
+    description: >
+      The downstream job resolves the comment when neither upstream job
+      failed. `if_gates_on_outcome: success` is the same inverted-wiring
+      guard as the post check above, for the opposite polarity (issue #86
+      review round 3, N6).
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
     job_needs_nonempty: true
     if_contains: "needs."
+    if_gates_on_outcome: success
     with_present: ["marker", "title"]
     with_equals:
       mode: resolve

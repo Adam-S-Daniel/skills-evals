@@ -591,6 +591,46 @@ def _permission_satisfies(actual: str | None, required: str) -> bool:
     return False
 
 
+# Recognizes the common GitHub Actions idioms for gating on one job
+# outcome, capturing an optional leading `!` so a negated form (`!contains(
+# needs.*.result, 'failure')`, meaning "nothing failed") is distinguishable
+# from a direct one (`contains(needs.*.result, 'failure')`, meaning
+# "something failed") — negating a check for the OTHER outcome is exactly
+# as common a way to write "gate on this outcome" as naming it directly,
+# and both must be recognized for `_gates_on_outcome` to tell a real
+# multi-job wiring from its inversion.
+_OUTCOME_GATE_RE = re.compile(
+    r"(?P<neg>!\s*)?"
+    r"(?:contains\([^)]*?,\s*'(?P<contains_outcome>failure|success)'\)"
+    r"|\.result\s*==\s*'(?P<eq_outcome>failure|success)'"
+    r"|\b(?P<bare_outcome>failure|success)\(\))")
+
+
+def _gates_on_outcome(step_if: str, outcome: str) -> bool:
+    """Does this `if:` expression read as gating on `outcome`
+    (`"failure"` or `"success"`)?
+
+    Recognizes `<x>.result == '<outcome>'`, `contains(<x>, '<outcome>')`,
+    and the bare `<outcome>()` call, each either naming `outcome` directly
+    (not negated) or negating the OTHER outcome (`!contains(<x>,
+    '<other>')` means "gate on `outcome`" just as much as naming it
+    directly does). This is what lets `visual-regression-post-step` /
+    `-resolve-step` catch a fully INVERTED multi-job wiring: swapping which
+    call gets which condition swaps which outcome each one's `if:` actually
+    reads as gating on, even though both still mention `needs.` and one of
+    the two outcome words.
+    """
+    other = "success" if outcome == "failure" else "failure"
+    for m in _OUTCOME_GATE_RE.finditer(step_if):
+        named = m.group("contains_outcome") or m.group("eq_outcome") or m.group("bare_outcome")
+        negated = bool(m.group("neg"))
+        if named == outcome and not negated:
+            return True
+        if named == other and negated:
+            return True
+    return False
+
+
 def _job_download_artifact_paths(job_body: dict, before_index: int | None = None) -> list[str]:
     """Every location an `actions/download-artifact` step in this job
     extracted to, in step order. Structural: walks `steps:`, only a matched
@@ -649,6 +689,7 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                        job_needs_nonempty: bool = False,
                        job_permissions_include: dict | None = None,
                        if_contains: str | None = None,
+                       if_gates_on_outcome: str | None = None,
                        with_present: list[str] | None = None,
                        with_equals: dict | None = None,
                        with_tag_ref: str | None = None,
@@ -670,6 +711,15 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     half. `job_if_equals` compares against `_normalize_expr`, not the raw
     `if:` string, so a skill-faithful `if: ${{ always() }}` matches a check
     written against the bare `always()` spelling.
+
+    `if_gates_on_outcome` (`"failure"` or `"success"`) asserts the step's
+    `if:` reads, by `_gates_on_outcome`, as gating on that outcome — not
+    merely that it mentions `needs.` or the outcome word at all. This is
+    what catches a fully INVERTED multi-job wiring (the post call gated on
+    success, the resolve call gated on failure): both calls can still
+    satisfy `if_contains="needs."` and even mention the same outcome word
+    under negation, so only reading the gate's actual polarity tells them
+    apart.
 
     `job_permissions_include` asserts a `{perm: value}` mapping is in scope
     for the qualifying step's job: the job's OWN `permissions:` block if it
@@ -755,6 +805,10 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                 continue
         if if_contains is not None and if_contains not in _stringify_if(step.get("if")):
             continue
+        if if_gates_on_outcome is not None and not _gates_on_outcome(
+            _stringify_if(step.get("if")), if_gates_on_outcome
+        ):
+            continue
         with_block = step.get("with") if isinstance(step.get("with"), dict) else {}
         if with_present and any(not with_block.get(k) for k in with_present):
             continue
@@ -776,6 +830,7 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             f"expected >= {min_matches} step(s) matching (uses ending "
             f"{uses_suffix!r}, job={job!r}, job_if_equals={job_if_equals!r}, "
             f"job_needs_nonempty={job_needs_nonempty!r}, if_contains={if_contains!r}, "
+            f"if_gates_on_outcome={if_gates_on_outcome!r}, "
             f"with_present={with_present!r}, with_equals={with_equals!r}, "
             f"with_tag_ref={with_tag_ref!r}) — found {len(qualifying)} of "
             f"{len(matches)} step(s) with a matching `uses:`")
@@ -905,8 +960,9 @@ CHECKS = {
 _CHECK_META_KEYS = {"id", "description", "type", "paths"}
 _WORKFLOW_STEP_USES_KEYS = {
     "uses_suffix", "job", "job_if_equals", "job_needs_nonempty",
-    "job_permissions_include", "if_contains", "with_present", "with_equals",
-    "with_tag_ref", "log_file_matches_download", "unique_with_key", "min_matches",
+    "job_permissions_include", "if_contains", "if_gates_on_outcome", "with_present",
+    "with_equals", "with_tag_ref", "log_file_matches_download", "unique_with_key",
+    "min_matches",
 }
 
 

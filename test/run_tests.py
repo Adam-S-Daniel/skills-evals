@@ -3295,6 +3295,29 @@ jobs:
         self.assertFalse(by_id["visual-regression-post-step"]["passed"])
         self.assertFalse(by_id["visual-regression-resolve-step"]["passed"])
 
+    def test_inverted_multijob_wiring_fails(self):
+        # Review round 3, N6: swapping which condition goes with which mode
+        # — post gated on success, resolve gated on failure — used to still
+        # score full marks, because both calls still mention `needs.` and
+        # (one of them under negation) the same outcome word. Neither call
+        # may pass once its `if:` is checked for the actual outcome it
+        # gates on.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        post_if = "if: ${{ contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}"
+        resolve_if = "if: ${{ !contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}"
+        self.assertIn(post_if, text)
+        self.assertIn(resolve_if, text)
+        text = text.replace(post_if, "__RESOLVE_IF__").replace(resolve_if, "__POST_IF__")
+        text = text.replace("__RESOLVE_IF__", resolve_if).replace("__POST_IF__", post_if)
+        path.write_text(text, encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["visual-regression-post-step"]["passed"],
+                         by_id["visual-regression-post-step"]["detail"])
+        self.assertFalse(by_id["visual-regression-resolve-step"]["passed"],
+                         by_id["visual-regression-resolve-step"]["detail"])
+
     def test_cms_platform_checkout_pinned_to_branch_fails(self):
         # The carve-out is "stays on its release tag", not "may float".
         ws = self._correct_workspace()
