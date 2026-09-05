@@ -2721,6 +2721,29 @@ class TestIssue85(unittest.TestCase):
             by_id = self._checks(ws, seed)
         self.assertFalse(by_id["workflows-still-parse"]["passed"])
 
+    # -- the seed must not read as an eval fixture (review #133, B2) ---------
+
+    _SEED_LEAK_WORDS = ("eval", "fixture", "harness", "hermetic", "check")
+
+    def test_seed_files_do_not_reveal_the_harness(self):
+        """A seed a real repo could carry names none of its own machinery.
+
+        PINS.md used to open with "This is a hermetic eval fixture: no check
+        here resolves a SHA over the network" and named `ci.yml` as the file
+        to fix — handing the without-skill arm a description of the harness
+        itself rather than a plausible repo artifact.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        leaks = []
+        for path in sorted(seed.rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for word in self._SEED_LEAK_WORDS:
+                if re.search(rf"\b{word}\b", text, re.IGNORECASE):
+                    leaks.append(f"{path.relative_to(seed)}: {word!r}")
+        self.assertFalse(leaks, "; ".join(leaks))
+
     # -- the pin_comment_absent primitive, exercised directly ----------------
 
     def _synthetic_ws(self, files: dict[str, str]) -> Path:
