@@ -2634,6 +2634,36 @@ class DirListingMatchesCheckTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("not a directory", detail)
 
+    def test_ignore_glob_excludes_matching_names_from_the_listing(self):
+        ws = self._ws(["a.pdf", "pdf-rename-log-2026-09-05.csv"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf"], ignore=["pdf-rename-log-*.csv"])
+        self.assertTrue(passed, detail)
+
+    def test_ignore_glob_does_not_swallow_an_unrelated_stray_file(self):
+        ws = self._ws(["a.pdf", "a.pdf.bak"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf"], ignore=["pdf-rename-log-*.csv"])
+        self.assertFalse(passed)
+        self.assertIn("unexpected: a.pdf.bak", detail)
+
+    def test_ignore_glob_does_not_swallow_a_stray_subdirectory(self):
+        ws = self._ws(["a.pdf"])
+        (ws / "inbox" / "archive").mkdir()
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf"], ignore=["pdf-rename-log-*.csv"])
+        self.assertFalse(passed)
+        self.assertIn("unexpected: archive", detail)
+
+    def test_ignore_is_matched_as_a_glob_not_a_regex(self):
+        # "." in a glob is literal; a naive `re.match` of the raw pattern
+        # would treat it as "any character" and wrongly swallow this file.
+        ws = self._ws(["a.pdf", "notesXtxt"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf"], ignore=["notes.txt"])
+        self.assertFalse(passed)
+        self.assertIn("unexpected: notesXtxt", detail)
+
 
 class FilesUnchangedByDigestCheckTests(unittest.TestCase):
     """objective.files_unchanged(by="digest"), against tiny workspaces."""
@@ -2838,6 +2868,32 @@ class TestIssue82(unittest.TestCase):
         by_id = self._run(self._rename_correctly)
         for check_id, result in by_id.items():
             self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_skill_faithful_workspace_with_the_rename_log_passes(self):
+        # SKILL.md step 6 appends a pdf-rename-log-YYYY-MM-DD.csv after a
+        # real run. A skill-faithful agent that does this must not be
+        # penalized relative to one that skips the log.
+        def mutate(ws):
+            self._rename_correctly(ws)
+            (ws / "inbox" / "pdf-rename-log-2026-09-05.csv").write_text(
+                "timestamp,original_path,new_path,action,notes\n", encoding="utf-8")
+        by_id = self._run(mutate)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_a_stray_bak_file_still_fails_the_listing_check(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            (ws / "inbox" / "notes.pdf.bak").write_text("x", encoding="utf-8")
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
+
+    def test_a_stray_archive_subdirectory_still_fails_the_listing_check(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            (ws / "inbox" / "archive").mkdir()
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
 
     def test_renaming_the_image_only_pdf_fails_the_listing_check(self):
         def mutate(ws):

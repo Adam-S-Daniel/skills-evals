@@ -85,6 +85,14 @@ objective_checks:
       - "20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf"
       - "Scan_20260118_161230.pdf"
       - "20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf"
+    # SKILL.md step 6 appends `pdf-rename-log-YYYY-MM-DD.csv` "in the same
+    # folder" after every run. That name is wall-clock-derived, so it can
+    # never appear in the fixed `expected:` list above; without this, a
+    # skill-faithful run that actually writes the log fails a check that a
+    # run which skips the log passes — rewarding the less faithful run.
+    # Not narrowed to `*.pdf` instead: a stray `.bak` or an `archive/`
+    # subdirectory left in inbox/ must still fail this check.
+    ignore: ["pdf-rename-log-*.csv"]
 
   # Independent of file names: no PDF's CONTENT may be lost or altered.
   # Catches what a name-only check cannot — a collision that clobbered one

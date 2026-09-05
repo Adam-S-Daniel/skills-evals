@@ -7,6 +7,7 @@ reference them by their `type` field.
 
 from __future__ import annotations
 
+import fnmatch
 import glob
 import hashlib
 import json
@@ -431,7 +432,8 @@ def files_unchanged(workspace: str, patterns: list[str],
 
 
 def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str] | None = None,
-                        expected_file: str | None = None, seed: str | None = None) -> tuple[bool, str]:
+                        expected_file: str | None = None, seed: str | None = None,
+                        ignore: list[str] | None = None) -> tuple[bool, str]:
     """The sorted immediate-entry listing of one directory must equal an
     expected list of names.
 
@@ -447,6 +449,13 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
         the runtime workspace, so a run that deletes or edits its own copy of
         that file cannot change what "expected" means) — one name per
         non-blank line.
+
+    `ignore`: optional list of `fnmatch` glob patterns (compared as data,
+    never a regex) for entry names to drop from the listing before
+    comparing — for a name that is inherently non-deterministic (e.g. a
+    wall-clock-stamped log file) and so cannot itself appear in `expected`.
+    Anything NOT matching an ignore pattern is still compared normally, so
+    this narrows what is excused, not what is checked.
     """
     if len(patterns) != 1:
         return (False, f"dir_listing_matches takes exactly one directory, got {patterns!r}")
@@ -455,6 +464,9 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
     if not os.path.isdir(target):
         return (False, f"{directory}: not a directory")
     actual = sorted(os.listdir(target))
+    if ignore:
+        actual = [name for name in actual
+                 if not any(fnmatch.fnmatch(name, pat) for pat in ignore)]
 
     if expected is not None and expected_file is not None:
         return (False, "dir_listing_matches: give expected or expected_file, not both")
@@ -590,6 +602,7 @@ def run_checks(fixture: dict, workspace: str, seed: str,
         elif check["type"] == "dir_listing_matches":
             kwargs["expected"] = check.get("expected")
             kwargs["expected_file"] = check.get("expected_file")
+            kwargs["ignore"] = check.get("ignore")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
