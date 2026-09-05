@@ -1,0 +1,50 @@
+name: Post failure summary to PR
+description: Scrub a Playwright log via gitleaks and post (or resolve) a PR failure-summary comment.
+
+inputs:
+  mode:
+    description: |
+      Either `post` (install gitleaks + scrub the log + post the
+      failure-summary comment) or `resolve` (stamp the existing
+      comment to "passing on <sha>"). The caller decides which
+      mode to invoke via its own `if: failure()` / `if: success()`
+      gate; the action does NOT detect job state itself.
+    required: true
+  marker:
+    description: |
+      Unique HTML-comment marker for this workflow's summary
+      (e.g. `host-loop-failure-summary`). Two workflows must NOT
+      share a marker — they would clobber each other's comments.
+    required: true
+  title:
+    description: |
+      Short label shown in the comment heading
+      (e.g. "host-loop", "prod-mutate", "E2E tests").
+    required: true
+  log-file:
+    description: |
+      Path to the captured Playwright/test log to scrub. Required
+      when `mode: post`; ignored when `mode: resolve` (resolve
+      doesn't read the log).
+    required: false
+    default: ""
+  gitleaks-version:
+    description: Version of gitleaks to install for scrubbing.
+    required: false
+    default: "8.21.2"
+  pr-number:
+    description: |
+      Explicit PR number to comment on. Required when the workflow
+      fires on `workflow_dispatch` (or any non-`pull_request`
+      event), since `github.event.pull_request` is empty in that
+      case. When unset, the action falls back to
+      `context.payload.pull_request.number`.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Sanity log
+      shell: bash
+      run: echo "::notice::post-failure-comment invoked"
