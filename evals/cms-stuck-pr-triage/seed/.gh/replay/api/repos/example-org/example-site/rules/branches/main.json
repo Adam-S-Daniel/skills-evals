@@ -1,0 +1,40 @@
+[
+  {
+    "type": "deletion",
+    "ruleset_source_type": "Repository",
+    "ruleset_source": "example-org/example-site",
+    "ruleset_id": 1837402
+  },
+  {
+    "type": "non_fast_forward",
+    "ruleset_source_type": "Repository",
+    "ruleset_source": "example-org/example-site",
+    "ruleset_id": 1837402
+  },
+  {
+    "type": "pull_request",
+    "ruleset_source_type": "Repository",
+    "ruleset_source": "example-org/example-site",
+    "ruleset_id": 1837402,
+    "parameters": {
+      "required_approving_review_count": 0,
+      "dismiss_stale_reviews_on_push": false,
+      "require_code_owner_review": false,
+      "require_last_push_approval": false
+    }
+  },
+  {
+    "type": "required_status_checks",
+    "ruleset_source_type": "Repository",
+    "ruleset_source": "example-org/example-site",
+    "ruleset_id": 1837402,
+    "parameters": {
+      "strict_required_status_checks_policy": false,
+      "required_status_checks": [
+        { "context": "validate-content" },
+        { "context": "e2e / e2e" },
+        { "context": "content-schema / parity" }
+      ]
+    }
+  }
+]

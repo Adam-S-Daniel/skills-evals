@@ -1,0 +1,41 @@
+[
+  {
+    "number": 412,
+    "title": "Create Post “Spring release notes”",
+    "headRefName": "cms/posts/spring-release-notes",
+    "baseRefName": "main",
+    "mergeStateStatus": "BLOCKED",
+    "isDraft": false,
+    "createdAt": "2026-08-30T09:14:22Z",
+    "updatedAt": "2026-08-30T09:41:07Z",
+    "author": { "login": "cms-bot", "is_bot": false },
+    "labels": [{ "name": "automated-test" }, { "name": "cms/draft" }],
+    "url": "https://github.com/example-org/example-site/pull/412"
+  },
+  {
+    "number": 418,
+    "title": "Update Post “Canary post”",
+    "headRefName": "cms/e2e/canary-post",
+    "baseRefName": "main",
+    "mergeStateStatus": "BLOCKED",
+    "isDraft": false,
+    "createdAt": "2026-08-28T05:03:11Z",
+    "updatedAt": "2026-09-02T05:44:19Z",
+    "author": { "login": "cms-bot", "is_bot": false },
+    "labels": [{ "name": "automated-test" }, { "name": "cms/ready" }],
+    "url": "https://github.com/example-org/example-site/pull/418"
+  },
+  {
+    "number": 421,
+    "title": "Create Post “Autumn opening hours”",
+    "headRefName": "cms/posts/autumn-hours",
+    "baseRefName": "main",
+    "mergeStateStatus": "UNKNOWN",
+    "isDraft": false,
+    "createdAt": "2026-09-02T06:09:41Z",
+    "updatedAt": "2026-09-02T06:10:02Z",
+    "author": { "login": "editor-rowan", "is_bot": false },
+    "labels": [{ "name": "decap-cms/pending_publish" }],
+    "url": "https://github.com/example-org/example-site/pull/421"
+  }
+]

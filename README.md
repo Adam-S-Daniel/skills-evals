@@ -29,6 +29,11 @@ harness/
     init_probe.py          # the primitive: read a session's loaded skill set, free
     arms.py                # one arm per delivery channel, each with a control leg
     account_store.py       # account-store measurement + the freshness gate
+  fakes/                   # stand-in binaries shared across Class B fixtures
+    gh                     # offline GitHub CLI: replays recorded responses,
+                           # refuses every write, logs each invocation
+    README.md              # its keying rule, its classes, its invocation log
+  registries.yml           # registry name -> URL -> skill-directory layout
 evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
@@ -45,6 +50,11 @@ evals/
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
+  cms-stuck-pr-triage/     # A/B eval, Class B: diagnose a stuck publish loop
+    fixture.yaml           # prompt, env (PATH + replay dir), checks, rubric
+    seed/                  # the site checkout: bin/gh is a symlink to
+                           # harness/fakes/gh, and .gh/replay/ holds its
+                           # recorded responses
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces

@@ -1,0 +1,22 @@
+{
+  "number": 421,
+  "state": "open",
+  "title": "Create Post “Autumn opening hours”",
+  "user": { "login": "editor-rowan", "type": "User" },
+  "created_at": "2026-09-02T06:09:41Z",
+  "updated_at": "2026-09-02T06:10:02Z",
+  "merged": false,
+  "merged_at": null,
+  "mergeable": true,
+  "mergeable_state": "unknown",
+  "auto_merge": { "merge_method": "squash", "enabled_by": { "login": "cms-bot" } },
+  "labels": [{ "name": "decap-cms/pending_publish" }],
+  "head": {
+    "ref": "cms/posts/autumn-hours",
+    "sha": "a83f0c6519d7e42b8065f3ac1d97e2b40f5c86d1"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35"
+  }
+}
