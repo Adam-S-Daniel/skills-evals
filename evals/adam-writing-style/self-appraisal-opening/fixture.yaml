@@ -1,6 +1,11 @@
 # Eval fixture: adam-writing-style — self-appraisal opening
 #
-# Class C, same shape as the other two fixtures in this directory. The
+# Class C, same shape as the other two fixtures in this directory. Expect
+# noise; run N >= 6 trials per arm and a multiple of 6 — the shuffle's
+# cycle is n! = 6 permutations, and a run that is not a whole number of
+# cycles leaves slot balance to whichever part of the cycle it covered.
+#
+# The
 # register is the mirror of the proposal bio: core move 9 says a
 # self-appraisal is first person, narrative, and generous — takes credit
 # alongside collaborators and names next quarter's goals — where the bio is

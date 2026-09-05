@@ -155,7 +155,7 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
          weights: dict[str, float] | None = None,
          mode: str | None = "absolute",
          references: list | None = None,
-         trial_index: int = 0) -> dict:
+         trial_index: int = 0, scope: str = "") -> dict:
     """Score one arm. `mode` picks the instrument; absolute is the default.
 
     ## absolute (the historical behaviour, unchanged)
@@ -197,7 +197,7 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
                 "mode.")
         return score_pairwise(rubric, transcript, references or [],
                               trial_index=trial_index, model=model,
-                              timeout=timeout)
+                              timeout=timeout, scope=scope)
     if mode not in (None, "", "absolute"):
         raise ValueError(
             f"unknown judge mode {mode!r} — known modes: absolute, pairwise")
@@ -279,20 +279,32 @@ def _digest(payload: str) -> int:
     return int(hashlib.sha256(payload.encode("utf-8")).hexdigest(), 16)
 
 
-def _cycle_offset(identities: list[str]) -> int:
+def _cycle_offset(identities: list[str], scope: str = "") -> int:
     """Where in the permutation cycle trial 0 starts, for this set of drafts.
 
     Without it trial 0 would always be the identity permutation, which puts
     the draft under test in slot A for every fixture's first trial.
 
     The seed is the draft IDENTITIES — "agent" plus each reference's name —
-    and nothing else. Renaming a reference therefore moves the whole cycle,
-    while editing a reference's prose does not; that is deliberate (a run
-    stays reproducible while its references are being edited) but it means
-    a rename is a change to the shuffle, which
+    together with `scope`, the fixture the drafts belong to. Identities
+    alone were not enough: every Class C fixture names its references
+    `in-voice` and `generic`, so all three started at the same offset and
+    trial 0 put the draft under test in the same slot in every one of them.
+    Position bias that correlates across fixtures does not average out
+    across them either, which is the whole point of shuffling.
+
+    Renaming a reference, or renaming the fixture directory, therefore moves
+    that fixture's cycle; editing a reference's prose does not. That is
+    deliberate — a run stays reproducible while its references are being
+    edited — and it means a rename is a change to the shuffle, which
     test_pairwise_trial_zero_order_is_pinned_for_every_fixture pins.
+    An empty `scope` reproduces the pre-scope seed exactly, so a caller that
+    has no fixture to name (a unit test, another harness) is unaffected.
     """
-    return _digest("skills-evals/pairwise/cycle/" + "|".join(sorted(identities)))
+    seed = "skills-evals/pairwise/cycle/"
+    if scope:
+        seed += scope + "/"
+    return _digest(seed + "|".join(sorted(identities)))
 
 
 def _nth_permutation(items: list, index: int) -> list:
@@ -311,14 +323,17 @@ def _nth_permutation(items: list, index: int) -> list:
 
 
 def blind_order(candidate_text: str, references: list,
-                trial_index: int = 0) -> list[dict]:
+                trial_index: int = 0, scope: str = "") -> list[dict]:
     """The drafts as the judge will see them: [{"label", "identity", "text"}].
 
     The draft under test and every reference get an opaque label (A, B, C
-    ...) in an order derived from `trial_index`. Two properties matter and
-    are tested: one trial replays identically (so a run is reproducible),
-    and the draft under test does not sit in the same slot every trial (so a
-    judge cannot learn the slot instead of the writing).
+    ...) in an order derived from `trial_index` and `scope` (the fixture
+    these drafts belong to — see `_cycle_offset`). Three properties matter
+    and are tested: one trial replays identically (so a run is
+    reproducible), the draft under test does not sit in the same slot every
+    trial (so a judge cannot learn the slot instead of the writing), and two
+    fixtures do not walk the cycle in step (so the residual bias in a short
+    run does not correlate across them).
     """
     # Emptiness is decided on the NORMALISED text, which is the text the
     # judge would actually see: a draft of nothing but a BOM, a zero-width
@@ -353,7 +368,7 @@ def blind_order(candidate_text: str, references: list,
     # to put the draft under test in slot A four times out of five, which is
     # the position bias the shuffle exists to remove.
     chosen = _nth_permutation(
-        identities, _cycle_offset(identities) + int(trial_index))
+        identities, _cycle_offset(identities, scope) + int(trial_index))
     return [{"label": _blind_label(i), **candidates[identity]}
             for i, identity in enumerate(chosen)]
 
@@ -542,7 +557,7 @@ def _build_pairwise_prompt(rubric: str, ordered: list[dict],
 
 def score_pairwise(rubric: str, candidate_text: str, references: list, *,
                    trial_index: int = 0, model: str | None = None,
-                   timeout: int = 120,
+                   timeout: int = 120, scope: str = "",
                    dimensions=PAIRWISE_DIMENSIONS) -> dict:
     """Rank the writing under test against the fixture's references, blind.
 
@@ -567,7 +582,7 @@ def score_pairwise(rubric: str, candidate_text: str, references: list, *,
     error), and ValueError if the judge's reply is not a complete ranking of
     exactly the labels it was given, with dimension scores for each.
     """
-    ordered = blind_order(candidate_text, references, trial_index)
+    ordered = blind_order(candidate_text, references, trial_index, scope)
     prompt = _build_pairwise_prompt(rubric, ordered, dimensions)
     parsed = _extract_json(_run_judge_cli(prompt, model=model, timeout=timeout))
     if not isinstance(parsed, dict):
@@ -701,4 +716,5 @@ def score_fixture(eval_dir, fixture: dict, transcript: str,
                  model=judge_cfg.get("model"),
                  timeout=judge_cfg.get("timeout_s", 120),
                  weights=judge_cfg.get("weights"),
-                 mode=mode, references=references, trial_index=trial_index)
+                 mode=mode, references=references, trial_index=trial_index,
+                 scope=Path(eval_dir).name)

@@ -6,7 +6,12 @@ The Class C pilot from [#81]. Class C means the judge carries the load: the
 few decidable bits are scored objectively, and the comparison is a **pairwise
 preference against committed reference samples** rather than an absolute
 rubric score (DESIGN.md, "Four instruments, one harness"). DESIGN.md's
-warning applies — expect noise, and run **N ≥ 5 trials per arm**.
+warning applies — expect noise, and run **N >= 6 trials per arm, and a
+multiple of 6**: the shuffle walks a cycle of n! = 6 permutations (the draft
+under test plus two references), so a trial count that is not a whole number
+of cycles leaves slot balance to whichever part of the cycle the run
+happened to cover. N = 5 gives one slot twice, another twice and the third
+once, which is position bias bought back by accident.
 
 | Fixture | Register | Prompt |
 |---|---|---|

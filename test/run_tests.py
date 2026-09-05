@@ -4261,6 +4261,72 @@ class TestIssue81(unittest.TestCase):
         self.assertIn("OSError", note)
         self.assertIn("argv", note)
 
+    # ------------------------------------------------------------------
+    # the shuffle is per fixture, and N is a whole number of cycles
+    # ------------------------------------------------------------------
+
+    # Trial 0's order, per fixture, with the fixture directory folded into
+    # the cycle seed. Three expectations where there used to be one: every
+    # Class C fixture names its references `in-voice` and `generic`, so
+    # seeding on the identities alone started all three at the same offset
+    # and put the draft under test in the same slot in each of them on the
+    # same trial. Two of the three still coincide here — three fixtures
+    # drawing from six permutations collide about half the time, and a hash
+    # tuned until they did not would be a hash fitted to today's three
+    # directory names — but the guaranteed correlation is gone, and a change
+    # to the seed derivation now has to move three pinned values.
+    TRIAL_ZERO_ORDERS = {
+        "recruiter-reply": ["reference:in-voice", "agent", "reference:generic"],
+        "proposal-bio": ["reference:in-voice", "agent", "reference:generic"],
+        "self-appraisal-opening": ["agent", "reference:generic",
+                                   "reference:in-voice"],
+    }
+
+    def test_pairwise_trial_zero_order_is_pinned_per_fixture(self):
+        # The reproducibility contract, held against the names the fixtures
+        # really carry. A rename — of a reference OR of the fixture
+        # directory — is allowed to fail this test; it is not allowed to
+        # move the shuffle in silence.
+        seen = {}
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                fixture = self._fixture(name)
+                references = judge.load_references(self.STYLE_DIR / name,
+                                                   fixture["judge"])
+                self.assertEqual([r["name"] for r in references],
+                                 ["in-voice", "generic"])
+                order = [c["identity"] for c in judge.blind_order(
+                    self.UNWRAPPED_CANDIDATE, references, 0, name)]
+                seen[name] = order
+                self.assertEqual(order, self.TRIAL_ZERO_ORDERS[name])
+        # And they are no longer one order shared by every fixture.
+        self.assertGreater(len({tuple(o) for o in seen.values()}), 1, seen)
+
+    def test_the_cycle_offset_moves_with_the_fixture_directory(self):
+        identities = ["agent", "reference:in-voice", "reference:generic"]
+        offsets = {scope: judge._cycle_offset(identities, scope)
+                   for scope in ("", "recruiter-reply", "proposal-bio",
+                                 "self-appraisal-opening")}
+        self.assertEqual(len(set(offsets.values())), len(offsets), offsets)
+
+    def test_the_recommended_trial_count_is_a_whole_number_of_cycles(self):
+        # N=5 is not a multiple of the cycle length (n! = 6 for a draft and
+        # two references), so slot balance over a run was an accident of
+        # which five permutations the cycle happened to start on. Every
+        # header that recommends a trial count says so, and says why.
+        cycle = math.factorial(1 + 2)
+        self.assertEqual(cycle, 6)
+        places = {"README.md": self.STYLE_DIR / "README.md"}
+        places.update({name: self.STYLE_DIR / name / "fixture.yaml"
+                       for name in self.FIXTURES})
+        for where, path in places.items():
+            flat = " ".join(path.read_text(encoding="utf-8").split())
+            with self.subTest(where=where):
+                self.assertIn(f"multiple of {cycle}", flat)
+                self.assertIn(f"N >= {cycle}", flat)
+                for stale in ("N >= 5", "N>=5"):
+                    self.assertNotIn(stale, flat)
+
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it
         # back into the judge's own voice. There is no way to render that
@@ -4278,25 +4344,6 @@ class TestIssue81(unittest.TestCase):
                 judge.score_pairwise("rubric", hostile, self.REFERENCES,
                                      timeout=30)
         self.assertIn("</draft", str(ctx.exception))
-
-    def test_pairwise_trial_zero_order_is_pinned_for_every_fixture(self):
-        # The reproducibility contract, held against the names the fixtures
-        # really carry. _cycle_offset seeds the shuffle from the draft
-        # IDENTITIES — "agent" plus each reference's name — so renaming a
-        # reference moves the whole cycle while editing its prose does not.
-        # A rename is allowed to fail this test; it is not allowed to move
-        # the shuffle in silence.
-        for name in self.FIXTURES:
-            with self.subTest(fixture=name):
-                fixture = self._fixture(name)
-                references = judge.load_references(self.STYLE_DIR / name,
-                                                   fixture["judge"])
-                self.assertEqual([r["name"] for r in references],
-                                 ["in-voice", "generic"])
-                self.assertEqual(
-                    [c["identity"] for c in judge.blind_order(
-                        self.UNWRAPPED_CANDIDATE, references, 0)],
-                    ["reference:generic", "reference:in-voice", "agent"])
 
     def test_pairwise_prompt_is_blind(self):
         ordered = judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)

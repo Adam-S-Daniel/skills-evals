@@ -2,7 +2,10 @@
 #
 # Class C, same shape as the recruiter-reply fixture in this directory: the
 # judge ranks the draft against two committed references, blind, and only
-# the decidable bits are scored objectively. Expect noise; N>=5 per arm.
+# the decidable bits are scored objectively. Expect noise; run N >= 6 per
+# arm and a multiple of 6 — the shuffle's cycle is n! = 6 permutations, and
+# a run that is not a whole number of cycles leaves slot balance to
+# whichever part of the cycle it covered.
 #
 # The register is the point here. Core move 8 says a proposal bio drops the
 # email softeners and goes third person, factual, employer-and-dates, no
