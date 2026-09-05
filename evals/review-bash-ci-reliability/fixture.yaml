@@ -158,14 +158,22 @@ objective_checks:
   # swallowing it with `|| echo ""`, `|| out=""`, or `|| out=''` instead of
   # `|| true`, wrapping the call in `set +e` / `set -e` to disable errexit
   # around it, and deleting the call outright (must_match requires the call
-  # itself to still be present). Every must_not_match alternative below
-  # requires `gh api` to appear earlier on that same live line (the
-  # `^[^#\n]*gh api[^#\n]*` prefix), so a genuine fallback for some other,
-  # unrelated command a few lines away — even one that happens to reuse the
-  # name `out`, e.g. `|| out=$(cat cache)` — does not suppress *this* call's
-  # failure and is left alone; only an empty-string (or bare) reassignment
-  # that hangs directly off the gh api line itself, and is the last thing on
-  # that line before an optional trailing comment, is forbidden.
+  # itself to still be present). Three of the four must_not_match
+  # alternatives below (the `|| true/:/echo` suppression, the
+  # `2>/dev/null` swallow, and the empty-string/bare reassignment) are
+  # line-local: each requires `gh api` to appear earlier on that same live
+  # line (the `^[^#\n]*gh api[^#\n]*` prefix), so a genuine fallback for
+  # some other, unrelated command a few lines away — even one that happens
+  # to reuse the name `out`, e.g. `|| out=$(cat cache)` — does not suppress
+  # *this* call's failure and is left alone; only a form that hangs
+  # directly off the gh api line itself, as the last thing on that line
+  # before an optional trailing comment, is forbidden. The remaining
+  # alternative — a bare `set +e` — is deliberately file-scoped instead: it
+  # bans a live `set +e` anywhere in collect.sh, not only next to the gh
+  # api call, because whether a `set +e`/`set -e` bracket actually wraps
+  # this particular call is a structural question a regex must not try to
+  # answer (the header above explains why no check here decides shell
+  # structure by regex).
   - id: gh-api-failure-not-swallowed
     description: A failed gh api call is not silently treated as "nothing found"
     type: file_matches

@@ -2462,6 +2462,51 @@ class TestIssue74(unittest.TestCase):
         self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
                         by_id["gh-api-failure-not-swallowed"]["detail"])
 
+    # -- Round-5 review F2 (third consecutive round on this paragraph): the
+    # comment above gh-api-failure-not-swallowed claimed EVERY must_not_match
+    # alternative requires `gh api` on that same live line. Three of the four
+    # do; the bare `set +e` ban is deliberately file-scoped instead — round 4
+    # endorsed the behavior (whether a set +e/set -e bracket actually wraps
+    # THIS call is a structural question a regex must not answer), the
+    # sentence just described it wrong. Fix the wording, then pin both the
+    # wording and the (already-correct) behavior it was misdescribing. --
+
+    def test_f2_gh_api_comment_scopes_line_local_vs_file_scoped(self):
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        start = text.index("Only the suppression forms themselves are forbidden")
+        end = text.index("- id: gh-api-failure-not-swallowed")
+        comment = text[start:end]
+        self.assertIn("line-local", comment)
+        self.assertIn("file-scoped", comment)
+        self.assertIn("set +e", comment)
+
+    def test_f2_far_away_set_plus_e_bracket_around_unrelated_command_fails(self):
+        # A set +e/set -e bracket nowhere near the gh api call, wrapping an
+        # unrelated command, must still fail the check: the ban is
+        # file-scoped by design, not conditioned on proximity to gh api.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text += (
+            '\n# unrelated diagnostic, nothing to do with the gh api call above\n'
+            'set +e\n'
+            'grep -c . changed-packages.txt\n'
+            'set -e\n')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_f2_control_without_far_away_set_plus_e_still_passes(self):
+        # Control for the test above: the same fixed collect.sh, minus the
+        # far-away set +e bracket, passes — isolating that the bracket
+        # itself, not some other change, is what fails the check.
+        ws = self._ws()
+        self._fix_all(ws)
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
     # -- Round-4 review S2: documented known limitation. [^#\n]* treats the
     # FIRST '#' on a line as a comment start even inside a quoted string, so
     # a correct fix can still fail if its remedy token lands after a quoted
