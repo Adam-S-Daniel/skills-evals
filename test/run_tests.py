@@ -2728,7 +2728,7 @@ class TestIssue85(unittest.TestCase):
                             f"actions/upload-artifact@{invented}")
                     .replace("actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f",
                             f"actions/cache@{invented}"))
-            self.assertNotIn("v4", text.split("checkout@")[0])  # sanity: replace happened
+            self.assertIn(f"actions/checkout@{invented}", text)  # sanity: replace happened
             ci.write_text(text, encoding="utf-8")
             by_id = self._checks(ws, seed)
         self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
@@ -2768,6 +2768,32 @@ class TestIssue85(unittest.TestCase):
                         "test setup is stale")
         self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
                          by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_match_reference_is_case_insensitive(self):
+        """Round 3, N-1: `pins_match_reference` compared SHAs case-sensitively
+        while `SHA_RE` and the sibling `uses_refs_sha_pinned` check are both
+        case-insensitive (`test_uses_refs_sha_pinned_accepts_upper_case_hex`),
+        so an all-uppercase-but-otherwise-correct audit passed
+        third-party-actions-sha-pinned and failed third-party-pins-match-pins-md
+        on the very same ref.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            text = ci.read_text(encoding="utf-8")
+            for sha in ("8c145d657eb0e222586a451c0917c3072252d69a",
+                       "297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708",
+                       "469fdae6c9a7a133f770f31f7ebfe863a834fba1",
+                       "145d7281d851cb2f0e335d9b256d80c13f353f7f"):
+                text = text.replace(sha, sha.upper())
+            ci.write_text(text, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["third-party-actions-sha-pinned"]["passed"],
+                        by_id["third-party-actions-sha-pinned"]["detail"])
+        self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
+                        by_id["third-party-pins-match-pins-md"]["detail"])
 
     # -- the platform_ref: input is bound too (review round 2, N2) -----------
 

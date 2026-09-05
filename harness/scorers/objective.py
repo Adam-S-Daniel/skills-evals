@@ -275,6 +275,10 @@ def pins_match_reference(workspace: str, patterns: list[str],
     `uses:` values are located the same way `uses_refs_sha_pinned` and
     `pin_comment_absent` do — a real YAML parse via `_uses_value_nodes` —
     never a text regex deciding where the code's structure is.
+
+    Compares with `.casefold()`: `SHA_RE` and `uses_refs_sha_pinned` both
+    accept uppercase hex, so an all-uppercase-but-otherwise-correct audit
+    must not fail here on case alone.
     """
     import yaml
     if not reference:
@@ -310,7 +314,7 @@ def pins_match_reference(workspace: str, patterns: list[str],
                             f"({reference} gives {expected_sha})")
             continue
         for rel, lineno, ref_val in refs:
-            if ref_val != expected_sha:
+            if ref_val.casefold() != expected_sha.casefold():
                 problems.append(f"{rel}:{lineno} {action}@{ref_val} "
                                 f"({reference} gives {expected_sha})")
     return (not problems, f"every {reference} pin present and correct"
