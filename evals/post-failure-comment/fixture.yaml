@@ -1,0 +1,338 @@
+# Eval fixture: post-failure-comment
+# Measures whether the post-failure-comment skill improves an agent's ability
+# to wire a workflow's captured Playwright log into the platform's
+# .github/actions/post-failure-comment composite action, instead of an ad hoc
+# inline comment block — and to follow the composite's caller-side-gating
+# convention exactly, including the shapes the skill documents as broken.
+
+skill: post-failure-comment
+registry: https://github.com/Adam-S-Daniel/cms-platform
+
+# Seed hygiene note (review round 3, B3; guards corrected round 4, S2) — why
+# this file, not the seed, is where this lives: the vendored
+# seed/.cms-platform/.../action.yml's `mode` and `marker` input DESCRIPTIONS
+# carry the caller-side-gating contract (mode is selected by the caller's own
+# `if:` gate; two workflows must not share a marker). That's fine to leave in
+# place — it's the real action's own input documentation, present in both
+# arms regardless of which one gets the skill, not authorship leaking eval
+# context. What had to go was everything outside a `description:` scalar: a
+# top-of-file design-history comment and an "Eval fixture note" comment that
+# named the eval, the issue, and the convention under test directly to the
+# agent. Two guards in test/run_tests.py now decide this, deliberately
+# narrower and broader than "no comment outside `inputs:`" respectively:
+# test_vendored_action_seed_carries_no_comments_outside_inputs asserts, via
+# YAML node marks (not a string blocklist), that this ONE file carries no `#`
+# anywhere except inside an input's own `description:` scalar text — a
+# comment between two input entries, or beside a `required:`/`default:`
+# line, is caught exactly like one outside `inputs:` entirely (round 4, S2 —
+# excluding the whole `inputs:` mapping span, as this guard used to, missed
+# exactly that shape). test_seed_carries_no_eval_authorship_leak_keywords
+# case-insensitively greps every file under the seed (not only this one) for
+# words that would tell the without-skill arm it's inside a fixture — a
+# differently-worded re-leak, in any seed file, can't slip back in.
+
+# Class A (workspace transform, per DESIGN.md's four-instrument taxonomy):
+# correctness is decidable from the resulting workflow files alone, so the
+# objective checks below carry the whole behavioural spec; the judge is left
+# only what genuinely needs judgement (see judge_rubric).
+model: claude-sonnet-5
+
+judge:
+  model: claude-opus-4-8
+  # Weighted overall — the harness recomputes it from these and ignores the
+  # judge's own arithmetic. Convention fidelity carries the correctness axis
+  # (every documented gate/shape, including the two "don't repeat" traps);
+  # restraint is a guardrail, not a substitute for doing the work, so it is
+  # weighted below convention fidelity, per DESIGN.md's "correctness outweighs
+  # guardrails" rule — an equal-weighted restraint quietly rewards an arm that
+  # touches only the schedule-only workflow and calls it done.
+  weights:
+    convention_fidelity: 0.5
+    gitleaks_explanation: 0.2
+    restraint: 0.3
+
+prompt: >
+  Make CI failures in these workflows self-report to the PR the way the
+  platform's failure-comment action expects.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# Objective checks run by harness/scorers/objective.py against the resulting
+# workspace. All structural (yaml-parsed jobs/steps), never a line/regex scan
+# deciding WHICH step or job is in play — only a selected step's leaf VALUES
+# (an `if:` string, a `with:` value, a `run:` body) get a plain string test.
+objective_checks:
+  - id: workflows-still-parse
+    description: All three workflow files still parse as YAML
+    type: yaml_parses
+    paths: [".github/workflows/*.yml"]
+
+  - id: schedule-only-workflow-untouched
+    description: >
+      nightly-audit.yml has no PR to comment on (schedule-only) and must be
+      left byte-identical — the skill's own "When NOT to use this" section.
+    type: files_unchanged
+    paths: [".github/workflows/nightly-audit.yml"]
+
+  - id: e2e-inline-block-removed
+    description: >
+      The pre-composite ad hoc block (raw `gh pr comment`, the log
+      interpolated straight into the shell command, no marker, no gitleaks)
+      is gone from e2e-tests.yml, not merely left alongside the composite
+      call. Whole-comment lines are excluded before matching (issue #86
+      review round 3, N11) — a correct answer that leaves a `#` comment
+      MENTIONING the removed block (e.g. explaining what it replaced) must
+      not fail the same check a wrong answer, which left the code itself in
+      place, would fail. `file_matches_excluding_comments` strips WHOLE
+      comment lines only (first non-whitespace char is `#`): a trailing
+      same-line comment (`run: npm ci  # was: gh pr comment`) still fails
+      this check, since a `#` inside a `run:` string can't be told apart
+      from a real comment without a shell lexer — a known false-fail,
+      recorded rather than fixed (issue #86 review round 4, N4). A
+      commented-out `# gh pr comment` line INSIDE a `run: |` block IS
+      stripped correctly, since the stripping is purely line-oriented over
+      the raw file text and doesn't care what YAML construct the line sits
+      inside.
+    type: file_matches_excluding_comments
+    paths: [".github/workflows/e2e-tests.yml"]
+    must_not_match:
+      - "gh pr comment"
+      - "steps\\.capture\\.outputs\\.log"
+
+  - id: e2e-post-step
+    description: >
+      e2e-tests.yml's `e2e` job calls the composite with `if: failure()`,
+      mode: post, and a real log-file/marker/title — the single-job shape
+      from the skill's caller convention. `log_file_matches_tee` requires
+      `log-file` to name the actual `tee` target an earlier `run:` step in
+      the SAME job wrote to (SKILL.md's `2>&1 | tee /tmp/<log>.log`
+      idiom), not merely any non-empty string. Also asserts the job is in
+      scope for `pull-requests: write` (workflow- or job-level) — the
+      skill's own "most subtle and most common" pitfall, and objectively
+      decidable. `marker_not_html_comment` rejects a marker the caller
+      already wrapped in `<!-- -->` (the composite wraps it itself to find
+      its own prior post); `with_forbids_job_status` rejects `${{
+      job.status }}` leaking into ANY `with:` value, not only `mode`; and
+      `marker_pairs_with_mode: resolve` requires this step's marker to
+      match the resolve step's, since a post/resolve pair under different
+      markers leaves the resolve unable to find the post's comment (issue
+      #86 review round 3, N8). `if_gates_on_outcome: failure` asserts the
+      gate actually reads as "the job failed" — not merely that its `if:`
+      contains the substring `failure()`, which a negated condition like
+      `!failure()` (true on every GREEN run) still does (issue #86 review
+      round 4, B1 — the round-2 N6 defect applied to this pair of checks
+      too; round 2 scoped N6's fix to the multi-job checks only).
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: e2e
+    if_contains: "failure()"
+    if_gates_on_outcome: failure
+    with_present: ["log-file", "marker", "title"]
+    with_equals:
+      mode: post
+    job_permissions_include:
+      pull-requests: write
+    log_file_matches_tee: true
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: resolve
+
+  - id: e2e-resolve-step
+    description: >
+      e2e-tests.yml's `e2e` job resolves the comment on success. Shares the
+      marker-form and pairing guards with e2e-post-step (issue #86 review
+      round 3, N8): `marker_pairs_with_mode: post` requires this step's
+      marker to match the post step's own. `if_gates_on_outcome: success`
+      is the same inverted-wiring guard as e2e-post-step's, for the
+      opposite polarity (issue #86 review round 4, B1).
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml"]
+    uses_suffix: "/post-failure-comment"
+    job: e2e
+    if_contains: "success()"
+    if_gates_on_outcome: success
+    with_present: ["marker", "title"]
+    with_equals:
+      mode: resolve
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: post
+
+  - id: visual-regression-report-job-shape
+    description: >
+      The multi-job workflow's failure-comment calls live in a final job that
+      always runs regardless of the upstream jobs' outcome and depends on them
+      — the `needs:` + a run-regardless `if:` shape (job.status/failure()/
+      success() only reflect the FINALIZE job's own state, never the
+      matrix's). SKILL.md's own multi-job snippet shows no job-level `if:`
+      at all — some such gate is this fixture's OWN requirement, needed
+      because GitHub skips a job by default when a job it `needs:` fails.
+      `job_if_equals` accepts either `always()` (the spelling the skill's
+      snippet DOES show, on the single-job workflow's job-less shape,
+      carried over here) or `!cancelled()` — GitHub's own recommended
+      alternative for "run regardless of upstream failure" that additionally
+      skips on a cancelled RUN, which `always()` does not — normalizing an
+      outer `${{ ... }}` wrapper and whitespace before comparing either way,
+      so `if: ${{ always() }}` and the unwrapped `always()` both satisfy it.
+      `job_if_equals` is an EXACT match against the two accepted spellings
+      by design, not a substring/contains test: `if: ${{ always() &&
+      github.event_name == 'pull_request' }}` on the downstream job — a
+      right answer SKILL.md itself doesn't show, since the skill's own
+      `always()` snippet is on the JOB-LESS single-job shape — fails this
+      check. Recorded here (issue #86 review round 4, N3) so that's a
+      deliberate choice, not a discovery made during a real with_skill run.
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    job_if_equals: ["always()", "!cancelled()"]
+    job_needs_nonempty: true
+
+  - id: visual-regression-post-step
+    description: >
+      The downstream job's post call gates on `needs.<job>.result`, not
+      `job.status` or a bare `failure()` (which would read the downstream
+      job's own trivial status, not the matrix's). `log-file` must point at
+      a path an `actions/download-artifact` step in the SAME job downloaded
+      to — the log was captured on the chromium/firefox runner, a different
+      filesystem than the downstream job's, so a `log-file:` naming a path
+      with no artifact transport into this job is unreachable at runtime,
+      not merely unverified. Also asserts the job is in scope for
+      `pull-requests: write`. Selects the job structurally by
+      `job_needs_nonempty` rather than by a hardcoded name — the skill's own
+      multi-job example names it `finalize`, not `report`, and neither name
+      is prescribed, so naming one here would silently favor whichever arm
+      happens to guess it. `if_gates_on_outcome: failure` asserts the gate
+      actually reads as "something failed" (`.result == 'failure'`,
+      `.result != 'success'` — the stricter spelling that also catches
+      cancelled/skipped, issue #86 review round 4, N2 —
+      `contains(needs.*.result, 'failure')`, or a negated check for
+      `'success'`) — not merely that it mentions `needs.` and the word
+      `failure` at all, which a fully INVERTED wiring (this call gated on
+      success instead) could still do (issue #86 review round 3, N6).
+      Shares the marker-form and pairing guards with e2e-post-step (issue
+      #86 review round 3, N8): `marker_not_html_comment` rejects a marker
+      already wrapped in `<!-- -->`, `with_forbids_job_status` rejects `${{
+      job.status }}` in any `with:` value, and `marker_pairs_with_mode:
+      resolve` requires this step's marker to match the resolve step's.
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    job_needs_nonempty: true
+    if_contains: "needs."
+    if_gates_on_outcome: failure
+    with_present: ["log-file", "marker", "title"]
+    with_equals:
+      mode: post
+    job_permissions_include:
+      pull-requests: write
+    log_file_matches_download: true
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: resolve
+
+  - id: visual-regression-resolve-step
+    description: >
+      The downstream job resolves the comment when neither upstream job
+      failed. `if_gates_on_outcome: success` is the same inverted-wiring
+      guard as the post check above, for the opposite polarity (issue #86
+      review round 3, N6). Also shares the marker-form and pairing guards
+      with the post check (N8): `marker_pairs_with_mode: post` requires
+      this step's marker to match the post step's own.
+    type: workflow_step_uses
+    paths: [".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    job_needs_nonempty: true
+    if_contains: "needs."
+    if_gates_on_outcome: success
+    with_present: ["marker", "title"]
+    with_equals:
+      mode: resolve
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: post
+
+  - id: post-failure-comment-reference-valid
+    description: >
+      Every step calling the composite resolves it either as the vendored
+      LOCAL path (any `./...` ref — the skill's condition 3 only requires
+      the action's directory be present, not any particular checkout shape)
+      or as a REMOTE `Adam-S-Daniel/cms-platform/...@<tag>` ref pinned to a
+      release tag, never a bare 40-hex SHA (the one carve-out from the
+      fleet's general SHA-pinning rule). If a checkout of cms-platform
+      exists anywhere in the workflow, its `ref:` must be tag-shaped too —
+      but no checkout is REQUIRED, since the remote form needs none and the
+      skill never prescribes a checkout as the only way to reach the action.
+      Replaces two earlier per-file checks that both demanded a checkout
+      step with a non-SHA `ref:` — an implementation the skill never
+      prescribes — and rejected the vendored local path and the literal
+      remote-tag carve-out, the two shapes the issue actually allows.
+    type: post_failure_comment_reference_valid
+    paths: [".github/workflows/e2e-tests.yml", ".github/workflows/visual-regression.yml"]
+
+  - id: markers-unique-per-workflow
+    description: >
+      No two DIFFERENT workflows share a marker (they would clobber each
+      other's comments) — a `post`/`resolve` pair in the SAME workflow
+      sharing one marker is the correct dedup key, not a collision. Passes
+      VACUOUSLY on the pristine seed (it has zero post-failure-comment steps,
+      so zero markers to collide) — it only starts asserting anything once
+      at least one workflow calls the composite, which every other check
+      above already requires anyway.
+    type: workflow_step_uses
+    paths: [".github/workflows/e2e-tests.yml", ".github/workflows/visual-regression.yml"]
+    uses_suffix: "/post-failure-comment"
+    unique_with_key: marker
+
+  - id: no-event-or-input-interpolation-in-run
+    description: >
+      No `run:` step interpolates `${{ github.event.* }}` or `${{ inputs.* }}`
+      directly into a shell command, in any workflow — the log and any PR
+      metadata now flow through the composite's own inputs/env, not a hand
+      rolled `gh pr comment` line.
+    type: no_event_interpolation_in_run
+    paths: [".github/workflows/*.yml"]
+
+  - id: cms-platform-vendored-contract-unchanged
+    description: >
+      The vendored .cms-platform/ action contract must be byte-identical to
+      the seed — restraint means leaving the composite's OWN contract alone,
+      never proposing a "fix" to it (the judge's restraint clause and the
+      skill's second "pattern that does not work" — moving the gate inside
+      the action — both hinge on this actually being enforced). `paths`
+      names the exact seed file rather than a `.cms-platform/**` glob:
+      Python's `glob` does not descend a wildcard into a dot-prefixed
+      directory like `.github`, so a `**` pattern here would silently match
+      nothing below `.cms-platform/` and this check would vacuously pass no
+      matter what the agent did to the vendored file.
+    type: files_unchanged
+    paths: [".cms-platform/.github/actions/post-failure-comment/action.yml"]
+
+# Judge scoring: 3 dimensions, 0-10 each, dictated to match judge.weights'
+# keys exactly. Everything decidable from the workflow files alone is
+# checked objectively above; the judge is left only what needs judgement.
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) convention_fidelity — did the agent follow the composite's documented
+  caller convention exactly: caller-side `if: failure()`/`if: success()`
+  gating (never moved inside the action), the correct outcome source for each
+  workflow's shape (a bare `failure()`/`success()` for the single-job
+  workflow, `needs.<job>.result` for the multi-job one — never `job.status`,
+  which the skill documents as silently expanding to an empty string inside
+  the action's own `with:` block), a real captured log path, and a marker
+  unique per workflow. (`pull-requests: write` is checked objectively above,
+  not judged here.) Cap this dimension at 4 if either of the skill's
+  documented "don't repeat" patterns appears anywhere in the result.
+  (2) gitleaks_explanation — since nothing objective here can see WHY the
+  wiring is safe, does the agent's reply explain that every comment posted
+  through the composite is scrubbed via its bundled gitleaks pass-through,
+  that this has no caller-side opt-out, and that this is exactly why the
+  agent did not need to (and should not) add its own redaction step?
+  (3) restraint — did the agent leave nightly-audit.yml alone, avoid editing
+  the vendored .cms-platform/ action contract, avoid inventing a new marker
+  convention or a third mode the action doesn't support, and avoid touching
+  files outside the two Playwright workflows?
