@@ -779,8 +779,11 @@ def _census_relevance(count_keys):
 PREVIOUS_ARMS_CAP = 500
 
 
-def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]:
-    """The previous roster's arm ids. A malformed entry is skipped, not fatal.
+def _clean_previous_arms(previous, warn, api_ids=(),
+                         count_keys=()) -> tuple[list[str], list[str]]:
+    """(reported, carried) — the previous roster's arm ids, twice over.
+
+    A malformed entry is skipped, not fatal.
 
     Shape-checked with `PREVIOUS_ARM_ID_RE`, not just type-checked: a
     previous roster is a JSON file read off a public branch, and every id
@@ -808,22 +811,37 @@ def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]
     (`count_keys`, either spelling of a dated/undated pair) — is kept ahead
     of filler, and only then does the id order break ties. The plain
     `sorted(ids)[:PREVIOUS_ARMS_CAP]` this replaces had the same
-    alphabetical-head shape S2 fixes for `catalogue_seen`, and the same
-    consequence: a previous roster carrying 500 low-sorting filler ids
-    beside ONE real departed arm reported 500 filler retirements and not
-    the real one, so `retired_since_last` — the line render_summary leads
-    with — silently lost the only retirement that happened. Both arguments
+    alphabetical-head shape S2 fixes for `catalogue_seen`. Both arguments
     default to empty, which reduces to the old spelling-only order for a
     caller with no context to give.
+
+    THE CAP GOVERNS ONLY WHAT IS CARRIED FORWARD (F3, #129 review round
+    8) — hence the two lists. A real departed arm with ZERO census turns
+    is neither listed by the Models API nor named by the census, so 500
+    fillers still capped it out and `retired_since_last` — the line
+    render_summary leads with — still lost the only retirement that
+    happened; round 7's own test avoided the case by giving the arm 8,000
+    turns. Nothing in the data tells a filler apart from a real id there,
+    so no ordering can fix it: `reported` is the whole shape-validated
+    list, and every arm the previous roster named that is not an arm now
+    is reported retired. `carried` is that list capped, and is what
+    attribution and the hold-over check read.
+
+    What that costs is a `retired_since_last` as long as the previous
+    roster's own `arms` list, which only a hostile branch can inflate —
+    linear in the input, not amplified, and this harness's own next
+    `previous.json` is the small roster it publishes rather than the
+    planted one. Reporting 500 fabricated retirements and omitting the
+    real one is the worse of the two.
     """
     if previous is None:
-        return []
+        return [], []
     entries = previous.get("arms") if isinstance(previous, dict) else None
     if entries is None:
-        return []
+        return [], []
     if not isinstance(entries, list):
         warn("previous roster: `arms` is not a list; comparing against nothing")
-        return []
+        return [], []
     seen: set[str] = set()
     ids = []
     skipped = 0
@@ -838,6 +856,7 @@ def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]
     if skipped:
         warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
              f"not an object with a well-formed model-id-shaped `id`")
+    carried = ids
     if len(ids) > PREVIOUS_ARMS_CAP:
         dropped = len(ids) - PREVIOUS_ARMS_CAP
         live = set(api_ids)
@@ -849,10 +868,11 @@ def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]
         # `not _relevant(...)` first: False sorts before True, so relevant
         # ids head the list and the id order only breaks ties inside each
         # group — deterministic either way.
-        ids = sorted(ids, key=lambda i: (not _relevant(i), i))[:PREVIOUS_ARMS_CAP]
+        carried = sorted(ids,
+                         key=lambda i: (not _relevant(i), i))[:PREVIOUS_ARMS_CAP]
         warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
              f"the {PREVIOUS_ARMS_CAP}-entry cap")
-    return ids
+    return ids, carried
 
 
 def _as_date(moment: datetime) -> str:
@@ -1216,8 +1236,17 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # catalogue history to fold a previous arm published under a DATED id
     # that has since left the API, whose usage the census records under
     # the UNDATED alias — see the `aliases` comment just below.
-    previous_arms = _clean_previous_arms(previous, warn, api_ids=api_ids,
-                                        count_keys=counts.keys())
+    #
+    # Two lists, and which one each reader wants is the whole of F3 (#129
+    # review round 8): `previous_arms` is every arm the previous roster
+    # named, and is what `added_since_last`/`retired_since_last` compare
+    # against, so a departed arm is reported whether or not this run can
+    # say anything about it. `carried_arms` is that list capped, and is
+    # what attribution, the alias map and the hold-over check read — the
+    # cap bounds what is carried forward, nothing else.
+    previous_arms, carried_arms = _clean_previous_arms(previous, warn,
+                                                       api_ids=api_ids,
+                                                       count_keys=counts.keys())
 
     # The union of every id the Models API has EVER listed across runs: this
     # run's api ids plus whatever the previous roster already accumulated,
@@ -1264,7 +1293,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # needs this run's own capability order to decide which live snapshot a
     # bare alias that is not itself in the catalogue names.
     aliases = _usage_alias_map(
-        api_ids, list(counts) + previous_arms + list(catalogue_seen),
+        api_ids, list(counts) + carried_arms + list(catalogue_seen),
         seat_aliases, [m["id"] for m in available])
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
@@ -1272,7 +1301,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     window_union = set(enter_weeks) | set(exit_weeks)
     raw_total, ranked_total = _in_window_totals(
         counts, window_union, rungs, aliases=aliases,
-        api_ids=api_ids, previous_arms=previous_arms,
+        api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
     usable, stale_note, census_code = _census_verdict(
         census_doc, raw_total, ranked_total, policy, now,
@@ -1301,11 +1330,11 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # test-only policy whose exit window is shorter than its enter one.
     enter_raw_total, enter_ranked_total = _in_window_totals(
         counts, set(enter_weeks), rungs, aliases=aliases,
-        api_ids=api_ids, previous_arms=previous_arms,
+        api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
     exit_raw_total, exit_ranked_total = _in_window_totals(
         counts, set(exit_weeks), rungs, aliases=aliases,
-        api_ids=api_ids, previous_arms=previous_arms,
+        api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
     enter_usable = (usable and enter_ranked_total >= policy["min_ranked_turns"]
                    and enter_ranked_total >= policy["min_ranked_share"] * enter_raw_total)
@@ -1356,7 +1385,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         reason = None
         if enter_usable:
             share = usage_share(counts, model_id, enter_weeks, rungs, aliases,
-                               api_ids=api_ids, previous_arms=previous_arms,
+                               api_ids=api_ids, previous_arms=carried_arms,
                                catalogue_seen=catalogue_seen)
             if share >= policy["arm_enter_usage_pct"]:
                 reason = (f"carries {_format_share(share, policy['arm_enter_usage_pct'])}% "
@@ -1368,7 +1397,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                             f"(past the {policy['cooling_off_days']}-day cooling-off)")
             reason = (newest_words if usable
                       else f"{stale_note}; fell back to newest per tier — {newest_words}")
-        if reason is None and model_id in previous_arms:
+        if reason is None and model_id in carried_arms:
             if not usable:
                 # Staleness is not evidence of disuse. Retiring a previous arm
                 # because nobody published a census retires it on NO evidence
@@ -1415,7 +1444,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                           f"there is no evidence to retire it")
             else:
                 held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
-                                  api_ids=api_ids, previous_arms=previous_arms,
+                                  api_ids=api_ids, previous_arms=carried_arms,
                                   catalogue_seen=catalogue_seen)
                 if held >= policy["arm_exit_usage_pct"]:
                     reason = (f"held over from the previous roster: still "
@@ -1541,15 +1570,24 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             else:
                 # Never `not usable` (nor `not exit_usable`) here: the arms
                 # loop above gives every previous arm still in `available`
-                # an unconditional "no evidence to retire it" reason in
-                # both of those cases, which keeps it IN `arm_ids` — so a
-                # previous arm reaching this `else` with `model_id not in
-                # arm_ids` has always been genuinely measured against the
-                # exit bar and found below it. (A prior revision carried a
-                # dead `elif not usable:` branch here for exactly the case
-                # this comment rules out; it could never execute.)
+                # AND still in `carried_arms` an unconditional "no evidence
+                # to retire it" reason in both of those cases, which keeps
+                # it IN `arm_ids` — so a previous arm reaching this `else`
+                # with `model_id not in arm_ids` has always been genuinely
+                # measured against the exit bar and found below it. (A
+                # prior revision carried a dead `elif not usable:` branch
+                # here for exactly the case this comment rules out; it
+                # could never execute.) The `carried_arms` half of that is
+                # what `api_ids=` at the `_clean_previous_arms` call site
+                # buys: a previous arm the Models API still lists is always
+                # relevant, so the cap always carries it forward and it can
+                # never reach this branch on a stale census. Dropping that
+                # argument retires it here at a measured 0.0% on no
+                # evidence at all — see
+                # TestIssue67Review8::test_a_live_previous_arm_survives
+                # _the_cap_and_is_held_over.
                 held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
-                                  api_ids=api_ids, previous_arms=previous_arms,
+                                  api_ids=api_ids, previous_arms=carried_arms,
                                   catalogue_seen=catalogue_seen)
                 why = (f"below the {policy['arm_exit_usage_pct']}% exit bar for the last "
                        f"{policy['arm_exit_window_weeks']} weeks "

@@ -6292,8 +6292,14 @@ class TestIssue67Review6(unittest.TestCase):
     def test_previous_arms_caps_length_with_a_count_only_warning(self):
         """`_clean_previous_arms` dedup used `entry not in ids` over a
         growing list — O(n^2) — and had no cap at all. A set for
-        membership plus a 500-entry cap (sorted head, count-only
-        warning) matches the treatment `catalogue_seen` already got."""
+        membership plus a 500-entry cap (relevance-ordered head,
+        count-only warning) matches the treatment `catalogue_seen`
+        already got.
+
+        F3 (round 8) moved what the cap bounds: it trims the set carried
+        forward for attribution, and says so in a count-only warning,
+        while `retired_since_last` reports every arm the previous roster
+        named — so 600 arms are 600 retirements and 100 dropped."""
         previous = {"arms": [{"id": f"claude-sonnet-{i}-9", "reason": "x"}
                              for i in range(600)]}
         warnings = []
@@ -6302,8 +6308,10 @@ class TestIssue67Review6(unittest.TestCase):
             policy=self._policy(), previous=previous, now=self.NOW,
             warn=warnings.append)
         retired_ids = {r["id"] for r in result["retired_since_last"]}
-        self.assertLessEqual(len(retired_ids), 500)
-        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        self.assertEqual(len(retired_ids), 600)
+        capped = [w for w in warnings if "cap" in w and "arms" in w]
+        self.assertTrue(capped, warnings)
+        self.assertIn("dropped 100", capped[0])
         for w in warnings:
             self.assertNotIn("claude-sonnet-599-9", w)
 
@@ -7350,31 +7358,44 @@ class TestIssue67Review7(unittest.TestCase):
                                census=census, previous=previous,
                                warn=warnings.append)
         retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
-        self.assertIn(self.RETIRED_REAL, retired,
-                      "the one arm that really left the Models API must not "
-                      "be capped out by 500 filler ids that sort below it")
+        self.assertTrue(self.RETIRED_REAL in retired,
+                        "the one arm that really left the Models API must not "
+                        "be capped out by 500 filler ids that sort below it")
         self.assertIn("no longer returned", retired[self.RETIRED_REAL])
-        self.assertLessEqual(len(retired), 500)
+        # What the cap now decides is what is CARRIED FORWARD, so that is
+        # where this keeps its teeth (F3, round 8 moved the report itself
+        # out from under the cap): capped out, the departed arm stops
+        # being attributable, its 8000 turns leave the denominator, and
+        # `claude-sonnet-5` is published as carrying 100.0% of census
+        # usage where it really carries 9.09%.
+        reason = TestIssue67._reason(result, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
         self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
         for w in warnings:
             self.assertNotIn("0arm-499", w, "the cap warning names counts only")
         # Mutation check (manual): reverting the cap to
-        # `ids = sorted(ids)[:PREVIOUS_ARMS_CAP]` drops
+        # `carried = sorted(ids)[:PREVIOUS_ARMS_CAP]` drops
         # `claude-sonnet-4-9` — the single alphabetically-last id of 501 —
-        # and `retired_since_last` names 500 fillers and no real
-        # retirement: the first assertion goes red.
+        # so it is no longer carried forward, its turns leave the usage
+        # denominator, and the "carries" assertion goes red.
 
     def test_the_previous_arms_cap_still_bounds_an_all_filler_roster(self):
         """The bound itself is unchanged when nothing is relevant: 600
-        filler arms still cap at 500, with a count-only warning."""
+        filler arms still trim the carried-forward set to 500, with a
+        count-only warning naming the 100 dropped. F3 (round 8) is what
+        moved `retired_since_last` out from under that bound — every arm
+        the previous roster named is reported."""
         previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
                              for i in range(600)]}
         warnings = []
         result = self._compute(models=self._capped_history_models(),
                                census=None, previous=previous,
                                warn=warnings.append)
-        self.assertEqual(len(result["retired_since_last"]), 500)
-        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        self.assertEqual(len(result["retired_since_last"]), 600)
+        capped = [w for w in warnings if "cap" in w and "arms" in w]
+        self.assertTrue(capped, warnings)
+        self.assertIn("dropped 100", capped[0])
         for w in warnings:
             self.assertNotIn("0arm-599", w)
 
@@ -8337,6 +8358,86 @@ class TestIssue67Review8(unittest.TestCase):
         room = 500 - len(api_ids)
         self.assertEqual(published[0], sorted(api_ids | set(plants[:room])),
                          "the id-ascending head of the tied slice survives")
+
+    # --- F3: the retirement report is computed BEFORE the cap ------------
+    #
+    # Round 7's S3 made the previous-arms cap keep an arm the run can say
+    # something about — one the catalogue lists, or one the census names —
+    # ahead of filler. A real departed arm with ZERO census turns is
+    # neither, so 500 fillers still capped it out and `retired_since_last`
+    # — the line the job summary leads with — still lost the only
+    # retirement that happened. S3's own test avoided the case by giving
+    # the arm 8,000 turns. Nothing in the data tells a filler apart from a
+    # real id here, so ordering cannot fix it: the report is computed from
+    # the uncapped, shape-validated list instead, and the cap now governs
+    # only what is carried forward for attribution.
+
+    def test_a_departed_arm_with_no_census_turns_is_still_reported_retired(self):
+        """500 fillers, one real departed arm, and a census that names
+        neither — so nothing but the cap decides whether the retirement is
+        reported at all."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, out, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        retired = {r["id"]: r["reason"] for r in published["retired_since_last"]}
+        self.assertTrue(self.A3_DEPARTED in retired,
+                        "the one arm that really left the Models API must be "
+                        "reported whether or not the census names it")
+        self.assertIn("no longer returned", retired[self.A3_DEPARTED])
+        self.assertIn(f"retired `{self.A3_DEPARTED}`", out,
+                      "and it reaches the rendered summary")
+        # Mutation check (manual): computing the report from the capped
+        # list again drops it — 500 filler retirements and not the real
+        # one: red.
+
+    def test_the_report_names_counts_only_for_a_hostile_previous_arm(self):
+        """Uncapping the report does not widen what reaches the public
+        branch: an id carrying a newline and a `::` workflow command is
+        still dropped by the shape check, still counted rather than
+        quoted, and still never reaches `retired_since_last` or the
+        Markdown eval.yml prints to stdout."""
+        hostile = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [{"id": hostile, "reason": "was an arm"},
+                             {"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, out, err = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            text = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0)
+        retired = [r["id"] for r in published["retired_since_last"]]
+        self.assertEqual(retired, [self.A3_DEPARTED])
+        for published_text in (text, out, err):
+            self.assertNotIn("pwned", published_text)
+            self.assertNotIn("::error::", published_text)
+        self.assertTrue([line for line in err.splitlines()
+                         if "`arms` entry/entries" in line], err)
+
+    def test_the_cap_still_bounds_what_is_carried_forward(self):
+        """The cap is unchanged for the set carried forward: 600 filler
+        arms still trim to 500, with a count-only warning naming the 100
+        dropped. What is no longer capped is the REPORT."""
+        previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
+                             for i in range(600)]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(published["retired_since_last"]), 600,
+                         "every arm the previous roster named is reported")
+        capped = [line for line in err.splitlines()
+                  if "cap" in line and "arms" in line]
+        self.assertTrue(capped, err)
+        self.assertIn("dropped 100", capped[0])
+        for line in capped:
+            self.assertNotIn("0arm-599", line)
 
 if __name__ == "__main__":
     unittest.main()
