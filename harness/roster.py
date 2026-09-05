@@ -238,6 +238,70 @@ def alias_map(ids) -> dict[str, str]:
     return mapping
 
 
+def _usage_alias_map(api_ids, other_ids, seat_aliases: dict,
+                     live_order) -> dict[str, str]:
+    """{id: the id whose numerator its census turns belong to}, for USAGE.
+
+    B1 (#129 review round 7). Round 6's B1 built ONE wide map,
+    `alias_map(api_ids + counts + previous_arms + catalogue_seen)`, and
+    `usage_share` used it for the MODEL's own target as well as for census
+    keys. A catalogue listing TWO dated snapshots of one base, with the bare
+    alias present only in the previous roster's `arms` or `catalogue_seen`,
+    then folded BOTH snapshots onto that bare alias: each one's numerator
+    collected the other's turns and both were published "carries 100.0%" —
+    seating a snapshot on 0.99% of the window, keeping a previous arm with
+    no turns of its own instead of retiring it at 0.0%, and consuming the
+    last non-arm model so that the judge became an arm and
+    `run_eval.select_models` refused every unpinned fixture. No hostile
+    input is needed to reach it: a run whose catalogue lists the bare alias
+    records it in `catalogue_seen` BY DESIGN, and the next run's own
+    published roster is the input that reproduces it.
+
+    The rule, in one line: AN ID THE MODELS API RETURNS THIS RUN IS NEVER
+    RE-TARGETED BY THE WIDE MAP.
+
+    1. A live catalogue id's target is its SEAT identity — `seat_aliases`,
+       the catalogue-only map. Two catalogue ids the seat map keeps
+       distinct therefore always have distinct targets, so their numerators
+       are disjoint. (Two snapshots of a bare alias that IS itself in the
+       catalogue are NOT kept distinct by the seat map: they are one model,
+       one seat and one share, which is what that map is for.)
+    2. Every other id — a departed previous arm, a `catalogue_seen` history
+       entry, a census key naming neither — folds by the wide map, which is
+       what keeps round 6's B1 fixed: a previous arm published under a dated
+       id that has since left the API, whose usage the census records under
+       the undated alias, still folds onto that alias and still counts in
+       the denominator.
+    3. One exception to 2, and it is what makes the documented
+       dated-snapshot-ONLY catalogue shape work: a bare alias that is NOT
+       itself in the catalogue while dated snapshots of it ARE names exactly
+       one live model. `live_order` is the run's own capability order
+       (weakest and oldest first), so the NEWEST live snapshot claims it —
+       the same model that holds the seat. That keeps the whole map a
+       FUNCTION: a census key is attributed to at most one live id.
+    """
+    live = {i for i in api_ids if isinstance(i, str)}
+    wide = alias_map(list(api_ids) + list(other_ids))
+    mapping: dict[str, str] = {}
+    for model_id in live:  # (1)
+        target = seat_aliases.get(model_id, model_id)
+        if target != model_id:
+            mapping[model_id] = target
+    for model_id in other_ids:  # (2)
+        if not isinstance(model_id, str) or model_id in live:
+            continue
+        target = wide.get(model_id, model_id)
+        if target != model_id:
+            mapping[model_id] = target
+    claimed: dict[str, str] = {}
+    for model_id in live_order:  # (3) — last write wins: the newest
+        match = SNAPSHOT_SUFFIX.match(model_id)
+        if match and match.group("base") not in live:
+            claimed[match.group("base")] = model_id
+    for base, model_id in claimed.items():
+        mapping[base] = seat_aliases.get(model_id, model_id)
+    return mapping
+
 def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
                      api_ids_folded: set[str] | None,
                      previous_arms: set[str], previous_arms_folded: set[str],
@@ -956,27 +1020,37 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
     # an alias the catalogue actually offers — an alias that exists solely as
     # an old census key is not a model anyone can run, so `seat_aliases`
-    # stays catalogue-only. USAGE is widened past that: `aliases` folds over
-    # api ids, census keys, previous arms AND catalogue_seen, because a
-    # previous arm published under a dated id that has since left the API,
-    # whose usage the census records under the undated alias, is in NEITHER
-    # `api_ids` NOR `counts` — only its undated alias is (in `counts`).
-    # `alias_map` needs BOTH spellings present in the ids it is given to
-    # create the fold at all; leaving previous_arms/catalogue_seen out of
-    # that call meant it never saw the dated id, so `previous_arms_folded`
-    # downstream stayed identical to `previous_arms` and never matched the
-    # undated candidate — measured: 5000 real turns dropped from the
-    # denominator, inflating an unrelated model's share from ~1.96% to a
-    # false ~97.1%. This is a SEPARATE mechanism from _is_attributable's
+    # stays catalogue-only. USAGE is widened past that (see
+    # `_usage_alias_map`): a departed previous arm, a `catalogue_seen`
+    # history entry and a census key all fold over api ids, census keys,
+    # previous arms AND catalogue_seen, because a previous arm published
+    # under a dated id that has since left the API, whose usage the census
+    # records under the undated alias, is in NEITHER `api_ids` NOR `counts`
+    # — only its undated alias is (in `counts`) — and `alias_map` needs BOTH
+    # spellings present in the ids it is given to create the fold at all.
+    # Leaving previous_arms/catalogue_seen out of that call meant it never
+    # saw the dated id, so `previous_arms_folded` downstream stayed
+    # identical to `previous_arms` and never matched the undated candidate
+    # — measured: 5000 real turns dropped from the denominator, inflating an
+    # unrelated model's share from ~1.96% to a false ~97.1%. What the
+    # widening may NOT do is re-target an id the Models API returns THIS
+    # run: that is B1 of round 7, and `_usage_alias_map` is where the rule
+    # lives. This is a SEPARATE mechanism from _is_attributable's
     # catalogue_seen check: that one credits a since-retired real id's own
     # usage even when neither of ITS spellings ever held (or holds) a seat.
     seat_aliases = alias_map(api_ids)
-    aliases = alias_map(api_ids + list(counts) + previous_arms + list(catalogue_seen))
     snapshots = {m["id"]: seat_aliases[m["id"]]
                  for m in ranked if m["id"] in seat_aliases}
 
     available = [m for m in ranked if m["id"] not in snapshots]
     available.sort(key=lambda m: _rank(m, rungs))
+
+    # Built AFTER `available` is ordered: rule (3) of `_usage_alias_map`
+    # needs this run's own capability order to decide which live snapshot a
+    # bare alias that is not itself in the catalogue names.
+    aliases = _usage_alias_map(
+        api_ids, list(counts) + previous_arms + list(catalogue_seen),
+        seat_aliases, [m["id"] for m in available])
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])

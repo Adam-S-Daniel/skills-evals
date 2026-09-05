@@ -7002,5 +7002,239 @@ class TestIssue82(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+class TestIssue67Review7(unittest.TestCase):
+    """Round 7 fixes for #67 (PR #129 review round 7), one test per fix.
+
+    A SIBLING of TestIssue67, reusing its canned documents rather than
+    subclassing — run_tests.py's class-per-review-round convention. Every
+    model id below is TEST FIXTURE data; the policy code under test carries
+    none (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None, warn=None, policy=None):
+        """`compute_roster` — the production entry point — with the canned
+        documents. `warn` defaults to a sink so a test that is not about
+        warnings does not print to the suite's stderr."""
+        return roster.compute_roster(
+            models_doc=(TestIssue67._models_doc() if models is TestIssue67.DEFAULT
+                        else models),
+            census_doc=(TestIssue67._census_doc() if census is TestIssue67.DEFAULT
+                        else census),
+            policy=policy or cls._policy(), previous=previous, now=cls.NOW,
+            warn=warn if warn is not None else (lambda _m: None))
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # --- B1: an id the Models API returns THIS run is never re-targeted by
+    # the WIDE usage alias map ------------------------------------------
+    #
+    # Round 6's B1 widened that map to
+    # `alias_map(api_ids + counts + previous_arms + catalogue_seen)` and
+    # `usage_share` used it for the MODEL's own target as well as for census
+    # keys. When the catalogue lists TWO dated snapshots of one base and the
+    # bare alias is present only in the previous roster (its `arms` or its
+    # `catalogue_seen`), both snapshots folded onto that bare alias, each
+    # one's numerator collected the other's turns, and both were published
+    # "carries 100.0%". The fix: a live catalogue id's target comes from
+    # `seat_aliases` (the catalogue-only map), so two ids the seat map keeps
+    # distinct always keep distinct numerators.
+
+    SNAP_OLD = "claude-opus-5-20260101"
+    SNAP_NEW = "claude-opus-5-20260601"
+    SNAP_BASE = "claude-opus-5"
+
+    @classmethod
+    def _two_snapshot_models(cls):
+        """A catalogue listing TWO dated snapshots of one base and no bare
+        alias of it at all, beside two ordinary models."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.SNAP_OLD, "2026-01-01T00:00:00Z"),
+            cls._model(cls.SNAP_NEW, "2026-06-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _two_snapshot_census(cls, old=40, new=4000):
+        """Usage recorded under each snapshot's OWN id: 40 turns for the
+        older, 4000 for the newer, 4040 in the enter window all told."""
+        return TestIssue67._census_doc(counts={
+            cls.SNAP_OLD: {cls.W[0]: old}, cls.SNAP_NEW: {cls.W[0]: new}})
+
+    def _assert_snapshots_are_not_both_at_100(self, result):
+        self.assertIn(self.SNAP_NEW, self._arm_ids(result))
+        self.assertIn("99.0%", self._reason(result, self.SNAP_NEW))
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result),
+                         "a snapshot carrying 40 of 4040 enter-window turns "
+                         "(0.99%) must not be seated")
+        for arm in result["arms"]:
+            self.assertNotIn("100.0%", arm["reason"], arm)
+
+    def test_two_live_snapshots_keep_distinct_numerators_via_previous_arms(self):
+        """The bare alias is present only in `previous.arms`."""
+        previous = {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self._assert_snapshots_are_not_both_at_100(result)
+        # Mutation check (manual): restoring the single wide-map target
+        # (`aliases = alias_map(api_ids + list(counts) + previous_arms +
+        # list(catalogue_seen))`, used for the model's own target too)
+        # folds BOTH snapshots onto `claude-opus-5` and publishes both at
+        # "carries 100.0%" — red.
+
+    def test_two_live_snapshots_keep_distinct_numerators_via_catalogue_seen(self):
+        """The bare alias is present only in `previous.catalogue_seen` —
+        which is where run 1 puts it, by design, whenever the catalogue
+        listed it once."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self._assert_snapshots_are_not_both_at_100(result)
+        # Mutation check (manual): as above — red.
+
+    def test_the_organic_two_run_chain_keeps_numerators_distinct(self):
+        """No hostile input anywhere: run 1's catalogue lists the bare
+        alias (so run 1 records it in `catalogue_seen` by design), and run 2
+        — fed run 1's OWN published roster as `previous` — sees the bare
+        alias replaced by two dated snapshots."""
+        run1_models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(self.SNAP_BASE, "2026-01-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+        first = self._compute(
+            models=run1_models,
+            census=TestIssue67._census_doc(counts={self.SNAP_BASE: {self.W[0]: 4040}}),
+            previous=None)
+        self.assertIn(self.SNAP_BASE, self._seen_ids(first))
+
+        second = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=first)
+        self._assert_snapshots_are_not_both_at_100(second)
+        # Mutation check (manual): as above — red.
+
+    def test_a_previous_arm_with_no_census_turns_is_retired_at_zero(self):
+        """The older snapshot is a previous arm with LITERALLY no turns of
+        its own; the bare alias sits in history. It must be retired at
+        0.0%, not kept on the newer snapshot's turns."""
+        census = TestIssue67._census_doc(counts={
+            self.SNAP_NEW: {self.W[0]: 4000},
+            "claude-sonnet-5": {self.W[0]: 40}})
+        previous = {"arms": [{"id": self.SNAP_OLD, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=census, previous=previous)
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result))
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == self.SNAP_OLD)
+        self.assertIn("exit bar", entry["reason"])
+        self.assertIn("0.0%", entry["reason"])
+        # Mutation check (manual): as above — the wide map gives SNAP_OLD
+        # the newer snapshot's 4000 turns, seats it at "carries 100.0%",
+        # and `retired_since_last` is empty — `next(...)` raises
+        # StopIteration and the test errors.
+
+    def test_the_two_snapshot_roster_still_offers_a_non_arm_judge(self):
+        """The extra seat consumed the last non-arm model, so the judge
+        became an arm and `run_eval.select_models` refused every unpinned
+        fixture. Driven through the runner's own entry point, on a roster
+        `compute_roster` actually produced."""
+        previous = {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self.assertFalse(result["judge"]["is_arm"], result["judge"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.json"
+            path.write_text(json.dumps(result), encoding="utf-8")
+            fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
+            args = argparse.Namespace(model=None, roster=path, no_judge=False)
+            agent, judge_model, error = run_eval.select_models(fixture, args)
+        self.assertIsNone(error, error)
+        self.assertNotEqual(agent, judge_model)
+        # Mutation check (manual): as above — both snapshots are seated,
+        # nothing available is left un-seated except the models already
+        # taken, `judge.is_arm` is True, and select_models returns "names a
+        # judge that is also an arm".
+
+    # The invariant itself, over a few catalogues: two ids the SEAT map
+    # keeps distinct never collect the same census turns. Observed through
+    # `compute_roster` with a test-only 0% entry bar, which makes every
+    # available model publish its measured share in words — disjoint
+    # numerators over one denominator can never sum past 100%.
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    _SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    def test_usage_numerators_are_disjoint_across_distinct_seat_ids(self):
+        catalogues = [
+            # two dated snapshots of one base, the bare alias only in history
+            (self._two_snapshot_models(), self._two_snapshot_census(),
+             {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}),
+            # ... and with the bare alias as a census key as well
+            (self._two_snapshot_models(),
+             TestIssue67._census_doc(counts={
+                 self.SNAP_OLD: {self.W[0]: 40},
+                 self.SNAP_NEW: {self.W[0]: 4000},
+                 self.SNAP_BASE: {self.W[0]: 1000}}),
+             {"arms": [], "catalogue_seen": [
+                 {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}),
+            # a base that IS live beside one of its snapshots (one model,
+            # one seat, one share — the seat map collapses them)
+            ({"fetched_at": "2026-09-04T11:00:00Z", "models": [
+                self._model(self.SNAP_BASE, "2026-01-01T00:00:00Z"),
+                self._model(self.SNAP_NEW, "2026-06-01T00:00:00Z"),
+                self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z")]},
+             self._two_snapshot_census(), None),
+            # the ordinary catalogue, with the ordinary census
+            (TestIssue67._models_doc(), TestIssue67._census_doc(), None),
+        ]
+        for index, (models, census, previous) in enumerate(catalogues):
+            with self.subTest(catalogue=index):
+                result = self._compute(models=models, census=census,
+                                       previous=previous,
+                                       policy=self._zero_bar_policy())
+                shares = [float(m.group(1))
+                          for m in (self._SHARE_RE.search(a["reason"])
+                                    for a in result["arms"]) if m]
+                self.assertTrue(shares, result["arms"])
+                # One decimal place per share, so allow half a unit of
+                # last-digit rounding per arm and nothing more.
+                self.assertLessEqual(sum(shares), 100.0 + 0.05 * len(shares),
+                                     f"{shares} sum past one denominator")
+        # Mutation check (manual): restoring the single wide-map target
+        # makes catalogue 0's two snapshots report 100.0% each — 200.0% of
+        # one denominator — red.
+
 if __name__ == "__main__":
     unittest.main()
