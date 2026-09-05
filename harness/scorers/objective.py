@@ -279,6 +279,13 @@ def pins_match_reference(workspace: str, patterns: list[str],
     Compares with `.casefold()`: `SHA_RE` and `uses_refs_sha_pinned` both
     accept uppercase hex, so an all-uppercase-but-otherwise-correct audit
     must not fail here on case alone.
+
+    The binding is a two-way closure, not a one-way whitelist: as well as
+    every PINS.md action being correctly pinned, every remote `uses:` found
+    in the given files must itself have a PINS.md row — otherwise a newly
+    ADDED third-party action PINS.md never named, however well-formed its
+    SHA, would score a perfect run simply by being absent from the table
+    this check otherwise iterates.
     """
     import yaml
     if not reference:
@@ -287,6 +294,7 @@ def pins_match_reference(workspace: str, patterns: list[str],
     if not pins:
         return (False, f"{reference}: no pin table rows found")
     found: dict[str, list[tuple[str, int, str]]] = {action: [] for action in pins}
+    undeclared = []
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
             with open(path, encoding="utf-8") as f:
@@ -303,10 +311,13 @@ def pins_match_reference(workspace: str, patterns: list[str],
                 if not isinstance(ref, str) or not _is_remote_action(ref):
                     continue
                 action, _, ref_val = ref.partition("@")
+                lineno = value_node.start_mark.line + 1
                 if action in found:
-                    lineno = value_node.start_mark.line + 1
                     found[action].append((rel, lineno, ref_val))
-    problems = []
+                else:
+                    undeclared.append(f"{rel}:{lineno} {action}: "
+                                      f"not listed in {reference}")
+    problems = list(undeclared)
     for action, expected_sha in pins.items():
         refs = found[action]
         if not refs:

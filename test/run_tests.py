@@ -2795,6 +2795,26 @@ class TestIssue85(unittest.TestCase):
         self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
                         by_id["third-party-pins-match-pins-md"]["detail"])
 
+    def test_pins_match_reference_fails_an_action_absent_from_pins_md(self):
+        """Round 3, N-3: PINS.md binding was a whitelist, not a closure — it
+        asserted every PINS.md action is correctly pinned, but never that
+        every remote action actually `uses:`'d in the audited files has a
+        PINS.md row. An ADDED third-party action absent from PINS.md, even
+        with a plausible-looking 40-hex SHA, scored a perfect run.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        invented = "e" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            text = ci.read_text(encoding="utf-8")
+            text = text.rstrip("\n") + f"\n      - uses: actions/labeler@{invented}\n"
+            ci.write_text(text, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
     # -- the platform_ref: input is bound too (review round 2, N2) -----------
 
     def test_platform_ref_input_rewritten_to_sha_fails(self):
