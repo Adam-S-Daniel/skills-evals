@@ -2815,6 +2815,49 @@ class TestIssue85(unittest.TestCase):
         self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
                          by_id["third-party-pins-match-pins-md"]["detail"])
 
+    def test_pins_match_reference_fails_on_malformed_pins_md_row(self):
+        """Round 3, N-4: a malformed PINS.md row (a shortened sha) failed
+        `PINS_TABLE_ROW_RE`'s match entirely, so `_load_pins_reference`
+        silently dropped that action from the requirement set — only
+        `files_unchanged` on PINS.md (which is not what this check polices)
+        had any chance of noticing PINS.md itself was ever touched.
+
+        The malformed row here names an action ('actions/labeler') that
+        appears NOWHERE in ci.yml, so the N-3 closure fix (an undeclared
+        `uses:` ref) has nothing to catch — proving the malformed row is
+        detected by reading PINS.md's own row shape, not as a side effect of
+        the closure check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            pins = ws / "PINS.md"
+            text = pins.read_text(encoding="utf-8")
+            text = text.rstrip("\n") + "\n| actions/labeler | v5 | deadbeef |\n"
+            pins.write_text(text, encoding="utf-8")
+            ci_text = (ws / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertNotIn("actions/labeler", ci_text)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_match_reference_glob_skips_non_files(self):
+        """Round 3, N-4: `pins_match_reference`'s glob loop had no
+        `os.path.isfile` guard — unlike `file_matches`'s `_read_matched` —
+        so a pattern matching a directory (not just files) would raise on
+        `open()`. Exercises the check against a `paths` pattern that
+        matches both the real workflow and a same-named directory.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "ci.yml.d").mkdir()
+            passed, detail = objective.pins_match_reference(
+                str(ws), [".github/workflows/ci.yml*"], reference="PINS.md")
+        self.assertTrue(passed, detail)
+
     # -- the platform_ref: input is bound too (review round 2, N2) -----------
 
     def test_platform_ref_input_rewritten_to_sha_fails(self):

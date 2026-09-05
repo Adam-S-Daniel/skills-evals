@@ -233,29 +233,58 @@ def platform_refs_on_tag(workspace: str, patterns: list[str],
             else "; ".join(bad))
 
 
+# Any 3-cell table row — deliberately NOT anchored to a 40-hex last cell, so
+# a row with a malformed (e.g. shortened) sha is still recognised as a row
+# rather than silently failing to match at all. The sha cell is validated
+# separately in _load_pins_reference, so a malformed one is reported instead
+# of just vanishing.
 PINS_TABLE_ROW_RE = re.compile(
-    r"^\|\s*([^\|]+?)\s*\|\s*[^\|]+?\s*\|\s*([0-9a-fA-F]{40})\s*\|\s*$")
+    r"^\|\s*([^\|]+?)\s*\|\s*[^\|]+?\s*\|\s*([^\|]+?)\s*\|\s*$")
+# The markdown alignment row under a table header (`|---|---|---|`, optional
+# `:` for alignment) — a table-shaped row with no meaningful cell content,
+# never a pin.
+PINS_SEPARATOR_RE = re.compile(r"^\|[\s:-]+\|[\s:-]+\|[\s:-]+\|\s*$")
 
 
-def _load_pins_reference(workspace: str, reference: str) -> dict[str, str]:
-    """{action: sha}, read lexically off a PINS.md-shaped markdown table.
+def _load_pins_reference(workspace: str, reference: str) -> tuple[dict[str, str], list[str]]:
+    """({action: sha}, [malformed row descriptions]), read lexically off a
+    PINS.md-shaped markdown table.
 
     The table's action-name and SHA cells are read as literal text — this
     never decides code SHAPE, so a plain line regex over the reference
     file's own leaf content is the right tool, unlike locating a `uses:`
     node in a workflow (which _uses_value_nodes does via a real YAML parse).
+
+    A table-shaped row (three pipe-delimited cells) whose sha cell is not a
+    valid 40-hex value is reported as malformed rather than silently
+    dropped: `PINS_TABLE_ROW_RE` used to require the sha cell to already be
+    valid hex, so a shortened sha just failed to match at all and the action
+    vanished from the requirement set entirely — indistinguishable from the
+    action never having been listed. The header row (`| Action | Tag | SHA
+    |`) and the markdown alignment row beneath it are table-shaped too, so
+    both are recognised and skipped explicitly rather than by accident.
     """
     try:
         with open(os.path.join(workspace, reference), encoding="utf-8") as f:
             text = f.read()
     except OSError:
-        return {}
-    out = {}
+        return {}, []
+    out: dict[str, str] = {}
+    malformed = []
     for line in text.splitlines():
+        if PINS_SEPARATOR_RE.match(line):
+            continue
         m = PINS_TABLE_ROW_RE.match(line)
-        if m:
-            out[m.group(1)] = m.group(2)
-    return out
+        if not m:
+            continue
+        action, sha = m.group(1), m.group(2)
+        if action.strip().casefold() == "action":
+            continue  # header row
+        if SHA_RE.match(sha):
+            out[action] = sha
+        else:
+            malformed.append(f"{reference}: {action}: invalid sha {sha!r}")
+    return out, malformed
 
 
 def pins_match_reference(workspace: str, patterns: list[str],
@@ -286,17 +315,24 @@ def pins_match_reference(workspace: str, patterns: list[str],
     ADDED third-party action PINS.md never named, however well-formed its
     SHA, would score a perfect run simply by being absent from the table
     this check otherwise iterates.
+
+    A malformed row in the reference file itself (a table-shaped row whose
+    sha cell isn't valid 40-hex) fails the check directly rather than
+    silently dropping that action from the requirement set — see
+    `_load_pins_reference`.
     """
     import yaml
     if not reference:
         return (False, "no reference file configured")
-    pins = _load_pins_reference(workspace, reference)
-    if not pins:
+    pins, malformed = _load_pins_reference(workspace, reference)
+    if not pins and not malformed:
         return (False, f"{reference}: no pin table rows found")
     found: dict[str, list[tuple[str, int, str]]] = {action: [] for action in pins}
     undeclared = []
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
             with open(path, encoding="utf-8") as f:
                 text = f.read()
             try:
@@ -317,7 +353,7 @@ def pins_match_reference(workspace: str, patterns: list[str],
                 else:
                     undeclared.append(f"{rel}:{lineno} {action}: "
                                       f"not listed in {reference}")
-    problems = list(undeclared)
+    problems = list(malformed) + undeclared
     for action, expected_sha in pins.items():
         refs = found[action]
         if not refs:
