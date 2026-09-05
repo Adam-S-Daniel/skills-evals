@@ -8,9 +8,11 @@ reference them by their `type` field.
 from __future__ import annotations
 
 import glob
+import hashlib
 import json
 import os
 import re
+from collections import Counter
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -367,10 +369,28 @@ def event_only_workflows_unfiltered(workspace: str, patterns: list[str]) -> tupl
 
 
 def files_unchanged(workspace: str, patterns: list[str],
-                    seed: str | None = None) -> tuple[bool, str]:
-    """The named files must be byte-identical to the seed workspace."""
+                    seed: str | None = None, by: str = "path") -> tuple[bool, str]:
+    """The matched files' content must survive, relative to the seed workspace.
+
+    `by="path"` (default): every matched file must be byte-identical to the
+    seed file at the SAME relative path — a rename, even of untouched
+    content, is a failure. This is what every existing fixture wants: a
+    ruleset or a fake binary that must not be touched OR moved.
+
+    `by="digest"`: compares the MULTISET of sha256 content digests across
+    all matched files, ignoring which filename holds which content. A file
+    that got renamed (content preserved, path changed) still passes; a file
+    whose content changed, or one that vanished outright (e.g. a naive
+    rename that clobbered another file instead of disambiguating), does not
+    — its digest is missing from the resulting bag. This is the mode a
+    rename task needs: correct behaviour is EXPECTED to move content to new
+    paths, so path identity is not the property to protect, content
+    survival is.
+    """
     if seed is None:
         return (False, "seed workspace not provided")
+    if by not in ("path", "digest"):
+        return (False, f"files_unchanged: unknown by={by!r}, expected 'path' or 'digest'")
 
     def snapshot(root):
         out = {}
@@ -385,6 +405,22 @@ def files_unchanged(workspace: str, patterns: list[str],
         return out
 
     before, after = snapshot(seed), snapshot(workspace)
+
+    if by == "digest":
+        def digests(snapshot_dict):
+            return [hashlib.sha256(data).hexdigest() for data in snapshot_dict.values()]
+        before_counts, after_counts = Counter(digests(before)), Counter(digests(after))
+        if before_counts == after_counts:
+            return (True, f"content preserved by digest ({sum(before_counts.values())} file(s))")
+        lost = before_counts - after_counts
+        gained = after_counts - before_counts
+        problems = []
+        if lost:
+            problems.append(f"{sum(lost.values())} file(s)' content missing from the result")
+        if gained:
+            problems.append(f"{sum(gained.values())} file(s) with unexpected/new content in the result")
+        return (False, "; ".join(problems) if problems else "digest multiset changed")
+
     problems = [f"{rel}: removed" for rel in sorted(set(before) - set(after))]
     problems += [f"{rel}: added" for rel in sorted(set(after) - set(before))]
     problems += [f"{rel}: modified" for rel in sorted(set(before) & set(after))
@@ -392,6 +428,59 @@ def files_unchanged(workspace: str, patterns: list[str],
     return (not problems,
             f"unchanged ({', '.join(sorted(before)) or 'no files matched'})"
             if not problems else "; ".join(problems))
+
+
+def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str] | None = None,
+                        expected_file: str | None = None, seed: str | None = None) -> tuple[bool, str]:
+    """The sorted immediate-entry listing of one directory must equal an
+    expected list of names.
+
+    `patterns` names exactly one directory, relative to the workspace (e.g.
+    `["inbox"]`) — this is not a glob, unlike every other check here; it is
+    listed once and compared whole, which is what a rename task needs: the
+    property under test is which NAMES exist afterward, not any one file's
+    content.
+
+    The expected names come from exactly one of:
+      - `expected`: an inline list in the fixture.
+      - `expected_file`: a path read from the pristine `seed` directory (never
+        the runtime workspace, so a run that deletes or edits its own copy of
+        that file cannot change what "expected" means) — one name per
+        non-blank line.
+    """
+    if len(patterns) != 1:
+        return (False, f"dir_listing_matches takes exactly one directory, got {patterns!r}")
+    directory = patterns[0]
+    target = os.path.join(workspace, directory)
+    if not os.path.isdir(target):
+        return (False, f"{directory}: not a directory")
+    actual = sorted(os.listdir(target))
+
+    if expected is not None and expected_file is not None:
+        return (False, "dir_listing_matches: give expected or expected_file, not both")
+    if expected_file is not None:
+        if seed is None:
+            return (False, "seed workspace not provided")
+        try:
+            with open(os.path.join(seed, expected_file), encoding="utf-8") as f:
+                expected = [line.strip() for line in f if line.strip()]
+        except OSError as exc:
+            return (False, f"{expected_file}: {exc}")
+    elif expected is None:
+        return (False, "dir_listing_matches: expected or expected_file is required")
+    expected = sorted(expected)
+
+    if actual == expected:
+        return (True, f"{directory}/ matches the expected listing ({len(actual)} entries)")
+    missing = sorted(set(expected) - set(actual))
+    extra = sorted(set(actual) - set(expected))
+    problems = []
+    if missing:
+        problems.append("missing: " + ", ".join(missing))
+    if extra:
+        problems.append("unexpected: " + ", ".join(extra))
+    return (False, "; ".join(problems) if problems
+            else f"listing differs: {actual} != {expected}")
 
 
 def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
@@ -462,6 +551,7 @@ CHECKS = {
     "files_unchanged": files_unchanged,
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
+    "dir_listing_matches": dir_listing_matches,
 }
 
 
@@ -484,9 +574,11 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                             "detail": f"unknown check type {check['type']!r}"})
             continue
         kwargs = {}
-        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged"):
+        if check["type"] in ("non_remote_refs_unchanged", "files_unchanged", "dir_listing_matches"):
             kwargs["seed"] = seed
-        elif check["type"] == "changeset_triggers":
+        if check["type"] == "files_unchanged":
+            kwargs["by"] = check.get("by", "path")
+        if check["type"] == "changeset_triggers":
             kwargs["changeset"] = check.get("changeset", [])
             kwargs["expect_triggered"] = check.get("expect_triggered", [])
             kwargs["expect_skipped"] = check.get("expect_skipped", [])
@@ -495,6 +587,9 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["must_not_match"] = check.get("must_not_match", [])
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
+        elif check["type"] == "dir_listing_matches":
+            kwargs["expected"] = check.get("expected")
+            kwargs["expected_file"] = check.get("expected_file")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

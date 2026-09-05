@@ -1,0 +1,118 @@
+# Eval fixture: rename-pdfs
+# Measures whether the rename-pdfs skill improves an agent's ability to turn
+# a folder of already-searchable PDFs with scanner-junk names into
+# YYYYMMDD-Type-Issuer-Title.pdf (or the YYYYMMDD-YYYYMMDD range variant),
+# while getting three non-obvious things right: pick the document's OWN date
+# over a decoy date embedded in the scanner's filename, skip a PDF that has
+# no text layer at all instead of guessing from its filename, and never let
+# a same-content collision overwrite a file — disambiguate it instead.
+#
+# Class A (DESIGN.md, "Scaling to the registry"): a workspace transform whose
+# correctness is decidable from the resulting files alone. seed/inbox/ ships
+# six PDFs built by the committed seed/make_pdfs.py (hand-rolled, stdlib-only
+# PDF bytes — no reportlab) and committed as static binaries, so the seed
+# never regenerates at eval time.
+
+skill: rename-pdfs
+registry: https://github.com/Adam-S-Daniel/agentskills
+
+# Same calibration as workflow-path-audit / windows-elevation-from-wsl: a
+# pinned mid-tier model so the with/without comparison isn't flattened by a
+# ceiling effect, and so the arms don't silently track the CLI's default
+# model across releases.
+model: claude-sonnet-5
+
+# What the agent under test (and, transitively, this fixture's seed
+# generator) needs beyond a bare Python 3 interpreter. Not consumed by this
+# fixture's own objective checks or by test/run_tests.py — those run against
+# the already-committed, static seed/inbox/*.pdf and never regenerate or
+# read them with pypdf. This is what the harness lane's with_skill/
+# without_skill agent run needs installed before invoking the CLI, since
+# scripts/extract_pdf_context.py (the skill's own helper) imports pypdf to
+# read the seed PDFs' text.
+requires:
+  python:
+    - package: pypdf
+      version: "6.16.2"
+      published: "2026-08-23"  # pip index versions pypdf / PyPI JSON API
+
+prompt: >
+  Rename the PDFs in inbox/ per my convention.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# Every claim below is decided by the resulting file names/bytes alone, per
+# DESIGN.md's "anything a script can decide is never left to the judge."
+objective_checks:
+  # The single decisive check: the exact resulting file names. This is what
+  # "correct" means for this fixture — YYYYMMDD-Type-Issuer-Title.pdf (or the
+  # YYYYMMDD-YYYYMMDD range form) built from each document's OWN date and
+  # content, the image-only scan left under its original scanner name, the
+  # already-conventional file untouched, and the collision disambiguated
+  # rather than overwritten. Reads seed/expected.txt from the pristine seed
+  # directory (never the runtime workspace), so nothing the agent does to its
+  # own copy of that file changes what "expected" means.
+  - id: inbox-renamed-per-convention
+    description: >
+      inbox/'s final listing is exactly: the statement date-ranged
+      (20260101-20260131), the invoice dated from its body (20260214, not
+      the filename's decoy 20260301), the image-only scan left under its
+      original name, the pre-named receipt untouched, and the duplicate
+      bill disambiguated rather than overwritten.
+    type: dir_listing_matches
+    paths: ["inbox"]
+    expected_file: expected.txt
+
+  # Independent of file names: no PDF's CONTENT may be lost or altered.
+  # Catches what a name-only check cannot — a collision that clobbered one
+  # of the two duplicate bills (its content digest vanishes from the bag)
+  # and a file whose content was edited in place under an unchanged name
+  # (its digest is replaced by one the seed never had). A pure rename
+  # (content preserved, path changed) still passes, which is what a correct
+  # run of this task IS.
+  - id: inbox-content-preserved
+    description: Every PDF's bytes survive somewhere in inbox/, by content digest
+    type: files_unchanged
+    paths: ["inbox/*.pdf"]
+    by: digest
+
+# Judge scoring: 3 dimensions, 0-10 each. The exact resulting file names are
+# already decided objectively above, so the judge is left the things that
+# genuinely need judgement: whether the agent's PROCESS matched the skill's
+# stated convention and priority rules (not just that it landed on the right
+# answer by luck), and whether it stayed inside the one folder it was asked
+# to touch.
+judge:
+  model: claude-opus-4-8
+  # Convention fidelity carries the correctness axis and must outvote the
+  # Restraint guardrail (DESIGN.md, harness-wide rules) — an equal-weighted
+  # Restraint quietly rewards an arm that renames nothing.
+  weights:
+    convention_fidelity: 0.5
+    date_priority: 0.3
+    restraint: 0.2
+
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) convention_fidelity — did every renamed file follow
+  YYYYMMDD-Type-Issuer-Title.pdf exactly (Title Case type/issuer, a single
+  hyphen between fields, no hyphen introduced inside a field, the
+  YYYYMMDD-YYYYMMDD range form used only for the statement that actually
+  covers a period), and did the agent recognize the file already in that
+  convention and leave it alone rather than re-touching it? Cap this
+  dimension at 3 if the final inbox/ listing does not match
+  inbox-renamed-per-convention.
+  (2) date_priority — for the invoice, did the agent take February 14, 2026
+  from the document body rather than the scanner filename's March 1, 2026;
+  for the statement, did it recognize "1 Jan 2026 to 31 Jan 2026" as a
+  period and use the range form rather than picking just one endpoint or
+  falling back to the scan date; and did it say so when it used a body date
+  over a filename or mtime date, per the skill's documented priority?
+  (3) restraint — did the agent rename only the PDFs that needed it, leave
+  the image-only scan and the already-conventional file's names alone,
+  resolve the duplicate-bill collision with a disambiguator instead of
+  overwriting either copy, and touch nothing outside inbox/?

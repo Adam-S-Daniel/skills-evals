@@ -31,6 +31,7 @@ FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
 EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
 ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
+RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
@@ -2558,6 +2559,335 @@ class TestIssue63Round2(unittest.TestCase):
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
+
+
+class DirListingMatchesCheckTests(unittest.TestCase):
+    """objective.dir_listing_matches, exercised directly against tiny workspaces."""
+
+    def _ws(self, names: list[str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        d = ws / "inbox"
+        d.mkdir()
+        for name in names:
+            (d / name).write_text("x", encoding="utf-8")
+        return ws
+
+    def test_matching_listing_passes(self):
+        ws = self._ws(["a.pdf", "b.pdf"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["b.pdf", "a.pdf"])
+        self.assertTrue(passed, detail)
+        self.assertIn("2 entries", detail)
+
+    def test_missing_and_unexpected_are_both_reported(self):
+        ws = self._ws(["a.pdf", "c.pdf"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf", "b.pdf"])
+        self.assertFalse(passed)
+        self.assertIn("missing: b.pdf", detail)
+        self.assertIn("unexpected: c.pdf", detail)
+
+    def test_expected_file_is_read_from_the_pristine_seed_not_the_workspace(self):
+        ws = self._ws(["a.pdf", "b.pdf"])
+        seed = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, seed, ignore_errors=True)
+        (seed / "expected.txt").write_text("a.pdf\nb.pdf\n", encoding="utf-8")
+        # Tampering with the WORKSPACE's own copy must not matter: there is
+        # no expected.txt in this ws at all, and the check still passes by
+        # reading the seed's copy.
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected_file="expected.txt", seed=str(seed))
+        self.assertTrue(passed, detail)
+
+    def test_expected_file_without_seed_fails_clearly(self):
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected_file="expected.txt")
+        self.assertFalse(passed)
+        self.assertIn("seed workspace not provided", detail)
+
+    def test_both_expected_and_expected_file_is_an_error(self):
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf"], expected_file="expected.txt", seed=str(ws))
+        self.assertFalse(passed)
+        self.assertIn("not both", detail)
+
+    def test_neither_expected_nor_expected_file_is_an_error(self):
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(str(ws), ["inbox"])
+        self.assertFalse(passed)
+        self.assertIn("required", detail)
+
+    def test_more_than_one_directory_pattern_is_rejected(self):
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox", "other"], expected=["a.pdf"])
+        self.assertFalse(passed)
+        self.assertIn("exactly one directory", detail)
+
+    def test_missing_directory_fails_clearly(self):
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        passed, detail = objective.dir_listing_matches(str(ws), ["inbox"], expected=[])
+        self.assertFalse(passed)
+        self.assertIn("not a directory", detail)
+
+
+class FilesUnchangedByDigestCheckTests(unittest.TestCase):
+    """objective.files_unchanged(by="digest"), against tiny workspaces."""
+
+    def _ws(self, files: dict[str, bytes]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, data in files.items():
+            path = ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(data)
+        return ws
+
+    def test_default_by_path_is_unchanged_behaviour(self):
+        seed = self._ws({"a.txt": b"one"})
+        ws = self._ws({"a.txt": b"one"})
+        self.assertTrue(objective.files_unchanged(str(ws), ["*.txt"], seed=str(seed))[0])
+
+    def test_rename_passes_by_digest_but_fails_by_path(self):
+        seed = self._ws({"old.txt": b"same bytes"})
+        ws = self._ws({"new.txt": b"same bytes"})
+        passed, detail = objective.files_unchanged(str(ws), ["*.txt"], seed=str(seed), by="digest")
+        self.assertTrue(passed, detail)
+        passed, detail = objective.files_unchanged(str(ws), ["*.txt"], seed=str(seed), by="path")
+        self.assertFalse(passed, detail)
+
+    def test_content_change_under_the_same_name_fails_by_digest(self):
+        seed = self._ws({"a.txt": b"original"})
+        ws = self._ws({"a.txt": b"tampered"})
+        passed, detail = objective.files_unchanged(str(ws), ["*.txt"], seed=str(seed), by="digest")
+        self.assertFalse(passed)
+        self.assertIn("missing", detail)
+        self.assertIn("unexpected/new", detail)
+
+    def test_a_clobbered_duplicate_loses_a_digest_from_the_bag(self):
+        # Two files sharing content; one vanishes (e.g. an overwrite) instead
+        # of both surviving under distinct names.
+        seed = self._ws({"a.pdf": b"dup", "b.pdf": b"dup"})
+        ws = self._ws({"a.pdf": b"dup"})
+        passed, detail = objective.files_unchanged(str(ws), ["*.pdf"], seed=str(seed), by="digest")
+        self.assertFalse(passed)
+        self.assertIn("missing from the result", detail)
+
+    def test_unknown_by_value_is_rejected(self):
+        seed = self._ws({"a.txt": b"x"})
+        ws = self._ws({"a.txt": b"x"})
+        passed, detail = objective.files_unchanged(str(ws), ["*.txt"], seed=str(seed), by="hash")
+        self.assertFalse(passed)
+        self.assertIn("unknown by=", detail)
+
+    def test_run_checks_routes_the_by_field(self):
+        seed = self._ws({"old.pdf": b"same"})
+        ws = self._ws({"new.pdf": b"same"})
+        fixture = {"objective_checks": [
+            {"id": "d", "type": "files_unchanged", "paths": ["*.pdf"], "by": "digest"},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(seed))}
+        self.assertTrue(by_id["d"]["passed"], by_id["d"]["detail"])
+
+
+def _import_pypdf_or_skip():
+    """Import pypdf, or skip the calling test if it is not installed.
+
+    Not a pytest fixture (this suite runs under plain unittest via
+    `python3 test/run_tests.py`) — just a small shared helper so tests
+    reading the seed PDFs with pypdf skip cleanly in an environment that has
+    not installed it, rather than erroring the whole run. CI's hermetic
+    suite does not need pypdf for anything else.
+    """
+    try:
+        import pypdf
+    except ImportError:
+        raise unittest.SkipTest("pypdf not installed")
+    return pypdf
+
+
+class TestIssue82(unittest.TestCase):
+    """The rename-pdfs fixture: seed shape, objective checks, and the
+    behaviours those checks must and must not catch.
+
+    seed/inbox/ ships six committed PDFs (built by seed/make_pdfs.py, not
+    regenerated at test time): a statement covering a period, an invoice
+    whose scanner filename embeds a decoy date, an image-only scan with no
+    text layer, a file already named per the convention, and two
+    byte-identical "duplicate scan" bills whose correct target name
+    collides.
+    """
+
+    ORIGINAL_TO_CORRECT = {
+        "Scan_20260205_081533.pdf":
+            "20260101-20260131-Statement-Example Utilities Ltd-Account 4821.pdf",
+        "Scan_20260301_114022.pdf":
+            "20260214-Invoice-Example Utilities Ltd-Invoice 4471.pdf",
+        "Scan_20260306_070211.pdf":
+            "20260303-Bill-Example Utilities Ltd-Account 9002.pdf",
+        "Scan_20260306_071455.pdf":
+            "20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf",
+        # Left alone:
+        "Scan_20260118_161230.pdf": "Scan_20260118_161230.pdf",
+        "20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf":
+            "20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf",
+    }
+
+    def _ws(self, mutate=None) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        shutil.copytree(RENAME_DIR / "seed", ws, dirs_exist_ok=True)
+        if mutate:
+            mutate(ws)
+        return ws
+
+    def _rename_correctly(self, ws: Path) -> None:
+        inbox = ws / "inbox"
+        for original, correct in self.ORIGINAL_TO_CORRECT.items():
+            if original != correct:
+                (inbox / original).rename(inbox / correct)
+
+    def _run(self, mutate=None) -> dict:
+        fixture = run_eval.load_fixture(RENAME_DIR)
+        ws = self._ws(mutate)
+        results = objective.run_checks(fixture, str(ws), str(RENAME_DIR / "seed"))
+        return {r["id"]: r for r in results}
+
+    # -- seed shape ----------------------------------------------------
+
+    def test_seed_ships_exactly_six_committed_pdfs(self):
+        pdfs = sorted(p.name for p in (RENAME_DIR / "seed" / "inbox").glob("*.pdf"))
+        self.assertEqual(len(pdfs), 6, pdfs)
+        self.assertEqual(set(pdfs), set(self.ORIGINAL_TO_CORRECT))
+
+    def test_expected_txt_matches_the_correct_renaming(self):
+        expected = sorted(
+            line.strip() for line in
+            (RENAME_DIR / "seed" / "expected.txt").read_text(encoding="utf-8").splitlines()
+            if line.strip())
+        self.assertEqual(expected, sorted(self.ORIGINAL_TO_CORRECT.values()))
+
+    def test_duplicate_bills_are_byte_identical(self):
+        inbox = RENAME_DIR / "seed" / "inbox"
+        a = (inbox / "Scan_20260306_070211.pdf").read_bytes()
+        b = (inbox / "Scan_20260306_071455.pdf").read_bytes()
+        self.assertEqual(a, b)
+
+    def test_image_only_pdf_has_no_extractable_text(self):
+        pypdf = _import_pypdf_or_skip()
+        reader = pypdf.PdfReader(str(RENAME_DIR / "seed" / "inbox" / "Scan_20260118_161230.pdf"))
+        self.assertEqual((reader.pages[0].extract_text() or "").strip(), "")
+
+    def test_invoice_filename_carries_a_decoy_date_distinct_from_the_body(self):
+        # The scanner filename's embedded date must NOT equal the document's
+        # own invoice date, or the date-priority scenario tests nothing.
+        pypdf = _import_pypdf_or_skip()
+        reader = pypdf.PdfReader(
+            str(RENAME_DIR / "seed" / "inbox" / "Scan_20260301_114022.pdf"))
+        text = reader.pages[0].extract_text()
+        self.assertIn("February 14, 2026", text)
+        self.assertNotIn("20260301", text)
+
+    def test_fixture_yaml_shape(self):
+        fixture = run_eval.load_fixture(RENAME_DIR)
+        self.assertEqual(fixture["skill"], "rename-pdfs")
+        self.assertEqual(fixture["prompt"].strip(),
+                         "Rename the PDFs in inbox/ per my convention.")
+        weights = fixture["judge"]["weights"]
+        self.assertEqual(weights, {"convention_fidelity": 0.5, "date_priority": 0.3,
+                                   "restraint": 0.2})
+        # The rubric must name every dimension by its exact weight key —
+        # not just a case-insensitive match, which judge.py already
+        # tolerates, but the literal string a contributor typed.
+        for dimension in weights:
+            self.assertIn(dimension, fixture["judge_rubric"])
+        checks_by_type = {c["type"] for c in fixture["objective_checks"]}
+        self.assertEqual(checks_by_type, {"dir_listing_matches", "files_unchanged"})
+
+    def test_fixture_requires_pins_pypdf_with_a_publish_date(self):
+        fixture = run_eval.load_fixture(RENAME_DIR)
+        pkgs = fixture["requires"]["python"]
+        pypdf_reqs = [p for p in pkgs if p["package"] == "pypdf"]
+        self.assertEqual(len(pypdf_reqs), 1)
+        self.assertIn("version", pypdf_reqs[0])
+        self.assertIn("published", pypdf_reqs[0])
+
+    # -- the checks: pass/fail scenarios --------------------------------
+
+    def test_pristine_seed_fails_the_renaming_check(self):
+        by_id = self._run()
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
+        # Nothing has moved yet, so content is trivially intact.
+        self.assertTrue(by_id["inbox-content-preserved"]["passed"])
+
+    def test_hand_renamed_correct_copy_passes_every_check(self):
+        by_id = self._run(self._rename_correctly)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_renaming_the_image_only_pdf_fails_the_listing_check(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            inbox = ws / "inbox"
+            (inbox / "Scan_20260118_161230.pdf").rename(
+                inbox / "20260118-Statement-Example Utilities Ltd-Oops.pdf")
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
+        # A plain rename does not touch content, so the digest check alone
+        # would miss this — it is the listing check's job to catch it.
+        self.assertTrue(by_id["inbox-content-preserved"]["passed"])
+
+    def test_leaving_the_pre_named_file_alone_but_renaming_nothing_else_still_fails(self):
+        by_id = self._run()
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
+
+    def test_a_collision_overwrite_fails_both_checks(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            inbox = ws / "inbox"
+            (inbox / "20260303-Bill-Example Utilities Ltd-Account 9002 (2).pdf").unlink()
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-renamed-per-convention"]["passed"])
+        self.assertFalse(by_id["inbox-content-preserved"]["passed"])
+
+    def test_touching_the_pre_named_file_fails_the_digest_check_only(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            path = ws / "inbox" / "20251215-Receipt-Example Utilities Ltd-Deposit Refund.pdf"
+            path.write_bytes(path.read_bytes() + b"\n%tampered\n")
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-content-preserved"]["passed"])
+        # The name did not change, so the listing check cannot see this.
+        self.assertTrue(by_id["inbox-renamed-per-convention"]["passed"])
+
+    def test_touching_the_image_only_pdf_fails_the_digest_check(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            path = ws / "inbox" / "Scan_20260118_161230.pdf"
+            path.write_bytes(path.read_bytes() + b"\n%tampered\n")
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["inbox-content-preserved"]["passed"])
+
+    # -- CLI-level: the objective-only exit code -------------------------
+
+    def test_cli_objective_only_exits_1_on_the_pristine_seed(self):
+        proc = subprocess.run(
+            [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(RENAME_DIR),
+             "--arm", "objective-only"],
+            capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+
+    def test_cli_objective_only_exits_0_on_a_hand_renamed_correct_copy(self):
+        ws = self._ws(self._rename_correctly)
+        proc = subprocess.run(
+            [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(RENAME_DIR),
+             "--arm", "objective-only", "--workspace", str(ws)],
+            capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
 if __name__ == "__main__":
