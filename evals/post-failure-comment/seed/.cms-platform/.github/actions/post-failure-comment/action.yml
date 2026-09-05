@@ -47,4 +47,4 @@ runs:
   steps:
     - name: Sanity log
       shell: bash
-      run: echo "::notice::post-failure-comment invoked (vendored contract copy — see cms-platform for the real steps)"
+      run: echo "::notice::post-failure-comment invoked"
