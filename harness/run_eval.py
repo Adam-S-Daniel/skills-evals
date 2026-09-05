@@ -262,8 +262,8 @@ def resolve_registries(cli_values: list[str] | None, env_value: str | None,
         else:
             path = (base_dir / ".." / name).resolve()
             source = "sibling default"
-        resolved[name] = {"path": path, "layout": entry["layout"], "url": entry["url"],
-                          "source": source}
+        resolved[name] = {"name": name, "path": path, "layout": entry["layout"],
+                          "url": entry["url"], "source": source}
     return resolved
 
 
@@ -527,9 +527,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         skill_md_glob = _skill_md_glob(layout, skill)
         matches = sorted(p.parent for p in registry.glob(skill_md_glob) if p.is_file())
         if not matches:
-            pattern = registry / skill_md_glob
+            # The registry's NAME (arm_config's own, when _run_arm resolved
+            # it — falling back to the checkout dir's basename otherwise)
+            # plus the RELATIVE glob, never the resolved absolute path: this
+            # detail reaches summary.json, which eval.yml commits to the
+            # public eval-results branch (item 6, #129 review round 4 — the
+            # same treatment select_models' own roster-path messages use).
+            registry_label = arm.get("registry_name") or registry.name
             return {"error": "skill_not_found",
-                    "detail": f"no SKILL.md matched {pattern}"}
+                    "detail": f"no SKILL.md matched {registry_label}/{skill_md_glob}"}
         skill_src = matches[0]
         skill_dest = workspace / ".claude" / "skills" / skill
         try:
@@ -725,15 +731,20 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                     registry_error = {"error": "unknown_registry", "detail": str(exc)}
                 else:
                     if not entry["path"].is_dir():
+                        # The registry's NAME and layout, not its resolved
+                        # absolute path — this detail reaches summary.json,
+                        # which eval.yml commits to the public eval-results
+                        # branch (item 6, #129 review round 4).
                         registry_error = {
                             "error": "registry_not_found",
-                            "detail": f"registry {fixture['registry']!r} resolves "
-                                      f"to {entry['path']}, which is not a "
-                                      "directory"}
+                            "detail": f"registry {entry['name']!r} has no "
+                                      f"local checkout for layout "
+                                      f"{entry['layout']!r}"}
                     else:
                         arm_config["skill"] = fixture["skill"]
                         arm_config["registry"] = entry["path"]
                         arm_config["layout"] = entry["layout"]
+                        arm_config["registry_name"] = entry["name"]
 
         result = registry_error if registry_error is not None else run_agent(
             workspace, fixture["prompt"], arm_config)

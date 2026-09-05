@@ -157,10 +157,30 @@ class WithSkillInstallTests(unittest.TestCase):
             result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
-            self.assertIn(str(FAKE_REGISTRY), result["detail"])
+            # Item 6 (#129 review round 4): the registry's basename, not its
+            # full absolute path — this detail reaches summary.json, which
+            # eval.yml commits to the public eval-results branch.
+            self.assertIn(FAKE_REGISTRY.name, result["detail"])
+            self.assertNotIn(str(FAKE_REGISTRY), result["detail"])
             # Names the plugins/*/skills/<skill> glob pattern that was searched.
             self.assertIn("skills", result["detail"])
             self.assertIn("plugins", result["detail"])
+
+    def test_missing_skill_detail_does_not_leak_the_registry_absolute_path(self):
+        """A registry checkout can live anywhere on the runner's disk —
+        this proves the leak is closed for a path shape that does not
+        happen to be the repo's own committed fixture path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "some-private-runner-directory-name"
+            registry.mkdir()
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            arm = {"name": "with_skill", "skill": "does-not-exist",
+                  "registry": registry, "timeout": 30}
+            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            self.assertIn("error", result)
+            self.assertIn(registry.name, result["detail"])
+            self.assertNotIn(str(registry), result["detail"])
 
 
 class RunAgentModesTests(unittest.TestCase):
@@ -4775,12 +4795,13 @@ class TestIssue63Round2(unittest.TestCase):
             with_skill_summary = json.loads(
                 (run_dir / "with_skill" / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(with_skill_summary["error"]["type"], "registry_not_found")
-            # base_dir = harness_dir.parent = skills_evals_root, so the
-            # sibling default is (skills_evals_root / ".." / name).resolve()
-            # = tmp_root / "scratch-registry" — inside the disposable tmp
-            # root, never beside the real skills-evals checkout.
+            # Item 6 (#129 review round 4): the registry's NAME and layout,
+            # not its resolved absolute path — this detail reaches
+            # summary.json, which eval.yml commits to the public
+            # eval-results branch.
             expected_path = str((tmp_root / "scratch-registry").resolve())
-            self.assertIn(expected_path, with_skill_summary["error"]["detail"])
+            self.assertIn("scratch-registry", with_skill_summary["error"]["detail"])
+            self.assertNotIn(expected_path, with_skill_summary["error"]["detail"])
 
             without_skill_summary = json.loads(
                 (run_dir / "without_skill" / "summary.json").read_text(encoding="utf-8"))
