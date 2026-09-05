@@ -39,6 +39,7 @@ FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
 EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
 ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
+GHA_SHA_PINNING_DIR = REPO_ROOT / "evals" / "github-actions-sha-pinning"
 POST_FAILURE_COMMENT_DIR = REPO_ROOT / "evals" / "post-failure-comment"
 RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 
@@ -6386,6 +6387,1364 @@ class TestIssue67Review6(unittest.TestCase):
         # Mutation check (manual): reverting the anchor to `$` folds the
         # malformed key onto claude-sonnet-4-5 again, changing the
         # reason to "carries 99.0%" — turning both assertions red.
+
+
+class TestIssue85(unittest.TestCase):
+    """evals/github-actions-sha-pinning: resurrects the retired
+    pin-actions-to-sha instrument (DESIGN.md's "Reference eval" section)
+    retargeted at the skill that survived cms-platform's 2026-08-20
+    comment-convention reversal — cms-platform/skills/github-actions-sha-pinning.
+    """
+
+    # The "correct" edits below are applied by anchored replacement, and each
+    # anchor is asserted present first — so if the seed's ci.yml drifts, this
+    # test fails loudly instead of quietly measuring nothing. actions/cache's
+    # already-correct bare SHA has no entry here on purpose: leaving it alone
+    # is itself part of what the restraint checks below cover.
+    _CI_FIXES = (
+        ("uses: actions/checkout@v4",
+         "uses: actions/checkout@8c145d657eb0e222586a451c0917c3072252d69a"),
+        ("uses: actions/setup-node@297dbbf",
+         "uses: actions/setup-node@297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708"),
+        ("uses: actions/upload-artifact@469fdae6c9a7a133f770f31f7ebfe863a834fba1"
+         "  # v4.1.0",
+         "uses: actions/upload-artifact@469fdae6c9a7a133f770f31f7ebfe863a834fba1"),
+    )
+
+    def _replace(self, path: Path, old: str, new: str) -> None:
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(old, text, f"{path.name}: anchor drifted out of the seed")
+        path.write_text(text.replace(old, new), encoding="utf-8")
+
+    def _audited(self, ws: Path) -> None:
+        """Apply the correct fix in place: pin every third-party ref in
+        ci.yml to a full SHA and strip the pre-existing version comment.
+        """
+        ci = ws / ".github" / "workflows" / "ci.yml"
+        for old, new in self._CI_FIXES:
+            self._replace(ci, old, new)
+
+    def _seed_copy(self, tmp: str) -> Path:
+        ws = Path(tmp) / "ws"
+        shutil.copytree(GHA_SHA_PINNING_DIR / "seed", ws)
+        return ws
+
+    def _checks(self, ws: Path, seed: Path) -> dict:
+        fixture = run_eval.load_fixture(GHA_SHA_PINNING_DIR)
+        return {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(seed))}
+
+    def _run(self, audited: bool) -> dict:
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            if audited:
+                self._audited(ws)
+            return self._checks(ws, seed)
+
+    # -- the four properties issue #85 asks for ------------------------------
+
+    def test_pristine_seed_fails_the_fixup_checks(self):
+        by_id = self._run(audited=False)
+        for check_id in ("third-party-actions-sha-pinned",
+                         "no-trailing-comments"):
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_pristine_seed_passes_the_restraint_checks(self):
+        # These can only be broken by a careless fix, so they must start out
+        # green — otherwise a failure on them says nothing about the arm.
+        by_id = self._run(audited=False)
+        for check_id in ("cms-platform-refs-stay-on-tag",
+                         "local-and-docker-refs-untouched",
+                         "reference-files-untouched",
+                         "ci-workflow-not-deleted",
+                         "workflows-still-parse"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_audited_copy_passes_all_checks(self):
+        for check_id, result in self._run(audited=True).items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_cms_platform_workflow_ref_converted_to_sha_fails(self):
+        # The carve-out's whole point: a naive "pin everything" pass breaks
+        # cms-platform's own pin-consistency lint. Converting just the
+        # reusable-workflow ref (deploy.yml) must fail even though ci.yml and
+        # the composite ref are both otherwise correctly fixed.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "@v0.1.104",
+                          "@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_cms_platform_composite_ref_converted_to_sha_fails(self):
+        # Same trap, the other shape: the composite-action ref, not the
+        # reusable-workflow one.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            gate = ws / ".github" / "actions" / "gate" / "action.yml"
+            self._replace(gate, "@v0.1.104",
+                          "@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_surviving_version_comment_fails(self):
+        # A comment added to the one ref the audit doesn't otherwise touch
+        # (actions/cache's already-correct bare SHA) — proving the check
+        # scans every uses: line, not only the ones the fix rewrote.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            self._replace(
+                ci, "uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f",
+                "uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f  # v4.1.0")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["no-trailing-comments"]["passed"])
+
+    def test_cms_platform_refs_stay_on_tag_flags_an_extra_sha_pinned_ref(self):
+        """Isolates must_not_match (fixture.yaml's check at ~line 109): both
+        required tag lines stay verbatim and correct, but an extra
+        cms-platform ref is SHA-pinned elsewhere in the same file — proving
+        the check catches that even when nothing required is missing, not
+        only when a must_match line got clobbered.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            original = deploy.read_text(encoding="utf-8")
+            extra = ("  stray:\n    uses: Adam-S-Daniel/cms-platform/"
+                    ".github/workflows/other.yml"
+                    "@1e9a6937a11cbce43ac288d062ceec17fc51d43f\n")
+            deploy.write_text(original + extra, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertIn("Adam-S-Daniel/cms-platform/.github/workflows/"
+                     "e2e-tests.yml@v0.1.104", original)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- the carve-out must apply in ci.yml too (review round 5, S1) --------
+    # `pins_match_reference`'s platform_prefix exclusion (round 4, N4) covers
+    # ci.yml, but `platform_refs_on_tag` (this carve-out's own enforcement)
+    # did not scan ci.yml at all, and `uses_refs_sha_pinned` had no carve-out
+    # awareness there either — so a cms-platform ref landing in ci.yml was
+    # policed backwards: SHA-pinning it (the violation) passed everything,
+    # and correctly tag-pinning it (compliance) failed the SHA-shape check.
+
+    def test_cms_platform_ref_sha_pinned_in_ci_yml_fails_only_the_carve_out_check(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  extra:\n    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/actions/recursion-gate"
+                  "@1e9a6937a11cbce43ac288d062ceec17fc51d43f\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        for check_id, result in by_id.items():
+            if check_id == "cms-platform-refs-stay-on-tag":
+                continue
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_cms_platform_ref_tag_pinned_in_ci_yml_passes_all_checks(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  extra:\n    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/actions/recursion-gate@v0.1.104\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    # -- PINS.md is the only offline source of truth (review round 2, N1) ----
+
+    def test_invented_sha_audit_fails_pins_match(self):
+        """A hallucinated-but-40-hex SHA must not score a perfect run.
+
+        PINS.md is the seed's only offline source of truth for the correct
+        SHA per action; a plausible-looking invented value passes
+        `uses_refs_sha_pinned` (it IS 40 hex characters) but must fail the
+        PINS.md-bound check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        invented = "f" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            text = ci.read_text(encoding="utf-8")
+            text = (text
+                    .replace("actions/checkout@v4",
+                            f"actions/checkout@{invented}")
+                    .replace("actions/setup-node@297dbbf",
+                            f"actions/setup-node@{invented}")
+                    .replace("actions/upload-artifact@"
+                            "469fdae6c9a7a133f770f31f7ebfe863a834fba1  # v4.1.0",
+                            f"actions/upload-artifact@{invented}")
+                    .replace("actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f",
+                            f"actions/cache@{invented}"))
+            self.assertIn(f"actions/checkout@{invented}", text)  # sanity: replace happened
+            ci.write_text(text, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_md_faithful_audit_passes_pins_match(self):
+        by_id = self._run(audited=True)
+        self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
+                        by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pristine_seed_fails_pins_match(self):
+        by_id = self._run(audited=False)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"])
+
+    def test_ci_stub_with_only_a_comment_fails_pins_match(self):
+        """N3: the old bare-name `ci-workflow-not-deleted` guard is satisfied
+        by a ci.yml stub whose only content is a comment naming the four
+        actions — no real `uses:` line at all. The PINS.md-bound check (N1)
+        closes this: it requires each PINS.md action to appear as an actual
+        `uses:` pin (located structurally via YAML), not merely as a
+        substring anywhere in the file.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                "name: CI\n"
+                "# actions/checkout actions/setup-node actions/upload-artifact"
+                " actions/cache\n"
+                "on:\n  push:\n    branches: [main]\n"
+                "jobs:\n  test:\n    runs-on: ubuntu-latest\n    steps: []\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["ci-workflow-not-deleted"]["passed"],
+                        "the stub no longer trips the old bare-name check — "
+                        "test setup is stale")
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_match_reference_is_case_insensitive(self):
+        """Round 3, N-1: `pins_match_reference` compared SHAs case-sensitively
+        while `SHA_RE` and the sibling `uses_refs_sha_pinned` check are both
+        case-insensitive (`test_uses_refs_sha_pinned_accepts_upper_case_hex`),
+        so an all-uppercase-but-otherwise-correct audit passed
+        third-party-actions-sha-pinned and failed third-party-pins-match-pins-md
+        on the very same ref.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            text = ci.read_text(encoding="utf-8")
+            for sha in ("8c145d657eb0e222586a451c0917c3072252d69a",
+                       "297dbbfd3925b9ddfa3512a328e7fd3f2ca1f708",
+                       "469fdae6c9a7a133f770f31f7ebfe863a834fba1",
+                       "145d7281d851cb2f0e335d9b256d80c13f353f7f"):
+                text = text.replace(sha, sha.upper())
+            ci.write_text(text, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["third-party-actions-sha-pinned"]["passed"],
+                        by_id["third-party-actions-sha-pinned"]["detail"])
+        self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
+                        by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_match_reference_fails_an_action_absent_from_pins_md(self):
+        """Round 3, N-3: PINS.md binding was a whitelist, not a closure — it
+        asserted every PINS.md action is correctly pinned, but never that
+        every remote action actually `uses:`'d in the audited files has a
+        PINS.md row. An ADDED third-party action absent from PINS.md, even
+        with a plausible-looking 40-hex SHA, scored a perfect run.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        invented = "e" * 40
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            text = ci.read_text(encoding="utf-8")
+            text = text.rstrip("\n") + f"\n      - uses: actions/labeler@{invented}\n"
+            ci.write_text(text, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_match_reference_fails_on_malformed_pins_md_row(self):
+        """Round 3, N-4: a malformed PINS.md row (a shortened sha) failed
+        `PINS_TABLE_ROW_RE`'s match entirely, so `_load_pins_reference`
+        silently dropped that action from the requirement set — only
+        `files_unchanged` on PINS.md (which is not what this check polices)
+        had any chance of noticing PINS.md itself was ever touched.
+
+        The malformed row here names an action ('actions/labeler') that
+        appears NOWHERE in ci.yml, so the N-3 closure fix (an undeclared
+        `uses:` ref) has nothing to catch — proving the malformed row is
+        detected by reading PINS.md's own row shape, not as a side effect of
+        the closure check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            pins = ws / "PINS.md"
+            text = pins.read_text(encoding="utf-8")
+            text = text.rstrip("\n") + "\n| actions/labeler | v5 | deadbeef |\n"
+            pins.write_text(text, encoding="utf-8")
+            ci_text = (ws / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertNotIn("actions/labeler", ci_text)
+        self.assertFalse(by_id["third-party-pins-match-pins-md"]["passed"],
+                         by_id["third-party-pins-match-pins-md"]["detail"])
+
+    def test_pins_match_reference_fails_on_row_with_wrong_cell_count(self):
+        """Round 4, N5: `PINS_TABLE_ROW_RE` used to require EXACTLY 3 cells
+        (4 pipe characters) to match at all, so a row with too few or too
+        many cells failed to match entirely and vanished from the
+        requirement set — the same silent-drop bug N-4 (round 3) already
+        fixed for a malformed sha VALUE, but for cell SHAPE instead.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        bad_rows = (
+            "| actions/labeler | " + "d" * 40 + " |",               # 2 cells
+            "| actions/labeler | v5 | " + "d" * 40 + " | extra |",  # 4 cells
+        )
+        for bad_row in bad_rows:
+            with tempfile.TemporaryDirectory() as tmp:
+                ws = self._seed_copy(tmp)
+                self._audited(ws)
+                pins = ws / "PINS.md"
+                text = pins.read_text(encoding="utf-8")
+                text = text.rstrip("\n") + f"\n{bad_row}\n"
+                pins.write_text(text, encoding="utf-8")
+                ci_text = (ws / ".github" / "workflows" / "ci.yml").read_text(
+                    encoding="utf-8")
+                by_id = self._checks(ws, seed)
+            self.assertNotIn("actions/labeler", ci_text)
+            self.assertFalse(
+                by_id["third-party-pins-match-pins-md"]["passed"],
+                f"{bad_row!r}: "
+                f"{by_id['third-party-pins-match-pins-md']['detail']}")
+
+    def test_pins_match_reference_glob_skips_non_files(self):
+        """Round 3, N-4: `pins_match_reference`'s glob loop had no
+        `os.path.isfile` guard — unlike `file_matches`'s `_read_matched` —
+        so a pattern matching a directory (not just files) would raise on
+        `open()`. Exercises the check against a `paths` pattern that
+        matches both the real workflow and a same-named directory.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "ci.yml.d").mkdir()
+            passed, detail = objective.pins_match_reference(
+                str(ws), [".github/workflows/ci.yml*"], reference="PINS.md")
+        self.assertTrue(passed, detail)
+
+    def test_pins_match_reference_skips_platform_refs_in_closure(self):
+        """Round 4, N4: an agent that consolidates deploy.yml's job into
+        ci.yml adds a cms-platform `uses:` ref to the very file this check
+        scans. PINS.md carries no row for a platform ref — that is
+        `platform_refs_on_tag`'s business, not this check's — so the
+        closure leg must not flag it as an undeclared action.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  e2e:\n    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/workflows/e2e-tests.yml@v0.1.104\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["third-party-pins-match-pins-md"]["passed"],
+                        by_id["third-party-pins-match-pins-md"]["detail"])
+
+    # -- the platform_ref: input is bound too (review round 2, N2) -----------
+
+    def test_platform_ref_input_rewritten_to_sha_fails(self):
+        # The skill names this input explicitly ("the `platform_ref:` INPUT
+        # carrying the same version literal") — a SHA there breaks
+        # platform-bump's rewrite and the pin-consistency lint exactly like
+        # the `uses:@tag` line would.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          "platform_ref: 1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_platform_ref_input_skewed_fails(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104", "platform_ref: v0.1.99")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"])
+
+    def test_cms_platform_refs_stay_on_tag_flags_an_uppercase_extra_sha_pinned_ref(self):
+        """N4: `must_not_match`'s SHA pattern must be case-insensitive to
+        match `uses_refs_sha_pinned`'s `SHA_RE` — an uppercase-hex extra
+        cms-platform ref must be caught exactly like a lowercase one is
+        (`test_cms_platform_refs_stay_on_tag_flags_an_extra_sha_pinned_ref`).
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            original = deploy.read_text(encoding="utf-8")
+            extra = ("  stray:\n    uses: Adam-S-Daniel/cms-platform/"
+                    ".github/workflows/other.yml"
+                    "@1E9A6937A11CBCE43AC288D062CEEC17FC51D43F\n")
+            deploy.write_text(original + extra, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- the carve-out check is structural, not a text regex (review round 3,
+    # S-1) -- a `file_matches` must_match/must_not_match pair decides two YAML
+    # values by scanning raw concatenated text: a stale "# was ..." comment
+    # satisfies must_match even though the live value beneath it drifted, and
+    # quoting/spacing around a genuinely correct value defeats an exact-text
+    # must_match. `platform_refs_on_tag` composes the tree and compares each
+    # leaf node's own parsed value instead.
+
+    def test_platform_refs_on_tag_comment_skew_on_platform_ref_fails(self):
+        """A '# was platform_ref: v0.1.104' comment left above a drifted
+        'platform_ref: v0.1.99' line must not satisfy the check — only the
+        live parsed value counts, and the failure must name the LIVE value's
+        own line, not the comment's.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "      platform_ref: v0.1.104",
+                          "      # was platform_ref: v0.1.104\n"
+                          "      platform_ref: v0.1.99")
+            text = deploy.read_text(encoding="utf-8")
+            target_line = next(i for i, line in enumerate(text.splitlines(), 1)
+                               if line.strip() == "platform_ref: v0.1.99")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn(f":{target_line} platform_ref: v0.1.99", detail)
+
+    def test_platform_refs_on_tag_comment_skew_on_uses_fails(self):
+        """Same trap, the `uses:` shape: a stale '# was ...@v0.1.104' comment
+        above a drifted '...@v0.1.99' live ref must not satisfy the check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(
+                deploy,
+                "    uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.104",
+                "    # was Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.104\n"
+                "    uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.99")
+            text = deploy.read_text(encoding="utf-8")
+            target_line = next(
+                i for i, line in enumerate(text.splitlines(), 1)
+                if line.strip() == "uses: Adam-S-Daniel/cms-platform/"
+                                   ".github/workflows/e2e-tests.yml@v0.1.99")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn(f":{target_line} uses:", detail)
+
+    def test_platform_refs_on_tag_accepts_quoted_value(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          'platform_ref: "v0.1.104"')
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_accepts_double_spaced_value(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          "platform_ref:  v0.1.104")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_rejects_uses_sha_rewrite_with_tag_surviving_in_comment(self):
+        """The tag literal appearing elsewhere in the file (a trailing
+        comment) must not paper over a SHA-rewritten live `uses:` ref — the
+        check reads the value NODE, not whether the tag string appears
+        anywhere in the file's text.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "@v0.1.104",
+                          "@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8") + "\n# still on v0.1.104 elsewhere\n",
+                encoding="utf-8")
+            text = deploy.read_text(encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertIn("v0.1.104", text)  # the literal does survive, in a comment
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_rejects_platform_ref_sha_rewrite_with_tag_surviving_in_sibling_job(self):
+        """N2 revisited: a `platform_ref:` rewritten to a SHA must fail even
+        though the tag literal survives elsewhere in the same file (the
+        sibling `uses:` line, left untouched) — the old
+        `platform_ref: [0-9a-fA-F]{40}` must_not_match line covered this only
+        accidentally (must_match already failed once the literal text
+        'platform_ref: v0.1.104' was gone); the structural check must fail
+        it directly, by reading the platform_ref value node itself.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          "platform_ref: 1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            text = deploy.read_text(encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertIn("uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                     "e2e-tests.yml@v0.1.104", text)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- the presence half of the old must_match, restored structurally
+    # (review round 4, B1) -- `platform_refs_on_tag` asserted only "every
+    # platform ref FOUND is on the tag", so with no platform ref found at all
+    # it passed vacuously. Deleting the platform refs (or routing around them)
+    # must fail via a `min_refs` count, not a `files_unchanged`-style presence
+    # guard (an edited-but-still-correct deploy.yml must keep passing).
+
+    def test_platform_refs_on_tag_min_refs_catches_deleted_deploy_and_gate(self):
+        # Round 5's T row, extended (round 6, F1): both deploy.yml and the
+        # gate action deleted also trips both file-deletion tripwires
+        # directly, on top of the min_refs floor.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
+        self.assertFalse(by_id["deploy-workflow-not-deleted"]["passed"],
+                         by_id["deploy-workflow-not-deleted"]["detail"])
+        self.assertFalse(by_id["gate-action-not-deleted"]["passed"],
+                         by_id["gate-action-not-deleted"]["detail"])
+
+    def test_platform_refs_on_tag_min_refs_catches_deploy_stubbed_to_a_run_step(self):
+        # The gate composite's platform ref survives, but deploy.yml's
+        # reusable-workflow call is gone — one platform ref found, not two.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                "name: Deploy\n\non:\n  push:\n    branches: [main]\n\n"
+                "jobs:\n  e2e:\n    runs-on: ubuntu-latest\n"
+                "    steps:\n      - run: echo hi\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
+
+    def test_platform_refs_on_tag_min_refs_catches_gate_ref_swapped_local(self):
+        # deploy.yml's reusable-workflow call survives, but the gate
+        # composite's cross-repo ref was swapped for a local `./` ref.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            gate = ws / ".github" / "actions" / "gate" / "action.yml"
+            self._replace(
+                gate,
+                "uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@v0.1.104",
+                "uses: ./.github/actions/local-recursion-gate")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
+
+    def test_platform_refs_on_tag_min_refs_catches_deploy_deleted_alone(self):
+        # Round 5's Y row, extended (round 6, F1): deploy.yml alone deleted
+        # also trips the deploy-workflow-not-deleted tripwire directly, not
+        # just the min_refs floor — and the gate action, left untouched,
+        # still passes its own tripwire.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
+        self.assertFalse(by_id["deploy-workflow-not-deleted"]["passed"],
+                         by_id["deploy-workflow-not-deleted"]["detail"])
+        self.assertTrue(by_id["gate-action-not-deleted"]["passed"],
+                        by_id["gate-action-not-deleted"]["detail"])
+
+    def test_platform_refs_on_tag_min_refs_edited_but_correct_deploy_still_passes(self):
+        # The guardrail: min_refs counts platform uses: refs, it does not
+        # require deploy.yml to be byte-identical to the seed.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8").replace(
+                    "name: Deploy", "name: Deploy to production"),
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_correct_audit_passes_min_refs(self):
+        by_id = self._run(audited=True)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        self.assertEqual(by_id["cms-platform-refs-stay-on-tag"]["detail"],
+                         "every platform ref pinned to v0.1.104")
+
+    def test_platform_refs_on_tag_min_refs_direct_call(self):
+        """Exercises the `min_refs` kwarg directly, isolated from the fixture
+        wiring: fewer than `min_refs` platform `uses:` value nodes found
+        fails with a detail naming the count and the threshold.
+        """
+        ws = self._synthetic_ws({
+            "one.yml": "jobs:\n  a:\n    uses: Adam-S-Daniel/cms-platform/"
+                      ".github/workflows/x.yml@v1\n"})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["one.yml"], platform_prefix="Adam-S-Daniel/cms-platform/",
+            tag="v1", min_refs=2)
+        self.assertFalse(passed)
+        self.assertIn("only 1 platform uses: ref(s) found", detail)
+        self.assertIn("expected at least 2", detail)
+
+    # -- min_refs counts distinct locations, not node visits (round 5, N1) --
+    # `_mapping_value_nodes` appends a matched value_node at EVERY key-match
+    # site, regardless of whether that node was already visited elsewhere in
+    # the tree — an anchored `uses:` value referenced again via a YAML alias
+    # (`*x`) at a second, decoy job is therefore counted TWICE even though it
+    # is one physical ref. Before this was fixed, ONE real cms-platform ref,
+    # doubled by an alias, could satisfy min_refs=2 on its own — so deleting
+    # the gate composite's entire directory (dropping the real ref count to
+    # 1) still scored a full pass. `bad`'s own de-duplication (the aliased
+    # platform_ref: tests above) never touched `ref_count`, which counted
+    # raw node visits until now.
+
+    def test_platform_refs_on_tag_min_refs_does_not_inflate_on_an_aliased_uses_ref(self):
+        """Isolates the primitive: an anchored `uses:` value aliased at a
+        second job is ONE location, not two — `min_refs=2` must still fail
+        against it alone, naming the true count of 1.
+        """
+        ws = self._synthetic_ws({
+            "aliased-uses.yml": (
+                "jobs:\n"
+                "  a:\n"
+                "    uses: &pr Adam-S-Daniel/cms-platform/"
+                ".github/workflows/x.yml@v1\n"
+                "  b:\n"
+                "    uses: *pr\n")})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["aliased-uses.yml"],
+            platform_prefix="Adam-S-Daniel/cms-platform/", tag="v1", min_refs=2)
+        self.assertFalse(passed, detail)
+        self.assertIn("only 1 platform uses: ref(s) found", detail)
+
+    def test_platform_refs_on_tag_min_refs_is_a_value_guard_not_a_file_guard(self):
+        """min_refs is a VALUE guard on the COUNT of platform refs found
+        across its paths, not a per-file existence guard (round 6, F1): two
+        DIFFERENT `uses:` lines in ONE file (not an alias of one another)
+        are two distinct locations and satisfy min_refs=2 on their own — the
+        fix above (round 5) must not over-correct into counting every file
+        as at most one ref. Whether any ONE file was deleted is decided by
+        an existence tripwire instead (`deploy-workflow-not-deleted`,
+        `gate-action-not-deleted` at fixture scale), never by this count.
+        """
+        ws = self._synthetic_ws({
+            "two-distinct.yml": (
+                "jobs:\n"
+                "  a:\n"
+                "    uses: Adam-S-Daniel/cms-platform/"
+                ".github/workflows/x.yml@v1\n"
+                "  b:\n"
+                "    uses: Adam-S-Daniel/cms-platform/"
+                ".github/workflows/y.yml@v1\n")})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["two-distinct.yml"],
+            platform_prefix="Adam-S-Daniel/cms-platform/", tag="v1", min_refs=2)
+        self.assertTrue(passed, detail)
+
+    def test_platform_refs_on_tag_min_refs_gate_deleted_survives_only_via_an_aliased_ref(self):
+        """At fixture scale: the gate composite's directory is deleted
+        entirely (the carve-out's second required location is gone), but
+        deploy.yml's own reusable-workflow ref is anchored and re-referenced
+        via a YAML alias at a second, decoy job — ONE physical platform ref,
+        syntactically matched twice. Before the fix this alone satisfied
+        min_refs=2 and the deleted gate/ went unnoticed; the real ref count
+        here is 1.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                "name: Deploy\n\non:\n  push:\n    branches: [main]\n\n"
+                "jobs:\n"
+                "  e2e:\n"
+                "    uses: &platform_ref Adam-S-Daniel/cms-platform/"
+                ".github/workflows/e2e-tests.yml@v0.1.104\n"
+                "    with:\n      platform_ref: v0.1.104\n"
+                "    secrets: inherit\n"
+                "  e2e-shadow:\n"
+                "    uses: *platform_ref\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("only 1 platform uses: ref(s) found", detail)
+
+    # -- the platform_ref leg needs a scalar guard (review round 4, S1) ------
+
+    def test_platform_refs_on_tag_skips_a_platform_ref_input_declaration(self):
+        """A composite that DECLARES an input named platform_ref (a mapping
+        under `inputs:`, not a version literal) is a false positive: the
+        value node bound to that key is a MappingNode, not a scalar, so
+        comparing its `.value` to `tag` is never equal and used to produce a
+        detail interpolating a raw list of Node objects.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            gate = ws / ".github" / "actions" / "gate" / "action.yml"
+            self._replace(
+                gate, "runs:\n",
+                "inputs:\n  platform_ref:\n    description: pinned platform tag\n"
+                "    required: true\nruns:\n")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_matches_platform_ref_under_env(self):
+        # The key-path decision, recorded: platform_ref is matched at any
+        # depth, not only directly under a job's `with:` — a drifted value
+        # under `env:` must be caught exactly like one under `with:`.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8")
+                + "  env-leg:\n    runs-on: ubuntu-latest\n"
+                  "    env:\n      platform_ref: v0.1.99\n"
+                  "    steps:\n      - run: echo hi\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- prefix matching is case-insensitive (review round 4, N2) -----------
+
+    def test_platform_refs_on_tag_catches_lowercased_owner_sha_pinned(self):
+        """GitHub's owner/repo path is case-insensitive, so a lowercased
+        'adam-s-daniel/cms-platform/...' ref naming this account's own
+        platform repo is the SAME cross-repo reference and must be caught if
+        it is SHA-pinned, not skipped as though it named something else.
+
+        Round 5, S2: the earlier version of this test REPLACED the ONLY
+        deploy.yml platform ref with the lowercased+SHA-pinned one — so a
+        case-SENSITIVE mutant (which fails to recognise the lowercased ref
+        as a platform ref at all) doesn't merely miss the violation, it also
+        stops COUNTING that ref: ref_count drops from 2 to 1 and `min_refs`
+        fails the check anyway, but for the wrong reason (a missing ref, not
+        a bad pin) — `assertFalse(passed)` can't tell the difference. This
+        version keeps BOTH seed refs (deploy.yml's reusable-workflow call
+        and the gate composite's) intact, satisfying min_refs=2 on their
+        own, and adds a THIRD, lowercased, SHA-pinned platform ref: the
+        case-sensitive mutant simply never sees it (ref_count still 2, both
+        real refs still correctly tag-pinned) and scores a full pass; only
+        the case-insensitive match catches the third ref, and names it.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            original = deploy.read_text(encoding="utf-8")
+            extra = ("  stray:\n    uses: adam-s-daniel/cms-platform/"
+                    ".github/workflows/other.yml"
+                    "@1e9a6937a11cbce43ac288d062ceec17fc51d43f\n")
+            deploy.write_text(original + extra, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("adam-s-daniel/cms-platform/.github/workflows/"
+                      "other.yml@1e9a6937a11cbce43ac288d062ceec17fc51d43f",
+                      detail)
+        self.assertIn("expected @v0.1.104", detail)
+
+    # -- an aliased platform_ref is one problem, not two (review round 4, N3)
+
+    def test_platform_refs_on_tag_dedupes_an_aliased_platform_ref(self):
+        """`yaml.compose` resolves an alias to the SAME Node object as its
+        anchor, so an anchored+aliased `platform_ref:` used in two places is
+        visited twice by `_mapping_value_nodes` — a drifted value must be
+        reported once, at the anchor's own line, not once per alias
+        occurrence.
+        """
+        ws = self._synthetic_ws({
+            "aliased.yml": (
+                "jobs:\n"
+                "  a:\n"
+                "    with:\n"
+                "      platform_ref: &pr v0.1.99\n"
+                "  b:\n"
+                "    with:\n"
+                "      platform_ref: *pr\n")})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["aliased.yml"],
+            platform_prefix="Adam-S-Daniel/cms-platform/", tag="v0.1.104")
+        self.assertFalse(passed)
+        self.assertEqual(detail.count("platform_ref: v0.1.99"), 1, detail)
+
+    # -- platform_refs_on_tag's own glob loop skips non-files too (N1) ------
+
+    def test_platform_refs_on_tag_glob_skips_non_files(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml.d").mkdir()
+            passed, detail = objective.platform_refs_on_tag(
+                str(ws), [".github/workflows/deploy.yml*"],
+                platform_prefix="Adam-S-Daniel/cms-platform/", tag="v0.1.104")
+        self.assertTrue(passed, detail)
+
+    # -- the restraint checks have teeth too ---------------------------------
+
+    def test_editing_local_docker_workflow_fails_restraint(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            lint = ws / ".github" / "workflows" / "lint.yml"
+            lint.write_text(lint.read_text(encoding="utf-8") + "\n# stray edit\n",
+                            encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["local-and-docker-refs-untouched"]["passed"])
+
+    def test_editing_pins_md_fails_restraint(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / "PINS.md").write_text("edited\n", encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["reference-files-untouched"]["passed"])
+
+    def test_broken_yaml_fails_parse_check(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(ci.read_text(encoding="utf-8") + "\n  bad: [unclosed\n",
+                         encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["workflows-still-parse"]["passed"])
+
+    def test_yaml_parses_glob_skips_non_files(self):
+        # Round 4, N7: same isfile guard, yaml_parses' loop.
+        ws = self._synthetic_ws({"clean.yml": "jobs: {}\n"})
+        (ws / "clean.yml.d").mkdir()
+        passed, detail = objective.yaml_parses(str(ws), ["clean.yml*"])
+        self.assertTrue(passed, detail)
+
+    def test_deleting_ci_workflow_fails_restraint(self):
+        # Otherwise every glob-driven check above passes vacuously: nothing
+        # unpinned, nothing commented, nothing changed in the files that
+        # remain (review #133, S3).
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "ci.yml").unlink()
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["ci-workflow-not-deleted"]["passed"])
+
+    # -- file-deletion tripwires, one per file (round 6, F1) -----------------
+    #
+    # min_refs on cms-platform-refs-stay-on-tag is a fungible floor across
+    # ALL of platform_refs_on_tag's paths — a count of 2 is satisfied just
+    # as well by both refs surviving in deploy.yml alone as by one in
+    # deploy.yml and one in the gate action, so it cannot prove any ONE
+    # file still exists. deploy-workflow-not-deleted and
+    # gate-action-not-deleted are file_matches existence tripwires, the same
+    # shape as ci-workflow-not-deleted, that decide deletion per file
+    # instead.
+
+    def test_gate_deleted_with_deploy_carrying_two_distinct_refs_fails_only_gate_tripwire(self):
+        """The bug this fixes: on 1436512908b86b0e806f9d80dbbd74d561898963
+        (before deploy-workflow-not-deleted / gate-action-not-deleted
+        existed) this exact workspace — the gate action's entire directory
+        deleted, deploy.yml edited to carry a SECOND, distinct cms-platform
+        `uses:` ref alongside its real one — scored 8/8: min_refs=2 was
+        satisfied by deploy.yml alone, so cms-platform-refs-stay-on-tag
+        never saw that the gate action was gone. Confirmed by running this
+        exact mutation through objective.run_checks against fixture.yaml as
+        checked out at that commit (8/8, gate-action-not-deleted did not
+        exist to fail). Now it must fail exactly gate-action-not-deleted.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8")
+                + "  e2e-two:\n"
+                  "    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/workflows/e2e-tests-2.yml@v0.1.104\n"
+                  "    secrets: inherit\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        self.assertFalse(by_id["gate-action-not-deleted"]["passed"],
+                         by_id["gate-action-not-deleted"]["detail"])
+        self.assertTrue(by_id["deploy-workflow-not-deleted"]["passed"],
+                        by_id["deploy-workflow-not-deleted"]["detail"])
+
+    def test_deploy_deleted_with_job_consolidated_into_ci_fails_only_deploy_tripwire(self):
+        """The other half of the bug: deploy.yml deleted entirely, its
+        cms-platform call folded straight into ci.yml (S1(a) put ci.yml
+        into platform_refs_on_tag's own paths) — still correctly on the
+        release tag. min_refs=2 is satisfied (one ref now in ci.yml, one in
+        the untouched gate action), so cms-platform-refs-stay-on-tag never
+        sees that deploy.yml itself is gone. Confirmed 8/8 against
+        fixture.yaml as checked out at 1436512908b86b0e806f9d80dbbd74d561898963
+        (deploy-workflow-not-deleted did not exist to fail). Now it must
+        fail exactly deploy-workflow-not-deleted.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            ci = ws / ".github" / "workflows" / "ci.yml"
+            ci.write_text(
+                ci.read_text(encoding="utf-8")
+                + "  e2e:\n"
+                  "    uses: Adam-S-Daniel/cms-platform/"
+                  ".github/workflows/e2e-tests.yml@v0.1.104\n"
+                  "    secrets: inherit\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        self.assertFalse(by_id["deploy-workflow-not-deleted"]["passed"],
+                         by_id["deploy-workflow-not-deleted"]["detail"])
+        self.assertTrue(by_id["gate-action-not-deleted"]["passed"],
+                        by_id["gate-action-not-deleted"]["detail"])
+
+    def test_deploy_and_gate_tripwires_fail_when_their_files_are_absent(self):
+        """Confirms file_matches fails CLOSED (not vacuously, not erroring)
+        when the target file is simply absent — the primitive both new
+        tripwires depend on. Runs the shipped fixture.yaml's own must_match
+        tokens (via run_eval.load_fixture + objective.run_checks) against a
+        workspace where the two files are simply gone, so this is a
+        targeted regression on the real config, not a hand-built stand-in
+        for file_matches' own generic behaviour.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml").unlink()
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            by_id = self._checks(ws, seed)
+        for check_id in ("deploy-workflow-not-deleted", "gate-action-not-deleted"):
+            self.assertFalse(by_id[check_id]["passed"])
+            self.assertIn("no file matched", by_id[check_id]["detail"])
+
+    # -- the tripwires certify presence, not shape (round 7, F1) -------------
+    #
+    # THE INVARIANT: an existence tripwire certifies exactly one thing, that
+    # the file is present and still carries the platform call it is named
+    # for. It never constrains anything a correct audit may edit — a job
+    # key, a `with:` block, the owner's letter case. Before this round,
+    # deploy-workflow-not-deleted's must_match carried three tokens (the
+    # repo path, `platform_ref:`, `e2e:`) and gate-action-not-deleted's
+    # carried two (the repo path, `runs:`) — so a correct audit that merely
+    # touched one of those literal strings failed the tripwire even though
+    # nothing was deleted. Reduced to the one repo-path token, case-
+    # insensitive, below.
+
+    def test_deploy_tripwire_survives_a_renamed_job_key(self):
+        """The bug this fixes: on c85667c, renaming deploy.yml's `e2e:` job
+        to `end-to-end:` — a legitimate audit edit that touches nothing the
+        tripwire should care about — failed deploy-workflow-not-deleted with
+        `lacks /e2e:/`, even though the file exists and still calls
+        cms-platform. Confirmed by running this exact mutation against
+        c85667c's fixture.yaml: only deploy-workflow-not-deleted failed (of
+        ten), with that exact detail. Must now pass every check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "  e2e:\n", "  end-to-end:\n")
+            by_id = self._checks(ws, seed)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_deploy_tripwire_survives_a_lowercased_owner_on_the_tag(self):
+        """The bug this fixes: on c85667c, lowercasing the owner in deploy.yml's
+        own cms-platform ref (`Adam-S-Daniel` -> `adam-s-daniel`, tag
+        unchanged) failed deploy-workflow-not-deleted with a `lacks
+        /Adam-S-Daniel.../` detail, even though cms-platform-refs-stay-on-tag
+        already casefolds this exact ref and passes it — a GitHub owner/repo
+        path is case-insensitive, so this is not a violation the tripwire
+        should be able to raise on its own. Confirmed by running this exact
+        mutation against c85667c's fixture.yaml: only deploy-workflow-not-
+        deleted failed (of ten), with that exact detail. Must now pass every
+        check — there is nothing here for any check to flag.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(
+                deploy,
+                "uses: Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml@v0.1.104",
+                "uses: adam-s-daniel/cms-platform/.github/workflows/e2e-tests.yml@v0.1.104")
+            by_id = self._checks(ws, seed)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_deploy_tripwire_survives_the_with_block_dropped(self):
+        """The bug this fixes: on c85667c, dropping deploy.yml's `with:
+        platform_ref: v0.1.104` block while leaving the `uses:` ref intact
+        failed deploy-workflow-not-deleted with `lacks /platform_ref:/`, even
+        though nothing was deleted. `min_refs` on cms-platform-refs-stay-on-
+        tag counts `uses:` value nodes only, never `platform_ref:` nodes (see
+        that check's own docstring), so removing this `with:` block does not
+        move that count either — measured here: it stays green throughout.
+        Confirmed by running this exact mutation against c85667c's
+        fixture.yaml: only deploy-workflow-not-deleted failed (of ten), with
+        that exact detail. Must now pass every check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "    with:\n      platform_ref: v0.1.104\n", "")
+            by_id = self._checks(ws, seed)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_deploy_and_gate_tripwires_must_match_is_a_single_case_insensitive_token(self):
+        """Pins the fix's own shape: each tripwire's must_match is now
+        exactly one pattern, the repo path up to and excluding `@`, opening
+        with the `(?i)` inline flag. Fails on c85667c, where
+        deploy-workflow-not-deleted carried three tokens and
+        gate-action-not-deleted carried two, none case-insensitive.
+        """
+        fixture = run_eval.load_fixture(GHA_SHA_PINNING_DIR)
+        by_id = {c["id"]: c for c in fixture["objective_checks"]}
+        deploy_tokens = by_id["deploy-workflow-not-deleted"]["must_match"]
+        gate_tokens = by_id["gate-action-not-deleted"]["must_match"]
+        self.assertEqual(len(deploy_tokens), 1, deploy_tokens)
+        self.assertEqual(len(gate_tokens), 1, gate_tokens)
+        self.assertTrue(deploy_tokens[0].startswith("(?i)"), deploy_tokens[0])
+        self.assertTrue(gate_tokens[0].startswith("(?i)"), gate_tokens[0])
+        self.assertIn("Adam-S-Daniel/cms-platform/", deploy_tokens[0])
+        self.assertIn("Adam-S-Daniel/cms-platform/", gate_tokens[0])
+        self.assertNotIn("@", deploy_tokens[0])
+        self.assertNotIn("@", gate_tokens[0])
+
+    def test_correct_audit_passes_all_ten_objective_checks(self):
+        by_id = self._run(audited=True)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_pristine_seed_fails_exactly_three_of_ten_checks(self):
+        by_id = self._run(audited=False)
+        self.assertEqual(len(by_id), 10, sorted(by_id))
+        failing = {cid for cid, r in by_id.items() if not r["passed"]}
+        self.assertEqual(failing, {"third-party-actions-sha-pinned",
+                                   "third-party-pins-match-pins-md",
+                                   "no-trailing-comments"})
+
+    # -- the seed must not read as an eval fixture (review #133, B2) ---------
+
+    _SEED_LEAK_WORDS = ("eval", "fixture", "harness", "hermetic", "check")
+
+    def test_seed_files_do_not_reveal_the_harness(self):
+        """A seed a real repo could carry names none of its own machinery.
+
+        PINS.md used to open with "This is a hermetic eval fixture: no check
+        here resolves a SHA over the network" and named `ci.yml` as the file
+        to fix — handing the without-skill arm a description of the harness
+        itself rather than a plausible repo artifact.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        leaks = []
+        for path in sorted(seed.rglob("*")):
+            if not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8")
+            for word in self._SEED_LEAK_WORDS:
+                if re.search(rf"\b{word}\b", text, re.IGNORECASE):
+                    leaks.append(f"{path.relative_to(seed)}: {word!r}")
+        self.assertFalse(leaks, "; ".join(leaks))
+
+    # -- the pin_comment_absent primitive, exercised directly ----------------
+
+    def _synthetic_ws(self, files: dict[str, str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, content in files.items():
+            (ws / rel).write_text(content, encoding="utf-8")
+        return ws
+
+    def test_pin_comment_absent_passes_a_clean_pin(self):
+        ws = self._synthetic_ws({
+            "clean.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["clean.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_pin_comment_absent_flags_a_step_level_comment(self):
+        ws = self._synthetic_ws({
+            "commented.yml": "jobs:\n  test:\n    steps:\n"
+                             "      - uses: actions/checkout@" + "0" * 40
+                             + "  # v4.3.1\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["commented.yml"])
+        self.assertFalse(passed)
+        self.assertIn("commented.yml:4", detail)
+
+    def test_pin_comment_absent_flags_a_job_level_uses(self):
+        # A reusable-workflow call (`jobs.<id>.uses:`) has no leading `-` and
+        # no `steps:` above it — the node-walk must find it too, not just the
+        # step shape.
+        ws = self._synthetic_ws({
+            "job-level.yml": "jobs:\n  deploy:\n"
+                             "    uses: Adam-S-Daniel/cms-platform/"
+                             ".github/workflows/x.yml@v0.1.1  # keep on v0.1.1\n"})
+        passed, _ = objective.pin_comment_absent(str(ws), ["job-level.yml"])
+        self.assertFalse(passed)
+
+    def test_pin_comment_absent_skips_unparseable_yaml(self):
+        # yaml_parses is the check that reports a syntax error; this one must
+        # not raise on the same file.
+        ws = self._synthetic_ws({"broken.yml": "jobs: [unclosed\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["broken.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_pin_comment_absent_ignores_a_hash_glued_to_the_value(self):
+        # None of this fixture's real ref values contain '#', but the
+        # detector's own rule (whitespace-then-#) is what makes that safe
+        # rather than merely assumed: a '#' glued directly onto the preceding
+        # character is plain scalar content per YAML, not a comment start,
+        # and the check must not treat it as one.
+        ws = self._synthetic_ws({
+            "glued.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@abc#not-a-comment\n"})
+        passed, detail = objective.pin_comment_absent(str(ws), ["glued.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_pin_comment_absent_ignores_a_hash_inside_a_quoted_value(self):
+        # Anchored at the value node's end_mark (review #133, nit): a '#'
+        # that appears BEFORE the closing quote is part of the scalar's own
+        # text, never a comment, however much whitespace precedes it.
+        ws = self._synthetic_ws({
+            "quoted-hash.yml": "jobs:\n  test:\n    steps:\n"
+                              '      - uses: "actions/checkout@' + "0" * 40
+                              + ' # inner"\n'})
+        passed, detail = objective.pin_comment_absent(str(ws), ["quoted-hash.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_pin_comment_absent_glob_skips_non_files(self):
+        # Round 4, N7: mirrors platform_refs_on_tag's isfile guard — a
+        # `paths` pattern matching a directory (not just files) must not
+        # raise IsADirectoryError on open().
+        ws = self._synthetic_ws({
+            "clean.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"})
+        (ws / "clean.yml.d").mkdir()
+        passed, detail = objective.pin_comment_absent(str(ws), ["clean.yml*"])
+        self.assertTrue(passed, detail)
+
+    # -- uses_refs_sha_pinned, exercised directly (review #133, S1) ----------
+    # Reimplemented on _uses_value_nodes (the same tree walk pin_comment_absent
+    # uses) instead of a line regex: a quoted correct pin read as unpinned
+    # (the quote characters landed inside the captured "ref"), and a
+    # `uses:`-shaped line inside a `run: |` block scalar read as a ref.
+
+    def test_uses_refs_sha_pinned_accepts_a_quoted_pin(self):
+        ws = self._synthetic_ws({
+            "quoted.yml": "jobs:\n  test:\n    steps:\n"
+                         '      - uses: "actions/checkout@' + "0" * 40 + '"\n'})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["quoted.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_refs_sha_pinned_ignores_a_uses_shaped_run_block_line(self):
+        ws = self._synthetic_ws({
+            "block.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"
+                        "      - run: |\n"
+                        "          uses: actions/setup-node@v4\n"})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["block.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_refs_sha_pinned_accepts_upper_case_hex(self):
+        ws = self._synthetic_ws({
+            "upper.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "A" * 40 + "\n"})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["upper.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_refs_sha_pinned_still_flags_a_tag(self):
+        ws = self._synthetic_ws({
+            "tag.yml": "jobs:\n  test:\n    steps:\n"
+                      "      - uses: actions/checkout@v4\n"})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["tag.yml"])
+        self.assertFalse(passed, detail)
+        self.assertIn("actions/checkout@v4", detail)
+
+    def test_uses_refs_sha_pinned_glob_skips_non_files(self):
+        # Round 4, N7: same isfile guard, this loop.
+        ws = self._synthetic_ws({
+            "clean.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"})
+        (ws / "clean.yml.d").mkdir()
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["clean.yml*"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_value_nodes_terminates_on_a_self_referential_anchor(self):
+        """A cyclic alias graph must not recurse forever.
+
+        `yaml.compose` resolves `*x` to the SAME node object anchored by
+        `&x`, so `a: &x\\n  b: *x` makes that node its own descendant. The
+        `id(node)` seen-set is what stops the walk following it forever.
+        """
+        import yaml
+        doc = yaml.compose("a: &x\n  b: *x\n", Loader=yaml.SafeLoader)
+        self.assertEqual(objective._uses_value_nodes(doc), [])
+
+    # -- the CLI path itself --------------------------------------------------
+
+    def test_run_eval_objective_only_exits_1_on_pristine_seed(self):
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+              str(GHA_SHA_PINNING_DIR), "--arm", "objective-only"]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 1, proc.stdout + proc.stderr)
+        payload = json.loads(proc.stdout)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["third-party-actions-sha-pinned"]["passed"])
+
+    def test_run_eval_objective_only_exits_0_on_audited_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                  str(GHA_SHA_PINNING_DIR), "--arm", "objective-only",
+                  "--workspace", str(ws)]
+            proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    # -- the judge weights must bind (review #133, S2) ------------------------
+
+    def test_the_judge_weights_reach_the_dimensions_the_rubric_names(self):
+        """A weight keyed to a name the judge never returns is no weight.
+
+        `carve_out: 0.4` against a rubric labelled "Carve-out handling"
+        matched nothing — `_weighted_overall` keys on the casefolded
+        dimension NAME — so that dimension (and `comment_removal`) silently
+        kept weight 1.0 and only `restraint` applied, measuring 6.52 where
+        the fixture's weights actually intend 6.80. The rubric now dictates
+        its dimension names verbatim; this test drives `_weighted_overall`
+        with the fixture's own weights and the names its own rubric text
+        names, the same pattern as claude/skills-evals-84's
+        TestIssue84Review.test_the_judge_weights_reach_the_dimensions_the_rubric_names.
+        """
+        fixture = run_eval.load_fixture(GHA_SHA_PINNING_DIR)
+        weights = fixture["judge"]["weights"]
+        labels = re.findall(r"\(\d\)\s+`?([A-Za-z_ ]+?)`?\s+—", fixture["judge_rubric"])
+        self.assertEqual(len(labels), 3, labels)
+        self.assertEqual(sorted(name.strip().casefold() for name in labels),
+                         sorted(str(k).strip().casefold() for k in weights))
+        scores = (8, 6, 6)
+        dimensions = [{"name": name, "score": score, "rationale": ""}
+                      for name, score in zip(labels, scores)]
+        expected = sum(weights[name] * score for name, score in zip(labels, scores))
+        self.assertAlmostEqual(expected, 6.8, places=6,
+                               msg="the fixture's own weights no longer intend 6.80")
+        self.assertAlmostEqual(judge._weighted_overall(dimensions, weights),
+                               expected, places=6)
 
 
 class TestIssue86(unittest.TestCase):
