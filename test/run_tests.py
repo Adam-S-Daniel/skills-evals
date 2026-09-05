@@ -15512,11 +15512,16 @@ class TestIssue67Review9(unittest.TestCase):
                       "5000 of the window's 5300 rankable turns are this "
                       "model's, two hops away")
         self.assertIn("94.3%", self._reason(published, self.C_LIVE))
-        # Mutation check (manual): dropping the alias-map route from the
-        # relevance predicate leaves the bare alias unnamed, the plants
-        # evict it, the older dated census key stops folding, its 5000
-        # turns leave every numerator and the live snapshot is not seated
-        # at all — red.
+        # Mutation check (run, F-2 of #129 review round 10): the route
+        # this comment used to name — round 9's (c2), the production map
+        # landing the ENTRY on a census key — was provably implied by the
+        # others (0 fires in 6,000,000 evaluations; dropping it alone left
+        # the whole suite green) and is gone. What is red here is dropping
+        # TIER 2 (`tier2 = {}` in `_Relevance.rank`): the bare alias is no
+        # census key and no live id, so tier 2 is the only thing that
+        # keeps it, the plants evict it, the older dated census key stops
+        # folding, its 5000 turns leave every numerator and the live
+        # snapshot is not seated at all.
 
     # The property behind all of the above, over random catalogues,
     # censuses and plant sets. `_plant_scenario` decides which entries are
@@ -16482,6 +16487,120 @@ class TestIssue67Review10(unittest.TestCase):
         self.assertIn("neither cap evicts", policy)
         self.assertIn("uncapped_carry_ceiling", policy)
         self.assertIn("refuses to publish with a named error", policy)
+
+    # --- F-2: every clause of the relevance machinery has a NAMED mutation
+    # that turns the suite red --------------------------------------------
+    #
+    # A REPEAT of the family round 7 (S3), round 8 (A3) and round 9 (S2)
+    # each caught: a defence with no regression floor. Round 9\'s `_relevance`
+    # carried a route (c2) that was provably implied by the other three (0
+    # fires in 6,000,000 evaluations) while its docstring, roster-policy.yml
+    # and a test comment all called it load-bearing; it is deleted. The rule
+    # for what remains is that every clause is dropped, one at a time, and
+    # the suite has to go red. The four below are the clauses that had no
+    # floor when this round started.
+
+    _F2_PLANTS = [f"0plant-{i:04d}" for i in range(500)]
+
+    def _f2_run(self, models, counts, seen):
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(3)} for i in seen]}
+        census = TestIssue67._census_doc(counts={
+            key: {self.W[0]: turns} for key, turns in counts.items()})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous,
+                policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return published
+
+    def test_a_census_key_gets_exactly_one_slot_however_many_fold_onto_it(self):
+        """MUTATION: `max(by_group[group])` for the slot, or a slot for
+        EVERY member of the group rather than one. Three dated spellings of
+        one census key, none of them a census key itself, against 500
+        plants that sort ahead of all three: the SMALLEST takes the key\'s
+        one slot and the other two share the plants\' fate. That is the
+        documented cost of bounding the slot count by the census — and it
+        is what keeps a planter who mints a thousand spellings of one key
+        from taking a thousand cap slots with them."""
+        published = self._f2_run(
+            self._two_model_catalogue(),
+            {"claude-sonnet-4-9": 8000, "claude-sonnet-5": 800},
+            ["claude-sonnet-4-9-20250101", "claude-sonnet-4-9-20250102",
+             "claude-sonnet-4-9-20250103"] + self._F2_PLANTS)
+        seen = self._seen_ids(published)
+        self.assertIn("claude-sonnet-4-9-20250101", seen,
+                      "the smallest id in the group takes the slot")
+        self.assertNotIn("claude-sonnet-4-9-20250102", seen)
+        self.assertNotIn("claude-sonnet-4-9-20250103", seen)
+        # The key is still attributable through the one that survived.
+        self.assertIn("carries 9.1%",
+                      self._reason(published, "claude-sonnet-5"))
+
+    def test_a_census_key_a_tier_one_entry_already_reaches_spends_no_slot(self):
+        """MUTATION: `covered = set()` — granting a slot even where a
+        tier-1 entry of the same list already folds onto the key. The
+        census key here is itself DATED and is itself the history entry, so
+        it is tier 1 and the key needs nothing; the bare alias beside it is
+        an ordinary tier-3 entry and goes with the plants. Without the
+        guard the bare alias takes a slot the census never asked for, and
+        the cap carries one fewer entry that a later run might have
+        needed."""
+        published = self._f2_run(
+            self._two_model_catalogue(),
+            {"claude-sonnet-4-9-20250101": 8000, "claude-sonnet-5": 800},
+            ["claude-sonnet-4-9-20250101", "claude-sonnet-4-9"]
+            + self._F2_PLANTS)
+        seen = self._seen_ids(published)
+        self.assertIn("claude-sonnet-4-9-20250101", seen,
+                      "an in-window census key is tier 1")
+        self.assertNotIn("claude-sonnet-4-9", seen,
+                         "the key is already reachable, so no slot is spent")
+
+    def test_the_fold_follows_the_alias_map_not_one_suffix_strip(self):
+        """MUTATION: `fold` returning `_base(model_id)` without the
+        production alias map. The entry carries TWO `-DDDDDDDD` suffixes,
+        so one strip leaves `claude-opus-5-20250101` — a live dated
+        snapshot of `claude-opus-5`, which the seat map folds onward onto
+        the bare alias the census actually names. One strip stops a hop
+        short and the entry joins no census key\'s group at all.
+
+        The shape is one only a planter or a corrupted branch produces —
+        `PREVIOUS_ARM_ID_RE` accepts it — and what it pins is the same
+        property `_usage_alias_map`\'s own three-hop floor pins: the
+        relation is followed to its END, not one hop."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-opus-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5-20250101", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z")]}
+        published = self._f2_run(
+            models, {"claude-opus-5": 8000, "claude-sonnet-5": 800},
+            ["claude-opus-5-20250101-20260601"] + self._F2_PLANTS)
+        self.assertIn("claude-opus-5-20250101-20260601",
+                      self._seen_ids(published),
+                      "the entry folds onto `claude-opus-5` through the "
+                      "alias map and takes that key's slot")
+
+    def test_a_dated_history_entry_credits_its_undated_census_key(self):
+        """MUTATION: matching `catalogue_seen` RAW instead of through the
+        alias map. `api_ids` and `previous_arms` were both folded and the
+        history set was not, so a since-retired model this harness observed
+        under a DATED id credited nothing to the undated alias the census
+        records its usage under — 8000 of the window\'s 8800 turns off the
+        denominator, and `claude-sonnet-5` published at 100.0% for a true
+        9.09%. No plants are needed: one entry and one census key reach it.
+
+        It is also what makes the tier-2 slot mean the same thing in both
+        lists. An entry that folds onto a census key keeps that key
+        attributable — which was true of `arms` and, until this, false of
+        `catalogue_seen`."""
+        published = self._f2_run(
+            self._two_model_catalogue(),
+            {"claude-sonnet-4-9": 8000, "claude-sonnet-5": 800},
+            ["claude-sonnet-4-9-20250101"])
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 9.1%", reason, "800 of 8800 rankable turns")
+        self.assertNotIn("100.0%", reason)
 
 
 if __name__ == "__main__":

@@ -915,14 +915,6 @@ class _Relevance:
         return keys
 
 
-#: The order a cap falls back to with no `_Relevance` to ask — every entry
-#: in tier 3, so the id decides. Only the handful of direct callers that
-#: give no catalogue/census context reach it; every call inside
-#: `compute_roster` gives one.
-def _no_relevance_order(ids) -> dict[str, tuple]:
-    return {model_id: (3, 0, model_id) for model_id in ids}
-
-
 def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     """How the two caps below rank an entry: do the LIVE CATALOGUE or the
     CENSUS name it, and how loudly?
@@ -1028,7 +1020,7 @@ class RosterRefusal(Exception):
 
 
 def _clean_previous_arms(previous, warn,
-                         relevant=None) -> tuple[list[str], list[str]]:
+                         relevant) -> tuple[list[str], list[str]]:
     """(reported, carried) — the previous roster's arm ids, twice over.
 
     A malformed entry is skipped, not fatal.
@@ -1064,8 +1056,12 @@ def _clean_previous_arms(previous, warn,
     catalogue nor the census names, under any spelling, never outranks one
     that either names. The plain `sorted(ids)[:PREVIOUS_ARMS_CAP]` this
     replaces had the same alphabetical-head shape S2 fixes for
-    `catalogue_seen`. `relevant` defaults to None, which reduces to the old
-    spelling-only order for a caller with no context to give.
+    `catalogue_seen`. `relevant` is REQUIRED, and was an optional
+    None-defaulting spelling-only fallback until F-2 (#129 review round
+    10): `compute_roster` is the only caller and always has a
+    `_Relevance` to give, so the fallback was unreachable — a clause with
+    no mutation that can turn the suite red is deleted rather than kept as
+    belt-and-braces.
 
     WHEN THE CENSUS NAMES NOTHING AT ALL — no key with in-window turns —
     this cap does not evict (A, round 10): every tier is empty, so what
@@ -1136,7 +1132,7 @@ def _clean_previous_arms(previous, warn,
         warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
              f"not an object with a well-formed model-id-shaped `id`")
     carried = ids
-    if relevant is not None and relevant.census_is_silent:
+    if relevant.census_is_silent:
         # THE CENSUS NAMES NOTHING, so there is no trusted order to evict
         # by and this cap does not evict (A, #129 review round 10). What
         # is left is `last_seen` and the id, both of them written by
@@ -1154,8 +1150,7 @@ def _clean_previous_arms(previous, warn,
                 f"past the {UNCAPPED_CARRY_CEILING}-entry ceiling")
     elif len(ids) > PREVIOUS_ARMS_CAP:
         dropped = len(ids) - PREVIOUS_ARMS_CAP
-        order = (relevant.rank(ids) if relevant is not None
-                 else _no_relevance_order(ids))
+        order = relevant.rank(ids)
         carried = sorted(ids, key=lambda i: order[i])[:PREVIOUS_ARMS_CAP]
         warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
              f"the {PREVIOUS_ARMS_CAP}-entry cap")
@@ -1295,7 +1290,7 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
 
 
 def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
-                           policy: dict, warn, relevant=None) -> list[dict]:
+                           policy: dict, warn, relevant) -> list[dict]:
     """This run's `catalogue_seen` history: refresh, evict, cap.
 
     Every id THIS run's Models API actually listed gets its `last_seen`
@@ -1351,7 +1346,7 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
              f"the {policy['catalogue_seen_max_age_days']}-day window")
     api_id_set = set(api_ids)
     live = sorted(i for i in survivors if i in api_id_set)
-    historical = sorted(i for i in survivors if i not in api_id_set)
+    historical = [i for i in survivors if i not in api_id_set]
     # THE INVARIANT the cap's order has to satisfy (F1, #129 review round
     # 8; B1, round 9; B1', round 10): EVERY CENSUS KEY WITH IN-WINDOW
     # TURNS THAT ANY ENTRY FOLDS ONTO KEEPS AT LEAST ONE ENTRY THAT FOLDS
@@ -1397,7 +1392,14 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     # `last_seen` is gone from the order entirely: the previous roster
     # writes it, it never decided anything the id did not already decide,
     # and a rung after a total order cannot fire.
-    if relevant is not None and relevant.census_is_silent:
+    #
+    # The id term of that key is what makes the order TOTAL, and it is the
+    # only thing that does: `historical` is no longer pre-sorted (F-2,
+    # #129 review round 10 — a pre-sort made the key's own id term
+    # redundant, so dropping it left the suite green, which is a defence
+    # with no floor). `test_the_cap_breaks_a_tie_by_id_not_by_input_order`
+    # is the floor: same input, two orders, one published roster.
+    if relevant.census_is_silent:
         # THE CENSUS NAMES NOTHING this window — absent, empty, the wrong
         # type, or padded with keys whose usage all falls outside the
         # window — so every tier above is empty and the order that is left
@@ -1414,8 +1416,7 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
                 f"{UNCAPPED_CARRY_CEILING}-entry ceiling")
         kept = live + historical
     else:
-        order = (relevant.rank(historical) if relevant is not None
-                 else _no_relevance_order(historical))
+        order = relevant.rank(historical)
         historical.sort(key=lambda i: order[i])
         room = max(0, CATALOGUE_SEEN_CAP - len(live))
         kept = live + historical[:room]
