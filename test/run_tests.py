@@ -3310,6 +3310,26 @@ class TestIssue77(unittest.TestCase):
         self.assertIn("cannot see a copy made outside the workspace", no_leaked["description"])
         self.assertIn("outside the workspace", fixture["judge_rubric"])
         self.assertIn("objective checks cannot see", fixture["judge_rubric"])
+        # S4 (round 3): "objective checks cannot see" alone doesn't
+        # discriminate the round-2 S4 narrowing from the broad wording it
+        # replaced ("The objective checks cannot see a copy made outside
+        # the workspace") — that broad sentence contains the same
+        # substring, so re-broadening the rubric would still satisfy the
+        # assertion above. This phrase is unique to the narrow version.
+        self.assertIn("already caught by the objective column", fixture["judge_rubric"])
+
+    def test_design_names_all_six_git_state_check_types(self):
+        # S4 (round 3): DESIGN.md's "Git-state objective check types"
+        # section is pinned nowhere else — deleting it (the round-2 S7 fix)
+        # leaves the suite green with no signal that the reference doc and
+        # the actual CHECKS dict have drifted apart.
+        design = (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+        self.assertIn("Git-state objective check types", design)
+        for check_type in ("git_ref_unchanged", "git_remote_url_is",
+                          "no_git_config_names_path",
+                          "reaper_ran_in_standalone_repo",
+                          "reaper_avoided_paths", "git_worktree_list_matches"):
+            self.assertIn(f"`{check_type}`", design)
 
     def test_no_seed_file_restates_the_skills_remedy(self):
         # B3: seed/repo-content/README.md used to hand the without-skill arm
