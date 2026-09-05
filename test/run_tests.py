@@ -3365,7 +3365,13 @@ class TestIssue81(unittest.TestCase):
     # example.net addresses only; no credential anywhere.
     _ALLOWED_HOSTS = ("example.com", "example.net")
     _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
-    _URL_RE = re.compile(r"https?://([^\s/)\"'>]+)")
+    # A bare `www.` host is a link to every reader and every mail client,
+    # and it carried none of the scheme this pattern used to require: a
+    # fixture could name a real site as "www.notexample.com" and the scan
+    # saw nothing. The prefix is outside the group either way, so the host
+    # reported is the same one `_host_allowed` would have been handed had
+    # the scheme been there.
+    _URL_RE = re.compile(r"(?:https?://|(?<![\w.@-])www\.)([^\s/)\"'>]+)")
     # `\b` never fires inside GITHUB_TOKEN — the boundary is between `_`
     # and `T`, both word characters — so the keyword is preceded by a start,
     # a space or a `_`/`-` instead, and may carry the rest of an
@@ -3374,20 +3380,42 @@ class TestIssue81(unittest.TestCase):
     # merely mentions a keyword ("the secrets-remediation backlog") out.
     # `Authorization:` carries its scheme rather than a keyword, so it is
     # its own alternative.
+    #
+    # The last four alternatives need no keyword at all. A token whose own
+    # SHAPE names its issuer is a credential wherever it is pasted, and the
+    # shape a fixture would really carry one in is prose ("the key was
+    # ghp_..."), with no `token:` anywhere near it. `access[_-]?key` joins
+    # the keyword list for the same reason: `AWS_SECRET_ACCESS_KEY=` only
+    # ever matched on its `SECRET`, so a bare `ACCESS_KEY=` walked past.
+    # And a certificate is not secret the way a private key is, but a
+    # fixture has no business carrying one either and it travels in the
+    # same paste.
     _SECRET_RE = re.compile(
         r"(?im)(?:^|[\s_\-])"
-        r"(?:password|passwd|api[_-]?key|secret|token|bearer|credential)"
+        r"(?:password|passwd|api[_-]?key|access[_-]?key|secret|token|bearer"
+        r"|credential)"
         r"[\w-]*\s*[:=]\s*\S"
         r"|Authorization:\s*(?:Bearer|Basic)\s"
-        r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
-    # Three shapes: a separated ten-digit number with an optional country
-    # code, a bare ten-digit run, and an international number in two-to-four
-    # digit groups. The lookarounds keep it off the fixtures' own numbers —
-    # `2019–2024` (en dash), `REQ-4417`, `HRLS-2026-014`, `NIST 800-53`.
+        r"|-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----"
+        r"|\bghp_[A-Za-z0-9]{20,}"
+        r"|\bxoxb-[A-Za-z0-9-]{10,}"
+        r"|\bAKIA[0-9A-Z]{16}\b"
+        r"|\bsk-ant-[A-Za-z0-9_-]{16,}")
+    # Five shapes: a separated ten-digit number with an optional country
+    # code, a bare ten-digit run, an international number in two-to-four
+    # digit groups, the same with a trunk code in parentheses
+    # (`+44 (0)20 7946 0958` — the parentheses broke the group run), and an
+    # unseparated international run (`+442079460958` — the separated
+    # alternatives all needed a separator). The lookarounds keep it off the
+    # fixtures' own numbers — `2019–2024` (en dash), `REQ-4417`,
+    # `HRLS-2026-014`, `NIST 800-53` — and the leading `+` keeps the last
+    # one off a long build number.
     _PHONE_RE = re.compile(
         r"(?<![\d-])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]\d{3}[ .-]\d{4}(?![\d-])"
         r"|(?<![\d-])\d{10}(?![\d-])"
-        r"|(?<![\d-])\+\d{1,3}(?:[ .-]\d{2,4}){2,4}(?![\d-])")
+        r"|(?<![\d-])\+\d{1,3}(?:[ .-]\d{2,4}){2,4}(?![\d-])"
+        r"|(?<![\d-])\+\d{1,3}[ .-]?\(0\)[ .-]?\d{2,4}(?:[ .-]\d{2,4}){1,3}(?![\d-])"
+        r"|(?<![\d-])\+\d{10,15}(?![\d-])")
     # Links into this account's own repositories are exempt, and only
     # those: `registry:` names the real registry repo, and the fixtures'
     # README links this repo's issue tracker. The fiction rule is about
@@ -5058,6 +5086,19 @@ class TestIssue81(unittest.TestCase):
         "api-key=hunter2",
         "password = hunter2",
         "-----BEGIN RSA PRIVATE KEY-----",
+        # Round 3: no keyword anywhere near the value, and two keywords
+        # the list did not carry.
+        "the key was ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+        # Split across the concatenation on purpose: GitHub's own push
+        # protection reads a whole one as a live Slack token and rejected
+        # the push that first added it. The scan under test sees the
+        # joined string either way.
+        "xoxb" + "-0123456789-0123456789012-abcdefghijklmnopqrstuvwx",
+        "AKIAIOSFODNN7EXAMPLE",
+        "sk-ant-api03-0123456789abcdefghijklmnopqrstuvwxyz",
+        "ACCESS_KEY=wJalrXUtnFEMIbPxRfiCYEXAMPLEKEY",
+        "access-key: hunter2",
+        "-----BEGIN CERTIFICATE-----",
     )
 
     # Prose that mentions one of the keywords and is not a credential. An
@@ -5067,6 +5108,11 @@ class TestIssue81(unittest.TestCase):
         "The token of appreciation was a mug.",
         "He holds the AWS Solutions Architect – Professional certification.",
         "Section 508 audit findings: 34 of 51 closed.",
+        # The new keyword, in the two shapes prose really uses it: a
+        # separator is still required, and "access key" with a space is
+        # English rather than an environment variable.
+        "She still has access to the deploy-scaffold repository.",
+        "The access key card lives at the front desk.",
     )
 
     def test_the_credential_scan_catches_the_shapes_it_missed(self):
@@ -5078,12 +5124,18 @@ class TestIssue81(unittest.TestCase):
                 self.assertNotRegex(prose, self._SECRET_RE)
 
     _PHONE_SHAPES = ("555-867-5309", "(555) 867-5309", "555.867.5309",
-                     "5558675309", "+44 20 7946 0958", "+1 555 867 5309")
+                     "5558675309", "+44 20 7946 0958", "+1 555 867 5309",
+                     # Round 3: the trunk code in parentheses, and the same
+                     # number written with no separators at all.
+                     "+44 (0)20 7946 0958", "+442079460958")
 
     _NOT_PHONES = ("Halyard Civic Data (2019–2024)", "REQ-4417",
                    "RFP HRLS-2026-014", "FISMA / NIST 800-53",
                    "closed 34 of the 51 open findings",
-                   "from 26 minutes to 9", "a clean Section 508 audit")
+                   "from 26 minutes to 9", "a clean Section 508 audit",
+                   # A long digit run with no `+` is a build id, not the
+                   # unseparated international number added beside it.
+                   "build 202609051200 finished in 11 minutes")
 
     def test_the_phone_scan_catches_the_shapes_it_missed(self):
         for shape in self._PHONE_SHAPES:
@@ -5106,6 +5158,36 @@ class TestIssue81(unittest.TestCase):
             problems, _ = self._fiction_problems(planted)
         self.assertIn("README.md: looks like a credential", problems)
         self.assertIn("README.md: looks like a phone number", problems)
+
+    def test_the_scan_reports_the_shapes_round_3_added(self):
+        # The same walk, planted with the three shapes that carried no
+        # keyword and no scheme: a token that names its own issuer, a
+        # number written the way a UK one is, and a host with `www.` in
+        # front of it instead of `https://`. Each was invisible to the
+        # scan before, so each is planted through `_fiction_problems`
+        # rather than asserted against its regex alone.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            with (planted / "README.md").open("a", encoding="utf-8") as f:
+                f.write("\nThe key was AKIAIOSFODNN7EXAMPLE.\n"
+                        "Reach the office on +44 (0)20 7946 0958.\n"
+                        "Mirrored at www.notexample.com/adam.\n")
+            problems, _ = self._fiction_problems(planted)
+        self.assertIn("README.md: looks like a credential", problems)
+        self.assertIn("README.md: looks like a phone number", problems)
+        self.assertIn("README.md: URL host notexample.com", problems)
+
+    def test_a_bare_www_host_on_an_allowed_domain_is_still_allowed(self):
+        # The other direction: widening the URL pattern must not make the
+        # fixtures' own example.com links a finding.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            with (planted / "README.md").open("a", encoding="utf-8") as f:
+                f.write("\nSee www.example.com and https://www.example.net.\n")
+            problems, _ = self._fiction_problems(planted)
+        self.assertEqual(problems, [])
 
     # ------------------------------------------------------------------
     # the judge's own edges
