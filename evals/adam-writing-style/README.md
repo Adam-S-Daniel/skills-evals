@@ -24,8 +24,9 @@ Each directory is a complete eval dir on its own — `fixture.yaml`, `seed/`,
 
 > [!WARNING]
 > **`run_eval.py` does not honour `judge.mode` yet.** The runner still calls
-> `judge.score()` with the arguments it knew before [#81], so the `judge:`
-> block below reaches it without its `mode:` or its `references:`. Run these
+> `judge.score()` with the arguments it knew before [#81], so each
+> fixture's `judge:` block reaches it without its `mode:` or its
+> `references:`. Run these
 > fixtures today and the ABSOLUTE judge scores them against a *ranking*
 > rubric, silently: measured on `recruiter-reply`, exit 0 and a report
 > reading `Judge overall | 7.5`, which is not a rank and means nothing here.
@@ -67,6 +68,20 @@ thing under test.
 Everything else — the sixty-word budget, whether the em dashes land at the
 right joints, whether the warmth is real — is the judge's.
 
+Every pattern reads only the agent's **non-quoted** lines (`(?m)^(?!>)`),
+and the greeting and the hedge only its first non-quoted paragraph: a reply
+that quotes the cold email back was otherwise scored on the recruiter's
+words — her "I think your background lines up well" satisfied the hedge
+check, and her signature satisfied the greeting.
+
+The known failure mode in the other direction stays, and each fixture's
+header records it: commentary the agent wraps *around* the writing is
+scored as if it were the writing, so "I kept it free of 'leverage'" fails
+the avoid-list check. It is directional against the `with_skill` arm — the
+arm that knows the list is the arm that mentions it — which is why every
+brief now asks for the text alone, nothing before or after it and nothing
+quoted.
+
 ## The references
 
 Two per fixture, in `references/`: one in the voice, one competent but
@@ -77,6 +92,14 @@ eval is measured against.
 They deliberately live beside `fixture.yaml` rather than inside `seed/`:
 `seed/` is copied into the agent's workspace, so a reference in there would
 hand the agent the answer and flatten both arms.
+
+The judge sees them blind and it sees them *level*: every draft is unwrapped
+to the same line shape before the prompt is built (these references are
+hard-wrapped prose and a model's reply is not, which would otherwise mark
+the odd draft out on every trial), each is fenced with a per-call nonce so
+nothing inside a draft can pose as the prompt, and the `<!-- fictional -->`
+line each file opens with is stripped — it is on every reference and on no
+model's reply.
 
 ## Fiction
 
