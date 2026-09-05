@@ -3274,6 +3274,32 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
                         "nothing-else-touched"):
             self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
 
+    def test_existing_second_dangling_link_on_index_row_fails_only_the_link_targets_check(self):
+        # S1 (round 3): link_targets_exist matched only the FIRST link on a
+        # line (regex.search). An otherwise-correct index row with a second,
+        # dangling link appended (e.g. a "supersedes" aside) used to score
+        # 7/7 — only the link the row's OWN linked slug names was ever
+        # inspected.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        readme = ws / "docs" / "decisions" / "README.md"
+        text = readme.read_text(encoding="utf-8")
+        self.assertIn(self.EXISTING_INDEX_ROW, text)
+        row_with_second_link = (self.EXISTING_INDEX_ROW.rstrip("\n") +
+                                " <!-- supersedes [0002](0002-ghost.md) -->\n")
+        readme.write_text(text.replace(self.EXISTING_INDEX_ROW, row_with_second_link),
+                          encoding="utf-8")
+
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"],
+                         by_id["readme-index-links-resolve"]["detail"])
+        self.assertIn("0002-ghost.md", by_id["readme-index-links-resolve"]["detail"])
+        for check_id in ("adr-0004-house-format-sections-in-order",
+                        "index-gained-a-row-for-0004", "retry-sh-links-the-adr",
+                        "retry-sh-link-resolves", "exactly-one-new-adr-file",
+                        "nothing-else-touched"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+
     def test_existing_cli_objective_only_exit_codes(self):
         ws_pristine = self._ws(ADRS_EXISTING_DIR)
         code, _ = self._run_cli(ADRS_EXISTING_DIR, ws_pristine)

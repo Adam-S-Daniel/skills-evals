@@ -1155,9 +1155,9 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
             checked.append(rel)
             with open(path, encoding="utf-8", errors="replace") as f:
                 for line in f:
-                    m = regex.search(line)
-                    if m and not os.path.isfile(os.path.join(base_dir, m.group(1))):
-                        missing.append(f"{rel}: {m.group(1)}")
+                    for m in regex.finditer(line):
+                        if not os.path.isfile(os.path.join(base_dir, m.group(1))):
+                            missing.append(f"{rel}: {m.group(1)}")
     if missing:
         return (False, "dangling link target(s): " + "; ".join(missing))
     return (True, f"all link targets exist ({', '.join(checked) or 'no file matched'})")
