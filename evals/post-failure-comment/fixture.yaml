@@ -87,7 +87,16 @@ objective_checks:
       review round 3, N11) — a correct answer that leaves a `#` comment
       MENTIONING the removed block (e.g. explaining what it replaced) must
       not fail the same check a wrong answer, which left the code itself in
-      place, would fail.
+      place, would fail. `file_matches_excluding_comments` strips WHOLE
+      comment lines only (first non-whitespace char is `#`): a trailing
+      same-line comment (`run: npm ci  # was: gh pr comment`) still fails
+      this check, since a `#` inside a `run:` string can't be told apart
+      from a real comment without a shell lexer — a known false-fail,
+      recorded rather than fixed (issue #86 review round 4, N4). A
+      commented-out `# gh pr comment` line INSIDE a `run: |` block IS
+      stripped correctly, since the stripping is purely line-oriented over
+      the raw file text and doesn't care what YAML construct the line sits
+      inside.
     type: file_matches_excluding_comments
     paths: [".github/workflows/e2e-tests.yml"]
     must_not_match:
@@ -170,6 +179,13 @@ objective_checks:
       skips on a cancelled RUN, which `always()` does not — normalizing an
       outer `${{ ... }}` wrapper and whitespace before comparing either way,
       so `if: ${{ always() }}` and the unwrapped `always()` both satisfy it.
+      `job_if_equals` is an EXACT match against the two accepted spellings
+      by design, not a substring/contains test: `if: ${{ always() &&
+      github.event_name == 'pull_request' }}` on the downstream job — a
+      right answer SKILL.md itself doesn't show, since the skill's own
+      `always()` snippet is on the JOB-LESS single-job shape — fails this
+      check. Recorded here (issue #86 review round 4, N3) so that's a
+      deliberate choice, not a discovery made during a real with_skill run.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
