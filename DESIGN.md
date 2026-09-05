@@ -179,10 +179,11 @@ Not every skill takes the same eval, and some take none. Classify first:
 
 - **A. Workspace transforms** — correctness is decidable from the resulting
   files alone. The `workflow-path-audit` shape applies unchanged: seed +
-  objective checks + thin judge. Candidates: `github-actions-sha-pinning`,
-  `review-bash-ci-reliability`, `code-quality`, `post-failure-comment`,
-  `admin-config-render`, `writing-adrs` (the format half), `rename-pdfs`,
-  `pdf-ocr-audit`.
+  objective checks + thin judge. Candidates: `review-bash-ci-reliability`,
+  `code-quality`, `post-failure-comment`, `admin-config-render`,
+  `writing-adrs` (the format half), `rename-pdfs`, `pdf-ocr-audit`.
+  (`github-actions-sha-pinning` was also Class A; it has already shipped —
+  see "Backfill order" below.)
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as
