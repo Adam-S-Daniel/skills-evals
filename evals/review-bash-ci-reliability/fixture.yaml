@@ -56,15 +56,19 @@ arms:
 # (test_every_shell_check_alternative_is_anchored_to_non_comment_text) checks
 # this mechanically, alternative by alternative, over every file_matches
 # check in this fixture.
-# Deliberate exception: four alternatives (process-substitution-error-
-# propagates's and gh-api-failure-not-swallowed's pipe-free/reassignment
-# alternatives, and both of decoy-existing-set-e-untouched's) end in an
-# explicit, optional trailing-comment-tail group — `(\s*#.*)?$` or
-# `(#.*)?$` — whose own match extends into the comment. This is safe and
-# not a violation of the rule above: the tail can only ever consume a
-# trailing comment, never satisfy a must_match or defeat a must_not_match
-# on its own, so it cannot let a comment stand in for live code either
-# way; the property test strips it before scanning for unanchored runs.
+# Deliberate exception: exactly four alternatives end in an explicit,
+# optional trailing-comment-tail group — `(\s*#.*)?$` or `(#.*)?$` — whose
+# own match extends into the comment. They are, in fixture order:
+# process-substitution-error-propagates's pipe-free alternative (must_match),
+# gh-api-failure-not-swallowed's reassignment alternative (must_not_match),
+# and both of decoy-existing-set-e-untouched's, one per field. This is safe
+# and not a violation of the rule above: the tail can only ever consume a
+# trailing comment, never satisfy a must_match or defeat a must_not_match on
+# its own, so it cannot let a comment stand in for live code either way; the
+# property test strips it before scanning for unanchored runs. The count and
+# the four owners above are measured against the fixture itself, not
+# asserted here as prose, by
+# test_n_a_comment_tail_exception_paragraph_is_pinned.
 # Known limitation: this anchoring treats the FIRST '#' on a line as a
 # comment start even when it is inside a quoted string, since lexing shell
 # quoting is out of scope here. A remedy token must therefore come before

@@ -2118,6 +2118,56 @@ class TestIssue74(unittest.TestCase):
                   if c["id"] == "grep-q-avoids-broken-pipe"]
         self.assertEqual(len(check["must_not_match"]), 2, check["must_not_match"])
 
+    # -- Round-6 review N-a: the header's comment-tail exception paragraph
+    # (round-5 N3) was unpinned prose — deleting it, or letting a fifth
+    # alternative grow a comment tail without being named there, left the
+    # suite green. Pinned the same way the off-skill and known-limitation
+    # paragraphs are, plus a mechanical cross-check of the count and of
+    # which checks own the four. --
+
+    COMMENT_TAIL_OWNERS = (
+        ("process-substitution-error-propagates", "must_match"),
+        ("gh-api-failure-not-swallowed", "must_not_match"),
+        ("decoy-existing-set-e-untouched", "must_match"),
+        ("decoy-existing-set-e-untouched", "must_not_match"),
+    )
+
+    def test_n_a_comment_tail_exception_paragraph_is_pinned(self):
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        start = text.index("# Deliberate exception:")
+        end = text.index("# Known limitation:")
+        paragraph = text[start:end]
+
+        for word in ("comment-tail", "exactly four alternatives",
+                     "pipe-free alternative",
+                     "reassignment alternative",
+                     "process-substitution-error-propagates",
+                     "gh-api-failure-not-swallowed",
+                     "decoy-existing-set-e-untouched"):
+            with self.subTest(word=word):
+                self.assertIn(word, paragraph)
+
+        defined = self._test_issue_74_method_names()
+        cited = re.findall(r"\btest_[A-Za-z0-9_]+", paragraph)
+        self.assertTrue(cited, paragraph)
+        self.assertEqual(sorted({n for n in cited if n not in defined}), [],
+                         "cited test name(s) are not methods of TestIssue74")
+
+        # The count and the ownership the paragraph claims, measured against
+        # the fixture itself: exactly four alternatives end in a comment
+        # tail, and they belong to exactly the checks named above.
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        owners = []
+        for check in fixture["objective_checks"]:
+            if check["type"] != "file_matches":
+                continue
+            for field in ("must_match", "must_not_match"):
+                for pattern in check.get(field, []):
+                    for alt in _split_top_level_alternatives(pattern):
+                        if COMMENT_TAIL_RE.search(alt):
+                            owners.append((check["id"], field))
+        self.assertEqual(sorted(owners), sorted(self.COMMENT_TAIL_OWNERS))
+
     def test_grep_q_finding_documented_as_off_skill_in_fixture_header(self):
         text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
         self.assertIn("off-skill", text.lower())
