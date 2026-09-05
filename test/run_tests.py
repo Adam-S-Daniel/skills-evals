@@ -2018,6 +2018,106 @@ class TestIssue74(unittest.TestCase):
         by_id = self._run(ws)
         self.assertFalse(by_id["grep-q-avoids-broken-pipe"]["passed"])
 
+    # -- Round-6 review D: the comment credited this check's must_not_match
+    # with banning "the producer piping INTO grep -q". It banned exactly one
+    # spelling, the seed's own `echo "$build_log" | grep -q`. Measured: a
+    # `cat build.log | grep -q "Successfully published"` left live BESIDE a
+    # correct here-string scored 11/11 with the SIGPIPE-prone pipeline still
+    # in the script. Option (ii) of the review: widen the ban to any live
+    # line that pipes into `grep -q` and carries the token, so the sentence
+    # becomes true rather than being narrowed to fit. --
+
+    GREP_Q_HERE_STRING = 'grep -q "Successfully published" <<< "$build_log"'
+
+    def test_d_producer_piped_into_grep_q_fails(self):
+        # Each row keeps the correct here-string remedy alongside it, so
+        # must_match is satisfied and the failure is attributable to
+        # must_not_match — not to a missing remedy.
+        producers = (
+            'cat build.log | grep -q "Successfully published"',
+            'printf \'%s\' "$build_log" | grep -q "Successfully published"',
+        )
+        for producer in producers:
+            with self.subTest(producer=producer):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "publish.sh"
+                text = path.read_text(encoding="utf-8")
+                path.write_text(
+                    text.replace(self.GREP_Q_HERE_STRING,
+                                 f"{self.GREP_Q_HERE_STRING}\n{producer}"),
+                    encoding="utf-8")
+                result = self._run(ws)["grep-q-avoids-broken-pipe"]
+                self.assertFalse(result["passed"])
+                # Pins WHICH ban caught it: the widened pipe alternative,
+                # not the seed's one hardcoded spelling.
+                self.assertIn(r"\|(?!\|)\s*grep -q", result["detail"])
+
+    def test_d_pipe_free_remedies_are_untouched_by_the_widened_ban(self):
+        # The accepted remedies carry no pipe into grep -q, so none of them
+        # may be caught by the widened alternative. `||` is not a pipe: the
+        # here-string remedy with the skill's `|| { ...; exit 1; }` handler,
+        # and a `|| grep -q ...` fallback, both stay legal.
+        remedies = (
+            self.GREP_Q_HERE_STRING,
+            'grep -q "Successfully published" <<< "${build_log}"',
+            '[[ "$build_log" == *"Successfully published"* ]]',
+            'case "$build_log" in\n'
+            '    *"Successfully published"*) ;;\n'
+            '    *) exit 1 ;;\n'
+            'esac',
+            'log_file="/tmp/build-log.$$"\n'
+            'printf \'%s\\n\' "$build_log" > "$log_file"\n'
+            'grep -q "Successfully published" "$log_file"',
+            self.GREP_Q_HERE_STRING
+            + ' || { echo "ERROR: publish not confirmed" >&2; exit 1; }',
+            '[[ "$build_log" == *"Successfully published"* ]] || '
+            'grep -q "Successfully published" "$log_file"',
+        )
+        for remedy in remedies:
+            with self.subTest(remedy=remedy.splitlines()[0][:60]):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "publish.sh"
+                text = path.read_text(encoding="utf-8")
+                path.write_text(text.replace(self.GREP_Q_HERE_STRING, remedy),
+                                encoding="utf-8")
+                result = self._run(ws)["grep-q-avoids-broken-pipe"]
+                self.assertTrue(result["passed"], result["detail"])
+
+    def test_d_grep_q_comment_pins_its_claims_to_named_tests(self):
+        # Same rule the gh api paragraph obeys: every claim this comment
+        # makes about what the check bans cites the test that measures it,
+        # and every cited name is a real TestIssue74 method (`ast`, never a
+        # regex).
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        start = text.index("# Finding 2 (off-skill")
+        end = text.index("- id: grep-q-avoids-broken-pipe")
+        comment = text[start:end]
+        defined = self._test_issue_74_method_names()
+        cited = re.findall(r"\btest_[A-Za-z0-9_]+", comment)
+        self.assertTrue(cited, comment)
+        self.assertEqual(sorted({n for n in cited if n not in defined}), [],
+                         "cited test name(s) are not methods of TestIssue74")
+        for word in ("pipes into", "grep -q", "Successfully published",
+                     "`||` is not a pipe"):
+            with self.subTest(word=word):
+                self.assertIn(word, comment)
+        bullets = self._claim_bullets(comment)
+        self.assertGreaterEqual(len(bullets), 5, bullets)
+        for bullet in bullets:
+            with self.subTest(bullet=bullet[:60]):
+                last = bullet.rstrip().rstrip(",.").split()[-1]
+                self.assertIn(last, defined,
+                              "every claim bullet must END with the name of "
+                              "the TestIssue74 test that measures it")
+        # The widened ban is two alternatives, not one: the seed's own
+        # spelling (which needs no token) and the token-carrying pipe.
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        [check] = [c for c in fixture["objective_checks"]
+                  if c["id"] == "grep-q-avoids-broken-pipe"]
+        self.assertEqual(len(check["must_not_match"]), 2, check["must_not_match"])
+
     def test_grep_q_finding_documented_as_off_skill_in_fixture_header(self):
         text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
         self.assertIn("off-skill", text.lower())

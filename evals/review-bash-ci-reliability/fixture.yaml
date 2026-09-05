@@ -143,23 +143,45 @@ objective_checks:
   # process that could receive SIGPIPE: a here-string (braced or not), a
   # `[[ ... == *...* ]]` glob test, a `case` statement, or grep against a
   # file the string was written to.
-  # The first must_match alternative below also lacks a trailing anchor (the
-  # same shape process-substitution-error-propagates's third alternative was
-  # missing), but it is harmless here: the risky shape this finding forbids
-  # is the producer piping INTO grep -q, which must_not_match already bans
-  # outright, not the mere presence of "grep -q ... Successfully published"
-  # text — so there is no equivalent bare-pipe-without-remedy dodge to close.
-  # Because it has no closing `$`, this alternative is unaffected by the
-  # `||`-tolerance added to process-substitution-error-propagates's sibling
-  # alternative above: `grep -q "Successfully published" <<< "$build_log" ||
-  # { ...; exit 1; }` already passes here today. Do not add a trailing `$`
-  # to this alternative without adding the same `||` tolerance alongside it.
+  # Round-6 review D: this comment used to credit must_not_match with
+  # banning "the producer piping INTO grep -q" when it banned exactly one
+  # spelling, the seed's own `echo "$build_log" | grep -q` — a live
+  # `cat build.log | grep -q "Successfully published"` beside a correct
+  # here-string scored 11/11 with the SIGPIPE-prone pipeline still in the
+  # script. The review offered narrowing the sentence or widening the ban;
+  # the ban was widened, so the sentence is true as written. What each ban
+  # does, one claim per bullet, each ending with the test that measures it:
+  #   - must_not_match alternative 2 fires on any live line where a single
+  #     `|` pipes into `grep -q` and "Successfully published" appears later
+  #     on that same line, whatever the producer is —
+  #     test_d_producer_piped_into_grep_q_fails
+  #   - `||` is not a pipe: no pipe-free remedy is caught, and neither is a
+  #     here-string remedy carrying the skill's `|| { ...; exit 1; }`
+  #     handler or a `|| grep -q ...` fallback —
+  #     test_d_pipe_free_remedies_are_untouched_by_the_widened_ban
+  #   - alternative 1 keeps the seed's own spelling, which needs no token on
+  #     the line, so a correct fix added ALONGSIDE the original buggy line
+  #     still fails —
+  #     test_grep_q_leftover_piped_line_not_removed_fails
+  #   - deleting the check instead of fixing it fails on must_match —
+  #     test_grep_q_check_deleted_entirely_fails
+  #   - this list's own shape and its citations are checked by
+  #     test_d_grep_q_comment_pins_its_claims_to_named_tests
+  # The first must_match alternative below lacks a trailing anchor (the same
+  # shape process-substitution-error-propagates's third alternative was
+  # missing). Because it has no closing `$`, it is unaffected by the
+  # `||`-tolerance added to that sibling alternative: `grep -q "Successfully
+  # published" <<< "$build_log" || { ...; exit 1; }` passes here —
+  # test_d_pipe_free_remedies_are_untouched_by_the_widened_ban. Do not add a
+  # trailing `$` to this alternative without adding the same `||` tolerance
+  # alongside it.
   - id: grep-q-avoids-broken-pipe
     description: grep -q consumes $build_log without a pipe (here-string, [[ ... ]], case, or a file argument)
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
       - '^[^#\n]*echo "\$build_log" \| grep -q[^#\n]*'
+      - '^[^#\n]*(?<!\|)\|(?!\|)\s*grep -q[^#\n]*"Successfully published"[^#\n]*'
     must_match:
       - '(^[^#\n|]*grep -q[^#\n|]*"Successfully published"[^#\n|]*|^[^#\n]*\[\[\s*"\$\{?build_log\}?"\s*==\s*\*[^#\n]*\*\s*\]\][^#\n]*|^[^#\n]*case\s+"\$\{?build_log\}?"\s+in[^#\n]*)'
 
