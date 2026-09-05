@@ -11300,13 +11300,32 @@ class TestIssue67Review8(unittest.TestCase):
     def test_the_cap_still_bounds_what_is_carried_forward(self):
         """The cap is unchanged for the set carried forward: 600 filler
         arms still trim to 500, with a count-only warning naming the 100
-        dropped. What is no longer capped is the REPORT."""
-        previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
-                             for i in range(600)]}
+        dropped. What is no longer capped is the REPORT.
+
+        The published SHARE is the assertion that only the CAPPED list can
+        satisfy (S2, #129 review round 9). The two assertions below it —
+        600 retirements reported, 100 dropped by the warning — both read
+        the UNCAPPED list, so the mutation `return ids, carried` ->
+        `return ids, ids` (the cap removed outright) left them green.
+        Every filler here is a ranked id the census names, carrying 10
+        turns; 500 of them are carried and 100 are not, so the live
+        model's 1000 turns are 1000/6000 = 16.7% of the attributable
+        denominator. Uncapped they would be 1000/7000 = 14.3%."""
+        fillers = [f"claude-sonnet-3-{i:03d}" for i in range(600)]
+        previous = {"arms": [{"id": i, "reason": "filler"} for i in fillers]}
+        counts = {i: {self.W[0]: 10} for i in fillers}
+        counts["claude-sonnet-5"] = {self.W[0]: 1000}
+        census = TestIssue67._census_doc(counts=counts)
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, err = self._run_main(
-                tmp, self._two_model_catalogue(), previous=previous)
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
         self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 16.7%", reason,
+                      "1000 turns against the 500 carried arms' 5000")
+        self.assertNotIn("14.3%", reason,
+                         "that is the share with the cap removed")
         self.assertEqual(len(published["retired_since_last"]), 600,
                          "every arm the previous roster named is reported")
         capped = [line for line in err.splitlines()
@@ -11314,7 +11333,7 @@ class TestIssue67Review8(unittest.TestCase):
         self.assertTrue(capped, err)
         self.assertIn("dropped 100", capped[0])
         for line in capped:
-            self.assertNotIn("0arm-599", line)
+            self.assertNotIn("claude-sonnet-3-599", line)
 
     # --- F2: `catalogue_seen[].last_seen` is converted to UTC before it
     # is rendered ---------------------------------------------------------
@@ -11973,6 +11992,51 @@ class TestIssue67Review9(unittest.TestCase):
         # middle of the chain hold no seat of their own.
         self.assertNotIn(self.S2_MID, self._arm_ids(published))
         self.assertNotIn(self.S2_BASE, self._arm_ids(published))
+
+    # --- S2(b): a regression floor for the previous-arms CAP itself ------
+    #
+    # The cap could be removed outright with the suite green: the mutation
+    # `return ids, carried` -> `return ids, ids` left all 605 tests
+    # passing, `test_the_cap_still_bounds_what_is_carried_forward`
+    # included — that test reads the UNCAPPED list (`retired_since_last`
+    # is 600 long, the warning names 100 dropped) and both survive the
+    # mutation untouched. What the cap actually decides is who is CARRIED
+    # FORWARD for attribution, so the floor has to be a scenario where the
+    # cap's own eviction moves the denominator.
+
+    S2B_ARMS = [f"claude-sonnet-3-{i:03d}" for i in range(501)]
+
+    def test_the_arms_cap_decides_the_attributable_denominator(self):
+        """MUTATION: `return ids, carried` -> `return ids, ids` in
+        `_clean_previous_arms`. 501 departed ranked arms, every one of them
+        named by the census, so relevance ties and the id order alone
+        decides who the cap drops — and the one it drops holds 900,000 of
+        the window's 901,500 raw turns. Capped, those turns are not
+        attributable to anything, the census reads as almost entirely
+        unrankable and the roster falls back to newest-per-tier and says
+        so; uncapped, they are attributable and the fallback never
+        happens."""
+        previous = {"arms": [{"id": i, "reason": "was an arm"}
+                             for i in self.S2B_ARMS]}
+        counts = {i: {self.W[0]: 3} for i in self.S2B_ARMS[:500]}
+        counts[self.S2B_ARMS[500]] = {self.W[0]: 900_000}
+        census = TestIssue67._census_doc(counts=counts)
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("only 1500 of 901500 raw turns", reason,
+                      "the capped-out arm's 900,000 turns are not "
+                      "attributable to anything")
+        self.assertIn("under the 1% relative floor", reason)
+        self.assertIn("fell back to newest per tier", reason)
+        # Mutation check (manual): with the cap removed the 501st arm is
+        # carried, its 900,000 turns are attributable, the census reads as
+        # usable and the reason is a bare "newest model in the sonnet
+        # tier, ... days old" with no census-quality sentence at all —
+        # red on all three assertions.
 
 
 if __name__ == "__main__":
