@@ -303,7 +303,12 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     or a previous roster that could not be read), a model retired before
     this harness ever observed it is unattributable — there is no evidence
     to credit, only the shape it USED to have, which is exactly the
-    unreliable signal this replaces.
+    unreliable signal this replaces. This also covers the MIGRATION case:
+    the `previous.json` already sitting on `eval-results` predates this
+    field entirely, so the first run after this merges behaves exactly
+    like a genuine first run. S3 (#129 review round 6) adds a SECOND
+    migration, for `catalogue_seen`'s own shape change (a bare id string
+    to `{id, last_seen}`) — see `_clean_catalogue_seen`.
     """
     if api_ids is None:
         return True
@@ -373,11 +378,15 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     FIRST-RUN CAVEAT: with no `catalogue_seen` history yet, a model retired
     before this harness's first run is unattributable — its usage silently
     drops from the denominator until a run observes it directly (see
-    `_is_attributable`). Every call inside compute_roster gives `api_ids`
-    and `previous_arms`; omitted (both default None), the denominator is
-    every ranked key regardless of catalogue membership, the
-    pre-#67-review-round-3 behavior a few direct tests of the raw
-    arithmetic rely on.
+    `_is_attributable`) — including the MIGRATION case where the
+    `previous.json` already on `eval-results` predates this field, so the
+    first run after this merges behaves like a genuine first run; S3
+    (#129 review round 6) adds a second migration on top, for
+    `catalogue_seen`'s own bare-string-to-`{id, last_seen}` shape change.
+    Every call inside compute_roster gives `api_ids` and `previous_arms`;
+    omitted (both default None), the denominator is every ranked key
+    regardless of catalogue membership, the pre-#67-review-round-3
+    behavior a few direct tests of the raw arithmetic rely on.
 
     A dated snapshot's usage is folded onto its alias — one model, one share.
     """

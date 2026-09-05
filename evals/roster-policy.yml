@@ -52,12 +52,17 @@ tiers:
 # published roster carries `catalogue_seen`, the union of every id the
 # Models API has ever listed across runs. A model's usage stops counting
 # only once no run has ever observed it — FIRST-RUN CAVEAT: with no
-# `catalogue_seen` history yet (a genuine first run, or a previous roster
-# that could not be read), a model retired before this harness's first run
-# is unattributable, and its usage silently drops from the denominator
-# until a run observes it directly. An earlier approach inferred this from
-# the id's SHAPE instead; withdrawn because shape cannot tell a
-# since-retired real model from a plausibly-named proxy alias.
+# `catalogue_seen` history yet (a genuine first run, a previous roster that
+# could not be read, OR THE MIGRATION CASE — the `previous.json` already
+# published on `eval-results` predates this field entirely, so the first
+# run after it merges behaves exactly like a genuine first run), a model
+# retired before this harness's first run is unattributable, and its usage
+# silently drops from the denominator until a run observes it directly. An
+# earlier approach inferred this from the id's SHAPE instead; withdrawn
+# because shape cannot tell a since-retired real model from a
+# plausibly-named proxy alias. A SECOND migration applies to
+# `catalogue_seen`'s own shape (below): the bare id string it used to
+# publish is accepted for one run and rewritten with an age.
 
 # A model becomes an arm if it carries at least this share of census usage
 # over the trailing window...

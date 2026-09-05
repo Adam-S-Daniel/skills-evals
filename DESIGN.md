@@ -350,10 +350,15 @@ Five properties are load-bearing and should survive any rework:
    withdrawn because shape cannot distinguish a since-retired real model
    from a plausibly-named proxy alias, and it missed the pre-#67 legacy id
    shape entirely. **First-run caveat:** with no `catalogue_seen` history
-   yet (a genuine first run, or a previous roster that could not be read),
-   a model retired before this harness ever observed it is unattributable
-   — its usage silently drops from the denominator until a run observes it
-   directly.
+   yet (a genuine first run, or a previous roster that could not be read
+   — **or the migration case**, where the `previous.json` already
+   published on `eval-results` predates this field entirely, so the first
+   run after it merges behaves exactly like a genuine first run), a model
+   retired before this harness ever observed it is unattributable — its
+   usage silently drops from the denominator until a run observes it
+   directly. A second, independent migration applies to `catalogue_seen`'s
+   own shape (below): the bare id string it used to publish is read for
+   one run and rewritten with an age.
 
    `catalogue_seen` is READ BACK from `previous.json` on `eval-results` —
    a branch other jobs on other machines write to, which this harness
