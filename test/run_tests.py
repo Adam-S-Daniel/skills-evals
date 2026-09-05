@@ -10,6 +10,7 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import hashlib
 import itertools
 import json
@@ -7483,6 +7484,163 @@ def build_suite() -> unittest.TestSuite:
     return suite
 
 
+def flatten_suite(suite: unittest.TestSuite):
+    """Every leaf TestCase in `suite`, however deeply nested."""
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from flatten_suite(item)
+        else:
+            yield item
+
+
+def parse_argv(argv: list[str]) -> argparse.Namespace:
+    """This runner's own command line.
+
+    A FLAG changes how a run is reported (`-v`, `-q`, `--failfast`) or narrows
+    it explicitly (`-k`); either way the suite it draws from is `build_suite()`,
+    the whole thing. Only a bare NAME — `TestFoo.test_bar` — is a targeted run,
+    and that one goes through `unittest.main`, which can address this module's
+    own classes and nothing else.
+
+    Before this, `main()` routed ANY argument to `unittest.main`, so
+    `python3 test/run_tests.py -v` and `--failfast` silently ran 379 of 438
+    tests and printed OK: every discovered test/issues/ module was missing and
+    nothing said so.
+    """
+    parser = argparse.ArgumentParser(
+        prog="run_tests.py", add_help=True,
+        description="The whole skills-evals suite: this file's classes plus "
+                    "every discovered test/issues/test_issue_*.py.")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="name each test as it runs")
+    parser.add_argument("-q", "--quiet", action="store_true",
+                        help="totals only")
+    parser.add_argument("-f", "--failfast", action="store_true",
+                        help="stop at the first failure")
+    parser.add_argument("-k", dest="patterns", action="append", default=[],
+                        metavar="PATTERN",
+                        help="run only tests whose id matches PATTERN "
+                             "(substring, or fnmatch when it carries a *); "
+                             "repeatable, and the run says it was narrowed")
+    parser.add_argument("targets", nargs="*", metavar="TestClass.test_name",
+                        help="a targeted run through unittest.main, which "
+                             "addresses this file's own classes only")
+    return parser.parse_args(argv)
+
+
+def select_tests(opts: argparse.Namespace
+                 ) -> tuple[unittest.TestSuite, int, int]:
+    """`(suite, selected, total)` — build_suite(), narrowed by any `-k`.
+
+    Matching follows unittest's own `-k`: a pattern carrying `*` is an fnmatch
+    against the test id, anything else is a substring of it.
+    """
+    every = list(flatten_suite(build_suite()))
+    if not opts.patterns:
+        return unittest.TestSuite(every), len(every), len(every)
+
+    def matches(test) -> bool:
+        test_id = test.id()
+        return any(fnmatch.fnmatchcase(test_id, pattern) if "*" in pattern
+                   else pattern in test_id
+                   for pattern in opts.patterns)
+
+    kept = [t for t in every if matches(t)]
+    return unittest.TestSuite(kept), len(kept), len(every)
+
+
+# ----------------------------------------------------------------------
+# The discovery + argv contract, pinned from INSIDE this file (issue #97, S3)
+#
+# The two existing discovery pins live in test/issues/test_issue_97.py —
+# inside the very subtree that stops being discovered when the block above is
+# disabled. Deleting the `suite.addTests(loader.discover(...))` call therefore
+# left `Ran 379 tests ... OK`, exit 0: a 59-test drop that no assertion
+# anywhere could see, because the assertions went with the tests. This class
+# lives in run_tests.py itself and cannot vanish with them.
+# ----------------------------------------------------------------------
+
+
+class TestTheRunnerItself(unittest.TestCase):
+    """`build_suite()` really covers the discovered subtree, and a flag on the
+    command line does not quietly narrow the run."""
+
+    maxDiff = None
+
+    @staticmethod
+    def _modules(suite: unittest.TestSuite) -> set[str]:
+        return {t.id().split(".")[0] for t in flatten_suite(suite)}
+
+    def test_build_suite_covers_every_discoverable_issue_module(self):
+        expected = {p.stem for p in DISCOVERY_DIR.glob(DISCOVERY_PATTERN)}
+        self.assertTrue(
+            expected,
+            f"no {DISCOVERY_PATTERN} under {DISCOVERY_DIR} — this assertion "
+            "must not be able to pass vacuously")
+        self.assertIn("test_issue_97", expected)
+        missing = expected - self._modules(build_suite())
+        self.assertEqual(
+            missing, set(),
+            "build_suite() must carry at least one test from EVERY "
+            f"{DISCOVERY_PATTERN} module under {DISCOVERY_DIR}; missing: "
+            f"{sorted(missing)}")
+
+    def test_build_suite_also_carries_this_files_own_classes(self):
+        # The other half: discovery must not have replaced the local classes.
+        self.assertIn(__name__, self._modules(build_suite()))
+
+    def test_a_flag_selects_the_same_suite_as_no_arguments(self):
+        # `python3 test/run_tests.py -v` used to route to unittest.main, which
+        # addresses only THIS module's classes: it ran 379 of 438 and printed
+        # OK. A flag changes how the run is REPORTED, never what it contains.
+        plain = sorted(t.id() for t in flatten_suite(select_tests(parse_argv([]))[0]))
+        for flags in (["-v"], ["-q"], ["--failfast"], ["-v", "--failfast"]):
+            with self.subTest(flags=flags):
+                opts = parse_argv(flags)
+                self.assertEqual(opts.targets, [])
+                got = sorted(t.id()
+                             for t in flatten_suite(select_tests(opts)[0]))
+                self.assertEqual(got, plain)
+        self.assertTrue(parse_argv(["-v"]).verbose)
+        self.assertTrue(parse_argv(["-q"]).quiet)
+        self.assertTrue(parse_argv(["--failfast"]).failfast)
+
+    def test_a_bare_name_is_a_targeted_run_and_a_dash_is_not(self):
+        self.assertEqual(parse_argv(["TestFoo.test_bar"]).targets,
+                         ["TestFoo.test_bar"])
+        self.assertEqual(parse_argv(["-k", "guidance"]).targets, [])
+        self.assertEqual(parse_argv(["-k", "guidance"]).patterns, ["guidance"])
+
+    def test_dash_k_narrows_the_suite_and_says_by_how_much(self):
+        opts = parse_argv(["-k", "test_a_flag_selects_the_same_suite"])
+        suite, selected, total = select_tests(opts)
+        self.assertEqual(selected, 1, sorted(t.id() for t in flatten_suite(suite)))
+        self.assertGreater(total, selected)
+
+    def test_dash_k_on_the_command_line_still_reaches_the_discovered_subtree(self):
+        # End to end through the real entry point, and cheap: one test.
+        # `-k` used to reach unittest.main, which cannot address a discovered
+        # module at all, so this named nothing and the run was a false green.
+        target = "test_this_module_is_reachable_through_the_discovery_pattern"
+        proc = subprocess.run(
+            [sys.executable, str(TEST_DIR / "run_tests.py"), "-v", "-k", target],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
+            # test/issues/test_issue_97.py reads this and skips the two pins
+            # that shell out to the whole suite, so a child can never fork.
+            env=dict(os.environ, SKILLS_EVALS_SUITE_CHILD="1"))
+        output = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, output[-3000:])
+        self.assertIn("test_issue_97", output,
+                      "a `-k` selection must be able to name a test from the "
+                      f"DISCOVERED subtree\n{output[-3000:]}")
+        self.assertIn(target, output, output[-3000:])
+        self.assertRegex(output, r"Ran 1 test\b", output[-3000:])
+        self.assertRegex(
+            output, r"(?i)narrow",
+            "a narrowed run must say so in one line, so an `OK` from it is "
+            f"never read as a full-suite pass\n{output[-3000:]}")
+
+
 # ----------------------------------------------------------------------
 # The run-wide user-memory guard (issue #97, S2)
 #
@@ -7526,18 +7684,34 @@ def user_memory_fingerprint(path: Path) -> str:
         return f"unreadable: {type(exc).__name__}"
 
 
-def main() -> int:
-    # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) still goes
-    # through unittest.main, which addresses only this module's own classes —
-    # a discovered module is run by name with `python3 test/issues/<file>.py`.
-    # The no-argument invocation, which is the one ci.yml makes, is the whole
-    # suite.
-    if len(sys.argv) > 1:
-        unittest.main(module=sys.modules[__name__], argv=sys.argv)
-        return 0
+def main(argv: list[str] | None = None) -> int:
+    """Exit status, always from the runner result and the memory guard.
+
+    (The old shape ended `unittest.main(...); return 0` — unreachable, since
+    `unittest.main` exits the process itself. The status is computed here now,
+    on every path.)
+    """
+    opts = parse_argv(list(sys.argv[1:] if argv is None else argv))
+    if opts.targets:
+        # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) goes
+        # through unittest.main, which addresses only this module's own
+        # classes — a discovered module is run by name with
+        # `python3 test/issues/<file>.py`.
+        print(f"NARROWED RUN: targeting {' '.join(opts.targets)} within "
+              f"{__name__}'s own classes — the discovered "
+              f"{DISCOVERY_PATTERN} modules are NOT in this run.")
+        program = unittest.main(module=sys.modules[__name__],
+                                argv=[sys.argv[0]] + opts.targets, exit=False)
+        return 0 if program.result.wasSuccessful() else 1
     memory = user_memory_path()
     before = user_memory_fingerprint(memory)
-    result = unittest.TextTestRunner(verbosity=1).run(build_suite())
+    suite, selected, total = select_tests(opts)
+    if selected != total:
+        print(f"NARROWED RUN: -k selected {selected} of {total} tests — an OK "
+              "from this run is not a full-suite pass.")
+    verbosity = 2 if opts.verbose else (0 if opts.quiet else 1)
+    result = unittest.TextTestRunner(verbosity=verbosity,
+                                     failfast=opts.failfast).run(suite)
     status = 0 if result.wasSuccessful() else 1
     after = user_memory_fingerprint(memory)
     if after != before:
