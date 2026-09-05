@@ -5562,6 +5562,110 @@ class TestIssue81(unittest.TestCase):
                   if not check.get("strip_seed")]
         self.assertEqual(checks, [], "these #81 checks do not set strip_seed")
 
+    # Nb (round 5, the code review): two properties the code asserts that
+    # nothing measured.
+
+    def test_the_fold_in_transcript_matches_protects_the_wsl_handoff(self):
+        """The fold inside `transcript_matches`, pinned where it is alone.
+
+        Removing it was invisible to the suite: every #81 check opts into
+        `strip_seed`, and `strip_seed_material` folds again on its own way
+        in, so the transcript-level fold had no consequence anywhere the
+        suite looked. The fixture it actually protects is this one —
+        `must_match` only, no `strip_seed`, so nothing downstream folds —
+        and a handoff salted with a zero-width space is what a model that
+        copied its command out of a rendered page really hands over.
+        """
+        wsl_dir = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
+        fixture = run_eval.load_fixture(wsl_dir)
+        check = next(c for c in fixture["objective_checks"]
+                     if c["id"] == "handoff-names-elevation-and-the-line")
+        self.assertNotIn("strip_seed", check,
+                         "this check opts in now; pick another one")
+        clean = ("This needs an elevated PowerShell prompt. Run "
+                 "register-tasks.ps1 there.\n")
+        self.assertTrue(*objective.transcript_matches(
+            str(wsl_dir), [], must_match=check["must_match"],
+            transcript=clean))
+        # Every `Cf` code point, the zero-width fillers, and the two
+        # variation-selector blocks, mid-word in both the word the first
+        # pattern needs and the filename the second needs. Nothing
+        # downstream will fold these; if the fold here goes, the fixture
+        # loses its handoff check.
+        #
+        # A combining mark is deliberately NOT in this loop: NFKC composes
+        # it onto the letter in front of it, so `register-ta<U+0301>sks` is
+        # `register-tásks` and the pattern is right not to match. That is
+        # the same rule that keeps `café` a word — see
+        # `test_a_combining_accent_is_not_an_invisible`.
+        selectors = [chr(cp) for cp in
+                     list(range(0xFE00, 0xFE10)) + list(range(0xE0100, 0xE01F0))]
+        for char in self._zero_width_code_points() + selectors:
+            salted = clean.replace("elevated", "elev" + char + "ated")
+            salted = salted.replace("register-tasks",
+                                    "register-ta" + char + "sks")
+            with self.subTest(code_point=hex(ord(char))):
+                self.assertTrue(*objective.transcript_matches(
+                    str(wsl_dir), [], must_match=check["must_match"],
+                    transcript=salted))
+
+    def test_a_run_cannot_span_two_seed_files(self):
+        """`_seed_index` keeps the files apart, and it says so.
+
+        Its docstring claims a run can never span a boundary that was never
+        adjacent to begin with — but joining every file into one whole left
+        the suite green, so the claim was unmeasured. A sentence built from
+        the tail of one seed file and the head of the next is a sentence
+        NOBODY wrote, and calling it the seed's would take the agent's own
+        writing away from it on the strength of a directory walk order.
+        """
+        seed = self.STYLE_DIR / "recruiter-reply" / "seed"
+        files = [p for p in sorted(seed.rglob("*")) if p.is_file()]
+        self.assertGreaterEqual(len(files), 2, "one seed file proves nothing")
+        index = objective._seed_index(str(seed))
+        # Each file's own key, taken by running the real `_seed_index` over
+        # a directory holding that file alone — so the keys are the
+        # scorer's, not a second implementation of its line handling, and
+        # they survive a mutation that joins the files in the whole-seed
+        # index.
+        wholes = []
+        with tempfile.TemporaryDirectory() as tmp:
+            for i, path in enumerate(files):
+                one = Path(tmp) / str(i)
+                one.mkdir()
+                shutil.copy(path, one / path.name)
+                wholes.extend(objective._seed_index(str(one))[1])
+        self.assertEqual(len(wholes), len(files))
+        # A straddling sentence: the last `run - 1` words of one file's key
+        # and the first `run - 1` of the next's. That length is the whole
+        # point — EVERY window of `run` words in it contains words from
+        # both files, so no window can be a run unless the two files were
+        # joined. (Take `run` words from each side instead and the sentence
+        # has two honest runs in it, one per file, and coverage 1.0 is the
+        # right answer rather than a boundary leak.)
+        run = objective._SEED_COVERAGE_RUN
+        straddles = []
+        for before, after in zip(wholes, wholes[1:]):
+            tail, head = before.split(), after.split()
+            if len(tail) < run or len(head) < run:
+                continue
+            straddles.append(" ".join(tail[-(run - 1):] + head[:run - 1]))
+        self.assertTrue(straddles, "no pair of seed files is long enough")
+        for straddle in straddles:
+            with self.subTest(straddle=straddle[:50]):
+                # Not one of the seed's sentences, not a run of any one
+                # file, and no window of it is a gram — so coverage is 0
+                # and the sentence stays the agent's.
+                self.assertFalse(objective._is_seed_material(
+                    straddle, index, objective._SEED_MATERIAL_FLOOR,
+                    objective._SEED_SENTENCE_FLOOR))
+                self.assertEqual(objective._seed_coverage(straddle, index[2]),
+                                 0.0)
+                # And through the scorer, not only the helper.
+                self.assertEqual(
+                    objective.strip_seed_material(straddle + "\n", str(seed)).
+                    strip(), straddle)
+
     def test_no_other_fixture_asks_for_the_seed_pre_pass(self):
         # B1: a global pre-pass narrowed `windows-elevation-from-wsl` —
         # a handoff command inside a ```powershell fence stopped counting.
