@@ -1013,6 +1013,22 @@ _WORKFLOW_STEP_USES_KEYS = {
     "unique_with_key", "min_matches",
 }
 
+# Every fixture-suppliable constraint key each check `type` accepts, beyond
+# `_CHECK_META_KEYS` and the `seed`/`transcript` kwargs `run_checks` injects
+# itself (never fixture-suppliable, so they're not listed here). A type
+# absent from this map — `yaml_parses`, `files_unchanged`,
+# `non_remote_refs_unchanged`, `event_only_workflows_unfiltered`,
+# `required_checks_early_skip`, `no_event_interpolation_in_run` — takes NO
+# constraint keys at all: `workspace` + `paths` (+ the injected `seed`)
+# fully determine what it checks.
+_CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
+    "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
+    "file_matches": {"must_match", "must_not_match"},
+    "transcript_matches": {"must_match", "must_not_match"},
+    "workflow_step_uses": _WORKFLOW_STEP_USES_KEYS,
+    "post_failure_comment_reference_valid": {"uses_suffix"},
+}
+
 
 def run_checks(fixture: dict, workspace: str, seed: str,
                transcript: str | None = None) -> list[dict]:
@@ -1025,11 +1041,13 @@ def run_checks(fixture: dict, workspace: str, seed: str,
     a mode here, it is the only behaviour. A future network-dependent check
     reintroduces an opt-in deliberately, and defaults it off.
 
-    A `workflow_step_uses` check's keys are validated against a fixed set
-    before running: an unrecognized key (a typo like `job_ifequals`) raises
-    rather than being silently dropped from `kwargs` — dropped, the fixture
-    would run a WEAKER check than written and still report green, which is
-    worse than failing loudly at load time.
+    Every check's keys are validated against `_CHECK_ALLOWED_KEYS` before
+    running, for every type — not just `workflow_step_uses` — so an
+    unrecognized key (a typo like `job_ifequals`, or a constraint that
+    belongs to a different check type entirely) raises rather than being
+    silently dropped from `kwargs`: dropped, the fixture would run a WEAKER
+    check than written and still report green, which is worse than failing
+    loudly at load time.
     """
     results = []
     for check in fixture.get("objective_checks", []):
@@ -1038,29 +1056,16 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             results.append({"id": check["id"], "passed": False,
                             "detail": f"unknown check type {check['type']!r}"})
             continue
-        kwargs = {}
+        allowed = _CHECK_ALLOWED_KEYS.get(check["type"], set())
+        extra = set(check) - _CHECK_META_KEYS - allowed
+        if extra:
+            raise ValueError(f"unknown {check['type']!r} constraint key(s) in "
+                            f"check {check.get('id')!r}: {sorted(extra)}")
+        kwargs = {key: check[key] for key in allowed if key in check}
         if check["type"] in ("non_remote_refs_unchanged", "files_unchanged"):
             kwargs["seed"] = seed
-        elif check["type"] == "changeset_triggers":
-            kwargs["changeset"] = check.get("changeset", [])
-            kwargs["expect_triggered"] = check.get("expect_triggered", [])
-            kwargs["expect_skipped"] = check.get("expect_skipped", [])
-        elif check["type"] in ("file_matches", "transcript_matches"):
-            kwargs["must_match"] = check.get("must_match", [])
-            kwargs["must_not_match"] = check.get("must_not_match", [])
-            if check["type"] == "transcript_matches":
-                kwargs["transcript"] = transcript
-        elif check["type"] == "workflow_step_uses":
-            extra = set(check) - _CHECK_META_KEYS - _WORKFLOW_STEP_USES_KEYS
-            if extra:
-                raise ValueError(f"unknown workflow_step_uses constraint key(s) in "
-                                f"check {check.get('id')!r}: {sorted(extra)}")
-            for key in _WORKFLOW_STEP_USES_KEYS:
-                if key in check:
-                    kwargs[key] = check[key]
-        elif check["type"] == "post_failure_comment_reference_valid":
-            if "uses_suffix" in check:
-                kwargs["uses_suffix"] = check["uses_suffix"]
+        elif check["type"] == "transcript_matches":
+            kwargs["transcript"] = transcript
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

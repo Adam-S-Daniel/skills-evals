@@ -3097,6 +3097,29 @@ class TestIssue86(unittest.TestCase):
         with self.assertRaises(ValueError):
             objective.run_checks(fixture, str(ws), str(ws))
 
+    def test_run_checks_raises_on_unknown_key_for_every_check_type(self):
+        # Review round 3, N10: the unknown-key guard used to cover only
+        # workflow_step_uses — a typo'd or misplaced key on ANY other check
+        # type was silently dropped, running a weaker check than written
+        # while still reporting green. Every type must raise now, including
+        # one (yaml_parses) that takes no fixture-suppliable keys at all.
+        ws = self._ws({".github/workflows/w.yml":
+                       "on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n"
+                       "    steps: []\n"})
+        cases = [
+            {"id": "c1", "type": "yaml_parses", "paths": [".github/workflows/*.yml"],
+             "not_a_real_key": True},
+            {"id": "c2", "type": "file_matches", "paths": [".github/workflows/*.yml"],
+             "must_not_match_typo": ["x"]},
+            {"id": "c3", "type": "changeset_triggers", "paths": [".github/workflows/*.yml"],
+             "expect_triggerred": ["w.yml"]},
+            {"id": "c4", "type": "post_failure_comment_reference_valid",
+             "paths": [".github/workflows/*.yml"], "uses_suffx": "/post-failure-comment"},
+        ]
+        for check in cases:
+            with self.assertRaises(ValueError, msg=f"{check['type']} should have raised"):
+                objective.run_checks({"objective_checks": [check]}, str(ws), str(ws))
+
     def test_unique_with_key_allows_same_marker_within_one_file(self):
         wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
              "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
