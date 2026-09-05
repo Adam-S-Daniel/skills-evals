@@ -2588,7 +2588,19 @@ class TestIssue81(unittest.TestCase):
     """
 
     STYLE_DIR = REPO_ROOT / "evals" / "adam-writing-style"
-    FIXTURES = ("recruiter-reply", "proposal-bio", "self-appraisal-opening")
+    # Read off the disk, not written out here. The credential scan already
+    # walked the whole directory while the marker test iterated a 3-tuple in
+    # this file, so a fourth fixture directory with its markers stripped
+    # passed the suite. Every test that says "for each fixture" now means
+    # the fixtures that exist.
+    FIXTURES = tuple(sorted(p.parent.name
+                            for p in STYLE_DIR.glob("*/fixture.yaml")))
+
+    @classmethod
+    def _fixture_names(cls, root=None) -> tuple[str, ...]:
+        """The fixture directories under `root` (default: the style dir)."""
+        root = Path(root) if root is not None else cls.STYLE_DIR
+        return tuple(sorted(p.parent.name for p in root.glob("*/fixture.yaml")))
 
     # The prompts the issue gives, verbatim. Held here so a reworded fixture
     # fails loudly rather than quietly measuring a different task.
@@ -3260,20 +3272,6 @@ class TestIssue81(unittest.TestCase):
 
     FICTION_MARKER = "<!-- fictional -->"
 
-    def test_every_reference_and_seed_prose_file_is_marked_fictional(self):
-        # One line at the top of every piece of prose in here, so a reader
-        # who lands on a single file — on GitHub, in a diff, in a search
-        # result — knows the recruiter, the employer and the RFP are
-        # invented before reading a word of them.
-        marked = 0
-        for name in self.FIXTURES:
-            for path in sorted((self.STYLE_DIR / name).rglob("*.md")):
-                with self.subTest(path=str(path.relative_to(self.STYLE_DIR))):
-                    first = path.read_text(encoding="utf-8").splitlines()[0]
-                    self.assertEqual(first.strip(), self.FICTION_MARKER)
-                    marked += 1
-        self.assertGreaterEqual(marked, 13, "the prose files moved")
-
     def test_the_fiction_marker_never_reaches_the_judge(self):
         # It is on every reference and on no model's reply, so leaving it
         # in would label the references for the judge — the loudest tell
@@ -3923,6 +3921,128 @@ class TestIssue81(unittest.TestCase):
                 self._assert_all_pass(
                     "proposal-bio", clean.replace("Section 508", phrasing),
                     f"standard phrased as {phrasing!r}")
+
+    # ------------------------------------------------------------------
+    # the fiction marker: on the reviewable files, never in the seed
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _marker_problems(cls, root) -> tuple[list[str], list[str]]:
+        """(problems, files scanned) for the fiction marker under `root`.
+
+        Every `*.md` OUTSIDE a `seed/` — the references, and this
+        directory's own README — must open with the marker, so a reader who
+        lands on one file alone knows the recruiter, the employer and the
+        RFP are invented before reading a word of them.
+
+        No file INSIDE a `seed/` may carry it. `seed/` is copied into the
+        agent's workspace, so a marker there tells the agent under test that
+        its own brief is invented, and makes the one candidate that echoes
+        the line the one draft the judge can identify.
+
+        The walk is the whole directory, one pass, so a fourth fixture
+        directory is covered the day it lands. The list this used to iterate
+        was a 3-tuple written out in this file.
+        """
+        root = Path(root)
+        problems, scanned = [], []
+        for path in sorted(root.rglob("*.md")):
+            if not path.is_file():
+                continue
+            rel = path.relative_to(root).as_posix()
+            scanned.append(rel)
+            lines = path.read_text(encoding="utf-8").splitlines()
+            first = lines[0].strip() if lines else ""
+            in_seed = "seed/" in rel or rel.startswith("seed/")
+            if in_seed:
+                if any(cls.FICTION_MARKER in line for line in lines):
+                    problems.append(f"{rel}: carries the fiction marker")
+            elif first != cls.FICTION_MARKER:
+                problems.append(f"{rel}: does not open with the fiction marker")
+        return problems, scanned
+
+    def test_the_prose_outside_the_seed_is_marked_and_the_seed_is_not(self):
+        problems, scanned = self._marker_problems(self.STYLE_DIR)
+        self.assertEqual(problems, [])
+        self.assertIn("README.md", scanned)
+        for name in self.FIXTURES:
+            self.assertIn(f"{name}/references/in-voice.md", scanned)
+            self.assertIn(f"{name}/references/generic.md", scanned)
+
+    def test_the_marker_scan_reaches_a_fixture_this_file_does_not_name(self):
+        # The denominator, planted: the scan walks the directory, so a
+        # fourth fixture with its markers stripped is caught. Iterating the
+        # hardcoded 3-tuple, it was not.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            fourth = planted / "cover-letter"
+            (fourth / "references").mkdir(parents=True)
+            (fourth / "seed").mkdir()
+            (fourth / "fixture.yaml").write_text("skill: adam-writing-style\n",
+                                                 encoding="utf-8")
+            (fourth / "references" / "in-voice.md").write_text(
+                "A fourth reference with no marker on it.\n", encoding="utf-8")
+            (fourth / "seed" / "BRIEF.md").write_text(
+                f"{self.FICTION_MARKER}\n\nA seed file carrying the marker.\n",
+                encoding="utf-8")
+            problems, scanned = self._marker_problems(planted)
+            # And the fixture list itself sees it, which is the denominator
+            # the marker test used to miss. Inside the temp dir: the glob
+            # has to run while the planted tree still exists.
+            self.assertIn("cover-letter", self._fixture_names(planted))
+        self.assertIn("cover-letter/references/in-voice.md: does not open "
+                      "with the fiction marker", problems)
+        self.assertIn("cover-letter/seed/BRIEF.md: carries the fiction marker",
+                      problems)
+        self.assertIn("cover-letter/references/in-voice.md", scanned)
+
+    def test_the_fixture_list_is_read_off_the_disk(self):
+        self.assertTrue(self.FIXTURES, "no fixture directories found on disk")
+        self.assertEqual(self.FIXTURES, self._fixture_names())
+        for name in self.FIXTURES:
+            self.assertTrue((self.STYLE_DIR / name / "fixture.yaml").is_file())
+
+    def test_each_fixture_records_its_seeds_fiction_where_the_agent_cannot_see(self):
+        # The marker left seed/, so the record moves to the one file that
+        # sits beside the seed and is never copied into the workspace.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                header = (self.STYLE_DIR / name / "fixture.yaml").read_text(
+                    encoding="utf-8")
+                self.assertIn(self.FICTION_MARKER, header)
+                self.assertIn("seed", header)
+
+    def test_the_agent_workspace_built_from_a_seed_carries_no_marker(self):
+        # Built the way run_eval._run_arm builds it, so this is the tree the
+        # agent under test really starts from.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                with tempfile.TemporaryDirectory() as tmp:
+                    ws = Path(tmp) / "ws"
+                    shutil.copytree(self.STYLE_DIR / name / "seed", ws,
+                                    dirs_exist_ok=True)
+                    for path in sorted(ws.rglob("*")):
+                        if path.is_file():
+                            self.assertNotIn(
+                                self.FICTION_MARKER,
+                                path.read_text(encoding="utf-8",
+                                               errors="replace"),
+                                f"{name}: {path.name} reached the agent "
+                                "carrying the fiction marker")
+
+    def test_a_candidate_that_echoes_the_marker_is_not_marked_out(self):
+        # The references have the line stripped before the judge sees them.
+        # A candidate that opens with it — an agent that read a marked seed
+        # file and mirrored the shape — would otherwise be the one draft
+        # carrying a line no other draft has.
+        marked = self.FICTION_MARKER + "\n\n" + self.UNWRAPPED_CANDIDATE
+        self.assertEqual(judge._normalize_draft_text(marked),
+                         judge._normalize_draft_text(self.UNWRAPPED_CANDIDATE))
+        ordered = judge.blind_order(marked, self.REFERENCES, 0)
+        prompt = judge._build_pairwise_prompt("rubric text", ordered)
+        self.assertNotIn("fictional", prompt.lower())
+        self.assertNotIn("<!--", prompt)
 
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it

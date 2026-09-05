@@ -1,5 +1,3 @@
-<!-- fictional -->
-
 From: Dana Whitcombe <dana.whitcombe@example.com>
 To: adam@example.net
 Date: Tue, 1 Sep 2026 09:14:00 -0400

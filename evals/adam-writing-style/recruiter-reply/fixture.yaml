@@ -6,9 +6,14 @@
 # absolute rubric score. DESIGN.md's own warning applies — expect noise here
 # and run N>=5 trials per arm.
 #
-# Everything in seed/ is invented: Dana Whitcombe, Northgate Bell Talent
-# Group and the client behind REQ-4417 are not real people or companies, and
-# the only addresses are example.com / example.net.
+# <!-- fictional --> Everything in seed/ is invented: Dana Whitcombe,
+# Northgate Bell Talent Group and the client behind REQ-4417 are not real
+# people or companies, and the only addresses are example.com /
+# example.net. The marker sits HERE, on the file the agent never sees,
+# rather than at the top of each seed file: seed/ is copied into the
+# agent's workspace, so a marker in there tells the agent under test that
+# its own brief is invented, and makes the one candidate that echoes the
+# line the one draft the judge can pick out.
 #
 # The two facts the objective check looks for (REQ-4417, March 2027) sit in
 # the MATERIAL — the recruiter's own email and a personal note — and the

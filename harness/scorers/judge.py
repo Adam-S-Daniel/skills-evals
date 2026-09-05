@@ -356,11 +356,14 @@ def blind_order(candidate_text: str, references: list,
 _DRAFT_CLOSE = "</draft>"
 
 
-# Every committed reference and every seed prose file in a Class C fixture
-# opens with this line, so a reader who lands on one file alone knows the
-# people and employers in it are invented. It is stripped out of a
-# reference before the judge sees it: it is on every reference and on no
-# model's reply, which would make it the loudest tell in the prompt.
+# Every committed reference in a Class C fixture opens with this line, so a
+# reader who lands on one file alone knows the people and employers in it
+# are invented. It is NOT in `seed/` — that tree is copied into the agent's
+# workspace, and a marker there tells the agent its own brief is invented.
+# It is stripped out of every draft before the judge sees it, the candidate
+# included: on the references alone it is the loudest tell in the prompt,
+# and on a candidate that echoed it (an agent that read one and mirrored the
+# shape) it would mark that draft out just as loudly.
 FICTION_MARKER_RE = re.compile(r"\A\s*<!--\s*fictional\s*-->[ \t]*\n?",
                                re.IGNORECASE)
 
@@ -378,13 +381,16 @@ def _normalize_draft_text(text: str) -> str:
     judge can pick it by line shape without reading a word — the shuffle
     hides which slot the draft under test is in and hides nothing else.
 
-    So every draft gets the same treatment: trailing whitespace goes,
+    So every draft gets the same treatment: the fiction marker goes (it is
+    on every committed reference and on no model's reply, unless the model
+    echoed one), trailing whitespace goes,
     newlines inside a paragraph become spaces, runs of spaces collapse, and
     a run of blank lines becomes one paragraph break. Paragraph structure is
     the only shape that survives, which is why the fixtures' rubrics ask the
     judge to rank "as writing rather than formatting".
     """
-    lines = [line.strip() for line in (text or "").strip().splitlines()]
+    lines = [line.strip()
+             for line in strip_fiction_marker(text or "").strip().splitlines()]
     joined = re.sub(r"(?<!\n)\n(?!\n)", " ", "\n".join(lines))
     return re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", joined)).strip()
 

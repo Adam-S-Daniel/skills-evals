@@ -9,9 +9,11 @@
 # puff — the opposite of the self-appraisal fixture next door, which is why
 # the two are separate fixtures rather than one.
 #
-# Harborlight Regional Library System, RFP HRLS-2026-014, Halyard Civic Data
-# and Ardith Analytics are all invented; there is no real client or employer
-# anywhere in this fixture.
+# <!-- fictional --> Harborlight Regional Library System, RFP
+# HRLS-2026-014, Halyard Civic Data and Ardith Analytics are all invented;
+# there is no real client or employer anywhere in this fixture. The marker
+# sits here rather than at the top of each seed/ file, which is copied
+# into the agent's workspace — see recruiter-reply/fixture.yaml.
 #
 # The sixty-word cap is deliberately NOT an objective check: a regex cannot
 # count words, and objective.py is not this fixture's to extend. The judge's

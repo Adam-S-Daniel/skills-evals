@@ -1,5 +1,3 @@
-<!-- fictional -->
-
 # Current commitments
 
 - Delivery-infrastructure lead at the current shop. The engagement is

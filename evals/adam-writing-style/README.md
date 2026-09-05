@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 # `adam-writing-style` — three Class C fixtures
 
 The Class C pilot from [#81]. Class C means the judge carries the load: the
@@ -108,14 +110,24 @@ to the same line shape before the prompt is built (these references are
 hard-wrapped prose and a model's reply is not, which would otherwise mark
 the odd draft out on every trial), each is fenced with a per-call nonce so
 nothing inside a draft can pose as the prompt, and the `<!-- fictional -->`
-line each file opens with is stripped — it is on every reference and on no
-model's reply.
+line each reference opens with is stripped — from the candidate as well as
+from the references, so an agent that echoed the line is not marked out by
+it either.
 
 ## Fiction
 
 Every person, employer, client, RFP and requisition number in these fixtures
 is invented, and the only addresses are `example.com` / `example.net`. This
 repository is public and fixtures are committed.
+
+The `<!-- fictional -->` marker opens every `.md` outside a `seed/` — the
+six references and this README — and appears in **no** file under any
+`seed/`. `seed/` is copied into the agent's workspace, so a marker there
+tells the agent under test that its own brief is invented, and makes the
+one candidate that mirrors the line the one draft the judge can pick out of
+a blind set. Each seed's fiction is recorded instead at the top of its
+`fixture.yaml`, which sits beside `seed/` and is never copied into the
+workspace.
 
 [#81]: https://github.com/Adam-S-Daniel/skills-evals/issues/81
 [#66]: https://github.com/Adam-S-Daniel/skills-evals/issues/66

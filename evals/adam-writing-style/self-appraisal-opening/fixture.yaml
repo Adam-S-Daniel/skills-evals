@@ -7,8 +7,11 @@
 # third person and stripped of softeners. Getting one register right and the
 # other wrong is exactly what a single merged fixture would hide.
 #
-# The quarter, the repository name and every number in notes.md are
-# invented; no real employer, coworker or system appears.
+# <!-- fictional --> The quarter, the repository name and every number in
+# seed/notes.md are invented; no real employer, coworker or system
+# appears. The marker sits here rather than at the top of each seed/ file,
+# which is copied into the agent's workspace — see
+# recruiter-reply/fixture.yaml.
 #
 # Every check below reads the agent's final reply with the material it
 # quoted removed (objective.strip_quoted): a `>` blockquote at any legal
