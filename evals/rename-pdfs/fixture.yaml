@@ -32,6 +32,15 @@
 # 20260205-Statement-... (the scan date) instead of the range this fixture
 # expects. The issue prescribes the range string; this fixture keeps it
 # rather than watering down the task to what the helper currently parses.
+#
+# Second known confound: SKILL.md:151 forbids batch-renaming without
+# per-file confirmation unless the user types `auto`. run_eval.py invokes
+# `claude -p` with no user to answer that prompt, so a maximally
+# skill-faithful with_skill agent may propose every rename and apply none
+# of them. The prompt below stays the issue's exact sentence rather than
+# adding "auto" or otherwise working around this — read any with_skill N=3
+# numbers with this confound in mind; it is a property of the harness'
+# headless invocation, not of this fixture, and has no code fix here.
 
 skill: rename-pdfs
 registry: https://github.com/Adam-S-Daniel/agentskills
