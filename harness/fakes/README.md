@@ -123,6 +123,14 @@ same file.
   attached to its shorthand (`-XPOST`, `-fquery=…`, `-Rowner/name`) for the
   shorthands in `ATTACHED_VALUE_FLAGS`. Boolean flags are listed explicitly in
   `BOOLEAN_FLAGS` so `run view --log 12` cannot swallow the run id.
+- **A bare `-` after a value-taking flag is that flag's value**, as it is in
+  pflag, which is what gh parses with: `--body-file -` means "read the body
+  from stdin". Read as a positional instead, it shifted every later
+  positional by one — `pr comment 421 --body-file -` keyed to
+  `pr-comment-421--.json`, and `api --input - repos/o/r/pulls/421` keyed to
+  `api/-.json`, a payload that cannot exist, on a call whose real endpoint
+  was never looked up. A bare `-` in any other position is still a
+  positional.
 - **A shorthand whose meaning differs per subcommand must be written
   long-form, unless one subcommand owns it.** `-w` is boolean `--web` on
   `gh pr view` but `--workflow <name>` on `gh run list`; a flat global set

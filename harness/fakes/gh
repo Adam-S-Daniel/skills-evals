@@ -197,14 +197,30 @@ def split_attached(arg: str) -> tuple[str, str] | None:
     return arg[:2], value[1:] if value.startswith("=") else value
 
 
+def _is_value(token: str) -> bool:
+    """Can `token` be the VALUE of the value-taking flag before it?
+
+    Anything not flag-shaped can, and so can a bare `-`: pflag, which is
+    what gh parses with, reads `--body-file -` as "the body, from stdin"
+    rather than as a flag followed by a positional. Reading it as a
+    positional shifted every later positional by one, so
+    `pr comment 421 --body-file -` keyed to `pr-comment-421--.json` and
+    `api --input - repos/o/r/pulls/421` keyed to `api/-.json` — a payload
+    that cannot exist, on a call whose real endpoint was never looked up.
+    """
+    return token == "-" or not token.startswith("-")
+
+
 def parse_argv(argv: list[str]) -> tuple[list[str], dict[str, list]]:
     """Split argv into positionals and flags.
 
     Flags are dropped from the payload key entirely, which is what makes
     argv ORDER irrelevant: `pr list --repo X --state open` and
     `pr list --state open --repo X` normalize to the same positionals.
-    `--flag=value` is one token, `-Xvalue` is split into flag and value, and
-    a boolean flag never eats a positional. A shorthand that gh binds to a
+    `--flag=value` is one token, `-Xvalue` is split into flag and value, a
+    boolean flag never eats a positional, and a bare `-` after a
+    value-taking flag is that flag's VALUE (see `_is_value`), not a
+    positional. A shorthand that gh binds to a
     long flag is recorded under the LONG name (see `SHORTHAND_ALIASES`), so
     the two spellings of one flag stay in argv order in one list.
 
@@ -235,7 +251,7 @@ def parse_argv(argv: list[str]) -> tuple[list[str], dict[str, list]]:
                 flags.setdefault(key, []).append(value)
             elif name in booleans:
                 flags.setdefault(key, []).append(True)
-            elif i + 1 < len(argv) and not argv[i + 1].startswith("-"):
+            elif i + 1 < len(argv) and _is_value(argv[i + 1]):
                 flags.setdefault(key, []).append(argv[i + 1])
                 i += 1
             else:
