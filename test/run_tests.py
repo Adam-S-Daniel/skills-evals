@@ -7934,6 +7934,32 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                 self.assertNotIn(stale, comment)
         # The relaxation itself is stated: delimited, not terminal.
         self.assertIn("delimited", comment)
+    # ------------------------------------------------------------------ N2
+
+    # The four verbs `pr-c-left-alone` excludes from its key pattern, and
+    # the class each one's record actually carries. Measured below through
+    # the real binary, so the comment beside the pattern cannot drift from
+    # it. `diff` is `unknown` rather than `read` only because this payload
+    # set ships no `pr-diff-421` response — it CLASSIFIES as a read; what
+    # matters to the exclusion is that neither is `write`.
+    EXCLUDED_VERBS = {"checkout": "write", "diff": "unknown",
+                      "view": "read", "checks": "read"}
+
+    def test_only_one_of_the_excluded_verbs_is_a_write(self):
+        """The comment said all four "stay `class=write`". Only one does."""
+        ws = self._ws()
+        for verb, expected in self.EXCLUDED_VERBS.items():
+            with self.subTest(verb=verb):
+                self._invoke(ws, [ws / "bin" / "gh", "pr", verb, "421"])
+                self.assertIn(f"class={expected} key=pr-{verb}-421.json",
+                              self._log(ws))
+        comment = self._check_comment("pr-c-left-alone")
+        self.assertNotIn("they stay `class=write`", comment)
+        self.assertIn("only `gh pr checkout` is `class=write`", comment)
+        for verb, expected in self.EXCLUDED_VERBS.items():
+            if expected != "write":
+                with self.subTest(named_as_not_a_write=verb):
+                    self.assertIn(f"`pr {verb}`", comment)
 
 if __name__ == "__main__":
     unittest.main()
