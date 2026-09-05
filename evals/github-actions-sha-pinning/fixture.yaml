@@ -7,6 +7,24 @@
 # release TAG instead. Resurrects the retired `pin-actions-to-sha` instrument
 # (see DESIGN.md's "Reference eval" section) and retargets it at the skill
 # that survived cms-platform's 2026-08-20 comment-convention reversal.
+#
+# WHICH SCOPE CASE THIS SEED EXERCISES (review #133, S4): the skill's own
+# "Scope" section names two shapes — cms-platform itself (third-party
+# actions only, no cross-repo cms-platform ref ever fires) and a full
+# CONSUMER (adamdaniel.ai / jodidaniel.com), where "there is nothing in a
+# consumer for Rule 1 to fix" because every `uses:` targets cms-platform on
+# its tag and none is third-party. This seed is neither: it is the THIRD
+# shape the fleet actually has — cms-platform's own AGENTS.md notes "ten
+# repos call a cms-platform reusable; only the two consumers have a
+# platform.lock, a gem and a pin-consistency gate" (the #283 section). A
+# repo in that wider set calls one cms-platform reusable workflow
+# (deploy.yml) and one cms-platform composite action (the gate action) on
+# their release tag, exactly like a consumer — but carries no `platform.lock`
+# and is free to run its own CI with real third-party actions (ci.yml),
+# which a full consumer never does. A with-skill arm that read the Scope
+# section as "this is a consumer, there's nothing to fix" would wrongly
+# leave ci.yml's third-party pins alone; this seed is shaped so that
+# reading is wrong.
 
 skill: github-actions-sha-pinning
 registry: https://github.com/Adam-S-Daniel/cms-platform
@@ -65,13 +83,15 @@ objective_checks:
     type: uses_refs_sha_pinned
     paths: [".github/workflows/ci.yml"]
 
-  - id: no-trailing-version-comments
+  - id: no-trailing-comments
     description: >
-      No `uses:` line anywhere carries a trailing version comment (e.g.
-      "# v4.1.0") — reversed 2026-08-20, see the skill's Rule 2. Applies
-      fleet-wide, including a cms-platform ref pinned by tag.
+      No `uses:` line anywhere carries a trailing comment (e.g. "# v4.1.0")
+      — the fleet rule is "nothing after it", reversed 2026-08-20, see the
+      skill's Rule 2. Applies fleet-wide, including a cms-platform ref
+      pinned by tag.
     type: pin_comment_absent
-    paths: [".github/workflows/*.yml", ".github/actions/*/action.yml"]
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml",
+           ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
 
   - id: cms-platform-refs-stay-on-tag
     description: >
@@ -80,7 +100,8 @@ objective_checks:
       composite-action call in the gate action — stays pinned to the release
       tag `v0.1.104` and must NOT be converted to a SHA.
     type: file_matches
-    paths: [".github/workflows/deploy.yml", ".github/actions/*/action.yml"]
+    paths: [".github/workflows/deploy.yml",
+           ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
     must_match:
       - "Adam-S-Daniel/cms-platform/\\.github/workflows/e2e-tests\\.yml@v0\\.1\\.104"
       - "Adam-S-Daniel/cms-platform/\\.github/actions/recursion-gate@v0\\.1\\.104"
@@ -96,15 +117,29 @@ objective_checks:
 
   - id: reference-files-untouched
     description: >
-      platform.lock and PINS.md are inputs/reference material, not something
-      the fix touches.
+      PINS.md is input/reference material, not something the fix touches.
     type: files_unchanged
-    paths: ["platform.lock", "PINS.md"]
+    paths: ["PINS.md"]
+
+  - id: ci-workflow-not-deleted
+    description: >
+      ci.yml still exists and still carries the four actions it started
+      with (actions/checkout, actions/setup-node, actions/upload-artifact,
+      actions/cache) — otherwise every glob-driven check above passes
+      vacuously against a deleted file.
+    type: file_matches
+    paths: [".github/workflows/ci.yml"]
+    must_match:
+      - "actions/checkout"
+      - "actions/setup-node"
+      - "actions/upload-artifact"
+      - "actions/cache"
 
   - id: workflows-still-parse
     description: All workflow and composite-action files still parse as YAML
     type: yaml_parses
-    paths: [".github/workflows/*.yml", ".github/actions/*/action.yml"]
+    paths: [".github/workflows/*.yml", ".github/workflows/*.yaml",
+           ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
 
 # Judge scoring: 3 dimensions, 0-10 each. What's objectively decidable above
 # (SHA shape, comment absence, carve-out ref, file restraint) is never left to

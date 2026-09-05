@@ -2618,7 +2618,7 @@ class TestIssue85(unittest.TestCase):
     def test_pristine_seed_fails_the_fixup_checks(self):
         by_id = self._run(audited=False)
         for check_id in ("third-party-actions-sha-pinned",
-                         "no-trailing-version-comments"):
+                         "no-trailing-comments"):
             self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
 
     def test_pristine_seed_passes_the_restraint_checks(self):
@@ -2628,6 +2628,7 @@ class TestIssue85(unittest.TestCase):
         for check_id in ("cms-platform-refs-stay-on-tag",
                          "local-and-docker-refs-untouched",
                          "reference-files-untouched",
+                         "ci-workflow-not-deleted",
                          "workflows-still-parse"):
             self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
 
@@ -2676,7 +2677,30 @@ class TestIssue85(unittest.TestCase):
                 ci, "uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f",
                 "uses: actions/cache@145d7281d851cb2f0e335d9b256d80c13f353f7f  # v4.1.0")
             by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["no-trailing-version-comments"]["passed"])
+        self.assertFalse(by_id["no-trailing-comments"]["passed"])
+
+    def test_cms_platform_refs_stay_on_tag_flags_an_extra_sha_pinned_ref(self):
+        """Isolates must_not_match (fixture.yaml's check at ~line 109): both
+        required tag lines stay verbatim and correct, but an extra
+        cms-platform ref is SHA-pinned elsewhere in the same file — proving
+        the check catches that even when nothing required is missing, not
+        only when a must_match line got clobbered.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            original = deploy.read_text(encoding="utf-8")
+            extra = ("  stray:\n    uses: Adam-S-Daniel/cms-platform/"
+                    ".github/workflows/other.yml"
+                    "@1e9a6937a11cbce43ac288d062ceec17fc51d43f\n")
+            deploy.write_text(original + extra, encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertIn("Adam-S-Daniel/cms-platform/.github/workflows/"
+                     "e2e-tests.yml@v0.1.104", original)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
 
     # -- the restraint checks have teeth too ---------------------------------
 
@@ -2690,16 +2714,6 @@ class TestIssue85(unittest.TestCase):
                             encoding="utf-8")
             by_id = self._checks(ws, seed)
         self.assertFalse(by_id["local-and-docker-refs-untouched"]["passed"])
-
-    def test_editing_platform_lock_fails_restraint(self):
-        seed = GHA_SHA_PINNING_DIR / "seed"
-        with tempfile.TemporaryDirectory() as tmp:
-            ws = self._seed_copy(tmp)
-            self._audited(ws)
-            (ws / "platform.lock").write_text("platform_ref: v0.1.105\n",
-                                              encoding="utf-8")
-            by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["reference-files-untouched"]["passed"])
 
     def test_editing_pins_md_fails_restraint(self):
         seed = GHA_SHA_PINNING_DIR / "seed"
@@ -2720,6 +2734,18 @@ class TestIssue85(unittest.TestCase):
                          encoding="utf-8")
             by_id = self._checks(ws, seed)
         self.assertFalse(by_id["workflows-still-parse"]["passed"])
+
+    def test_deleting_ci_workflow_fails_restraint(self):
+        # Otherwise every glob-driven check above passes vacuously: nothing
+        # unpinned, nothing commented, nothing changed in the files that
+        # remain (review #133, S3).
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "ci.yml").unlink()
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["ci-workflow-not-deleted"]["passed"])
 
     # -- the seed must not read as an eval fixture (review #133, B2) ---------
 
