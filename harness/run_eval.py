@@ -364,6 +364,13 @@ def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     return env
 
 
+# Both spellings `expand()` honours, so a fixture cannot opt out of the
+# guard below by writing the braced one. `${WORKSPACE}` failed a
+# `startswith("$WORKSPACE")` test, which returned as if the fixture had put
+# nothing of its own on PATH.
+_WORKSPACE_SPELLINGS = ("$WORKSPACE", "${WORKSPACE}")
+
+
 def assert_stand_ins_on_path(workspace: Path, env: dict, env_spec: dict | None) -> None:
     """A fixture that prepends `$WORKSPACE/<dir>` to PATH must actually get it.
 
@@ -371,9 +378,12 @@ def assert_stand_ins_on_path(workspace: Path, env: dict, env_spec: dict | None) 
     the fixture meant to fake, under bypassPermissions, and scores whatever
     that tool happened to say. Raising is the right end for it — a harness
     that cannot honour a fixture's `env:` block has no result worth writing.
+
+    `$WORKSPACE/bin` and `${WORKSPACE}/bin` are the same fixture: `expand()`
+    resolves both, so both are guarded here.
     """
     spec = str((env_spec or {}).get("PATH", ""))
-    if not spec.startswith("$WORKSPACE"):
+    if not spec.startswith(_WORKSPACE_SPELLINGS):
         return
     wanted = Path(expand(spec.split(os.pathsep, 1)[0], dict(env)))
     got = Path(env["PATH"].split(os.pathsep)[0])

@@ -1725,6 +1725,35 @@ class Issue84Fixture:
         results = objective.run_checks(fixture, str(ws), str(seed), transcript=transcript)
         return {r["id"]: r for r in results}
 
+    def _mini_eval(self, seed_bin: dict[str, str] | None,
+                   path_spec: str = "$WORKSPACE/bin:$PATH") -> Path:
+        """A throwaway eval dir whose fixture prepends a bin dir to PATH."""
+        root = Path(tempfile.mkdtemp(prefix="issue84-eval-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        (root / "fixture.yaml").write_text(
+            "skill: mini\nprompt: probe\n"
+            f'env:\n  PATH: "{path_spec}"\n'
+            "objective_checks: []\njudge_rubric: none\n", encoding="utf-8")
+        seed = root / "seed"
+        (seed / "bin").mkdir(parents=True)
+        (seed / "README.md").write_text("mini seed\n", encoding="utf-8")
+        for name, body in (seed_bin or {}).items():
+            path = seed / "bin" / name
+            path.write_text(body, encoding="utf-8")
+            path.chmod(0o755)
+        return root
+
+    def _run_mini(self, eval_dir: Path) -> subprocess.CompletedProcess:
+        env = dict(os.environ)
+        env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
+        env["FAKE_CLAUDE_MODE"] = "agent_and_judge"
+        with tempfile.TemporaryDirectory() as results:
+            return subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+                 "--arm", "without_skill", "--no-judge", "--timeout", "30",
+                 "--results-dir", results],
+                capture_output=True, text=True, env=env, cwd=str(REPO_ROOT))
+
     def _triage_reads(self, ws: Path) -> None:
         """The read-only enumeration a correct triage performs."""
         self._gh(ws, "run", "list", "--workflow", "cms-publish-loop-prod.yml",
@@ -2389,34 +2418,6 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.assertEqual(env["PATH"], f"{tmp}/bin:/usr/bin")
         self.assertEqual(env["GH_REPLAY_DIR"], f"{tmp}/{self.PAYLOAD_DIR}")
         self.assertEqual(env["WORKSPACE"], tmp)
-
-    def _mini_eval(self, seed_bin: dict[str, str] | None) -> Path:
-        """A throwaway eval dir whose fixture prepends `$WORKSPACE/bin`."""
-        root = Path(tempfile.mkdtemp(prefix="issue84-eval-"))
-        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
-        (root / "fixture.yaml").write_text(
-            "skill: mini\nprompt: probe\n"
-            'env:\n  PATH: "$WORKSPACE/bin:$PATH"\n'
-            "objective_checks: []\njudge_rubric: none\n", encoding="utf-8")
-        seed = root / "seed"
-        (seed / "bin").mkdir(parents=True)
-        (seed / "README.md").write_text("mini seed\n", encoding="utf-8")
-        for name, body in (seed_bin or {}).items():
-            path = seed / "bin" / name
-            path.write_text(body, encoding="utf-8")
-            path.chmod(0o755)
-        return root
-
-    def _run_mini(self, eval_dir: Path) -> subprocess.CompletedProcess:
-        env = dict(os.environ)
-        env["CLAUDE_BIN"] = str(FAKE_CLAUDE)
-        env["FAKE_CLAUDE_MODE"] = "agent_and_judge"
-        with tempfile.TemporaryDirectory() as results:
-            return subprocess.run(
-                [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
-                 "--arm", "without_skill", "--no-judge", "--timeout", "30",
-                 "--results-dir", results],
-                capture_output=True, text=True, env=env, cwd=str(REPO_ROOT))
 
     def test_an_arm_whose_stand_in_never_made_it_onto_path_fails_loudly(self):
         """Better a crashed arm than one that ran the real tool."""
@@ -4800,6 +4801,42 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
         log = self._log(ws).strip()
         self.assertEqual(len(log.splitlines()), 1, log)
         self.assertIn("key=pr-list.json exit=0)", log)
+
+    # ------------------------------------ the guard on the arm's PATH (S6)
+
+    def test_the_stand_in_guard_reads_both_spellings_of_workspace(self):
+        """`${WORKSPACE}/bin` is the same fixture as `$WORKSPACE/bin` (S6).
+
+        The guard tested the spec with `startswith("$WORKSPACE")`, which the
+        braced spelling fails, so it returned without checking anything —
+        and `agent_env` expands both spellings happily, so the fixture
+        looked fine right up to the arm running whatever real tool was next
+        on PATH under bypassPermissions. Silently. That is the one failure
+        this guard exists to make loud.
+        """
+        for spec in ("$WORKSPACE/bin:$PATH", "${WORKSPACE}/bin:$PATH"):
+            with self.subTest(spec=spec), tempfile.TemporaryDirectory() as tmp:
+                ws = Path(tmp)
+                env_spec = {"PATH": spec}
+                env = run_eval.agent_env(ws, env_spec)
+                with self.assertRaises(RuntimeError):
+                    run_eval.assert_stand_ins_on_path(ws, env, env_spec)
+                # …and with a stand-in actually there, neither spelling raises.
+                (ws / "bin").mkdir()
+                stand_in = ws / "bin" / "gh"
+                stand_in.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+                stand_in.chmod(0o755)
+                run_eval.assert_stand_ins_on_path(ws, env, env_spec)
+
+    def test_an_arm_with_the_braced_spelling_and_no_stand_in_fails_loudly(self):
+        """End to end, through run_eval.py itself."""
+        proc = self._run_mini(self._mini_eval(None, "${WORKSPACE}/bin:$PATH"))
+        self.assertNotEqual(proc.returncode, 0, proc.stdout)
+        self.assertIn("PATH", proc.stderr)
+        # …and the same fixture with a stand-in on it still runs.
+        ok = self._run_mini(self._mini_eval({"gh": "#!/bin/sh\nexit 0\n"},
+                                            "${WORKSPACE}/bin:$PATH"))
+        self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
 
 if __name__ == "__main__":
     unittest.main()
