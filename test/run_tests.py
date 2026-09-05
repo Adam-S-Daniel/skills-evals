@@ -952,7 +952,18 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
         self.assertFalse(passed, detail)
         self.assertIn("escapes", detail.lower())
 
-    def test_absolute_base_does_not_escape_via_a_real_sibling_file(self):
+    # --- Round 4, N-a: an absolute base is a fixture config mistake, refused
+    # up front (same wording as dir_listing_matches's own isabs guard) rather
+    # than caught later per-link and blamed on every link individually ---
+
+    def test_absolute_base_is_refused_at_config_time(self):
+        # This used to be caught only by the commonpath guard below, once
+        # per matched link, with the misleading "(escapes the workspace)"
+        # wording — as if the LINK were the problem rather than the fixture's
+        # own `base`. A sibling file existing at that absolute path (so the
+        # old commonpath check would have found something real to complain
+        # about) proves the new refusal fires before any of that resolution
+        # even happens.
         ws = self._ws({"README.md": "[0001](sibling.md)\n"})
         sibling = ws.parent / "sibling.md"
         sibling.write_text("x\n", encoding="utf-8")
@@ -961,7 +972,59 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
             str(ws), ["README.md"], link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)',
             base=str(ws.parent))
         self.assertFalse(passed, detail)
-        self.assertIn("escapes", detail.lower())
+        self.assertIn("must be a workspace-relative path, not absolute", detail)
+
+    def test_absolute_base_naming_a_wholly_unrelated_directory_is_refused(self):
+        ws = self._ws({"README.md": "[0001](x.md)\n"})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)',
+            base="/etc")
+        self.assertFalse(passed, detail)
+        self.assertIn("must be a workspace-relative path, not absolute", detail)
+
+    def test_relative_base_that_resolves_outside_the_workspace_is_named_once(self):
+        # A relative `base` (so the isabs refusal above never fires) that
+        # still walks out of the workspace via `..` is the twin mistake:
+        # named ONCE against the base, not once per link scanned.
+        ws = self._ws({
+            "sub/README.md": "[0001](a.md) and [0002](b.md) and [0003](c.md)\n",
+        })
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["sub/README.md"],
+            link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)', base="../../escaped")
+        self.assertFalse(passed, detail)
+        self.assertIn("../../escaped", detail)
+        self.assertIn("resolves outside the workspace", detail)
+        self.assertEqual(detail.count("resolves outside the workspace"), 1, detail)
+
+    def test_symlinked_workspace_component_still_resolves_via_realpath(self):
+        # dir_listing_matches resolves with os.path.realpath so a symlinked
+        # path component inside the workspace is contained correctly; this
+        # check used os.path.abspath, which does not resolve symlinks at
+        # all, so a base reached only through a symlinked component could be
+        # (mis)judged relative to the link's un-resolved, textual path
+        # instead of where it actually points on disk.
+        ws = self._ws({
+            "real/docs/README.md": "[0001](0001-a.md)\n",
+            "real/docs/0001-a.md": "x\n",
+        })
+        (ws / "alias").symlink_to(ws / "real")
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["alias/docs/README.md"],
+            link_pattern=r'\[[0-9]{4}\]\(([0-9]{4}-[a-z0-9-]+\.md)\)', base="alias/docs")
+        self.assertTrue(passed, detail)
+
+    def test_relative_dotdot_path_back_into_the_workspace_still_resolves(self):
+        # A `..`-bearing captured path is fine as long as it stays inside the
+        # workspace once resolved — only ESCAPING is the problem.
+        ws = self._ws({
+            "docs/decisions/README.md": "[0001](../../README.md)\n",
+            "README.md": "root readme\n",
+        })
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["docs/decisions/README.md"],
+            link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)', base="docs/decisions")
+        self.assertTrue(passed, detail)
 
     # --- N4: registered in the CHECKS map, same as file_count ---
 
@@ -5588,6 +5651,24 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         fixture_path.write_text(yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
         return tmp_eval_dir
 
+    def _copy_fixture_with_link_base(self, eval_dir: Path, bad_base: str) -> Path:
+        """A throwaway copy of `eval_dir` with every link_targets_exist
+        check's `base` replaced by `bad_base` — the checked-in fixture.yaml
+        is never touched. Same shape as `_copy_fixture_with_link_pattern`,
+        for round 4's N-a: an absolute `base` fixture config mistake.
+        """
+        tmp_eval_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp_eval_dir, ignore_errors=True)
+        shutil.copytree(eval_dir, tmp_eval_dir, dirs_exist_ok=True)
+        fixture_path = tmp_eval_dir / "fixture.yaml"
+        fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+        mutated = [c for c in fixture["objective_checks"] if c["type"] == "link_targets_exist"]
+        self.assertTrue(mutated, "no link_targets_exist check found to mutate")
+        for check in mutated:
+            check["base"] = bad_base
+        fixture_path.write_text(yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
+        return tmp_eval_dir
+
     def _link_retry_sh(self, ws: Path, link_comment: str) -> None:
         path = ws / "scripts" / "retry.sh"
         text = path.read_text(encoding="utf-8")
@@ -5812,6 +5893,22 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         by_id = {c["id"]: c for c in payload["checks"]}
         self.assertFalse(by_id["readme-index-links-resolve"]["passed"])
         self.assertIn("capture group", by_id["readme-index-links-resolve"]["detail"])
+
+    def test_cli_survives_a_link_targets_exist_check_with_an_absolute_base(self):
+        # Round 4, N-a: an absolute `base` in a fixture is a config mistake,
+        # refused once up front — through the real CLI, on an otherwise
+        # correct workspace, not just the unit-level objective.py call.
+        tmp_eval_dir = self._copy_fixture_with_link_base(ADRS_EXISTING_DIR, "/etc")
+        ws = self._ws(tmp_eval_dir)
+        self._apply_correct_existing(ws)
+        code, payload = self._run_cli(tmp_eval_dir, ws)
+        self.assertEqual(code, 1, payload)
+        self.assertIn("checks", payload, payload)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        detail = by_id["readme-index-links-resolve"]["detail"]
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"])
+        self.assertIn("must be a workspace-relative path, not absolute", detail)
+        self.assertEqual(detail.count("must be a workspace-relative path"), 1, detail)
 
     def test_cli_objective_only_ignores_stale_registry_env_vars(self):
         # N3: --arm objective-only never installs a skill, so it shouldn't

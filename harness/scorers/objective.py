@@ -1156,6 +1156,8 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
         return (False, "link_targets_exist check names no link_pattern")
     if not base:
         return (False, "link_targets_exist check names no base directory")
+    if os.path.isabs(base):
+        return (False, f"{base}: must be a workspace-relative path, not absolute")
     try:
         regex = re.compile(link_pattern)
     except re.error as exc:
@@ -1163,8 +1165,14 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
     if regex.groups < 1:
         return (False, "link_targets_exist link_pattern has no capture group "
                 "to name the linked path")
-    workspace_abs = os.path.abspath(workspace)
+    # realpath, not abspath, so a workspace-internal symlinked component is
+    # resolved to where it actually points before containment is judged —
+    # the same convention dir_listing_matches uses for the same reason.
+    workspace_real = os.path.realpath(workspace)
     base_dir = os.path.join(workspace, base)
+    base_real = os.path.realpath(base_dir)
+    if os.path.commonpath([workspace_real, base_real]) != workspace_real:
+        return (False, f"{base}: resolves outside the workspace")
     matched = set()
     for pattern in patterns:
         matched.update(p for p in glob.glob(os.path.join(workspace, pattern))
@@ -1176,10 +1184,10 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
         with open(path, encoding="utf-8", errors="replace") as f:
             for line in f:
                 for m in regex.finditer(line):
-                    target_abs = os.path.abspath(os.path.join(base_dir, m.group(1)))
-                    if os.path.commonpath([workspace_abs, target_abs]) != workspace_abs:
+                    target_real = os.path.realpath(os.path.join(base_dir, m.group(1)))
+                    if os.path.commonpath([workspace_real, target_real]) != workspace_real:
                         missing.add(f"{rel}: {m.group(1)} (escapes the workspace)")
-                    elif not os.path.isfile(target_abs):
+                    elif not os.path.isfile(target_real):
                         missing.add(f"{rel}: {m.group(1)}")
     if missing:
         return (False, "dangling link target(s): " + "; ".join(sorted(missing)))
