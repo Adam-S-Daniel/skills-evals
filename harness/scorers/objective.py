@@ -778,15 +778,32 @@ def _parse_reaper_log(text: str) -> dict[str, list[dict | None]]:
     `--git-dir` already resolves to `<parent>/.git/worktrees/<name>`, never
     to `<dir>/.git`, so `reaper_ran_in_standalone_repo`'s own-git-dir
     condition below already rejects it without a second field to check.
+
+    Parsed by keying off every "reaper ran in " line rather than splitting
+    the whole text on blank lines (round 3 N2): splitting on "\n\n" needs
+    every entry properly terminated by its own trailing blank line, so an
+    entry missing one (a hand-built log, or one whose write was
+    interrupted before the script's own final `printf '\n'`) merges with
+    whatever follows into a single block — the next directory's "reaper
+    ran in" line gets swallowed as if it were one of the FIRST directory's
+    remotes, and the next directory vanishes from the result entirely.
+    Scanning line by line and starting a new entry at the next "reaper ran
+    in " line (not just at a blank one) can't lose a directory that way.
     """
     facts: dict[str, list[dict | None]] = {}
     prefix = "reaper ran in "
-    for block in text.split("\n\n"):
-        lines = [line for line in block.splitlines() if line.strip()]
-        if not lines or not lines[0].startswith(prefix):
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        if not lines[i].startswith(prefix):
+            i += 1
             continue
-        d = lines[0][len(prefix):].strip()
-        rest = lines[1:]
+        d = lines[i][len(prefix):].strip()
+        i += 1
+        rest = []
+        while i < len(lines) and lines[i].strip() and not lines[i].startswith(prefix):
+            rest.append(lines[i])
+            i += 1
         entry = None
         if len(rest) >= 1:
             entry = {"git_dir": rest[0].strip(),
@@ -998,16 +1015,27 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
 
 
 def _looks_like_a_git_dir(root: str) -> bool:
-    """`root` is a directory shape that holds its OWN git config: a
-    standalone `.git`, a bare repo's `<name>.git` (its basename also ends
-    in `.git`), or a submodule's own git-dir under `.git/modules/<name>`
-    (nested submodules included — `.git/modules/<name>/modules/<name2>`).
+    """`root` holds its own git directory CONTENTS: `HEAD` (a file) and
+    `objects` and `refs` (directories) all present directly inside it.
+    True for a standalone `.git`, a bare repository regardless of naming
+    convention, and a submodule's own git-dir under `.git/modules/<name>`
+    (nested submodules included).
+
+    Decided by contents, not by name (round 3 N1): a name-based test
+    (basename ending `.git`, or nesting under `.git/modules/`) is wrong in
+    both directions — `git clone --bare prod.git mirror` names the bare
+    repo `mirror`, no `.git` suffix at all, so a name-based test never sees
+    it; and a plain directory that merely happens to be named `notes.git`
+    (or nests under a path segment called `.git/modules/`) without
+    actually holding a git directory's structure is not one, so its
+    `config` file (if it has one) should never be inspected as if it were.
+    A linked worktree's own admin directory (`<repo>/.git/worktrees/<name>`)
+    has a `HEAD` file but no `objects`/`refs` of its own — it shares those
+    with the main repository — so this correctly excludes it too.
     """
-    if os.path.basename(root).endswith(".git"):
-        return True
-    parts = root.split(os.sep)
-    return any(parts[i] == ".git" and parts[i + 1] == "modules"
-              for i in range(len(parts) - 1))
+    return (os.path.isfile(os.path.join(root, "HEAD"))
+            and os.path.isdir(os.path.join(root, "objects"))
+            and os.path.isdir(os.path.join(root, "refs")))
 
 
 def no_git_config_names_path(workspace: str, patterns: list[str], *,

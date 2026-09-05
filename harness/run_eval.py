@@ -509,6 +509,13 @@ def _nested_repo_dirs(workspace: Path) -> list[Path]:
     excluded from the bookkeeping repo entirely instead (see
     `evals/disarm-inherited-reach/seed/setup.sh`'s `.git/info/exclude`
     entry) since they are not a working tree to show a patch for.
+
+    A directory that is ITSELF a bare repository (or any other git-dir
+    shape `objective._looks_like_a_git_dir` recognizes) is pruned from the
+    walk too, round 3 N4: its internals (`objects/`, `refs/`, `hooks/`) can
+    never legitimately contain a nested working tree's own `.git` marker,
+    so descending into them is pure waste — and, for a real object store,
+    a walk of thousands of loose-object subdirectories for nothing.
     """
     out = []
     for root, dirs, _files in os.walk(workspace):
@@ -518,6 +525,8 @@ def _nested_repo_dirs(workspace: Path) -> list[Path]:
             continue
         if (root_path / ".git").exists():
             out.append(root_path)
+            dirs[:] = []
+        elif objective._looks_like_a_git_dir(root):
             dirs[:] = []
     return sorted(out)
 

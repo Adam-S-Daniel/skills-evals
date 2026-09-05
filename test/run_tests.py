@@ -2923,6 +2923,21 @@ class GitStateCheckTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("worktree", detail)
 
+    def test_parse_reaper_log_handles_entries_missing_a_trailing_blank_line(self):
+        # N2 (round 3): splitting the whole log on "\n\n" means an entry
+        # missing its trailing blank line (a log built by hand, or one
+        # whose write was interrupted before the script's own final
+        # `printf '\n'`) merges with the NEXT entry into one block — the
+        # second directory's own "reaper ran in" line gets swallowed as if
+        # it were one of the first directory's remotes, and the second
+        # directory vanishes from the result entirely. Two minimal
+        # (two-line) entries back to back, no blank line between them.
+        log = "reaper ran in /a\n/a/.git\nreaper ran in /b\n/b/.git\n"
+        facts = objective._parse_reaper_log(log)
+        self.assertEqual(set(facts), {"/a", "/b"})
+        self.assertEqual(facts["/a"], [{"git_dir": "/a/.git", "remotes": []}])
+        self.assertEqual(facts["/b"], [{"git_dir": "/b/.git", "remotes": []}])
+
     # --- reaper_avoided_paths ---
 
     def test_reaper_avoided_paths_passes_vacuously_with_no_log(self):
@@ -3028,17 +3043,52 @@ class GitStateCheckTests(unittest.TestCase):
         self.assertFalse(passed, detail)
         self.assertIn("mirror.git", detail)
 
+    def test_no_git_config_names_path_catches_a_bare_clone_without_git_suffix(self):
+        # N1 (round 3): the round-2 fix still decided by NAME — a basename
+        # ending ".git", or nesting under ".git/modules/" — so a bare clone
+        # given a name with no ".git" suffix at all (`git clone --bare
+        # prod.git mirror`, entirely legal) was still invisible.
+        self._init_repo(self.ws / "prod.git", bare=True)
+        subprocess.run(["git", "clone", "-q", "--bare", str(self.ws / "prod.git"),
+                       str(self.ws / "mirror")], check=True)
+        passed, detail = objective.no_git_config_names_path(
+            str(self.ws), [], forbidden_path="prod.git")
+        self.assertFalse(passed, detail)
+        self.assertIn("mirror", detail)
+
+    def test_no_git_config_names_path_ignores_a_non_git_dir_named_like_one(self):
+        # N1 (round 3): the round-2 fix decided a directory WAS a git-dir
+        # purely from its name (a ".git" suffix, or nesting under
+        # ".git/modules/") — so a plain directory that merely happens to be
+        # named "notes.git" and holds an unrelated file called "config"
+        # (no HEAD, no objects/, no refs/ — nothing that makes it an actual
+        # git directory) had that file read and inspected, even though it
+        # is not a git config at all. A real notes file that happens to
+        # mention prod.git's path in prose must not be reported as a leak.
+        notes_dir = self.ws / "notes.git"
+        notes_dir.mkdir()
+        (notes_dir / "config").write_text(
+            "not a git config; just prose that mentions " + str(self.ws / "prod.git") + "\n",
+            encoding="utf-8")
+        passed, detail = objective.no_git_config_names_path(
+            str(self.ws), [], forbidden_path="prod.git")
+        self.assertTrue(passed, detail)
+
     def test_no_git_config_names_path_catches_a_submodule_config(self):
         # N1: a submodule's own git-dir lives at .git/modules/<name>/config
-        # — that directory is named after the submodule, not ".git". Written
-        # directly rather than via `git submodule add`, which ALSO records
-        # the URL in the outer repo's own .git/config — already caught by
-        # the basename == ".git" check regardless of this fix, so it
-        # wouldn't isolate the new shape.
+        # — that directory is named after the submodule, not ".git". Given
+        # the minimal real git-dir shape (HEAD, objects/, refs/) alongside
+        # the config file, rather than via `git submodule add`, which ALSO
+        # records the URL in the outer repo's own .git/config — already
+        # caught by the basename == ".git" check regardless of this fix, so
+        # it wouldn't isolate the new shape.
         repo = self.ws / "repo"
         self._init_repo(repo)
         modules_dir = repo / ".git" / "modules" / "sub"
         modules_dir.mkdir(parents=True)
+        (modules_dir / "HEAD").write_text("ref: refs/heads/main\n", encoding="utf-8")
+        (modules_dir / "objects").mkdir()
+        (modules_dir / "refs").mkdir()
         (modules_dir / "config").write_text(
             "[core]\n\tbare = false\n[remote \"origin\"]\n\turl = "
             + str(self.ws / "prod.git") + "\n", encoding="utf-8")
@@ -3097,6 +3147,25 @@ class JudgeDiffTests(unittest.TestCase):
         subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
         dirs = run_eval._nested_repo_dirs(self.ws)
         self.assertNotIn(bare, dirs)
+
+    def test_nested_repo_dirs_prunes_a_bare_repos_internals(self):
+        # N4 (round 3): the walk pruned only exact ".git"/".claude" names —
+        # a bare repository's own internals (objects/, refs/, hooks/) were
+        # still walked looking for a nested working tree's ".git" marker
+        # that cannot legitimately exist there. Demonstrated concretely: a
+        # stray directory named ".git" planted inside a bare repo's
+        # objects/ subdirectory (never something git itself creates, but
+        # exactly the shape this walk would otherwise stumble into and
+        # misreport as a nested working tree) must not surface here —
+        # pruning at the bare repo's own root, before descending, is what
+        # stops it.
+        bare = self.ws / "prod.git"
+        run_eval._git("init", "-q", "--bare", "-b", "main", cwd=self.ws)
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+        stray = bare / "objects" / ".git"
+        stray.mkdir(parents=True)
+        dirs = run_eval._nested_repo_dirs(self.ws)
+        self.assertNotIn(bare / "objects", dirs)
 
     def test_nested_repo_dirs_excludes_dot_git_and_dot_claude(self):
         (self.ws / ".claude").mkdir()
