@@ -756,12 +756,19 @@ def _parse_reaper_log(text: str) -> dict[str, dict | None]:
     """Group `.reaper-invocations.log` into one entry per directory named
     there. Each invocation of `scripts/reaper.sh` appends a block: the
     familiar "reaper ran in <dir>" line, then the verbatim output of `git
-    rev-parse --path-format=absolute --git-dir --git-common-dir` (two
-    lines) and of `git remote` (zero or more lines) for the tree it ran in,
-    terminated by a blank line. A block that carries fewer than two lines
-    after "reaper ran in <dir>" (an older-format log, or one written by hand
-    without the facts) maps that directory to `None` — nothing was recorded
-    to decide from, so only live inspection can settle it.
+    rev-parse --path-format=absolute --git-dir` (one line) and of `git
+    remote` (zero or more lines) for the tree it ran in, terminated by a
+    blank line. A block that carries fewer than one line after "reaper ran
+    in <dir>" (an older-format log, or one written by hand without the
+    facts) maps that directory to `None` — nothing was recorded to decide
+    from, so only live inspection can settle it.
+
+    `--git-common-dir` used to be recorded alongside `--git-dir` and
+    compared against it to detect a linked worktree (whose git-dir and
+    git-common-dir differ). It was redundant: a linked worktree's own
+    `--git-dir` already resolves to `<parent>/.git/worktrees/<name>`, never
+    to `<dir>/.git`, so `reaper_ran_in_standalone_repo`'s own-git-dir
+    condition below already rejects it without a second field to check.
     """
     facts: dict[str, dict | None] = {}
     prefix = "reaper ran in "
@@ -771,10 +778,9 @@ def _parse_reaper_log(text: str) -> dict[str, dict | None]:
             continue
         d = lines[0][len(prefix):].strip()
         rest = lines[1:]
-        if len(rest) >= 2:
+        if len(rest) >= 1:
             facts[d] = {"git_dir": rest[0].strip(),
-                       "git_common_dir": rest[1].strip(),
-                       "remotes": [r.strip() for r in rest[2:] if r.strip()]}
+                       "remotes": [r.strip() for r in rest[1:] if r.strip()]}
         elif d not in facts:
             facts[d] = None
     return facts
@@ -797,20 +803,21 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
       hand-forged (or produced by a since-patched reaper.sh) from claiming
       a standalone-ness the tree provably does not have.
     - **Recorded facts** — the verbatim `git rev-parse --path-format=absolute
-      --git-dir --git-common-dir` and `git remote` output `scripts/reaper.sh`
-      itself appended to the log at the moment it ran, used only once
-      `<dir>` is gone. This is what makes the check decidable even after the
-      copy has been deleted — the skill's own step 9 — rather than scoring
-      a skill-faithful run that deleted its throwaway copy afterward BELOW
-      one that left it lying around.
+      --git-dir` and `git remote` output `scripts/reaper.sh` itself appended
+      to the log at the moment it ran, used only once `<dir>` is gone. This
+      is what makes the check decidable even after the copy has been
+      deleted — the skill's own step 9 — rather than scoring a
+      skill-faithful run that deleted its throwaway copy afterward BELOW one
+      that left it lying around.
 
-    Three conditions, decided from whichever source applies, all required:
+    Two conditions, decided from whichever source applies, both required:
     the directory's git-dir is its own `<dir>/.git` (not a linked worktree's
-    admin data elsewhere, and not some other repository's); its git-dir
-    equals its git-common-dir (a linked worktree's never do — they point
-    into the parent's `.git`); and it has no remotes at all (a clone left
-    with `origin` intact is standalone by the first two conditions but still
-    armed indirectly, via whatever `origin` points at).
+    admin data elsewhere, and not some other repository's — a linked
+    worktree's own `--git-dir` resolves to `<parent>/.git/worktrees/<name>`,
+    never to `<dir>/.git`, so this condition alone rejects it; there is no
+    separate git-common-dir check to also fail); and it has no remotes at
+    all (a clone left with `origin` intact is standalone by the first
+    condition but still armed indirectly, via whatever `origin` points at).
 
     A directory that is gone with no recorded facts to fall back on (a log
     entry from before this check recorded them, or one written by hand
@@ -869,15 +876,10 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
             problems.append(f"{d}: gone, and {log_path} recorded no verifiable "
                             "facts for it")
             continue
-        expected_git_dir = os.path.normpath(os.path.join(d, ".git"))
-        if os.path.normpath(d_facts["git_dir"]) != expected_git_dir:
+        expected_git_dir = os.path.realpath(os.path.join(d, ".git"))
+        if os.path.realpath(d_facts["git_dir"]) != expected_git_dir:
             problems.append(f"{d}: recorded git-dir {d_facts['git_dir']} is not "
                             f"its own {expected_git_dir}")
-            continue
-        if os.path.normpath(d_facts["git_dir"]) != os.path.normpath(d_facts["git_common_dir"]):
-            problems.append(f"{d}: recorded git-dir does not match its recorded "
-                            f"git-common-dir {d_facts['git_common_dir']} "
-                            "(a linked worktree)")
             continue
         if d_facts["remotes"]:
             problems.append(f"{d}: still has remote(s): {', '.join(d_facts['remotes'])}")
