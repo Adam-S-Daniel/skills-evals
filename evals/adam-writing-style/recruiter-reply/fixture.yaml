@@ -87,14 +87,14 @@ objective_checks:
       - '(?i)\bleverag(?:e|es|ed|ing)\b'
       - '(?i)\bsynerg(?:y|ies|istic)\b'
       - '(?i)\brobust(?:ly|ness)?\b'
-      - '(?i)\bbest[- ]in[- ]class\b'
-      - '(?i)\bworld[- ]class\b'
-      - '(?i)\bdeep[- ]dives?\b'
-      - '(?i)\bdeep expertise in\b'
-      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
-      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
-      - '(?i)\btouch(?:es|ed|ing)? base\b'
-      - '(?i)\bping me\b'
+      - '(?i)\bbest[-\s]+in[-\s]+class\b'
+      - '(?i)\bworld[-\s]+class\b'
+      - '(?i)\bdeep[-\s]+dives?\b'
+      - '(?i)\bdeep\s+expertise\s+in\b'
+      - '(?i)\bthought[-\s]+leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing)\s+back\b'
+      - '(?i)\btouch(?:es|ed|ing)?\s+base\b'
+      - '(?i)\bping\s+me\b'
 
   # Core move 1: greet warmly, by name — in the greeting, not anywhere in
   # the reply. Anchored to the opening: a reply that greets nobody and
@@ -154,7 +154,7 @@ objective_checks:
     strip_seed: true
     must_match:
       - '\bREQ-4417\b'
-      - '(?i)\bMarch 2027\b'
+      - '(?i)\bMarch\s+2027\b'
 
 # Pairwise: the judge ranks this reply against the two committed references
 # without being told which is which, and the rank is the score. The

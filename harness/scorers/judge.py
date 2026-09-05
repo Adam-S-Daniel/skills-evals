@@ -439,10 +439,13 @@ def strip_fiction_marker(text: str) -> str:
 _LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+•]|\d+[.)])\s")
 
 # Characters that take up no width and carry no meaning in a draft: a BOM,
-# the zero-width and bidi marks, and a stray NUL. A draft made only of these
-# used to pass the non-empty guard and then slip past the duplicate guard as
-# well, so an arm that produced nothing came back ranked.
-_INVISIBLE_RE = re.compile("[​-‏⁠﻿\x00]")
+# the zero-width and bidi marks, the soft hyphen, a stray NUL, and the two
+# blank glyphs that are NOT whitespace to `\s` and so survived every strip
+# — the Braille pattern blank and the Hangul filler, both of which render as
+# an empty cell. A draft made only of these used to pass the non-empty guard
+# and then slip past the duplicate guard as well, so an arm that produced
+# nothing came back ranked.
+_INVISIBLE_RE = re.compile("[\u00ad\u200b-\u200f\u2060\u2800\u3164\ufeff\x00]")
 
 
 def _unwrap_block(lines: list[str], width: float) -> list[str]:

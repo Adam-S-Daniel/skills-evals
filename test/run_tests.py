@@ -3165,6 +3165,109 @@ class TestIssue81(unittest.TestCase):
     # specificity: both seed facts, cited
     # ------------------------------------------------------------------
 
+    # S7. "26" adjacent to "min" was written as a lookahead running
+    # FORWARD only, so the same fact stated the other way round — the new
+    # number first, the old one after — read as absent.
+    _APPRAISAL_NUMBER_IN_REVERSE = (
+        "Most of this quarter went to the deployment work. I stood up\n"
+        "deploy-scaffold as the shared deployment repository, and the cache\n"
+        "and matrix rework cut the median pipeline run to 9 minutes, down\n"
+        "from 26. Next quarter is for the last two teams.\n")
+
+    def test_the_pipeline_number_counts_in_either_order(self):
+        self._assert_all_pass("self-appraisal-opening",
+                              self._APPRAISAL_NUMBER_IN_REVERSE,
+                              "the new number first, the old one after")
+
+    # S8. Two drafts that narrate the quarter about Adam and passed a check
+    # about writing it in the first person.
+    #
+    # The first slips an auxiliary between the name and the verb, which the
+    # `\bAdam\s+(?:led|built|...)` list could not see; the second does the
+    # same with an adverb, and its only `\bI\b` is the one inside "I/O".
+    _APPRAISAL_NARRATED_WITH_AN_AUXILIARY = (
+        "Adam has led the deploy-scaffold work this quarter, and I am glad\n"
+        "he did: the cache and matrix rework cut the median pipeline run\n"
+        "from 26 minutes to 9, and six teams have adopted the repository.\n")
+    _APPRAISAL_NARRATED_WITH_AN_ADVERB = (
+        "Adam again led the deploy-scaffold rollout this quarter. The cache\n"
+        "and matrix rework cut the median pipeline run from 26 minutes to 9,\n"
+        "and I/O contention on the shared runners is gone with it.\n")
+
+    def test_a_third_person_narration_is_caught_through_an_intervening_word(self):
+        for label, draft in (
+                ("auxiliary", self._APPRAISAL_NARRATED_WITH_AN_AUXILIARY),
+                ("adverb", self._APPRAISAL_NARRATED_WITH_AN_ADVERB)):
+            with self.subTest(narration=label):
+                self._assert_only_failure(
+                    self._score("self-appraisal-opening", draft),
+                    "appraisal-is-first-person")
+
+    def test_an_i_inside_a_slashed_acronym_is_not_a_first_person_subject(self):
+        # The must_match half of the same check. `\bI\b` fires inside
+        # "I/O", so a paragraph with no first-person subject anywhere read
+        # as first person on an acronym.
+        check = next(c for c in
+                     self._fixture("self-appraisal-opening")["objective_checks"]
+                     if c["id"] == "appraisal-is-first-person")
+        for pattern in check["must_match"]:
+            with self.subTest(pattern=pattern):
+                self.assertNotRegex("I/O contention is gone.", pattern)
+                self.assertRegex("I stood up deploy-scaffold.", pattern)
+
+    # N7. The same two-word facts, split by the hard wrap a 74-column
+    # reference really has. Every one of these read as absent because the
+    # patterns hard-coded a single space and bounded the sentence with
+    # `[^.\n]*`.
+    _FACTS_ACROSS_A_LINE_BREAK = {
+        "recruiter-reply": (
+            "Hi Dana,\n"
+            "\n"
+            "Sorry for the slow reply — I am going to pass on REQ-4417. My\n"
+            "engagement here is contracted through March\n"
+            "2027, and three days a week on site would not work for me.\n"
+            "\n"
+            "Thanks,\nAdam Daniel\n"),
+        "proposal-bio": (
+            "Adam Daniel leads delivery infrastructure at a civic technology\n"
+            "consultancy. At Halyard Civic Data (2019–2024) he rebuilt the\n"
+            "deployment pipeline behind eleven state agency websites and ran\n"
+            "the remediation program that carried all eleven to a clean Section\n"
+            "508 audit. He holds the CISSP.\n"),
+        "self-appraisal-opening": (
+            "Most of this quarter went to the deployment work. I stood up\n"
+            "deploy-scaffold as the shared deployment repository, and the cache\n"
+            "and matrix rework pulled the median pipeline run from 26\n"
+            "minutes to 9. Next quarter is for the last two teams.\n"),
+    }
+
+    def test_a_two_word_fact_survives_the_line_break_a_wrap_puts_in_it(self):
+        for name, draft in sorted(self._FACTS_ACROSS_A_LINE_BREAK.items()):
+            with self.subTest(fixture=name):
+                self._assert_all_pass(name, draft,
+                                      "the fact split across a hard wrap")
+
+    # N6. A banned term with an invisible character inside it, and one with
+    # two spaces where the pattern hard-coded one. Both read to the operator
+    # exactly as the term does, and both passed the ban.
+    _HIDDEN_BUZZWORDS = {
+        "soft hyphen": "We can lever\u00adage that next quarter.",
+        "zero-width space": "We can lever\u200bage that next quarter.",
+        "word joiner": "A deep\u2060 dive is what it needs.",
+        "double space": "A deep  dive is what it needs.",
+        "wrapped term": "We should circle\nback in 2027.",
+        "wrapped expertise": "He has deep\nexpertise in this space.",
+    }
+
+    def test_an_invisible_character_does_not_hide_a_banned_term(self):
+        for name in self.FIXTURES:
+            clean = self._reference(name, "in-voice")
+            for label, spliced in sorted(self._HIDDEN_BUZZWORDS.items()):
+                with self.subTest(fixture=name, hidden=label):
+                    self._assert_only_failure(
+                        self._score(name, clean + "\n\n" + spliced + "\n"),
+                        self.AVOID_CHECK_ID)
+
     def test_each_fixture_requires_both_of_its_seed_facts(self):
         for name, facts in self.FACTS.items():
             clean = self._reference(name, "in-voice")
@@ -3825,20 +3928,22 @@ class TestIssue81(unittest.TestCase):
     # agent's own commentary, which is the known failure mode every fixture
     # header records — not something provenance can decide, because
     # commentary really is the agent's writing.
-    UNREACHABLE_FROM_THE_SEED = {
-        ("proposal-bio", "bio-is-third-person"):
-            r"\b(?:[Hh]e|[Hh]is|Adam|Daniel)\b",
-        ("self-appraisal-opening", "appraisal-is-first-person"): r"\bI\b",
-    }
+    UNREACHABLE_FROM_THE_SEED = (
+        ("proposal-bio", "bio-is-third-person"),
+        ("self-appraisal-opening", "appraisal-is-first-person"),
+    )
 
     def test_the_seed_cannot_supply_what_the_register_checks_look_for(self):
-        for (name, check_id), pattern in sorted(
-                self.UNREACHABLE_FROM_THE_SEED.items()):
-            with self.subTest(fixture=name, check=check_id):
-                check = next(c for c in self._fixture(name)["objective_checks"]
-                             if c["id"] == check_id)
-                self.assertIn(pattern, check["must_match"])
-                self.assertNotRegex(self._seed_text(name), pattern)
+        # Read off the fixture rather than restated here, so a widened
+        # pattern that DID start matching the material would fail this
+        # rather than leave the omission above silently wrong.
+        for name, check_id in self.UNREACHABLE_FROM_THE_SEED:
+            check = next(c for c in self._fixture(name)["objective_checks"]
+                         if c["id"] == check_id)
+            self.assertTrue(check["must_match"], check_id)
+            for pattern in check["must_match"]:
+                with self.subTest(fixture=name, pattern=pattern):
+                    self.assertNotRegex(self._seed_text(name), pattern)
 
     def test_quoted_material_never_supplies_what_a_check_looks_for(self):
         # One case per (fixture, check) whose target can be quoted, in all
@@ -4585,7 +4690,14 @@ class TestIssue81(unittest.TestCase):
         # then evaded the duplicate guard as well, so an arm that produced
         # nothing came back ranked as if its writing had been read.
         for invisible in ("﻿", "​​", "\x00",
-                          "﻿\n​\n", "‎ ‏"):
+                          "﻿\n​\n", "‎ ‏",
+                          # Not whitespace to `\\s`, and not zero-width
+                          # either: these two render as a blank cell, so
+                          # a draft made of them looks empty and passed
+                          # the guard as if it were writing. The soft
+                          # hyphen renders as nothing at all except at a
+                          # line break.
+                          "⠀⠀⠀", "ㅤㅤ", "­­"):
             with self.subTest(candidate=repr(invisible)):
                 with self.assertRaises(ValueError) as ctx:
                     judge.blind_order(invisible, self.REFERENCES, 0)

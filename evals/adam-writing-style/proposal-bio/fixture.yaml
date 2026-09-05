@@ -72,14 +72,14 @@ objective_checks:
       - '(?i)\bleverag(?:e|es|ed|ing)\b'
       - '(?i)\bsynerg(?:y|ies|istic)\b'
       - '(?i)\brobust(?:ly|ness)?\b'
-      - '(?i)\bbest[- ]in[- ]class\b'
-      - '(?i)\bworld[- ]class\b'
-      - '(?i)\bdeep[- ]dives?\b'
-      - '(?i)\bdeep expertise in\b'
-      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
-      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
-      - '(?i)\btouch(?:es|ed|ing)? base\b'
-      - '(?i)\bping me\b'
+      - '(?i)\bbest[-\s]+in[-\s]+class\b'
+      - '(?i)\bworld[-\s]+class\b'
+      - '(?i)\bdeep[-\s]+dives?\b'
+      - '(?i)\bdeep\s+expertise\s+in\b'
+      - '(?i)\bthought[-\s]+leader(?:ship)?s?\b'
+      - '(?i)\bcircl(?:e|es|ed|ing)\s+back\b'
+      - '(?i)\btouch(?:es|ed|ing)?\s+base\b'
+      - '(?i)\bping\s+me\b'
 
   # Core move 8: third person. Both halves are kept — a bio with no
   # third-person subject at all is as wrong as one that slips into "I", and
@@ -125,7 +125,10 @@ objective_checks:
   # Both patterns accept the phrasings a sixty-word budget actually
   # produces: "2019-24" as well as "2019-2024", and "Sections 504 and 508"
   # in either order as well as "Section 508". The standard's number has to
-  # sit in the same sentence as the word, which is what `[^.\n]*` bounds.
+  # sit in the same sentence as the word, which is what `[^.]{0,80}` bounds
+  # — a bound rather than `[^.\n]*`, because a 74-column wrap puts a line
+  # break between "Section" and "508" often enough to matter and `\n` in
+  # the class made that read as absent.
   - id: cites-both-facts
     description: The bio carries the employment dates and the named accessibility standard
     type: transcript_matches
@@ -134,7 +137,7 @@ objective_checks:
       - '\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
       # Case-sensitive on purpose: the skill's spelling rules say "Section
       # 508", capital S, never abbreviated.
-      - '\bSections?\b[^.\n]*\b508\b'
+      - '\bSections?\b[^.]{0,80}\b508\b'
 
 judge_rubric: >
   Rank the drafts best to worst as a key-personnel paragraph for a public
