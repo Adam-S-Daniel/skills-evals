@@ -3631,6 +3631,20 @@ class TestIssue81(unittest.TestCase):
         The whole directory, in one walk. It used to iterate the three
         fixture dirs, which left this directory's own README.md unscanned —
         an `api_key:` line in it kept the suite green.
+
+        N4 (record-only): this scan covers the SHAPED half of the fiction
+        rule — things with a syntax a regex can recognise: credentials,
+        e-mail addresses, URL and bare hosts, IBANs, IPv6 addresses and
+        phone numbers. It does not and cannot cover the unshaped half: a
+        real person's name, a real employer, a real street address are
+        ordinary words, and only a reader knows whether "Halyard Civic
+        Data" is invented. Among shaped secrets it still misses GitLab
+        personal access tokens (`glpat-`), PyPI tokens (`pypi-`), a
+        basic-auth URL (`https://user:pw@host`), US Social Security
+        numbers, payment card numbers and UK National Insurance numbers,
+        and any bare IPv4 address. Recorded rather than fixed: widening the
+        secret pattern is its own change with its own false-positive
+        budget, and the fixtures under test carry none of these.
         """
         root = Path(root)
         problems, scanned = [], []

@@ -1255,6 +1255,14 @@ def _strip_wrapper(line: str, tag_gap: str = " ") -> tuple[str, bool]:
     is taken on the stripped-and-`.strip()`ed line, so a bare
     `<blockquote>` or `</details>` line is a block delimiter under either
     reading.
+
+    Nc (record-only): a leading `>` comes off whatever the writer meant by
+    it, so a line of prose that opens with one as a CHARACTER — a shell
+    prompt, a diff marker, `> 60 words` — loses it. Nothing in this repo's
+    fixtures depends on a leading `>`: no `must_match` or `must_not_match`
+    pattern anchors on one, and none of the three drafts is about shell
+    output. Recorded because the reading is a choice, not because a check
+    is at risk.
     """
     stripped = line
     while True:
@@ -1582,6 +1590,22 @@ def strip_seed_material(text: str, seed: str | None,
     There is no whole-reply fallback: a reply that is nothing but the quoted
     seed has an empty residue, so its `must_match` checks fail and the
     fixture fails, which is the right answer for a reply that wrote nothing.
+
+    N2 (record-only): the wrap column is a WHOLE-DRAFT property — one
+    number per draft, estimated by `wrapping.wrap_width` over every
+    paragraph in it — so a long line somewhere unrelated can decide whether
+    two short lines elsewhere are rejoined, and therefore whether a
+    sub-floor paste is one sentence over the floor or two under it. There
+    is no per-paragraph column to use instead: a paragraph of two lines
+    carries too little evidence to estimate one, which is the whole reason
+    `WRAP_EVIDENCE_LINES` exists.
+
+    N3 (record-only): inside a MARKED quotation the floors are nil, so a
+    sub-floor sentence of the seed's goes there and the same sentence stays
+    everywhere else. That asymmetry is deliberate — the markup is the
+    agent saying "this is a quotation", and taking it at its word is what
+    lets a short line inside a `> ` block go — but it does mean the SAME
+    words have two verdicts in one draft, decided by where they sit.
 
     The limits, stated because they are real. A sentence the agent built
     around a fact is its own writing and is scored, even though the fact in
