@@ -56,6 +56,16 @@ arms:
 # (test_every_shell_check_alternative_is_anchored_to_non_comment_text) checks
 # this mechanically, alternative by alternative, over every file_matches
 # check in this fixture.
+# Known limitation: this anchoring treats the FIRST '#' on a line as a
+# comment start even when it is inside a quoted string, since lexing shell
+# quoting is out of scope here. A remedy token must therefore come before
+# any quoted '#' on its line to be recognized — e.g.
+# `git commit -m "chore: bump #${NEXT_VERSION}" --no-gpg-sign` fails
+# commit-signing-safe-for-ci even though it is a correct fix, because
+# --no-gpg-sign lands after the quoted '#' (documented, not treated as a
+# bug to fix here). The same blind spot has a fail-open twin: a banned
+# token that lands after a quoted '#' can likewise evade a must_not_match,
+# e.g. `echo "phase #1"; set -e` evades decoy 2's ban on a live `set -e`.
 objective_checks:
   - id: workflow-yaml-parses
     description: The release workflow still parses as YAML
@@ -99,7 +109,7 @@ objective_checks:
       - '^[^#\n]*<\s*<\(\s*gh run watch[^#\n]*'
       - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:)[^#\n]*'
     must_match:
-      - '(^[^#\n]*\w+=\$\(\s*gh run watch[^#\n]*|^[^#\n]*PIPESTATUS[^#\n]*|^[^#\n|]*\bgh run watch\b[^#\n|]*)'
+      - '(^[^#\n]*\w+=\$\(\s*gh run watch[^#\n]*|^[^#\n]*PIPESTATUS[^#\n]*|^[^#\n|]*\bgh run watch\b[^#\n|]*(\s*#.*)?$)'
 
   # Finding 2 (off-skill — see header): `echo "$build_log" | grep -q ...` as
   # a bare statement under `pipefail` — if grep matches and exits before echo
@@ -109,6 +119,12 @@ objective_checks:
   # process that could receive SIGPIPE: a here-string (braced or not), a
   # `[[ ... == *...* ]]` glob test, a `case` statement, or grep against a
   # file the string was written to.
+  # The first must_match alternative below also lacks a trailing anchor (the
+  # same shape process-substitution-error-propagates's third alternative was
+  # missing), but it is harmless here: the risky shape this finding forbids
+  # is the producer piping INTO grep -q, which must_not_match already bans
+  # outright, not the mere presence of "grep -q ... Successfully published"
+  # text — so there is no equivalent bare-pipe-without-remedy dodge to close.
   - id: grep-q-avoids-broken-pipe
     description: grep -q consumes $build_log without a pipe (here-string, [[ ... ]], case, or a file argument)
     type: file_matches
@@ -126,14 +142,17 @@ objective_checks:
   # skill's own `x=$(gh api …) || { ...; exit 1; }` shape) or simply no
   # longer swallowing it (relying on `set -euo pipefail` to propagate the
   # failure). Only the suppression forms themselves are forbidden — including
-  # swallowing it with `|| echo ""` instead of `|| true`, wrapping the call in
-  # `set +e` / `set -e` to disable errexit around it, and deleting the call
-  # outright (must_match requires the call itself to still be present).
-  # `|| echo ""` is banned only when it hangs directly off the gh api line
-  # itself (the must_not_match pattern requires `gh api` earlier on the same
-  # live line); `|| out=""` on some other, unrelated command a few lines away
-  # — even one that happens to reuse the name `out` — does not suppress
-  # *this* call's failure and is left alone.
+  # swallowing it with `|| echo ""`, `|| out=""`, or `|| out=''` instead of
+  # `|| true`, wrapping the call in `set +e` / `set -e` to disable errexit
+  # around it, and deleting the call outright (must_match requires the call
+  # itself to still be present). Every must_not_match alternative below
+  # requires `gh api` to appear earlier on that same live line (the
+  # `^[^#\n]*gh api[^#\n]*` prefix), so a genuine fallback for some other,
+  # unrelated command a few lines away — even one that happens to reuse the
+  # name `out`, e.g. `|| out=$(cat cache)` — does not suppress *this* call's
+  # failure and is left alone; only an empty-string (or bare) reassignment
+  # that hangs directly off the gh api line itself, and is the last thing on
+  # that line before an optional trailing comment, is forbidden.
   - id: gh-api-failure-not-swallowed
     description: A failed gh api call is not silently treated as "nothing found"
     type: file_matches
@@ -144,6 +163,7 @@ objective_checks:
       - '^[^#\n]*gh api[^#\n]*\|\|\s*(true|:|echo)[^#\n]*'
       - '^[^#\n]*gh api[^#\n]*2>\s*/dev/null[^#\n]*'
       - '^[^#\n]*\bset \+e\b[^#\n]*'
+      - '^[^#\n]*gh api[^#\n]*\|\|\s*\w+=(""|'''')?\s*(#.*)?$'
 
   # Finding 4: `git commit` with no git identity configured fails with exit
   # 128 on any runner that lacks a global user.name/user.email. `--local` and
@@ -200,7 +220,7 @@ objective_checks:
     type: file_matches
     paths: ["scripts/bump.sh", ".github/workflows/*.yml"]
     must_match:
-      - '^[^#\n]*(?i:\bversion\s*=.*package\.json)'
+      - '^[^#\n]*(?i:\bversion\s*=[^#\n]*package\.json)[^#\n]*'
     must_not_match:
       - '(?=[\s\S]*(?:\A|\n)[^#\n]*\bjq\b)\A(?:(?!(?:\A|\n)[^#\n]*(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)[^#\n]*\bjq\b|(?:\A|\n)[^#\n]*uses:[^#\n]*jq|(?:\A|\n)[^#\n]*command -v jq)[\s\S])*\Z'
 
@@ -267,7 +287,7 @@ judge_rubric: >
   (2) Restraint — did the agent leave both decoys (the optional cleanup's
   `|| true`, and the already-correct `set -euo pipefail`) untouched, and
   avoid editing files or lines the review did not call for? Cap at 4 if
-  either decoy check is failing.
+  either decoy check or workflow-file-present is failing.
   (3) Explanation — for each fix, did the reply name the actual failure mode
   (e.g. "process substitution runs in a subshell set -e can't see", not just
   "fixed a bug"), so a reader could tell why the original code was unsafe?

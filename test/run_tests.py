@@ -866,8 +866,18 @@ def _iter_regex_tokens(pattern: str):
 
 
 def _regex_fully_wrapped(pattern: str) -> bool:
-    """Is `pattern` a single `(...)` group spanning the entire string?"""
-    if not (pattern.startswith("(") and pattern.endswith(")")):
+    """Is `pattern` a single *plain* `(...)` group spanning the entire string?
+
+    A special group — `(?:...)`, `(?i:...)`, `(?=...)`, `(?!...)`, a named
+    group, etc. — is deliberately excluded even when it does span the whole
+    string: naively stripping just the outer `(` / `)` would leave the
+    `?:` / `?i:` / ... marker glued onto whatever follows, corrupting the
+    first alternative split out of the body. `_split_top_level_alternatives`
+    relies on that exclusion to leave such a pattern intact as one atomic
+    alternative instead of mis-parsing it.
+    """
+    if not (pattern.startswith("(") and not pattern.startswith("(?")
+            and pattern.endswith(")")):
         return False
     depth = 0
     pos = 0
@@ -886,18 +896,26 @@ def _regex_fully_wrapped(pattern: str) -> bool:
 def _split_top_level_alternatives(pattern: str) -> list[str]:
     """Every top-level `|`-separated alternative of `pattern`.
 
-    If `pattern` is one `(...)` group spanning the whole string, split its
-    body on `|` at paren-depth 0 relative to that body (so a nested group's
-    own `|`, e.g. `( --(local|global))?`, is not a split point, and neither
-    is a literal `|` inside a character class like `[^#\\n|]`). Otherwise
-    `pattern` itself is the only alternative — this fixture never puts a
-    bare top-level `|` outside of a wrapping group.
+    Splits on `|` at parenthesis depth 0, whether or not `pattern` is
+    wrapped in a single plain `(...)` group. A wrapped pattern (e.g.
+    `(A|B|C)`) has its outer parens stripped first, so its `|` bars sit at
+    depth 0 in the body; an unwrapped top-level alternation (e.g. `A|B`,
+    with no enclosing parens at all) already sits at depth 0 with nothing to
+    strip, so it is split the same way — a naked top-level alternation is
+    just as real a set of alternatives as a wrapped one, and treating it as
+    one unsplit alternative would hide an unanchored second half from every
+    check below. A nested group's own `|` (e.g. `( --(local|global))?`) is
+    never a split point, and neither is a literal `|` inside a character
+    class like `[^#\\n|]` (both handled by _iter_regex_tokens keeping
+    escapes and whole classes opaque). A special group spanning the whole
+    pattern (`(?:...)`, `(?i:...)`, ...) is left alone by
+    _regex_fully_wrapped, so its internal `|` bars stay above depth 0 here
+    and the whole thing comes back as one atomic alternative instead of
+    being corrupted by a naive strip.
     """
-    if not _regex_fully_wrapped(pattern):
-        return [pattern]
-    body = pattern[1:-1]
+    text = pattern[1:-1] if _regex_fully_wrapped(pattern) else pattern
     alts, buf, depth = [], "", 0
-    for tok, is_special in _iter_regex_tokens(body):
+    for tok, is_special in _iter_regex_tokens(text):
         if not is_special:
             buf += tok
             continue
@@ -914,6 +932,44 @@ def _split_top_level_alternatives(pattern: str) -> list[str]:
             buf += tok
     alts.append(buf)
     return alts
+
+
+ANCHOR_PREFIXES = ("^[^#\\n]*", "^[^#\\n|]*")
+WHOLE_DOCUMENT_PREFIXES = ("\\A", "(?=")
+# Matches either a `[^...]*` negated-class run (capturing its negated set in
+# group 1, so callers can check whether '#' is in it) or a bare `.*` (group 1
+# is None for this alternative — a dot-star has no negated set to check, it
+# is unconditionally unanchored). `[^\n]*` is caught by the first branch: its
+# negated set is the two-character escape `\n`, which does not contain '#'.
+UNANCHORED_RUN_RE = re.compile(r"\[\^((?:\\.|[^\]])*)\]\*|\.\*")
+# A deliberate, optional trailing comment allowance — e.g. decoy 2's own
+# `set -euo pipefail(\s*#.*)?$` / `set -e\s*(#.*)?$` — is not itself an
+# unanchored run to flag; strip it before scanning so it can't false-positive.
+COMMENT_TAIL_RE = re.compile(r"(?:\(\\s\*#\.\*\)\?\$|\(#\.\*\)\?\$)$")
+
+
+def _anchoring_problems(label: str, pattern: str) -> list[str]:
+    """Every anchoring problem in one must_match/must_not_match `pattern`.
+
+    `label` (e.g. "check-id.must_match") is prefixed onto each problem
+    string purely for readable failure messages; the checking logic itself
+    is independent of it. Shared by the fixture-wide property test and the
+    mutation tests that pin each half of the property against synthetic
+    patterns.
+    """
+    problems = []
+    for alt in _split_top_level_alternatives(pattern):
+        if alt.startswith(WHOLE_DOCUMENT_PREFIXES):
+            continue
+        if not alt.startswith(ANCHOR_PREFIXES):
+            problems.append(f"{label}: {alt!r} does not start with a "
+                            "non-comment-prefix anchor")
+        scan = COMMENT_TAIL_RE.sub("", alt, count=1)
+        for m in UNANCHORED_RUN_RE.finditer(scan):
+            if m.group(1) is None or "#" not in m.group(1):
+                problems.append(f"{label}: {alt!r} has an unanchored run "
+                                f"{m.group(0)!r} that does not exclude '#'")
+    return problems
 
 
 class TestIssue74(unittest.TestCase):
@@ -1736,19 +1792,31 @@ class TestIssue74(unittest.TestCase):
     # alternative is now supposed to have: parse the fixture, split each
     # must_match/must_not_match pattern into its top-level alternatives (a
     # nested group's own `|`, and a literal `|` inside a character class
-    # like `[^#\n|]`, are not split points), and require every alternative
-    # that asserts something about one line of live code — as opposed to the
-    # handful of whole-document `\A...\Z` / `(?=...)` existence checks used
-    # by the jq checks, which are already anchored per-line internally and
-    # are exempted here — to both start with a non-comment-prefix anchor
-    # (`^[^#\n]*` or the pipe-excluding `^[^#\n|]*`) and contain no
-    # unanchored `[^...]*` run that omits `#` from its negated set (which
-    # would let the match run on into a trailing comment).
-    ANCHOR_PREFIXES = ("^[^#\\n]*", "^[^#\\n|]*")
-    WHOLE_DOCUMENT_PREFIXES = ("\\A", "(?=")
-    UNANCHORED_RUN_RE = re.compile(r"\[\^((?:\\.|[^\]])*)\]\*")
-
+    # like `[^#\n|]`, are not split points — see _split_top_level_alternatives
+    # for how a naked top-level alternation and a `(?:...)`-wrapped one are
+    # each handled), and require every alternative that asserts something
+    # about one line of live code — as opposed to the handful of
+    # whole-document `\A...\Z` / `(?=...)` existence checks used by the jq
+    # checks, which are already anchored per-line internally and are exempted
+    # here — to both start with a non-comment-prefix anchor (`^[^#\n]*` or
+    # the pipe-excluding `^[^#\n|]*`) and contain no unanchored run (a bare
+    # `.*`, a `[^\n]*`, or any other `[^...]*` whose negated set omits `#`)
+    # that would let the match run on into a trailing comment — after
+    # stripping a deliberate, optional trailing-comment-tail group like decoy
+    # 2's own `(\s*#.*)?$`, which is not itself a violation. Round 4 found
+    # this property test blind to an unwrapped top-level alternation (it
+    # only ever split a fully-*wrapped* pattern) and to a bare `.*`
+    # (UNANCHORED_RUN_RE only matched a literal `[^...]*` class); both gaps
+    # are closed in the shared `_anchoring_problems`/`_split_top_level_alternatives`
+    # helpers above, exercised directly by the mutation tests below.
     def test_every_shell_check_alternative_is_anchored_to_non_comment_text(self):
+        # Self-referential: pins this test's own name against the fixture
+        # header's citation of it (round-4 review N2) so a rename of this
+        # method without updating the header is caught, rather than the two
+        # silently drifting apart.
+        header = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        self.assertIn(self._testMethodName, header)
+
         fixture = run_eval.load_fixture(BASH_CI_DIR)
         problems = []
         for check in fixture["objective_checks"]:
@@ -1756,20 +1824,74 @@ class TestIssue74(unittest.TestCase):
                 continue
             for field in ("must_match", "must_not_match"):
                 for pattern in check.get(field, []):
-                    for alt in _split_top_level_alternatives(pattern):
-                        if alt.startswith(self.WHOLE_DOCUMENT_PREFIXES):
-                            continue
-                        if not alt.startswith(self.ANCHOR_PREFIXES):
-                            problems.append(
-                                f"{check['id']}.{field}: {alt!r} does not "
-                                "start with a non-comment-prefix anchor")
-                        for m in self.UNANCHORED_RUN_RE.finditer(alt):
-                            if "#" not in m.group(1):
-                                problems.append(
-                                    f"{check['id']}.{field}: {alt!r} has an "
-                                    f"unanchored run {m.group(0)!r} that "
-                                    "does not exclude '#'")
+                    problems.extend(
+                        _anchoring_problems(f"{check['id']}.{field}", pattern))
         self.assertEqual(problems, [], "\n".join(problems))
+
+    # -- Round-4 review B1: mutation tests pinning the property test's own
+    # logic against synthetic patterns, independent of whatever the real
+    # fixture happens to contain right now. Each of these must turn red
+    # under the OLD (round-3) implementation and green under the fix. --
+
+    def test_property_catches_unwrapped_alternation_with_unanchored_alternative(self):
+        problems = _anchoring_problems(
+            "synthetic.must_match", r"^[^#\n]*A|B")
+        self.assertTrue(problems, "unwrapped alternation with an unanchored "
+                        "second alternative must be flagged")
+
+    def test_property_catches_dot_star_rewrite(self):
+        problems = _anchoring_problems(
+            "synthetic.must_match", r"^[^#\n]*version=.*package\.json")
+        self.assertTrue(problems, "a bare .* run must be flagged even "
+                        "though it is not a [^...]* class")
+
+    def test_property_catches_negated_class_missing_newline_exclusion(self):
+        problems = _anchoring_problems(
+            "synthetic.must_match", r"^[^#\n]*version=[^\n]*package\.json")
+        self.assertTrue(problems, "[^\\n]* (no '#' in its negated set) must "
+                        "be flagged the same as any other unanchored run")
+
+    def test_property_catches_dropped_prefix_anchor_inside_wrapped_group(self):
+        problems = _anchoring_problems(
+            "synthetic.must_match",
+            r"(^[^#\n]*git config user\.email[^#\n]*|-c\s+user\.email[^#\n]*)")
+        self.assertTrue(problems, "the second alternative in a wrapped "
+                        "group must still be checked for its own anchor")
+
+    def test_property_accepts_properly_anchored_wrapped_alternation(self):
+        problems = _anchoring_problems(
+            "synthetic.must_match",
+            r"(^[^#\n]*git config user\.email[^#\n]*|^[^#\n]*-c\s+user\.email[^#\n]*)")
+        self.assertEqual(problems, [])
+
+    def test_property_ignores_deliberate_comment_tail_group(self):
+        # decoy 2's own shape: an explicitly optional trailing comment is
+        # not itself an unanchored run to flag.
+        problems = _anchoring_problems(
+            "synthetic.must_match", r"^[^#\n]*set -euo pipefail(\s*#.*)?$")
+        self.assertEqual(problems, [])
+        problems = _anchoring_problems(
+            "synthetic.must_not_match", r"^[^#\n]*set -e\s*(#.*)?$")
+        self.assertEqual(problems, [])
+
+    # -- Round-4 review N4: a pattern whose entire top-level wrapping is a
+    # special group ((?:...), (?i:...), ...) rather than a plain (...) one
+    # must not be mis-parsed by naively stripping the outer parens, which
+    # would glue the `?:`/`?i:` marker onto the first split-off alternative
+    # and corrupt it. --
+
+    def test_regex_fully_wrapped_rejects_special_group(self):
+        self.assertFalse(_regex_fully_wrapped(r"(?:^[^#\n]*A|^[^#\n]*B)"))
+        self.assertFalse(_regex_fully_wrapped(r"(?i:^[^#\n]*A|^[^#\n]*B)"))
+        self.assertTrue(_regex_fully_wrapped(r"(^[^#\n]*A|^[^#\n]*B)"))
+
+    def test_split_top_level_alternatives_does_not_corrupt_special_group(self):
+        for wrapped in (r"(?:^[^#\n]*A|^[^#\n]*B)", r"(?i:^[^#\n]*A|^[^#\n]*B)"):
+            with self.subTest(wrapped=wrapped):
+                alts = _split_top_level_alternatives(wrapped)
+                # Left intact as one atomic alternative, never split into a
+                # corrupted "?:^[^#\n]*A" / "?i:^[^#\n]*A" fragment.
+                self.assertEqual(alts, [wrapped])
 
     # -- Round-2 review item 6: grep-q-avoids-broken-pipe pinned one exact
     # spelling of the fix. Any pipe-free consumption of $build_log is
@@ -2112,6 +2234,12 @@ class TestIssue74(unittest.TestCase):
                         by_id["grep-q-avoids-broken-pipe"]["detail"])
 
     def test_s3_trailing_comment_on_no_pipe_remedy_line_passes(self):
+        # The comment deliberately contains a `|` (quoting the old buggy
+        # line) — round-4 review N3: without a pipe in the comment, this
+        # test passed even on the round-3 (missing-`$`) fixture too, since a
+        # comment-free trailing anchor isn't exercised by a plain
+        # non-piped comment. A `|` after the `#` must not be mistaken for a
+        # live, unremedied pipe by the must_match's [^#\n|]* class.
         ws = self._ws()
         self._fix_all(ws)
         path = ws / "scripts" / "publish.sh"
@@ -2119,7 +2247,7 @@ class TestIssue74(unittest.TestCase):
         text = text.replace(
             'watch_output=$(gh run watch "$RUN_ID")\n'
             'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
-            'gh run watch "$RUN_ID"  # was: piped into tail via process substitution\n'
+            'gh run watch "$RUN_ID"  # was: … | tail -n 5\n'
             'mapfile -t WATCH_LOG < <(gh run view "$RUN_ID" --log | tail -n 5)')
         path.write_text(text, encoding="utf-8")
         by_id = self._run(ws)
@@ -2217,6 +2345,182 @@ class TestIssue74(unittest.TestCase):
         by_id = self._run(ws)
         self.assertTrue(by_id["workflow-file-present"]["passed"],
                         by_id["workflow-file-present"]["detail"])
+
+    # -- Round-4 review B1 (BLOCKER): version-read-does-not-depend-on-
+    # unguarded-jq's must_match had an unanchored `.*` between "version="
+    # and "package.json", so a trailing comment could cross into it —
+    # `VERSION="$1"  # no longer read from package.json` (the live version
+    # read genuinely deleted) scored 11/11 on 3dd563b. --
+
+    def test_b1_version_read_comment_dodge_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.JQ_FIXED_LINE,
+            'VERSION="$1"  # no longer read from package.json')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["version-read-does-not-depend-on-unguarded-jq"]["passed"])
+
+    def test_b1_version_read_dodge_scores_11_of_11_on_3dd563b(self):
+        # Documents the full blast radius the reviewer measured: on 3dd563b
+        # every other check still passes around the dodge, so it is the
+        # must_match anchoring alone that was exploitable, not some
+        # compensating failure elsewhere.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.JQ_FIXED_LINE,
+            'VERSION="$1"  # no longer read from package.json')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertEqual(
+            sum(1 for r in by_id.values() if r["passed"]), len(by_id) - 1,
+            "only version-read-does-not-depend-on-unguarded-jq should fail")
+
+    def test_b1_version_read_trailing_unrelated_comment_still_passes(self):
+        # The fix must not overcorrect: a live version read followed by an
+        # unrelated trailing comment (nothing to cross into) still passes.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.JQ_FIXED_LINE, self.JQ_FIXED_LINE + "  # parsed from package.json")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["version-read-does-not-depend-on-unguarded-jq"]["passed"],
+                        by_id["version-read-does-not-depend-on-unguarded-jq"]["detail"])
+
+    # -- Round-4 review S1: gh-api-failure-not-swallowed's must_not_match did
+    # not forbid reassigning the captured variable to an empty string on
+    # failure (`|| out=""` / `|| out=''`), which swallows the failure just
+    # as much as `|| true` does — `out` ends up blank either way and the
+    # script reports "No merged PRs found" and exits 0. --
+
+    def test_s1_gh_api_empty_string_reassignment_swallow_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || out=""')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_s1_gh_api_empty_single_quote_reassignment_swallow_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            "out=$(gh api \"repos/${REPO}/pulls?state=merged\" --jq '.[].title') || out=''")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    def test_s1_gh_api_genuine_fallback_on_same_line_stays_legal(self):
+        # A real fallback (not an empty-string swallow) on the gh api line
+        # itself must not be caught by the new alternative.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') '
+            '|| out=$(cat cache)')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    def test_s1_skill_own_safe_snippet_still_passes(self):
+        # test_b2_skill_safe_snippet_passes already pins this against the
+        # must_not_match set as it stood before S1; re-asserted here so the
+        # new alternative's addition is proven not to regress it too.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || '
+            '{ echo "ERROR: gh api call failed" >&2; exit 1; }')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    # -- Round-4 review S2: documented known limitation. [^#\n]* treats the
+    # FIRST '#' on a line as a comment start even inside a quoted string, so
+    # a correct fix can still fail if its remedy token lands after a quoted
+    # '#' earlier on the same line. Lexing shell quoting to close this
+    # properly is out of scope (see the fixture header); this test pins the
+    # gap as a known, accepted false negative rather than a silent one. --
+
+    def test_s2_quoted_hash_before_no_gpg_sign_is_a_known_false_negative(self):
+        ws = self._ws()
+        self._fix_publish(ws)
+        self._fix_collect(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(self.JQ_LINE, self.JQ_FIXED_LINE)
+        text = text.replace(
+            "git add package.json",
+            'git config --local user.email "release-bot@example.com"\n'
+            'git config --local user.name "release-bot"\n'
+            'git add package.json')
+        text = text.replace(
+            'git commit -m "chore: bump version to ${NEXT_VERSION}"',
+            'git commit -m "chore: bump #${NEXT_VERSION}" --no-gpg-sign')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["git-identity-configured"]["passed"],
+                        by_id["git-identity-configured"]["detail"])
+        # Known false negative: --no-gpg-sign is genuinely present and would
+        # otherwise satisfy commit-signing-safe-for-ci, but it lands after
+        # the quoted '#' in the commit message, which [^#\n]* cannot tell
+        # apart from a real comment start.
+        self.assertFalse(by_id["commit-signing-safe-for-ci"]["passed"])
+
+    # -- Round-4 review S3: process-substitution-error-propagates's third
+    # must_match alternative lost its trailing `$`, so it matched on the
+    # mere PRESENCE of "gh run watch" text with no requirement to reach end
+    # of line — the pristine seed's own still-broken line satisfied it
+    # (must_not_match was the only thing still failing the check), and a
+    # bare, unchecked `gh run watch "$X" | tail -n 5` (no PIPESTATUS check)
+    # satisfied it outright despite not being one of the three accepted
+    # remedies. --
+
+    def test_s3_bare_piped_watch_without_pipestatus_check_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID" | tail -n 5')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["process-substitution-error-propagates"]["passed"])
+
+    def test_s3_pristine_seed_watch_line_fails_must_match_too(self):
+        # Before the fix, must_match's third alternative matched even the
+        # seed's own unfixed line outright (the detail said only "contains"
+        # a must_not_match pattern, never "lacks" a must_match one) — the
+        # check failed by luck of must_not_match, not because must_match
+        # was doing its job. After the fix both halves correctly fail it.
+        by_id = self._run(self._ws())
+        self.assertIn("lacks", by_id["process-substitution-error-propagates"]["detail"])
 
 
 class MakeBadgeTests(unittest.TestCase):
