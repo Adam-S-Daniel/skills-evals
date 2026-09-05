@@ -299,6 +299,24 @@ def _usage_alias_map(api_ids, other_ids, seat_aliases: dict,
        (weakest and oldest first), so the NEWEST live snapshot claims it —
        the same model that holds the seat. That keeps the whole map a
        FUNCTION: a census key is attributed to at most one live id.
+
+    THREE INVARIANTS, each pinned by a test (A1, #129 review round 8):
+
+    (i)   IDEMPOTENT. Folding a key twice gives what folding it once
+          gives, for every key in the domain. Every consumer folds
+          exactly once, so a key that needs two hops is a key whose
+          turns land somewhere no numerator is looking.
+    (ii)  Every VALUE is either a live catalogue id, or a non-live id
+          that no live id claims. A value that is both non-live and
+          claimed is a census key stranded one hop short of the model
+          whose work it is.
+    (iii) The numerators PARTITION the attributable denominator: every
+          attributable ranked census key is credited to exactly one
+          model — a live model, or, for a since-retired id nobody
+          claims, itself — so the live models' shares plus the shares
+          of unclaimed retired ids come to 100%. "No share sums past
+          100%" is the weaker half of this and cannot see turns lost
+          from every numerator at once.
     """
     live = {i for i in api_ids if isinstance(i, str)}
     wide = alias_map(list(api_ids) + list(other_ids))
@@ -320,7 +338,29 @@ def _usage_alias_map(api_ids, other_ids, seat_aliases: dict,
             claimed[match.group("base")] = model_id
     for base, model_id in claimed.items():
         mapping[base] = seat_aliases.get(model_id, model_id)
+    # COMPOSE, and it is invariant (i) that needs it (A1, #129 review
+    # round 8). Rules (2) and (3) each move a key ONE hop, and a key can
+    # need both: a non-live dated id folds onto its bare alias by (2), and
+    # that bare alias folds onward onto the newest live snapshot by (3).
+    # Every consumer applies this map exactly once (`aliases.get(candidate,
+    # candidate)`), so such a key used to land on the bare alias — which
+    # `catalogue_seen` makes ATTRIBUTABLE, so its turns joined the
+    # denominator, while it equalled no live model's target, so no
+    # numerator collected them. Measured through the two-run chain
+    # roster-policy.yml documents: 5000 turns inside the denominator and
+    # outside every numerator, a live snapshot not seated at all, and a
+    # previous arm retired "below the 2% exit bar (0.0% ...)" on its own
+    # family's usage. Following each chain to its end is still a FUNCTION
+    # into at most one id per key, so rule (1)'s disjointness survives.
+    for model_id in list(mapping):
+        seen = {model_id}
+        target = mapping[model_id]
+        while target in mapping and target not in seen:
+            seen.add(target)
+            target = mapping[target]
+        mapping[model_id] = target
     return mapping
+
 
 def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
                      api_ids_folded: set[str] | None,

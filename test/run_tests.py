@@ -16,6 +16,7 @@ import io
 import itertools
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
@@ -7631,6 +7632,369 @@ class TestIssue67Review7(unittest.TestCase):
         missing floor."""
         doc = roster._clean_previous_arms.__doc__
         self.assertIn("constant-factor courtesy", doc)
+
+
+class TestIssue67Review8(unittest.TestCase):
+    """Round 8 fixes for #67 (PR #129 review round 8 and its adversarial
+    pass), one test per fix.
+
+    A SIBLING of TestIssue67, reusing its canned documents rather than
+    subclassing — run_tests.py's class-per-review-round convention. Every
+    model id below is TEST FIXTURE data; the policy code under test carries
+    none (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard),
+    and the family words the random scenarios build ids out of are read
+    from the policy ladder rather than restated here.
+
+    Every scenario is driven through `compute_roster` or through `main()`
+    with files on disk, the way eval.yml invokes it. `main()` reads the
+    wall clock, so `_run_main` freezes it: the ISO-week windows, the
+    census freshness window and the cooling-off are all undecidable
+    against a moving `now`, and DESIGN.md's "hermetic, always" rule
+    applies to time as much as to network.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    class _FrozenNow(datetime):
+        """`datetime` with `now()` pinned, patched over `roster.datetime`
+        for the duration of a `main()` call. `timeweeks.parse_ts` keeps its
+        own real `datetime`, so parsing stays exactly what production
+        does."""
+
+        @classmethod
+        def now(cls, tz=None):
+            return TestIssue67.NOW
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None, warn=None, policy=None):
+        return roster.compute_roster(
+            models_doc=(TestIssue67._models_doc() if models is TestIssue67.DEFAULT
+                        else models),
+            census_doc=(TestIssue67._census_doc() if census is TestIssue67.DEFAULT
+                        else census),
+            policy=policy or cls._policy(), previous=previous, now=cls.NOW,
+            warn=warn if warn is not None else (lambda _m: None))
+
+    @classmethod
+    def _run_main(cls, tmp, models, census=None, previous=None):
+        """`roster.main()` — eval.yml's own entry point — over files on
+        disk, with `now` frozen. Returns (rc, published, stdout, stderr);
+        `published` is None when main() refused to write a roster."""
+        tmp = Path(tmp)
+        models_path = tmp / "models.json"
+        models_path.write_text(json.dumps(models), encoding="utf-8")
+        out = tmp / "roster" / "latest.json"
+        argv = ["roster.py", "--models", str(models_path), "--policy",
+                str(cls.POLICY), "--out", str(out)]
+        if census is not None:
+            census_path = tmp / "census.json"
+            census_path.write_text(json.dumps(census), encoding="utf-8")
+            argv += ["--census", str(census_path)]
+        if previous is not None:
+            previous_path = tmp / "previous.json"
+            previous_path.write_text(json.dumps(previous), encoding="utf-8")
+            argv += ["--previous", str(previous_path)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(roster, "datetime", cls._FrozenNow), \
+             contextlib.redirect_stdout(stdout), \
+             contextlib.redirect_stderr(stderr):
+            rc = roster.main()
+        published = (json.loads(out.read_text(encoding="utf-8"))
+                     if out.is_file() else None)
+        return rc, published, stdout.getvalue(), stderr.getvalue()
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    _SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        """The shipped policy with a 0% entry bar, so EVERY available model
+        publishes its measured share in words — the only way to read the
+        numerators off the roster the production code actually produces."""
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    # --- A1: the usage alias map is COMPOSED, so a census key two hops
+    # from a live model is credited rather than orphaned ------------------
+    #
+    # Round 7's B1 fix left three rules that each map ONE hop: rule (2)
+    # folds a non-live dated id onto its bare alias when that alias is
+    # anywhere in `counts + previous_arms + catalogue_seen`, and rule (3)
+    # folds a bare alias that is not itself in the catalogue onward onto
+    # the newest live snapshot of it. Every consumer applies the map
+    # exactly ONCE, so a key needing both hops landed on the bare alias:
+    # in `catalogue_seen`, therefore attributable and inside the
+    # denominator, and equal to no live model's target, therefore inside
+    # nobody's numerator.
+
+    HOP_BASE = "claude-haiku-4"
+    HOP_OLD = "claude-haiku-4-20250101"
+    HOP_LIVE = "claude-haiku-4-20260601"
+    HOP_NEXT = "claude-haiku-5"
+
+    @classmethod
+    def _hop_run1_models(cls):
+        """Run 1's catalogue: the bare alias is live, so run 1 records it
+        in `catalogue_seen` BY DESIGN."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.HOP_BASE, "2025-06-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _hop_run2_models(cls):
+        """Run 2's catalogue: the bare alias is gone, replaced by a dated
+        snapshot of it (roster-policy.yml's own documented shape), and a
+        newer model has shipped in the same tier — so the snapshot can only
+        be seated on measured usage, never on newest-in-tier."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.HOP_LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls.HOP_NEXT, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _hop_census(cls):
+        """The family's work recorded under the OLDER dated spelling — the
+        one that has left the API — beside 300 turns of a live model:
+        5000 of 5300 rankable turns, 94.3%."""
+        return TestIssue67._census_doc(counts={
+            cls.HOP_OLD: {cls.W[0]: 5000},
+            "claude-sonnet-5": {cls.W[0]: 300}})
+
+    def test_the_organic_chain_credits_a_two_hop_census_key(self):
+        """No hostile input anywhere, and both runs through `main()` with
+        files on disk: run 1's catalogue lists the bare alias, run 2's
+        lists a dated snapshot of it beside a newer model, and the census
+        records the family's work under an older dated spelling. The live
+        snapshot must carry those 5000 turns."""
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, _ = self._run_main(first, self._hop_run1_models())
+            self.assertEqual(rc, 0)
+            self.assertIn(self.HOP_BASE, self._seen_ids(run1))
+
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._hop_run2_models(), census=self._hop_census(),
+                previous=run1)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.HOP_LIVE, self._arm_ids(run2),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, two hops away")
+        self.assertIn("94.3%", self._reason(run2, self.HOP_LIVE))
+        # Mutation check (manual): deleting the composition step at the end
+        # of `_usage_alias_map` leaves the census key folded onto the bare
+        # alias, which is in `catalogue_seen` — attributable, in the
+        # denominator, in nobody's numerator — and the live snapshot is not
+        # seated at all: red.
+
+    def test_a_two_hop_previous_arm_is_kept_not_retired_at_zero(self):
+        """The same shape with the snapshot ALREADY an arm: it must be held
+        on its own 94.3%, not retired at a false 0.0% while 5000 of its
+        family's turns sit inside that very denominator."""
+        previous = {"arms": [{"id": self.HOP_LIVE, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.HOP_BASE, "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._hop_run2_models(), census=self._hop_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.HOP_LIVE, self._arm_ids(published))
+        self.assertIn("94.3%", self._reason(published, self.HOP_LIVE))
+        self.assertEqual(
+            [r for r in published["retired_since_last"]
+             if r["id"] == self.HOP_LIVE], [],
+            "a model carrying 94.3% of the window must not be retired")
+        # Mutation check (manual): deleting the composition step retires it
+        # with "below the 2% exit bar ... (0.0% of rankable census usage)"
+        # — red.
+
+    # The invariants, over random catalogues. `_random_scenario` decides
+    # the id each census key's turns BELONG to from the shape it builds,
+    # never from the code under test.
+
+    _SHAPES = ("bare-live", "dated-only-live", "retired")
+
+    @classmethod
+    def _random_scenario(cls, rng):
+        """(models_doc, census_doc, previous, owner) for one random
+        catalogue.
+
+        Three family shapes, which between them cover every route the
+        usage alias map has: a bare alias that IS in the catalogue (it
+        holds the seat and every spelling of the family folds onto it);
+        a catalogue that publishes only DATED snapshots of a family (the
+        newest live snapshot claims the bare alias, and every other
+        spelling folds there — this is the shape the two-hop defect lives
+        in); and a family with no live model at all (its turns are
+        attributable through `catalogue_seen` and belong to nobody's
+        numerator, which is what round 6's B1 fix intends).
+
+        `owner` maps each id to the id whose numerator must collect its
+        census turns. Family words come from the policy ladder.
+        """
+        words = roster.tier_words(cls._policy())
+        models = []
+        counts = {}
+        history = []
+        owner = {}
+        for index in range(rng.randint(2, 4)):
+            base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
+            snaps = [(f"{base}-2026{month:02d}01",
+                      f"2026-{month:02d}-01T00:00:00Z") for month in (1, 4, 6)]
+            family = [base] + [sid for sid, _ in snaps]
+            # Family 0 is always live, so every scenario has a catalogue
+            # this policy can seat something out of.
+            shape = "bare-live" if index == 0 else rng.choice(cls._SHAPES)
+            if shape == "bare-live":
+                models.append(cls._model(base, "2025-06-01T00:00:00Z"))
+                models += [cls._model(sid, created) for sid, created in snaps
+                           if rng.random() < 0.4]
+                owner.update({i: base for i in family})
+            elif shape == "dated-only-live":
+                live = snaps[:rng.randint(1, 3)]
+                models += [cls._model(sid, created) for sid, created in live]
+                owner.update({i: live[-1][0] for i in family})
+                owner.update({sid: sid for sid, _ in live})
+                history.append(base)
+            else:
+                owner.update({i: base for i in family})
+                history.append(base)
+            for key in [i for i in family if rng.random() < 0.6] or [base]:
+                counts[key] = {cls.W[0]: rng.randrange(1, 40) * 100}
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": i, "last_seen": cls._days_ago(rng.randint(1, 60))}
+            for i in history]}
+        return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
+                TestIssue67._census_doc(counts=counts), previous, owner)
+
+    def test_the_usage_alias_map_is_idempotent_over_random_catalogues(self):
+        """Invariants (i) and (ii) of `_usage_alias_map`. Called directly,
+        because they are properties OF the map rather than of any one
+        roster: folding a key twice must give what folding it once gives
+        (every consumer applies the map exactly once), and a value must be
+        a live catalogue id or an id no live id claims — a value that is
+        both non-live and claimed is a census key stranded one hop short
+        of the model whose work it is."""
+        rng = random.Random(670801)
+        rungs = roster.tier_rungs(self._policy())
+        two_hop = 0
+        for index in range(60):
+            models, census, previous, _ = self._random_scenario(rng)
+            api_ids = [m["id"] for m in models["models"]]
+            seat = roster.alias_map(api_ids)
+            live_order = [m["id"] for m
+                          in sorted((m for m in models["models"]
+                                     if m["id"] not in seat),
+                                    key=lambda m: roster._rank(m, rungs))]
+            other = (list(census["counts"])
+                     + [e["id"] for e in previous["catalogue_seen"]])
+            mapping = roster._usage_alias_map(api_ids, other, seat, live_order)
+            live = set(api_ids)
+            claimed_bases = set()
+            for model_id in live:
+                match = roster.SNAPSHOT_SUFFIX.match(model_id)
+                if match and match.group("base") not in live:
+                    claimed_bases.add(match.group("base"))
+            with self.subTest(scenario=index):
+                for key, target in mapping.items():
+                    self.assertEqual(
+                        mapping.get(target, target), target,
+                        f"{key} needs two hops to reach {mapping.get(target)}")
+                    self.assertTrue(
+                        target in live or target not in claimed_bases,
+                        f"{key} lands on {target}, which a live id claims")
+            # Self-check: count the keys that NEED two hops — a non-live
+            # dated id whose bare base a live snapshot claims. Counted off
+            # the key's own shape, not off where the map sends it, so the
+            # count is the same before and after the fix.
+            for key in mapping:
+                match = roster.SNAPSHOT_SUFFIX.match(key)
+                if (key not in live and match
+                        and match.group("base") in claimed_bases):
+                    two_hop += 1
+        self.assertGreater(two_hop, 0,
+                           "no scenario exercised a two-hop key: the "
+                           "property has no teeth on this seed")
+        # Mutation check (manual): deleting the composition step at the end
+        # of `_usage_alias_map` leaves `<base>-YYYYMMDD -> <base>` beside
+        # `<base> -> <newest live snapshot>` — red on both assertions.
+
+    def test_the_numerators_partition_the_denominator_over_random_catalogues(self):
+        """Invariant (iii), through `compute_roster` with a 0% entry bar so
+        every available model publishes its measured share: each
+        attributable ranked census key is credited to exactly ONE model, so
+        every published share equals the turns that key-set actually holds,
+        and the shares sum to 100% less only the turns of families no live
+        model claims.
+
+        Round 7's property test asserts `sum(shares) <= 100`, which cannot
+        see turns lost from every numerator at once."""
+        rng = random.Random(670802)
+        checked = 0
+        for index in range(60):
+            models, census, previous, owner = self._random_scenario(rng)
+            counts = census["counts"]
+            total = sum(sum(w.values()) for w in counts.values())
+            expected: dict[str, int] = {}
+            for key, by_week in counts.items():
+                expected[owner[key]] = (expected.get(owner[key], 0)
+                                        + sum(by_week.values()))
+            result = self._compute(models=models, census=census,
+                                   previous=previous,
+                                   policy=self._zero_bar_policy())
+            arm_ids = {a["id"] for a in result["arms"]}
+            shares = []
+            with self.subTest(scenario=index):
+                for arm in result["arms"]:
+                    match = self._SHARE_RE.search(arm["reason"])
+                    self.assertTrue(match, arm)
+                    published = float(match.group(1))
+                    shares.append(published)
+                    self.assertAlmostEqual(
+                        published, 100 * expected.get(arm["id"], 0) / total,
+                        delta=0.051, msg=f"{arm['id']} in {counts}")
+                unclaimed = sum(turns for model_id, turns in expected.items()
+                                if model_id not in arm_ids)
+                self.assertAlmostEqual(
+                    sum(shares), 100 * (total - unclaimed) / total,
+                    delta=0.051 * len(shares),
+                    msg=f"turns lost from every numerator: {counts}")
+            checked += 1
+        self.assertEqual(checked, 60)
+        # Mutation check (manual): deleting the composition step strands a
+        # two-hop key's turns in the denominator and in no numerator, so
+        # the claiming snapshot's published share falls short — red.
+        # Restoring round 7's single wide map instead makes two live
+        # snapshots collect each other's turns and the shares sum past
+        # 100% — also red.
+
 
 if __name__ == "__main__":
     unittest.main()
