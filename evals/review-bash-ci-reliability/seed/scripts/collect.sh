@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Collect the packages changed since the last release, via the GitHub API.
-# Placeholder for the real collection call; the eval never executes this script.
 set -euo pipefail
 
 REPO="example-org/example-repo"
@@ -15,4 +14,5 @@ fi
 echo "$out" > changed-packages.txt
 
 tmp_response="/tmp/collect-response.$$"
+printf '%s' "$out" > "$tmp_response"
 rm -f "$tmp_response" || true  # temp file cleanup; harmless if it's already gone

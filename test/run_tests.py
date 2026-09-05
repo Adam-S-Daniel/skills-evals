@@ -836,17 +836,39 @@ class TestIssue74(unittest.TestCase):
     and FAIL on a copy where the decoy itself was incorrectly "fixed" — that
     is what proves the decoy checks actually have teeth, not just that they
     happen to pass.
+
+    Round 1 of review found that several checks overfit to one exact
+    spelling of a correct fix (the skill itself prescribes more than one
+    remedy per finding) and that several must_not_match patterns fired on
+    `# was: ...` comments quoting the old, now-dead code rather than only on
+    live code. The tests below (marked B1-B6, S1-S4 to match the review
+    items) pin the *properties* each check is supposed to enforce, not one
+    hand-written spelling — using both this class's direct
+    objective.run_checks() path and, for the reviewer's named copies, the
+    real `run_eval.py --arm objective-only` CLI.
     """
 
     REAL_FINDING_IDS = (
         "process-substitution-error-propagates",
         "grep-q-avoids-broken-pipe",
         "gh-api-failure-not-swallowed",
-        "git-identity-configured-before-commit",
+        "git-identity-configured",
         "version-read-does-not-depend-on-jq",
+        "commit-signing-safe-for-ci",
     )
     DECOY_IDS = ("decoy-optional-cleanup-untouched", "decoy-existing-set-e-untouched")
     RESTRAINT_IDS = ("workflow-yaml-parses",) + DECOY_IDS
+
+    GH_API_LINE = ('out=$(gh api "repos/${REPO}/pulls?state=merged" '
+                  '--jq \'.[].title\') || true')
+    GH_API_FIXED_BLOCK = (
+        'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then\n'
+        '    echo "ERROR: gh api call failed" >&2\n'
+        '    exit 1\n'
+        'fi')
+    JQ_LINE = "VERSION=$(jq -r '.version' package.json)"
+    JQ_FIXED_LINE = ("VERSION=$(grep -m1 '\"version\"' package.json | "
+                     "sed -E 's/.*\"version\":[[:space:]]*\"([^\"]+)\".*/\\1/')")
 
     def _ws(self) -> Path:
         ws = Path(tempfile.mkdtemp())
@@ -858,6 +880,13 @@ class TestIssue74(unittest.TestCase):
         fixture = run_eval.load_fixture(BASH_CI_DIR)
         results = objective.run_checks(fixture, str(ws), str(BASH_CI_DIR / "seed"))
         return {r["id"]: r for r in results}
+
+    def _run_cli(self, ws: Path) -> tuple[int, dict]:
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(BASH_CI_DIR),
+              "--arm", "objective-only", "--workspace", str(ws)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        return proc.returncode, payload
 
     # -- hand fixes, one per real finding, mirroring the skill's own remedy --
 
@@ -876,25 +905,18 @@ class TestIssue74(unittest.TestCase):
     def _fix_collect(self, ws: Path) -> None:
         path = ws / "scripts" / "collect.sh"
         text = path.read_text(encoding="utf-8")
-        text = text.replace(
-            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || true',
-            'if ! out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\'); then\n'
-            '    echo "ERROR: gh api call failed" >&2\n'
-            '    exit 1\n'
-            'fi')
+        text = text.replace(self.GH_API_LINE, self.GH_API_FIXED_BLOCK)
         path.write_text(text, encoding="utf-8")
 
     def _fix_bump(self, ws: Path) -> None:
         path = ws / "scripts" / "bump.sh"
         text = path.read_text(encoding="utf-8")
-        text = text.replace(
-            "VERSION=$(jq -r '.version' package.json)",
-            "VERSION=$(grep -m1 '\"version\"' package.json | "
-            "sed -E 's/.*\"version\":[[:space:]]*\"([^\"]+)\".*/\\1/')")
+        text = text.replace(self.JQ_LINE, self.JQ_FIXED_LINE)
         text = text.replace(
             "git add package.json",
             'git config --local user.email "release-bot@example.com"\n'
             'git config --local user.name "release-bot"\n'
+            'git config --local commit.gpgsign false\n'
             'git add package.json')
         path.write_text(text, encoding="utf-8")
 
@@ -902,6 +924,133 @@ class TestIssue74(unittest.TestCase):
         self._fix_publish(ws)
         self._fix_collect(ws)
         self._fix_bump(ws)
+
+    # -- reviewer's named copies (round-1 review, real runner on 15 hand-built
+    # workspaces): A and L are correct fixes using alternate valid forms; I,
+    # K, O are plausible-looking wrong fixes that must still fail. --
+
+    def _apply_copy_A(self, ws: Path) -> None:
+        """Independent, skill-faithful hand-fix using different (but equally
+        valid) forms than _fix_all's: --global instead of --local, the
+        skill's own `|| { ...; exit 1; }` snippet, jq kept and installed in
+        the workflow instead of replaced, and ${PIPESTATUS[0]} instead of a
+        plain command-substitution capture."""
+        publish = ws / "scripts" / "publish.sh"
+        text = publish.read_text(encoding="utf-8")
+        text = text.replace(
+            'mapfile -t WATCH_LOG < <(gh run watch "$RUN_ID" | tail -n 5)',
+            'gh run watch "$RUN_ID" | tee "/tmp/watch-log.$$" > /dev/null\n'
+            'watch_status="${PIPESTATUS[0]}"\n'
+            'if [[ "$watch_status" -ne 0 ]]; then\n'
+            '    echo "ERROR: gh run watch failed" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            'mapfile -t WATCH_LOG < <(tail -n 5 "/tmp/watch-log.$$")')
+        text = text.replace(
+            'echo "$build_log" | grep -q "Successfully published"',
+            'grep -q "Successfully published" <<< "$build_log"')
+        publish.write_text(text, encoding="utf-8")
+
+        collect = ws / "scripts" / "collect.sh"
+        text = collect.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_LINE,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || '
+            '{ echo "ERROR: gh api call failed" >&2; exit 1; }')
+        collect.write_text(text, encoding="utf-8")
+
+        bump = ws / "scripts" / "bump.sh"
+        text = bump.read_text(encoding="utf-8")
+        text = text.replace(
+            "git add package.json",
+            'git config --global user.email "ci@example.com"\n'
+            'git config --global user.name "ci-runner"\n'
+            'git config --global commit.gpgsign false\n'
+            'git add package.json')
+        bump.write_text(text, encoding="utf-8")
+
+        workflow = ws / ".github" / "workflows" / "release.yml"
+        text = workflow.read_text(encoding="utf-8")
+        text = text.replace(
+            "      - name: Bump version",
+            "      - name: Install jq\n"
+            "        run: sudo apt-get update && sudo apt-get install -y jq\n"
+            "      - name: Bump version")
+        workflow.write_text(text, encoding="utf-8")
+
+    def _apply_copy_L(self, ws: Path) -> None:
+        """A correct fix (mirroring _fix_all) that also leaves `# was: ...`
+        comments quoting the original buggy lines — proves every
+        must_not_match is anchored to a non-comment prefix (B5)."""
+        self._fix_all(ws)
+        publish = ws / "scripts" / "publish.sh"
+        text = publish.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n',
+            '# was: mapfile -t WATCH_LOG < <(gh run watch "$RUN_ID" | tail -n 5)\n'
+            'watch_output=$(gh run watch "$RUN_ID")\n')
+        text = text.replace(
+            'grep -q "Successfully published" <<< "$build_log"',
+            '# was: echo "$build_log" | grep -q "Successfully published"\n'
+            'grep -q "Successfully published" <<< "$build_log"')
+        publish.write_text(text, encoding="utf-8")
+
+        collect = ws / "scripts" / "collect.sh"
+        text = collect.read_text(encoding="utf-8")
+        text = text.replace(
+            "if ! out=$(gh api",
+            f"# was: {self.GH_API_LINE}\n"
+            "if ! out=$(gh api")
+        collect.write_text(text, encoding="utf-8")
+
+        bump = ws / "scripts" / "bump.sh"
+        text = bump.read_text(encoding="utf-8")
+        text = text.replace(
+            "VERSION=$(grep -m1",
+            f"# was: {self.JQ_LINE}\n"
+            "VERSION=$(grep -m1")
+        bump.write_text(text, encoding="utf-8")
+
+    def _apply_copy_I(self, ws: Path) -> None:
+        """Every finding correctly fixed except finding 1, where the watch's
+        failure is captured but then swallowed with `|| true` instead of
+        propagated (B1's forbidden dodge)."""
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n',
+            'watch_output=$(gh run watch "$RUN_ID") || true\n')
+        path.write_text(text, encoding="utf-8")
+
+    def _apply_copy_K(self, ws: Path) -> None:
+        """Every finding correctly fixed, but a redundant bare `set -e`
+        (with a trailing comment) is re-added next to the already-correct
+        `set -euo pipefail` — B6's decoy dodge."""
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("set -euo pipefail\n",
+                            "set -euo pipefail\nset -e  # for extra safety\n")
+        path.write_text(text, encoding="utf-8")
+
+    def _apply_copy_O(self, ws: Path) -> None:
+        """Every finding correctly fixed except finding 3, where the gh api
+        failure is suppressed with `2>/dev/null` and the failure branch only
+        warns; an unrelated `exit 1` elsewhere in the file must not be
+        mistaken for handling it (B2's forbidden dodge)."""
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" '
+            "--jq '.[].title' 2>/dev/null)\n"
+            'if [[ -z "$out" ]]; then\n'
+            '    echo "WARNING: gh api call may have failed silently" >&2\n'
+            "fi")
+        text += "\n# unrelated failure path, unconnected to the gh api call\nexit 1\n"
+        path.write_text(text, encoding="utf-8")
 
     def test_pristine_seed_fails_every_real_finding(self):
         by_id = self._run(self._ws())
@@ -986,7 +1135,7 @@ class TestIssue74(unittest.TestCase):
             'git commit -m "chore: bump version to ${NEXT_VERSION}" || true')
         path.write_text(text, encoding="utf-8")
         by_id = self._run(ws)
-        self.assertFalse(by_id["git-identity-configured-before-commit"]["passed"])
+        self.assertFalse(by_id["git-identity-configured"]["passed"])
 
     def test_objective_only_cli_fails_on_pristine_seed(self):
         cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(BASH_CI_DIR),
@@ -1005,10 +1154,293 @@ class TestIssue74(unittest.TestCase):
     def test_objective_only_cli_passes_on_a_hand_fixed_copy(self):
         ws = self._ws()
         self._fix_all(ws)
-        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(BASH_CI_DIR),
-              "--arm", "objective-only", "--workspace", str(ws)]
-        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
-        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        returncode, _ = self._run_cli(ws)
+        self.assertEqual(returncode, 0)
+
+    # -- B1: process-substitution-error-propagates must accept any of the
+    # skill's remedies (a named-variable capture, PIPESTATUS, or no pipe at
+    # all), and must reject the `|| true`/`|| :` dodge on the capture. --
+
+    def test_b1_watch_captured_into_any_variable_name_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("watch_output=", "watch_raw=")
+        text = text.replace('"$watch_output"', '"$watch_raw"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    def test_b1_pipestatus_remedy_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID" | tee "/tmp/watch-log.$$" > /dev/null\n'
+            'watch_status="${PIPESTATUS[0]}"\n'
+            'if [[ "$watch_status" -ne 0 ]]; then\n'
+            '    echo "ERROR: gh run watch failed" >&2\n'
+            '    exit 1\n'
+            'fi\n'
+            'mapfile -t WATCH_LOG < <(tail -n 5 "/tmp/watch-log.$$")')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    def test_b1_no_pipe_remedy_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID"\n'
+            'mapfile -t WATCH_LOG < <(gh run view "$RUN_ID" --log | tail -n 5)')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    # -- B2: gh-api-failure-not-swallowed must accept the skill's own SAFE
+    # snippet and the simplest delete-the-suppression fix, and must reject
+    # `|| :` / `2>/dev/null` / `2> /dev/null` on the gh api line. --
+
+    def test_b2_skill_safe_snippet_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || '
+            '{ echo "ERROR: gh api call failed" >&2; exit 1; }')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    def test_b2_simplest_fix_bare_assignment_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            self.GH_API_FIXED_BLOCK,
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\')')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["gh-api-failure-not-swallowed"]["passed"],
+                        by_id["gh-api-failure-not-swallowed"]["detail"])
+
+    def test_b2_colon_and_spaced_redirect_dodges_fail(self):
+        dodges = (
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\') || :',
+            'out=$(gh api "repos/${REPO}/pulls?state=merged" --jq \'.[].title\' 2> /dev/null)',
+        )
+        for dodge in dodges:
+            with self.subTest(dodge=dodge):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "collect.sh"
+                text = path.read_text(encoding="utf-8")
+                text = text.replace(self.GH_API_FIXED_BLOCK, dodge)
+                path.write_text(text, encoding="utf-8")
+                by_id = self._run(ws)
+                self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    # -- B3: git-identity-configured must accept --global (SKILL.md's own
+    # example), not just --local. --
+
+    def test_b3_global_git_config_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'git config --local user.email "release-bot@example.com"',
+            'git config --global user.email "release-bot@example.com"')
+        text = text.replace(
+            'git config --local user.name "release-bot"',
+            'git config --global user.name "release-bot"')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["git-identity-configured"]["passed"],
+                        by_id["git-identity-configured"]["detail"])
+
+    # -- B4: version-read-does-not-depend-on-jq must accept "installed" as
+    # well as "replaced", must still reject jq kept-and-not-installed, and
+    # must not be satisfiable by deleting bump.sh outright. --
+
+    def test_b4_jq_kept_and_installed_in_workflow_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        bump = ws / "scripts" / "bump.sh"
+        text = bump.read_text(encoding="utf-8")
+        text = text.replace(self.JQ_FIXED_LINE, self.JQ_LINE)
+        bump.write_text(text, encoding="utf-8")
+        workflow = ws / ".github" / "workflows" / "release.yml"
+        text = workflow.read_text(encoding="utf-8")
+        text = text.replace(
+            "      - name: Bump version",
+            "      - name: Install jq\n"
+            "        run: sudo apt-get update && sudo apt-get install -y jq\n"
+            "      - name: Bump version")
+        workflow.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["version-read-does-not-depend-on-jq"]["passed"],
+                        by_id["version-read-does-not-depend-on-jq"]["detail"])
+
+    def test_b4_jq_kept_and_not_installed_fails(self):
+        # Reviewer's copy E.
+        ws = self._ws()
+        self._fix_all(ws)
+        bump = ws / "scripts" / "bump.sh"
+        text = bump.read_text(encoding="utf-8")
+        text = text.replace(self.JQ_FIXED_LINE, self.JQ_LINE)
+        bump.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["version-read-does-not-depend-on-jq"]["passed"])
+
+    def test_b4_deleting_bump_sh_outright_fails(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        (ws / "scripts" / "bump.sh").unlink()
+        by_id = self._run(ws)
+        self.assertFalse(by_id["version-read-does-not-depend-on-jq"]["passed"])
+
+    # -- B5: every must_not_match must ignore comment text. --
+
+    def test_b5_was_comments_do_not_trip_must_not_match_checks(self):
+        ws = self._ws()
+        self._apply_copy_L(ws)
+        by_id = self._run(ws)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    # -- B6: the seed no longer names the decoy rule outright, and the decoy
+    # check must still catch a duplicated `set -e` even with a trailing
+    # comment. --
+
+    def test_b6_seed_no_longer_instructs_against_reintroducing_set_e(self):
+        text = (BASH_CI_DIR / "seed" / "scripts" / "publish.sh").read_text(encoding="utf-8")
+        self.assertNotIn("should not be re-added or duplicated", text)
+        self.assertNotIn("earlier revisions of this script forgot", text)
+
+    def test_b6_set_e_duplicate_with_trailing_comment_fails(self):
+        # Reviewer's copy K.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("set -euo pipefail\n",
+                            "set -euo pipefail\nset -e  # for extra safety\n")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertFalse(by_id["decoy-existing-set-e-untouched"]["passed"])
+        for check_id in self.REAL_FINDING_IDS + ("decoy-optional-cleanup-untouched",
+                                                  "workflow-yaml-parses"):
+            self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    # -- S1: the decoy match is command-only (comment wording is free), and
+    # the seed's tmp_response is a file the cleanup line genuinely wrote. --
+
+    def test_s1_decoy_match_ignores_comment_wording(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "collect.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'rm -f "$tmp_response" || true  # temp file cleanup; '
+            "harmless if it's already gone",
+            'rm -f "$tmp_response" || true  # nothing to do if this was never written')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["decoy-optional-cleanup-untouched"]["passed"],
+                        by_id["decoy-optional-cleanup-untouched"]["detail"])
+
+    def test_s1_seed_actually_writes_the_temp_file_before_cleaning_it_up(self):
+        text = (BASH_CI_DIR / "seed" / "scripts" / "collect.sh").read_text(encoding="utf-8")
+        self.assertIn('> "$tmp_response"', text)
+
+    # -- S2: checklist item 5 (commit signing in CI) has a shape and a check. --
+
+    def test_s2_signingkey_remedy_also_satisfies_commit_signing_check(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "bump.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace("git config --local commit.gpgsign false\n", "")
+        text = text.replace(
+            "git add package.json",
+            'git config --local user.signingkey "0xDEADBEEF"\n'
+            "git add package.json")
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["commit-signing-safe-for-ci"]["passed"],
+                        by_id["commit-signing-safe-for-ci"]["detail"])
+
+    # -- S3: pin the discriminating power of checks 1, 2, 3 and 5 through the
+    # real runner, using the reviewer's named copies. --
+
+    def test_s3_copy_a_skill_faithful_hand_fix_passes(self):
+        ws = self._ws()
+        self._apply_copy_A(ws)
+        returncode, payload = self._run_cli(ws)
+        self.assertEqual(returncode, 0, payload)
+
+    def test_s3_copy_l_comments_plus_correct_fix_passes(self):
+        ws = self._ws()
+        self._apply_copy_L(ws)
+        returncode, payload = self._run_cli(ws)
+        self.assertEqual(returncode, 0, payload)
+
+    def test_s3_copy_i_watch_dodge_fails(self):
+        ws = self._ws()
+        self._apply_copy_I(ws)
+        returncode, payload = self._run_cli(ws)
+        self.assertEqual(returncode, 1)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["process-substitution-error-propagates"]["passed"])
+
+    def test_s3_copy_k_set_e_duplicate_fails(self):
+        ws = self._ws()
+        self._apply_copy_K(ws)
+        returncode, payload = self._run_cli(ws)
+        self.assertEqual(returncode, 1)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["decoy-existing-set-e-untouched"]["passed"])
+
+    def test_s3_copy_o_gh_api_warn_only_dodge_fails(self):
+        ws = self._ws()
+        self._apply_copy_O(ws)
+        returncode, payload = self._run_cli(ws)
+        self.assertEqual(returncode, 1)
+        by_id = {c["id"]: c for c in payload["checks"]}
+        self.assertFalse(by_id["gh-api-failure-not-swallowed"]["passed"])
+
+    # -- S4: the seed reads in-world, with no mention of the eval. --
+
+    def test_s4_seed_readme_reads_in_world(self):
+        text = (BASH_CI_DIR / "seed" / "README.md").read_text(encoding="utf-8")
+        self.assertNotIn("eval", text.lower())
+
+    def test_s4_seed_scripts_do_not_mention_the_eval(self):
+        for name in ("publish.sh", "collect.sh", "bump.sh"):
+            text = (BASH_CI_DIR / "seed" / "scripts" / name).read_text(encoding="utf-8")
+            self.assertNotIn("eval", text.lower(), name)
+
+    # -- Nit: the top-level README's evals/ tree lists the new directory. --
+
+    def test_readme_lists_the_new_eval_directory(self):
+        text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("review-bash-ci-reliability/", text)
 
 
 class MakeBadgeTests(unittest.TestCase):

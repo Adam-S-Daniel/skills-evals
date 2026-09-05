@@ -4,7 +4,8 @@
 # process-substitution failure that `set -euo pipefail` does not catch, a
 # `grep -q` that pipefail/SIGPIPE can turn into a spurious pipeline failure,
 # a `gh api` failure swallowed by `|| true`, a `git commit` with no configured
-# identity, and a script that assumes `jq` is available without ensuring it.
+# identity, an unguaranteed `jq` dependency, and a commit with no defense
+# against a globally-enabled `commit.gpgsign`.
 # Two decoys — a genuinely optional `|| true` and an already-correct `set -e`
 # — look like findings but are not, and must be left alone.
 
@@ -40,7 +41,10 @@ arms:
 # Objective checks run by harness/scorers/objective.py against the resulting
 # workspace. Every check is lexical (a regex against shell/YAML text) except
 # the first, which parses the workflow with `yaml` rather than guessing at
-# its structure from a regex.
+# its structure from a regex. Every must_not_match below is anchored to a
+# non-comment prefix (`^[^#\n]*...`) so a fix that leaves behind a `# was:
+# ...` comment quoting the old, buggy line is not penalized for text that is
+# no longer live code.
 objective_checks:
   - id: workflow-yaml-parses
     description: The release workflow still parses as YAML
@@ -50,20 +54,24 @@ objective_checks:
   # Finding 1: `mapfile ... < <(gh run watch "$RUN_ID" | tail -n 5)` — process
   # substitution runs in a disconnected subshell, so a failing `gh run watch`
   # is invisible to `set -euo pipefail`: mapfile succeeds regardless of what
-  # the substituted pipeline's exit status was. The prescribed fix (mirrors
-  # the skill's own example) is to capture the risky command with plain
-  # command substitution FIRST — which `set -e` does catch — and only feed
-  # the now-safe, already-captured text through process substitution.
+  # the substituted pipeline's exit status was. Any of three remedies is
+  # accepted: capture `gh run watch` with plain command substitution first
+  # (into any variable), check `${PIPESTATUS[0]}` right after a direct (non
+  # process-substituted) pipe, or drop the pipe entirely and let `set -e` see
+  # the command's own exit status. The dodge of keeping the broken shape but
+  # swallowing its failure with `|| true`/`|| :` is forbidden outright.
   - id: process-substitution-error-propagates
     description: >
-      gh run watch's exit status is captured before any process substitution,
-      so set -euo pipefail actually catches a failed publish run
+      gh run watch's exit status is captured before any process substitution
+      (via command substitution, PIPESTATUS, or no pipe at all), so set -euo
+      pipefail actually catches a failed publish run
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
-      - '<\s*<\(gh run watch'
+      - '^[^#\n]*<\s*<\(gh run watch'
+      - '^[^#\n]*gh run watch[^\n]*\|\|\s*(true|:)'
     must_match:
-      - 'watch_output=\$\(gh run watch'
+      - '(\w+=\$\(\s*gh run watch|PIPESTATUS|^[^\n|]*gh run watch[^\n|]*$)'
 
   # Finding 2: `echo "$build_log" | grep -q ...` as a bare statement under
   # `pipefail` — if grep matches and exits before echo finishes writing, echo
@@ -75,60 +83,92 @@ objective_checks:
     type: file_matches
     paths: ["scripts/publish.sh"]
     must_not_match:
-      - 'echo "\$build_log" \| grep -q'
+      - '^[^#\n]*echo "\$build_log" \| grep -q'
     must_match:
       - 'grep -q[^\n]*<<<\s*"\$build_log"'
 
-  # Finding 3: the gh api capture's failure is swallowed by `|| true`, and
-  # since a failed call and a genuinely empty result both leave `out` blank,
-  # the two become indistinguishable — the script reports "nothing to
-  # release" either way. The fix checks the call's own exit status.
+  # Finding 3: the gh api capture's failure is swallowed, and since a failed
+  # call and a genuinely empty result both leave `out` blank, the two become
+  # indistinguishable — the script reports "nothing to release" either way.
+  # Any fix that removes the suppression on the gh api line itself is
+  # accepted, whether that means checking the call's own exit status (the
+  # skill's own `x=$(gh api …) || { ...; exit 1; }` shape) or simply no
+  # longer swallowing it (relying on `set -euo pipefail` to propagate the
+  # failure). Only the suppression forms themselves are forbidden.
   - id: gh-api-failure-not-swallowed
     description: A failed gh api call is not silently treated as "nothing found"
     type: file_matches
     paths: ["scripts/collect.sh"]
     must_not_match:
-      - 'gh api[^\n]*\|\|\s*true'
-    must_match:
-      - 'if ! out=\$\(gh api'
-      - 'exit 1'
+      - '^[^#\n]*gh api[^\n]*\|\|\s*(true|:)'
+      - '^[^#\n]*gh api[^\n]*2>\s*/dev/null'
 
   # Finding 4: `git commit` with no git identity configured fails with exit
-  # 128 on any runner that lacks a global user.name/user.email. Suppressing
-  # the failure (`|| true`, `2>/dev/null`) would make the check un-fixable by
-  # definition, so those dodges are forbidden alongside requiring the fix.
-  - id: git-identity-configured-before-commit
-    description: git user.email is configured before the commit, not worked around
+  # 128 on any runner that lacks a global user.name/user.email. `--local` and
+  # `--global` are both legitimate (SKILL.md's own example uses `--global`).
+  # Suppressing the failure (`|| true`, `|| :`, `2>/dev/null`) would make the
+  # check un-fixable by definition, so those dodges are forbidden. Whether
+  # the config call actually runs *before* the commit is left to the judge —
+  # a regex can see that both lines exist, not which one executes first.
+  - id: git-identity-configured
+    description: >
+      git user.email is configured, locally or globally, rather than worked
+      around; whether it is configured before the commit is the judge's call
     type: file_matches
     paths: ["scripts/bump.sh"]
     must_match:
-      - 'git config( --local)? user\.email'
+      - 'git config( --(local|global))? user\.email'
     must_not_match:
-      - 'git commit[^\n]*\|\|\s*true'
-      - 'git commit[^\n]*2>/dev/null'
+      - '^[^#\n]*git commit[^\n]*\|\|\s*(true|:)'
+      - '^[^#\n]*git commit[^\n]*2>\s*/dev/null'
 
   # Finding 5: `jq` is used to read package.json's version with no guarantee
-  # it's installed. The fixed script no longer depends on it.
+  # it's installed. SKILL.md's checklist gives two remedies — install it in
+  # the workflow, or stop depending on it — and both are accepted: the check
+  # forbids a live (non-comment) `jq` usage only when no jq-install step
+  # (matching several common forms) appears anywhere in the scripts or
+  # workflow. A line that itself installs jq is excluded from being read as
+  # an unguarded usage. must_match keeps the version-read logic itself
+  # required, so deleting bump.sh outright cannot pass by leaving nothing to
+  # violate.
   - id: version-read-does-not-depend-on-jq
-    description: Reading the current version no longer shells out to jq
+    description: >
+      Reading the current version either drops the jq dependency or, if jq
+      is kept, the workflow installs it
+    type: file_matches
+    paths: ["scripts/bump.sh", ".github/workflows/*.yml"]
+    must_match:
+      - 'VERSION\s*=.*package\.json'
+    must_not_match:
+      - '^(?!.*\b(?:apt(?:-get)? install|apk add|dnf install|yum install|brew install|choco install)\b)[^#\n]*\bjq\b(?![\s\S]*?(?:apt(?:-get)? install[^\n]*\bjq\b|apk add[^\n]*\bjq\b|dnf install[^\n]*\bjq\b|yum install[^\n]*\bjq\b|brew install[^\n]*\bjq\b|choco install[^\n]*\bjq\b|uses:[^\n]*jq))'
+
+  # Finding 6: a `git commit` in a script has no defense against a runner
+  # whose global gitconfig has `commit.gpgsign = true` — that commit fails
+  # unless it either disables signing for this repo or has a signing key set
+  # up (SKILL.md checklist item 5).
+  - id: commit-signing-safe-for-ci
+    description: >
+      Commit signing is disabled for this script's own commit, or a signing
+      key is explicitly configured
     type: file_matches
     paths: ["scripts/bump.sh"]
-    must_not_match:
-      - '\bjq\b'
+    must_match:
+      - '(git config( --(local|global))? commit\.gpgsign\s+false|git config( --(local|global))? user\.signingkey)'
 
   # Decoy 1: a `|| true` on a temp-file cleanup that is genuinely optional
-  # (idempotent, already commented as such). A correct fix leaves it alone.
+  # (idempotent). A correct fix leaves the command alone; the check matches
+  # the command only, not the comment's exact wording.
   - id: decoy-optional-cleanup-untouched
     description: The genuinely-optional rm -f ... || true cleanup line is untouched
     type: file_matches
     paths: ["scripts/collect.sh"]
     must_match:
-      - 'rm -f "\$tmp_response" \|\| true\s*#.*harmless if it.s already gone'
+      - 'rm -f "\$tmp_response" \|\| true'
 
-  # Decoy 2: `set -euo pipefail` is already correctly present. The comment
-  # above it (an old habit of forgetting it) might bait an over-eager agent
-  # into re-adding a redundant bare `set -e`; a correct fix leaves it as one
-  # line, exactly as it is.
+  # Decoy 2: `set -euo pipefail` is already correctly present. An over-eager
+  # agent might re-add a redundant bare `set -e` — with or without a
+  # trailing comment — alongside it; a correct fix leaves it as one line,
+  # exactly as it is.
   - id: decoy-existing-set-e-untouched
     description: The already-correct set -euo pipefail line is neither removed nor duplicated
     type: file_matches
@@ -136,24 +176,28 @@ objective_checks:
     must_match:
       - '^set -euo pipefail$'
     must_not_match:
-      - '^set -e$'
+      - '^set -e\s*(#.*)?$'
 
 # The judge is left what a regex cannot decide: whether each fix actually
 # solves the failure mode the checklist describes (vs. a plausible-looking
-# workaround), whether the agent explained the failure mode it found, and
-# whether it kept its hands off the decoys and everything else. Dimension
-# (1) caps on the decidable facts so the judge cannot praise a transcript the
-# objective column failed.
+# workaround), whether git identity is configured *before* the commit runs,
+# whether the agent explained the failure mode it found, and whether it kept
+# its hands off the decoys and everything else. Dimension (1) caps on the
+# decidable facts so the judge cannot praise a transcript the objective
+# column failed.
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) Correctness — for each of the five real findings (the process-
+  (1) Correctness — for each of the six real findings (the process-
   substitution-hidden failure in publish.sh, the pipefail/SIGPIPE-prone
-  grep -q, the gh api failure swallowed by `|| true`, the missing git
-  identity before the commit, and the unguaranteed jq dependency), did the
-  fix solve the actual failure mode rather than merely suppress the symptom
-  (e.g. wrapping a still-broken call in `|| true` or `2>/dev/null` instead of
-  fixing it)? Cap this dimension at 4 if any objective check for a real
-  finding is failing.
+  grep -q, the gh api failure swallowed by suppression, the missing git
+  identity before the commit, the unguaranteed jq dependency, and the
+  missing defense against commit.gpgsign in CI), did the fix solve the
+  actual failure mode rather than merely suppress the symptom (e.g. wrapping
+  a still-broken call in `|| true` or `2>/dev/null` instead of fixing it)?
+  For the git-identity finding specifically, also verify the config call
+  actually runs before the commit, not just that both exist somewhere in the
+  file. Cap this dimension at 4 if any objective check for a real finding is
+  failing.
   (2) Restraint — did the agent leave both decoys (the optional cleanup's
   `|| true`, and the already-correct `set -euo pipefail`) untouched, and
   avoid editing files or lines the review did not call for? Cap at 4 if

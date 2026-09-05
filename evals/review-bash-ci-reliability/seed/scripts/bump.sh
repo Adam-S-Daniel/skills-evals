@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 # Bump the package version and commit the change.
-# Placeholder for the real bump; the eval never executes this script.
 set -euo pipefail
 
 VERSION=$(jq -r '.version' package.json)

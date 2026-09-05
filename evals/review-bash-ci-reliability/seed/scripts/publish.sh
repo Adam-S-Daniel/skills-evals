@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 # Trigger the downstream publish workflow and wait for it to finish.
-# Note: earlier revisions of this script forgot `set -e`; it is intentionally
-# enabled below and should not be re-added or duplicated.
-# Placeholder for the real publish call; the eval never executes this script.
 set -euo pipefail
 
 RUN_ID="${PUBLISH_RUN_ID:-0}"
