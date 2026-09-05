@@ -1068,6 +1068,135 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
 
 
+def file_count(workspace: str, patterns: list[str], min_count: int | None = None,
+               max_count: int | None = None) -> tuple[bool, str]:
+    """Assert the number of files matched by `patterns` falls in [min_count, max_count].
+
+    `max_count=None` means no upper bound. A file matched by more than one
+    pattern is counted once (patterns are pooled through a set of paths, not
+    summed), so overlapping globs can't inflate the count. Only files are
+    counted — a directory whose name happens to match the glob (e.g. a stray
+    `NNNN-*.md/` left by a bad rename) is excluded, the same as
+    `_read_matched` excludes directories. This is the check for "exactly N
+    files exist" shapes a regex over content can't express — e.g. asserting
+    exactly one new file was added to a directory that already had others,
+    which `file_matches`/`files_unchanged` have no way to state. As with
+    every other check type here, `**` is NOT recursive — patterns are
+    globbed with `glob.glob`, not `glob.glob(..., recursive=True)`.
+
+    A check naming neither bound, a `min` of 0 with no `max` (equally
+    vacuous — nothing can ever fail it), a non-`int` bound, a negative
+    bound, or a `max_count` below `min_count` is a fixture config mistake,
+    not a vacuous pass: each of those returns `(False, ...)` with a detail
+    naming the specific problem, before any file is counted. `bool` is
+    rejected explicitly even though Python's `bool` is an `int` subclass —
+    `min: true` in a fixture's YAML is a typo, not a bound of 1.
+    """
+    for label, value in (("min", min_count), ("max", max_count)):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, int)):
+            return (False, f"file_count {label} bound must be an int, "
+                    f"got {type(value).__name__}: {value!r}")
+    if min_count is None and max_count is None:
+        return (False, "file_count check names neither a min nor a max bound")
+    if max_count is None and not min_count:
+        return (False, "file_count min bound is 0 with no max bound, "
+                "which passes unconditionally")
+    if min_count is not None and min_count < 0:
+        return (False, f"file_count min bound is negative: {min_count}")
+    if max_count is not None and max_count < 0:
+        return (False, f"file_count max bound is negative: {max_count}")
+    if min_count is not None and max_count is not None and max_count < min_count:
+        return (False, f"file_count max ({max_count}) is less than min ({min_count})")
+
+    min_count = min_count if min_count is not None else 0
+    matched = set()
+    for pattern in patterns:
+        matched.update(p for p in glob.glob(os.path.join(workspace, pattern))
+                       if os.path.isfile(p))
+    count = len(matched)
+    problems = []
+    if count < min_count:
+        problems.append(f"found {count}, expected at least {min_count}")
+    if max_count is not None and count > max_count:
+        problems.append(f"found {count}, expected at most {max_count}")
+    return (not problems, f"{count} file(s) matched {patterns}" if not problems
+            else "; ".join(problems))
+
+
+def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | None = None,
+                       base: str | None = None) -> tuple[bool, str]:
+    """Every relative path a link line names must resolve to a real file.
+
+    `link_pattern` is matched per LINE — the one place in this module where
+    a per-line (rather than whole-document) regex is the deliberate choice:
+    a link is a self-contained lexical fact on its own line, unlike the
+    multi-line heading-order checks elsewhere here — and must capture the
+    linked path in group 1. `base` is the directory (relative to the
+    workspace) that captured path resolves against, e.g. "docs/decisions"
+    for an index table whose links are relative to that folder, or "." for
+    a comment elsewhere in the repo that spells the path out in full.
+
+    Neither `file_matches` nor `files_unchanged` can express this: they see
+    text or bytes, never whether a captured path names a file that actually
+    exists — so an index row or a comment naming a slug nothing wrote is
+    invisible to both.
+
+    No scanned file existing at all (`patterns` matched nothing) is a
+    vacuous PASS, `(True, ... "no file matched")` — the same convention
+    `file_matches`'s docstring states explicitly for its own must_match
+    asymmetry. Whether that's the right call for a given fixture (e.g.
+    "the ADR was never written") is what the other content checks decide;
+    this one only ever speaks to link targets it actually found.
+
+    A `link_pattern` that fails to compile, or that compiles but has no
+    capture group, is a fixture config mistake, not a crash: each returns
+    `(False, ...)` naming the specific problem, before any file is scanned.
+    """
+    if not link_pattern:
+        return (False, "link_targets_exist check names no link_pattern")
+    if not base:
+        return (False, "link_targets_exist check names no base directory")
+    if os.path.isabs(base):
+        return (False, f"{base}: must be a workspace-relative path, not absolute")
+    try:
+        regex = re.compile(link_pattern)
+    except re.error as exc:
+        return (False, f"link_targets_exist link_pattern does not compile: {exc}")
+    if regex.groups < 1:
+        return (False, "link_targets_exist link_pattern has no capture group "
+                "to name the linked path")
+    # realpath, not abspath, so a workspace-internal symlinked component is
+    # resolved to where it actually points before containment is judged —
+    # the same convention dir_listing_matches uses for the same reason.
+    workspace_real = os.path.realpath(workspace)
+    base_dir = os.path.join(workspace, base)
+    base_real = os.path.realpath(base_dir)
+    # os.path.commonpath raises ValueError for paths on different drives — unreachable on
+    # POSIX (Windows-only), and CI runs ubuntu, so this and the commonpath call below are
+    # both left to raise rather than guarded against a case this fleet never runs on.
+    if os.path.commonpath([workspace_real, base_real]) != workspace_real:
+        return (False, f"{base}: resolves outside the workspace")
+    matched = set()
+    for pattern in patterns:
+        matched.update(p for p in glob.glob(os.path.join(workspace, pattern))
+                       if os.path.isfile(p))
+    missing, checked = set(), []
+    for path in sorted(matched):
+        rel = os.path.relpath(path, workspace).replace(os.sep, "/")
+        checked.append(rel)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                for m in regex.finditer(line):
+                    target_real = os.path.realpath(os.path.join(base_dir, m.group(1)))
+                    if os.path.commonpath([workspace_real, target_real]) != workspace_real:
+                        missing.add(f"{rel}: {m.group(1)} (escapes the workspace)")
+                    elif not os.path.isfile(target_real):
+                        missing.add(f"{rel}: {m.group(1)}")
+    if missing:
+        return (False, "dangling link target(s): " + _capped_join(sorted(missing)))
+    return (True, f"all link targets exist ({', '.join(checked) or 'no file matched'})")
+
+
 # --------------------------------------------------------------------------
 # Git-state checks (git state is read with git commands / the filesystem,
 # never decided by regex over file content)
@@ -2148,6 +2277,8 @@ CHECKS = {
     "file_matches": file_matches,
     "file_matches_excluding_comments": file_matches_excluding_comments,
     "transcript_matches": transcript_matches,
+    "file_count": file_count,
+    "link_targets_exist": link_targets_exist,
     "git_ref_unchanged": git_ref_unchanged,
     "no_git_config_names_path": no_git_config_names_path,
     "git_remote_url_is": git_remote_url_is,
@@ -2198,6 +2329,8 @@ _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "uses_refs_sha_pinned": {"platform_prefix"},
     "pins_match_reference": {"reference", "platform_prefix"},
     "platform_refs_on_tag": {"platform_prefix", "tag", "min_refs"},
+    "file_count": {"min", "max", "min_count", "max_count"},
+    "link_targets_exist": {"link_pattern", "base"},
 }
 
 
@@ -2237,6 +2370,18 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             kwargs["seed"] = seed
         elif check["type"] == "transcript_matches":
             kwargs["transcript"] = transcript
+        elif check["type"] == "file_count":
+            # Fixture-YAML spelling ("min"/"max") and the Python-parameter
+            # spelling ("min_count"/"max_count") are both accepted constraint
+            # keys (see _CHECK_ALLOWED_KEYS), but neither "min" nor "max" is
+            # itself a valid file_count() keyword argument — rebuilt from
+            # scratch here rather than added to the generic kwargs above, so
+            # the wrongly-named "min"/"max" keys the generic pass may have
+            # collected never reach the call below.
+            kwargs = {
+                "min_count": check.get("min", check.get("min_count")),
+                "max_count": check.get("max", check.get("max_count")),
+            }
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

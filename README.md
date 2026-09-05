@@ -42,6 +42,9 @@ evals/
   windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
     fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
     seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe
+  writing-adrs/            # A/B eval, Class A (format half): two fixtures
+    bootstrap/             # no docs/decisions/ yet — bootstrap the folder
+    existing-convention/   # docs/decisions/ already has a house format
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
