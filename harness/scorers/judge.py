@@ -25,9 +25,10 @@ import math
 import os
 import re
 import secrets
-import statistics
 import subprocess
 from pathlib import Path
+
+from . import wrapping
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
@@ -436,7 +437,7 @@ def strip_fiction_marker(text: str) -> str:
 # neither the bullets the writer wrote nor the prose the rubric rewards. Its
 # own continuation line is joined — that is ordinary hard wrapping, and
 # refusing it left a wrapped list separable from its unwrapped twin.
-_LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+•]|\d+[.)])\s")
+_LIST_ITEM_RE = wrapping.LIST_ITEM_RE
 
 # Characters that take up no width and carry no meaning in a draft: a BOM,
 # the zero-width and bidi marks, the soft hyphen, a stray NUL, and the two
@@ -448,65 +449,11 @@ _LIST_ITEM_RE = re.compile(r"^\s*(?:[-*+•]|\d+[.)])\s")
 _INVISIBLE_RE = re.compile("[\u00ad\u200b-\u200f\u2060\u2800\u3164\ufeff\x00]")
 
 
-def _unwrap_block(lines: list[str], width: float) -> list[str]:
-    """One paragraph's lines, with hard wrapping — and only that — undone.
-
-    A line is a continuation of the one above it when the line above was too
-    full for this line's first word to have fitted on it. That is what hard
-    wrapping IS, and `width` is the estimated wrap column (see
-    `_wrap_width`): the ragged last line of a wrapped paragraph ("than
-    through a form.") is just as short as a sign-off, and only
-    reconstructing the wrap tells them apart — the line above a ragged tail
-    is full, the line above a sign-off is not.
-
-    A line that STARTS a list item is never joined into the line above it,
-    because a list can follow a full line ("...easiest to see as a list:")
-    and would otherwise be swallowed by it. A list item's OWN continuation
-    line is joined, though: it used not to be, and a hard-wrapped list
-    therefore normalised to twice as many lines as its unwrapped twin —
-    the exact line-shape tell this normalisation exists to remove,
-    surviving inside every draft that uses a list.
-
-    Joined lines are collected and joined once at the end rather than
-    appended onto a growing string: `out[-1] += ...` is quadratic in the
-    paragraph's length, and a 12 MB draft took 94 seconds in it.
-    """
-    joined: list[list[str]] = [[lines[0]]]
-    for previous, line in zip(lines, lines[1:]):
-        first_word = line.split(" ", 1)[0]
-        wrapped = len(previous) + 1 + len(first_word) > width
-        if wrapped and not _LIST_ITEM_RE.match(line):
-            joined[-1].append(line)
-        else:
-            joined.append([line])
-    return [" ".join(part) for part in joined]
-
-
-def _wrap_width(blocks: list[list[str]]) -> float:
-    """The draft's estimated wrap column: the median non-final line length.
-
-    Every line that is not the last of its paragraph, across the whole
-    draft. Two properties are needed and neither `max` nor a per-block
-    statistic has both:
-
-    - **Robust to one long line.** The wrap column used to be the draft's
-      own longest line, so a single unbreakable URL — and the skill under
-      test tells the writer to hyperlink — became the width, no line looked
-      wrapped any more, and the unwrap switched itself off for that draft
-      alone. A median ignores it.
-    - **Not fooled by a short paragraph.** Computing the width per block
-      instead makes a two-line sign-off ("Thanks," / "Adam Daniel") its own
-      wrap column, and joins it. Pooling the whole draft keeps the
-      sign-off's lines far under the column the prose was wrapped at.
-
-    A draft with no multi-line paragraph has nothing to join, so the width
-    is unused; it falls back to the longest line rather than to zero.
-    """
-    non_final = [len(line) for block in blocks for line in block[:-1]]
-    if not non_final:
-        return max((len(line) for block in blocks for line in block),
-                   default=0)
-    return statistics.median(non_final)
+# Both live in `wrapping`, which `objective.strip_seed_material` imports
+# too: the judge's reading of which breaks the writer meant and the
+# objective column's must be the same reading.
+_unwrap_block = wrapping.unwrap_block
+_wrap_width = wrapping.wrap_width
 
 
 def _normalize_draft_text(text: str) -> str:

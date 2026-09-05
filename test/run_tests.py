@@ -4704,6 +4704,69 @@ class TestIssue81(unittest.TestCase):
         normalised = judge._normalize_draft_text(self._SIGNED_OFF_DRAFT)
         self.assertTrue(normalised.endswith("the meantime.\nAdam"), normalised)
 
+    # B3, measured: the wrap column pooled every non-final line in the draft,
+    # so a MODEL-shaped draft — one long line per paragraph, which is what an
+    # arm actually hands back — had the two-line sign-off as its only sample.
+    # The median came out at 7, `Thanks,` was read as a wrapped line, and
+    # `Thanks, Adam Daniel` came back joined. Both committed references are
+    # hard-wrapped prose and kept theirs, so the agent's draft was the odd one
+    # out on every recruiter-reply trial, deterministically, on a plain
+    # sign-off — which rubric dimension (2) scores by name.
+    def test_a_model_shaped_draft_keeps_its_sign_off(self):
+        normalised = judge._normalize_draft_text(self.UNWRAPPED_CANDIDATE)
+        self.assertTrue(normalised.endswith("Thanks,\nAdam Daniel"),
+                        normalised)
+
+    def test_the_wrap_column_ignores_paragraphs_too_short_to_be_evidence(self):
+        # The fix, stated as the rule rather than as one draft's outcome: a
+        # paragraph under `WRAP_EVIDENCE_LINES` lines is not evidence of a
+        # wrap and contributes no sample, and with no evidence at all the
+        # width is the draft's longest line, which joins nothing.
+        blocks = [["a very long single line of prose that nobody wrapped"],
+                  ["Thanks,", "Adam Daniel"]]
+        self.assertEqual(judge._wrap_width(blocks), 52)
+        # One qualifying paragraph is enough, and the short one no longer
+        # drags the median down with it.
+        blocks.append(["x" * 70, "y" * 70, "z" * 20])
+        self.assertEqual(judge._wrap_width(blocks), 70)
+
+    def test_a_pooled_sample_below_a_plausible_column_falls_back(self):
+        # A paragraph of deliberate one-line sentences IS three lines long,
+        # so it qualifies — and its median is far under any column anyone
+        # wraps at. Joining on it would erase breaks the writer made.
+        blocks = [["Short line one.", "Short line two.", "Short line three."],
+                  ["a" * 68, "b" * 68, "c" * 30]]
+        self.assertGreaterEqual(judge._wrap_width(blocks),
+                                judge.wrapping.MIN_WRAP_COLUMN)
+
+    def test_every_committed_shape_keeps_the_sign_off_it_was_written_with(self):
+        # The three shapes side by side, because the fix must not be "join
+        # nothing" wearing a different hat: a model-shaped draft, a draft
+        # carrying one URL longer than any wrap column, and a hard-wrapped
+        # paragraph with a bare name under it.
+        for label, draft, tail in (
+                ("model-shaped", self.UNWRAPPED_CANDIDATE, "Thanks,\nAdam Daniel"),
+                ("long hyperlink", self._HYPERLINKED_DRAFT, "Thanks,\nAdam Daniel"),
+                ("hard-wrapped", self._SIGNED_OFF_DRAFT, "the meantime.\nAdam"),
+        ):
+            with self.subTest(draft=label):
+                normalised = judge._normalize_draft_text(draft)
+                self.assertTrue(normalised.endswith(tail), normalised)
+
+    def test_every_draft_in_the_prompt_ends_in_the_same_shape(self):
+        # The tell B3 is about, measured where it would have been read: in
+        # the prompt the judge actually sees. A sign-off is two short lines
+        # in every draft or in none of them — otherwise the draft under test
+        # is separable by its last two lines alone.
+        prompt, ordered = self._trial_zero_prompt("recruiter-reply")
+        shapes = set()
+        for draft in self._prompt_drafts(prompt):
+            tail = draft.strip().split("\n\n")[-1].split("\n")
+            shapes.add(tuple(len(line) <= self.DELIBERATE_LINE for line in tail))
+        self.assertEqual(len(ordered), 3)
+        self.assertEqual(len(shapes), 1,
+                         f"the drafts' last paragraphs differ in shape: {shapes}")
+
     # The same three sentences, hard-wrapped and not. A reference is
     # hard-wrapped prose and a model's reply is not; if those two do not
     # normalise to the same text, the shuffle hides which slot the draft
