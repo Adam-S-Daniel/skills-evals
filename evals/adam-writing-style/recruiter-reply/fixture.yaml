@@ -68,16 +68,21 @@ objective_checks:
   # agentskills checkout at TEST time and fails if a term there is not
   # covered here, so the two cannot drift apart.
   #
-  # Nothing below carries a quote anchor of its own any more. Quoted
-  # material — a `>` blockquote at any legal indent, or a fenced block — is
-  # stripped once, for every pattern, by objective.strip_quoted: a reply
-  # that quotes the recruiter's email back is not using her words as its
-  # own, and the seed material is not the agent's writing. A reply that is
-  # quoted in its ENTIRETY is scored whole, so a ban cannot be switched off
-  # by wrapping the thing being scored in `> `.
+  # Nothing below carries a quote anchor of its own any more. Every check
+  # here sets `strip_seed: true`, and objective.strip_seed_material does
+  # the work once, for every pattern, on PROVENANCE rather than on markup:
+  # the seed is committed, so her email's lines are hers in whatever shape
+  # they are pasted back, and every other line is the agent's writing
+  # however it chose to format it. What is left is unquoted, so a reply the
+  # agent handed back inside a `> ` block — the shape every calibration
+  # example in SKILL.md has — is scored as the prose it is, and its bans
+  # fire. A reply that is nothing but her email has an empty residue and
+  # fails its must_match checks, which is the right answer for a reply that
+  # wrote nothing.
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the reply
     type: transcript_matches
+    strip_seed: true
     must_not_match:
       - '(?i)\bleverag(?:e|es|ed|ing)\b'
       - '(?i)\bsynerg(?:y|ies|istic)\b'
@@ -93,19 +98,22 @@ objective_checks:
 
   # Core move 1: greet warmly, by name — in the greeting, not anywhere in
   # the reply. Anchored to the opening: a reply that greets nobody and
-  # quotes her signature underneath used to pass on the name in that
-  # footer, and the quoted footer is not part of the text this pattern
-  # sees. Leading blank lines are skipped, then the name must appear
-  # inside the OPENING WINDOW: the first four lines of the reply's own
-  # text — the greeting, a blank line, the opening paragraph, and one line
-  # of slack. The hedge below uses the same four; they used to differ
+  # pastes her signature underneath used to pass on the name in that
+  # footer, and her signature is seed material, so it is not part of the
+  # text this pattern sees. The name must appear inside the OPENING
+  # WINDOW: the first four LINES OF TEXT of the residue — blank lines are
+  # skipped wherever they fall, not just at the front, because the
+  # pre-pass leaves a blank behind wherever it took a seed line out and a
+  # window that counted those would be measuring the stripper's
+  # leftovers. The hedge below uses the same four; they used to differ
   # (three lines here, six there) and one of the two comments described
   # neither.
   - id: greets-the-recruiter-by-name
     description: The reply greets the recruiter by name in its opening
     type: transcript_matches
+    strip_seed: true
     must_match:
-      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,3}[^\n]*\bDana\b'
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n(?:[ \t]*\n)*){0,3}[^\n]*\bDana\b'
 
   # Core move 2: open with a hedge or apology. Any of the skill's shapes
   # counts, but it has to be the AGENT'S and it has to be near the top: the
@@ -130,17 +138,20 @@ objective_checks:
   - id: opens-with-a-hedge
     description: The reply opens with one of the skill's hedges rather than an assertion
     type: transcript_matches
+    strip_seed: true
     must_match:
-      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,3}(?:[^\n]*?[.!?—,;:][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n(?:[ \t]*\n)*){0,3}(?:[^\n]*?[.!?—,;:][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
 
   # Core move 3: be specific — paste the ID verbatim, name the date. Both
-  # facts are in the seed material; neither is asked for. Anchored to
-  # non-quoted lines: a reply that quotes her email back carries REQ-4417
-  # in the quote, and a fact the agent merely echoed is not the agent
-  # being specific.
+  # facts are in the seed material; neither is asked for. Her own lines
+  # are stripped first: a reply that pastes her email back carries
+  # REQ-4417 in that paste, and a line the agent merely echoed is not the
+  # agent being specific. A SENTENCE the agent built around the ID is,
+  # and still counts — the sentence is not one of her lines.
   - id: cites-both-facts
     description: The reply quotes the requisition number and the contract end date
     type: transcript_matches
+    strip_seed: true
     must_match:
       - '\bREQ-4417\b'
       - '(?i)\bMarch 2027\b'

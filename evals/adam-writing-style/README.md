@@ -84,29 +84,67 @@ thing under test.
 Everything else — the sixty-word budget, whether the em dashes land at the
 right joints, whether the warmth is real — is the judge's.
 
-Every check reads the agent's reply with the material it **quoted**
-removed, and the greeting and the hedge only its opening: a reply that
-quotes the cold email back was otherwise scored on the recruiter's words —
-her "I think your background lines up well" satisfied the hedge check, and
-her signature satisfied the greeting.
+### The seed pre-pass: provenance, not markup
 
-The stripping is one pre-pass (`objective.strip_quoted`), not an anchor per
-pattern. The anchor it replaced (`(?m)^(?!>)`, written out 47 times) only
-ever saw a line whose *first* character is `>`, so a fenced code block and
-a blockquote indented one to three spaces — legal Markdown, and what a
-model actually writes — walked past all 47. A reply quoted in its
-**entirety** is scored whole: otherwise a draft could switch the avoid-list
-ban off by wrapping itself in `> `, and every calibration example in
-SKILL.md is a `>` blockquote, so the with-skill arm is the one most likely
-to mirror the shape.
+Every check here sets `strip_seed: true`, so it is scored over the reply
+with the **seed's own material** removed (`objective.strip_seed_material`),
+and the greeting and the hedge over only its opening. Without it a reply
+that pasted the cold email back was scored on the recruiter's words — her
+"I think your background lines up well" satisfied the hedge check, and her
+signature satisfied the greeting.
+
+Two earlier attempts decided that from **markup**, and both failed, in
+opposite directions. A line scanner (`^ {0,3}>` plus a fence tracker)
+cannot see an indented code block, an HTML `<blockquote>`/`<details>`/
+`<pre>`, a lazy continuation, or a verbatim paste carrying no marker at
+all; a real Markdown parser sees every one of those and still cannot tell
+a quoted seed from a deliverable the agent *chose* to present as a
+blockquote — which is exactly what every calibration example in SKILL.md
+is, so the `with_skill` arm is the one most likely to hand its reply back
+in that shape.
+
+What separates the two is not markup. It is **provenance**: `seed/` is
+committed material this harness reads, so the lines that came from it can
+be named in any shape they are pasted back in, and every other line is the
+agent's writing however it chose to format it. Concretely: each seed line
+of at least 24 characters (and any run of at least that much of the seed's
+own text) is dropped wherever it appears; a fenced, HTML-wrapped or
+blockquoted block whose every line is seed text goes whole, short lines
+included; and what survives is **unquoted**, so a reply inside `> ` or a
+fence is scored as the prose it is. Both `must_match` and `must_not_match`
+run over that residue, so a reply that is nothing but the quoted material
+fails its `must_match` checks — the right answer for a reply that wrote
+nothing — while a reply the agent merely wrapped in `> ` stays, and its
+bans fire.
+
+**It is opt-in, per check.** A global pre-pass narrowed an unrelated
+shipped fixture: `windows-elevation-from-wsl` asks the reply to hand over a
+command, the command is in the seed, and stripping it left the handoff
+check failing a transcript that put it in a ```powershell fence. Only these
+three fixtures set `strip_seed`.
+
+**What it does not do**, stated because both limits are real:
+
+- A fact the agent restates in **its own sentence** is its own writing and
+  is scored, even though the fact is in the seed. "REQ-4417 is not going to
+  work for me" counts; the recruiter's line carrying REQ-4417 does not.
+  That is the point, not a leak.
+- A seed line **shorter than 24 characters** is not stripped, so an
+  *unmarked* verbatim paste leaves "Best regards," and a bare name behind.
+  The floor is what keeps the agent's own "Thanks," and its own sign-off
+  from being claimed by the seed; a paste that marks itself as a quotation
+  (a blockquote, a fence, an HTML wrapper) is dropped whole and leaves
+  nothing.
 
 The known failure mode in the other direction stays, and each fixture's
-header records it: commentary the agent wraps *around* the writing is
-scored as if it were the writing, so "I kept it free of 'leverage'" fails
-the avoid-list check. It is directional against the `with_skill` arm — the
-arm that knows the list is the arm that mentions it — which is why every
-brief now asks for the text alone, nothing before or after it and nothing
-quoted.
+header records it: commentary the agent wraps *around* the writing really
+is the agent's writing, so it is scored as if it were the writing. "I kept
+it free of 'leverage'" fails the avoid-list check — directional against the
+`with_skill` arm, since the arm that knows the list is the arm that
+mentions it — and in the bio a "That is the paragraph he asked for."
+satisfies `bio-is-third-person` on the commentary's own pronoun. That is
+why every brief asks for the text alone, nothing before or after it and
+nothing quoted.
 
 ## The references
 

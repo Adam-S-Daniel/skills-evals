@@ -2897,9 +2897,9 @@ class TestIssue81(unittest.TestCase):
         ">\n"
         "> Hi Adam,\n"
         ">\n"
-        "> Your name came up while I was looking for platform engineers with\n"
-        "> public-sector delivery experience, and I think your background\n"
-        "> lines up well with what they are after.\n"
+        "> filling a Staff Platform Engineer role for a client of ours — requisition\n"
+        "> REQ-4417 — and I think your background lines up well with what they are\n"
+        "> after.\n"
         "\n"
         "Hi Dana,\n"
         "\n"
@@ -2927,8 +2927,9 @@ class TestIssue81(unittest.TestCase):
         "> Dana Whitcombe\n"
         "> Senior Technical Recruiter, Northgate Bell Talent Group\n")
 
-    # A bio that spends its sixty words without either fact, and a quoted
-    # note underneath saying so: the note supplied both facts to the check.
+    # A bio that spends its sixty words without either fact, with the
+    # background note quoted underneath: the seed's own lines supplied both
+    # facts to a check about what the BIO says.
     _BIO_WITH_THE_FACTS_ONLY_IN_A_QUOTED_NOTE = (
         "Adam Daniel leads delivery infrastructure at a civic technology\n"
         "consultancy. He rebuilt the deployment pipeline behind eleven state\n"
@@ -2936,8 +2937,9 @@ class TestIssue81(unittest.TestCase):
         "eleven to a clean audit. He holds the AWS Solutions Architect –\n"
         "Professional certification and the CISSP.\n"
         "\n"
-        "> No room for the 2019–2024 dates or the Section 508 line inside\n"
-        "> sixty words — say the word and I will trade out the certifications.\n")
+        "> - Halyard Civic Data, 2019–2024. Rebuilt the deployment pipeline behind\n"
+        ">   eleven state agency websites, and ran the accessibility remediation\n"
+        ">   program that took all eleven to a clean Section 508 audit.\n")
 
     def test_a_quoted_cold_email_does_not_supply_the_opening_hedge(self):
         self._assert_only_failure(
@@ -2985,6 +2987,45 @@ class TestIssue81(unittest.TestCase):
                 self.assertIn("commentary", header.lower(),
                               f"{name} does not record commentary as a known "
                               "failure mode")
+
+    # The same failure mode pointing the other way, which the headers used
+    # to record in one direction only: commentary is the agent's writing,
+    # so it can HAND a check its answer as readily as it can take it away.
+    _BIO_WITHOUT_A_SUBJECT_PLUS_COMMENTARY = (
+        "Leads delivery infrastructure at a civic technology consultancy.\n"
+        "Rebuilt the deployment pipeline behind eleven state agency websites\n"
+        "at Halyard Civic Data (2019–2024) and ran the remediation program\n"
+        "that carried all eleven to a clean Section 508 audit. Holds the AWS\n"
+        "Solutions Architect – Professional certification and the CISSP.\n"
+        "\n"
+        "That is the paragraph he asked for.\n")
+
+    def test_commentary_can_supply_a_check_as_well_as_break_one(self):
+        # A bio with no subject of its own — the résumé-fragment register
+        # bio-is-third-person exists to catch — passes it on the pronoun in
+        # the agent's own sign-off line. Provenance cannot help here and is
+        # not meant to: that sentence really is the agent's writing. It is
+        # recorded in the fixture header and in the directory's README so
+        # nobody reads the check as tighter than it is.
+        self.assertFalse(
+            self._score("proposal-bio",
+                        self._BIO_WITHOUT_A_SUBJECT)["bio-is-third-person"]
+            ["passed"],
+            "the subject-less bio must fail on its own")
+        self._assert_all_pass("proposal-bio",
+                              self._BIO_WITHOUT_A_SUBJECT_PLUS_COMMENTARY,
+                              "commentary supplied the third-person subject")
+        # Comment markers stripped before flattening: the sentence is
+        # wrapped across two comment lines in the header.
+        header = " ".join(
+            line.lstrip("# ") for line in (self.STYLE_DIR / "proposal-bio"
+                                           / "fixture.yaml")
+            .read_text(encoding="utf-8").split("\n")).replace("  ", " ")
+        header = " ".join(header.split())
+        self.assertIn("That is the paragraph he asked for.", header)
+        readme = " ".join((self.STYLE_DIR / "README.md").read_text(
+            encoding="utf-8").split())
+        self.assertIn("That is the paragraph he asked for.", readme)
 
     def test_every_brief_asks_for_the_text_alone(self):
         # The mitigation for both directions above: nothing wrapped around
@@ -3638,8 +3679,11 @@ class TestIssue81(unittest.TestCase):
     # fenced code block, a blockquote indented one to three spaces (legal
     # Markdown), and — the blocker — a reply quoted in its ENTIRETY, which
     # made `no-avoid-list-words` switchable off by the thing being scored.
-    # The anchors are gone; objective.strip_quoted does the work once, for
-    # every pattern, and falls back to the whole reply when nothing is left.
+    # The anchors are gone, and so is the scanner that replaced them:
+    # objective.strip_seed_material does the work once, for every pattern,
+    # on provenance rather than on markup. These three styles stay because
+    # they are the ones the fixtures' own cases are written in; the full
+    # table of shapes lives in SEED_QUOTE_SHAPES below.
 
     QUOTE_STYLES = ("blockquote", "indented-blockquote", "fenced")
 
@@ -3658,7 +3702,16 @@ class TestIssue81(unittest.TestCase):
 
     # (fixture, check id) -> (a draft with a {quote} slot, the material that
     # goes in it). The body passes every other check on its own; the thing
-    # the named check looks for appears ONLY inside the quote.
+    # the named check looks for appears ONLY inside the quote — and the
+    # quote is VERBATIM seed material, because that is what the pre-pass
+    # decides on now. A paraphrase the agent typed itself is the agent's
+    # writing however it chose to format it, which is the other half of the
+    # design decision and is covered by
+    # test_a_deliverable_the_agent_chose_to_format_is_still_scored.
+    #
+    # A seed that drifts turns these quotes back into the agent's own words
+    # and the named check starts passing, so drift fails this test loudly
+    # rather than quietly emptying it.
     QUOTED_CASES = {
         ("recruiter-reply", "greets-the-recruiter-by-name"): (
             "Hi there,\n"
@@ -3683,8 +3736,9 @@ class TestIssue81(unittest.TestCase):
             "would not work for me even if the timing were closer.\n"
             "\n"
             "Thanks,\nAdam Daniel\n",
-            "Your name came up while I was looking for platform engineers, and\n"
-            "I think your background lines up well with what they are after.\n"),
+            "filling a Staff Platform Engineer role for a client of ours — requisition\n"
+            "REQ-4417 — and I think your background lines up well with what they are\n"
+            "after.\n"),
         ("recruiter-reply", "cites-both-facts"): (
             "Hi Dana,\n"
             "\n"
@@ -3696,17 +3750,9 @@ class TestIssue81(unittest.TestCase):
             "\n"
             "Thanks,\nAdam Daniel\n",
             "Subject: Staff Platform Engineer — REQ-4417\n"
-            "My engagement here is contracted through March 2027.\n"),
-        ("proposal-bio", "bio-is-third-person"): (
-            "Leads delivery infrastructure at a civic technology consultancy.\n"
-            "Rebuilt the deployment pipeline behind eleven state agency websites\n"
-            "at Halyard Civic Data (2019–2024) and ran the remediation program\n"
-            "that carried all eleven to a clean Section 508 audit. Holds the AWS\n"
-            "Solutions Architect – Professional certification and the CISSP.\n"
-            "\n"
-            "{quote}\n",
-            "Adam Daniel leads the delivery-infrastructure group; he ran the\n"
-            "remediation program himself.\n"),
+            "- Delivery-infrastructure lead at the current shop. The engagement is\n"
+            "  contracted through March 2027. There is a renewal conversation before\n"
+            "  that, but nothing I would move on while it runs.\n"),
         ("proposal-bio", "cites-both-facts"): (
             "Adam Daniel leads delivery infrastructure at a civic technology\n"
             "consultancy. He rebuilt the deployment pipeline behind eleven state\n"
@@ -3715,17 +3761,9 @@ class TestIssue81(unittest.TestCase):
             "Professional certification and the CISSP.\n"
             "\n"
             "{quote}\n",
-            "Halyard Civic Data, 2019–2024. Ran the accessibility remediation\n"
-            "program that took all eleven to a clean Section 508 audit.\n"),
-        ("self-appraisal-opening", "appraisal-is-first-person"): (
-            "Most of this quarter went to the deployment work: deploy-scaffold\n"
-            "is the shared deployment repository now, six application teams have\n"
-            "adopted it, and two more are mid-migration. The cache and matrix\n"
-            "rework pulled the median pipeline run from 26 minutes to 9.\n"
-            "\n"
-            "{quote}\n",
-            "Next quarter: I want the last two teams migrated and the rest of\n"
-            "those findings closed.\n"),
+            "- Halyard Civic Data, 2019–2024. Rebuilt the deployment pipeline behind\n"
+            "  eleven state agency websites, and ran the accessibility remediation\n"
+            "  program that took all eleven to a clean Section 508 audit.\n"),
         ("self-appraisal-opening", "cites-both-facts"): (
             "Most of this quarter went to the deployment work. I stood up the\n"
             "shared deployment repository; six application teams have adopted it\n"
@@ -3733,9 +3771,35 @@ class TestIssue81(unittest.TestCase):
             "the median pipeline run by more than half.\n"
             "\n"
             "{quote}\n",
-            "Stood up deploy-scaffold, the shared deployment repository.\n"
-            "Median pipeline run fell from 26 minutes to 9.\n"),
+            "- Stood up `deploy-scaffold`, the shared deployment repository. Six\n"
+            "  application teams have adopted it; two more are mid-migration.\n"
+            "- Median pipeline run fell from 26 minutes to 9 after the cache and matrix\n"
+            "  rework. Build fixes a coworker landed the same sprint are part of that\n"
+            "  number.\n"),
     }
+
+    # The two register checks are absent from the table above on purpose,
+    # and this is the reason rather than an oversight: nothing in the
+    # proposal-bio seed is a third-person subject and nothing in the
+    # self-appraisal seed is a first-person "I", so no quotation of the
+    # MATERIAL could ever supply either. What can still supply them is the
+    # agent's own commentary, which is the known failure mode every fixture
+    # header records — not something provenance can decide, because
+    # commentary really is the agent's writing.
+    UNREACHABLE_FROM_THE_SEED = {
+        ("proposal-bio", "bio-is-third-person"):
+            r"\b(?:[Hh]e|[Hh]is|Adam|Daniel)\b",
+        ("self-appraisal-opening", "appraisal-is-first-person"): r"\bI\b",
+    }
+
+    def test_the_seed_cannot_supply_what_the_register_checks_look_for(self):
+        for (name, check_id), pattern in sorted(
+                self.UNREACHABLE_FROM_THE_SEED.items()):
+            with self.subTest(fixture=name, check=check_id):
+                check = next(c for c in self._fixture(name)["objective_checks"]
+                             if c["id"] == check_id)
+                self.assertIn(pattern, check["must_match"])
+                self.assertNotRegex(self._seed_text(name), pattern)
 
     def test_quoted_material_never_supplies_what_a_check_looks_for(self):
         # One case per (fixture, check) whose target can be quoted, in all
@@ -3857,6 +3921,301 @@ class TestIssue81(unittest.TestCase):
                                 + check.get("must_not_match", [])):
                     with self.subTest(fixture=name, pattern=pattern):
                         self.assertNotIn("(?!>)", pattern)
+
+    # ------------------------------------------------------------------
+    # provenance: the seed is known, so what came from it can be named
+    # ------------------------------------------------------------------
+    #
+    # A line scanner cannot see an indented code block, an HTML block, a
+    # lazy continuation or a verbatim paste with no marker at all; and a
+    # real Markdown parser cannot tell a quoted seed from a deliverable the
+    # agent CHOSE to present as a blockquote — which is what every
+    # calibration example in SKILL.md is. What separates the two is not
+    # markup. It is provenance: the seed is committed, so the harness knows
+    # exactly which lines are the material and which are the agent's.
+    #
+    # Every shape below is one the reviewers measured. The table is run in
+    # both directions on all three fixtures: the in-voice reference plus the
+    # quoted seed must pass every check, and a contentless filler plus the
+    # same quoted seed must fail at least one.
+
+    SEED_QUOTE_SHAPES = (
+        "blockquote", "blockquote-indented-1", "blockquote-indented-3",
+        "blockquote-nbsp", "blockquote-nested", "fence-backtick",
+        "fence-backtick-info", "fence-tilde", "fence-unterminated",
+        "indented-block", "lazy-continuation", "fence-inside-a-blockquote",
+        "blockquote-inside-a-list-item", "html-blockquote", "html-details",
+        "html-pre", "verbatim-paste", "crlf",
+    )
+
+    @staticmethod
+    def _quote_seed(text: str, shape: str) -> str:
+        """`text` presented in one of the shapes an agent really quotes in."""
+        lines = text.strip().splitlines()
+        joined = "\n".join(lines)
+        if shape == "blockquote":
+            return "\n".join("> " + line for line in lines)
+        if shape == "blockquote-indented-1":
+            return "\n".join(" > " + line for line in lines)
+        if shape == "blockquote-indented-3":
+            # Three spaces is still a blockquote to every Markdown renderer.
+            return "\n".join("   > " + line for line in lines)
+        if shape == "blockquote-nbsp":
+            return "\n".join("\u00a0> " + line for line in lines)
+        if shape == "blockquote-nested":
+            return "\n".join("> > " + line for line in lines)
+        if shape == "fence-backtick":
+            return "```\n" + joined + "\n```"
+        if shape == "fence-backtick-info":
+            return "```markdown\n" + joined + "\n```"
+        if shape == "fence-tilde":
+            return "~~~\n" + joined + "\n~~~"
+        if shape == "fence-unterminated":
+            return "```\n" + joined
+        if shape == "indented-block":
+            return "\n".join("    " + line if line.strip() else line
+                              for line in lines)
+        if shape == "lazy-continuation":
+            # Only the first line carries the marker; a Markdown renderer
+            # pulls the rest into the same blockquote anyway.
+            return "\n".join(("> " + line) if i == 0 else line
+                              for i, line in enumerate(lines))
+        if shape == "fence-inside-a-blockquote":
+            return "\n".join(["> ```"] + ["> " + line for line in lines]
+                              + ["> ```"])
+        if shape == "blockquote-inside-a-list-item":
+            return "\n".join(["- The material she sent:"]
+                              + ["  > " + line for line in lines])
+        if shape == "html-blockquote":
+            return "<blockquote>\n" + joined + "\n</blockquote>"
+        if shape == "html-details":
+            return ("<details>\n<summary>The material</summary>\n\n"
+                    + joined + "\n</details>")
+        if shape == "html-pre":
+            return "<pre>\n" + joined + "\n</pre>"
+        if shape == "verbatim-paste":
+            return joined
+        if shape == "crlf":
+            return "\r\n".join("> " + line for line in lines)
+        raise AssertionError(f"unknown quote shape {shape!r}")
+
+    # Two paragraphs that say nothing about the task: no fact, no greeting,
+    # no hedge. Everything a check could find has to come from the quoted
+    # seed, which is the escape the adversarial round measured.
+    _CONTENTLESS_FILLER = (
+        "Here is the text you asked for, ready to drop straight in.\n"
+        "Let me know if you would like it a little shorter.\n")
+
+    def test_quoted_seed_material_is_not_the_agents_writing(self):
+        # The measured escape, closed: quote the seed in ANY of these
+        # shapes, add a paragraph with no content in it, and at least one
+        # objective check still has to fail. Round 3 measured an all-pass on
+        # all three fixtures under the indented block and the three HTML
+        # shapes, on two fixtures under lazy continuation, and on two more
+        # through an unterminated fence.
+        for name in self.FIXTURES:
+            seed = self._seed_text(name)
+            for shape in self.SEED_QUOTE_SHAPES:
+                with self.subTest(fixture=name, shape=shape):
+                    by_id = self._score(
+                        name, self._quote_seed(seed, shape) + "\n\n"
+                        + self._CONTENTLESS_FILLER)
+                    # The specificity check names the failure exactly: both
+                    # facts are in the material and neither is in the
+                    # filler, so a pass here is the quote scoring for the
+                    # agent. Asserted on its own rather than as "something
+                    # failed", which a hedge check happens to satisfy for
+                    # reasons that have nothing to do with provenance.
+                    self.assertFalse(
+                        by_id["cites-both-facts"]["passed"],
+                        f"{name}/{shape}: the quoted seed supplied the facts")
+                    self.assertTrue(
+                        any(not r["passed"] for r in by_id.values()),
+                        f"{name}/{shape}: a contentless filler beside the "
+                        "quoted seed passed every objective check")
+
+    def test_a_genuine_draft_beside_the_quoted_seed_still_passes(self):
+        # The other direction, and the one that makes the pre-pass safe to
+        # turn on: quoting the material must not cost the agent the checks
+        # its own writing satisfies.
+        for name in self.FIXTURES:
+            seed = self._seed_text(name)
+            draft = self._reference(name, "in-voice")
+            for shape in self.SEED_QUOTE_SHAPES:
+                with self.subTest(fixture=name, shape=shape):
+                    self._assert_all_pass(
+                        name, draft + "\n\n" + self._quote_seed(seed, shape),
+                        f"the in-voice reference beside the seed ({shape})")
+
+    # The shapes that mark the quote as a quote: the whole block is
+    # provably seed material, so it goes even where a line of it is short.
+    # `verbatim-paste`, `indented-block`, `fence-unterminated` and
+    # `lazy-continuation` are not in this list on purpose: none of them
+    # marks the whole quotation as one (a lazy continuation marks only its
+    # first line), so an unmarked run of the material leaves its short lines
+    # behind — the documented limit of the length floor.
+    MARKED_SEED_QUOTE_SHAPES = tuple(
+        shape for shape in SEED_QUOTE_SHAPES
+        if shape not in ("verbatim-paste", "indented-block",
+                         "fence-unterminated", "lazy-continuation"))
+
+    def test_a_marked_quote_leaves_nothing_behind_even_above_the_draft(self):
+        # Quote first, reply underneath — the shape a reply-in-thread takes.
+        # Nothing of the quote may survive into the opening window, or the
+        # greeting and the hedge are scored against the recruiter's own
+        # signature block.
+        for name in self.FIXTURES:
+            seed = self._seed_text(name)
+            draft = self._reference(name, "in-voice")
+            for shape in self.MARKED_SEED_QUOTE_SHAPES:
+                with self.subTest(fixture=name, shape=shape):
+                    self._assert_all_pass(
+                        name, self._quote_seed(seed, shape) + "\n\n" + draft,
+                        f"the seed ({shape}) above the in-voice reference")
+
+    def test_a_deliverable_the_agent_chose_to_format_is_still_scored(self):
+        # The other half of the design decision. Every calibration example
+        # in SKILL.md is a `>` blockquote, so the arm that read the skill is
+        # the arm most likely to hand its reply back inside one — and the
+        # round-3 measurement was exactly that: the in-voice reference
+        # presented as a blockquote after a one-line preamble failed three
+        # of the four checks, because the scanner could not tell the
+        # agent's formatting from the seed's provenance.
+        draft = self._reference("recruiter-reply", "in-voice")
+        quoted = "\n".join("> " + line if line.strip() else ">"
+                            for line in draft.strip().splitlines())
+        for label, transcript in (
+                ("blockquoted whole", quoted),
+                ("blockquoted after a preamble",
+                 "Here is the draft:\n\n" + quoted),
+                ("fenced whole", "```\n" + draft.strip() + "\n```"),
+                ("one stray unbalanced fence", draft.strip() + "\n\n```\n"),
+        ):
+            with self.subTest(shape=label):
+                self._assert_all_pass("recruiter-reply", transcript, label)
+
+    def test_a_blockquoted_reply_cannot_switch_the_avoid_list_off(self):
+        # S1, measured: "Here is the draft:" plus a reply full of buzzwords
+        # inside a blockquote. The reply is not seed material, so it stays
+        # in the residue and the ban fires — which is what stops the ban
+        # being switchable off by the thing being scored.
+        buzzwords = (
+            "Hi Dana,\n"
+            "\n"
+            "Sorry for the slow reply — I am going to pass on REQ-4417. My\n"
+            "engagement here is contracted through March 2027, and I would\n"
+            "rather not leverage a move right now.\n"
+            "\n"
+            "Thanks,\nAdam Daniel\n")
+        quoted = "\n".join("> " + line if line.strip() else ">"
+                            for line in buzzwords.strip().splitlines())
+        by_id = self._score("recruiter-reply",
+                            "Here is the draft:\n\n" + quoted)
+        self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
+
+    def test_a_short_seed_line_reused_in_the_agents_own_prose_survives(self):
+        # The floor on the seed-line index: a line the agent could plausibly
+        # have written itself is never claimed by the seed. "Thanks," and a
+        # bare name are the cases that matter, and both are far under it.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        for line in ("Hi Adam,", "Best regards,", "Dana Whitcombe", "# Brief"):
+            with self.subTest(line=line):
+                self.assertLess(len(line), 24)
+                self.assertEqual(
+                    objective.strip_seed_material(line + "\n", seed), line)
+
+    def test_a_fact_stated_in_the_agents_own_sentence_still_counts(self):
+        # Provenance, not keyword matching: REQ-4417 is in the seed, but a
+        # sentence the agent built around it is the agent's writing and the
+        # specificity check must see it.
+        own_words = (
+            "Hi Dana,\n"
+            "\n"
+            "Sorry for the slow reply. REQ-4417 is not going to work for me:\n"
+            "my engagement here runs through March 2027, and three days a\n"
+            "week on site would be a stretch even after that.\n"
+            "\n"
+            "Thanks,\nAdam Daniel\n")
+        # Not one of these lines is a seed line, though every fact in them is.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        self.assertEqual(objective.strip_seed_material(own_words, seed).strip(),
+                         own_words.strip())
+        self._assert_all_pass("recruiter-reply", own_words,
+                              "the facts in the agent's own sentences")
+
+    # ------------------------------------------------------------------
+    # the pre-pass is opt-in, and only these three fixtures opt in
+    # ------------------------------------------------------------------
+
+    def test_every_issue_81_check_asks_for_the_seed_pre_pass(self):
+        checks = [(name, check["id"])
+                  for name in self.FIXTURES
+                  for check in self._fixture(name)["objective_checks"]
+                  if not check.get("strip_seed")]
+        self.assertEqual(checks, [], "these #81 checks do not set strip_seed")
+
+    def test_no_other_fixture_asks_for_the_seed_pre_pass(self):
+        # B1: a global pre-pass narrowed `windows-elevation-from-wsl` —
+        # a handoff command inside a ```powershell fence stopped counting.
+        # It is opt-in now, and this is the fence around the opt-in.
+        elsewhere = []
+        for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
+            if path.parent.parent.name == "adam-writing-style":
+                continue
+            fixture = run_eval.load_fixture(path.parent)
+            for check in fixture.get("objective_checks") or []:
+                if "strip_seed" in check:
+                    elsewhere.append(f"{path.parent.name}/{check['id']}")
+        self.assertEqual(elsewhere, [])
+
+    def test_a_fenced_handoff_command_still_counts_for_the_wsl_fixture(self):
+        # The regression B1 names, in the fixture it was measured on: the
+        # skill's own handoff is a command, and a command belongs in a
+        # fence. Nothing in `windows-elevation-from-wsl` may strip it.
+        fixture = run_eval.load_fixture(REPO_ROOT / "evals"
+                                        / "windows-elevation-from-wsl")
+        check = next(c for c in fixture["objective_checks"]
+                     if c["id"] == "handoff-names-elevation-and-the-line")
+        transcript = (
+            "I stopped short of the write: this needs an elevated PowerShell\n"
+            "prompt, and the WSL-side interop session is not one. Run this\n"
+            "there:\n"
+            "\n"
+            "```powershell\n"
+            "pwsh -File C:\\work\\scripts\\register-tasks.ps1\n"
+            "```\n"
+            "\n"
+            "The live task is exported already, so there is something to\n"
+            "restore.\n")
+        wsl_dir = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
+
+        def score(text, **kwargs):
+            return objective.transcript_matches(
+                str(wsl_dir), [], must_match=check.get("must_match", []),
+                must_not_match=check.get("must_not_match", []),
+                transcript=text, **kwargs)
+
+        self.assertTrue(*score(transcript))
+
+        # And the opt-in is what keeps it that way, not luck: this fixture's
+        # own seed README carries the sentence an agent naturally quotes
+        # when it explains the fix, so with the pre-pass turned on the only
+        # mention of the script goes with it.
+        quoting_the_readme = (
+            "This needs an elevated Windows PowerShell prompt — the session\n"
+            "reachable from WSL holds a filtered token. From the repo README:\n"
+            "\n"
+            "> `register-tasks.ps1` replaces the existing task in place — that is how a\n"
+            "> trigger or setting change is applied.\n"
+            "\n"
+            "So run it there and the change lands.\n")
+        self.assertTrue(*score(quoting_the_readme))
+        stripped_passed, stripped_detail = score(
+            quoting_the_readme, seed=str(wsl_dir / "seed"))
+        self.assertFalse(
+            stripped_passed,
+            "the pre-pass no longer costs this fixture anything, so the "
+            f"opt-in this test guards has stopped mattering: {stripped_detail}")
 
     def test_pairwise_rejects_a_draft_carrying_the_nonce(self):
         # The other half of the fence guard, which nothing covered: a draft

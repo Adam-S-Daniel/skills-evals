@@ -22,18 +22,26 @@
 # count words, and objective.py is not this fixture's to extend. The judge's
 # register dimension carries it.
 #
-# Every check below reads the agent's final reply with the material it
-# quoted removed (objective.strip_quoted): a `>` blockquote at any legal
-# indent and anything inside a fenced block is not the agent's writing.
-# A reply quoted in its entirety is scored whole.
+# Every check below sets `strip_seed: true`, so it reads the agent's final
+# reply with the SEED's own material removed (objective.strip_seed_material)
+# and everything else unquoted. Provenance decides that, not markup: a line
+# that is the background note's is not the agent's writing however it is
+# pasted back, and a paragraph the agent chose to present as a blockquote
+# or inside a fence is still the agent's writing and is scored as prose.
+# A reply that is nothing but the quoted material has an empty residue, so
+# its must_match checks fail, which is the right answer for a reply that
+# wrote nothing.
 #
-# Known failure mode — commentary. What the agent wraps around the
-# paragraph is scored as if it were the paragraph: "I kept it free of
-# 'leverage'" fails no-avoid-list-words and "I kept it to 58 words" fails
-# bio-is-third-person, both of them checks about the bio. It is
-# directional against the with-skill arm, because the arm that knows the
-# rules is the arm that narrates them. BRIEF.md asks for the paragraph
-# alone with nothing before or after it; the judge backstops the rest.
+# Known failure mode — commentary, in both directions. What the agent wraps
+# around the paragraph is the agent's writing, so it is scored as if it
+# were the paragraph. Against the arm: "I kept it free of 'leverage'" fails
+# no-avoid-list-words and "I kept it to 58 words" fails
+# bio-is-third-person, both of them checks about the bio, and it is
+# directional because the arm that knows the rules is the arm that narrates
+# them. FOR the arm: a subject-less résumé fragment followed by "That is
+# the paragraph he asked for." passes bio-is-third-person on the
+# commentary's own pronoun. BRIEF.md asks for the paragraph alone with
+# nothing before or after it; the judge backstops the rest.
 
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -59,6 +67,7 @@ objective_checks:
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the bio
     type: transcript_matches
+    strip_seed: true
     must_not_match:
       - '(?i)\bleverag(?:e|es|ed|ing)\b'
       - '(?i)\bsynerg(?:y|ies|istic)\b'
@@ -88,14 +97,19 @@ objective_checks:
   # users") passed a check about having a subject. He/his/Adam/Daniel can
   # only be the person.
   #
-  # Known noise source: `\bI\b` is matched over the agent's whole final
-  # reply minus its quoted lines, so an agent that wraps the paragraph in
-  # commentary of its own ("I kept it to 58 words") fails a check about the
-  # bio's register. The brief asks for the paragraph alone to keep that
-  # rare, and the judge's register dimension backstops it.
+  # Known noise source, both ways: `\bI\b` and the third-person
+  # alternation are matched over the agent's whole final reply minus the
+  # SEED material in it, and commentary is not seed material. So an agent
+  # that wraps the paragraph in commentary of its own ("I kept it to 58
+  # words") fails a check about the bio's register — and a subject-less
+  # résumé fragment followed by "That is the paragraph he asked for."
+  # PASSES it on the commentary's own pronoun. The brief asks for the
+  # paragraph alone to keep both rare, and the judge's register dimension
+  # backstops what is left.
   - id: bio-is-third-person
     description: The bio is written in the third person, with no first-person "I"
     type: transcript_matches
+    strip_seed: true
     must_match:
       - '\b(?:[Hh]e|[Hh]is|Adam|Daniel)\b'
     must_not_match:
@@ -103,10 +117,10 @@ objective_checks:
 
   # Core move 3, in the bio register: concrete employer-and-dates structure
   # and the named standard, not "extensive accessibility experience". Both
-  # facts are in background.md; neither is asked for. Quoted material is
-  # stripped first: a quoted "no room for the 2019-2024 dates" note
-  # underneath a bio that omits them used to satisfy this check on the
-  # agent's behalf.
+  # facts are in background.md; neither is asked for. The seed's own lines
+  # are stripped first: a bio that omits the dates and pastes the
+  # background bullet underneath used to satisfy this check on the agent's
+  # behalf.
   #
   # Both patterns accept the phrasings a sixty-word budget actually
   # produces: "2019-24" as well as "2019-2024", and "Sections 504 and 508"
@@ -115,6 +129,7 @@ objective_checks:
   - id: cites-both-facts
     description: The bio carries the employment dates and the named accessibility standard
     type: transcript_matches
+    strip_seed: true
     must_match:
       - '\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
       # Case-sensitive on purpose: the skill's spelling rules say "Section

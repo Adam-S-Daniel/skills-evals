@@ -5,12 +5,11 @@
 # cycle is n! = 6 permutations, and a run that is not a whole number of
 # cycles leaves slot balance to whichever part of the cycle it covered.
 #
-# The
-# register is the mirror of the proposal bio: core move 9 says a
+# The register is the mirror of the proposal bio: core move 9 says a
 # self-appraisal is first person, narrative, and generous — takes credit
 # alongside collaborators and names next quarter's goals — where the bio is
-# third person and stripped of softeners. Getting one register right and the
-# other wrong is exactly what a single merged fixture would hide.
+# third person and stripped of softeners. Getting one register right and
+# the other wrong is exactly what a single merged fixture would hide.
 #
 # <!-- fictional --> The quarter, the repository name and every number in
 # seed/notes.md are invented; no real employer, coworker or system
@@ -18,17 +17,22 @@
 # which is copied into the agent's workspace — see
 # recruiter-reply/fixture.yaml.
 #
-# Every check below reads the agent's final reply with the material it
-# quoted removed (objective.strip_quoted): a `>` blockquote at any legal
-# indent and anything inside a fenced block is not the agent's writing.
-# A reply quoted in its entirety is scored whole.
+# Every check below sets `strip_seed: true`, so it reads the agent's final
+# reply with the SEED's own material removed (objective.strip_seed_material)
+# and everything else unquoted. Provenance decides that, not markup: a line
+# that is notes.md's is not the agent's writing however it is pasted back,
+# and a paragraph the agent chose to present as a blockquote or inside a
+# fence is still the agent's writing and is scored as prose. A reply that
+# is nothing but the quoted notes has an empty residue, so its must_match
+# checks fail, which is the right answer for a reply that wrote nothing.
 #
 # Known failure mode — commentary. What the agent wraps around the
-# paragraph is scored as if it were the paragraph, so "I kept it free of
-# 'leverage'" fails no-avoid-list-words, a check about the writing. It is
-# directional against the with-skill arm, because the arm that knows the
-# avoid list is the arm that mentions it. BRIEF.md asks for the paragraph
-# alone with nothing before or after it; the judge backstops the rest.
+# paragraph is the agent's writing, so it is scored as if it were the
+# paragraph: "I kept it free of 'leverage'" fails no-avoid-list-words, a
+# check about the writing. It is directional against the with-skill arm,
+# because the arm that knows the avoid list is the arm that mentions it.
+# BRIEF.md asks for the paragraph alone with nothing before or after it;
+# the judge backstops the rest.
 
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -55,6 +59,7 @@ objective_checks:
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the paragraph
     type: transcript_matches
+    strip_seed: true
     must_not_match:
       - '(?i)\bleverag(?:e|es|ed|ing)\b'
       - '(?i)\bsynerg(?:y|ies|istic)\b'
@@ -83,6 +88,7 @@ objective_checks:
   - id: appraisal-is-first-person
     description: The paragraph is written in the first person, not narrated about Adam
     type: transcript_matches
+    strip_seed: true
     must_match:
       - '\bI\b'
     must_not_match:
@@ -90,8 +96,8 @@ objective_checks:
 
   # Core move 3 again, in the eval register: the named thing and the number,
   # not "improved our deployment tooling". Both facts are in notes.md;
-  # neither is asked for. Quoted material is stripped first — a note the
-  # agent quoted back is not the agent being specific.
+  # neither is asked for. The seed's own lines are stripped first — a note
+  # the agent pasted back is not the agent being specific.
   #
   # The number pattern used to require "26" adjacent to "min", which misses
   # the natural phrasings: "from 26 to 9 minutes", "26-minute", "26 min".
@@ -99,6 +105,7 @@ objective_checks:
   - id: cites-both-facts
     description: The paragraph names the repository and the pipeline number from the notes
     type: transcript_matches
+    strip_seed: true
     must_match:
       - '\bdeploy-scaffold\b'
       - '\b26\b(?=[^.\n]*\bmin)'
