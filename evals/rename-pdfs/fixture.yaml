@@ -41,6 +41,12 @@
 # adding "auto" or otherwise working around this — read any with_skill N=3
 # numbers with this confound in mind; it is a property of the harness'
 # headless invocation, not of this fixture, and has no code fix here.
+#
+# SKILL.md:121 says only "append ` (2)`, ` (3)`, etc." for a collision — it
+# does not say whether that goes before or after `.pdf`. This fixture's
+# expected answer puts it before the extension
+# (`...Account 9002 (2).pdf`), which is one reasonable reading of the
+# skill text, not the only one a faithful agent could land on.
 
 skill: rename-pdfs
 registry: https://github.com/Adam-S-Daniel/agentskills
