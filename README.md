@@ -45,6 +45,9 @@ evals/
   writing-adrs/            # A/B eval, Class A (format half): two fixtures
     bootstrap/             # no docs/decisions/ yet — bootstrap the folder
     existing-convention/   # docs/decisions/ already has a house format
+  review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
+    fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
+    seed/                  # a release pipeline with the findings baked in
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
