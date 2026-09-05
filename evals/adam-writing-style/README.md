@@ -21,12 +21,27 @@ wrong.
 
 Each directory is a complete eval dir on its own — `fixture.yaml`, `seed/`,
 `references/` — because the multi-fixture runner ([#66]) has not landed.
+
+> [!WARNING]
+> **`run_eval.py` does not honour `judge.mode` yet.** The runner still calls
+> `judge.score()` with the arguments it knew before [#81], so the `judge:`
+> block below reaches it without its `mode:` or its `references:`. Run these
+> fixtures today and the ABSOLUTE judge scores them against a *ranking*
+> rubric, silently: measured on `recruiter-reply`, exit 0 and a report
+> reading `Judge overall | 7.5`, which is not a rank and means nothing here.
+> Until `run_eval._run_arm` calls `judge.score_fixture`, pass `--no-judge`
+> and treat the objective column as the only score this runner produces.
+> `harness/scorers/judge.py` is complete and tested end to end
+> (`judge.score_fixture`); it is the call site that has not moved, and
+> moving it is the harness lane's change, not this fixture set's.
+
 That means three invocations by hand:
 
 ```sh
+# --no-judge until run_eval.py honours judge.mode: see the warning above.
 for f in recruiter-reply proposal-bio self-appraisal-opening; do
   python3 harness/run_eval.py evals/adam-writing-style/$f --arm both \
-    --registry agentskills=../agentskills
+    --registry agentskills=../agentskills --no-judge
 done
 ```
 

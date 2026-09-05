@@ -10,6 +10,7 @@ Run: python3 test/run_tests.py
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import itertools
 import json
@@ -3569,6 +3570,30 @@ class TestIssue81(unittest.TestCase):
                 self.assertIn(result["rank"], (1, 2, 3))
                 self.assertEqual(sorted(result["reference_dimensions"]),
                                  ["generic", "in-voice"])
+
+    def test_run_eval_does_not_honour_judge_mode_yet(self):
+        # The seam, pinned. run_eval.py still calls judge.score() with the
+        # three keywords it knew before #81 — no mode, no references — so a
+        # pairwise fixture run through the runner is scored by the ABSOLUTE
+        # judge against a ranking rubric. Measured on recruiter-reply: exit
+        # 0, "Judge overall | 7.5". #81 may not edit run_eval.py, so the
+        # fixtures' README carries a warning instead, and this test fails
+        # the day the call site moves — which is the day that warning has to
+        # go and the rank has to reach the report.
+        tree = ast.parse((HARNESS_DIR / "run_eval.py").read_text(
+            encoding="utf-8"))
+        calls = [node for node in ast.walk(tree)
+                 if isinstance(node, ast.Call)
+                 and isinstance(node.func, ast.Attribute)
+                 and isinstance(node.func.value, ast.Name)
+                 and node.func.value.id == "judge"]
+        self.assertEqual([node.func.attr for node in calls], ["score"],
+                         "run_eval.py's judge call site moved")
+        self.assertEqual(sorted(kw.arg for kw in calls[0].keywords),
+                         ["model", "timeout", "weights"],
+                         "run_eval.py's judge.score() call changed shape")
+        readme = (self.STYLE_DIR / "README.md").read_text(encoding="utf-8")
+        self.assertIn("run_eval.py` does not honour `judge.mode` yet", readme)
 
     def test_score_fixture_still_defaults_to_the_absolute_mode(self):
         # A fixture with no `judge.mode:` — every fixture that predates #81 —
