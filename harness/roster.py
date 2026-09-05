@@ -209,37 +209,54 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
                      previous_arms: set[str], previous_arms_folded: set[str],
                      catalogue_seen: set[str]) -> bool:
     """Whether a census key names something this harness can actually
-    credit: an id currently in the Models API catalogue — checked BOTH
-    unfolded (`candidate`, verbatim) and folded (`folded`, so a dated
-    snapshot's usage still counts under its alias) — or a previous
-    roster's arm, checked the same two ways, or an id `catalogue_seen`
-    says this harness has observed the Models API list at some point in
-    its history. `api_ids=None` means "no catalogue context was given" —
-    every caller inside compute_roster always gives one; the handful of
-    tests that call usage_share()/_in_window_totals() directly, on
-    already-real ids, with no context at all, get the old unfiltered
-    behavior instead of an empty catalogue.
+    credit. `api_ids=None` means "no catalogue context was given" — every
+    caller inside compute_roster always gives one; the handful of tests
+    that call usage_share()/_in_window_totals() directly, on already-real
+    ids, with no context at all, get the old unfiltered behavior instead
+    of an empty catalogue.
 
-    `folded in api_ids` alone is not enough: it only credits a candidate
-    whose ALIAS is itself a bare catalogue id. A catalogue that publishes
-    ONLY a dated snapshot (roster-policy.yml's own documented shape) has no
-    such bare id — `folded` (the snapshot's undated alias) is not in
-    `api_ids` even though the snapshot itself (`candidate`, unfolded) is.
-    That dropped every one of the snapshot's own turns as "unattributable"
-    whenever the census also recorded even one turn under the bare alias
-    (which is what makes `alias_map` fold it at all) — measured: 2000 turns
-    under a verbatim catalogue id read as CENSUS_UNRANKED. `folded in
-    api_ids_folded` (`api_ids` run through the SAME alias map) closes the
-    same gap from the other side: a candidate recorded under the bare alias
-    now matches the api id's own folded spelling too.
+    Exactly three routes, checked below, and this IS the whole set (#129
+    review round 6 deleted two more that used to sit beside them — see
+    the end of this docstring):
 
-    `previous_arms_folded` (`previous_arms` run through the SAME alias map)
-    is the missing sibling of `api_ids_folded`, for the same reason: a
-    previous arm published under a DATED id, whose usage the census records
-    under the UNDATED alias, matches neither `candidate in previous_arms`
-    nor `folded in previous_arms` (the alias, unfolded, is not the dated
-    id) — measured: dropping 5000 real turns from the denominator and
-    inflating an unrelated model's share from ~2.0% to a false ~97.09%.
+    `folded in api_ids_folded` (`api_ids` run through the SAME alias map
+    as `folded`) covers two shapes at once. An ordinary bare catalogue id
+    is a fixed point of its own fold (nothing maps it further), so it
+    reappears in `api_ids_folded` unchanged — this is what makes a bare
+    `candidate in api_ids` check redundant, see below. And a candidate
+    recorded under the bare alias of a dated-snapshot-ONLY catalogue entry
+    (roster-policy.yml's own documented shape: the catalogue publishes
+    ONLY `<alias>-YYYYMMDD`, never the bare `<alias>`) still matches,
+    because `alias_map` folds the catalogue id ONTO that alias and lands
+    it in `api_ids_folded` — measured: 2000 turns under a verbatim
+    catalogue id once read as CENSUS_UNRANKED without this route.
+
+    `previous_arms_folded` (`previous_arms` run through the SAME alias
+    map) is the missing sibling of the route above, for a previous
+    roster's arm instead of a live catalogue id: a previous arm published
+    under a DATED id, whose usage the census records under the UNDATED
+    alias, matches via the fold even after the dated id has left the
+    Models API entirely — measured: dropping 5000 real turns from the
+    denominator and inflating an unrelated model's share from ~2.0% to a
+    false ~97.1% (B1, #129 review round 6 — the alias map compute_roster
+    builds must itself fold `previous_arms`/`catalogue_seen` in for this
+    route to have anything to match; see compute_roster's `aliases`
+    comment).
+
+    Two more routes used to sit here — bare, unfolded `candidate in
+    api_ids`/`folded in api_ids`, and `candidate in previous_arms`/
+    `folded in previous_arms` — and #129 review round 6 deleted them as
+    PROVABLY dead, not merely untested: for any id `x` that is a genuine
+    member of `api_ids` (or `previous_arms`), `api_ids_folded` (or
+    `previous_arms_folded`) is built by folding EVERY element of that same
+    set through the identical alias map, so `x`'s own fold is already one
+    of its elements by construction — `x in api_ids` (or `previous_arms`)
+    therefore never fires without `folded in api_ids_folded` (or
+    `previous_arms_folded`) also firing for `x` as the candidate. Dropping
+    them left every existing test green with no other code path changed.
+    `catalogue_seen = set(api_ids) | previous.catalogue_seen`
+    (compute_roster) is a superset of `api_ids` besides, which is a second,
+    independent reason a bare `api_ids` check added nothing.
 
     Being ranked (a recognised family word in the id) is necessary but NOT
     sufficient: a proxy or routing alias can paste extra segments onto a
@@ -284,9 +301,7 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     """
     if api_ids is None:
         return True
-    return (candidate in api_ids or folded in api_ids
-           or folded in (api_ids_folded or ())
-           or candidate in previous_arms or folded in previous_arms
+    return (folded in (api_ids_folded or ())
            or candidate in previous_arms_folded or folded in previous_arms_folded
            or candidate in catalogue_seen or folded in catalogue_seen)
 

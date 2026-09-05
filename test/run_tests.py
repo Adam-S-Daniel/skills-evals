@@ -5845,5 +5845,139 @@ class TestIssue67Review5(unittest.TestCase):
         roster.validate_policy(base)
 
 
+class TestIssue67Review6(unittest.TestCase):
+    """Round 6 fixes for #67 (PR #129 review round 6), one test per fix.
+    See run_tests.py's class-per-review-round convention — a SIBLING of
+    TestIssue67, reusing its canned documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- B2: `_is_attributable` has exactly three routes left after round
+    # 6 dropped `candidate in api_ids`/`folded in api_ids` and the plain
+    # `candidate in previous_arms`/`folded in previous_arms` clauses as
+    # provably dead. One isolated regression floor per surviving route,
+    # all built on the same legacy-shaped dated/undated pair, and each
+    # scenario's previous roster's `catalogue_seen` deliberately excludes
+    # the id under test so the OTHER routes cannot rescue it by accident.
+
+    DATED = "claude-3-5-sonnet-20241022"
+    UNDATED = "claude-3-5-sonnet"
+
+    def test_route_folded_in_api_ids_folded(self):
+        """The catalogue publishes ONLY the dated snapshot id; the census
+        records its usage under the bare undated alias. Neither
+        `previous_arms` nor `catalogue_seen` names either spelling — the
+        only possible route is `folded in api_ids_folded`."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                 "models": [self._model(self.DATED, "2026-01-01T00:00:00Z")]}
+        counts = {self.UNDATED: {self.W[0]: 500}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": []}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, self.DATED)
+        self.assertIn("carries", reason)
+        self.assertIn("100.0%", reason)
+        self.assertNotIn(self.UNDATED, result["catalogue_seen"])
+        # Mutation check (manual): deleting `folded in (api_ids_folded or
+        # ())` from `_is_attributable` makes the 500 turns under
+        # `claude-3-5-sonnet` unattributable (neither remaining route
+        # names it), so the window carries zero rankable usage and
+        # `claude-3-5-sonnet-20241022` falls back to "no fresh census
+        # ...; fell back to newest per tier" — turning both assertions
+        # above red.
+
+    def test_route_previous_arms_folded(self):
+        """A previous arm published under the dated id, since retired
+        from the Models API; the census records its usage under the bare
+        undated alias. `catalogue_seen` names neither spelling — the only
+        possible route is `previous_arms_folded`."""
+        models = TestIssue67._models_doc(drop={
+            "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+            "claude-opus-5", "claude-fable-5-1"})  # haiku only
+        counts = {self.UNDATED: {self.W[0]: 500},
+                 "claude-haiku-4-5": {self.W[0]: 25}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": self.DATED, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, "claude-haiku-4-5")
+        self.assertIn("newest", reason)
+        self.assertNotIn("carries", reason)
+        self.assertNotIn(self.UNDATED, result["catalogue_seen"])
+        self.assertNotIn(self.DATED, result["catalogue_seen"])
+        # Mutation check (manual): deleting `candidate in
+        # previous_arms_folded or folded in previous_arms_folded` makes
+        # the 500 turns unattributable, shrinking the denominator to
+        # haiku's own 25 turns (still above min_ranked_turns, so the
+        # census still reads as usable rather than merely falling back)
+        # and inflating its share to a false 100% — its reason becomes
+        # "carries 100.0%..." instead of the newest-in-tier one, turning
+        # both assertions above red.
+
+    def test_route_catalogue_seen(self):
+        """Both the dated and undated spellings have left the Models API
+        and neither was ever a previous arm; only the UNDATED spelling
+        was ever recorded in `catalogue_seen` history. Usage is recorded
+        under the DATED spelling, so only the FOLDED form matches
+        `catalogue_seen` — the only possible route."""
+        models = TestIssue67._models_doc(drop={
+            "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+            "claude-opus-5", "claude-fable-5-1"})  # haiku only
+        counts = {self.DATED: {self.W[0]: 500},
+                 "claude-haiku-4-5": {self.W[0]: 25}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": [self.UNDATED]}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, "claude-haiku-4-5")
+        self.assertIn("newest", reason)
+        self.assertNotIn("carries", reason)
+        # Mutation check (manual): deleting `candidate in catalogue_seen
+        # or folded in catalogue_seen` makes the 500 turns unattributable
+        # (neither of the other two routes names the dated id or its
+        # fold), shrinking the denominator to haiku's own 5 turns and
+        # inflating its share to a false 100% — turning both assertions
+        # above red.
+
+    def test_catalogue_seen_is_always_a_superset_of_this_runs_api_ids(self):
+        """`catalogue_seen = set(api_ids) | previous.catalogue_seen`
+        (compute_roster) — every id this run's Models API returned is in
+        `catalogue_seen` by construction, which is also why a bare
+        `candidate in api_ids`/`folded in api_ids` check added nothing
+        `catalogue_seen` didn't already cover."""
+        models = TestIssue67._models_doc()
+        result = self._compute(models=models, previous=None)
+        api_ids = {m["id"] for m in models["models"]}
+        self.assertLessEqual(api_ids, set(result["catalogue_seen"]))
+
+    def test_two_dead_clauses_stay_deleted(self):
+        """Regression floor for the deletion itself, not just for the
+        routes that remain: `_is_attributable`'s EXECUTABLE body (the
+        `return` statement, not its prose docstring, which names the
+        deleted clauses on purpose to explain why they're gone) must not
+        contain the bare, unfolded `candidate in api_ids`/`candidate in
+        previous_arms` checks — both provably subsumed by their `_folded`
+        siblings."""
+        import inspect
+        src = inspect.getsource(roster._is_attributable)
+        body = src.rsplit('"""', 1)[-1]
+        self.assertNotIn("candidate in api_ids", body)
+        self.assertNotIn("candidate in previous_arms or", body)
+
+
 if __name__ == "__main__":
     unittest.main()
