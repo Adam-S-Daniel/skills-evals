@@ -38,8 +38,10 @@ swallowed, so no failure downstream costs the log its record.
 WHERE that log goes is settled once, at start-up, by ONE rule: two
 directories up from this file's own real path is the root, and the single
 line in <root>/.git/workspace-root names the directory the log sits in.
-Nothing settable is read -- no variable, no cwd -- so no single command can
-move a record out of the tree a reader looks at. With no anchor to read,
+Nothing settable is read to decide it -- no variable, no cwd -- so no single
+command can move a record out of the tree a reader looks at. (GH_REPLAY_DIR
+still decides where RESPONSES come from; it has nothing to do with where the
+record goes.) With no anchor to read,
 this refuses outright: one line on stderr, exit 1, nothing served and
 nothing recorded. That is the case for a copy of this file on its own
 (wherever it is put, and whatever the directory is called), for a workspace
@@ -215,8 +217,8 @@ def _is_value(token: str) -> bool:
     rather than as a flag followed by a positional. Reading it as a
     positional shifted every later positional by one, so
     `pr comment 421 --body-file -` keyed to `pr-comment-421--.json` and
-    `api --input - repos/o/r/pulls/421` keyed to `api/-.json` — a payload
-    that cannot exist, on a call whose real endpoint was never looked up.
+    `api --input - repos/o/r/pulls/421` keyed to `api/-.json` — a payload no
+    response set ships, on a call whose real endpoint was never looked up.
     """
     return token == "-" or not token.startswith("-")
 
@@ -451,9 +453,9 @@ def resolve_log_dir() -> str | None:
     called `bin` — so a copy of this file in any other `.../bin/` recorded
     into THAT directory's parent, and a copy at `<root>/.gh/bin/gh` recorded
     into `<root>/.gh`, both of them out of sight of anything reading
-    `<root>`. A name is not a credential; the anchor is written by whoever
-    built the workspace, and a copy of this file alone has no way to forge
-    one that points anywhere useful.
+    `<root>`. A name is not a credential. The anchor is written by whoever
+    built the workspace; a copy of this file alone carries none, and writing
+    one beside it is writing evidence rather than running a command.
 
     Returns None when there is no anchor to read — no `__file__` at all (the
     source piped into an interpreter), no anchor beside the deduced root, an

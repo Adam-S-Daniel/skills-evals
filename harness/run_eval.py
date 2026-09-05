@@ -437,9 +437,11 @@ def agent_env(workspace: Path, env_spec: dict | None,
       * the fixture's own `env:` block, applied last, so a fixture that
         wants a name back can say so.
 
-    `gh`'s token variables cannot reach it from the harness's environment:
+`gh`'s token variables do not reach it from the harness's environment:
     `GH_TOKEN` and `GITHUB_TOKEN` arrive empty, and `GH_ENTERPRISE_TOKEN`,
-    `GITHUB_ENTERPRISE_TOKEN` and `GH_HOST` are not on the list.
+    `GITHUB_ENTERPRISE_TOKEN` and `GH_HOST` are not on the list. A fixture's
+    own `env:` block can still name anything it likes — it is applied last,
+    and no fixture here names one of those.
 
     `source` is the parent environment to filter, defaulting to `os.environ`
     — a test can hand over a mapping it built rather than mutating the
@@ -596,8 +598,8 @@ SEED_COMMIT_MESSAGE = "initial commit"
 # and where a stand-in binary in `<workspace>/bin/` reads it from.
 #
 # Under `.git/`, deliberately, and it is the whole of the mechanism:
-#   * `git status` never shows it and no scorer's glob reaches into `.git/`,
-#     so it changes no check's verdict on any fixture;
+#   * `git status` never shows it, and no objective check in this repository
+#     globs into `.git/` — both measured — so it changes no check's verdict;
 #   * `cp -a` of the WHOLE workspace carries it — and it still names the
 #     ORIGINAL, so a copy of the workspace records where the original does;
 #   * a bare copy, or a hard link, of the binary alone never has it, so a

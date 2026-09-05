@@ -128,8 +128,8 @@ same file.
   from stdin". Read as a positional instead, it shifted every later
   positional by one — `pr comment 421 --body-file -` keyed to
   `pr-comment-421--.json`, and `api --input - repos/o/r/pulls/421` keyed to
-  `api/-.json`, a payload that cannot exist, on a call whose real endpoint
-  was never looked up. A bare `-` in any other position is still a
+  `api/-.json`, a payload no response set ships, on a call whose real
+  endpoint was never looked up. A bare `-` in any other position is still a
   positional.
 - **A shorthand whose meaning differs per subcommand must be written
   long-form, unless one subcommand owns it.** `-w` is boolean `--web` on
@@ -206,13 +206,18 @@ so the anchor is the workspace's own path and the log is
 `<root>/.gh-invocations.log`.
 
 The anchor is under `.git/` for four reasons at once: `git status` never
-shows it, no objective check's glob reaches into `.git/`, `cp -a` of the
-WHOLE workspace carries it (and it still names the ORIGINAL, so a copy of
-the workspace records where the original does), and a bare copy — or a hard
-link — of the binary alone never has it.
+shows it (measured), no objective check in this repository globs into
+`.git/` (measured across every fixture, and `glob` does not match a leading
+dot without being told to), `cp -a` of the WHOLE workspace carries it — and
+it still names the ORIGINAL, so a copy of the workspace records where the
+original does — and a bare copy, or a hard link, of the binary alone does
+not have it.
 
 **With no anchor to read, it refuses.** One `gh`-shaped line on stderr, exit
-1, nothing served and nothing recorded, anywhere. That covers a copy of the
+1, no payload on stdout, and no log written: each row below asserts that no
+`.gh-invocations.log` appears anywhere under the directory the copy was run
+from, and that the workspace's own log is byte-identical to before. That
+covers a copy of the
 binary in some other `bin/`, a hard link in one, a copy at
 `$WORKSPACE/.gh/bin/gh`, a copy outside any `bin/`, the shipped binary run
 in place from its own directory (so a stray run leaves nothing behind in the

@@ -8079,6 +8079,46 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         for sequence in ("`", "$(", "${"):
             with self.subTest(sequence=sequence):
                 self.assertNotIn(sequence, docstring)
+    # ------------------------------------------------------------------ N7
+
+    def test_no_objective_check_anywhere_globs_into_the_git_directory(self):
+        """The anchor's invisibility, claimed of every fixture, measured so.
+
+        `gh`'s docstring and `harness/fakes/README.md` say the anchor under
+        `.git/` changes no check's verdict. That is a claim about every
+        fixture in this repository, not just this one, so it is measured
+        across all of them: no check's `paths` reaches into `.git/`, and
+        `glob` does not match a leading dot unless a pattern segment starts
+        with one.
+        """
+        import glob as globlib
+        checked = 0
+        for path in sorted(globlib.glob(str(REPO_ROOT / "evals" / "*" /
+                                            "fixture.yaml"))):
+            fixture = run_eval.load_fixture(Path(path).parent)
+            for check in fixture.get("objective_checks", []):
+                for pattern in check.get("paths", []):
+                    checked += 1
+                    with self.subTest(fixture=Path(path).parent.name,
+                                      check=check["id"], pattern=pattern):
+                        segments = str(pattern).split("/")
+                        self.assertNotIn(".git", segments)
+                        self.assertNotIn(".git*", segments)
+        self.assertGreater(checked, 20, "no fixture paths were checked")
+
+    def test_the_wording_of_the_new_rules_claims_only_what_is_measured(self):
+        """N7's own guard: the two absolutes that were too wide.
+
+        "nothing recorded, anywhere" said more than any row proves — the
+        rows assert no log under the directory the copy ran from, and the
+        workspace's own log unchanged — and "nothing settable is read" read
+        as a claim about the whole file when GH_REPLAY_DIR is settable and
+        is read, for RESPONSES. Both are scoped now.
+        """
+        readme = self.FAKES_README.read_text(encoding="utf-8")
+        self.assertNotIn("nothing served and nothing recorded, anywhere", readme)
+        gh = self.FAKE_GH.read_text(encoding="utf-8")
+        self.assertIn("Nothing settable is read to decide it", gh)
 
 if __name__ == "__main__":
     unittest.main()
