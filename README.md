@@ -69,31 +69,52 @@ the objective checks and the LLM judge, writes `results/<skill>/<timestamp>/`):
 
 ```bash
 python3 harness/run_eval.py evals/workflow-path-audit --arm both \
-  --registry ~/repos/agentskills
+  --registry ../agentskills
 ```
 
 Useful variations:
 
 ```bash
 # Only the with_skill or without_skill arm:
-python3 harness/run_eval.py evals/workflow-path-audit --arm with_skill --registry ~/repos/agentskills
+python3 harness/run_eval.py evals/workflow-path-audit --arm with_skill --registry ../agentskills
 
 # Skip the LLM judge (objective checks + cost/turns only):
 python3 harness/run_eval.py evals/workflow-path-audit --arm both --no-judge
 
-# Point at a different agent binary, registry checkout, or output root:
-CLAUDE_BIN=/path/to/claude AGENTSKILLS_DIR=~/repos/agentskills \
+# Point at a different agent binary or output root (a sibling ../agentskills
+# checkout resolves with no --registry flag at all — see below):
+CLAUDE_BIN=/path/to/claude \
   python3 harness/run_eval.py evals/workflow-path-audit --arm both --results-dir /tmp/eval-out
 ```
 
-`--registry` (else `$AGENTSKILLS_DIR`, else `~/repos/agentskills`) must point
-at a checkout of the `agentskills` registry — the `with_skill` arm resolves
-the skill dir by globbing `plugins/*/skills/<skill>` (the first sorted match
-wins), so it works whether the registry lays a skill out under a plugin
-named after that skill (`plugins/<skill>/skills/<skill>/`, legacy) or under a
-bundle plugin holding several skills (`plugins/<bundle>/skills/<skill>/`).
-It then copies that resolved directory (the one containing `SKILL.md`) into
-the workspace's `.claude/skills/<skill>/`.
+A fixture's `registry:` field names which registry its skill lives in (by
+URL); [`harness/registries.yml`](harness/registries.yml) maps each registry
+named there to a layout glob. `--registry NAME=PATH` (repeatable) points a
+name at a local checkout; a bare `--registry PATH` (no `=`, legacy) is taken
+as the `agentskills` entry. `$SKILLS_EVALS_REGISTRIES` (same
+`NAME=PATH,NAME=PATH` shape; a bare entry there is likewise taken as
+`agentskills`) merges with `--registry` **by name** — a flag naming one
+registry does not suppress an env entry naming another, and a flag wins only
+where both name the same one. `$AGENTSKILLS_DIR` covers the `agentskills`
+entry specifically (its older, single-registry override), and any name still
+unresolved after all of the above falls back to a sibling checkout
+`../<name>` next to this repo — so `agentskills`, `cms-platform`, and
+`adamdaniel.ai` checkouts next to `skills-evals/` resolve with no flags at
+all. (The harness's older `~/repos/agentskills` last-resort default is gone;
+a sibling `../agentskills` checkout is the default now, which is what the
+invocations above rely on.) An unknown registry name, an empty `PATH`, or an
+override that resolves to a nonexistent directory aborts the run before any
+arm starts — including `--arm objective-only` — rather than failing partway
+through or silently ignoring the bad value. Within a registry, the
+`with_skill` arm resolves the skill dir by globbing that registry's layout
+with the skill name substituted for its second-to-last path segment — the
+`*` immediately before `SKILL.md` (the first sorted match wins), which is
+what lets `plugins/*/skills/<skill>` (agentskills' own
+mix of the legacy `plugins/<skill>/skills/<skill>/` shape and the bundled
+`plugins/<bundle>/skills/<skill>/` shape), `skills/<skill>` (cms-platform),
+and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
+code path. It then copies that resolved directory (the one containing
+`SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
 
 ## Guidance-bridge canary
 
@@ -287,10 +308,14 @@ Trust model: the badge reflects exactly what a scheduled or
 maintainer-dispatched run of this repo's **committed** fixtures
 produced — the workflow never runs on pull requests (it holds an API key and
 runs the agent with `bypassPermissions`, so it must never see untrusted
-fixture content; fixtures here — and the agentskills registry whose skill
-content the with-skill arm executes — are trusted because only maintainers
-can push to either repo), and the badge JSON is served raw from the default
-branch, so it can only change via a commit to this repo.
+fixture content; fixtures here — and the three checked-out registries
+(agentskills, cms-platform, adamdaniel.ai) whose skill content the
+with-skill arm executes — are trusted because only maintainers can push to
+any of the four repos involved, directly or through an automated lane such
+as cms-platform's Decap CMS publish loop or dependabot auto-merge; see
+`.github/workflows/eval.yml`'s security header), and the badge JSON is
+served raw from the default branch, so it can only change via a commit to
+this repo.
 
 ## Status
 
