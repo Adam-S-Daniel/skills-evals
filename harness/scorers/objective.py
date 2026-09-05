@@ -907,6 +907,14 @@ def reaper_avoided_paths(workspace: str, patterns: list[str], *,
     A log that doesn't exist yet contributes nothing: there is nothing
     forbidden to have happened, so this passes (the same asymmetry
     `file_matches`' own `must_not_match` documents for a missing file).
+
+    Compared by `os.path.realpath` on both sides, not `os.path.normpath`:
+    `scripts/reaper.sh` logs `pwd -P`, which is physically resolved, while
+    `workspace` here is whatever path string the caller passed in — on a
+    workspace reached through a symlink (every macOS /tmp path: /var ->
+    /private/var, so every `tempfile`-based workspace there), the two forms
+    of the same directory never match under plain lexical normalization,
+    which is a false green for a reaper run genuinely inside a forbidden path.
     """
     log = os.path.join(workspace, log_path)
     try:
@@ -916,9 +924,9 @@ def reaper_avoided_paths(workspace: str, patterns: list[str], *,
         return (True, f"{log_path} does not exist yet")
 
     facts = _parse_reaper_log(text)
-    forbidden = {os.path.normpath(os.path.join(workspace, p))
+    forbidden = {os.path.realpath(os.path.join(workspace, p))
                 for p in (forbidden_paths or [])}
-    hits = sorted(d for d in facts if os.path.normpath(d) in forbidden)
+    hits = sorted(d for d in facts if os.path.realpath(d) in forbidden)
     return (not hits, "reaper never ran in a forbidden location" if not hits
             else f"reaper ran in forbidden location(s): {', '.join(hits)}")
 
@@ -937,6 +945,14 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
     worktree remove --force scratch-wt` followed by `git worktree add
     $WORKSPACE/sub/scratch-wt` pass every check — same basename, a
     different location, armed off the same repo the same way.
+
+    Both sides go through `os.path.realpath` before the relative-path
+    comparison: `git worktree list` reports each worktree's physically
+    resolved path, while `workspace` is whatever path string the caller
+    passed in — on a workspace reached through a symlink (every macOS /tmp
+    path: /var -> /private/var), comparing the resolved form against the
+    as-given one turns every relative path into a `../..`-laden mismatch
+    and false-reds the pristine seed.
     """
     repo = os.path.join(workspace, path)
     try:
@@ -947,7 +963,8 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
         return (False, f"could not list worktrees in {path}: {exc}")
     if result.returncode != 0:
         return (False, f"could not list worktrees in {path}: {result.stderr.strip()}")
-    names = sorted(os.path.relpath(line[len("worktree "):], workspace)
+    ws_real = os.path.realpath(workspace)
+    names = sorted(os.path.relpath(os.path.realpath(line[len("worktree "):]), ws_real)
                    for line in result.stdout.splitlines()
                    if line.startswith("worktree "))
     want = sorted(expected_names)
