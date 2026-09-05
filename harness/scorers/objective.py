@@ -14,7 +14,7 @@ import re
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
-SHA_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA_RE = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def _workflow_uses(workspace: str, patterns: list[str]) -> list[tuple[str, int, str, str]]:
@@ -36,45 +36,87 @@ def _is_remote_action(ref: str) -> bool:
 
 
 def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str]:
-    bad = [f"{f}:{n} {ref}" for f, n, ref, _ in _workflow_uses(workspace, patterns)
-           if _is_remote_action(ref)
-           and not SHA_RE.match(ref.rsplit("@", 1)[-1])]
+    """Every remote (non-local, non-docker) `uses:` ref is a bare full
+    40-character commit SHA — never a tag, an abbreviated SHA, or anything
+    else.
+
+    Locates each `uses:` value with a real YAML parse (`_uses_value_nodes`,
+    the same composed-tree walk `pin_comment_absent` uses) and tests the
+    node's own `.value` against `SHA_RE` — never a line regex, which a
+    quoted pin (the quote characters land inside the captured "ref") or a
+    `uses:`-shaped line inside a `run: |` block scalar (prose, not a mapping
+    key) both defeat.
+    """
+    import yaml
+    bad = []
+    for pattern in patterns:
+        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            try:
+                doc = yaml.compose(text, Loader=yaml.SafeLoader)
+            except yaml.YAMLError:
+                continue  # yaml_parses reports this; nothing to check here
+            if doc is None:
+                continue
+            rel = os.path.relpath(path, workspace)
+            for value_node in _uses_value_nodes(doc):
+                ref = value_node.value
+                if not isinstance(ref, str) or not _is_remote_action(ref):
+                    continue
+                if not SHA_RE.match(ref.rsplit("@", 1)[-1]):
+                    lineno = value_node.start_mark.line + 1
+                    bad.append(f"{rel}:{lineno} {ref}")
     return (not bad, "all remote refs SHA-pinned" if not bad
             else "unpinned: " + "; ".join(bad))
 
 
-def _uses_value_nodes(node) -> list:
+def _uses_value_nodes(node, _seen: set | None = None) -> list:
     """Every YAML *value* Node bound to a literal `uses:` mapping key, found
     by walking the composed document tree — never by scanning the raw text
     for the string "uses:", which could also match inside a `name:` field or
     a comment. Recurses into every Mapping/Sequence node so it finds `uses:`
     wherever it appears: a step, a job-level reusable-workflow call, or a
     composite action's `runs.steps`.
+
+    `_seen` tracks visited nodes by `id()`: `yaml.compose` resolves an alias
+    (`*x`) to the SAME node object anchored by `&x`, so a self-referential
+    anchor (`a: &x\n  b: *x`) makes a node its own descendant — an unguarded
+    walk recurses forever. A node already visited contributes nothing new.
     """
     import yaml
+    if _seen is None:
+        _seen = set()
+    node_id = id(node)
+    if node_id in _seen:
+        return []
+    _seen.add(node_id)
     out = []
     if isinstance(node, yaml.MappingNode):
         for key_node, value_node in node.value:
             if isinstance(key_node, yaml.ScalarNode) and key_node.value == "uses":
                 out.append(value_node)
-            out.extend(_uses_value_nodes(key_node))
-            out.extend(_uses_value_nodes(value_node))
+            out.extend(_uses_value_nodes(key_node, _seen))
+            out.extend(_uses_value_nodes(value_node, _seen))
     elif isinstance(node, yaml.SequenceNode):
         for item in node.value:
-            out.extend(_uses_value_nodes(item))
+            out.extend(_uses_value_nodes(item, _seen))
     return out
 
 
-def _line_has_trailing_comment(line: str) -> bool:
-    """Does the raw source `line` carry a `#` comment after its content?
+def _line_has_trailing_comment(line: str, after_column: int) -> bool:
+    """Does `line` carry a `#` comment starting at or after `after_column`?
 
-    Lexical, not structural: a `uses:` value in a workflow is always a plain
-    git ref or path and never itself contains `#`, so any `#` on the line
-    marks a genuine YAML comment start — YAML requires the character before a
-    comment-opening `#` to be whitespace or the start of the line, which is
-    never true of a ref's own characters.
+    `after_column` is the value node's own `end_mark.column` — the point
+    where its textual representation (quotes included, for a quoted scalar)
+    actually ends. Anchoring the search there, rather than scanning the
+    whole line from its start, is what keeps a `#` embedded INSIDE a quoted
+    value (e.g. `uses: "ref # not a comment"`) from being mistaken for a
+    trailing comment: that `#` sits before the value's own end_mark, so it is
+    never examined. YAML still requires the character before a genuine
+    comment-opening `#` to be whitespace or the start of the line.
     """
-    idx = line.find("#")
+    idx = line.find("#", after_column)
     return idx != -1 and (idx == 0 or line[idx - 1] in " \t")
 
 
@@ -105,11 +147,11 @@ def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
             lines = text.splitlines()
             rel = os.path.relpath(path, workspace)
             for value_node in _uses_value_nodes(doc):
-                lineno = value_node.start_mark.line
+                lineno = value_node.end_mark.line
                 if lineno >= len(lines):
                     continue
                 raw = lines[lineno]
-                if _line_has_trailing_comment(raw):
+                if _line_has_trailing_comment(raw, value_node.end_mark.column):
                     bad.append(f"{rel}:{lineno + 1} {raw.strip()}")
     return (not bad, "no trailing comment on any uses: pin" if not bad
             else "version comment present: " + "; ".join(bad))

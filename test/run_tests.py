@@ -2799,6 +2799,65 @@ class TestIssue85(unittest.TestCase):
         passed, detail = objective.pin_comment_absent(str(ws), ["glued.yml"])
         self.assertTrue(passed, detail)
 
+    def test_pin_comment_absent_ignores_a_hash_inside_a_quoted_value(self):
+        # Anchored at the value node's end_mark (review #133, nit): a '#'
+        # that appears BEFORE the closing quote is part of the scalar's own
+        # text, never a comment, however much whitespace precedes it.
+        ws = self._synthetic_ws({
+            "quoted-hash.yml": "jobs:\n  test:\n    steps:\n"
+                              '      - uses: "actions/checkout@' + "0" * 40
+                              + ' # inner"\n'})
+        passed, detail = objective.pin_comment_absent(str(ws), ["quoted-hash.yml"])
+        self.assertTrue(passed, detail)
+
+    # -- uses_refs_sha_pinned, exercised directly (review #133, S1) ----------
+    # Reimplemented on _uses_value_nodes (the same tree walk pin_comment_absent
+    # uses) instead of a line regex: a quoted correct pin read as unpinned
+    # (the quote characters landed inside the captured "ref"), and a
+    # `uses:`-shaped line inside a `run: |` block scalar read as a ref.
+
+    def test_uses_refs_sha_pinned_accepts_a_quoted_pin(self):
+        ws = self._synthetic_ws({
+            "quoted.yml": "jobs:\n  test:\n    steps:\n"
+                         '      - uses: "actions/checkout@' + "0" * 40 + '"\n'})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["quoted.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_refs_sha_pinned_ignores_a_uses_shaped_run_block_line(self):
+        ws = self._synthetic_ws({
+            "block.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "0" * 40 + "\n"
+                        "      - run: |\n"
+                        "          uses: actions/setup-node@v4\n"})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["block.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_refs_sha_pinned_accepts_upper_case_hex(self):
+        ws = self._synthetic_ws({
+            "upper.yml": "jobs:\n  test:\n    steps:\n"
+                        "      - uses: actions/checkout@" + "A" * 40 + "\n"})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["upper.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_uses_refs_sha_pinned_still_flags_a_tag(self):
+        ws = self._synthetic_ws({
+            "tag.yml": "jobs:\n  test:\n    steps:\n"
+                      "      - uses: actions/checkout@v4\n"})
+        passed, detail = objective.uses_refs_sha_pinned(str(ws), ["tag.yml"])
+        self.assertFalse(passed, detail)
+        self.assertIn("actions/checkout@v4", detail)
+
+    def test_uses_value_nodes_terminates_on_a_self_referential_anchor(self):
+        """A cyclic alias graph must not recurse forever.
+
+        `yaml.compose` resolves `*x` to the SAME node object anchored by
+        `&x`, so `a: &x\\n  b: *x` makes that node its own descendant. The
+        `id(node)` seen-set is what stops the walk following it forever.
+        """
+        import yaml
+        doc = yaml.compose("a: &x\n  b: *x\n", Loader=yaml.SafeLoader)
+        self.assertEqual(objective._uses_value_nodes(doc), [])
+
     # -- the CLI path itself --------------------------------------------------
 
     def test_run_eval_objective_only_exits_1_on_pristine_seed(self):
