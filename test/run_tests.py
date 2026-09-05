@@ -2795,6 +2795,60 @@ class TestIssue86(unittest.TestCase):
             job_permissions_include={"pull-requests": "write"})
         self.assertFalse(passed)
 
+    # ---- workflow_step_uses: job_permissions_include string shorthands
+    # (issue #86 review round 3, N2) ----------------------------------------
+
+    def _wf_with_permissions(self, job_perms: str | None, workflow_perms: str | None) -> str:
+        lines = ["on:\n  pull_request:\n"]
+        if workflow_perms is not None:
+            lines.append(f"permissions: {workflow_perms}\n")
+        lines.append("jobs:\n  e2e:\n    runs-on: ubuntu-latest\n")
+        if job_perms is not None:
+            lines.append(f"    permissions: {job_perms}\n")
+        lines.append(
+            "    steps:\n"
+            "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+            "        if: failure()\n        with:\n          mode: post\n")
+        return "".join(lines)
+
+    def test_job_level_write_all_satisfies_write_requirement(self):
+        wf = self._wf_with_permissions(job_perms="write-all", workflow_perms=None)
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="e2e",
+            job_permissions_include={"pull-requests": "write"})
+        self.assertTrue(passed, detail)
+
+    def test_workflow_level_write_all_satisfies_read_requirement(self):
+        # write-all satisfies ANY requirement, including a `read` one.
+        wf = self._wf_with_permissions(job_perms=None, workflow_perms="write-all")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="e2e",
+            job_permissions_include={"contents": "read"})
+        self.assertTrue(passed, detail)
+
+    def test_read_all_satisfies_read_requirement(self):
+        wf = self._wf_with_permissions(job_perms=None, workflow_perms="read-all")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="e2e",
+            job_permissions_include={"contents": "read"})
+        self.assertTrue(passed, detail)
+
+    def test_job_level_read_all_fails_write_requirement(self):
+        # The skill's silent-403 pitfall: job-level `permissions: read-all`
+        # REPLACES a more generous workflow-level block entirely, so a job
+        # actually restricted to read-all must fail a `pull-requests: write`
+        # requirement even when the workflow-level block grants it.
+        wf = self._wf_with_permissions(job_perms="read-all",
+                                       workflow_perms="{ pull-requests: write }")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="e2e",
+            job_permissions_include={"pull-requests": "write"})
+        self.assertFalse(passed)
+
     # ---- workflow_step_uses: uses_suffix must be a true suffix (S3) --------
 
     def test_uses_suffix_does_not_match_unrelated_action(self):

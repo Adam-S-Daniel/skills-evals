@@ -545,6 +545,44 @@ def _job_matches(job_id: str, job: dict, job_selector: str | None) -> bool:
     return isinstance(job.get("name"), str) and job["name"] == job_selector
 
 
+def _job_permission_level(job_body: dict, doc: dict, key: str) -> str | None:
+    """The effective permission level GitHub grants scope `key` for this job.
+
+    Job-level `permissions:` REPLACES workflow-level entirely when present
+    — they do not merge — whatever shape either one takes: a per-scope
+    mapping, or the whole-block string shorthand `read-all` (every scope
+    read) / `write-all` (every scope write).
+    """
+    perms = job_body.get("permissions")
+    if perms is None:
+        perms = doc.get("permissions")
+    if perms == "write-all":
+        return "write"
+    if perms == "read-all":
+        return "read"
+    if isinstance(perms, dict):
+        return perms.get(key)
+    return None
+
+
+def _permission_satisfies(actual: str | None, required: str) -> bool:
+    """Does an effective per-scope level satisfy a requirement?
+
+    `write` satisfies both a `read` and a `write` requirement (GitHub
+    grants read access implicitly with write); `read` satisfies only a
+    `read` requirement; `none` and an undeclared scope satisfy neither —
+    this is what makes a job-level `permissions: read-all` (which REPLACES
+    a more generous workflow-level block) correctly fail a `write`
+    requirement instead of silently reading the workflow-level value it no
+    longer grants — the skill's own "most subtle and most common" pitfall.
+    """
+    if actual == "write":
+        return True
+    if actual == "read":
+        return required == "read"
+    return False
+
+
 def _job_download_artifact_paths(job_body: dict) -> list[str]:
     """Every `path:` an `actions/download-artifact` step in this job wrote to,
     in step order. Structural: walks `steps:`, only a matched step's
@@ -597,9 +635,12 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     for the qualifying step's job: the job's OWN `permissions:` block if it
     declares one (job-level permissions REPLACE workflow-level ones in real
     GitHub Actions — they do not merge), else the workflow-level
-    `permissions:` block. This is how `pull-requests: write` — the skill's
-    own "most subtle and most common" pitfall — becomes a decidable fact
-    instead of something left entirely to the judge.
+    `permissions:` block — either one may be a per-scope mapping or the
+    whole-block string shorthand `read-all`/`write-all` (see
+    `_job_permission_level`/`_permission_satisfies`). This is how
+    `pull-requests: write` — the skill's own "most subtle and most common"
+    pitfall — becomes a decidable fact instead of something left entirely
+    to the judge.
 
     `log_file_matches_download` requires the qualifying step's `with.log-file`
     value to fall under a path an `actions/download-artifact` step earlier in
@@ -669,10 +710,8 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             if not has_needs:
                 continue
         if job_permissions_include:
-            perms = job_body.get("permissions")
-            if not isinstance(perms, dict):
-                perms = doc.get("permissions") if isinstance(doc.get("permissions"), dict) else {}
-            if any(perms.get(k) != v for k, v in job_permissions_include.items()):
+            if any(not _permission_satisfies(_job_permission_level(job_body, doc, k), v)
+                  for k, v in job_permissions_include.items()):
                 continue
         if if_contains is not None and if_contains not in _stringify_if(step.get("if")):
             continue
