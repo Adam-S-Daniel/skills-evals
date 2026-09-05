@@ -440,13 +440,20 @@ def strip_fiction_marker(text: str) -> str:
 _LIST_ITEM_RE = wrapping.LIST_ITEM_RE
 
 # Characters that take up no width and carry no meaning in a draft: a BOM,
-# the zero-width and bidi marks, the soft hyphen, a stray NUL, and the two
-# blank glyphs that are NOT whitespace to `\s` and so survived every strip
-# — the Braille pattern blank and the Hangul filler, both of which render as
-# an empty cell. A draft made only of these used to pass the non-empty guard
-# and then slip past the duplicate guard as well, so an arm that produced
-# nothing came back ranked.
-_INVISIBLE_RE = re.compile("[\u00ad\u200b-\u200f\u2060\u2800\u3164\ufeff\x00]")
+# the zero-width and bidi marks, the soft hyphen, the invisible operators,
+# the combining grapheme joiner, the Mongolian vowel separator, the
+# variation selectors, a stray NUL, and the two blank glyphs that are NOT
+# whitespace to `\s` and so survived every strip — the Braille pattern
+# blank and the Hangul filler, both of which render as an empty cell. A
+# draft made only of these used to pass the non-empty guard and then slip
+# past the duplicate guard as well, so an arm that produced nothing came
+# back ranked. Identical to `objective._INVISIBLE_RE` by construction and
+# by test (test_the_two_invisible_classes_are_the_same_class): a character
+# one of them folds and the other does not is a character that reads as
+# nothing to the judge and as something to the objective column.
+_INVISIBLE_RE = re.compile(
+    "[\u00ad\u034f\u061c\u180b-\u180e\u200b-\u200f\u2060-\u2064"
+    "\u206a-\u206f\u2800\u3164\ufe00-\ufe0f\ufeff\uffa0\x00]")
 
 
 # Both live in `wrapping`, which `objective.strip_seed_material` imports

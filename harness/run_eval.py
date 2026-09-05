@@ -472,6 +472,11 @@ def _write_summary(results_dir: Path, skill: str, arm_name: str, timestamp: str,
             json.dump(raw, f, indent=2)
 
 
+# How much of an error detail one report table cell carries. The full
+# detail is always in summary.json; this is the reader's version.
+_REPORT_CELL_CHARS = 200
+
+
 def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[dict]) -> str:
     lines = [
         f"# Eval report: {skill}",
@@ -501,8 +506,17 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
         duration_str = str(agent.get("duration_ms")) if agent.get("duration_ms") is not None else "-"
 
         err = s.get("error")
-        # Error details can carry multiline stderr or `|`s — keep the table intact.
-        err_str = " ".join(f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")[:200] if err else ""
+        # Error details can carry multiline stderr or `|`s — keep the table
+        # intact. The cut is marked: an error cut off mid-sentence at
+        # exactly 200 characters reads as the whole error, and the reader
+        # has no way to tell there is more of it in summary.json, which
+        # keeps the detail in full.
+        err_str = ""
+        if err:
+            err_str = " ".join(
+                f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")
+            if len(err_str) > _REPORT_CELL_CHARS:
+                err_str = err_str[:_REPORT_CELL_CHARS - 1] + "…"
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")

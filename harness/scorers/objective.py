@@ -647,8 +647,8 @@ _TABLE_RULE_RE = re.compile(r"^[^\S\n]*\|[-:|\s]*\|[^\S\n]*$")
 # to the operator as the banned terms and are scored as them, and one
 # U+2062 per line no longer buys a paste its provenance back.
 _INVISIBLE_RE = re.compile(
-    "[­͏؜᠋-᠎​-‏⁠-⁤"
-    "⁪-⁯⠀ㅤ︀-️﻿ﾠ\x00]")
+    "[\u00ad\u034f\u061c\u180b-\u180e\u200b-\u200f\u2060-\u2064"
+    "\u206a-\u206f\u2800\u3164\ufe00-\ufe0f\ufeff\uffa0\x00]")
 
 # A sentence ends at `.`, `!`, `?` or `;` FOLLOWED BY WHITESPACE, or at the
 # end of a line. The trailing-whitespace requirement is what keeps
@@ -1807,7 +1807,22 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             # transcript is the agent's WRITING, so the material it
             # pasted back is not. A fixture whose transcript check asks
             # for something its own seed also carries must not set it.
-            if kwargs.pop("strip_seed", False):
+            #
+            # A real boolean, not a truthy value: read by truthiness,
+            # `strip_seed: "no"` and `strip_seed: "false"` both turn the
+            # pre-pass ON, which is the opposite of what the fixture says
+            # and silent about it. YAML already parses `true`/`false`/`yes`/
+            # `no` to booleans, so anything arriving here as a string was
+            # quoted on purpose or is a typo — either way the fixture does
+            # not mean what it says.
+            strip_seed = kwargs.pop("strip_seed", False)
+            if not isinstance(strip_seed, bool):
+                raise FixtureError(
+                    f"check {check.get('id')!r}: strip_seed must be a "
+                    f"boolean, not {strip_seed!r} — a non-boolean is read "
+                    "by truthiness, so a value meaning 'no' turns the seed "
+                    "pre-pass on")
+            if strip_seed:
                 kwargs["seed"] = seed
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})

@@ -91,6 +91,16 @@ objective_checks:
   # first person; the marker has to be a sentence subject — a word (or a
   # contraction of one) follows it, and a slash does not precede it.
   #
+  # Two words is the edge, and it is a real one rather than a round number:
+  # "Adam, working with the team, led the deploy-scaffold rollout" puts
+  # THREE words between the name and the verb and reads as narration about
+  # him, which is the failure this ban is for, and it walks past. Widening
+  # the gap costs more than it buys — at four or five words the pattern
+  # starts matching across a clause boundary and calls a first-person
+  # sentence that merely names a coworker ("Adam Cheng on the platform team
+  # and I led...") third-person narration, which is the register the rubric
+  # rewards. The judge's register dimension carries the rest.
+  #
   # The `he <verb>` half is gone. It banned the sentence the rubric
   # explicitly rewards: a first-person paragraph that credits a coworker
   # ("a coworker deserves half of that — he built the cache fix that landed

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import copy
 import hashlib
 import itertools
 import json
@@ -3376,6 +3377,19 @@ class TestIssue81(unittest.TestCase):
     # reported is the same one `_host_allowed` would have been handed had
     # the scheme been there.
     _URL_RE = re.compile(r"(?:https?://|(?<![\w.@-])www\.)([^\s/)\"'>]+)")
+    # A host with neither a scheme nor a `www.` in front of it is still a
+    # link to a reader — "mirrored at notexample.com/adam" names a real
+    # site as plainly as the same line with https:// on it, and the pattern
+    # above saw nothing. Restricted to a fixed list of TLDs so it stays off
+    # the filenames a repo is full of (`run_eval.py`, `background.md`,
+    # `fixture.yaml`) and off `e.g.`; a real domain under a TLD outside the
+    # list is the residual, and the scheme and `www.` patterns still cover
+    # every shape a link is normally written in.
+    _BARE_HOST_TLDS = ("com", "net", "org", "edu", "gov", "mil", "int", "io",
+                       "ai", "dev", "app", "co", "uk", "us", "info", "biz")
+    _BARE_HOST_RE = re.compile(
+        r"(?<![\w.@/-])((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+"
+        r"(?:" + "|".join(_BARE_HOST_TLDS) + r"))(?![\w-])", re.I)
     # `\b` never fires inside GITHUB_TOKEN — the boundary is between `_`
     # and `T`, both word characters — so the keyword is preceded by a start,
     # a space or a `_`/`-` instead, and may carry the rest of an
@@ -3394,6 +3408,17 @@ class TestIssue81(unittest.TestCase):
     # And a certificate is not secret the way a private key is, but a
     # fixture has no business carrying one either and it travels in the
     # same paste.
+    # The last group needs no keyword at all. A token whose own SHAPE names
+    # its issuer is a credential wherever it is pasted, and the shape a
+    # fixture would really carry one in is prose ("the key was ghp_..."),
+    # with no `token:` anywhere near it. Four of these used to be caught, if
+    # at all, by the PHONE regex happening to match a digit run inside them
+    # — which reports the wrong finding and stops the moment the token has
+    # no ten-digit run in it. Each is named now: every GitHub prefix rather
+    # than `ghp_` alone, a fine-grained PAT, a user Slack token beside the
+    # bot one, an OpenAI project key, a Google API key, a JWT, and a bare
+    # PEM body line (a private key pasted without its BEGIN header is still
+    # a private key).
     _SECRET_RE = re.compile(
         r"(?im)(?:^|[\s_\-])"
         r"(?:password|passwd|api[_-]?key|access[_-]?key|secret|token|bearer"
@@ -3401,10 +3426,34 @@ class TestIssue81(unittest.TestCase):
         r"[\w-]*\s*[:=]\s*\S"
         r"|Authorization:\s*(?:Bearer|Basic)\s"
         r"|-----BEGIN [A-Z0-9 ]*(?:PRIVATE KEY|CERTIFICATE)-----"
-        r"|\bghp_[A-Za-z0-9]{20,}"
-        r"|\bxoxb-[A-Za-z0-9-]{10,}"
+        r"|\bgh[pousr]_[A-Za-z0-9]{20,}"
+        r"|\bgithub_pat_[A-Za-z0-9_]{20,}"
+        r"|\bxox[baprs]-[A-Za-z0-9-]{10,}"
         r"|\bAKIA[0-9A-Z]{16}\b"
-        r"|\bsk-ant-[A-Za-z0-9_-]{16,}")
+        r"|\bsk-(?:ant|proj)-[A-Za-z0-9_-]{16,}"
+        r"|\bAIza[0-9A-Za-z_-]{35}\b"
+        r"|\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}"
+        r"|^[A-Za-z0-9+/]{60,}={0,2}$")
+    # An IBAN: two country letters, two check digits, then the account, in
+    # one run or in the four-character groups a bank statement prints. Its
+    # own shape identifies it, like a token's, and it is exactly the kind of
+    # real-world detail the fiction rule exists to keep out of a public
+    # fixture. The lookarounds keep it off `HRLS-2026-014` and `REQ-4417`.
+    _IBAN_RE = re.compile(
+        r"(?<![A-Za-z0-9])[A-Z]{2}\d{2}"
+        r"(?:[A-Z0-9]{11,30}|(?:[ ]?[A-Z0-9]{4}){2,7}[A-Z0-9]{0,4})"
+        r"(?![A-Za-z0-9])")
+    # An IPv6 literal, in the two shapes that cannot be anything else: all
+    # eight groups, or a `::` elision. Three colon-separated groups is NOT
+    # one of them on purpose — `09:14:00` in the cold email's Date header is
+    # three groups of hex digits and is a time.
+    _IPV6_RE = re.compile(
+        r"(?<![:.\w])(?:"
+        r"(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}"
+        r"|[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*::"
+        r"(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?"
+        r"|::[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*"
+        r")(?![:\w])")
     # Five shapes: a separated ten-digit number with an optional country
     # code, a bare ten-digit run, an international number in two-to-four
     # digit groups, the same with a trunk code in parentheses
@@ -3458,8 +3507,15 @@ class TestIssue81(unittest.TestCase):
             problems += [f"{rel}: URL host {host}"
                          for host in cls._URL_RE.findall(text)
                          if not cls._host_allowed(host)]
+            problems += [f"{rel}: URL host {host}"
+                         for host in cls._BARE_HOST_RE.findall(text)
+                         if not cls._host_allowed(host)]
             if cls._SECRET_RE.search(text):
                 problems.append(f"{rel}: looks like a credential")
+            if cls._IBAN_RE.search(text):
+                problems.append(f"{rel}: looks like an IBAN")
+            if cls._IPV6_RE.search(text):
+                problems.append(f"{rel}: looks like an IPv6 address")
             if cls._PHONE_RE.search(text):
                 problems.append(f"{rel}: looks like a phone number")
         return problems, scanned
@@ -4106,6 +4162,133 @@ class TestIssue81(unittest.TestCase):
 
 
 
+
+
+    # ------------------------------------------------------------------
+    # the small things the pre-pass rests on
+    # ------------------------------------------------------------------
+
+    # N1: four characters that render as nothing and were not folded. Each
+    # can hide a banned term inside a word AND break a paste into pieces the
+    # provenance index cannot match, so each is tested in both directions.
+    _NEWLY_FOLDED = {
+        "invisible times U+2062": "\u2062",
+        "combining grapheme joiner U+034F": "\u034f",
+        "variation selector-16 U+FE0F": "\ufe0f",
+        "Mongolian vowel separator U+180E": "\u180e",
+    }
+
+    def test_an_invisible_character_hides_nothing(self):
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        material = ("Your name came up while I was looking for platform "
+                    "engineers with public-sector delivery experience")
+        for label, char in sorted(self._NEWLY_FOLDED.items()):
+            with self.subTest(character=label):
+                # The ban still fires through it, and nothing else moves:
+                # a genuine reply with one banned word salted open.
+                banned = self._REPLY_IN_ITS_OWN_WORDS.replace(
+                    "Thanks,",
+                    "I would rather not lever" + char + "age a move right "
+                    "now.\n\nThanks,")
+                self._assert_only_failure(self._score("recruiter-reply",
+                                                      banned),
+                                          self.AVOID_CHECK_ID)
+                # And provenance still reads through it.
+                salted = material[:20] + char + material[20:]
+                self.assertEqual(
+                    objective.strip_seed_material(salted + "\n", seed), "")
+
+    def test_the_two_invisible_classes_are_the_same_class(self):
+        # A character the judge folds and the scorer does not reads as
+        # nothing to the judge and as something to the objective column, on
+        # the same draft.
+        self.assertEqual(objective._INVISIBLE_RE.pattern,
+                         judge._INVISIBLE_RE.pattern)
+
+    # N2: `strip_seed` used to be read by truthiness, so a fixture that
+    # said `strip_seed: "no"` turned the pre-pass ON — the opposite of what
+    # it says, and silently.
+    _NOT_BOOLEANS = ("no", "false", "off", "0", 1, [])
+
+    def test_strip_seed_has_to_be_a_real_boolean(self):
+        fixture = self._fixture("recruiter-reply")
+        seed = self.STYLE_DIR / "recruiter-reply" / "seed"
+        for value in self._NOT_BOOLEANS:
+            with self.subTest(value=value):
+                mutated = copy.deepcopy(fixture)
+                mutated["objective_checks"][0]["strip_seed"] = value
+                with tempfile.TemporaryDirectory() as tmp:
+                    ws = Path(tmp) / "ws"
+                    shutil.copytree(seed, ws)
+                    with self.assertRaises(objective.FixtureError) as ctx:
+                        objective.run_checks(mutated, str(ws), str(seed),
+                                             transcript="Hi Dana,\n")
+                self.assertIn("strip_seed", str(ctx.exception))
+
+    def test_a_real_boolean_still_works_both_ways(self):
+        # The other direction, so the guard is not just "raise on
+        # everything": `false` turns the pre-pass off and the seed's own
+        # material is then scored as the agent's, which is exactly what the
+        # opt-in exists to control.
+        fixture = self._fixture("recruiter-reply")
+        seed = self.STYLE_DIR / "recruiter-reply" / "seed"
+        pasted = (self.STYLE_DIR / "recruiter-reply" / "seed" / "inbox"
+                  / "cold-email.md").read_text(encoding="utf-8")
+        verdicts = {}
+        for value in (True, False):
+            mutated = copy.deepcopy(fixture)
+            for check in mutated["objective_checks"]:
+                check["strip_seed"] = value
+            with tempfile.TemporaryDirectory() as tmp:
+                ws = Path(tmp) / "ws"
+                shutil.copytree(seed, ws)
+                verdicts[value] = {
+                    r["id"]: r["passed"] for r in objective.run_checks(
+                        mutated, str(ws), str(seed), transcript=pasted)}
+        self.assertFalse(verdicts[True]["greets-the-recruiter-by-name"])
+        self.assertTrue(verdicts[False]["greets-the-recruiter-by-name"])
+
+    # N7: the provenance index reads at most a megabyte of any one seed
+    # file. Past it the read raises: a truncated index answers "not the
+    # seed's" for every sentence past the cap, which reads as the agent
+    # having written the material it pasted.
+    def test_a_seed_file_over_the_read_cap_is_refused_by_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            seed = Path(tmp) / "seed"
+            seed.mkdir()
+            (seed / "notes.md").write_text(
+                "x" * (objective._SEED_READ_CAP + 1), encoding="utf-8")
+            with self.assertRaises(objective.SeedTooLarge) as ctx:
+                objective.strip_seed_material("Hi Dana,\n", str(seed))
+        self.assertIn("notes.md", str(ctx.exception))
+        self.assertIn(str(objective._SEED_READ_CAP), str(ctx.exception))
+
+    def test_a_seed_file_at_the_read_cap_is_read_whole(self):
+        # The boundary, from the other side: the cap is a limit, not an
+        # off-by-one that refuses a file it could have read.
+        with tempfile.TemporaryDirectory() as tmp:
+            seed = Path(tmp) / "seed"
+            seed.mkdir()
+            sentence = "The engagement is contracted through March 2027."
+            filler = "y" * (objective._SEED_READ_CAP - len(sentence) - 1)
+            (seed / "notes.md").write_text(f"{filler}\n{sentence}",
+                                           encoding="utf-8")
+            self.assertEqual(
+                objective.strip_seed_material(sentence + "\n", str(seed)), "")
+
+    def test_a_truncated_report_cell_says_so(self):
+        # N4: an error cut off mid-sentence at exactly 200 characters reads
+        # as the whole error, and the reader has no way to tell there is
+        # more of it in summary.json.
+        long = run_eval._render_report("s", "p", "t", [
+            {"arm": "with_skill", "error": {"type": "boom", "detail": "y" * 400}}])
+        cell = long.strip().splitlines()[-1]
+        self.assertIn("…", cell)
+        self.assertLessEqual(
+            len(cell.split("|")[-2].strip()), run_eval._REPORT_CELL_CHARS)
+        short = run_eval._render_report("s", "p", "t", [
+            {"arm": "with_skill", "error": {"type": "boom", "detail": "brief"}}])
+        self.assertNotIn("…", short)
 
     # ------------------------------------------------------------------
     # wrapper comes off; everything else is the agent's text
@@ -5578,7 +5761,83 @@ class TestIssue81(unittest.TestCase):
         "ACCESS_KEY=wJalrXUtnFEMIbPxRfiCYEXAMPLEKEY",
         "access-key: hunter2",
         "-----BEGIN CERTIFICATE-----",
+        # Round 4: shapes the scan reached only through the PHONE regex
+        # happening to match a digit run inside them, or not at all.
+        "the deploy used ghs_0123456789abcdefghijklmnopqrstuvwxyz",
+        "gho_0123456789abcdefghijklmnopqrstuvwxyz was in the log",
+        "github_pat_11ABCDEFG0abcdefghij_0123456789abcdefghijklmnop",
+        "xoxp" + "-0123456789-0123456789012-abcdefghijklmnopqrstuvwx",
+        "sk-proj-0123456789abcdefghijklmnopqrstuvwxyz",
+        "AIzaSy0123456789abcdefghijklmnopqrstuvw",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NSJ9.c2lnbmF0dXJl",
+        # A private key pasted without its BEGIN header is still one.
+        "MIIEowIBAAKCAQEAy0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
     )
+
+    # Shapes whose own form identifies them, reported under their own name
+    # rather than as "a credential".
+    _IBAN_SHAPES = ("GB82WEST12345698765432", "GB82 WEST 1234 5698 7654 32",
+                    "DE89370400440532013000")
+    _NOT_IBANS = ("REQ-4417", "RFP HRLS-2026-014", "NIST 800-53",
+                  "Halyard Civic Data", "AWS Solutions Architect")
+    _IPV6_SHAPES = ("2001:0db8:85a3:0000:0000:8a2e:0370:7334",
+                    "2001:db8::8a2e:370:7334", "fe80::1", "::1")
+    _NOT_IPV6 = ("Date: Tue, 1 Sep 2026 09:14:00 -0400",
+                 "the run fell from 26:00 to 9:00",
+                 "Section 508 audit: 34 of 51 closed")
+    _BARE_HOSTS = ("mirrored at notexample.com/adam",
+                   "see docs.notexample.org for the policy",
+                   "notexample.co.uk hosts the archive")
+    _NOT_BARE_HOSTS = ("run_eval.py", "background.md", "fixture.yaml",
+                       "e.g. the deploy-scaffold repository",
+                       "harness/scorers/objective.py")
+
+    def test_the_shape_named_scans_catch_what_they_are_named_for(self):
+        for pattern, hits, misses in (
+                (self._IBAN_RE, self._IBAN_SHAPES, self._NOT_IBANS),
+                (self._IPV6_RE, self._IPV6_SHAPES, self._NOT_IPV6),
+                (self._BARE_HOST_RE, self._BARE_HOSTS,
+                 self._NOT_BARE_HOSTS)):
+            for shape in hits:
+                with self.subTest(pattern=pattern.pattern[:24], shape=shape):
+                    self.assertRegex(shape, pattern)
+            for prose in misses:
+                with self.subTest(pattern=pattern.pattern[:24], prose=prose):
+                    self.assertNotRegex(prose, pattern)
+
+    def test_the_scan_reports_the_shapes_round_4_added(self):
+        # Through the WALK, not against the matchers alone: a shape the scan
+        # cannot report is a shape the scan does not have, however well the
+        # regex reads.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            with (planted / "README.md").open("a", encoding="utf-8") as f:
+                f.write("\nThe deploy used ghs_0123456789abcdefghijklmnop"
+                        "qrstuvwxyz.\n"
+                        "Settlement went to GB82 WEST 1234 5698 7654 32.\n"
+                        "The box answered on 2001:db8::8a2e:370:7334.\n"
+                        "Mirrored at notexample.com/adam.\n")
+            problems, _ = self._fiction_problems(planted)
+        self.assertIn("README.md: looks like a credential", problems)
+        self.assertIn("README.md: looks like an IBAN", problems)
+        self.assertIn("README.md: looks like an IPv6 address", problems)
+        self.assertIn("README.md: URL host notexample.com", problems)
+
+    def test_a_token_is_caught_by_name_not_by_its_digits(self):
+        # The point of naming them. `ghs_0123456789...` reached the scan,
+        # when it reached it at all, through the PHONE regex matching the
+        # ten-digit run inside it — the wrong finding, and one that
+        # disappears the moment the token has no such run. These carry
+        # none, so only a pattern that knows the prefix can see them.
+        for shape in ("ghs_abcdefghijklmnopqrstuvwxyzABCDEFGH",
+                      "gho_abcdefghijklmnopqrstuvwxyzABCDEFGH",
+                      "github_pat_ABCDEFGabcdefghij_abcdefghijklmnopqrs",
+                      "sk-proj-abcdefghijklmnopqrstuvwxyzABCDEF",
+                      "AIzaSyAabcdefghijklmnopqrstuvwxyzABCDEF"):
+            with self.subTest(shape=shape):
+                self.assertNotRegex(shape, self._PHONE_RE)
+                self.assertRegex(shape, self._SECRET_RE)
 
     # Prose that mentions one of the keywords and is not a credential. An
     # over-broad scan that failed these would fail the fixtures themselves.
