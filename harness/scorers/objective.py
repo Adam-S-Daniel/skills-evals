@@ -1131,7 +1131,7 @@ _FOOTNOTE_MARKER_RE = re.compile(r"^[^\S\n]*\[\^[^\]\n]+\]:[^\S\n]*")
 # fixtures' own proof that the checks are satisfiable by real writing, lost
 # `cites-both-facts` at 126 of the 189 wrap-column cells at four and 63 at
 # five. At six the whole battery of genuine drafts passes at every column
-# from 38 to 100, and the paste shapes still measure at or above 0.88. Six
+# from 38 to 100, and the paste shapes still measure at or above 0.93. Six
 # is also the shortest value at which the seed's own longest FACT phrases —
 # an employer, a job title, a repo path, a date — cannot be a run on their
 # own, which is what the run length is for.
@@ -1151,12 +1151,21 @@ _SEED_COVERAGE_RUN = 6
 #
 # Measured this round, R = 6: the highest-coverage sentence rule (c) could
 # newly claim in any genuine draft — 16 drafts plus the three in-voice
-# references at every wrap column from 38 to 100, 189 cells — is 0.59, and
-# the lowest highest-coverage sentence of any paste shape that has to fail
-# is 0.88. So the floor sits 0.16 above the genuine ceiling and 0.13 below
-# the paste floor. The rule is that both margins stay at 0.1 or better; if
-# a future draft closes one, the answer is to report it, not to tune this
-# number past the margin.
+# references at every wrap column from 38 to 100, 189 cells — is 0.59
+# (`close-paraphrase` on recruiter-reply), and the lowest highest-coverage
+# sentence of any paste shape that has to fail is 0.93
+# (`two-clauses-joined` on proposal-bio; `sub-floor-bullets` measures 0 by
+# construction — three-word fragments, none of them as long as the run —
+# and is caught by the FLOOR rather than by coverage, so it is not in this
+# population). So the floor sits 0.16 above the genuine ceiling and 0.18
+# below the paste floor. The rule: both margins stay at 0.1 or better.
+# If a future draft closes one, the answer is to report it, not to tune
+# this number past the margin.
+#
+# Neither number is prose: `test_the_coverage_margins_hold` measures them
+# through `seed_coverage_report` — the scorer's own pipeline — and pins
+# them, and `test_the_coverage_constants_are_named_with_their_margins`
+# asserts they are written here.
 _SEED_COVERAGE = 0.75
 
 # A sentence ends at `.`, `!`, `?`, `;` or `:` FOLLOWED BY WHITESPACE, or at

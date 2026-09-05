@@ -4903,8 +4903,9 @@ class TestIssue81(unittest.TestCase):
     # bullet markers turned into sentences. Rounds 1-4 called it "composed"
     # and scored it as the agent's writing, because no sentence of it was
     # contiguous in the note once "Adam Daniel", "At" and "he" were
-    # inserted. Design decision 3 calls it what it is: 0.88 to 0.92 of its
-    # words lie inside runs of the note's, so it is the note's material:
+    # inserted. Design decision 3 calls it what it is: 0.78 and 0.86 of the
+    # two sentences' words lie inside runs of the note's — both over the
+    # 0.75 floor — so it is the note's material:
     # what is left of it carries neither a third-person subject nor either
     # of the two facts, which is the right answer for a bio that wrote
     # nothing of its own.
@@ -7286,7 +7287,7 @@ class TestIssue81(unittest.TestCase):
         self.assertEqual(objective._SEED_COVERAGE, 0.75)
         source = (REPO_ROOT / "harness" / "scorers"
                   / "objective.py").read_text(encoding="utf-8")
-        for phrase in ("0.59", "0.88", "margins stay at 0.1 or better"):
+        for phrase in ("0.59", "0.93", "margins stay at 0.1 or better"):
             self.assertIn(phrase, source,
                           "the measured margins are not recorded beside the "
                           "constants")
