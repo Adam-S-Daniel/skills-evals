@@ -7314,5 +7314,57 @@ class TestIssue67Review7(unittest.TestCase):
                          "the cap evicts by `last_seen`, not by id order")
         self.assertIn("oldest by `last_seen`", text)
 
+    # --- S3: the previous-arms cap must not omit a REAL retirement -------
+    #
+    # `_clean_previous_arms` capped with `sorted(ids)[:PREVIOUS_ARMS_CAP]`
+    # — the same alphabetical-head shape S2 fixes for `catalogue_seen`, and
+    # with the same consequence: a previous roster carrying 500 low-sorting
+    # filler ids beside one real departed arm reported 500 filler
+    # retirements and not the real one, so `retired_since_last` — the line
+    # the job summary leads with — silently lost the only retirement that
+    # actually happened.
+
+    ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
+
+    def test_the_previous_arms_cap_keeps_a_real_retirement_over_filler(self):
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.RETIRED_REAL, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            self.RETIRED_REAL: {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        warnings = []
+        result = self._compute(models=self._capped_history_models(),
+                               census=census, previous=previous,
+                               warn=warnings.append)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn(self.RETIRED_REAL, retired,
+                      "the one arm that really left the Models API must not "
+                      "be capped out by 500 filler ids that sort below it")
+        self.assertIn("no longer returned", retired[self.RETIRED_REAL])
+        self.assertLessEqual(len(retired), 500)
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            self.assertNotIn("0arm-499", w, "the cap warning names counts only")
+        # Mutation check (manual): reverting the cap to
+        # `ids = sorted(ids)[:PREVIOUS_ARMS_CAP]` drops
+        # `claude-sonnet-4-9` — the single alphabetically-last id of 501 —
+        # and `retired_since_last` names 500 fillers and no real
+        # retirement: the first assertion goes red.
+
+    def test_the_previous_arms_cap_still_bounds_an_all_filler_roster(self):
+        """The bound itself is unchanged when nothing is relevant: 600
+        filler arms still cap at 500, with a count-only warning."""
+        previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
+                             for i in range(600)]}
+        warnings = []
+        result = self._compute(models=self._capped_history_models(),
+                               census=None, previous=previous,
+                               warn=warnings.append)
+        self.assertEqual(len(result["retired_since_last"]), 500)
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            self.assertNotIn("0arm-599", w)
+
 if __name__ == "__main__":
     unittest.main()

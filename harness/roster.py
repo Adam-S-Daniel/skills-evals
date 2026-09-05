@@ -685,7 +685,7 @@ def _clean_counts(counts, warn) -> dict:
 PREVIOUS_ARMS_CAP = 500
 
 
-def _clean_previous_arms(previous, warn) -> list[str]:
+def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]:
     """The previous roster's arm ids. A malformed entry is skipped, not fatal.
 
     Shape-checked with `PREVIOUS_ARM_ID_RE`, not just type-checked: a
@@ -699,8 +699,22 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     growing output list — the latter is O(n^2) and measured at 5.4s for
     40,000 entries, 37s for 100,000, publishing a 2.7MB roster with no
     warning at all. The accepted list is also capped at
-    `PREVIOUS_ARMS_CAP`: past it, only the alphabetically-sorted head is
-    kept, and the warning names the dropped COUNT, never a dropped id.
+    `PREVIOUS_ARMS_CAP`, and the warning names the dropped COUNT, never a
+    dropped id.
+
+    Past the cap, RELEVANCE decides who survives, not spelling (S3, #129
+    review round 7). An id this run can actually say something about — one
+    the Models API still lists (`api_ids`), or one the census names
+    (`count_keys`, either spelling of a dated/undated pair) — is kept ahead
+    of filler, and only then does the id order break ties. The plain
+    `sorted(ids)[:PREVIOUS_ARMS_CAP]` this replaces had the same
+    alphabetical-head shape S2 fixes for `catalogue_seen`, and the same
+    consequence: a previous roster carrying 500 low-sorting filler ids
+    beside ONE real departed arm reported 500 filler retirements and not
+    the real one, so `retired_since_last` — the line render_summary leads
+    with — silently lost the only retirement that happened. Both arguments
+    default to empty, which reduces to the old spelling-only order for a
+    caller with no context to give.
     """
     if previous is None:
         return []
@@ -726,7 +740,24 @@ def _clean_previous_arms(previous, warn) -> list[str]:
              f"not an object with a well-formed model-id-shaped `id`")
     if len(ids) > PREVIOUS_ARMS_CAP:
         dropped = len(ids) - PREVIOUS_ARMS_CAP
-        ids = sorted(ids)[:PREVIOUS_ARMS_CAP]
+        live = set(api_ids)
+        named = set(count_keys)
+        named_bases = set()
+        for key in named:
+            match = SNAPSHOT_SUFFIX.match(key)
+            if match:
+                named_bases.add(match.group("base"))
+
+        def _relevant(model_id: str) -> bool:
+            if model_id in live or model_id in named or model_id in named_bases:
+                return True
+            match = SNAPSHOT_SUFFIX.match(model_id)
+            return bool(match) and match.group("base") in named
+
+        # `not _relevant(...)` first: False sorts before True, so relevant
+        # ids head the list and the id order only breaks ties inside each
+        # group — deterministic either way.
+        ids = sorted(ids, key=lambda i: (not _relevant(i), i))[:PREVIOUS_ARMS_CAP]
         warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
              f"the {PREVIOUS_ARMS_CAP}-entry cap")
     return ids
@@ -1017,7 +1048,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # catalogue history to fold a previous arm published under a DATED id
     # that has since left the API, whose usage the census records under
     # the UNDATED alias — see the `aliases` comment just below.
-    previous_arms = _clean_previous_arms(previous, warn)
+    previous_arms = _clean_previous_arms(previous, warn, api_ids=api_ids,
+                                        count_keys=counts.keys())
 
     # The union of every id the Models API has EVER listed across runs: this
     # run's api ids plus whatever the previous roster already accumulated,
