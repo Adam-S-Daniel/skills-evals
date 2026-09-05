@@ -5669,8 +5669,11 @@ class TestIssue67Review5(unittest.TestCase):
         models = TestIssue67._models_doc()
         result = self._compute(models=models, previous=None)
         api_ids = {m["id"] for m in models["models"]}
-        self.assertEqual(set(result["catalogue_seen"]), api_ids)
-        self.assertEqual(result["catalogue_seen"], sorted(set(result["catalogue_seen"])))
+        seen_ids = [e["id"] for e in result["catalogue_seen"]]
+        self.assertEqual(set(seen_ids), api_ids)
+        self.assertEqual(seen_ids, sorted(seen_ids))
+        for entry in result["catalogue_seen"]:
+            self.assertIn("last_seen", entry)
 
         hostile = "claude-sonnet-4-5\n::error::pwned::"
         previous = {"arms": [], "catalogue_seen": result["catalogue_seen"] +
@@ -5686,7 +5689,7 @@ class TestIssue67Review5(unittest.TestCase):
             self.assertNotIn(hostile, w)
 
         result2 = self._compute(models=models, previous=previous)
-        self.assertNotIn(hostile, result2["catalogue_seen"])
+        self.assertNotIn(hostile, [e["id"] for e in result2["catalogue_seen"]])
         summary = roster.render_summary(result2)
         self.assertNotIn("::error::", summary)
         self.assertNotIn(hostile, summary)
@@ -5765,7 +5768,7 @@ class TestIssue67Review5(unittest.TestCase):
             models_doc=models, census_doc=None, policy=self._policy(),
             previous=None, now=self.NOW, warn=warnings.append)
         self.assertTrue(any("malformed model-id-shaped" in w for w in warnings), warnings)
-        self.assertNotIn(hostile, result["catalogue_seen"])
+        self.assertNotIn(hostile, [e["id"] for e in result["catalogue_seen"]])
         for entries in (result["arms"], result["unranked"], result["excluded"]):
             self.assertNotIn(hostile, [e["id"] for e in entries])
         summary = roster.render_summary(result)
@@ -5930,7 +5933,7 @@ class TestIssue67Review6(unittest.TestCase):
         reason = self._reason(result, self.DATED)
         self.assertIn("carries", reason)
         self.assertIn("100.0%", reason)
-        self.assertNotIn(self.UNDATED, result["catalogue_seen"])
+        self.assertNotIn(self.UNDATED, self._seen_ids(result))
         # Mutation check (manual): deleting `folded in (api_ids_folded or
         # ())` from `_is_attributable` makes the 500 turns under
         # `claude-3-5-sonnet` unattributable (neither remaining route
@@ -5956,8 +5959,8 @@ class TestIssue67Review6(unittest.TestCase):
         reason = self._reason(result, "claude-haiku-4-5")
         self.assertIn("newest", reason)
         self.assertNotIn("carries", reason)
-        self.assertNotIn(self.UNDATED, result["catalogue_seen"])
-        self.assertNotIn(self.DATED, result["catalogue_seen"])
+        self.assertNotIn(self.UNDATED, self._seen_ids(result))
+        self.assertNotIn(self.DATED, self._seen_ids(result))
         # Mutation check (manual): deleting `candidate in
         # previous_arms_folded or folded in previous_arms_folded` makes
         # the 500 turns unattributable, shrinking the denominator to
@@ -6000,7 +6003,7 @@ class TestIssue67Review6(unittest.TestCase):
         models = TestIssue67._models_doc()
         result = self._compute(models=models, previous=None)
         api_ids = {m["id"] for m in models["models"]}
-        self.assertLessEqual(api_ids, set(result["catalogue_seen"]))
+        self.assertLessEqual(api_ids, self._seen_ids(result))
 
     def test_two_dead_clauses_stay_deleted(self):
         """Regression floor for the deletion itself, not just for the
@@ -6097,6 +6100,143 @@ class TestIssue67Review6(unittest.TestCase):
         # reason via the usage_share branch instead), the second because
         # opus-4-8 would fall through to the "below the exit bar" branch
         # and be retired instead of held.
+
+    # --- S3: catalogue_seen needs an age, a cap, and a migration path for
+    # the bare-string shape it used to publish ---------------------------
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    def test_catalogue_seen_migrates_the_bare_string_shape(self):
+        """The shape `catalogue_seen` used to publish (a bare list of id
+        strings) must still be READABLE for one migration run: no crash,
+        no shape warning, and the ids come through into this run's
+        (now dict-shaped) output."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": ["claude-opus-4-7"]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertIn("claude-opus-4-7", self._seen_ids(result))
+        for entry in result["catalogue_seen"]:
+            self.assertIn("id", entry)
+            self.assertIn("last_seen", entry)
+        self.assertFalse(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+
+    def test_catalogue_seen_entry_ages_out_and_stops_diluting_a_held_over_arm(self):
+        """S3 (#129 review round 6): a valid-shaped id planted directly in
+        `catalogue_seen` with a stale `last_seen` — never actually
+        returned by the Models API, so nothing ever refreshes it — must
+        drop out of `catalogue_seen` once it is older than
+        `catalogue_seen_max_age_days`. Before this fix, catalogue_seen had
+        no age at all: the plant stayed attributable forever, and its
+        fabricated usage diluted a real held-over arm's measured share
+        from 100% to a false 0.1%, retiring it on no real evidence.
+        """
+        stale = (self.NOW - timedelta(days=181)).strftime("%Y-%m-%d")
+        previous = {
+            "arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}],
+            "catalogue_seen": [{"id": "claude-sonnet-9-9", "last_seen": stale}],
+        }
+        # opus-4-8's own 96 turns alone are 100% of the rankable window;
+        # with the plant credited too (95904 more, under a different
+        # model) they dilute to exactly 96/96000 = 0.1%.
+        counts = {"claude-sonnet-9-9": {w: 11988 for w in self.W},
+                 "claude-opus-4-8": {w: 12 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-9-9", self._seen_ids(result),
+                         "a plant never returned by the Models API, aged "
+                         "past the policy window, must not survive into "
+                         "this run's catalogue_seen")
+        # Once excluded, the plant's own huge (fabricated) volume still
+        # shows up in the RAW window total (attribution-blind), which now
+        # also trips S1's relative floor — a second, independent reason
+        # the real arm is held rather than retired on manufactured
+        # evidence, whichever text names it.
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertNotIn("0.1%", reason)
+        self.assertNotIn("claude-opus-4-8",
+                         {r["id"] for r in result["retired_since_last"]})
+        # Mutation check (manual): skipping the age-eviction step in
+        # `_update_catalogue_seen` (treat every previously-seen id as
+        # kept regardless of `last_seen`) keeps `claude-sonnet-9-9`
+        # attributable, diluting opus-4-8's exit-window share to a false
+        # 0.1% and RETIRING it (not merely leaving it unheld) — the
+        # `assertNotIn("claude-sonnet-9-9", ...)` above goes red directly,
+        # and opus-4-8 no longer appears in `arms` at all.
+
+    def test_real_since_retired_model_stays_attributable_within_the_age_window(self):
+        """The normal case S3 must not break: an id genuinely seen
+        recently (well within `catalogue_seen_max_age_days`) stays
+        attributable, dict-shaped `last_seen` and all."""
+        recent = (self.NOW - timedelta(days=10)).strftime("%Y-%m-%d")
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+        ]}
+        previous = {"arms": [],
+                   "catalogue_seen": [{"id": "claude-opus-4-8", "last_seen": recent}]}
+        counts = {"claude-opus-4-8": {w: 1000 for w in self.W},
+                 "claude-sonnet-4-6": {w: 60 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "claude-opus-4-8's usage must still count in the "
+                         "denominator, keeping sonnet-4-6's share below "
+                         "the entry bar")
+        self.assertIn("claude-opus-4-8", self._seen_ids(result))
+
+    def test_three_chained_runs_drop_the_plant_after_its_age(self):
+        """The plant is republished by the harness as its own output on
+        every later run — reverting it on the branch does not remove it
+        — until it ages out on its own. Simulates three chained runs,
+        each feeding the previous run's own `catalogue_seen` output
+        forward, `now` advancing between them; the plant is never
+        returned by the Models API in any of the three runs, so nothing
+        ever refreshes it."""
+        models = TestIssue67._models_doc(drop={"claude-opus-4-8"})
+        plant = "claude-sonnet-9-9"
+        previous = {"arms": [], "catalogue_seen": [plant]}  # migrates: last_seen = run 1's date
+        now = self.NOW
+        for run in range(3):
+            result = roster.compute_roster(
+                models_doc=models, census_doc=None, policy=self._policy(),
+                previous=previous, now=now)
+            if run < 2:
+                self.assertIn(plant, self._seen_ids(result),
+                             f"run {run}: still within the age window")
+            previous = result
+            now = now + timedelta(days=100)  # 3 runs span 200 days > 180-day policy
+        self.assertNotIn(plant, self._seen_ids(result),
+                         "the plant must not survive past its age even "
+                         "though every run kept republishing it forward")
+
+    def test_catalogue_seen_caps_length_with_a_count_only_warning(self):
+        """N3, merged into S3's rewrite: `catalogue_seen` accepts at most
+        500 entries (sorted head kept), past which the warning names only
+        the count — not one dropped id, which would be a value from an
+        untrusted branch reaching a log."""
+        previous = {"arms": [], "catalogue_seen": sorted(
+            f"claude-sonnet-{i}-9" for i in range(600))}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=None,
+            policy=self._policy(), previous=previous, now=self.NOW,
+            warn=warnings.append)
+        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        api_ids = {m["id"] for m in TestIssue67._models_doc()["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(result),
+                             "the cap must never evict this run's own live ids")
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            self.assertNotIn("claude-sonnet-599-9", w)
 
 
 if __name__ == "__main__":

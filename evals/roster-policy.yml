@@ -103,5 +103,34 @@ min_ranked_turns: 20
 # turns total}` as usable evidence over 800,020 raw turns — 20 turns clears
 # min_ranked_turns while being a vanishing fraction of what the fleet
 # actually did, which used to retire a previous arm with no counted usage
-# of its own at a literal 0.0%.
+# of its own at a literal 0.0%. Applied per window (enter AND exit), not
+# only over the 8-week union: a handful of ranked turns elsewhere in the
+# union can clear this floor while one window's OWN ranked/raw ratio still
+# fails it — which used to compute a false 100.0% entry share on 25 turns
+# out of 4,000,025 raw ones in the 4-week enter window alone.
 min_ranked_share: 0.01
+
+# `catalogue_seen` (the published roster's record of every model id the
+# Models API has EVER listed, across runs — see roster.py's module
+# docstring, property 5) is read back from `previous.json` on
+# `eval-results`, a branch OTHER JOBS ON OTHER MACHINES write to and this
+# harness treats as untrusted input, not an invariant. Every entry carries
+# a `last_seen` date, refreshed to today whenever the Models API actually
+# returns that id THIS run; an id that stops being genuinely observed
+# — including one planted directly on the branch, which the Models API
+# will never return — ages out and is dropped once its `last_seen` is
+# older than this many days. Without an age at all, a single planted id
+# stayed attributable forever and was republished by this harness as its
+# own output on every later run, diluting a real held-over arm's measured
+# share to a false 0.1% and retiring it on no evidence — reverting the
+# plant on the branch did not undo that, because the harness's own prior
+# output had already carried it forward. Picked at roughly 6 months: long
+# enough that a model still genuinely in occasional use across the
+# harness's own weekly cadence keeps counting, short enough that a
+# one-time plant cannot persist indefinitely. This run's own live ids are
+# never aged out by this (they get `last_seen` = today every run) — only
+# accumulated history can. See also the length cap in roster.py's
+# `CATALOGUE_SEEN_CAP` (currently 500 entries, oldest-by-id-sorted-out
+# first among non-live entries; this run's own live ids are exempt from
+# it too).
+catalogue_seen_max_age_days: 180

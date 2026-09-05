@@ -90,6 +90,7 @@ _THRESHOLD_CHECKS = {
     "census_max_age_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
     "min_ranked_turns": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
     "min_ranked_share": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1,
+    "catalogue_seen_max_age_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
 }
 
 
@@ -604,13 +605,33 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     return ids
 
 
-def _clean_catalogue_seen(previous, warn) -> list[str]:
-    """The previous roster's `catalogue_seen` list: every model id the
-    Models API has ever listed across runs, as of the last published
-    roster. A malformed entry is skipped, not fatal — same treatment as
+#: `catalogue_seen`'s cap (N3, merged into S3's rewrite): a length past
+#: which the O(1)-membership dedup below still leaves an unbounded, ever-
+#: growing publish. This run's own live api ids are never evicted by it —
+#: see `_update_catalogue_seen` — only accumulated HISTORY is trimmed.
+CATALOGUE_SEEN_CAP = 500
+
+
+def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
+    """The previous roster's `catalogue_seen` history, as `{"id",
+    "last_seen"}` entries (S3, #129 review round 6). Accepts the bare
+    string shape this field used to publish, for ONE migration run: a
+    bare string carries no age information at all, so it is rewritten
+    with `last_seen` = today — seeing it in a previous roster is the
+    only evidence there is, and treating it as "seen today" costs at
+    most one extra `catalogue_seen_max_age_days` window before an id
+    that stops being genuinely re-observed ages out on its own (see
+    `_update_catalogue_seen`, which is what actually EVICTS an entry —
+    this function only reads and shape-validates what came in). A
+    `last_seen` in the future (a hand-edited or clock-skewed entry) is
+    clamped to today rather than trusted, so a single future-dated plant
+    cannot buy itself unlimited immunity from the age check.
+
+    A malformed entry is skipped, not fatal — same treatment as
     `_clean_previous_arms`, and for the same reason: this is read off a
-    public branch, and every id from it is interpolated verbatim into
-    render_summary's Markdown, which eval.yml prints to stdout.
+    public branch (`eval-results`), which the module docstring already
+    calls untrusted, and every id from it ends up published again in
+    this run's own `catalogue_seen` output.
     """
     if previous is None:
         return []
@@ -620,18 +641,82 @@ def _clean_catalogue_seen(previous, warn) -> list[str]:
     if not isinstance(entries, list):
         warn("previous roster: `catalogue_seen` is not a list; starting empty")
         return []
-    ids = []
+    today = now.strftime("%Y-%m-%d")
+    by_id: dict[str, str] = {}
+    migrated = 0
     skipped = 0
     for entry in entries:
         if isinstance(entry, str) and entry and PREVIOUS_ARM_ID_RE.match(entry):
-            if entry not in ids:
-                ids.append(entry)
-        else:
-            skipped += 1
+            by_id[entry] = today
+            migrated += 1
+            continue
+        if (isinstance(entry, dict) and isinstance(entry.get("id"), str)
+                and entry["id"] and PREVIOUS_ARM_ID_RE.match(entry["id"])
+                and isinstance(entry.get("last_seen"), str) and entry["last_seen"]):
+            parsed = parse_ts(entry["last_seen"])
+            if parsed is None:
+                skipped += 1
+                continue
+            by_id[entry["id"]] = today if parsed > now else entry["last_seen"]
+            continue
+        skipped += 1
+    if migrated:
+        warn(f"previous roster: migrated {migrated} `catalogue_seen` "
+             f"entry/entries from the bare-string shape")
     if skipped:
         warn(f"previous roster: skipped {skipped} `catalogue_seen` entry/entries "
-             f"that are not a well-formed model-id-shaped string")
-    return ids
+             f"that are not a well-formed {{id, last_seen}} object or a "
+             f"model-id-shaped string")
+    return [{"id": model_id, "last_seen": last_seen}
+           for model_id, last_seen in by_id.items()]
+
+
+def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
+                          policy: dict, warn) -> list[dict]:
+    """This run's `catalogue_seen` history: refresh, evict, cap.
+
+    Every id THIS run's Models API actually listed gets its `last_seen`
+    refreshed to today — that is the only way an id's clock resets. Every
+    other previously-seen id keeps its own `last_seen`, and is DROPPED
+    once that is older than `policy["catalogue_seen_max_age_days"]` — the
+    only way an id LEAVES this history, besides the cap below. A model id
+    planted directly in `catalogue_seen` on `eval-results` (an untrusted
+    branch, per the module docstring) that the Models API never actually
+    returns has no way to get its `last_seen` refreshed, so it ages out
+    on its own; reverting the plant on the branch is not even necessary.
+
+    The cap NEVER evicts one of this run's own live `api_ids` — only
+    accumulated history beyond them — so `catalogue_seen` stays a
+    superset of `api_ids`, the property `usage_share`'s docstring and
+    `compute_roster`'s callers rely on.
+    """
+    today = now.strftime("%Y-%m-%d")
+    by_id = {e["id"]: e["last_seen"] for e in previous_entries}
+    for model_id in api_ids:
+        by_id[model_id] = today
+    max_age = timedelta(days=policy["catalogue_seen_max_age_days"])
+    survivors: dict[str, str] = {}
+    aged_out = 0
+    for model_id, last_seen in by_id.items():
+        seen_at = parse_ts(last_seen) or now
+        if now - seen_at > max_age:
+            aged_out += 1
+            continue
+        survivors[model_id] = last_seen
+    if aged_out:
+        warn(f"catalogue_seen: dropped {aged_out} entry/entries older than "
+             f"the {policy['catalogue_seen_max_age_days']}-day window")
+    api_id_set = set(api_ids)
+    live = sorted(i for i in survivors if i in api_id_set)
+    historical = sorted(i for i in survivors if i not in api_id_set)
+    room = max(0, CATALOGUE_SEEN_CAP - len(live))
+    kept = live + historical[:room]
+    dropped = len(survivors) - len(kept)
+    if dropped:
+        warn(f"catalogue_seen: dropped {dropped} entry/entries past the "
+             f"{CATALOGUE_SEEN_CAP}-entry cap")
+    return [{"id": model_id, "last_seen": survivors[model_id]}
+           for model_id in sorted(kept)]
 
 
 def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
@@ -793,10 +878,16 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     previous_arms = _clean_previous_arms(previous, warn)
 
     # The union of every id the Models API has EVER listed across runs: this
-    # run's api ids plus whatever the previous roster already accumulated.
-    # Read back next run as `previous`'s own `catalogue_seen` — see
-    # `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history means.
-    catalogue_seen = sorted(set(api_ids) | set(_clean_catalogue_seen(previous, warn)))
+    # run's api ids plus whatever the previous roster already accumulated,
+    # refreshed/aged/capped by `_update_catalogue_seen` (S3, #129 review
+    # round 6). Read back next run as `previous`'s own `catalogue_seen` —
+    # see `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history
+    # means. `catalogue_seen_entries` is the PUBLISHED `{id, last_seen}`
+    # shape; `catalogue_seen` stays a plain set of ids for every downstream
+    # membership check (`_is_attributable`, `_fold_set`'s callers, etc.).
+    catalogue_seen_entries = _update_catalogue_seen(
+        api_ids, _clean_catalogue_seen(previous, warn, now), now, policy, warn)
+    catalogue_seen = {e["id"] for e in catalogue_seen_entries}
 
     # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
     # an alias the catalogue actually offers — an alias that exists solely as
@@ -816,7 +907,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # catalogue_seen check: that one credits a since-retired real id's own
     # usage even when neither of ITS spellings ever held (or holds) a seat.
     seat_aliases = alias_map(api_ids)
-    aliases = alias_map(api_ids + list(counts) + previous_arms + catalogue_seen)
+    aliases = alias_map(api_ids + list(counts) + previous_arms + list(catalogue_seen))
     snapshots = {m["id"]: seat_aliases[m["id"]]
                  for m in ranked if m["id"] in seat_aliases}
 
@@ -1119,7 +1210,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         "previous_state": previous_state,
         "retired_since_last": retired,
         "added_since_last": added,
-        "catalogue_seen": catalogue_seen,
+        "catalogue_seen": catalogue_seen_entries,
     }
 
 

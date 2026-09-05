@@ -355,6 +355,25 @@ Five properties are load-bearing and should survive any rework:
    — its usage silently drops from the denominator until a run observes it
    directly.
 
+   `catalogue_seen` is READ BACK from `previous.json` on `eval-results` —
+   a branch other jobs on other machines write to, which this harness
+   treats as untrusted input, not an invariant (see roster.py's module
+   docstring). Each entry carries a `last_seen` date rather than living
+   forever: it is refreshed to today whenever the Models API actually
+   returns that id THIS run, and an entry leaves `catalogue_seen` once its
+   `last_seen` is older than `catalogue_seen_max_age_days` (roster-policy.yml,
+   180 by default) — the only exit besides a length cap (`CATALOGUE_SEEN_CAP`
+   in roster.py, currently 500, never evicting this run's own live ids).
+   Without an age, a single id planted directly on the branch stayed
+   attributable forever and was republished by this harness as its own
+   output on every later run — reverting the plant on the branch did not
+   undo that, because the harness's own prior output had already carried
+   it forward. A second, independent migration applies here too: the field
+   used to publish as a bare list of id strings with no age at all; that
+   shape is still accepted on read for one run and rewritten with
+   `last_seen` = that run's date, since seeing the bare string is the only
+   evidence there is.
+
 Thresholds, and the reasoning behind the numbers, belong in an ADR —
 [#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the
 README's "Model roster" section for the precedence rule and the census's
