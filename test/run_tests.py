@@ -3207,6 +3207,25 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         with self.assertRaises(AssertionError):
             self._assert_index_link_target_exists(ws, self.EXISTING_INDEX_LINK_RE)
 
+    def test_existing_root_readme_rewrite_fails_only_restraint_check(self):
+        # S2 (round 2): nothing-else-touched didn't guard the repo-root
+        # README.md. This fixture's index lives at docs/decisions/README.md
+        # — a different path files_unchanged's "README.md" glob never
+        # matched to begin with — so recording the ADR correctly required
+        # no edit to the root README.md, but a wholesale, unrelated rewrite
+        # of it went uncaught: a correct ADR 0004 plus a rewritten root
+        # README.md scored 5/5.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        (ws / "README.md").write_text("# Completely different\n", encoding="utf-8")
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["nothing-else-touched"]["passed"],
+                         by_id["nothing-else-touched"]["detail"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+
     def test_existing_cli_objective_only_exit_codes(self):
         ws_pristine = self._ws(ADRS_EXISTING_DIR)
         code, _ = self._run_cli(ADRS_EXISTING_DIR, ws_pristine)

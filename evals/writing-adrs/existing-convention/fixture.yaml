@@ -93,14 +93,23 @@ objective_checks:
 
   - id: nothing-else-touched
     description: >
-      The pre-existing ADRs (0001-0003), CHANGELOG.md, and AGENTS.md must
-      stay byte-identical. README.md is deliberately left out: the index
-      row for the new ADR is a required edit. Without this, deleting
+      The pre-existing ADRs (0001-0003), CHANGELOG.md, AGENTS.md, and the
+      repo-root README.md must stay byte-identical. (Round 1's brief for
+      this fixture said the root README.md needed no guard because "the
+      index lives at docs/decisions/README.md" — true, but that's an
+      argument for why recording the ADR never requires editing the root
+      file, not a reason to leave it unguarded. files_unchanged's
+      "README.md" pattern only ever matched the root file — a different
+      path from the index — so the root file was left unguarded by
+      mistake, not by design: a correct ADR 0004 plus an unrelated,
+      wholesale rewrite of the root README.md used to score 5/5.) Without
+      the rest of this list, deleting
       0002-poll-fulfillment-service-every-30s.md and adding a
       differently-numbered decoy ADR (plus a rewritten CHANGELOG.md) keeps
       exactly-one-new-adr-file's total count at 4 and scores full marks.
     type: files_unchanged
     paths:
+      - "README.md"
       - "CHANGELOG.md"
       - "docs/decisions/0001-*.md"
       - "docs/decisions/0002-*.md"
