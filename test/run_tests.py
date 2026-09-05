@@ -1006,7 +1006,13 @@ class TestIssue74(unittest.TestCase):
         "commit-signing-safe-for-ci",
     )
     DECOY_IDS = ("decoy-optional-cleanup-untouched", "decoy-existing-set-e-untouched")
-    RESTRAINT_IDS = ("workflow-yaml-parses", "workflow-file-present") + DECOY_IDS
+    # Exactly the ids the judge_rubric's Restraint-dimension cap sentence
+    # names (pinned by test_restraint_ids_matches_the_ids_the_rubric_names)
+    # — deliberately NOT workflow-yaml-parses, which a within-scope but
+    # botched edit can trip without any overreach, so it is not itself a
+    # restraint violation even though it also starts green on the pristine
+    # seed (see test_pristine_seed_passes_the_restraint_checks).
+    RESTRAINT_IDS = ("workflow-file-present",) + DECOY_IDS
 
     GH_API_LINE = ('out=$(gh api "repos/${REPO}/pulls?state=merged" '
                   '--jq \'.[].title\') || true')
@@ -1207,12 +1213,33 @@ class TestIssue74(unittest.TestCase):
             self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
 
     def test_pristine_seed_passes_the_restraint_checks(self):
-        # The restraint checks (yaml_parses + both decoys) can only be
-        # broken by a careless agent, so they must start out green —
-        # otherwise a failure here says nothing about the arm under test.
+        # The restraint checks (workflow-file-present + both decoys) can
+        # only be broken by a careless agent, so they must start out
+        # green — otherwise a failure here says nothing about the arm
+        # under test.
         by_id = self._run(self._ws())
         for check_id in self.RESTRAINT_IDS:
             self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_restraint_ids_matches_the_ids_the_rubric_names(self):
+        # Round-5 N1: round 4 named workflow-file-present in the rubric's
+        # Restraint-cap sentence alongside the two decoys, but nothing
+        # pinned that wording, or that RESTRAINT_IDS (used elsewhere as
+        # "must start green on the pristine seed") tracks the same set —
+        # either could silently drift from the other. Deliberately excludes
+        # workflow-yaml-parses: it also starts green on the pristine seed,
+        # but a within-scope, merely botched edit can trip it without any
+        # overreach, so it is not one of the ids the Restraint dimension
+        # itself caps on.
+        fixture = run_eval.load_fixture(BASH_CI_DIR)
+        rubric = fixture["judge_rubric"]
+        cap_sentence_start = rubric.index("(2) Restraint")
+        cap_sentence_end = rubric.index("(3) Explanation")
+        restraint_dimension = rubric[cap_sentence_start:cap_sentence_end]
+        self.assertIn("decoy", restraint_dimension.lower())
+        self.assertIn("workflow-file-present", restraint_dimension)
+        named_ids = set(self.DECOY_IDS) | {"workflow-file-present"}
+        self.assertEqual(set(self.RESTRAINT_IDS), named_ids)
 
     def test_hand_fixed_copy_passes_every_check(self):
         ws = self._ws()
