@@ -8206,5 +8206,137 @@ class TestIssue67Review8(unittest.TestCase):
             self.assertNotIn("zplant-599", warning,
                              "the cap warning names counts only")
 
+    # --- A3: regression floors for the defences round 7 introduced -------
+    #
+    # A REPEAT of round 7's own should-fix ("four of S3's defences have no
+    # regression floor"), on this round's defences. Six mutations left the
+    # suite at 411 green while changing behaviour; five are pinned below,
+    # and the sixth — the cap sort's `or now`, replaced by a floor under
+    # A2 — is pinned by
+    # `test_five_hundred_year_one_plants_do_not_evict_real_history`.
+    # Each test names its mutation, is red under it, and green otherwise.
+
+    ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
+    A3_DEPARTED = "claude-sonnet-4-9"
+
+    def test_the_newest_live_snapshot_claims_the_bare_alias_not_the_oldest(self):
+        """MUTATION: iterating `live_order` in reverse in rule (3) of
+        `_usage_alias_map`. The brief for round 7's B1 says the NEWER
+        snapshot carries the usage; nothing asserted WHICH one did, and
+        reversing the iteration seats the older one on the same turns with
+        the whole suite still green."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-opus-5-20260101", "2026-01-01T00:00:00Z"),
+            self._model("claude-opus-5-20260601", "2026-06-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts={
+            "claude-opus-5": {self.W[0]: 4000},
+            "claude-sonnet-5": {self.W[0]: 300}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(tmp, models, census=census)
+        self.assertEqual(rc, 0)
+        self.assertIn("claude-opus-5-20260601", self._arm_ids(published))
+        self.assertIn("93.0%", self._reason(published, "claude-opus-5-20260601"),
+                      "the NEWEST live snapshot claims the bare alias")
+        self.assertNotIn("claude-opus-5-20260101", self._arm_ids(published),
+                         "the older snapshot has no turns of its own")
+
+    def test_a_departed_arm_named_by_a_dated_census_key_survives_the_cap(self):
+        """MUTATION: `named_bases = set()` in `_census_relevance`. A
+        departed arm whose census key is a DATED spelling of it is relevant
+        only through that set; capped out, its 8000 turns leave the usage
+        denominator and the live model is published as carrying 100.0% of
+        census usage where it really carries 9.09%."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            f"{self.A3_DEPARTED}-20250101": {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+
+    def test_a_dated_departed_arm_whose_base_the_census_names_survives(self):
+        """MUTATION: `return False` for the last branch of
+        `_census_relevance` — the arm is itself a DATED spelling of an id
+        the census names bare. Same consequence as above, reached through
+        the other direction of the same fold."""
+        dated_arm = f"{self.A3_DEPARTED}-20250101"
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": dated_arm, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            self.A3_DEPARTED: {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+
+    def test_a_live_previous_arm_survives_the_cap_and_is_held_over(self):
+        """MUTATION: dropping `api_ids=api_ids` from the
+        `_clean_previous_arms` call site. A previous arm the catalogue
+        still lists, with no census to measure it against, is relevant
+        only through `api_ids`; capped out by 500 fillers it stops being a
+        previous arm at all, loses its "no evidence to retire it" hold-over
+        — staleness is not evidence of disuse — and is retired instead."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(tmp, models, previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn("claude-sonnet-4-6", self._arm_ids(published))
+        self.assertIn("no evidence to retire it",
+                      self._reason(published, "claude-sonnet-4-6"))
+
+    def test_the_cap_breaks_a_tie_by_id_not_by_input_order(self):
+        """MUTATION: dropping the `sorted(...)` that seeds the cap's
+        historical slice, leaving the survivors to whatever order the
+        input arrived in. Within a slice of entries the cap cannot tell
+        apart — same relevance, same `last_seen` — the id decides, and two
+        runs on the same input publish the same survivors."""
+        plants = [f"zplant-{i:03d}" for i in range(600)]
+        same_day = self._days_ago(5)
+        forward = {"arms": [], "catalogue_seen":
+                   [{"id": i, "last_seen": same_day} for i in plants]}
+        backward = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": same_day}
+                     for i in reversed(plants)]}
+        published = []
+        for previous in (forward, forward, backward):
+            with tempfile.TemporaryDirectory() as tmp:
+                rc, result, _, _ = self._run_main(
+                    tmp, self._two_model_catalogue(), previous=previous)
+            self.assertEqual(rc, 0)
+            published.append(sorted(self._seen_ids(result)))
+        self.assertEqual(published[0], published[1],
+                         "two runs on the same input publish the same "
+                         "survivors")
+        self.assertEqual(published[0], published[2],
+                         "the survivor is decided by id, not by the order "
+                         "the entries arrived in")
+        api_ids = {m["id"] for m in self._two_model_catalogue()["models"]}
+        room = 500 - len(api_ids)
+        self.assertEqual(published[0], sorted(api_ids | set(plants[:room])),
+                         "the id-ascending head of the tied slice survives")
+
 if __name__ == "__main__":
     unittest.main()
