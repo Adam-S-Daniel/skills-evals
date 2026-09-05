@@ -493,6 +493,9 @@ def dir_listing_matches(workspace: str, patterns: list[str], expected: list[str]
             return (False, f"{expected_file}: {exc}")
     elif expected is None:
         return (False, "dir_listing_matches: expected or expected_file is required")
+    if not isinstance(expected, list):
+        return (False, f"dir_listing_matches: expected must be a list, "
+                       f"got {type(expected).__name__}")
     expected = sorted(expected)
 
     if actual == expected:
