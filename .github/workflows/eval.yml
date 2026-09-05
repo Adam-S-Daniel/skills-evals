@@ -42,10 +42,13 @@
 #   evals/workflow-path-audit), read from $GITHUB_EVENT_PATH as DATA in the
 #   validation step below and never interpolated into a run: block —
 #   `${{ inputs.* }}` in a shell script is an injection surface, and this is
-#   the workflow that holds the key. The value is matched against the set of
-#   committed evals/**/fixture.yaml directories, so anything that names no
-#   committed fixture fails the step BEFORE the token exchange runs. The
-#   scheduled run passes no input and gets the default.
+#   the workflow that holds the key. The value is first refused outright if it
+#   carries any character outside [A-Za-z0-9/_.-] — a newline included, which
+#   is what a `grep -F` match alone could not catch, since grep treats each
+#   LINE of its pattern as a pattern of its own — and only then matched
+#   against the set of evals/**/fixture.yaml directories present in this
+#   checkout. Anything failing either check fails the step BEFORE the token
+#   exchange runs. The scheduled run passes no input and gets the default.
 #
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
 #   secret exists. The Claude Code CLI does not resolve the
@@ -213,14 +216,21 @@ jobs:
       # Runs BEFORE the token exchange, deliberately: a dispatch naming a
       # fixture that does not exist must fail here, with no credential minted
       # and nothing spent. The value is read from the event payload as DATA
-      # (jq, no `${{ }}` interpolation into this shell) and matched against
-      # the set of directories that actually carry a committed fixture.yaml,
-      # so a traversal, an absolute path, a shell metacharacter or a stale
-      # name simply is not in the set.
+      # (jq, no `${{ }}` interpolation into this shell), checked for SHAPE,
+      # and only then matched against the set of directories that actually
+      # carry a committed fixture.yaml — so a traversal, an absolute path, a
+      # shell metacharacter, a newline or a stale name never gets past here.
+      # "Committed" here means "present in this checkout": the set comes from
+      # `find`, not `git ls-files`, so an untracked fixture directory would be
+      # accepted too. Equivalent in the fresh CI checkout this workflow runs
+      # in, where nothing is untracked.
       - name: Select and validate the fixture to run
         working-directory: skills-evals
         run: |
           set -euo pipefail
+          # Byte semantics for the character class below, so what this gate
+          # accepts does not depend on the runner's locale.
+          export LC_ALL=C
           fixture=""
           if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
             fixture="$(jq -r '.inputs.fixture // empty' "$GITHUB_EVENT_PATH")"
@@ -229,11 +239,33 @@ jobs:
           if [ -z "$fixture" ]; then
             fixture="evals/workflow-path-audit"
           fi
+          # SHAPE FIRST, before any matching. `grep -F` treats each LINE of
+          # its pattern as a separate pattern, so a MULTI-LINE dispatch value
+          # used to pass this gate whenever either line named a committed
+          # fixture — and the whole two-line string was then written to
+          # $RUNNER_TEMP/eval-fixture, so the OIDC exchange ran, a real bearer
+          # was minted and the WIF preflight spent a call before the run step
+          # finally failed on "no such fixture.yaml". Nothing was injectable
+          # (every use is quoted) and no uncommitted fixture could run, but
+          # the ordering guarantee this header makes twice was false for that
+          # value. The rejected value is NOT echoed back: this log is public,
+          # so the message names the rule, not the input.
+          case "$fixture" in
+            *[!A-Za-z0-9/_.-]*)
+              echo "eval.yml: dispatch input 'fixture' has characters outside [A-Za-z0-9/_.-]"
+              exit 1 ;;
+          esac
           committed="$(find evals -mindepth 1 -name fixture.yaml -printf '%h\n' | sort)"
-          if ! printf '%s\n' "$committed" | grep -Fxq -- "$fixture"; then
+          # A here-string, never `printf ... | grep -Fxq`: piping a list into
+          # an early-exit reader under `pipefail` makes the writer take
+          # SIGPIPE the moment grep matches, and the step then fails CLOSED on
+          # a perfectly valid fixture once the list outgrows a pipe buffer.
+          # Safe at today's ~250 bytes; measured to reject valid fixtures from
+          # ~66 KB of committed list upward.
+          if ! grep -Fxq -- "$fixture" <<<"$committed"; then
             echo "eval.yml: dispatch input 'fixture' names no committed fixture: $fixture"
             echo "Committed fixtures:"
-            printf '  %s\n' $committed
+            sed 's/^/  /' <<<"$committed"
             exit 1
           fi
           printf '%s' "$fixture" > "$RUNNER_TEMP/eval-fixture"

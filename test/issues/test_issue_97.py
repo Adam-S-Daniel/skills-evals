@@ -979,7 +979,8 @@ class TestIssue97(unittest.TestCase):
                 return step["run"]
         self.fail("no validation step found")
 
-    def _run_validation(self, event: dict | None) -> subprocess.CompletedProcess:
+    def _run_validation(self, event: dict | None,
+                        cwd: Path | None = None) -> subprocess.CompletedProcess:
         tmp = Path(tempfile.mkdtemp(prefix="eval-dispatch-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
         event_path = tmp / "event.json"
@@ -988,10 +989,12 @@ class TestIssue97(unittest.TestCase):
         env = dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
                    RUNNER_TEMP=str(tmp))
         proc = subprocess.run(["bash", "-c", self._validation_script()],
-                              cwd=str(REPO_ROOT), env=env, capture_output=True,
-                              text=True, timeout=120)
+                              cwd=str(cwd or REPO_ROOT), env=env,
+                              capture_output=True, text=True, timeout=300)
         proc.selected = (tmp / "eval-fixture").read_text(encoding="utf-8") \
             if (tmp / "eval-fixture").is_file() else None
+        proc.key = (tmp / "eval-key").read_text(encoding="utf-8") \
+            if (tmp / "eval-key").is_file() else None
         return proc
 
     def test_the_validation_step_accepts_every_committed_fixture(self):
@@ -1012,17 +1015,127 @@ class TestIssue97(unittest.TestCase):
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(proc.selected, "evals/workflow-path-audit")
 
+    # Every value the step must refuse, driven through the real `run:` block.
+    # Two shapes of refusal, both exit 1 before the token exchange: a value
+    # carrying a character outside [A-Za-z0-9/_.-] (rejected on SHAPE, before
+    # any matching, and never echoed back into the log), and a well-shaped
+    # value that simply names no committed fixture.
+    REJECTED_DISPATCH_VALUES = (
+        # names nothing committed
+        "evals/nope",
+        "evals",
+        "evals/guidance",
+        "evals/workflow-path-audit/seed",
+        123,                                    # a JSON number, not a string
+        # path shapes that are not the committed spelling
+        "../../etc/passwd",
+        "/etc",
+        "/tmp/x",
+        "./evals/workflow-path-audit",
+        "evals//workflow-path-audit",
+        "evals/../evals/workflow-path-audit",
+        "evals/workflow-path-audit/",
+        # whitespace-decorated
+        "evals/workflow-path-audit ",
+        "evals/workflow-path-audit\t",
+        "evals/workflow-path-audit\r",
+        # shell metacharacters (inert here — every use is quoted — but the
+        # gate refuses them on shape rather than relying on that)
+        "; rm -rf /",
+        "evals/*",
+        "$(id)",
+        "`id`",
+        # a Cyrillic \u0430 where the ASCII `a` belongs: renders identically,
+        # names nothing
+        "evals/workflow-path-\u0430udit",
+        # MULTI-LINE. `grep -F` treats each LINE of its pattern as a separate
+        # pattern, so before the shape gate these passed whenever EITHER line
+        # named a committed fixture — and the whole two-line string was
+        # written to $RUNNER_TEMP/eval-fixture, so the OIDC exchange ran, a
+        # real bearer was minted and the WIF preflight spent a call before the
+        # run step failed on "no such fixture.yaml". The header promises the
+        # opposite, twice.
+        "/etc/passwd\nevals/workflow-path-audit",
+        "evals/workflow-path-audit\nevals/guidance/_delivery",
+        "evals/workflow-path-audit\n$(id)",
+        # structured JSON: jq renders these across lines, so they are
+        # multi-line too
+        ["evals/workflow-path-audit"],
+        {"fixture": "evals/workflow-path-audit"},
+    )
+
     def test_the_validation_step_rejects_anything_that_names_no_fixture(self):
-        for bad in ("evals/nope", "../../etc/passwd", "/etc", "evals",
-                    "evals/workflow-path-audit/seed", "evals/guidance",
-                    "; rm -rf /", "evals/workflow-path-audit "):
+        for bad in self.REJECTED_DISPATCH_VALUES:
             with self.subTest(fixture=bad):
                 proc = self._run_validation({"inputs": {"fixture": bad}})
+                output = proc.stdout + proc.stderr
                 self.assertEqual(proc.returncode, 1,
-                                 f"{bad!r} must fail the step: "
-                                 f"{proc.stdout + proc.stderr}")
-                self.assertIn("names no committed fixture", proc.stdout + proc.stderr)
-                self.assertIsNone(proc.selected)
+                                 f"{bad!r} must fail the step: {output}")
+                self.assertTrue(
+                    "names no committed fixture" in output
+                    or "characters outside" in output,
+                    f"{bad!r} must be refused by a NAMED rule, got: {output}")
+                self.assertIsNone(
+                    proc.selected,
+                    f"{bad!r} reached $RUNNER_TEMP/eval-fixture, so the token "
+                    "exchange would have run before anything failed")
+                self.assertIsNone(proc.key)
+
+    def test_a_rejected_shape_is_not_echoed_back_into_the_log(self):
+        # The log of this workflow is public. A value refused on SHAPE is
+        # arbitrary dispatch input, so the message names the RULE, not the
+        # input. (A value that passes the shape gate is [A-Za-z0-9/_.-] only
+        # and is safe to name, which the "names no committed fixture" branch
+        # does.)
+        marker = "$(uniquely-identifiable-payload)"
+        proc = self._run_validation({"inputs": {"fixture": marker}})
+        self.assertEqual(proc.returncode, 1)
+        output = proc.stdout + proc.stderr
+        self.assertIn("characters outside", output)
+        self.assertNotIn("uniquely-identifiable-payload", output)
+
+    def test_the_fixture_match_survives_a_committed_list_far_larger_than_a_pipe(self):
+        # `printf '%s\n' "$committed" | grep -Fxq -- "$fixture"` is the
+        # fleet's forbidden pipe-into-early-exit shape: grep exits the moment
+        # it matches, printf takes SIGPIPE on its next write, and `set -o
+        # pipefail` turns that into a nonzero pipeline status — so the step
+        # fails CLOSED on a perfectly valid fixture once the committed list
+        # outgrows a pipe buffer. Safe at today's ~200 bytes; measured first
+        # false rejection at ~66 KB and 0/20 accepted at 280 KB. This drives
+        # the real `run:` block against a synthetic evals/ tree of ~100 KB of
+        # committed paths, repeatedly, because the failure is racy.
+        tmp = Path(tempfile.mkdtemp(prefix="eval-bigtree-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        target = "evals/workflow-path-audit"
+        (tmp / target).mkdir(parents=True)
+        (tmp / target / "fixture.yaml").write_text("subject: skill\n", encoding="utf-8")
+        # The filler sorts AFTER the target on purpose: `grep -Fxq` exits the
+        # instant it matches, so the earlier in the sorted list the match is,
+        # the more of the list `printf` still has to write into a pipe nobody
+        # is reading. A dispatch of an early-sorting fixture is the ordinary
+        # case, not a contrived one — `evals/disarm-inherited-reach` sorts
+        # first in the real tree today.
+        for i in range(3600):
+            d = tmp / "evals" / f"zz-generated-fixture-{i:05d}"
+            d.mkdir(parents=True)
+            (d / "fixture.yaml").write_text("subject: skill\n", encoding="utf-8")
+        listed = subprocess.run(
+            ["bash", "-c",
+             "find evals -mindepth 1 -name fixture.yaml -printf '%h\\n' | sort"],
+            cwd=str(tmp), capture_output=True, text=True, timeout=120).stdout
+        self.assertGreater(len(listed.encode("utf-8")), 100_000,
+                           "the synthetic committed list must exceed 100 KB")
+        for trial in range(20):
+            with self.subTest(trial=trial):
+                proc = self._run_validation({"inputs": {"fixture": target}},
+                                            cwd=tmp)
+                self.assertEqual(
+                    proc.returncode, 0,
+                    "a committed fixture must still be accepted when the "
+                    f"committed list is {len(listed.encode('utf-8'))} bytes; "
+                    "the step failed CLOSED on a valid fixture: "
+                    f"{(proc.stdout + proc.stderr)[:400]}")
+                self.assertEqual(proc.selected, target)
 
     def test_agent_guidance_is_checked_out_side_by_side_without_credentials(self):
         checkout = next(
