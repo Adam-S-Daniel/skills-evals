@@ -8477,5 +8477,51 @@ class TestIssue67Review8(unittest.TestCase):
         self.assertEqual(entry["last_seen"], "2026-09-01")
         # Mutation check (manual): as above — publishes "2026-09-02", red.
 
+    # --- F4: `_format_share`'s last rung is `repr`, not `:.17g` ----------
+    #
+    # Seventeen significant digits round-trips any float, but it is not
+    # the SHORTEST rendering that does: `:.17g` of a share of 1.9999999
+    # is "1.9999998999999999", which is both unreadable and wrong-looking
+    # about a number the reason is quoting exactly. `repr` gives
+    # "1.9999999" and satisfies `float(text) != bar` just as reliably.
+
+    F4_ARM = "claude-sonnet-4-6"
+    F4_FILLERS = [f"claude-opus-9-{i}" for i in range(13)]
+
+    @classmethod
+    def _f4_census(cls):
+        """19,999,999 of 1,000,000,000 exit-window turns — a share of
+        exactly 1.9999999%, just under the 2% exit bar. The bulk sits on
+        `catalogue_seen` history rather than in the catalogue, so the
+        denominator is large without the roster growing a dozen seats."""
+        counts = {cls.F4_ARM: dict(
+            [(w, 2_499_999) for w in cls.W[:7]] + [(cls.W[7], 2_500_006)])}
+        for filler in cls.F4_FILLERS[:12]:
+            counts[filler] = {w: 10_000_000 for w in cls.W}
+        counts[cls.F4_FILLERS[12]] = dict(
+            [(w, 2_500_000) for w in cls.W[:7]] + [(cls.W[7], 2_500_001)])
+        return TestIssue67._census_doc(counts=counts)
+
+    def test_the_last_share_rung_is_the_shortest_round_tripping_rendering(self):
+        """Measured through `main()`: the brief's own case, 19,999,999 of
+        1,000,000,000 exit-window turns."""
+        previous = {"arms": [{"id": self.F4_ARM, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(2)}
+                                       for i in self.F4_FILLERS]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, TestIssue67._models_doc(), census=self._f4_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(r for r in published["retired_since_last"]
+                     if r["id"] == self.F4_ARM)
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertIn("(1.9999999% of", entry["reason"])
+        self.assertNotIn("1.9999998999999999", entry["reason"])
+        # Mutation check (manual): restoring `:.17g` as the last rung
+        # renders "1.9999998999999999%" — red. Restoring round 7's
+        # UNCHECKED `:.6g` renders "2%" against the 2% bar, which
+        # TestIssue67Review7's own N3 test still catches.
+
 if __name__ == "__main__":
     unittest.main()

@@ -501,14 +501,24 @@ def _format_share(value: float, bar: float, *, under: bool = False) -> str:
     renders there as exactly "2", so the reason read "below the 2% exit bar
     (2% of rankable census usage)" — a sentence that contradicts itself
     about a share that really is under the bar.
+
+    The last rung is `repr`, not `:.17g` (F4, #129 review round 8).
+    Seventeen significant digits round-trip any float, but they are not
+    the SHORTEST decimal that does: `:.17g` of a share of 1.9999999
+    renders "1.9999998999999999", which is unreadable and wrong-looking
+    about a number the reason quotes exactly, where `repr` gives
+    "1.9999999" — the shortest string that reads back as the same float,
+    so it satisfies `float(text) != bar` just as reliably.
     """
     if not under:
         return f"{value:.1f}"
-    for spec in ("1f", "2f", "3f", "4f", "6f", "6g", "17g"):
-        text = f"{value:.{spec}}"
+    ladder = [f"{value:.{spec}}"
+              for spec in ("1f", "2f", "3f", "4f", "6f", "6g")]
+    ladder.append(repr(value))
+    for text in ladder:
         if float(text) != bar and (value == 0 or float(text) != 0.0):
             return text
-    return f"{value:.17g}"
+    return ladder[-1]
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],
