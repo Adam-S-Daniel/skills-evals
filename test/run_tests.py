@@ -5159,5 +5159,141 @@ class TestIssue67Review3(unittest.TestCase):
         self.assertNotIn("Traceback", err.getvalue())
 
 
+class TestIssue67Review4(unittest.TestCase):
+    """Round 4 fixes for #67, one test per fix. See run_tests.py's
+    class-per-review-round convention (TestIssue67Review, TestIssue67Review2,
+    TestIssue67Review3) — a SIBLING of TestIssue67, reusing its canned
+    documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- item 1: `_is_attributable` must attribute a candidate whose RAW
+    # (unfolded) spelling is itself an api id, or whose folded spelling
+    # matches an api id folded through the SAME alias map — not only a
+    # candidate whose folded spelling is a bare (unfolded) api id. -------
+
+    def test_dated_only_catalogue_with_usage_under_the_undated_alias_is_attributed(self):
+        """(a) The Models API publishes only the dated snapshot id; the
+        census recorded most usage under that exact id but a handful of
+        turns under the bare (undated) alias — a shape roster-policy.yml
+        and alias_map's own docstring call legitimate. The OLD
+        `_is_attributable` folded the DATED candidate onto its undated
+        alias and found neither spelling in `api_ids` (the alias itself
+        is not a catalogue id), so all 2000 of its turns read as
+        unattributable and the census read as CENSUS_UNRANKED. Measured
+        against fc5de5c the same input gave 100% for this model; this is
+        the regression floor.
+        """
+        models_solo = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-06-01T00:00:00Z"),
+        ]}
+        counts_solo = {"claude-sonnet-4-9-20260101": {w: 500 for w in self.W[:4]},
+                       "claude-sonnet-4-9": {self.W[0]: 4}}
+
+        rungs = roster.tier_rungs(self._policy())
+        cleaned = roster._clean_counts(counts_solo, lambda _m: None)
+        aliases = roster.alias_map(["claude-sonnet-4-9-20260101"] + list(cleaned))
+        raw_total, ranked_total = roster._in_window_totals(
+            cleaned, set(self.W[:4]), rungs, aliases=aliases,
+            api_ids={"claude-sonnet-4-9-20260101"}, previous_arms=set())
+        self.assertEqual(raw_total, 2004)
+        self.assertEqual(ranked_total, 2004,
+                         "the dated id's own 2000 turns must count as "
+                         "ranked, attributable usage")
+
+        # A second, ordinary model in the mix (its own id published and
+        # attributed with no aliasing involved at all) is what turns the
+        # dated model's own combined 2004 turns into a measured SHARE
+        # rather than the trivial 100% of a one-model universe.
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-06-01T00:00:00Z"),
+            self._model("claude-haiku-4-9", "2026-06-01T00:00:00Z"),
+        ]}
+        counts = dict(counts_solo, **{"claude-haiku-4-9": {self.W[0]: 4}})
+        census = TestIssue67._census_doc(counts=counts)
+
+        result = self._compute(models=models, census=census, previous=None)
+        self.assertIn("claude-sonnet-4-9-20260101", self._arm_ids(result))
+        reason = self._reason(result, "claude-sonnet-4-9-20260101")
+        self.assertIn("99.8%", reason)
+        self.assertNotIn("no fresh census", reason.lower())
+
+    def test_mixed_dated_and_undated_ids_do_not_give_a_false_100_percent(self):
+        """(b) A mixed catalogue: one family published dated-only while its
+        census usage is recorded under the undated alias (the same shape as
+        (a)), alongside a second family whose census key matches its api id
+        exactly. Under the old code the first family's usage was excluded
+        (unattributable) while the second's was not, so the second family's
+        tiny usage read as ALL the rankable census."""
+        rungs = roster.tier_rungs(self._policy())
+        counts_raw = {"claude-sonnet-4-9": {self.W[0]: 100000},
+                      "claude-haiku-4-9-20251001": {self.W[0]: 5}}
+        cleaned = roster._clean_counts(counts_raw, lambda _m: None)
+        api_ids = {"claude-sonnet-4-9-20260101", "claude-haiku-4-9-20251001"}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-haiku-4-9-20251001", self.W[:1], rungs,
+            aliases, api_ids=api_ids, previous_arms=set())
+        self.assertLess(share, 1.0,
+                        "sonnet's 100000 turns under its undated alias must "
+                        "count toward the denominator; haiku's 5 turns must "
+                        "not read as the entire rankable census")
+
+    def test_a_heavily_used_dated_previous_arm_is_not_retired_at_zero_percent(self):
+        """(b), continued: end to end through compute_roster. A previous
+        arm published only under a dated id, whose census usage is
+        recorded under its undated alias, carries real usage and must not
+        be retired at a false 0.0% — nor should it lose its seat to a
+        newer same-tier model it is genuinely outperforming."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-01-01T00:00:00Z"),
+            self._model("claude-sonnet-4-10-20260201", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-9-20251001", "2025-10-01T00:00:00Z"),
+        ]}
+        counts = {"claude-sonnet-4-9": {self.W[0]: 100000},
+                  "claude-haiku-4-9-20251001": {self.W[0]: 5}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-9-20260101",
+                              "reason": "was an arm"}]}
+        result = self._compute(models=models, census=census, previous=previous)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertNotIn("claude-sonnet-4-9-20260101", retired,
+                         f"a model carrying ~100000 turns under its own "
+                         f"alias must not be retired: {retired}")
+
+    def test_proxy_alias_with_family_word_stays_unattributable(self):
+        """(c) Regression floor for round 3: a pure proxy/routing alias that
+        merely carries a family word — not a real catalogue id under any
+        spelling, and not a previous arm under any spelling — must still
+        read as zero ranked usage after the fix widens attribution. The fix
+        must not admit MORE than intended."""
+        rungs = roster.tier_rungs(self._policy())
+        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route"):
+            cleaned = roster._clean_counts(
+                {alias: {self.W[0]: 500}}, lambda _m: None)
+            api_ids = {"claude-opus-4-8"}
+            previous_arms = {"claude-opus-4-8"}
+            aliases = roster.alias_map(list(api_ids) + list(cleaned))
+            raw_total, ranked_total = roster._in_window_totals(
+                cleaned, set(self.W[:1]), rungs, aliases=aliases,
+                api_ids=api_ids, previous_arms=previous_arms)
+            self.assertEqual(ranked_total, 0, alias)
+
+
 if __name__ == "__main__":
     unittest.main()

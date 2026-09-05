@@ -165,15 +165,30 @@ def alias_map(ids) -> dict[str, str]:
 
 
 def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
+                     api_ids_folded: set[str] | None,
                      previous_arms: set[str]) -> bool:
     """Whether a census key names something the catalogue (or a previous
     roster) can actually credit: an id currently in the Models API catalogue
-    (`folded` — alias-folded, so a dated snapshot's usage still counts under
-    its alias), or a previous roster's arm. `api_ids=None` means "no
-    catalogue context was given" — every caller inside compute_roster always
-    gives one; the handful of tests that call usage_share()/
+    — checked BOTH unfolded (`candidate`, verbatim) and folded (`folded`,
+    so a dated snapshot's usage still counts under its alias) — or a
+    previous roster's arm, checked the same two ways. `api_ids=None` means
+    "no catalogue context was given" — every caller inside compute_roster
+    always gives one; the handful of tests that call usage_share()/
     _in_window_totals() directly, on already-real ids, with no context at
     all, get the old unfiltered behavior instead of an empty catalogue.
+
+    `folded in api_ids` alone is not enough: it only credits a candidate
+    whose ALIAS is itself a bare catalogue id. A catalogue that publishes
+    ONLY a dated snapshot (roster-policy.yml's own documented shape) has no
+    such bare id — `folded` (the snapshot's undated alias) is not in
+    `api_ids` even though the snapshot itself (`candidate`, unfolded) is.
+    That dropped every one of the snapshot's own turns as "unattributable"
+    whenever the census also recorded even one turn under the bare alias
+    (which is what makes `alias_map` fold it at all) — measured: 2000 turns
+    under a verbatim catalogue id read as CENSUS_UNRANKED. `folded in
+    api_ids_folded` (`api_ids` run through the SAME alias map) closes the
+    same gap from the other side: a candidate recorded under the bare alias
+    now matches the api id's own folded spelling too.
 
     Being ranked (a recognised family word in the id) is necessary but NOT
     sufficient: a proxy or routing alias can paste extra segments onto a
@@ -186,11 +201,17 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     "usable" evidence to retire a real previous arm at 0.0%. Closing that
     (see `_in_window_totals`) for a proxy alias is the same fix `other`
     already had for a value with no family word at all — a second route to
-    the identical failure.
+    the identical failure. Widening attribution to both spellings of the
+    catalogue id (above) must not widen it to a proxy alias too: neither of
+    TestIssue67Review3's worked proxy-alias examples folds to, or ever
+    equals, an api id or a previous arm under either spelling —
+    TestIssue67Review4 carries the regression floor for that.
     """
     if api_ids is None:
         return True
-    return folded in api_ids or candidate in previous_arms or folded in previous_arms
+    return (candidate in api_ids or folded in api_ids
+           or folded in (api_ids_folded or ())
+           or candidate in previous_arms or folded in previous_arms)
 
 
 def usage_share(counts: dict, model_id: str, weeks: list[str],
@@ -218,6 +239,8 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
     """
     aliases = aliases or {}
     api_ids_set = None if api_ids is None else set(api_ids)
+    api_ids_folded = (None if api_ids_set is None
+                      else {aliases.get(i, i) for i in api_ids_set})
     previous_arms_set = set(previous_arms) if previous_arms else set()
     wanted = set(weeks)
     target = aliases.get(model_id, model_id)
@@ -227,7 +250,8 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
         if rung_of(candidate, rungs) is None:
             continue
         folded = aliases.get(candidate, candidate)
-        if not _is_attributable(candidate, folded, api_ids_set, previous_arms_set):
+        if not _is_attributable(candidate, folded, api_ids_set, api_ids_folded,
+                                previous_arms_set):
             continue
         for week, n in (by_week or {}).items():
             if week in wanted:
@@ -412,6 +436,8 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
     """
     aliases = aliases or {}
     api_ids_set = None if api_ids is None else set(api_ids)
+    api_ids_folded = (None if api_ids_set is None
+                      else {aliases.get(i, i) for i in api_ids_set})
     previous_arms_set = set(previous_arms) if previous_arms else set()
     raw_total = 0
     ranked_total = 0
@@ -419,7 +445,8 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
         ranked = rung_of(candidate, rungs) is not None
         if ranked:
             folded = aliases.get(candidate, candidate)
-            ranked = _is_attributable(candidate, folded, api_ids_set, previous_arms_set)
+            ranked = _is_attributable(candidate, folded, api_ids_set,
+                                      api_ids_folded, previous_arms_set)
         for week, n in (by_week or {}).items():
             if week in weeks:
                 raw_total += n
