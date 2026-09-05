@@ -252,10 +252,18 @@ for every fixture, not folklore in one file's comments:
 - **Hermetic, always** — no network, no wall-clock; canned payloads and fake
   binaries.
   A fixture puts a fake binary in front of the real one with an `env:`
-  block (`PATH: "$WORKSPACE/bin:$PATH"`; `$WORKSPACE` expands to the arm's
-  temp workspace), and reads what the agent did off the log the fake writes
-  — `file_matches` over the log, `transcript_matches` over the final reply.
-  `windows-elevation-from-wsl` is the first fixture in that shape.
+  block (`PATH: "$WORKSPACE/bin:$PATH"` — `${WORKSPACE}` reads the same;
+  `$WORKSPACE` expands to the arm's temp workspace), and reads what the
+  agent did off the log the fake writes — `file_matches` over the log,
+  `transcript_matches` over the final reply.
+  `windows-elevation-from-wsl` is the first fixture in that shape;
+  `cms-stuck-pr-triage` is the second, and its `gh` is shared from
+  `harness/fakes/`.
+- **A check whose evidence is a log says so** (`require_present: true` on
+  `file_matches`). A `must_not_match` over a file that does not exist
+  PASSES, so "the agent attempted no write" is otherwise indistinguishable
+  from "the agent never ran the tool", and deleting the log becomes a way
+  to score restraint.
 
 ### Coverage accrues by process, not by project
 
