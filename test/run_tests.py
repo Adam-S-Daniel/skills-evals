@@ -4580,6 +4580,142 @@ class TestIssue81(unittest.TestCase):
                          if p.is_file()}
         return proc, artifacts
 
+    @staticmethod
+    def _planted_fixture(root: Path, **fields) -> Path:
+        """A minimal eval dir on disk, for the runner's own error paths."""
+        import yaml
+        eval_dir = Path(root) / "eval"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "placeholder.txt").write_text("x\n",
+                                                          encoding="utf-8")
+        fixture = {"skill": "adam-writing-style", "prompt": "do the thing",
+                   "judge_rubric": "rank them"}
+        fixture.update(fields)
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture),
+                                               encoding="utf-8")
+        return eval_dir
+
+    def _run_eval_on(self, eval_dir: Path, *args, results_dir=None,
+                     mode="agent_and_judge"):
+        """run_eval.py against an arbitrary eval dir; (proc, artifacts)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            results = Path(results_dir) if results_dir else Path(tmp)
+            proc = subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                 str(eval_dir), "--results-dir", str(results),
+                 "--timeout", "30", *args],
+                capture_output=True, text=True, cwd=str(REPO_ROOT),
+                env={**os.environ, "CLAUDE_BIN": str(FAKE_CLAUDE),
+                     "FAKE_CLAUDE_MODE": mode})
+            artifacts = {p.relative_to(results).as_posix():
+                         p.read_text(encoding="utf-8")
+                         for p in sorted(results.rglob("*"))
+                         if p.is_file()} if results.exists() else {}
+        return proc, artifacts
+
+    def test_a_bad_skill_name_is_rejected_before_the_judge_mode_guard(self):
+        # S2: the judge-mode refusal writes report.md and one summary.json
+        # per arm, and both paths are built out of fixture["skill"] — so a
+        # fixture carrying BOTH `skill: ../../ESCAPED` and a judge mode
+        # this runner refuses wrote its report two directories above
+        # --results-dir. _validate_skill_name ran afterwards, and never for
+        # objective-only at all. It runs first now.
+        with tempfile.TemporaryDirectory() as tmp:
+            outer = Path(tmp)
+            eval_dir = self._planted_fixture(
+                outer, skill="../../ESCAPED",
+                judge={"mode": "pairwise",
+                       "references": [{"name": "a", "path": "r.md"}]})
+            results_dir = outer / "a" / "b" / "results"
+            proc, _ = self._run_eval_on(eval_dir, "--arm", "without_skill",
+                                        results_dir=results_dir)
+            self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+            self.assertIn("skill", (proc.stdout + proc.stderr).lower())
+            self.assertNotIn("judge_mode_unsupported", proc.stdout)
+            self.assertFalse(results_dir.exists(), proc.stdout)
+            self.assertFalse((outer / "a" / "ESCAPED").exists())
+            self.assertEqual(sorted(p.name for p in outer.iterdir()), ["eval"])
+
+    # `judge:` written as something other than a mapping. YAML hands any of
+    # these over happily, and `(fixture.get("judge") or {}).get("mode")`
+    # raised an uncaught AttributeError on every one: exit 1, a traceback,
+    # and no report.md or summary.json at all.
+    MALFORMED_JUDGE_BLOCKS = {
+        "list": ["mode: pairwise"],
+        "string": "pairwise",
+        "number": 3,
+        "bool": True,
+    }
+
+    def test_a_judge_block_that_is_not_a_mapping_is_a_named_error(self):
+        for label, block in sorted(self.MALFORMED_JUDGE_BLOCKS.items()):
+            with self.subTest(shape=label):
+                with tempfile.TemporaryDirectory() as tmp:
+                    eval_dir = self._planted_fixture(Path(tmp), judge=block)
+                    proc, artifacts = self._run_eval_on(
+                        eval_dir, "--arm", "without_skill")
+                self.assertEqual(proc.returncode, 2,
+                                 proc.stdout + proc.stderr)
+                self.assertNotIn("Traceback", proc.stderr)
+                self.assertIn("invalid_judge_block", proc.stdout)
+                self.assertIn(type(block).__name__, proc.stdout)
+                summaries = [text for name, text in artifacts.items()
+                             if name.endswith("summary.json")]
+                reports = [text for name, text in artifacts.items()
+                           if name.endswith("report.md")]
+                self.assertTrue(summaries, artifacts.keys())
+                self.assertIn("invalid_judge_block", reports[0])
+                self.assertEqual(json.loads(summaries[0])["error"]["type"],
+                                 "invalid_judge_block")
+
+    def test_the_refused_report_keeps_the_actionable_half_of_the_detail(self):
+        # N1: _render_report truncates the error cell to 200 characters, and
+        # the detail opened with three sentences of provenance — so the
+        # report a reader actually sees lost the issue number, its URL and
+        # the flag that makes the run work. The actionable half comes first.
+        proc, artifacts = self._run_eval("--arm", "without_skill")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        report = next(text for name, text in artifacts.items()
+                      if name.endswith("report.md"))
+        row = next(line for line in report.splitlines()
+                   if "judge_mode_unsupported" in line)
+        for needed in ("--no-judge", "#97", self.ISSUE_97):
+            with self.subTest(needed=needed):
+                self.assertIn(needed, row)
+
+    def test_a_judge_mode_spelled_with_a_capital_is_still_that_mode(self):
+        # N4: `judge.mode: Absolute` was refused with "cannot drive yet",
+        # which is not what is wrong with it — the runner drives absolute.
+        # Both sides casefold, so the refusal is about the instrument
+        # rather than about the shift key.
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._planted_fixture(Path(tmp), judge={"mode": "Absolute"})
+            proc, _ = self._run_eval_on(eval_dir, "--arm", "without_skill")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotIn("judge_mode_unsupported", proc.stdout)
+        # And judge.score() reads it the same way, so the two cannot
+        # disagree about which instrument a fixture asked for.
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge"}):
+            scored = judge.score("rubric", "transcript", "", mode=" Absolute ",
+                                 timeout=30)
+        self.assertIn("dimensions", scored)
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+            ranked = judge.score("rubric", self.CANDIDATE, "", mode="PAIRWISE",
+                                 references=self.REFERENCES, timeout=30)
+        self.assertEqual(ranked["mode"], "pairwise")
+        # And score_fixture, which is where the decision to LOAD a
+        # fixture's references is made.
+        fixture = self._fixture("recruiter-reply")
+        fixture["judge"] = dict(fixture["judge"], mode="Pairwise")
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
+                                          "FAKE_CLAUDE_MODE": "judge_pairwise"}):
+            through_fixture = judge.score_fixture(
+                self.STYLE_DIR / "recruiter-reply", fixture, self.CANDIDATE)
+        self.assertEqual(through_fixture["mode"], "pairwise")
+        self.assertEqual(through_fixture["n_candidates"], 3)
+
     def test_a_pairwise_fixture_with_the_judge_on_exits_2(self):
         # It used to run both arms and score them with the ABSOLUTE judge
         # against a ranking rubric: exit 0, "Judge overall | 7.5", and

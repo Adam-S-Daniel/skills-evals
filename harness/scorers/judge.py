@@ -209,8 +209,15 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
 
     An unrecognised mode raises ValueError instead of falling back to
     absolute — a fixture typo must not produce a plausible number from the
-    wrong instrument.
+    wrong instrument. A mode is matched casefolded and trimmed, so
+    `Absolute` and ` pairwise ` are the modes they plainly name; only a
+    different WORD is a typo.
     """
+    # Casefolded and trimmed, the same way `run_eval.main` reads it off a
+    # fixture, so `mode: Absolute` is absolute in both places rather than
+    # unknown in one of them.
+    if isinstance(mode, str):
+        mode = mode.strip().casefold()
     if mode == "pairwise":
         if weights:
             raise ValueError(
@@ -759,6 +766,12 @@ def score_fixture(eval_dir, fixture: dict, transcript: str,
     """
     judge_cfg = fixture.get("judge") or {}
     mode = judge_cfg.get("mode", "absolute")
+    # Casefolded here as well as in `score()`: this is where the decision to
+    # LOAD references is made, and `mode: Pairwise` reaching score() with
+    # references=None would fail as "needs at least one reference" rather
+    # than as the mode it plainly named.
+    if isinstance(mode, str):
+        mode = mode.strip().casefold()
     references = (load_references(eval_dir, judge_cfg)
                   if mode == "pairwise" else None)
     return score(fixture["judge_rubric"], transcript or "", workspace_diff,

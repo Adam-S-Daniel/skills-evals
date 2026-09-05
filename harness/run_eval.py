@@ -695,6 +695,38 @@ def main() -> int:
               ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
         return 2
 
+    # Validated HERE, before anything derives a path from it. It used to
+    # run after the judge-mode guard below, and only for a non-objective-only
+    # arm — so a fixture carrying both `skill: ../../ESCAPED` and a judge
+    # mode this runner refuses had `_write_pre_run_error` build
+    # `<results-dir>/../../ESCAPED/<timestamp>/report.md` and write it,
+    # two directories above where the operator pointed the run. Every path
+    # this function builds comes off this name, so the check comes first
+    # and applies to every arm.
+    try:
+        _validate_skill_name(fixture["skill"])
+    except ValueError as exc:
+        print(f"invalid fixture: {exc}")
+        return 2
+
+    # `judge:` written as anything but a mapping — a list, a string, a
+    # number, a bare `true`; YAML hands over all of them — used to reach
+    # `.get("mode")` and raise an uncaught AttributeError: exit 1, a
+    # traceback, and none of the artifacts a fixture-level refusal is
+    # supposed to leave. Named and recorded like every other pre-run
+    # refusal, and for every arm: a malformed block is malformed whether or
+    # not this run would have reached the judge.
+    judge_cfg = fixture.get("judge")
+    if judge_cfg is None or judge_cfg == "":
+        judge_cfg = {}
+    if not isinstance(judge_cfg, dict):
+        detail = (f"fixture's `judge:` block is a {type(judge_cfg).__name__}, "
+                  "not a mapping: it must carry keys like `mode:`, `model:` "
+                  "and `references:`, or be left out entirely")
+        print(f"invalid_judge_block: {detail}")
+        _write_pre_run_error(args, fixture, "invalid_judge_block", detail)
+        return 2
+
     # A fixture whose `judge:` block asks for an instrument this runner
     # cannot drive is refused before any arm starts, rather than scored with
     # the wrong one. `_run_arm` still calls `judge.score()` with the three
@@ -706,20 +738,30 @@ def main() -> int:
     # #97 (https://github.com/Adam-S-Daniel/skills-evals/issues/97); until
     # then the run either passes --no-judge or does not happen.
     #
+    # The mode is casefolded, exactly as `judge.score()` casefolds it, so
+    # `mode: Absolute` is absolute rather than "a mode this runner cannot
+    # drive yet" — which said nothing true about a spelling of the mode the
+    # runner does drive.
+    #
     # objective-only is exempt because it runs no judge at all: these
     # fixtures are meant to exit 1 there with "no transcript", which is the
     # documented asymmetry rather than a runner error.
-    judge_mode = (fixture.get("judge") or {}).get("mode", "absolute")
+    judge_mode = judge_cfg.get("mode", "absolute")
+    normalised_mode = (judge_mode.strip().casefold()
+                       if isinstance(judge_mode, str) else judge_mode)
     if (args.arm != "objective-only" and not args.no_judge
-            and judge_mode not in (None, "", "absolute")):
-        detail = (f"fixture asks for judge mode {judge_mode!r}, which "
-                  "run_eval.py cannot drive yet: it still calls "
-                  "judge.score() with the arguments it knew before #81, so "
-                  "scoring this fixture here would rank it with the "
-                  "absolute judge. Wiring the call site onto "
-                  "judge.score_fixture() is #97 "
-                  "(https://github.com/Adam-S-Daniel/skills-evals/issues/97)."
-                  " Re-run with --no-judge and read the objective column.")
+            and normalised_mode not in (None, "", "absolute")):
+        # Front-loaded: `_render_report` truncates this cell to 200
+        # characters, and the three sentences of provenance that used to
+        # open it pushed the issue, its URL and the flag that makes the run
+        # work off the end of the report a reader actually sees.
+        detail = (f"cannot drive judge mode {judge_mode!r} yet: re-run with "
+                  "--no-judge and read the objective column. #97 "
+                  "https://github.com/Adam-S-Daniel/skills-evals/issues/97 "
+                  "wires the call site onto judge.score_fixture(); until "
+                  "then _run_arm still calls judge.score() with the "
+                  "arguments it knew before #81, so scoring this fixture "
+                  "here would rank it with the absolute judge.")
         print(f"judge_mode_unsupported: {detail}")
         _write_pre_run_error(args, fixture, "judge_mode_unsupported", detail)
         return 2
@@ -736,13 +778,6 @@ def main() -> int:
     except ValueError as exc:
         print(f"registry configuration error: {exc}")
         return 2
-
-    if args.arm != "objective-only":
-        try:
-            _validate_skill_name(fixture["skill"])
-        except ValueError as exc:
-            print(f"invalid fixture: {exc}")
-            return 2
 
     if args.arm == "objective-only":
         if args.workspace:
