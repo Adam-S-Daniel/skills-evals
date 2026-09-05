@@ -101,6 +101,13 @@ generic. They are **written text, not generated**, and Adam should read them
 as prose before this lands — they are the yardstick every future run of this
 eval is measured against.
 
+All six contract (`I'm`, `isn't`, `he's`), because the skill's own register
+does and this fixture's hedge regex accepts `I'm guessing`. The first drafts
+of them did not — nought apostrophes across all six — which cost twice: a
+model's reply with a single contraction was separable from every reference
+on every trial, and the register the judge ranked against was a
+de-contracted version of the voice under test.
+
 They deliberately live beside `fixture.yaml` rather than inside `seed/`:
 `seed/` is copied into the agent's workspace, so a reference in there would
 hand the agent the answer and flatten both arms.

@@ -4141,6 +4141,42 @@ class TestIssue81(unittest.TestCase):
             judge.blind_order(twinned, self.REFERENCES, 0)
         self.assertIn("identical", str(ctx.exception))
 
+    # ------------------------------------------------------------------
+    # the references' register: the skill's voice contracts
+    # ------------------------------------------------------------------
+
+    # A contraction, not a possessive: "the agency's site" carries an
+    # apostrophe too, and what is being measured here is the register, not
+    # the character.
+    CONTRACTION_RE = re.compile(
+        r"(?i)\b(?:I|you|we|they|he|she|it|that|there|here|what|who|let|"
+        r"don|doesn|didn|isn|aren|wasn|weren|can|won|wouldn|couldn|shouldn|"
+        r"hasn|haven|hadn)['’](?:m|s|t|re|ve|ll|d)\b")
+
+    def test_every_reference_is_written_in_a_voice_that_contracts(self):
+        # All six references were contraction-free — nought apostrophes
+        # between them — while SKILL.md's register contracts throughout and
+        # this fixture's own hedge regex accepts "I'm guessing". Two costs:
+        # a draft with one apostrophe was separable from every reference on
+        # every trial, and the yardstick the judge ranks against was a
+        # de-contracted version of the voice under test.
+        for name in self.FIXTURES:
+            for which in ("in-voice", "generic"):
+                with self.subTest(fixture=name, reference=which):
+                    self.assertRegex(self._reference(name, which),
+                                     self.CONTRACTION_RE)
+
+    def test_the_skill_being_measured_contracts_too(self):
+        # Why the test above is the right shape, read from the registry
+        # rather than asserted here.
+        skill_md = self._skill_md()
+        if skill_md is None:
+            reason = ("no adam-writing-style SKILL.md in the resolved "
+                      "agentskills checkout — skipping the register check")
+            print(reason)
+            self.skipTest(reason)
+        self.assertRegex(skill_md, self.CONTRACTION_RE)
+
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it
         # back into the judge's own voice. There is no way to render that
