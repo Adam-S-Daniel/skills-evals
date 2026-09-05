@@ -86,10 +86,27 @@
 #
 # * All five checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
-#   running, no GitHub write credential exists anywhere on the runner — the
-#   only credential in reach is the short-lived WIF-derived access token
-#   (and the single-use OIDC token file) scoped to the spend-capped
-#   workspace — no long-lived secret exists on the runner.
+#   running, no GitHub write credential exists anywhere on the runner and no
+#   long-lived secret exists on the runner. What IS in reach differs by
+#   subject, because the two arms are built differently:
+#
+#     - a SKILL arm's agent inherits the runner's whole ambient environment
+#       (harness/run_eval.py's `agent_env` is `dict(os.environ)`), so besides
+#       the short-lived WIF-derived Anthropic access token and the single-use
+#       OIDC token file it also has ACTIONS_ID_TOKEN_REQUEST_TOKEN and
+#       ACTIONS_ID_TOKEN_REQUEST_URL — which mint a GitHub OIDC assertion for
+#       any audience while `id-token: write` is granted — and
+#       ACTIONS_RUNTIME_TOKEN, which writes this run's artifacts and cache.
+#       None of them writes to the repository.
+#     - a GUIDANCE arm's agent gets an ALLOWLIST built from nothing
+#       (harness/guidance.py's `agent_env`): PATH, LANG, LC_ALL, SHELL, USER,
+#       NODE_PATH, plus the HOME, TMPDIR and CLAUDE_CONFIG_DIR the harness
+#       sets and every ANTHROPIC_* variable. The two GitHub tokens above are
+#       NOT in that set.
+#
+#   Re-pointing the skill arm at the allowlist is a separate change with its
+#   own byte-for-byte fixture comparison, not something this workflow's header
+#   can assert.
 #
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run

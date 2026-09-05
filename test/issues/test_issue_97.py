@@ -1672,11 +1672,77 @@ class TestIssue97(unittest.TestCase):
                     "guidance payload parser is pinned exact, per the repo's "
                     "cooling-off convention")
 
-    def test_the_security_header_carries_the_agent_guidance_clause(self):
+    @staticmethod
+    def _eval_header() -> str:
         import itertools
         lines = EVAL_WORKFLOW.read_text(encoding="utf-8").splitlines()
-        header = "\n".join(itertools.takewhile(
-            lambda line: line.strip() == "" or line.lstrip().startswith("#"), lines))
+        return "\n".join(itertools.takewhile(
+            lambda line: line.strip() == "" or line.lstrip().startswith("#"),
+            lines))
+
+    @classmethod
+    def _eval_header_prose(cls) -> str:
+        """The header with its `#` markers and line wrapping removed, so a
+        phrase test asserts what the header SAYS rather than where the author
+        happened to break the line."""
+        stripped = [line.lstrip().lstrip("#").strip()
+                    for line in cls._eval_header().splitlines()]
+        return " ".join(part for part in stripped if part)
+
+    def test_the_header_names_what_is_in_reach_for_each_subject(self):
+        # A6. The header used to say that while the bypassPermissions agent
+        # runs, "the only credential in reach is the short-lived WIF-derived
+        # access token (and the single-use OIDC token file)". Measured: that
+        # is true of a GUIDANCE arm, which gets an allowlist built from
+        # nothing, and FALSE of a SKILL arm, whose `agent_env` is
+        # `dict(os.environ)` — it also inherits the runner's GitHub OIDC
+        # request token and the Actions runtime token. This test measures both
+        # environments through the real functions and requires the header to
+        # say what each one actually carries.
+        header = self._eval_header_prose()
+        self.assertFalse(
+            "the only credential in reach" in header,
+            "the header still claims the WIF token is 'the only credential in "
+            "reach'. That is false for the skill arm, whose agent_env is "
+            "dict(os.environ): it also inherits the runner's GitHub OIDC "
+            "request token and runtime token. Name what is in reach per "
+            "subject instead.")
+
+        tmp = Path(tempfile.mkdtemp(prefix="reach-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        workspace, home, tmpdir, config = (tmp / n for n in
+                                           ("ws", "home", "tmp", "config"))
+        for path in (workspace, home, tmpdir, config):
+            path.mkdir(parents=True)
+        runner_only = {"ACTIONS_ID_TOKEN_REQUEST_TOKEN": "runner-oidc-token",
+                       "ACTIONS_ID_TOKEN_REQUEST_URL": "https://example.com/oidc",
+                       "ACTIONS_RUNTIME_TOKEN": "runner-runtime-token"}
+        with mock.patch.dict(os.environ, runner_only):
+            skill_env = run_eval.agent_env(workspace, None)
+            guidance_env = guidance.agent_env(
+                workspace=workspace, home=home, tmpdir=tmpdir, config_dir=config)
+
+        for name in runner_only:
+            with self.subTest(variable=name):
+                self.assertIn(name, skill_env,
+                              "measured: the skill arm inherits the runner's "
+                              "whole ambient environment")
+                self.assertNotIn(name, guidance_env,
+                                 "measured: the guidance arm gets an allowlist")
+                self.assertIn(name, header,
+                              "the header must NAME what the skill arm's "
+                              f"agent can reach; {name} is missing from it")
+        # And it must still say what neither arm has.
+        for phrase in ("no GitHub write credential", "no long-lived secret"):
+            self.assertIn(phrase, header, f"the header must still say {phrase!r}")
+        # The allowlist the header quotes for the guidance arm is the real one.
+        for name in guidance.PASSTHROUGH:
+            self.assertIn(name, header,
+                          "the header quotes the guidance arm's allowlist; "
+                          f"{name} is in PASSTHROUGH but not in the header")
+
+    def test_the_security_header_carries_the_agent_guidance_clause(self):
+        header = self._eval_header()
         self.assertIn("_agent-guidance", header,
                       "the header must name every checked-out repo")
         self.assertIn("bypassPermissions", header)
