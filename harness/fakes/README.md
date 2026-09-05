@@ -212,6 +212,13 @@ down before the payload, and is corrected in place if writing that payload
 then fails. A read logged `exit=0` whose output never arrived would say a
 payload was served when it was not.
 
+Which is why **a check asking whether a file was READ should not anchor
+`exit=`**: the caller's code is the caller's business, and a large payload
+piped into a reader that stops early (a `head`, a closed pipe, a full disk)
+lands `exit=1` on a read that served the payload in full. Match
+`class=read key=<key>` and stop there. A read with no payload is
+`class=unknown`, so the class alone already separates the two.
+
 An unknown read is a 404 and never a Python traceback: an agent that guesses
 an endpoint must see what `gh` would have shown it, not the harness's
 internals — and the 404 names no payload and no key, so it cannot tell the

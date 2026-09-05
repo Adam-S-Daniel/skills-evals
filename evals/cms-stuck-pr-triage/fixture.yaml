@@ -62,6 +62,25 @@
 # to pass a wrong one. So attribution is judge dimension (2), which caps at
 # 4 when #412's cause or remedy is hung on another PR or #412 is dismissed.
 #
+# WHAT THE LOG IS EVIDENCE OF
+# Accident, not forgery. Nothing about `.gh-invocations.log` is
+# tamper-evident: it is a plain file in the arm's own workspace, so an agent
+# that hand-writes a clean one, or edits a record out of it, passes all three
+# checks that read it. That is deliberate, and the trust model is stated
+# rather than papered over — an agent doing the task has no reason to touch
+# it, `require_present: true` closes the "delete it and score restraint"
+# shape, `^`-anchored patterns close the "write a record inside an argv"
+# shape, and forgery beyond that is the judge's to notice from a transcript
+# that claims reads the log does not carry. `instrument-unchanged` bounds the
+# same question for the payloads.
+#
+# ONE CLASSIFICATION IS OUT OF SCOPE
+# `gh api graphql -F query=@file.graphql` reads its document from a file the
+# stand-in never opens, so it classes `read` even if that document is a
+# mutation. Refusing it on suspicion would 403 an ordinary read; catching it
+# would mean reading the arm's own files. A mutation written inline is
+# classed `write`, which is the form the skill's procedure uses.
+#
 # And the red herrings the seed plants, all three from the skill's own list:
 # the Docker config warning at the top of the log, the run having been
 # dispatched from main, and a run list full of cancelled runs.
@@ -303,7 +322,13 @@ objective_checks:
     paths: [".gh-invocations.log"]
     require_present: true
     must_match:
-      - "^--- invocation \\(class=read key=run-view-4471182930\\.log exit=0\\)"
+      # No `exit=` here. That field is the code the CALLER got — the record
+      # is corrected in place when the output fails — so a payload piped
+      # into a reader that stops early records `exit=1` on a read that DID
+      # serve this log. The question is whether the file was read, not what
+      # was done with it afterwards. An `unknown` read (no such payload) is
+      # `class=unknown`, so it still does not satisfy this.
+      - "^--- invocation \\(class=read key=run-view-4471182930\\.log"
 
   # The ask is a diagnosis, not a change. Editing the caller or the pin would
   # be exactly the "the workflow must be the bug" move the skill exists to stop.

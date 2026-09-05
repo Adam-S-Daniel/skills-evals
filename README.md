@@ -46,8 +46,9 @@ evals/
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
   cms-stuck-pr-triage/     # A/B eval, Class B: diagnose a stuck publish loop
     fixture.yaml           # prompt, env (PATH + replay dir), checks, rubric
-    seed/                  # the site checkout: bin/gh -> ../../../../harness/
-                           # fakes/gh, with .gh/replay/ holding its responses
+    seed/                  # the site checkout: bin/gh is a symlink to
+                           # harness/fakes/gh, and .gh/replay/ holds its
+                           # recorded responses
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces

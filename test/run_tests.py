@@ -5082,14 +5082,21 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
         that claim to say where things live said the fixture set was three
         directories smaller than it is.
         """
+        import re
         readme = self._layout_block(REPO_ROOT / "README.md")
-        for entry in ("fakes/", "gh", "cms-stuck-pr-triage/"):
+        # Whole path strings: `assertIn("gh", ...)` was two letters, and
+        # "gh" is a substring of "github", which every layout block carries.
+        for entry in ("harness/fakes/gh", "cms-stuck-pr-triage/"):
             with self.subTest(readme=entry):
                 self.assertIn(entry, readme)
         design = self._layout_block(REPO_ROOT / "DESIGN.md")
-        for entry in ("fakes/", "gh"):
-            with self.subTest(design=entry):
-                self.assertIn(entry, design)
+        self.assertIn("fakes/", design)
+        # DESIGN.md draws a tree rather than paths, so the entry is asserted
+        # as an entry: a line whose own name is `gh`, not the letters
+        # anywhere in the block.
+        entries = [line.strip() for line in design.splitlines()]
+        self.assertTrue(any(re.match(r"^gh(\s|$)", entry) for entry in entries),
+                        "DESIGN.md's layout names no `gh` entry")
 
     def test_every_eval_directory_is_named_in_the_readmes_layout(self):
         """…and it stays that way when the next fixture lands."""
@@ -5614,6 +5621,63 @@ class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
                 by_id = self._score(act, transcript=self.CORRECT)
                 self.assertFalse(by_id["pr-c-left-alone"]["passed"],
                                  by_id["pr-c-left-alone"]["detail"])
+
+    # ------------------------------ reading is not exiting (N5), and the docs
+
+    def _gh_to_a_full_disk(self, ws: Path, *args: str):
+        """One invocation whose stdout cannot be written."""
+        env = dict(os.environ)
+        env["GH_REPLAY_DIR"] = str(ws / self.PAYLOAD_DIR)
+        with open("/dev/full", "w", encoding="utf-8") as sink:
+            return subprocess.run([str(ws / "bin" / "gh"), *args], cwd=str(ws),
+                                  stdout=sink, stderr=subprocess.PIPE, env=env)
+
+    def test_the_loop_log_check_does_not_anchor_the_callers_exit_code(self):
+        """`exit=` is the code the CALLER got, and reading is not exiting.
+
+        The record is corrected in place when the output fails, which is what
+        makes `exit=` honest — and it means a payload piped into a reader
+        that stops early (a `head`, a closed pipe, a full disk) records
+        `exit=1` on a read that DID serve the loop's log. The check asks
+        whether the file was read, so it must not also ask what the caller
+        did with it afterwards.
+        """
+        def act(ws):
+            self._gh(ws, "pr", "list", "--state", "open")
+            proc = self._gh_to_a_full_disk(ws, "run", "view", self.RUN_ID, "--log")
+            self.assertNotEqual(proc.returncode, 0, "stdout did not fail")
+        by_id = self._score(act, transcript=self.CORRECT)
+        self.assertTrue(by_id["loop-log-was-read"]["passed"],
+                        by_id["loop-log-was-read"]["detail"])
+
+    def test_the_loop_log_check_still_names_the_loops_own_run(self):
+        """Dropping `exit=` must not loosen anything else."""
+        def other_run(ws):
+            self._gh(ws, "pr", "list", "--state", "open")
+            self._gh(ws, "run", "view", "4468900033", "--log")
+        self.assertFalse(self._score(other_run, transcript=self.CORRECT)
+                         ["loop-log-was-read"]["passed"])
+        # …and an unknown read of the loop's own id is not a read of it.
+        def not_found(ws):
+            self._gh(ws, "pr", "list", "--state", "open")
+            (ws / self.PAYLOAD_DIR / f"run-view-{self.RUN_ID}.log").unlink()
+            self._gh(ws, "run", "view", self.RUN_ID, "--log")
+        self.assertFalse(self._score(not_found, transcript=self.CORRECT)
+                         ["loop-log-was-read"]["passed"])
+
+    def test_the_readme_says_a_log_check_should_not_anchor_the_exit_code(self):
+        readme = self.FAKES_README.read_text(encoding="utf-8")
+        self.assertIn("should not anchor", readme)
+
+    def test_the_header_scopes_out_the_graphql_file_form(self):
+        header = self._header().lower()
+        self.assertIn("@file", header)
+        self.assertIn("graphql", header)
+
+    def test_the_header_states_the_logs_trust_model(self):
+        header = self._header().lower()
+        self.assertIn("tamper", header)
+        self.assertIn("forgery", header)
 
 if __name__ == "__main__":
     unittest.main()
