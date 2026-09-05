@@ -1166,8 +1166,14 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # this re-parse cannot fail here.
     census_at_parsed = (parse_ts((census_doc or {}).get("generated_at"))
                         if census_code in CENSUS_PUBLISHED_CODES else None)
-    census_at_published = (census_at_parsed.strftime("%Y-%m-%dT%H:%M:%SZ")
-                           if census_at_parsed else None)
+    # `.astimezone(timezone.utc)` FIRST (N2, #129 review round 7):
+    # `parse_ts` keeps whatever offset the census carried, and
+    # `strftime("...Z")` on an offset-aware timestamp stamps a `Z` on the
+    # LOCAL wall clock — a `+05:00` census published five hours early and
+    # looking perfectly canonical, which is worse than looking wrong.
+    census_at_published = (
+        census_at_parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        if census_at_parsed else None)
 
     newest_by_rung: dict[int, str] = {}
     for model in available:  # sorted weakest-first, oldest-first within a rung
