@@ -13925,9 +13925,10 @@ class TestIssue67Review7(unittest.TestCase):
         # "carries 100.0% of rankable census usage ..." — red.
 
     def test_the_policy_describes_the_cap_the_code_implements(self):
-        """Updated for F1 (round 8): the cap orders by census relevance
-        FIRST, then by `last_seen`, then by id — the previous roster
-        writes the last two, so neither can be the thing that decides."""
+        """Updated for B1\' (#129 review round 10): the cap orders by
+        relevance in three tiers, then by the census's own in-window turn
+        count descending, then by the id. `last_seen` is out of the order
+        entirely, because the previous roster is what writes it."""
         text = self.POLICY.read_text(encoding="utf-8")
         self.assertNotIn("oldest-by-id-sorted-out", text,
                          "the cap evicts by `last_seen`, not by id order")
@@ -16413,6 +16414,74 @@ class TestIssue67Review10(unittest.TestCase):
         # Mutation check (manual): raising the ceiling past a million lets
         # the same input publish a roster GitHub will refuse to push, and
         # `test_past_the_ceiling_the_run_refuses_to_publish` goes red.
+
+    # --- F-1: the invariant sentence is PINNED, in both files ------------
+    #
+    # It was written in `evals/roster-policy.yml` and over the
+    # `catalogue_seen` cap, and nothing asserted either: deleting one copy,
+    # or both, left the whole suite green. Prose that no test reads is
+    # prose that drifts from the code the next time the code moves — which
+    # is how the policy came to describe a `last_seen` order the code had
+    # already stopped implementing.
+
+    #: The invariant, VERBATIM as it appears in all five places, in the
+    #: normalised form below (a YAML comment, a Python comment and three
+    #: docstrings wrap it differently; none of them may say anything
+    #: different).
+    INVARIANT = (
+        "every census key with in-window turns that any entry folds onto "
+        "keeps at least one entry that folds onto it, and an entry that "
+        "neither the live catalogue nor the census names, under any "
+        "spelling, never outranks one that either names")
+
+    ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
+
+    @staticmethod
+    def _normalised(text):
+        """Comment markers stripped, every run of whitespace collapsed,
+        lowercased — so a sentence wrapped one way in a YAML comment,
+        another way in an indented Python comment and a third way in a
+        docstring is the same string. Lowercased because the cap\'s own
+        comment shouts it."""
+        return " ".join(" ".join(line.strip().lstrip("#").strip()
+                                 for line in text.splitlines()).split()).lower()
+
+    def test_the_invariant_sentence_is_pinned_in_the_policy_and_the_code(self):
+        # `assertIn` on the SENTENCE, not on the file: a failure would
+        # otherwise dump the whole of roster-policy.yml into the log.
+        policy = self._normalised(self.POLICY.read_text(encoding="utf-8"))
+        self.assertIn(self.INVARIANT, policy,
+                      "evals/roster-policy.yml no longer states the "
+                      "invariant the caps are built to keep")
+        source = self._normalised(self.ROSTER_SRC.read_text(encoding="utf-8"))
+        self.assertEqual(source.count(self.INVARIANT), 4,
+                         "roster.py states the invariant in exactly four "
+                         "places: over the `catalogue_seen` cap's sort, and "
+                         "in the docstrings of `_relevance`, "
+                         "`_clean_previous_arms` and `_update_catalogue_seen`")
+        for name in ("_relevance", "_clean_previous_arms",
+                     "_update_catalogue_seen"):
+            with self.subTest(function=name):
+                doc = getattr(roster, name).__doc__ or ""
+                self.assertIn(self.INVARIANT, self._normalised(doc))
+        # Mutation check (run): deleting the sentence from
+        # evals/roster-policy.yml turns the first assertion red; deleting
+        # ANY ONE of the four copies in roster.py turns the count
+        # assertion red, and the three docstring copies each turn their
+        # own subTest red as well.
+
+    def test_the_policy_states_what_the_ceiling_does(self):
+        """The other half of the same problem: A (#129 review round 10)
+        stops the caps evicting when the census names nothing, and leaves
+        `UNCAPPED_CARRY_CEILING` as the only bound. A reader of the policy
+        who does not know that will read the 500-entry cap as an
+        unconditional bound on how large the published roster can get."""
+        policy = self._normalised(self.POLICY.read_text(encoding="utf-8"))
+        self.assertIn("a census key with zero in-window turns names nothing",
+                      policy)
+        self.assertIn("neither cap evicts", policy)
+        self.assertIn("uncapped_carry_ceiling", policy)
+        self.assertIn("refuses to publish with a named error", policy)
 
 
 if __name__ == "__main__":
