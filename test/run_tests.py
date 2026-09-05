@@ -31,6 +31,8 @@ FAKE_REGISTRY_LEGACY = TEST_DIR / "fixtures" / "fake_registry_legacy"
 EVAL_DIR = REPO_ROOT / "evals" / "workflow-path-audit"
 ELEVATION_DIR = REPO_ROOT / "evals" / "windows-elevation-from-wsl"
 CANARY_DIR = REPO_ROOT / "evals" / "guidance-bridge-canary"
+ADRS_EXISTING_DIR = REPO_ROOT / "evals" / "writing-adrs" / "existing-convention"
+ADRS_BOOTSTRAP_DIR = REPO_ROOT / "evals" / "writing-adrs" / "bootstrap"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
@@ -2628,6 +2630,585 @@ class TestIssue63Round2(unittest.TestCase):
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
+
+
+class TestIssue80(unittest.TestCase):
+    """evals/writing-adrs: two fixtures for the writing-adrs skill (issue #80).
+
+    `existing-convention` (Class A, format half) — a repo that already has
+    docs/decisions/ in a house Status/Context/Decision/Consequences format;
+    the task is to record an already-implemented retry-policy decision as
+    the next ADR, following the HOUSE convention rather than the skill's own
+    default template, updating the index, and linking the code. `bootstrap`
+    covers the other half of the skill: no docs/decisions/ exists yet, so
+    the correct answer is the skill's own carried template, landed in the
+    same change as the first ADR. Both fixtures share the same underlying
+    repo (README.md, CHANGELOG.md, scripts/retry.sh) and the same prompt;
+    only the presence of docs/decisions/ differs.
+
+    Every test below isolates ONE objective check per mutation: the
+    hand-written "correct" fix satisfies every check, and each mutation
+    breaks exactly the one check it's named for while leaving the others
+    green — proving the checks have teeth individually, not just in
+    aggregate.
+    """
+
+    # ---- existing-convention: hand-written correct ADR 0004 ---------------
+
+    EXISTING_ADR_0004 = """\
+# 0004. Retry transient failures up to 5 times with capped exponential backoff
+
+## Status
+
+Accepted
+
+## Context
+
+Order Sync's poller calls the fulfillment service and other upstream
+services that occasionally return a transient failure such as a 503. On
+2026-06-02 (PR #142), one such failure was retried in a tight loop with no
+cap and no delay, pinning a worker for 40 minutes and starving the queue
+behind it.
+
+## Decision
+
+Retry a failing call up to 5 times, backing off exponentially (1s, 2s, 4s,
+8s, 16s) before giving up.
+
+## Consequences
+
+A transient blip no longer surfaces as a customer-facing error, and a
+persistent failure now gives up after a bounded delay instead of looping
+forever. A call that legitimately needs more than 5 tries within about 30
+seconds will fail; none observed so far need that.
+
+## Alternatives considered
+
+Retrying forever with a fixed delay was rejected: it would have masked the
+same runaway-retry failure again, just slower.
+
+Failing fast with no retry at all was rejected too: it would turn every
+transient blip into a customer-facing error.
+
+## References
+
+PR #142.
+"""
+
+    # Same content with Context and Decision swapped — breaks section ORDER
+    # only; every field is still present, nothing else about the file changes.
+    EXISTING_ADR_0004_WRONG_ORDER = """\
+# 0004. Retry transient failures up to 5 times with capped exponential backoff
+
+## Status
+
+Accepted
+
+## Decision
+
+Retry a failing call up to 5 times, backing off exponentially (1s, 2s, 4s,
+8s, 16s) before giving up.
+
+## Context
+
+Order Sync's poller calls the fulfillment service and other upstream
+services that occasionally return a transient failure such as a 503. On
+2026-06-02 (PR #142), one such failure was retried in a tight loop with no
+cap and no delay, pinning a worker for 40 minutes and starving the queue
+behind it.
+
+## Consequences
+
+A transient blip no longer surfaces as a customer-facing error, and a
+persistent failure now gives up after a bounded delay instead of looping
+forever.
+"""
+
+    EXISTING_INDEX_ROW = ("| [0004](0004-retry-with-capped-exponential-backoff.md) | "
+                          "Retry transient failures up to 5 times with capped "
+                          "exponential backoff | Accepted |\n")
+
+    EXISTING_README_ANCHOR = (
+        "| [0003](0003-poll-fulfillment-service-every-10s.md) | Poll the "
+        "fulfillment service every 10 seconds | Accepted |\n")
+
+    EXISTING_RETRY_LINK = (
+        "# See docs/decisions/0004-retry-with-capped-exponential-backoff.md\n"
+        "# for why these retry parameters were chosen.\n")
+
+    RETRY_SH_ANCHOR = "set -euo pipefail\n"
+
+    # A second, unwarranted ADR for the CHANGELOG's routine fact — correct
+    # house format in isolation, but its mere existence is the violation.
+    DECOY_ADR_FOR_CHANGELOG = """\
+# 0005. Remove the moment dependency
+
+## Status
+
+Accepted
+
+## Context
+
+CHANGELOG.md records that the moment dependency was removed.
+
+## Decision
+
+Use the platform Date APIs instead.
+
+## Consequences
+
+One fewer dependency to update.
+"""
+
+    # ---- bootstrap: hand-written correct README + ADR 0001 -----------------
+
+    BOOTSTRAP_README = """\
+# Architecture Decision Records
+
+This folder captures why non-obvious decisions were made in this repo.
+
+## When to write one
+
+Write an ADR when, in six months, someone proposing to revert the change
+would need three paragraphs to be talked out of it.
+
+## Naming and numbering
+
+- `NNNN-kebab-title.md`, numbered sequentially from `0001`.
+- Title is an imperative verb + object.
+
+## Status values
+
+`Proposed` -> `Accepted` -> `Superseded by NNNN` (or `Deprecated`).
+
+## Template
+
+Copy everything between the rules into `NNNN-kebab-title.md`.
+
+---
+
+```markdown
+# NNNN. Imperative title matching the index row
+
+- **Status:** Proposed
+- **Date:** YYYY-MM-DD
+
+## Context
+
+## Decision
+
+## Consequences
+
+## Alternatives considered
+
+## References
+```
+
+---
+
+## Index
+
+| ADR | Title | Status |
+|-----|-------|--------|
+| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry transient failures up to 5 times with capped exponential backoff | Accepted |
+"""
+
+    BOOTSTRAP_ADR_0001 = """\
+# 0001. Retry transient failures up to 5 times with capped exponential backoff
+
+- **Status:** Accepted
+- **Date:** 2026-09-05
+
+## Context
+
+Order Sync's poller calls the fulfillment service and other upstream
+services that occasionally return a transient failure such as a 503. On
+2026-06-02 (PR #142), one such failure was retried in a tight loop with no
+cap and no delay, pinning a worker for 40 minutes and starving the queue
+behind it.
+
+## Decision
+
+Retry a failing call up to 5 times, backing off exponentially (1s, 2s, 4s,
+8s, 16s) before giving up.
+
+## Consequences
+
+A transient blip no longer surfaces as a customer-facing error, and a
+persistent failure now gives up after a bounded delay instead of looping
+forever.
+
+## Alternatives considered
+
+Retrying forever with a fixed delay was rejected: it would have masked the
+same runaway-retry failure again, just slower.
+
+Failing fast with no retry at all was rejected too: it would turn every
+transient blip into a customer-facing error.
+
+## References
+
+PR #142.
+"""
+
+    # Context/Decision swapped, same as the existing-convention wrong-order
+    # fixture above — breaks order only.
+    BOOTSTRAP_ADR_0001_WRONG_ORDER = """\
+# 0001. Retry transient failures up to 5 times with capped exponential backoff
+
+- **Status:** Accepted
+- **Date:** 2026-09-05
+
+## Decision
+
+Retry a failing call up to 5 times, backing off exponentially (1s, 2s, 4s,
+8s, 16s) before giving up.
+
+## Context
+
+Order Sync's poller calls the fulfillment service and other upstream
+services that occasionally return a transient failure such as a 503.
+
+## Consequences
+
+A transient blip no longer surfaces as a customer-facing error.
+
+## Alternatives considered
+
+Retrying forever with a fixed delay was rejected.
+
+## References
+
+PR #142.
+"""
+
+    BOOTSTRAP_RETRY_LINK = (
+        "# See docs/decisions/0001-retry-with-capped-exponential-backoff.md\n"
+        "# for why these retry parameters were chosen.\n")
+
+    BOOTSTRAP_DECOY_ADR_FOR_CHANGELOG = """\
+# 0002. Remove the moment dependency
+
+- **Status:** Accepted
+- **Date:** 2026-09-05
+
+## Context
+
+CHANGELOG.md records that the moment dependency was removed.
+
+## Decision
+
+Use the platform Date APIs instead.
+
+## Consequences
+
+One fewer dependency to update.
+"""
+
+    # ---- shared helpers -----------------------------------------------------
+
+    def _ws(self, eval_dir: Path) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        shutil.copytree(eval_dir / "seed", ws, dirs_exist_ok=True)
+        return ws
+
+    def _checks(self, eval_dir: Path, ws: Path) -> dict:
+        fixture = run_eval.load_fixture(eval_dir)
+        results = objective.run_checks(fixture, str(ws), str(eval_dir / "seed"))
+        return {r["id"]: r for r in results}
+
+    def _run_cli(self, eval_dir: Path, ws: Path) -> tuple[int, dict]:
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
+              "--arm", "objective-only", "--workspace", str(ws)]
+        proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
+        payload = json.loads(proc.stdout) if proc.stdout.strip() else {}
+        return proc.returncode, payload
+
+    def _link_retry_sh(self, ws: Path, link_comment: str) -> None:
+        path = ws / "scripts" / "retry.sh"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn(self.RETRY_SH_ANCHOR, text, "retry.sh anchor drifted out of the seed")
+        text = text.replace(self.RETRY_SH_ANCHOR, link_comment + self.RETRY_SH_ANCHOR, 1)
+        path.write_text(text, encoding="utf-8")
+
+    # ---- existing-convention: apply the correct fix in pieces --------------
+
+    def _write_adr_0004(self, ws: Path, content: str | None = None) -> None:
+        adr = ws / "docs" / "decisions" / "0004-retry-with-capped-exponential-backoff.md"
+        adr.write_text(content or self.EXISTING_ADR_0004, encoding="utf-8")
+
+    def _add_index_row_existing(self, ws: Path) -> None:
+        readme = ws / "docs" / "decisions" / "README.md"
+        text = readme.read_text(encoding="utf-8")
+        self.assertIn(self.EXISTING_README_ANCHOR, text,
+                      "README.md anchor drifted out of the seed")
+        text = text.replace(self.EXISTING_README_ANCHOR,
+                            self.EXISTING_README_ANCHOR + self.EXISTING_INDEX_ROW, 1)
+        readme.write_text(text, encoding="utf-8")
+
+    def _link_retry_sh_existing(self, ws: Path) -> None:
+        self._link_retry_sh(ws, self.EXISTING_RETRY_LINK)
+
+    def _apply_correct_existing(self, ws: Path) -> None:
+        self._write_adr_0004(ws)
+        self._add_index_row_existing(ws)
+        self._link_retry_sh_existing(ws)
+
+    # ---- bootstrap: apply the correct fix in pieces -------------------------
+
+    def _bootstrap_docs_decisions(self, ws: Path, readme: str, adr: str) -> None:
+        decisions = ws / "docs" / "decisions"
+        decisions.mkdir(parents=True, exist_ok=True)
+        (decisions / "README.md").write_text(readme, encoding="utf-8")
+        (decisions / "0001-retry-with-capped-exponential-backoff.md").write_text(
+            adr, encoding="utf-8")
+
+    def _link_retry_sh_bootstrap(self, ws: Path) -> None:
+        self._link_retry_sh(ws, self.BOOTSTRAP_RETRY_LINK)
+
+    def _apply_correct_bootstrap(self, ws: Path) -> None:
+        self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
+        self._link_retry_sh_bootstrap(ws)
+
+    # ======================================================================
+    # existing-convention
+    # ======================================================================
+
+    def test_existing_pristine_seed_fails_every_check(self):
+        ws = self._ws(ADRS_EXISTING_DIR)
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        for check_id in ("adr-0004-house-format-sections-in-order",
+                        "index-gained-a-row-for-0004", "retry-sh-links-the-adr",
+                        "exactly-one-new-adr-file"):
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+
+    def test_existing_hand_written_correct_fix_passes_every_check(self):
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_existing_cli_objective_only_exit_codes(self):
+        ws_pristine = self._ws(ADRS_EXISTING_DIR)
+        code, _ = self._run_cli(ADRS_EXISTING_DIR, ws_pristine)
+        self.assertEqual(code, 1)
+
+        ws_correct = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws_correct)
+        code, payload = self._run_cli(ADRS_EXISTING_DIR, ws_correct)
+        self.assertEqual(code, 0, payload)
+
+    def test_existing_adr_written_but_index_not_updated_fails_only_index_check(self):
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._write_adr_0004(ws)
+        self._link_retry_sh_existing(ws)
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"],
+                        by_id["adr-0004-house-format-sections-in-order"]["detail"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+
+    def test_existing_adr_and_index_but_no_code_link_fails_only_link_check(self):
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._write_adr_0004(ws)
+        self._add_index_row_existing(ws)
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+
+    def test_existing_wrong_section_order_fails_only_format_check(self):
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._write_adr_0004(ws, self.EXISTING_ADR_0004_WRONG_ORDER)
+        self._add_index_row_existing(ws)
+        self._link_retry_sh_existing(ws)
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+
+    def test_existing_second_adr_for_changelog_fact_fails_only_count_check(self):
+        # The correct fix, PLUS an extra ADR nobody asked for, recording
+        # CHANGELOG.md's routine dependency-removal fact. Everything about
+        # ADR 0004 itself, the index row, and the code link is still right —
+        # only the count check should catch the extra file.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        (ws / "docs" / "decisions" / "0005-remove-moment-dependency.md").write_text(
+            self.DECOY_ADR_FOR_CHANGELOG, encoding="utf-8")
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["exactly-one-new-adr-file"]["passed"],
+                         by_id["exactly-one-new-adr-file"]["detail"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+
+    # ======================================================================
+    # bootstrap
+    # ======================================================================
+
+    def test_bootstrap_pristine_seed_fails_every_real_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        for check_id in ("readme-bootstrapped-in-skill-shape",
+                        "index-gained-a-row-for-0001", "adr-0001-sections-in-order",
+                        "retry-sh-links-the-adr", "exactly-one-adr-file"):
+            self.assertFalse(by_id[check_id]["passed"], by_id[check_id]["detail"])
+        # Restraint is a trivial pass on the pristine seed: nothing changed yet.
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_hand_written_correct_fix_passes_every_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        for check_id, result in by_id.items():
+            self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_bootstrap_cli_objective_only_exit_codes(self):
+        ws_pristine = self._ws(ADRS_BOOTSTRAP_DIR)
+        code, _ = self._run_cli(ADRS_BOOTSTRAP_DIR, ws_pristine)
+        self.assertEqual(code, 1)
+
+        ws_correct = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws_correct)
+        code, payload = self._run_cli(ADRS_BOOTSTRAP_DIR, ws_correct)
+        self.assertEqual(code, 0, payload)
+
+    def test_bootstrap_adr_written_but_index_not_updated_fails_only_index_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        # README carries the bootstrap shape but never gained the 0001 row.
+        readme_without_row = self.BOOTSTRAP_README.replace(
+            "| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry "
+            "transient failures up to 5 times with capped exponential "
+            "backoff | Accepted |\n", "")
+        self._bootstrap_docs_decisions(ws, readme_without_row, self.BOOTSTRAP_ADR_0001)
+        self._link_retry_sh_bootstrap(ws)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"],
+                        by_id["readme-bootstrapped-in-skill-shape"]["detail"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_adr_and_index_but_no_code_link_fails_only_link_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_wrong_section_order_fails_only_format_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(
+            ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001_WRONG_ORDER)
+        self._link_retry_sh_bootstrap(ws)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_second_adr_for_changelog_fact_fails_only_count_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        (ws / "docs" / "decisions" / "0002-remove-moment-dependency.md").write_text(
+            self.BOOTSTRAP_DECOY_ADR_FOR_CHANGELOG, encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["exactly-one-adr-file"]["passed"],
+                         by_id["exactly-one-adr-file"]["detail"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_touching_changelog_fails_only_restraint_check(self):
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        changelog = ws / "CHANGELOG.md"
+        changelog.write_text(
+            changelog.read_text(encoding="utf-8") + "\n## 1.3.1\n\n- Unrelated edit.\n",
+            encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+
+    # ======================================================================
+    # The bootstrap README-shape check is pinned to the skill's OWN template
+    # at test time, so a future edit to that template that drops one of the
+    # headings this fixture relies on fails HERE, loudly, instead of the
+    # fixture silently testing a shape the skill no longer produces.
+    # ======================================================================
+
+    def test_bootstrap_readme_derived_from_live_skill_template_still_passes(self):
+        registries = run_eval.resolve_registries(
+            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
+            os.environ.get("AGENTSKILLS_DIR"))
+        entry = registries["agentskills"]
+        if not entry["path"].is_dir():
+            reason = (f"no agentskills checkout at {entry['path']} — skipping "
+                      "the live-template drift check")
+            print(reason)
+            self.skipTest(reason)
+
+        glob_pattern = run_eval._skill_md_glob(entry["layout"], "writing-adrs")
+        matches = sorted(p.parent for p in entry["path"].glob(glob_pattern) if p.is_file())
+        if not matches:
+            reason = (f"no SKILL.md matched {entry['path'] / glob_pattern} — "
+                      "skipping the live-template drift check")
+            print(reason)
+            self.skipTest(reason)
+
+        template_path = matches[0] / "references" / "decisions-README-template.md"
+        if not template_path.is_file():
+            reason = (f"writing-adrs skill has no {template_path} — skipping "
+                      "the live-template drift check")
+            print(reason)
+            self.skipTest(reason)
+
+        # Derive a README the way the skill instructs: copy the template,
+        # drop its "seeded from" quote line, fill in the index row. If the
+        # live template drops one of the headings readme-bootstrapped-in-
+        # skill-shape looks for, this derived text stops carrying it and the
+        # assertion below is what catches the drift.
+        template_text = template_path.read_text(encoding="utf-8")
+        lines = [line for line in template_text.splitlines()
+                if not line.strip().startswith("> Seeded from")]
+        derived_readme = "\n".join(lines) + "\n"
+        self.assertIn("| _none yet_ | | |", derived_readme,
+                      "template's empty-index placeholder drifted — update "
+                      "this test's replacement below")
+        derived_readme = derived_readme.replace(
+            "| _none yet_ | | |",
+            "| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry "
+            "transient failures up to 5 times with capped exponential "
+            "backoff | Accepted |")
+
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(ws, derived_readme, self.BOOTSTRAP_ADR_0001)
+        self._link_retry_sh_bootstrap(ws)
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"],
+                        by_id["readme-bootstrapped-in-skill-shape"]["detail"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"],
+                        by_id["index-gained-a-row-for-0001"]["detail"])
 
 
 if __name__ == "__main__":
