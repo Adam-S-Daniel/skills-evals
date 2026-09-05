@@ -3362,6 +3362,41 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
     # fixture silently testing a shape the skill no longer produces.
     # ======================================================================
 
+    def _derive_bootstrap_readme(self, template_text: str, index_row: str) -> str:
+        """Copy the skill's own bootstrap template the way it instructs: drop
+        its two-line "seeded from" quote block (both lines start with `>`) —
+        NOT just the first line, which used to leave the second line's
+        "house style, then delete this quote line." dangling in the derived
+        README — and fill in the index row.
+        """
+        lines = [line for line in template_text.splitlines()
+                if not line.strip().startswith(">")]
+        derived = "\n".join(lines) + "\n"
+        self.assertIn("| _none yet_ | | |", derived,
+                      "template's empty-index placeholder drifted — update "
+                      "this test's replacement below")
+        return derived.replace("| _none yet_ | | |", index_row)
+
+    def test_derive_bootstrap_readme_drops_the_whole_seeded_from_quote_block(self):
+        # N2: the old filter only dropped lines starting with "> Seeded
+        # from", leaving the template's second quote line ("> house style,
+        # then delete this quote line.") behind in the derived README.
+        template_text = (
+            "# Architecture Decision Records\n\n"
+            "> Seeded from the `writing-adrs` skill. Adjust wording to match "
+            "this repo's\n"
+            "> house style, then delete this quote line.\n\n"
+            "## Index\n\n"
+            "| ADR | Title | Status |\n"
+            "|-----|-------|--------|\n"
+            "| _none yet_ | | |\n"
+        )
+        derived = self._derive_bootstrap_readme(
+            template_text, "| [0001](x.md) | T | Accepted |")
+        self.assertNotIn(">", derived)
+        self.assertNotIn("Seeded from", derived)
+        self.assertNotIn("house style", derived)
+
     def test_bootstrap_readme_derived_from_live_skill_template_still_passes(self):
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
@@ -3389,19 +3424,14 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
             self.skipTest(reason)
 
         # Derive a README the way the skill instructs: copy the template,
-        # drop its "seeded from" quote line, fill in the index row. If the
-        # live template drops one of the headings readme-bootstrapped-in-
-        # skill-shape looks for, this derived text stops carrying it and the
-        # assertion below is what catches the drift.
+        # drop its two-line "seeded from" quote block, fill in the index
+        # row. If the live template drops one of the headings
+        # readme-bootstrapped-in-skill-shape looks for, this derived text
+        # stops carrying it and the assertion below is what catches the
+        # drift.
         template_text = template_path.read_text(encoding="utf-8")
-        lines = [line for line in template_text.splitlines()
-                if not line.strip().startswith("> Seeded from")]
-        derived_readme = "\n".join(lines) + "\n"
-        self.assertIn("| _none yet_ | | |", derived_readme,
-                      "template's empty-index placeholder drifted — update "
-                      "this test's replacement below")
-        derived_readme = derived_readme.replace(
-            "| _none yet_ | | |",
+        derived_readme = self._derive_bootstrap_readme(
+            template_text,
             "| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry "
             "transient failures up to 5 times with capped exponential "
             "backoff | Accepted |")
@@ -3414,6 +3444,14 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
                         by_id["readme-bootstrapped-in-skill-shape"]["detail"])
         self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"],
                         by_id["index-gained-a-row-for-0001"]["detail"])
+
+    # ======================================================================
+    # S6: the repo README's evals/ tree omitted writing-adrs/ entirely.
+    # ======================================================================
+
+    def test_readme_lists_the_writing_adrs_eval_directory(self):
+        readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("writing-adrs/", readme_text)
 
 
 if __name__ == "__main__":

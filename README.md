@@ -36,6 +36,9 @@ evals/
   windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
     fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
     seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe
+  writing-adrs/            # A/B eval, Class A (format half): two fixtures
+    bootstrap/             # no docs/decisions/ yet — bootstrap the folder
+    existing-convention/   # docs/decisions/ already has a house format
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
