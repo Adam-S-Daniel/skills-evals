@@ -20,6 +20,11 @@ registry: https://github.com/Adam-S-Daniel/agentskills
 # Same calibration as workflow-path-audit: arms on a pinned mid-tier model so
 # the with/without comparison is not flattened by a ceiling effect, and so the
 # arms do not silently track the CLI's default model across releases.
+#
+# Both keys are OVERRIDES now — absent them the runner takes the computed
+# roster (`roster/latest.json` on `eval-results`; harness/roster.py, #67).
+# The pins stay until the matrix runner lands and runs every arm in the
+# roster, which is where a per-fixture calibration belongs.
 model: claude-sonnet-5
 
 judge:

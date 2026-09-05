@@ -62,6 +62,33 @@
 #   (600s per arm, 120s per judge call); the workspace spend limit, not
 #   this workflow, is the hard ceiling.
 #
+# * The model roster step (#67) adds ONE more caller of that same bearer: a
+#   `GET /v1/models` read from scripts/refresh_models.py, exported
+#   step-locally exactly like the claude calls and never at top level. It
+#   introduces NO new credential shape — no stored secret, no new federation
+#   binding — and it is a read of the model catalogue, not of usage or
+#   billing. The one thing it would use if it existed is ANTHROPIC_ADMIN_KEY,
+#   for the optional org-wide usage report; that variable is deliberately NOT
+#   provisioned, and its absence prints a `::notice::` naming it rather than
+#   failing the run. Do not create it to silence the notice — provision it
+#   only if the org-wide report is actually wanted. Because the WIF rule's sub
+#   claim matches `ref:refs/heads/main` only, a dispatch from any other ref
+#   gets no bearer and dies at the exchange step above, before this one. That
+#   read is also the FIRST use of this bearer in the job, ahead of the
+#   preflight — which is a reason for it to be non-fatal, not a reason to put
+#   it later: it is a free extra signal about the credential, and the
+#   preflight remains the step that decides whether the bearer works.
+#
+#   The Admin API usage report, if it is ever provisioned, is BILLING data.
+#   It is written to $RUNNER_TEMP/admin-usage.json, deliberately NOT into
+#   $RUNNER_TEMP/roster/ — that directory is the one the commit step copies
+#   from, and it holds the published roster and nothing else so that a future
+#   directory copy cannot publish billing data to a public branch.
+#
+#   Nothing in this workflow ever prints a response body. The roster step's
+#   ::warning:: carries an HTTP status code or an exception class name, and
+#   refresh_models.py is written to produce nothing else.
+#
 # * All four checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
@@ -196,17 +223,219 @@ jobs:
           echo "::add-mask::$tok"
           printf '%s' "$tok" > "$RUNNER_TEMP/anthropic-bearer"
 
-      # Cheap canary validating the exchanged bearer before the real spend.
+      # Model roster (#67). Recomputes which models this harness should be
+      # running against — arms, judge, preflight — from what the Models API
+      # says is AVAILABLE and what the published usage census says is USED,
+      # and publishes it with the run. Deliberately small and separate: the
+      # eval step below is untouched, and the roster reaches it through
+      # $EVAL_ROSTER rather than through a new flag on its command line.
+      #
+      # It runs BEFORE the preflight because the preflight consumes it: the
+      # roster's `preflight` entry is the cheapest model the Models API still
+      # returns, which is exactly what a cheap canary should be spending.
+      #
+      # No new credential. The Models API call reuses the same WIF-derived
+      # bearer minted above; ANTHROPIC_ADMIN_KEY is optional and its absence
+      # produces a ::notice::, never a failure.
+      #
+      # NOT FATAL TO THE EVAL. The Models API read is still fatal to the
+      # ROSTER — a half-read API is indistinguishable from a model retiring,
+      # and publishing that quietly is the failure mode this feature exists to
+      # remove — but the eval and the badge never depended on the roster, and
+      # this step sits ahead of both. So a failure here prints a ::warning::
+      # naming the failure class, publishes NO roster (never a partial one),
+      # and lets the eval run on the fixture pins. This also matters because
+      # the WIF bearer against GET /v1/models is an auth path exercised for
+      # the very first time on the first dispatch after merge.
+      #
+      # A failed `git fetch` is NOT a first run. `|| true` conflated the two,
+      # and the roster then asserted "no fresh census (none published)" about
+      # a branch it simply could not read; `ls-remote` tells them apart.
+      #
+      # Everything lands in $RUNNER_TEMP, not the working tree: roster/ is
+      # tracked on eval-results and untracked on main, so a copy in the
+      # working tree would make the commit step's `git checkout -B
+      # eval-results` refuse. The commit step restores it after the switch,
+      # exactly as it already does for results/. $RUNNER_TEMP/roster holds the
+      # published roster AND NOTHING ELSE — the working inputs live in
+      # roster-inputs/ and the Admin API usage report (billing data) at
+      # $RUNNER_TEMP/admin-usage.json — so that a future directory copy of
+      # that path can only ever publish the roster.
+      - name: Refresh the model roster
+        working-directory: skills-evals
+        run: |
+          set -uo pipefail
+          pub="$RUNNER_TEMP/roster"
+          work="$RUNNER_TEMP/roster-inputs"
+          rm -rf "$pub" "$work"; mkdir -p "$pub" "$work"
+          reason=""
+          # The reason a failed script's stderr becomes a ::warning::/step-
+          # summary line. Prefers the FIRST non-empty line that is neither a
+          # `roster: `-prefixed warn() line (compute_roster's own warnings,
+          # chronologically first) nor an indented line (a roster.py
+          # "  <id>: <reason>" per-model detail, or an indented traceback
+          # frame) nor the traceback's own header — the single least useful
+          # line a traceback has. That headline is what roster.py's fatal
+          # "refusing to publish a roster with no arms" path prints FIRST,
+          # ahead of one indented line per excluded/unranked model, so the
+          # old `tail -n 1` here surfaced a random model's detail instead of
+          # the headline. Falls back to the plain last non-empty line only
+          # when nothing clears that bar (an uncaught exception, where the
+          # exception's own message is the last line and the traceback's
+          # header and frames are the only other candidates).
+          extract_reason() {
+            local line
+            while IFS= read -r line; do
+              [ -z "$line" ] && continue
+              case "$line" in
+                'roster: '*) continue ;;
+                ' '*|$'\t'*) continue ;;
+                'Traceback (most recent call last):') continue ;;
+              esac
+              printf '%s\n' "$line"
+              return 0
+            done < "$1"
+            grep -v '^$' "$1" | tail -n 1
+          }
+          # The `roster: `-prefixed warn() lines carry the actual diagnosis
+          # (a stale/unreadable census, skipped bad rows, ...). A census
+          # that is stale/unreadable/carries skipped rows can print these
+          # and STILL let the run succeed overall (a graceful fallback), so
+          # this runs on both the success and failure paths — it used to
+          # run only on failure, reaching only the raw job log on success,
+          # never the step summary — the surface most people actually read
+          # first.
+          emit_roster_warnings() {
+            local file="$1" warnings
+            [ -f "$file" ] || return 0
+            warnings=$(grep '^roster: ' "$file" || true)
+            [ -n "$warnings" ] || return 0
+            {
+              echo
+              echo "<details><summary>roster warnings</summary>"
+              echo
+              echo '```'
+              printf '%s\n' "$warnings"
+              echo '```'
+              echo
+              echo "</details>"
+            } >> "$GITHUB_STEP_SUMMARY"
+          }
+          refresh() {
+            ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
+            export ANTHROPIC_AUTH_TOKEN
+            # Previous roster and published census come off eval-results
+            # WITHOUT checking it out — the branch switch belongs to the
+            # commit step, and both inputs are optional, so a genuine first
+            # run (no branch, no files) just leaves empty files behind and
+            # roster.py treats those as absent.
+            if ! git fetch origin eval-results 2>/dev/null; then
+              # `git ls-remote | grep -q` discards ls-remote's OWN exit status
+              # under `pipefail`: on a correlated outage (fetch AND ls-remote
+              # both unreachable) grep sees empty stdin, "no match" is exit 1,
+              # and pipefail reports the pipeline's status as grep's 1 rather
+              # than ls-remote's 128 — reading a network outage as a genuine
+              # first run. Capture ls-remote's own output and exit status via
+              # command substitution instead, and match on the captured text
+              # with a here-string so nothing is piped into grep (the fleet's
+              # SIGPIPE rule) and ls-remote's failure cannot be swallowed by
+              # what comes after it.
+              ls_out=$(git ls-remote --heads origin eval-results 2>/dev/null) || {
+                reason="roster inputs unavailable: could not reach origin"
+                return 1
+              }
+              if grep -qF -- 'refs/heads/eval-results' <<<"$ls_out"; then
+                reason="roster inputs unavailable: eval-results exists but could not be fetched"
+                return 1
+              fi
+            fi
+            if git rev-parse -q --verify origin/eval-results >/dev/null 2>&1; then
+              git show origin/eval-results:roster/latest.json > "$work/previous.json" 2>/dev/null || true
+              git show origin/eval-results:usage/latest.json > "$work/census.json" 2>/dev/null || true
+            fi
+            # stderr is captured, not swallowed: it is echoed back to the log
+            # either way, and on failure extract_reason picks the
+            # ::warning::. Both scripts are written to keep that line to a
+            # status code or an exception class — never a response body.
+            if ! python3 scripts/refresh_models.py \
+                 --out "$work/models.json" \
+                 --admin-report "$RUNNER_TEMP/admin-usage.json" 2> "$work/refresh.err"; then
+              cat "$work/refresh.err" >&2
+              reason="$(extract_reason "$work/refresh.err")"
+              return 1
+            fi
+            cat "$work/refresh.err" >&2
+            if ! python3 harness/roster.py \
+                 --models "$work/models.json" \
+                 --policy evals/roster-policy.yml \
+                 --census "$work/census.json" \
+                 --admin-report "$RUNNER_TEMP/admin-usage.json" \
+                 --previous "$work/previous.json" \
+                 --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
+              cat "$work/roster.err" >&2
+              reason="$(extract_reason "$work/roster.err")"
+              return 1
+            fi
+            cat "$work/roster.err" >&2
+            cat "$work/summary.md" | tee -a "$GITHUB_STEP_SUMMARY"
+            emit_roster_warnings "$work/roster.err"
+            return 0
+          }
+          if refresh; then
+            echo "EVAL_ROSTER=$pub/latest.json" >> "$GITHUB_ENV"
+          else
+            rm -f "$pub/latest.json" "$pub"/*.partial
+            echo "::warning::model roster NOT refreshed: ${reason:-unknown failure}"
+            {
+              echo "### Model roster"
+              echo
+              echo "**The roster was not refreshed this run.** ${reason:-unknown failure}"
+              echo
+              echo "No roster is published; the eval below ran on the fixture pins."
+            } >> "$GITHUB_STEP_SUMMARY"
+            emit_roster_warnings "$work/roster.err"
+          fi
+
+      # Cheap canary validating the exchanged bearer before the real spend,
+      # on the model the roster names as `preflight` — the cheapest the Models
+      # API still returns. That entry used to be computed and consumed by
+      # nothing while this step hardcoded a model of its own.
+      #
+      # The literal below is the documented ROSTER FALLBACK, and it is the
+      # only model id in this file. It is used when the step above could not
+      # publish a roster, AND as the one retry when the roster's own
+      # preflight pick fails (a day-old cheapest-tier model can be past the
+      # roster's cooling-off check yet still not entitled for this bearer) —
+      # `test_no_model_ids_are_hardcoded_outside_fixtures` allows exactly one
+      # such literal and only because the marker on its line says what it is.
       - name: WIF auth preflight
         run: |
           set +e
+          fallback="claude-haiku-4-5" # ROSTER FALLBACK: used when no roster, and retried once if the roster's preflight model fails
+          model="$fallback"
+          roster="$RUNNER_TEMP/roster/latest.json"
+          if [ -f "$roster" ]; then
+            from_roster=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=(d.get("preflight") or {}).get("id"); print(p if isinstance(p, str) else "")' "$roster" 2>/dev/null)
+            if [ -n "$from_roster" ]; then model="$from_roster"; fi
+          fi
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
+          echo "preflight model: $model"
           out=$(timeout 120 claude -p 'Reply with exactly: ok' \
-            --model claude-haiku-4-5 --output-format json 2>&1)
+            --model "$model" --output-format json 2>&1)
           rc=$?
           echo "preflight exit: $rc"
           printf '%s\n' "$out" | tail -c 4000
+          if [ "$rc" -ne 0 ] && [ "$model" != "$fallback" ]; then
+            echo "::warning::preflight failed on roster model $model; retrying with the fallback"
+            model="$fallback"
+            echo "preflight model: $model"
+            out=$(timeout 120 claude -p 'Reply with exactly: ok' \
+              --model "$model" --output-format json 2>&1)
+            rc=$?
+            echo "preflight exit: $rc"
+            printf '%s\n' "$out" | tail -c 4000
+          fi
           exit $rc
 
       - name: Run the eval (both arms, judge)
@@ -262,13 +491,28 @@ jobs:
             git checkout -B eval-results
           fi
           [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
+          # The roster the refresh step computed, restored after the switch for
+          # the same reason results/ is: it is tracked here and nowhere on main.
+          # The refresh step is non-fatal, so there may be none — in which case
+          # nothing is committed for it and the summary says why.
+          if [ -f "$RUNNER_TEMP/roster/latest.json" ]; then
+            mkdir -p roster
+            cp "$RUNNER_TEMP/roster/latest.json" roster/latest.json
+          else
+            echo "No roster was published this run — see the roster step's warning." \
+              >> "$GITHUB_STEP_SUMMARY"
+          fi
           python3 "$RUNNER_TEMP/make_badge.py" workflow-path-audit
           git add badges results
+          # -f is load-bearing: .gitignore lists roster/ and usage/ so a stray
+          # local copy cannot ride into a main-branch PR. They ARE tracked here
+          # on eval-results, and a plain `git add` would silently skip them.
+          if [ -d roster ]; then git add -f roster; fi
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "eval: workflow-path-audit run + badge [skip ci]"
+          git commit -m "eval: workflow-path-audit run + badge + roster [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
 

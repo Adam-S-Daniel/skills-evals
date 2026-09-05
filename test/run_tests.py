@@ -11,19 +11,25 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import hashlib
+import io
 import itertools
 import json
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-import yaml
+import urllib.error
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 TEST_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TEST_DIR.parent
@@ -41,11 +47,15 @@ POST_FAILURE_COMMENT_DIR = REPO_ROOT / "evals" / "post-failure-comment"
 RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 
 sys.path.insert(0, str(HARNESS_DIR))
+import roster  # noqa: E402
 import run_eval  # noqa: E402
+import timeweeks  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import make_badge  # noqa: E402
+import model_usage_census  # noqa: E402
+import refresh_models  # noqa: E402
 
 
 class WithSkillInstallTests(unittest.TestCase):
@@ -155,10 +165,30 @@ class WithSkillInstallTests(unittest.TestCase):
             result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
-            self.assertIn(str(FAKE_REGISTRY), result["detail"])
+            # Item 6 (#129 review round 4): the registry's basename, not its
+            # full absolute path — this detail reaches summary.json, which
+            # eval.yml commits to the public eval-results branch.
+            self.assertIn(FAKE_REGISTRY.name, result["detail"])
+            self.assertNotIn(str(FAKE_REGISTRY), result["detail"])
             # Names the plugins/*/skills/<skill> glob pattern that was searched.
             self.assertIn("skills", result["detail"])
             self.assertIn("plugins", result["detail"])
+
+    def test_missing_skill_detail_does_not_leak_the_registry_absolute_path(self):
+        """A registry checkout can live anywhere on the runner's disk —
+        this proves the leak is closed for a path shape that does not
+        happen to be the repo's own committed fixture path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "some-private-runner-directory-name"
+            registry.mkdir()
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            arm = {"name": "with_skill", "skill": "does-not-exist",
+                  "registry": registry, "timeout": 30}
+            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            self.assertIn("error", result)
+            self.assertIn(registry.name, result["detail"])
+            self.assertNotIn(str(registry), result["detail"])
 
 
 class RunAgentModesTests(unittest.TestCase):
@@ -3960,6 +3990,2312 @@ class CanaryTests(unittest.TestCase):
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
+class TestIssue67(unittest.TestCase):
+    """Model roster: availability + usage -> arms/judge/preflight (#67).
+
+    Every model id below is TEST FIXTURE data. The policy code under test
+    carries none: tiers are inferred from the id's family word, and the family
+    words themselves live in evals/roster-policy.yml. `test_no_model_ids_are
+    _hardcoded_outside_fixtures` is the guard that keeps it that way.
+
+    `NOW` is frozen so the ISO-week windows and the 7-day cooling-off are
+    decidable rather than wall-clock-dependent — the harness-wide "hermetic,
+    always" rule (DESIGN.md) applies to time as much as to network.
+    """
+
+    NOW = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)
+    # 2026-09-04 is ISO week 36; the four- and eight-week windows below run
+    # back from it. Spelled out rather than computed, so a bug in the
+    # implementation's own week arithmetic cannot hide inside the fixture.
+    W = ["2026-W36", "2026-W35", "2026-W34", "2026-W33",
+         "2026-W32", "2026-W31", "2026-W30", "2026-W29"]
+
+    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+    # --- fixture builders -------------------------------------------------
+
+    @staticmethod
+    def _model(model_id, created, *, max_input=1_000_000, max_output=128_000):
+        return {"id": model_id, "display_name": model_id, "created_at": created,
+                "max_input_tokens": max_input, "max_tokens": max_output,
+                "capabilities": {"thinking": {"supported": True}}}
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        """A canned GET /v1/models payload spanning all four tiers.
+
+        claude-fable-5-1 is deliberately 3 days old: it is the newest model in
+        its tier but inside the cooling-off window, so it is NOT an arm — which
+        is what leaves a tier above the strongest arm for the judge to come
+        from.
+        """
+        models = [
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
+            cls._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            cls._model("claude-fable-5-1", "2026-09-01T00:00:00Z"),
+        ]
+        models = [m for m in models if m["id"] not in drop]
+        models += list(extra or [])
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        if counts is None:
+            counts = {
+                # last four weeks: 400 / 620 = 64.5%
+                "claude-sonnet-5": {w: 100 for w in cls.W[:4]},
+                # last four weeks: 200 / 620 = 32.3%
+                "claude-opus-5": {w: 50 for w in cls.W[:4]},
+                # last four weeks: 20 / 620 = 3.2% — under the 10% entry bar
+                "claude-haiku-4-5": {w: 5 for w in cls.W[:4]},
+                # all outside the four-week window
+                "claude-sonnet-4-6": {cls.W[7]: 100},
+            }
+        return {"generated_at": generated_at, "weeks": cls.W, "counts": counts}
+
+    @classmethod
+    def _policy(cls):
+        return roster.load_policy(cls.POLICY)
+
+    #: distinguishes "use the default fixture" from "there is no census at all",
+    #: which None cannot do here — the absence IS one of the cases under test.
+    DEFAULT = object()
+
+    @classmethod
+    def _compute(cls, models=DEFAULT, census=DEFAULT, previous=None):
+        return roster.compute_roster(
+            models_doc=cls._models_doc() if models is cls.DEFAULT else models,
+            census_doc=cls._census_doc() if census is cls.DEFAULT else census,
+            policy=cls._policy(), previous=previous, now=cls.NOW)
+
+    @staticmethod
+    def _arm_ids(result):
+        return [a["id"] for a in result["arms"]]
+
+    @staticmethod
+    def _reason(result, model_id):
+        return next(a["reason"] for a in result["arms"] if a["id"] == model_id)
+
+    # --- policy: the headline case ---------------------------------------
+
+    def test_canned_models_and_census_give_the_expected_roster(self):
+        result = self._compute()
+
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"])
+        # Usage-qualified arms say so, in words, with the share.
+        self.assertIn("64.5%", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("4 weeks", self._reason(result, "claude-sonnet-5"))
+        # haiku is under the 10% bar and rides in on newest-in-tier instead.
+        self.assertIn("newest", self._reason(result, "claude-haiku-4-5"))
+        self.assertIn("haiku", self._reason(result, "claude-haiku-4-5"))
+
+        # One tier above the strongest arm (opus) is fable, and the only fable
+        # model available is not an arm — so it is the judge.
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertIn("tier above", result["judge"]["reason"])
+
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cheapest", result["preflight"]["reason"])
+
+        self.assertEqual(result["source"]["models_api_at"], "2026-09-04T11:00:00Z")
+        self.assertEqual(result["source"]["census_at"], "2026-09-04T06:00:00Z")
+        self.assertIsNone(result["source"]["admin_report_at"])
+        self.assertIn("generated_at", result)
+
+    def test_judge_is_never_an_arm_model(self):
+        # Strip the fable tier: the strongest arm is then opus-5 with nothing
+        # above it, so the judge falls back to the strongest AVAILABLE model —
+        # which must still not be one of the arms.
+        result = self._compute(models=self._models_doc(drop={"claude-fable-5-1"}))
+        self.assertNotIn(result["judge"]["id"], self._arm_ids(result))
+        self.assertEqual(result["judge"]["id"], "claude-opus-4-8")
+        self.assertIn("strongest available", result["judge"]["reason"])
+
+    def test_judge_falls_back_when_every_available_model_is_an_arm(self):
+        """The first real run's state: no census published yet, so the arm set
+        is newest-per-tier — which on a one-current-model-per-tier catalogue is
+        every model there is. A null judge would be a hole in the published
+        roster, so the strongest available model is named and the reason says
+        plainly that it is also an arm."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            self._model("claude-fable-5-1", "2026-05-01T00:00:00Z"),
+        ]}
+        result = self._compute(models=models, census=None)
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-fable-5-1", "claude-haiku-4-5",
+                          "claude-opus-5", "claude-sonnet-5"])
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertIn("every available model is currently an arm",
+                      result["judge"]["reason"])
+
+    def test_preflight_is_the_cheapest_available_model(self):
+        # Drop the whole haiku tier and the cheapest becomes the newest sonnet.
+        result = self._compute(models=self._models_doc(drop={"claude-haiku-4-5"}))
+        self.assertEqual(result["preflight"]["id"], "claude-sonnet-5")
+
+    # --- the 7-day cooling-off -------------------------------------------
+
+    def test_seven_day_rule_excludes_a_model_created_yesterday(self):
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(
+            extra=[self._model("claude-sonnet-6", yesterday)])
+        result = self._compute(models=models)
+        self.assertNotIn("claude-sonnet-6", self._arm_ids(result),
+                         "a model one day old is inside the fleet's 7-day "
+                         "cooling-off and must not enter the arm set on the "
+                         "newest-in-tier rule")
+        # ... and the tier's previous newest keeps the seat.
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+
+    def test_a_brand_new_model_still_enters_on_usage(self):
+        # The cooling-off gates the newest-in-tier rule only. A model the fleet
+        # is demonstrably already using is an arm on the usage rule regardless
+        # of age — otherwise the roster would refuse to measure what is in use.
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(extra=[self._model("claude-sonnet-6", yesterday)])
+        census = self._census_doc(counts={
+            "claude-sonnet-6": {self.W[0]: 300},
+            "claude-sonnet-5": {w: 100 for w in self.W[:4]},
+        })
+        result = self._compute(models=models, census=census)
+        self.assertIn("claude-sonnet-6", self._arm_ids(result))
+        self.assertIn("usage", self._reason(result, "claude-sonnet-6"))
+
+    # --- leaving the arm set ---------------------------------------------
+
+    def test_model_missing_from_the_api_is_retired_even_with_high_usage(self):
+        previous = {"arms": [{"id": "claude-opus-4-7", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = self._census_doc(counts={
+            "claude-opus-4-7": {w: 400 for w in self.W},   # ~66% of everything
+            "claude-sonnet-5": {w: 200 for w in self.W},
+        })
+        result = self._compute(census=census, previous=previous)
+
+        self.assertNotIn("claude-opus-4-7", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-7", retired)
+        self.assertIn("Models API", retired["claude-opus-4-7"])
+
+    def test_a_previous_arm_is_held_over_until_it_is_under_two_percent(self):
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"},
+                             {"id": "claude-opus-4-8", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = self._census_doc(counts={
+            "claude-sonnet-5": {w: 100 for w in self.W},           # 800
+            # 40/week over 8 weeks = 320/1128 ≈ 28% of the 8-week window but
+            # only 160/560 of the 4-week one... keep it simple: sonnet-4-6 sits
+            # above 2% over 8 weeks, opus-4-8 below it.
+            "claude-sonnet-4-6": {w: 10 for w in self.W},          # 80
+            "claude-opus-4-8": {self.W[7]: 2},                     # 2
+        })
+        result = self._compute(census=census, previous=previous)
+
+        arms = self._arm_ids(result)
+        self.assertIn("claude-sonnet-4-6", arms,
+                      "a previous arm above the 2% exit bar over 8 weeks stays")
+        self.assertIn("held over", self._reason(result, "claude-sonnet-4-6"))
+        self.assertNotIn("claude-opus-4-8", arms)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("2", retired["claude-opus-4-8"])
+        self.assertIn("8 weeks", retired["claude-opus-4-8"])
+
+    def test_added_since_last_names_the_new_arms_with_their_reason(self):
+        previous = {"arms": [{"id": "claude-sonnet-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        added = {a["id"]: a["reason"] for a in result["added_since_last"]}
+        self.assertEqual(sorted(added), ["claude-haiku-4-5", "claude-opus-5"])
+        self.assertTrue(all(added.values()), "every entry carries its reason")
+
+    def test_first_run_has_no_previous_roster_and_reports_nothing_retired(self):
+        result = self._compute(previous=None)
+        self.assertEqual(result["retired_since_last"], [])
+        # Everything is new, but with no previous roster there is no "since
+        # last" to speak of — an empty added list, not the whole arm set.
+        self.assertEqual(result["added_since_last"], [])
+
+    # --- the census fallback ---------------------------------------------
+
+    def test_absent_census_falls_back_to_newest_per_tier_and_says_so(self):
+        result = self._compute(census=None)
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"])
+        for arm in result["arms"]:
+            self.assertIn("no fresh census", arm["reason"].lower())
+        self.assertIsNone(result["source"]["census_at"])
+
+    def test_stale_census_falls_back_the_same_way(self):
+        stale = self._census_doc(generated_at="2026-08-01T00:00:00Z")  # 34 days
+        result = self._compute(census=stale)
+        for arm in result["arms"]:
+            self.assertIn("no fresh census", arm["reason"].lower())
+        # The usage-only arm set would have been different, which is the whole
+        # point of saying so in the file rather than publishing it silently.
+        self.assertIn("claude-haiku-4-5", self._arm_ids(result))
+
+    def test_a_census_inside_the_freshness_window_is_used(self):
+        fresh = self._census_doc(generated_at="2026-08-25T00:00:00Z")  # 10 days
+        result = self._compute(census=fresh)
+        self.assertNotIn("no fresh census", self._reason(result, "claude-sonnet-5").lower())
+
+    # --- the census parser, and its privacy guard ------------------------
+
+    def test_census_emits_only_model_week_counts_and_leaks_nothing(self):
+        """MANDATORY (#67 guardrail): the census output is public data on a
+        public branch. A fixture transcript carrying a project path and prose
+        must yield neither — in its VALUES or in its KEYS.
+
+        The hostile `message.model` values below are the review round's
+        addition (B1): that field is whatever the routing layer wrote, and it
+        was being copied verbatim into a top-level key. TestIssue67Review
+        takes each of them apart individually; here they ride along in the one
+        test nobody is allowed to delete.
+        """
+        secret_path = "/home/example/repos/private-client-work"
+        secret_text = "the merger closes on Tuesday"
+        account_arn = ("arn:aws:bedrock:us-east-1:123456789012:"
+                       "application-inference-profile/abcd1234")
+        gcp_path = ("projects/example-gcp-project/locations/us-east5/"
+                    "publishers/anthropic/models/claude-opus-5")
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-home-example-repos-private-client-work"
+            projects.mkdir(parents=True)
+            hostile = [
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+                 "message": {"role": "assistant", "model": value}}
+                for value in (account_arn, gcp_path, secret_path, secret_text,
+                              {"id": "claude-opus-5"}, ["claude-opus-5"], 7)
+            ]
+            entries = [
+                {"type": "user", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"role": "user", "content": secret_text}},
+                {"type": "assistant", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-09-03T10:00:01Z",
+                 "message": {"role": "assistant", "model": "claude-opus-5",
+                             "content": [{"type": "text", "text": secret_text}]}},
+                {"type": "assistant", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-08-27T09:00:00Z",
+                 "message": {"role": "assistant", "model": "claude-haiku-4-5",
+                             "content": [{"type": "text", "text": secret_text}]}},
+            ]
+            entries += hostile
+            path = projects / "session.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\n",
+                            encoding="utf-8")
+            # Explicit mtime: the census skips transcripts last written before
+            # the window, so a wall-clock mtime would make this test's verdict
+            # depend on the year the suite runs in.
+            stamp = self.NOW.timestamp()
+            os.utime(path, (stamp, stamp))
+
+            counts = model_usage_census.census_counts(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1},
+                                      "claude-haiku-4-5": {"2026-W35": 1},
+                                      model_usage_census.OTHER_KEY: {"2026-W36": 7}})
+
+            document = model_usage_census.build_document(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            blob = json.dumps(document)
+            for key in document["counts"]:
+                self.assertTrue(
+                    model_usage_census.MODEL_ID_RE.match(key)
+                    or key == model_usage_census.OTHER_KEY,
+                    f"census published {key!r} as a key on a public branch")
+            self.assertNotIn(secret_path, blob)
+            self.assertNotIn(secret_text, blob)
+            self.assertNotIn("123456789012", blob)
+            self.assertNotIn("example-gcp-project", blob)
+            self.assertNotIn("private-client-work", blob)
+            self.assertNotIn("session.jsonl", blob)
+            self.assertNotIn("11111111-2222-4333-8444-555555555555", blob)
+            # Keys are exactly the published contract — nothing else rides along.
+            self.assertEqual(sorted(document), ["counts", "generated_at", "weeks"])
+
+    def test_census_ignores_entries_outside_the_window_and_without_a_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-tmp-x"
+            projects.mkdir(parents=True)
+            entries = [
+                # 12 weeks back — outside an 8-week window.
+                {"type": "assistant", "timestamp": "2026-06-12T10:00:00Z",
+                 "message": {"model": "claude-opus-4-8"}},
+                # assistant entry with no model at all
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"role": "assistant"}},
+                # a summary/system line the loader must not count
+                {"type": "summary", "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"model": "claude-opus-5"}},
+            ]
+            path = projects / "s.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\nnot json\n",
+                            encoding="utf-8")
+            stamp = self.NOW.timestamp()
+            os.utime(path, (stamp, stamp))
+            counts = model_usage_census.census_counts(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            self.assertEqual(counts, {})
+
+    # --- availability refresh --------------------------------------------
+
+    def test_refresh_models_normalizes_the_models_api_payload(self):
+        page = {"data": [
+            {"id": "claude-opus-5", "display_name": "Claude Opus 5",
+             "created_at": "2026-04-01T00:00:00Z", "max_input_tokens": 1000000,
+             "max_tokens": 128000, "capabilities": {"thinking": {"supported": True}},
+             "type": "model"},
+            {"id": "some-other-vendor-model", "display_name": "Other",
+             "created_at": "2026-04-01T00:00:00Z", "max_input_tokens": 1,
+             "max_tokens": 1, "capabilities": {}, "type": "model"},
+        ], "has_more": False}
+        doc = refresh_models.build_models_document(
+            lambda url, headers: page, now=self.NOW)
+        self.assertEqual([m["id"] for m in doc["models"]], ["claude-opus-5"],
+                         "only Claude models are written to the roster input")
+        model = doc["models"][0]
+        for field in ("max_input_tokens", "max_tokens", "capabilities", "created_at"):
+            self.assertIn(field, model)
+        self.assertEqual(doc["fetched_at"], "2026-09-04T12:00:00Z")
+
+    def test_admin_report_fails_soft_with_a_notice_naming_the_secret(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ANTHROPIC_ADMIN_KEY", None)
+            report, notice = refresh_models.fetch_admin_usage_report(
+                now=self.NOW, fetch=None)
+        self.assertIsNone(report)
+        self.assertTrue(notice.startswith("::notice::"), notice)
+        self.assertIn("ANTHROPIC_ADMIN_KEY", notice)
+
+    # --- consumption by the runner ---------------------------------------
+
+    def _fixture_dir(self, tmp, pinned):
+        eval_dir = Path(tmp) / "evals" / "a-skill"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+        fixture = {"skill": "a-skill", "prompt": "do the thing",
+                   "judge_rubric": "grade it", "arms": {"without_skill": {"install": "none"}}}
+        if pinned:
+            fixture["model"] = "claude-sonnet-4-6"
+            fixture["judge"] = {"model": "claude-opus-4-6"}
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def _roster_file(self, tmp):
+        path = Path(tmp) / "roster" / "latest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(self._compute()), encoding="utf-8")
+        return path
+
+    def _capture_models(self, eval_dir, roster_path, want="models"):
+        """Run one arm with the agent and judge stubbed, returning the models
+        the runner actually chose."""
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm):
+            seen["agent"] = arm.get("model")
+            return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        def fake_score(rubric, transcript, diff, model=None, **kwargs):
+            seen["judge"] = model
+            return {"dimensions": [], "overall": 1.0}
+
+        args = argparse.Namespace(
+            model=None, timeout=30, no_judge=False,
+            results_dir=Path(tempfile.mkdtemp()), roster=roster_path)
+        self.addCleanup(shutil.rmtree, args.results_dir, ignore_errors=True)
+        fixture = run_eval.load_fixture(eval_dir)
+        with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+             mock.patch.object(run_eval.judge, "score", fake_score):
+            summary = run_eval._run_arm(
+                "without_skill", fixture, eval_dir / "seed",
+                Path("/nonexistent-registry"), args, "20260904T120000Z")
+        return summary if want == "summary" else seen
+
+    def test_runner_takes_the_roster_when_the_fixture_has_no_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            seen = self._capture_models(eval_dir, self._roster_file(tmp))
+        expected = self._compute()
+        self.assertEqual(seen["agent"], expected["arms"][0]["id"])
+        self.assertEqual(seen["judge"], expected["judge"]["id"])
+
+    def test_runner_takes_the_fixture_pin_when_it_has_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            seen = self._capture_models(eval_dir, self._roster_file(tmp))
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6")
+        self.assertEqual(seen["judge"], "claude-opus-4-6")
+
+    def test_runner_survives_a_missing_roster(self):
+        """It no longer falls through to the CLI default: an unpinned fixture
+        with no usable roster is a RUNNER-level error naming the path it
+        looked for (the exit-2 path), while a pinned fixture is unaffected and
+        still runs with no roster at all. TestIssue67Review covers both sides
+        in detail; this is the regression floor for the change of contract."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            missing = Path(tmp) / "nope.json"
+            summary = self._capture_models(eval_dir, missing, want="summary")
+        self.assertIsNotNone(summary["error"])
+        # The roster's basename, not its full absolute path (item 5, #129
+        # review round 3) — this detail reaches summary.json, which
+        # eval.yml commits to the public eval-results branch.
+        self.assertIn(missing.name, summary["error"]["detail"])
+        self.assertNotIn(str(missing), summary["error"]["detail"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            seen = self._capture_models(eval_dir, Path(tmp) / "nope.json")
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6",
+                         "a pinned fixture still runs with no roster at all")
+
+    # --- policy file + the no-hardcoded-ids guard ------------------------
+
+    def test_policy_file_carries_the_thresholds_and_the_adr_placeholder(self):
+        raw = self.POLICY.read_text(encoding="utf-8")
+        policy = self._policy()
+        self.assertEqual(policy["cooling_off_days"], 7)
+        self.assertEqual(policy["arm_enter_usage_pct"], 10)
+        self.assertEqual(policy["arm_enter_window_weeks"], 4)
+        self.assertEqual(policy["arm_exit_usage_pct"], 2)
+        self.assertEqual(policy["arm_exit_window_weeks"], 8)
+        self.assertEqual(policy["census_max_age_days"], 14)
+        self.assertEqual(policy["min_ranked_turns"], 20)
+        self.assertEqual(policy["min_ranked_share"], 0.01)
+        self.assertEqual(roster.tier_rungs(policy),
+                         [["haiku"], ["sonnet"], ["opus"], ["fable", "mythos"]],
+                         "a rung may name peers that rank identically")
+        self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
+                                  "sub-issue until the ADR itself exists")
+        roster.validate_policy(policy)  # the real policy file must validate
+
+    #: Anything a maintainer marks with this on the SAME LINE is allowed to
+    #: carry a model id, and each file gets at most one. The marker is the
+    #: whole of the exemption: an unmarked literal is a bug by definition.
+    FALLBACK_MARKER = "ROSTER FALLBACK"
+
+    def _model_id_pattern(self):
+        """The shape of a model id, with the family words taken FROM THE
+        POLICY rather than restated here.
+
+        A literal alternation drifts the moment a rung is added — the guard
+        would then stop looking for the very family that was just introduced,
+        and go on passing. Deriving it means a new rung is covered the day it
+        lands.
+
+        The trailing group is `-<anything lowercase>`, repeated: it catches
+        `claude-opus-4-8`, the older `claude-3-opus-20240229` (hence the
+        optional numeric segment BEFORE the family word) and the alias shapes
+        like `claude-opus-latest` — all of which the previous
+        `-(family)-[0-9]` pattern walked straight past.
+        """
+        families = "|".join(re.escape(w) for w in roster.tier_words(self._policy()))
+        return re.compile(rf"claude-(?:[0-9]+-)?(?:{families})(?:-[0-9a-z.]+)+")
+
+    def test_no_model_ids_are_hardcoded_outside_fixtures(self):
+        # Fixtures may pin a model; the roster machinery may not, or the whole
+        # point of computing the roster from the API is lost the first time a
+        # model retires. eval.yml and run_eval.py are in scope because that is
+        # where the two surviving literals were: the preflight's hardcoded
+        # `--model`, and the runner's fall-through to the CLI default.
+        pattern = self._model_id_pattern()
+        # Self-check: the pattern must actually match the shapes it claims to.
+        for shape in ("claude-opus-4-8", "claude-3-opus-20240229",
+                      "claude-opus-latest", "claude-mythos-5-1"):
+            self.assertRegex(shape, pattern, "the guard's own pattern is inert")
+        for rel in ("harness/roster.py", "harness/timeweeks.py",
+                    "harness/run_eval.py", "scripts/refresh_models.py",
+                    "scripts/model_usage_census.py", "evals/roster-policy.yml",
+                    ".github/workflows/eval.yml"):
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            offenders = [line for line in text.splitlines()
+                         if pattern.search(line)
+                         and self.FALLBACK_MARKER not in line]
+            self.assertEqual(offenders, [], f"{rel} hardcodes a model id")
+            marked = [line for line in text.splitlines()
+                      if self.FALLBACK_MARKER in line and pattern.search(line)]
+            self.assertLessEqual(len(marked), 1,
+                                 f"{rel} carries more than one marked fallback "
+                                 f"literal; there is only ever one")
+
+    # --- eval.yml -----------------------------------------------------------
+
+    def _eval_workflow(self):
+        path = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+        return path.read_text(encoding="utf-8"), yaml.safe_load(
+            path.read_text(encoding="utf-8"))
+
+    def test_eval_workflow_refreshes_the_roster_before_running_the_eval(self):
+        _, doc = self._eval_workflow()
+        steps = doc["jobs"]["eval"]["steps"]
+        names = [s.get("name", "") for s in steps]
+        refresh = next(i for i, n in enumerate(names) if "roster" in n.lower())
+        run = next(i for i, n in enumerate(names) if n.startswith("Run the eval"))
+        self.assertLess(refresh, run,
+                        "the roster has to exist before the eval reads it")
+        script = steps[refresh]["run"]
+        self.assertIn("GITHUB_STEP_SUMMARY", script,
+                      "#67: the computed roster is called out in the job summary")
+        self.assertIn("roster.py", script)
+        self.assertIn("refresh_models.py", script)
+
+    def test_eval_workflow_commits_the_roster(self):
+        _, doc = self._eval_workflow()
+        commit = next(s for s in doc["jobs"]["eval"]["steps"]
+                      if "git checkout -B eval-results" in (s.get("run") or ""))
+        self.assertIn("roster", commit["run"],
+                      "roster/ is published on eval-results alongside the badge")
+
+    def test_eval_workflow_keeps_its_security_posture(self):
+        raw, doc = self._eval_workflow()
+        triggers = doc.get("on", doc.get(True))
+        self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"],
+                         "eval.yml holds a credential and runs the agent under "
+                         "bypassPermissions — no pull_request trigger, ever")
+        self.assertEqual(doc["permissions"], {"contents": "write", "id-token": "write"})
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            self.assertNotIn("${{", script,
+                             f"step {step.get('name')!r} interpolates into a "
+                             "run: block; read inputs from $GITHUB_EVENT_PATH")
+            uses = step.get("uses")
+            if uses:
+                self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
+                                 "every uses: is a bare 40-hex SHA, no comment")
+        self.assertNotIn("ANTHROPIC_API_KEY", raw,
+                         "auth is WIF-derived; no stored key shape is added")
+        # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
+        # `uses: owner/repo@<sha> # v4` sailed through the parsed check above
+        # (mutation-proven). Re-assert it on the raw text, where the comment
+        # still exists. TestIssue67Review carries the same rule; the
+        # duplication is deliberate — this is the test nobody may delete.
+        for line in raw.splitlines():
+            if re.match(r"^\s*(?:-\s+)?uses:", line):
+                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
+                                 "a `uses:` pin carries a trailing comment")
+        for step in doc["jobs"]["eval"]["steps"]:
+            if (step.get("uses") or "").startswith("actions/checkout@"):
+                self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                              False, f"checkout step {step.get('name')!r} keeps a "
+                                     "GitHub credential on the runner")
+        self.assertEqual(doc["concurrency"],
+                         {"group": "real-eval", "cancel-in-progress": False},
+                         "the badge commit races itself without this lane")
+
+
+class TestIssue67Review(unittest.TestCase):
+    """Review-round fixes on top of #67's roster feature (PR #129, round 1).
+
+    A SIBLING of TestIssue67, not a subclass: it reuses that class's canned
+    documents (they are classmethods for exactly this reason) so the two are
+    testing one model of the policy, but its own tests run once, not twice.
+
+    Same hermetic rules: frozen `now`, no network, no real `claude`, and
+    `example`-shaped stand-ins for anything that would name a real account,
+    project or path.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        return TestIssue67._models_doc(extra=extra, drop=drop)
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        return TestIssue67._census_doc(counts=counts, generated_at=generated_at)
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    # --- shared fixture helpers ------------------------------------------
+
+    @staticmethod
+    def _write_transcript(path: Path, entries: list, mtime: datetime) -> Path:
+        """A JSONL transcript with an EXPLICIT mtime.
+
+        The census skips transcripts whose mtime falls before the window
+        (N6), so a fixture that relied on the wall clock for its mtime would
+        pass or fail depending on the year the suite is run in. Setting it
+        explicitly keeps the hermetic-time rule intact.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(e) for e in entries) + "\n",
+                        encoding="utf-8")
+        stamp = mtime.timestamp()
+        os.utime(path, (stamp, stamp))
+        return path
+
+    def _assistant(self, model, when, **extra):
+        entry = {"type": "assistant", "timestamp": when,
+                 "message": {"role": "assistant", "model": model}}
+        entry["message"].update(extra.pop("message_extra", {}))
+        entry.update(extra)
+        return entry
+
+    # --- B1: the census publishes model-id-shaped keys, or `other` -------
+
+    #: The values a real transcript can carry in `message.model` that are NOT
+    #: model ids. Every one of these was found in a real routing setup; each
+    #: would have been copied verbatim into a key of a file on a public
+    #: branch. `example`-shaped stand-ins only — no real account or project.
+    HOSTILE_MODELS = {
+        "bedrock_arn": ("arn:aws:bedrock:us-east-1:123456789012:"
+                        "application-inference-profile/abcd1234"),
+        "vertex_path": ("projects/example-gcp-project/locations/us-east5/"
+                        "publishers/anthropic/models/claude-opus-5"),
+        "fs_path": "/home/example/repos/example-private-client/model.json",
+        "prose": "the model I used for the merger memo",
+        # These four ARE lowercase-and-dashes — the exact shape `MODEL_ID_RE`
+        # accepts — so a regex weakened in one specific way lets each one
+        # straight through as its own published key:
+        "dashed_no_family_word": "claude-home-user-secret-client-northrop-merger",
+        "dashed_too_long": "claude-" + "x" * 80,
+        # only the length-40 cap keeps this one out — it carries a real
+        # family word (`opus`) and every dash-token is well under the
+        # per-token 20-char sub-cap, so widening the overall cap (e.g. to
+        # 2000) is the ONLY thing that would admit it.
+        "dashed_long_with_family_word": ("claude-" +
+                                         "-".join(["pad12345678"] * 4) + "-opus"),
+        # only the `claude` prefix requirement keeps this one out — it is
+        # otherwise a well-formed, short, family-word-bearing id shape.
+        "family_word_without_claude_prefix": "internal-proxy-opus-route",
+        # `$`, unlike `\Z`, matches just before a trailing newline — item 6
+        # (#129 review round 3): an otherwise honest id with a trailing
+        # newline used to be published as its own (distinct, newline-
+        # carrying) key rather than falling to `other`.
+        "trailing_newline": "claude-opus-5\n",
+    }
+
+    #: The only key this test's transcript can honestly earn — an
+    #: independent oracle, not `MODEL_ID_RE` checking itself. Item 7 (#129
+    #: review round 2): the old assertion just re-ran the production regex
+    #: against its own output, so a mutation weakening the regex (dropping
+    #: the anchor, widening the length cap) stayed green — every hostile
+    #: value it let through still "matched MODEL_ID_RE" by definition.
+    GOOD_KEYS = {"claude-opus-5"}
+
+    def test_census_publishes_only_model_id_shaped_keys(self):
+        """B1: `message.model` is attacker-adjacent data — it is whatever the
+        routing layer wrote — and it became a top-level KEY of a public file."""
+        values = list(self.HOSTILE_MODELS.values()) + [
+            {"id": "claude-opus-5", "provider": "example"},   # a dict
+            ["claude-opus-5"],                                 # a list
+            7,                                                 # an int
+            "claude-opus-5",                                   # the honest case
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-home-example-x" / "s.jsonl",
+                [self._assistant(v, "2026-09-03T10:00:00Z") for v in values],
+                mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+
+        for key in counts:
+            with self.subTest(key=key):
+                self.assertTrue(
+                    key in self.GOOD_KEYS or key == model_usage_census.OTHER_KEY,
+                    f"census published {key!r} as a key on a public branch")
+        non_conforming = len(values) - 1  # every value but the one honest id
+        self.assertEqual(counts[model_usage_census.OTHER_KEY]["2026-W36"],
+                         non_conforming)
+        self.assertEqual(counts["claude-opus-5"]["2026-W36"], 1)
+
+    def test_census_never_stringifies_a_non_string_model(self):
+        """`str(some_dict)` is `repr()` — it publishes every value inside."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-home-example-x" / "s.jsonl",
+                [self._assistant({"id": "claude-opus-5", "api_key": "sk-ant-example"},
+                                 "2026-09-03T10:00:00Z")],
+                mtime=self.NOW)
+            document = model_usage_census.build_document(projects, now=self.NOW, weeks=8)
+        blob = json.dumps(document)
+        self.assertNotIn("sk-ant-example", blob)
+        self.assertNotIn("api_key", blob)
+        self.assertEqual(list(document["counts"]), [model_usage_census.OTHER_KEY])
+
+    def test_census_main_prints_nothing_from_under_the_projects_tree(self):
+        """The status line is the other public surface: CI logs are public."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            out = Path(tmp) / "published" / "usage.json"
+            self._write_transcript(
+                projects / "-home-example-repos-private-client-work" / "s.jsonl",
+                [self._assistant(v, "2026-09-03T10:00:00Z")
+                 for v in self.HOSTILE_MODELS.values()],
+                mtime=self.NOW)
+            argv = ["model_usage_census.py", "--projects", str(projects),
+                    "--out", str(out), "--weeks", "8"]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = model_usage_census.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(rc, 0, printed)
+            self.assertNotIn(str(projects), printed)
+            self.assertNotIn("private-client-work", printed)
+            for value in self.HOSTILE_MODELS.values():
+                self.assertNotIn(value, printed)
+            published = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(list(published["counts"]), [model_usage_census.OTHER_KEY])
+
+    # --- S5: one count per API turn, not per JSONL entry -----------------
+
+    def test_census_counts_one_turn_per_message_id(self):
+        """A thinking block, a text block and two tool calls arrive as four
+        assistant entries sharing one `message.id`. Counting entries inflated
+        the numbers the 10%/2% bars are decided on (measured 2.5x)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            entries = [self._assistant("claude-opus-5", "2026-09-03T10:00:0%dZ" % i,
+                                       message_extra={"id": "msg_01AAA"})
+                       for i in range(4)]
+            entries.append(self._assistant("claude-opus-5", "2026-09-03T11:00:00Z",
+                                           message_extra={"id": "msg_01BBB"}))
+            self._write_transcript(projects / "-x" / "s.jsonl", entries, mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    def test_census_falls_back_to_request_id_then_counts_the_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            entries = [
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:00Z",
+                 "requestId": "req_1", "message": {"model": "claude-opus-5"}},
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:01Z",
+                 "requestId": "req_1", "message": {"model": "claude-opus-5"}},
+                # No id and no requestId: nothing to dedupe on, so it counts.
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+                 "message": {"model": "claude-opus-5"}},
+            ]
+            self._write_transcript(projects / "-x" / "s.jsonl", entries, mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    def test_dedupe_is_per_transcript_not_global(self):
+        """Two sessions can legitimately carry the same message id only if one
+        is a resumed copy of the other; across unrelated transcripts, ids are
+        distinct. Deduping globally would silently drop real turns."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            for name in ("a.jsonl", "b.jsonl"):
+                self._write_transcript(
+                    projects / "-x" / name,
+                    [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z",
+                                     message_extra={"id": "msg_01SAME"})],
+                    mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    # --- N6: transcripts older than the window are not parsed ------------
+
+    def test_census_skips_transcripts_last_written_before_the_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-x" / "old.jsonl",
+                [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z")],
+                mtime=self.NOW - timedelta(days=365))
+            self._write_transcript(
+                projects / "-x" / "new.jsonl",
+                [self._assistant("claude-sonnet-5", "2026-09-03T10:00:00Z")],
+                mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-sonnet-5": {"2026-W36": 1}})
+
+    # --- N1: one week-arithmetic implementation, not two -----------------
+
+    def test_roster_and_census_share_one_week_implementation(self):
+        self.assertIs(roster.iso_week, timeweeks.iso_week)
+        self.assertIs(model_usage_census.iso_week, timeweeks.iso_week)
+        self.assertIs(roster.window_weeks, timeweeks.window_weeks)
+        self.assertIs(model_usage_census.window_weeks, timeweeks.window_weeks)
+        self.assertIs(roster.parse_ts, timeweeks.parse_ts)
+    # --- S1: an empty census is not usage evidence -----------------------
+
+    def _empty_census(self, **kwargs):
+        return self._census_doc(counts={}, **kwargs)
+
+    def test_a_fresh_but_empty_census_is_not_treated_as_usage_evidence(self):
+        """Nobody ran anything, or the publisher wrote a census of nothing —
+        either way there is no evidence, and every arm was reading as though
+        it had been chosen on usage."""
+        result = self._compute(census=self._empty_census())
+        self.assertTrue(result["arms"], "the fallback still names an arm set")
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("census published but empty over the window",
+                              arm["reason"])
+        self.assertEqual(result["source"]["census_at"], "2026-09-04T06:00:00Z",
+                         "the census WAS published; its provenance is recorded")
+
+    def test_a_census_with_no_weeks_inside_the_window_is_not_evidence(self):
+        outside = {"claude-sonnet-5": {"2026-W02": 500}}
+        result = self._compute(census=self._census_doc(counts=outside))
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("census published but empty over the window",
+                              arm["reason"])
+
+    # --- S2: staleness is not evidence of retirement ---------------------
+
+    STALE = "2026-08-14T00:00:00Z"  # 21 days before NOW, past the 14-day window
+
+    def test_a_stale_census_holds_previous_arms_still_in_the_api(self):
+        """Measured: a previous arm at 33% usage dropped because the census
+        was 21 days old. A stale census says nothing about usage — including
+        nothing that would justify retiring anything."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(census=self._census_doc(generated_at=self.STALE),
+                               previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        held = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no fresh census", held)
+        self.assertIn("no evidence to retire it", held)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_a_stale_census_still_retires_a_model_that_left_the_api(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(
+            models=self._models_doc(drop=("claude-opus-4-8",)),
+            census=self._census_doc(generated_at=self.STALE), previous=previous)
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
+        self.assertIn("no longer returned by the Models API",
+                      result["retired_since_last"][0]["reason"])
+
+    def test_an_empty_census_holds_previous_arms_the_same_way(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(census=self._empty_census(), previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertIn("no evidence to retire it",
+                      self._reason(result, "claude-opus-4-8"))
+
+    # --- S16: a future census timestamp is not fresh ---------------------
+
+    def test_a_census_generated_in_the_future_is_not_fresh(self):
+        ahead = self._census_doc(generated_at="2026-10-01T00:00:00Z")
+        result = self._compute(census=ahead)
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("in the future", arm["reason"])
+        self.assertIsNone(result["source"]["census_at"])
+
+    # --- S6: the ladder places mythos, and names what it cannot place ----
+
+    def test_mythos_ranks_as_a_peer_of_fable(self):
+        rungs = roster.tier_rungs(self._policy())
+        self.assertEqual(roster.rung_of("claude-mythos-5-1", rungs),
+                         roster.rung_of("claude-fable-5-1", rungs))
+        self.assertIsNotNone(roster.rung_of("claude-mythos-5-1", rungs))
+
+    def test_an_unranked_claude_model_is_named_with_its_reason(self):
+        extra = [TestIssue67._model("claude-zephyr-1", "2026-01-01T00:00:00Z")]
+        result = self._compute(models=self._models_doc(extra=extra))
+        self.assertEqual([u["id"] for u in result["unranked"]], ["claude-zephyr-1"])
+        self.assertIn("ladder", result["unranked"][0]["reason"])
+        self.assertNotIn("claude-zephyr-1", self._arm_ids(result))
+
+    def test_unranked_usage_is_excluded_from_the_share_denominator(self):
+        """Measured: 60/week of sonnet computed at 5.7% — under the 10% entry
+        bar — against 1000/week of usage on a model the ladder never placed."""
+        counts = {"claude-sonnet-5": {w: 60 for w in self.W[:4]},
+                  "claude-zephyr-1": {w: 1000 for w in self.W[:4]}}
+        result = self._compute(census=self._census_doc(counts=counts))
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertIn("100.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
+
+    # --- S7: what was excluded from the arm set, and why -----------------
+
+    def test_a_model_with_no_created_at_is_excluded_and_says_which(self):
+        broken = TestIssue67._model("claude-fable-9", None)
+        result = self._compute(models=self._models_doc(
+            extra=[broken], drop=("claude-fable-5-1",)))
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-9")
+        self.assertIn("created_at", entry["reason"])
+        self.assertIn("absent", entry["reason"])
+        self.assertNotIn("days old", entry["reason"],
+                         "'created_at absent' is not 'too new'")
+
+    def test_a_model_inside_the_cooling_off_is_excluded_and_says_so(self):
+        result = self._compute()
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-5-1")
+        self.assertIn("cooling-off", entry["reason"])
+        self.assertIn("3 days old", entry["reason"])
+
+    def test_an_unparseable_created_at_reads_as_absent_not_as_new(self):
+        broken = TestIssue67._model("claude-fable-9", "last Tuesday")
+        result = self._compute(models=self._models_doc(
+            extra=[broken], drop=("claude-fable-5-1",)))
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-9")
+        self.assertIn("unparseable", entry["reason"])
+
+    def test_an_empty_arm_set_is_fatal_and_publishes_nothing(self):
+        """An all-inside-cooling-off tier used to yield `arms: []` and exit 0
+        — a roster with no arms is not a roster, it is a silent no-op run."""
+        fresh_only = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-9", "2026-09-02T00:00:00Z")]}
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(fresh_only), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertNotEqual(rc, 0)
+            self.assertFalse(out.exists(), "nothing is written when there are no arms")
+            self.assertIn("no arms", (stdout.getvalue() + stderr.getvalue()).lower())
+
+    # --- S8: an alias and its dated snapshot are one model ---------------
+
+    SNAPSHOT = "claude-sonnet-5-20260201"
+
+    def _with_snapshot(self):
+        return self._models_doc(
+            extra=[TestIssue67._model(self.SNAPSHOT, "2026-02-01T00:00:00Z")])
+
+    def test_a_dated_snapshot_takes_no_second_arm_seat(self):
+        result = self._compute(models=self._with_snapshot())
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertNotIn(self.SNAPSHOT, self._arm_ids(result))
+        entry = next(e for e in result["excluded"] if e["id"] == self.SNAPSHOT)
+        self.assertIn("claude-sonnet-5", entry["reason"])
+        self.assertIn("snapshot", entry["reason"])
+
+    def test_a_dated_id_whose_alias_is_absent_stands_on_its_own(self):
+        """Only collapse onto an alias that actually exists — otherwise a
+        catalogue that publishes ONLY dated ids would have no arms at all."""
+        models = self._models_doc(drop=("claude-sonnet-5",),
+                                  extra=[TestIssue67._model(self.SNAPSHOT,
+                                                            "2026-02-01T00:00:00Z")])
+        result = self._compute(models=models)
+        self.assertIn(self.SNAPSHOT, self._arm_ids(result))
+
+    def test_snapshot_usage_counts_towards_its_alias(self):
+        counts = {self.SNAPSHOT: {w: 100 for w in self.W[:4]},
+                  "claude-haiku-4-5": {w: 100 for w in self.W[:4]}}
+        result = self._compute(models=self._with_snapshot(),
+                               census=self._census_doc(counts=counts))
+        self.assertIn("50.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
+
+    def test_version_components_sort_numerically_not_lexicographically(self):
+        """`claude-x-4-10` supersedes `claude-x-4-9`; a string sort says the
+        opposite, and the tie-break decides which model is 'newest in tier'."""
+        same_day = "2026-03-01T00:00:00Z"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-sonnet-4-9", same_day),
+            TestIssue67._model("claude-sonnet-4-10", same_day)]}
+        rungs = roster.tier_rungs(self._policy())
+        ordered = sorted(models["models"], key=lambda m: roster._rank(m, rungs))
+        self.assertEqual([m["id"] for m in ordered],
+                         ["claude-sonnet-4-9", "claude-sonnet-4-10"])
+
+    # --- S10: the judge says, in a field, whether it is also an arm ------
+
+    def test_judge_carries_a_machine_readable_is_arm_flag(self):
+        result = self._compute()
+        self.assertIs(result["judge"]["is_arm"], False)
+        self.assertNotIn(result["judge"]["id"], self._arm_ids(result))
+
+    def test_judge_is_arm_is_true_when_every_model_is_an_arm(self):
+        one_per_tier = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            TestIssue67._model("claude-sonnet-5", "2026-02-01T00:00:00Z")]}
+        result = self._compute(models=one_per_tier, census=None)
+        self.assertIs(result["judge"]["is_arm"], True)
+        self.assertIn(result["judge"]["id"], self._arm_ids(result))
+
+    # --- S12: the three documents come off a public branch ---------------
+
+    def _warned(self, **kwargs):
+        """compute_roster with the warnings collected instead of printed."""
+        notes: list[str] = []
+        kwargs.setdefault("models_doc", self._models_doc())
+        kwargs.setdefault("census_doc", self._census_doc())
+        kwargs.setdefault("policy", self._policy())
+        kwargs.setdefault("previous", None)
+        kwargs.setdefault("now", self.NOW)
+        result = roster.compute_roster(warn=notes.append, **kwargs)
+        return result, notes
+
+    def test_a_model_entry_without_a_string_id_is_skipped_and_named(self):
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            {"display_name": "no id at all", "created_at": "2026-01-01T00:00:00Z"},
+            {"id": 5, "created_at": "2026-01-01T00:00:00Z"},
+            TestIssue67._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            TestIssue67._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            "not even a dict",
+        ]}
+        result, notes = self._warned(models_doc=models)
+        self.assertEqual(self._arm_ids(result), ["claude-sonnet-5", "claude-opus-5"])
+        self.assertTrue(notes)
+        for note in notes:
+            with self.subTest(note=note):
+                self.assertNotIn("\n", note, "one line, never a traceback")
+                self.assertIn("models", note)
+
+    def test_census_counts_that_are_not_actual_ints_are_dropped_not_coerced(self):
+        """A census cell must be an actual `int` — not a numeral STRING, not
+        `None`. (N2, #129 review round 5: `_clean_counts` used to run every
+        cell through Python's `int()`, which coerces far more than a real
+        JSON number ever needs — see `_clean_counts`'s own comment.) Every
+        one of these weeks is dropped, and the run does not crash."""
+        counts = {"claude-sonnet-5": {w: "100" for w in self.W[:4]},
+                  "claude-opus-5": {w: None for w in self.W[:4]},
+                  "claude-haiku-4-5": "not a mapping at all"}
+        result, notes = self._warned(census_doc=self._census_doc(counts=counts))
+        # Every cell is dropped, so the census reads as empty over the
+        # window and every arm falls back to newest-per-tier — NOT to a
+        # coerced "100.0%" usage share.
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("fell back to newest per tier", reason)
+        self.assertNotIn("100.0%", reason)
+        self.assertTrue(any("census" in n for n in notes), notes)
+        for note in notes:
+            self.assertNotIn("\n", note)
+
+    def test_previous_arms_that_are_not_dicts_with_an_id_are_ignored(self):
+        previous = {"arms": ["claude-opus-4-8", {"reason": "no id"}, 7,
+                             {"id": "claude-opus-4-8"}]}
+        result, notes = self._warned(previous=previous)
+        self.assertTrue(any("previous" in n for n in notes), notes)
+        # The one well-formed entry is still honoured.
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
+
+    def test_a_wrong_shaped_previous_document_does_not_raise(self):
+        for previous in ({"arms": "claude-opus-5"}, {"arms": None}, {}):
+            with self.subTest(previous=previous):
+                result, _ = self._warned(previous=previous)
+                self.assertEqual(result["retired_since_last"], [])
+
+    # --- N5: an unranked previous arm is not "gone from the API" ---------
+
+    def test_an_unranked_previous_arm_is_retired_for_the_right_reason(self):
+        extra = [TestIssue67._model("claude-zephyr-1", "2026-01-01T00:00:00Z")]
+        previous = {"arms": [{"id": "claude-zephyr-1", "reason": "was an arm"}]}
+        result = self._compute(models=self._models_doc(extra=extra),
+                               previous=previous)
+        why = next(r["reason"] for r in result["retired_since_last"]
+                   if r["id"] == "claude-zephyr-1")
+        self.assertNotIn("no longer returned by the Models API", why)
+        self.assertIn("ladder", why)
+
+    # --- S9: the summary never claims "no change" it cannot know ---------
+
+    def test_summary_says_there_was_no_previous_roster_on_a_first_run(self):
+        text = roster.render_summary(self._compute(previous=None))
+        self.assertIn("no previous roster to compare against", text)
+        self.assertNotIn("No change to the arm set", text)
+
+    def test_summary_says_no_change_only_when_it_compared_something(self):
+        previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
+        text = roster.render_summary(self._compute(previous=previous))
+        self.assertIn("No change to the arm set", text)
+
+    def test_summary_says_inputs_unavailable_when_the_previous_was_unreadable(self):
+        text = roster.render_summary(self._compute(previous=None),
+                                     previous_state="unavailable")
+        self.assertIn("roster inputs unavailable", text.lower())
+        self.assertNotIn("No change to the arm set", text)
+
+    def test_main_reports_unavailable_when_the_previous_roster_is_corrupt(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            previous = Path(tmp) / "previous.json"
+            previous.write_text("{ this is not json", encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--previous", str(previous), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("roster inputs unavailable", printed.lower())
+    # --- S13: a half-read catalogue is refused, loudly and without a body ---
+
+    def test_a_models_api_that_never_stops_paging_is_refused(self):
+        """The file says it refuses a half-read API because a partial read is
+        indistinguishable from a retirement. It then read 20 pages and wrote
+        whatever it had."""
+        pages = iter(range(10_000))
+
+        def endless(url, headers):
+            n = next(pages)
+            return {"data": [{"id": f"claude-sonnet-{n}", "created_at":
+                              "2026-01-01T00:00:00Z"}],
+                    "has_more": True, "last_id": f"claude-sonnet-{n}"}
+
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(endless, now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_a_catalogue_that_ends_within_the_bound_is_written(self):
+        pages = [
+            {"data": [{"id": "claude-sonnet-5", "created_at": "2026-02-01T00:00:00Z"}],
+             "has_more": True, "last_id": "claude-sonnet-5"},
+            {"data": [{"id": "claude-opus-5", "created_at": "2026-04-01T00:00:00Z"}],
+             "has_more": False},
+        ]
+        served = iter(pages)
+        doc = refresh_models.build_models_document(
+            lambda url, headers: next(served), now=self.NOW)
+        self.assertEqual([m["id"] for m in doc["models"]],
+                         ["claude-opus-5", "claude-sonnet-5"])
+
+    def _refresh_main(self, exc):
+        """main() with the network call replaced by a raise. (rc, printed)."""
+        def boom(url, headers, timeout=30):
+            raise exc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "models.json"
+            argv = ["refresh_models.py", "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(refresh_models, "http_json", boom), \
+                 mock.patch.object(refresh_models, "_auth_headers", lambda: {}), \
+                 mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = refresh_models.main()
+            wrote = out.exists()
+        return rc, stdout.getvalue() + stderr.getvalue(), wrote
+
+    def test_a_timeout_is_caught_and_named_by_its_class(self):
+        """TimeoutError is an OSError, not a URLError — it used to escape the
+        except clause entirely and exit through a traceback."""
+        rc, printed, wrote = self._refresh_main(TimeoutError("timed out"))
+        self.assertEqual(rc, 1)
+        self.assertIn("TimeoutError", printed)
+        self.assertFalse(wrote)
+
+    def test_a_decoding_error_is_caught_and_named_by_its_class(self):
+        exc = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        rc, printed, _ = self._refresh_main(exc)
+        self.assertEqual(rc, 1)
+        self.assertIn("UnicodeDecodeError", printed)
+        self.assertNotIn("invalid start byte", printed)
+
+    def test_an_http_error_reports_the_status_code_and_no_response_body(self):
+        body = "the account example-org is over its quota"
+        exc = urllib.error.HTTPError(
+            "https://example.com/v1/models", 429, "Too Many Requests", {},
+            io.BytesIO(body.encode()))
+        rc, printed, _ = self._refresh_main(exc)
+        self.assertEqual(rc, 1)
+        self.assertIn("429", printed)
+        self.assertNotIn(body, printed)
+        self.assertNotIn("example-org", printed)
+
+    def test_a_missing_credential_still_says_which_variable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "models.json"
+            argv = ["refresh_models.py", "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+                os.environ.pop("ANTHROPIC_API_KEY", None)
+                with mock.patch.object(sys, "argv", argv), \
+                     contextlib.redirect_stdout(stdout), \
+                     contextlib.redirect_stderr(stderr):
+                    rc = refresh_models.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("ANTHROPIC_AUTH_TOKEN", printed)
+    # --- S11 / S10: the runner fails closed on an unusable roster --------
+
+    def _fixture_dir(self, tmp, pinned, pin_judge=None):
+        eval_dir = Path(tmp) / "evals" / "a-skill"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+        fixture = {"skill": "a-skill", "prompt": "do the thing",
+                   "registry": "https://github.com/Adam-S-Daniel/agentskills",
+                   "judge_rubric": "grade it",
+                   "arms": {"without_skill": {"install": "none"}}}
+        if pinned:
+            fixture["model"] = "claude-sonnet-4-6"
+        if pinned or pin_judge:
+            fixture["judge"] = {"model": pin_judge or "claude-opus-4-6"}
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def _roster_file(self, tmp, document=None, name="latest.json"):
+        path = Path(tmp) / "roster" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(document, str):
+            path.write_text(document, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(document if document is not None
+                                       else self._compute()), encoding="utf-8")
+        return path
+
+    def _run_one_arm(self, eval_dir, roster_path):
+        """One arm with the agent and judge stubbed. Returns the arm summary."""
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm):
+            seen["agent"] = arm.get("model")
+            return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        def fake_score(rubric, transcript, diff, model=None, **kwargs):
+            seen["judge"] = model
+            return {"dimensions": [], "overall": 1.0}
+
+        args = argparse.Namespace(
+            model=None, timeout=30, no_judge=False,
+            results_dir=Path(tempfile.mkdtemp()), roster=roster_path)
+        self.addCleanup(shutil.rmtree, args.results_dir, ignore_errors=True)
+        fixture = run_eval.load_fixture(eval_dir)
+        with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+             mock.patch.object(run_eval.judge, "score", fake_score):
+            summary = run_eval._run_arm("without_skill", fixture, eval_dir / "seed",
+                                        Path("/nonexistent-registry"), args,
+                                        "20260904T120000Z")
+        return summary, seen
+
+    def test_an_unpinned_fixture_with_no_roster_is_a_runner_level_error(self):
+        """Silently falling back to the CLI's default model published a badge
+        for a model nobody chose, and made every week-over-week comparison a
+        comparison against a different model."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            missing = Path(tmp) / "roster" / "nope.json"
+            summary, seen = self._run_one_arm(eval_dir, missing)
+        self.assertIsNotNone(summary["error"], "no pin and no roster must not run")
+        # The roster's basename, not its full absolute path (item 5, #129
+        # review round 3): this detail flows into summary.json, which
+        # eval.yml commits to the public eval-results branch.
+        self.assertIn(missing.name, summary["error"]["detail"],
+                      "the error names the roster path it looked for")
+        self.assertNotIn(str(missing), summary["error"]["detail"],
+                         "the roster's absolute path must not reach a "
+                         "public summary.json")
+        self.assertNotIn("agent", seen, "the agent is never invoked")
+
+    def test_a_pinned_fixture_runs_with_no_roster_at_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            summary, seen = self._run_one_arm(eval_dir, Path(tmp) / "nope.json")
+        self.assertIsNone(summary["error"])
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6")
+        self.assertEqual(seen["judge"], "claude-opus-4-6")
+
+    WRONG_SHAPES = {
+        "top level list": '[{"id": "claude-opus-5"}]',
+        "arms as strings": '{"arms": ["claude-opus-5"], "judge": {"id": "claude-fable-5-1"}}',
+        "judge as a string": '{"arms": [{"id": "claude-opus-5"}], "judge": "claude-fable-5-1"}',
+        "arms not a list": '{"arms": "claude-opus-5", "judge": {"id": "claude-fable-5-1"}}',
+        "empty arms": '{"arms": [], "judge": {"id": "claude-fable-5-1"}}',
+        "truncated": '{"arms": [{"id": "claude-opus-5"}',
+        "empty file": "",
+    }
+
+    def test_a_wrong_shaped_roster_is_a_named_error_not_an_attributeerror(self):
+        for label, raw in self.WRONG_SHAPES.items():
+            with self.subTest(shape=label), tempfile.TemporaryDirectory() as tmp:
+                eval_dir = self._fixture_dir(tmp, pinned=False)
+                path = self._roster_file(tmp, raw)
+                summary, seen = self._run_one_arm(eval_dir, path)
+                self.assertIsNotNone(summary["error"])
+                # The roster's basename, not its full absolute path (item
+                # 15, #129 review round 2; item 5, round 3): a selection
+                # error naming the roster's ABSOLUTE path lands in
+                # summary.json, which eval.yml commits to the public
+                # eval-results branch. assertIn(path.name, ...) alone has
+                # no teeth here — path.name is a substring of the full
+                # path too — so the absolute path's absence is asserted
+                # explicitly.
+                self.assertIn(path.name, summary["error"]["detail"])
+                self.assertNotIn(str(path), summary["error"]["detail"])
+                self.assertNotIn("agent", seen)
+
+    def test_the_runner_refuses_a_roster_judge_that_is_also_an_arm(self):
+        """The roster says so in a field precisely so the runner can refuse:
+        a model grading its own run is not a judgement."""
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y", "is_arm": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            summary, seen = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNotNone(summary["error"])
+        self.assertIn("judge", summary["error"]["detail"].lower())
+        self.assertNotIn("agent", seen)
+
+    def test_a_fixture_that_pins_its_judge_may_still_use_a_judge_is_arm_roster(self):
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y", "is_arm": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False, pin_judge="claude-fable-5-1")
+            summary, seen = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNone(summary["error"])
+        self.assertEqual(seen["agent"], "claude-opus-5")
+        self.assertEqual(seen["judge"], "claude-fable-5-1")
+
+    def test_a_judge_that_merely_appears_in_arms_is_refused_too(self):
+        """`is_arm` absent (an older roster) is not permission — membership in
+        `arms` is the fact, and the flag is the shortcut."""
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            summary, _ = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNotNone(summary["error"])
+
+    # --- N3: the roster is read once a run, not once an arm --------------
+
+    def test_the_roster_is_read_once_per_run_not_once_per_arm(self):
+        reads = []
+        real = run_eval.read_roster
+
+        def counting(path):
+            reads.append(path)
+            return real(path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            path = self._roster_file(tmp)
+            results = Path(tmp) / "results"
+            argv = ["run_eval.py", str(eval_dir), "--arm", "both",
+                    "--roster", str(path), "--results-dir", str(results),
+                    "--registry", f"agentskills={tmp}"]
+
+            def fake_run_agent(workspace, prompt, arm):
+                return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                        "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+            with mock.patch.object(run_eval, "read_roster", counting), \
+                 mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+                 mock.patch.object(run_eval.judge, "score",
+                                   lambda *a, **k: {"dimensions": [], "overall": 1.0}), \
+                 mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                rc = run_eval.main()
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(reads), 1, f"read {len(reads)} times for 2 arms")
+    # --- S3 / S4 / S9 / S15: the roster step in eval.yml ------------------
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    def test_the_roster_is_refreshed_before_the_preflight_that_consumes_it(self):
+        names = [s.get("name", "") for s in self._steps()]
+        roster_at = next(i for i, n in enumerate(names) if "roster" in n.lower())
+        preflight_at = next(i for i, n in enumerate(names) if "preflight" in n.lower())
+        self.assertLess(roster_at, preflight_at,
+                        "the preflight takes its model from the roster, so the "
+                        "roster has to exist first")
+
+    def test_the_preflight_takes_its_model_from_the_roster(self):
+        script = self._step_named("preflight")["run"]
+        self.assertIn("roster/latest.json", script,
+                      "`preflight` was computed and consumed by nothing")
+        self.assertIn('"preflight"', script, "it reads the preflight entry")
+        self.assertIn('--model "$model"', script,
+                      "the model is a variable the roster fills in, not a literal")
+        # Exactly one model id in the whole file, and it carries the marker.
+        raw = self.WORKFLOW.read_text(encoding="utf-8")
+        pattern = TestIssue67._model_id_pattern(TestIssue67())
+        literals = [ln for ln in raw.splitlines() if pattern.search(ln)]
+        self.assertEqual(len(literals), 1, literals)
+        self.assertIn("ROSTER FALLBACK", literals[0])
+
+    # --- the roster step, actually executed -------------------------------
+
+    def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
+                         roster_fail_stderr=None, roster_success_stderr=None):
+        """Run eval.yml's roster step for real, against stubs.
+
+        Hermetic: the two python scripts it calls are replaced by stubs, `git`
+        by an optional shim, and there is no network and no credential. What is
+        under test is the STEP — its failure handling — not the scripts.
+
+        `roster_fail_stderr`, if given, makes the roster.py stub write that
+        exact text to stderr and exit 1 (instead of succeeding) — for
+        exercising the step's own reason-extraction and step-summary logic
+        against a controlled roster.err. `roster_success_stderr`, if given
+        (and `roster_fail_stderr` is not), makes the stub write that text to
+        stderr but still SUCCEED (exit 0, write --out) — a stale/unreadable
+        census or skipped bad rows can print `roster: ` warnings and still
+        let the run succeed overall.
+
+        SHARED with TestIssue67Review3 (assigned there rather than
+        duplicated — see this file's per-review-round class convention:
+        TestIssue67Review2 does the same). Same step, same stub shape; kept
+        as one definition so a future change to the step's fixture only
+        needs to happen once.
+        """
+        script = self._step_named("roster")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "scripts").mkdir()
+        (tmp / "harness").mkdir()
+        (tmp / "evals").mkdir()
+        (tmp / "evals" / "roster-policy.yml").write_text("tiers: []\n", encoding="utf-8")
+        stub_args = ("import sys, json, argparse\n"
+                     "p = argparse.ArgumentParser()\n"
+                     "for f in ('--models','--policy','--census',"
+                     "'--admin-report','--previous','--out'):\n"
+                     "    p.add_argument(f)\n"
+                     "a = p.parse_args()\n")
+        (tmp / "scripts" / "refresh_models.py").write_text(
+            stub_args + (
+                "print('Models API read failed: HTTP 503', file=sys.stderr)\n"
+                "sys.exit(1)\n" if refresh_rc else
+                "open(a.out, 'w').write(json.dumps({'models': []}))\n"
+                "open(a.admin_report, 'w').write('{}')\n"),
+            encoding="utf-8")
+        if roster_fail_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_fail_stderr!r})\n"
+                           f"sys.exit(1)\n")
+        elif roster_success_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_success_stderr!r})\n"
+                           "open(a.out, 'w').write('{}')\n"
+                           "print('### Model roster')\n")
+        else:
+            roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
+                                       "print('### Model roster')\n")
+        (tmp / "harness" / "roster.py").write_text(roster_stub, encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+        # A real (empty) bare "origin" — actions/checkout always configures
+        # one in production, and item 2's fix makes the step's behavior
+        # depend on whether `origin` is genuinely reachable vs. genuinely
+        # missing the branch. An unconfigured origin used to read the same
+        # as "reachable, branch absent" purely by accident of both failing
+        # the same commands; that coincidence is gone now that ls-remote's
+        # own exit status is checked, so the fixture needs a real remote to
+        # stay a genuine first-run case without a git_shim.
+        bare_origin = tmp / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare_origin)], check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(bare_origin)],
+                       cwd=tmp, check=True)
+
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        env = dict(os.environ)
+        env.update({"RUNNER_TEMP": str(runner),
+                    "GITHUB_ENV": str(tmp / "github_env"),
+                    "GITHUB_STEP_SUMMARY": str(tmp / "summary.md")})
+        (tmp / "github_env").write_text("", encoding="utf-8")
+        (tmp / "summary.md").write_text("", encoding="utf-8")
+        if git_shim:
+            bindir = tmp / "bin"
+            bindir.mkdir()
+            shim = bindir / "git"
+            shim.write_text(git_shim.replace("{GIT}", shutil.which("git")),
+                            encoding="utf-8")
+            shim.chmod(0o755)
+            env["PATH"] = f"{bindir}:{env['PATH']}"
+        # Actions runs a `run:` block as `bash -e {file}`, not `bash -c`
+        # (its default shell is `bash --noprofile --norc -eo pipefail {0}`)
+        # — a command that fails outside an if/&&/||/! context aborts the
+        # whole step there. `bash -c` without `-e` let a step that would
+        # actually die partway through read as fully successful here.
+        script_file = tmp / "roster_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=120)
+        return {
+            "rc": proc.returncode,
+            "out": proc.stdout + proc.stderr,
+            "roster": runner / "roster" / "latest.json",
+            "env": (tmp / "github_env").read_text(encoding="utf-8"),
+            "summary": (tmp / "summary.md").read_text(encoding="utf-8"),
+        }
+
+    def test_the_roster_step_publishes_a_roster_on_the_happy_path(self):
+        got = self._run_roster_step()
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertTrue(got["roster"].is_file(), got["out"])
+        self.assertIn("EVAL_ROSTER=", got["env"])
+        self.assertIn("Model roster", got["summary"])
+
+    def test_a_models_api_failure_does_not_fail_the_eval(self):
+        """S4: the roster step sits ahead of the eval and the badge, neither of
+        which ever depended on it. A Models API blip must not kill both."""
+        got = self._run_roster_step(refresh_rc=1)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists(),
+                         "no roster is published — never a partial one")
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+        self.assertIn("not refreshed", got["summary"].lower())
+
+    #: `fetch` fails, `ls-remote` says the branch is there — a transient
+    #: network failure, not a first run. Anything else goes to the real git.
+    GIT_SHIM_FETCH_FAILS = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
+    ls-remote) printf 'deadbeef\\trefs/heads/eval-results\\n'; exit 0 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    #: `fetch` fails and the branch does not exist either — a genuine first run.
+    GIT_SHIM_FIRST_RUN = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) exit 128 ;;
+    ls-remote) exit 0 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    def test_a_failed_fetch_is_not_read_as_a_first_run(self):
+        """S9: `git fetch || true` conflated a transient failure with a first
+        run, and the roster then asserted 'no fresh census (none published)'."""
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_FETCH_FAILS)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists())
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+
+    def test_a_genuine_first_run_still_computes_a_roster(self):
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_FIRST_RUN)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertTrue(got["roster"].is_file(), got["out"])
+
+    def test_the_admin_usage_report_is_written_outside_the_published_directory(self):
+        """S15: it went into the very directory the commit step copies from."""
+        script = self._step_named("roster")["run"]
+        self.assertNotIn('roster/admin-usage.json', script)
+        self.assertIn('"$RUNNER_TEMP/admin-usage.json"', script)
+        got = self._run_roster_step()
+        published = got["roster"].parent
+        self.assertEqual(sorted(p.name for p in published.iterdir()),
+                         ["latest.json"],
+                         "only the roster itself lives in the copied directory")
+
+    # --- S14: the security header's rules, checked where they live -------
+
+    def test_every_uses_line_is_bare_in_the_RAW_file(self):
+        """The parsed-YAML check cannot see this: yaml.safe_load strips the
+        comment, so `uses: owner/repo@<sha> # v4` passed it (mutation-proven).
+        A trailing version comment is a LEXICAL property of the file, and a
+        regex over the raw text is the right tool for a lexical property."""
+        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$")
+        raw = self.WORKFLOW.read_text(encoding="utf-8")
+        lines = [ln for ln in raw.splitlines() if re.match(r"^\s*(?:-\s+)?uses:", ln)]
+        self.assertTrue(lines, "no `uses:` lines found — the check is inert")
+        for line in lines:
+            with self.subTest(line=line.strip()):
+                self.assertRegex(line, bare,
+                                 "every `uses:` is a bare 40-hex SHA with no "
+                                 "trailing version/date comment")
+
+    def test_every_checkout_disables_persist_credentials(self):
+        checkouts = [s for s in self._steps()
+                     if (s.get("uses") or "").startswith("actions/checkout@")]
+        self.assertTrue(checkouts)
+        for step in checkouts:
+            with self.subTest(step=step.get("name")):
+                self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                              False)
+
+    def test_the_concurrency_group_is_still_there(self):
+        """Nothing in this round adds or changes it — that is the assertion.
+        The badge commit races itself without it."""
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        self.assertEqual(doc["concurrency"],
+                         {"group": "real-eval", "cancel-in-progress": False})
+
+    def test_no_run_block_interpolates_an_actions_expression(self):
+        for step in self._steps():
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("${{", step.get("run") or "")
+
+
+class TestIssue67Review2(unittest.TestCase):
+    """Review-round-2 fixes on top of #67's roster feature (PR #129, round 2).
+
+    A SIBLING of TestIssue67 and TestIssue67Review — same reasons: reuse the
+    canned documents, run its own tests once. Same hermetic rules apply.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        return TestIssue67._models_doc(extra=extra, drop=drop)
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        return TestIssue67._census_doc(counts=counts, generated_at=generated_at)
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    #: The roster step, actually executed against stubs — same harness as
+    #: TestIssue67Review, reused rather than duplicated.
+    _run_roster_step = TestIssue67Review._run_roster_step
+    _roster_file = TestIssue67Review._roster_file
+    _write_transcript = staticmethod(TestIssue67Review._write_transcript)
+    _assistant = TestIssue67Review._assistant
+
+    # --- item 1: usage_share's denominator excludes `other`/unranked, and
+    #             _census_verdict must agree, not read RAW counts -----------
+
+    def test_census_entirely_unrankable_is_held_not_read_as_usable(self):
+        """A census whose in-window usage is entirely `other` (e.g. every
+        turn routed through Bedrock/Vertex/a proxy) has raw usage but a ZERO
+        ranked denominator. `usage_share` already excludes `other` from that
+        denominator; `_census_verdict` used to check raw counts instead, so
+        it called this census usable and let previous arms fall under the
+        exit bar at 0.0% — retiring them on no measurable evidence, exactly
+        the failure the stale-census hold-over path exists to prevent."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {model_usage_census.OTHER_KEY:
+                  {w: 500 for w in self.W[:4]}}
+        result = self._compute(census=self._census_doc(counts=counts),
+                               previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result),
+                      "an unrankable-only census is not evidence to retire "
+                      "a previous arm")
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("no usage this policy can rank", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_census_verdict_distinguishes_unranked_only_from_truly_empty(self):
+        """The existing 'empty over the window' message is for a census that
+        recorded NOTHING; a census that recorded usage none of which the
+        ladder can rank is a different fact and gets its own words."""
+        raw_total, ranked_total = roster._in_window_totals(
+            {model_usage_census.OTHER_KEY: {self.W[0]: 500}},
+            set(self.W[:4]), roster.tier_rungs(self._policy()))
+        self.assertEqual(raw_total, 500)
+        self.assertEqual(ranked_total, 0)
+        _, note, code = roster._census_verdict(
+            self._census_doc(counts={model_usage_census.OTHER_KEY:
+                                     {self.W[0]: 500}}),
+            raw_total, ranked_total, self._policy(), self.NOW)
+        self.assertEqual(code, "unranked")
+        self.assertIn("no usage this policy can rank", note)
+
+        empty_raw, empty_ranked = roster._in_window_totals(
+            {}, set(self.W[:4]), roster.tier_rungs(self._policy()))
+        _, empty_note, empty_code = roster._census_verdict(
+            self._census_doc(counts={}), empty_raw, empty_ranked,
+            self._policy(), self.NOW)
+        self.assertEqual(empty_code, "empty")
+        self.assertIn("empty over the window", empty_note)
+
+    # --- item 2: `git ls-remote | grep -q` discards ls-remote's own exit
+    #             status under `pipefail` -----------------------------------
+
+    #: Both `fetch` AND `ls-remote` fail — a correlated outage (DNS, proxy,
+    #: GitHub down), not a first run. `grep -q` on ls-remote's empty stdout
+    #: exits 1 (no match); under `pipefail` that becomes the PIPELINE's exit
+    #: status, discarding ls-remote's own 128 — so `if ... | grep -q ...`
+    #: reads false and the step falls through as though the branch never
+    #: existed.
+    GIT_SHIM_BOTH_FAIL = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
+    ls-remote) echo "fatal: unable to access origin" >&2; exit 128 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    def test_a_correlated_outage_is_not_read_as_a_first_run(self):
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_BOTH_FAIL)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists(),
+                         "no roster is published on a correlated outage")
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+
+    # --- item 3: `has_more: true` must never exit the paging loop via a
+    #             plain `break` — every such exit is a truncated catalogue --
+
+    def test_a_stuck_cursor_is_refused_not_silently_truncated(self):
+        """`has_more: true` with the SAME `last_id` every page — exactly what
+        MAX_PAGES exists to catch. The `next_after == after` break used to
+        fire after the SECOND identical page, exiting with rc 0 long before
+        MAX_PAGES and defeating the bound entirely."""
+        page = {"data": [{"id": "claude-sonnet-5",
+                          "created_at": "2026-01-01T00:00:00Z"}],
+                "has_more": True, "last_id": "claude-sonnet-5"}
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(lambda url, headers: page,
+                                                  now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_has_more_with_no_usable_cursor_is_refused(self):
+        """`has_more: true`, no `last_id`, and no entry in `data` carries an
+        `id` either — there is nothing to page from, but the old code read
+        that as "done" rather than "cannot continue"."""
+        page = {"data": [{"created_at": "2026-01-01T00:00:00Z"}],
+                "has_more": True}
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(lambda url, headers: page,
+                                                  now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_an_empty_page_that_still_claims_more_is_refused(self):
+        """A real page, then `{"data": [], "has_more": true}` — the API says
+        there is more, but the empty page carries no cursor to reach it.
+        `not entries` used to break the loop silently regardless of
+        `has_more`, publishing everything read so far as the whole
+        catalogue."""
+        pages = iter([
+            {"data": [{"id": "claude-sonnet-5",
+                      "created_at": "2026-01-01T00:00:00Z"}],
+             "has_more": True, "last_id": "claude-sonnet-5"},
+            {"data": [], "has_more": True},
+        ])
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(
+                lambda url, headers: next(pages), now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    # --- item 4a: the preflight pick applies the cooling-off, not just
+    #              "newest in the lowest rung" ----------------------------
+
+    def test_preflight_prefers_a_model_past_cooling_off_over_a_newer_one_inside_it(self):
+        """A day-old cheapest-tier model is exactly the kind an old or
+        narrowly-scoped bearer may not yet be entitled to invoke — and the
+        preflight step this feeds is FATAL to the whole job. When an older,
+        already-cooled-off model exists in the same (cheapest) tier, that is
+        the one to canary with, not the newest arrival."""
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(extra=[TestIssue67._model("claude-haiku-5", yesterday)])
+        result = self._compute(models=models)
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cooling-off", result["preflight"]["reason"])
+
+    def test_preflight_falls_back_to_newest_when_nothing_in_tier_has_cooled_off(self):
+        """The tier's only model is brand new — there is nothing older to
+        prefer, so the newest (still within cooling-off) is the only pick,
+        and the reason says so rather than silently pretending otherwise."""
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-9", yesterday),
+            TestIssue67._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+        result = self._compute(models=models, census=None)
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-9")
+        self.assertIn("within the", result["preflight"]["reason"])
+        self.assertIn("cooling-off", result["preflight"]["reason"])
+
+    # --- item 4b: eval.yml retries the preflight once with the fallback --
+
+    def _run_preflight_step(self, *, roster_doc, claude_shim):
+        """Run eval.yml's WIF auth preflight step for real, against a fake
+        `claude` on PATH. No network, no real credential."""
+        script = self._step_named("preflight")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        if roster_doc is not None:
+            (runner / "roster").mkdir()
+            (runner / "roster" / "latest.json").write_text(
+                json.dumps(roster_doc), encoding="utf-8")
+        bindir = tmp / "bin"
+        bindir.mkdir()
+        fake = bindir / "claude"
+        fake.write_text(claude_shim, encoding="utf-8")
+        fake.chmod(0o755)
+        env = dict(os.environ)
+        env["RUNNER_TEMP"] = str(runner)
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+        script_file = tmp / "preflight_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=60)
+        return {"rc": proc.returncode, "out": proc.stdout + proc.stderr}
+
+    #: Fails when invoked with `--model claude-opus-5` (the roster's pick),
+    #: succeeds on anything else (the ROSTER FALLBACK literal).
+    CLAUDE_SHIM_FAILS_ON_ROSTER_MODEL = '''#!/usr/bin/env bash
+model=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--model" ]; then model="$a"; fi
+  prev="$a"
+done
+if [ "$model" = "claude-opus-5" ]; then
+  echo "not entitled to invoke claude-opus-5" >&2
+  exit 1
+fi
+echo '{"result":"ok"}'
+exit 0
+'''
+
+    CLAUDE_SHIM_ALWAYS_FAILS = '''#!/usr/bin/env bash
+echo "nope" >&2
+exit 1
+'''
+
+    def test_preflight_retries_once_with_the_fallback_on_failure(self):
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(
+            roster_doc=roster, claude_shim=self.CLAUDE_SHIM_FAILS_ON_ROSTER_MODEL)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertIn("claude-opus-5", got["out"])
+        self.assertIn("preflight model: claude-opus-5", got["out"])
+        self.assertIn("preflight model: claude-haiku-4-5", got["out"],
+                      "retried with the fallback")
+
+    def test_preflight_fails_the_job_when_the_fallback_also_fails(self):
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(
+            roster_doc=roster, claude_shim=self.CLAUDE_SHIM_ALWAYS_FAILS)
+        self.assertNotEqual(got["rc"], 0)
+
+    def test_preflight_does_not_retry_when_the_roster_model_already_succeeds(self):
+        always_ok = '''#!/usr/bin/env bash
+echo '{"result":"ok"}'
+exit 0
+'''
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(roster_doc=roster, claude_shim=always_ok)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertNotIn("::warning::", got["out"])
+        self.assertEqual(got["out"].count("preflight model:"), 1,
+                         "no retry when the first attempt already succeeded")
+
+    # --- item 5: `_clean_counts` misses OverflowError, non-finite floats,
+    #             and negative counts ---------------------------------------
+
+    def test_clean_counts_rejects_infinite_and_nan_cells(self):
+        """`int(float('inf'))` raises OverflowError, which `except
+        (TypeError, ValueError)` does not catch — a census cell of `1e400`
+        (JSON overflows it to inf) or the literal `Infinity` used to exit by
+        an uncaught traceback instead of being skipped as a bad cell."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": float("inf"),
+                               "2026-W35": float("-inf"),
+                               "2026-W34": float("nan"),
+                               "2026-W33": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W33": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_main_does_not_crash_on_a_non_finite_census_count(self):
+        """End-to-end: Python's `json` module accepts the bare `Infinity`
+        literal by default (it is what `1e400` also decodes to). This used
+        to reach `int()` unguarded and exit by traceback; eval.yml's
+        extractor then printed the traceback's first line as the reason."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            census.write_text(
+                '{"generated_at": "2026-09-04T06:00:00Z", "weeks": %s, '
+                '"counts": {"claude-sonnet-5": {"2026-W36": Infinity}}}'
+                % json.dumps(self.W), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--census", str(census), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(rc, 0, printed)
+        self.assertNotIn("Traceback", printed)
+
+    def test_negative_counts_are_rejected_as_bad_cells(self):
+        """A `-99` cell was accepted at face value — `int(-99)` does not
+        raise — and fed straight into usage_share's totals, once producing
+        a nonsensical 'carries 10000.0% of census usage'."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": -99, "2026-W35": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W35": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_a_cancelling_pair_does_not_net_to_a_smaller_share(self):
+        """A `+100`/`-100` pair on the same model used to sum straight into
+        usage_share's totals and net to zero usage — including a zero
+        DENOMINATOR when that pair was the census's only entry, which the
+        old `_census_verdict` (checking raw, un-rejected counts) read as
+        usable."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {self.W[0]: 100, self.W[1]: -100},
+             "claude-sonnet-5": {w: 100 for w in self.W[:4]}}, notes.append)
+        rungs = roster.tier_rungs(self._policy())
+        share = roster.usage_share(cleaned, "claude-opus-5", self.W[:4], rungs)
+        self.assertEqual(share, 20.0,
+                         "the -100 cell is rejected, not summed: opus-5 "
+                         "keeps its 100 turns against a 500-turn ranked total")
+
+    # --- item 6: an unreadable (present, but corrupt) census must not read
+    #             the same as "none published" ----------------------------
+
+    def test_main_reports_census_unreadable_and_it_reaches_the_arm_reasons(self):
+        """`read_json` already distinguishes absent from present-but-
+        unreadable; main() printed the distinction to stderr and then threw
+        it away, passing `census_doc=None` either way — so a census
+        truncated mid-write said 'no fresh census (none published)', a
+        different (and wrong) fact."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            census.write_text('{"generated_at": "2026-09-04T06:00:00Z", "wee',
+                              encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--census", str(census), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(rc, 0, printed)
+            self.assertIn("unreadable", printed.lower())
+            published = json.loads(out.read_text(encoding="utf-8"))
+        self.assertTrue(published["arms"])
+        for arm in published["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("unreadable", arm["reason"].lower())
+                self.assertNotIn("none published", arm["reason"].lower())
+
+    def test_census_verdict_code_distinguishes_unreadable_from_absent(self):
+        _, note, code = roster._census_verdict(
+            None, 0, 0, self._policy(), self.NOW,
+            census_problem="latest.json is present but unreadable (JSONDecodeError)")
+        self.assertEqual(code, "unreadable")
+        self.assertIn("JSONDecodeError", note)
+        _, _, absent_code = roster._census_verdict(None, 0, 0, self._policy(), self.NOW)
+        self.assertEqual(absent_code, "absent")
+
+    # --- item 8: roster_models() drops malformed arm entries silently, and
+    #             the judge-is-arm refusal was checked against an emptied set
+
+    def test_roster_models_returns_a_skipped_count(self):
+        arm_ids, judge_id, judge_is_arm, skipped = run_eval.roster_models(
+            {"arms": [{"id": "claude-opus-5", "reason": "x"}, "not-a-dict",
+                      {"reason": "no id"}],
+             "judge": {"id": "claude-fable-5-1"}})
+        self.assertEqual(arm_ids, ["claude-opus-5"])
+        self.assertEqual(judge_id, "claude-fable-5-1")
+        self.assertFalse(judge_is_arm)
+        self.assertEqual(skipped, 2)
+
+    def test_a_roster_whose_arms_all_fail_to_parse_is_a_selection_error_even_when_the_agent_is_pinned(self):
+        """A fixture pinning `model:` but not `judge.model:` still reads the
+        roster (for the judge) — and `{"arms": ["claude-opus-5"], "judge":
+        {"id": "claude-opus-5", "is_arm": false}}` used to be ACCEPTED: the
+        raw string arm entry is dropped silently, arm_ids comes back empty,
+        and the judge-is-arm check (`judge_id in arm_ids`) is then checked
+        against that emptied set — even though the roster's own arms list
+        plainly names this exact judge id. A roster whose `arms` list is
+        non-empty but yields zero usable ids cannot be trusted, regardless
+        of whether this run even needed an arm from it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "evals" / "a-skill"
+            (eval_dir / "seed").mkdir(parents=True)
+            (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+            fixture = {"skill": "a-skill", "prompt": "do the thing",
+                      "judge_rubric": "grade it", "model": "claude-sonnet-4-6",
+                      "arms": {"without_skill": {"install": "none"}}}
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture),
+                                                    encoding="utf-8")
+            document = {"arms": ["claude-opus-5"],
+                       "judge": {"id": "claude-opus-5", "is_arm": False}}
+            roster_path = self._roster_file(tmp, document)
+            loaded_fixture = run_eval.load_fixture(eval_dir)
+            args = argparse.Namespace(model=None, roster=roster_path, no_judge=False)
+            agent, judge_model, error = run_eval.select_models(loaded_fixture, args)
+        self.assertIsNotNone(error)
+        self.assertIn(roster_path.name, error)
+
+    # --- item 10: `compared_to_previous` collapses "unreadable previous"
+    #              into "first run" — publish a third state -------------
+
+    def test_previous_state_is_published_and_the_summary_reads_it_off_the_roster(self):
+        """The JSON and the Markdown used to disagree by construction: main()
+        derived render_summary's `previous_state` argument from
+        `previous_problem` itself, while the roster dict only ever recorded
+        `compared_to_previous: previous is not None` — collapsing "the
+        previous roster was there but unreadable" into the same `False` as
+        "there is no previous roster (first run)". Publishing the state in
+        the roster means render_summary(roster), with no override, already
+        agrees with what actually happened."""
+        result = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=None, now=self.NOW,
+            previous_problem="previous.json is present but unreadable (JSONDecodeError)")
+        self.assertEqual(result["previous_state"], "unavailable")
+        text = roster.render_summary(result)
+        self.assertIn("roster inputs unavailable", text.lower())
+        self.assertNotIn("No change to the arm set", text)
+        self.assertNotIn("First published roster here", text)
+
+    def test_previous_state_distinguishes_none_from_compared(self):
+        first_run = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=None, now=self.NOW)
+        self.assertEqual(first_run["previous_state"], "none")
+        self.assertFalse(first_run["compared_to_previous"])
+
+        previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
+        compared = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=previous, now=self.NOW)
+        self.assertEqual(compared["previous_state"], "compared")
+        self.assertTrue(compared["compared_to_previous"])
+
+    # --- item 11: a fixture pinning neither model nor judge is told only
+    #              about the model pin -------------------------------------
+
+    def test_a_fixture_pinning_neither_model_nor_judge_is_told_about_both(self):
+        fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
+        args = argparse.Namespace(model=None,
+                                  roster=Path("/nonexistent/roster.json"),
+                                  no_judge=False)
+        agent, judge_model, error = run_eval.select_models(fixture, args)
+        self.assertIsNotNone(error)
+        self.assertIn("model", error)
+        self.assertIn("judge model", error)
+
+    # --- item 12: the fixture's own precedence comment still says the old,
+    #              fall-through-to-CLI-default contract -------------------
+
+    def test_workflow_path_audit_fixture_describes_the_fail_closed_precedence(self):
+        text = (REPO_ROOT / "evals" / "workflow-path-audit" / "fixture.yaml").read_text(
+            encoding="utf-8")
+        self.assertNotIn("the CLI's own default", text,
+                         "select_models() fails closed; nothing falls through "
+                         "to a CLI default any more")
+
+    # --- item 13: model_usage_census.py's docstring overstates what `other`
+    #              buys — usage_share drops it from BOTH sides -----------
+
+    def test_census_docstring_does_not_overstate_the_other_bucket_contract(self):
+        text = (REPO_ROOT / "scripts" / "model_usage_census.py").read_text(
+            encoding="utf-8")
+        self.assertNotIn("the totals the roster divides by stay truthful", text,
+                         "usage_share excludes `other` (and any unranked id) "
+                         "from what it divides by entirely — routing its "
+                         "counts under `other` keeps this script's own turn "
+                         "count honest, it does not feed the roster's share "
+                         "math at all")
+
+    # --- item 14: _run_arm materialized the workspace before checking
+    #              whether the run can even proceed ------------------------
+
+    def test_run_arm_checks_selection_error_before_materializing_the_workspace(self):
+        """A model-selection error means the agent never runs; mkdtemp +
+        copytree + a git init/add/commit for a workspace that gets
+        `shutil.rmtree`'d one line later was pure waste on every unpinned
+        fixture that hits a missing or broken roster."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "evals" / "a-skill"
+            (eval_dir / "seed").mkdir(parents=True)
+            (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+            fixture_doc = {"skill": "a-skill", "prompt": "do the thing",
+                           "judge_rubric": "grade it",
+                           "arms": {"without_skill": {"install": "none"}}}
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture_doc),
+                                                    encoding="utf-8")
+            fixture = run_eval.load_fixture(eval_dir)
+            results_dir = Path(tempfile.mkdtemp())
+            self.addCleanup(shutil.rmtree, results_dir, ignore_errors=True)
+            args = argparse.Namespace(model=None, timeout=30, no_judge=False,
+                                      results_dir=results_dir,
+                                      roster=Path(tmp) / "nope.json")
+            with mock.patch.object(run_eval.tempfile, "mkdtemp") as fake_mkdtemp:
+                summary = run_eval._run_arm(
+                    "without_skill", fixture, eval_dir / "seed",
+                    Path("/nonexistent-registry"), args, "20260904T120000Z")
+        self.assertIsNotNone(summary["error"])
+        fake_mkdtemp.assert_not_called()
+
+    # --- item 16: select_models' docstring says a pinned fixture never
+    #              needs the roster — true only when it pins BOTH ----------
+
+    def test_select_models_docstring_says_a_fixture_must_pin_both_to_skip_the_roster(self):
+        doc = run_eval.select_models.__doc__
+        self.assertNotIn("A PINNED fixture never needs the roster", doc,
+                         "a fixture pinning only `model:` (not `judge.model:`) "
+                         "still reads the roster for the judge")
+        self.assertIn("both", doc.lower())
+
+    # --- item 17: seen_turns resets per transcript, so the SAME file
+    #              reachable twice in the walk (a symlink, a hard-linked
+    #              copy) double-counts every turn in it -------------------
+
+    def test_a_duplicate_or_symlinked_transcript_is_not_double_counted(self):
+        """The same underlying file reachable via two paths must count once.
+        This is deliberately NOT the same thing test_dedupe_is_per_transcript
+        _not_global guards: that test has two genuinely DIFFERENT files
+        (different inodes) that happen to share a message id, and both must
+        still count — dedup here is by FILE IDENTITY, never by turn id
+        across distinct files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            original = self._write_transcript(
+                projects / "-x" / "a.jsonl",
+                [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z",
+                                 message_extra={"id": "msg_01ONLY"})],
+                mtime=self.NOW)
+            duplicate = projects / "-x" / "b.jsonl"
+            os.link(original, duplicate)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1}})
+
+    # --- item 19: eval.yml's two reason extractors disagree (tail vs head),
+    #              and grep -v '^roster: ' discards the diagnosis itself ---
+
+    def test_roster_failure_reason_is_the_last_line_not_the_traceback_header(self):
+        """`head -n 1` on roster.err — even filtered through `grep -v
+        '^roster: '` — picks 'Traceback (most recent call last):' on an
+        uncaught exception: the single least useful line a traceback has.
+        The last line is the exception message."""
+        stderr = ("roster: census.json is present but unreadable (JSONDecodeError)\n"
+                  "Traceback (most recent call last):\n"
+                  '  File "harness/roster.py", line 1, in <module>\n'
+                  "ValueError: something roster.py did not expect\n")
+        got = self._run_roster_step(roster_fail_stderr=stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertIn("ValueError: something roster.py did not expect",
+                      got["out"])
+        self.assertNotIn("Traceback (most recent call last):",
+                         [ln for ln in got["out"].splitlines()
+                          if ln.startswith("::warning::")][0])
+
+    def test_roster_warnings_are_carried_into_the_step_summary(self):
+        """The `roster: `-prefixed warn() lines used to be filtered OUT of
+        the reason candidates and never appeared anywhere but the raw job
+        log — the step summary (the UI surface most people actually read)
+        never showed the diagnosis at all on a failure."""
+        stderr = ("roster: census.json is present but unreadable (JSONDecodeError)\n"
+                  "refusing to publish a roster with no arms: every ranked "
+                  "model is excluded\n")
+        got = self._run_roster_step(roster_fail_stderr=stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("census.json is present but unreadable", got["summary"])
+
+    # --- item 20: _version_key uses isdigit(), which int() does not agree
+    #              with for every character isdigit() accepts ------------
+
+    def test_version_key_does_not_crash_on_a_non_ascii_digit_token(self):
+        """`'²'.isdigit()` (superscript two) is True, but
+        `int('²')` raises ValueError — `isdigit()` and `int()` do not
+        agree on what counts as a digit."""
+        result = roster._version_key("claude-sonnet-²")
+        self.assertEqual(result, ((0, 0, "claude"), (0, 0, "sonnet"),
+                                  (0, 0, "²")))
+
+    # --- item 21: roster.py imports window_start but never uses it, hidden
+    #              behind a line-wide `# noqa: F401` -----------------------
+
+    def test_roster_does_not_import_the_unused_window_start(self):
+        """`iso_week` is legitimately unused BY roster.py's own logic — it is
+        re-exported so `test_roster_and_census_share_one_week_implementation`
+        can check identity with timeweeks.iso_week — but `window_start` has
+        no such reason and roster.py never calls it at all."""
+        self.assertFalse(hasattr(roster, "window_start"),
+                         "window_start is dead weight in roster.py's import")
+        self.assertTrue(hasattr(roster, "iso_week"),
+                        "iso_week stays: it is deliberately re-exported")
+
+    # --- item 22: roster-policy.yml's comment says a model's tier is "the
+    #              first word to appear in its id" — rung_of returns the
+    #              LOWEST matching rung, not positional order -------------
+
+    def test_roster_policy_comment_matches_rung_of_lowest_rung_behavior(self):
+        text = self.POLICY.read_text(encoding="utf-8")
+        self.assertNotIn("the first of these words to appear", text,
+                         "rung_of() returns the WEAKEST matching rung, "
+                         "walking the ladder top-down — not the first word "
+                         "to appear positionally in the id")
+        # And the code the comment describes actually does that:
+        rungs = roster.tier_rungs(self._policy())
+        self.assertEqual(roster.rung_of("claude-opus-haiku-5", rungs),
+                         roster.rung_of("claude-haiku-5", rungs),
+                         "an id carrying both an opus and a haiku token "
+                         "ranks by the weaker rung, regardless of which "
+                         "word appears first in the id string")
+
+
 class TestIssue63(unittest.TestCase):
     """Issue #63: resolve the with_skill arm's skill dir against any registry
     layout named in harness/registries.yml, not just agentskills'
@@ -4248,6 +6584,7 @@ class TestIssue63(unittest.TestCase):
                     (seed_dir / "placeholder.txt").write_text(
                         "x\n", encoding="utf-8")
                     fixture = {"skill": "some-skill", "registry": bad,
+                              "model": "claude-haiku-4-5",
                               "prompt": "do the thing"}
                     import yaml
                     (eval_dir / "fixture.yaml").write_text(
@@ -4371,8 +6708,13 @@ class TestIssue63Review(unittest.TestCase):
             run_eval._validate_registry_paths(registries)
         msg = str(ctx.exception)
         self.assertIn("cms-platform", msg)
-        self.assertIn("does-not-exist-anywhere", msg)
         self.assertIn("--registry flag", msg)
+        # The resolved absolute PATH must not reach the message (item 6,
+        # #129 review round 4's treatment of this same class of detail,
+        # applied here too — N6, round 5): only the registry's name and
+        # override source.
+        self.assertNotIn(str(bad_path), msg)
+        self.assertNotIn("does-not-exist-anywhere", msg)
 
     def test_unoverridden_sibling_default_is_not_eagerly_validated(self):
         # agentskills-private has no sibling checkout in this environment and
@@ -4433,7 +6775,8 @@ class TestIssue63Review(unittest.TestCase):
             seed = Path(tmp) / "seed"
             seed.mkdir()
             (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
-            fixture = {"skill": "some-skill", "prompt": "do the thing"}
+            fixture = {"skill": "some-skill", "model": "claude-haiku-4-5",
+                      "prompt": "do the thing"}
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
@@ -4457,6 +6800,7 @@ class TestIssue63Review(unittest.TestCase):
             fixture = {
                 "skill": "unreachable-skill",
                 "registry": "https://github.com/example/not-a-registry",
+                "model": "claude-haiku-4-5",
                 "prompt": "do the thing",
             }
             import yaml
@@ -4688,7 +7032,8 @@ class TestIssue63Round2(unittest.TestCase):
             seed = Path(tmp) / "seed"
             seed.mkdir()
             (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
-            fixture = {"skill": "some-skill", "registry": None, "prompt": "do the thing"}
+            fixture = {"skill": "some-skill", "registry": None,
+                      "model": "claude-haiku-4-5", "prompt": "do the thing"}
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
@@ -4780,6 +7125,7 @@ class TestIssue63Round2(unittest.TestCase):
             fixture = {
                 "skill": "some-skill",
                 "registry": "https://example.com/scratch-registry",
+                "model": "claude-haiku-4-5",
                 "prompt": "do the thing",
             }
             import yaml
@@ -4802,12 +7148,13 @@ class TestIssue63Round2(unittest.TestCase):
             with_skill_summary = json.loads(
                 (run_dir / "with_skill" / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(with_skill_summary["error"]["type"], "registry_not_found")
-            # base_dir = harness_dir.parent = skills_evals_root, so the
-            # sibling default is (skills_evals_root / ".." / name).resolve()
-            # = tmp_root / "scratch-registry" — inside the disposable tmp
-            # root, never beside the real skills-evals checkout.
+            # Item 6 (#129 review round 4): the registry's NAME and layout,
+            # not its resolved absolute path — this detail reaches
+            # summary.json, which eval.yml commits to the public
+            # eval-results branch.
             expected_path = str((tmp_root / "scratch-registry").resolve())
-            self.assertIn(expected_path, with_skill_summary["error"]["detail"])
+            self.assertIn("scratch-registry", with_skill_summary["error"]["detail"])
+            self.assertNotIn(expected_path, with_skill_summary["error"]["detail"])
 
             without_skill_summary = json.loads(
                 (run_dir / "without_skill" / "summary.json").read_text(encoding="utf-8"))
@@ -4841,6 +7188,16 @@ class TestIssue63Round2(unittest.TestCase):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_install_failed")
+            # The skill name, not the destination's absolute workspace path
+            # (S5, #129 review round 5) — this detail reaches summary.json,
+            # which eval.yml commits to the public eval-results branch.
+            # Generic wording (N1, #129 review round 6): "already exists"
+            # would be false for the NotADirectoryError case below, which
+            # shares this same message.
+            self.assertIn("could not install some-skill/ into the seed workspace",
+                          result["detail"])
+            self.assertIn("FileExistsError", result["detail"])
+            self.assertNotIn(str(workspace), result["detail"])
 
             # Case 2: a seed shipping `.claude/skills` itself as a regular
             # FILE (not a directory) — os.makedirs (inside shutil.copytree)
@@ -4856,6 +7213,14 @@ class TestIssue63Round2(unittest.TestCase):
                 result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
             self.assertIn("error", result2)
             self.assertEqual(result2["error"], "skill_install_failed")
+            # N1 (#129 review round 6): "already exists" is FALSE for this
+            # case — `.claude/skills` is a file, not an existing directory
+            # — so the detail must not claim it.
+            self.assertIn("could not install some-skill/ into the seed workspace",
+                          result2["detail"])
+            self.assertNotIn("already exists", result2["detail"])
+            self.assertIn("NotADirectoryError", result2["detail"])
+            self.assertNotIn(str(workspace2), result2["detail"])
 
     # --- N4: a repeated --registry NAME= for the same name must raise, not
     # silently last-win ---
@@ -4880,6 +7245,1465 @@ class TestIssue63Round2(unittest.TestCase):
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
+
+
+class TestIssue67Review3(unittest.TestCase):
+    """Round 3 fixes for #67, one test per fix. See run_tests.py's
+    class-per-review-round convention (TestIssue67Review, TestIssue67Review2)."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+    # --- shared with TestIssue67Review: same step, same stub shape, one
+    # definition (item 9, #129 review round 4 — this file's existing
+    # per-review-round class convention already does this for
+    # TestIssue67Review2; a duplicate copy here just drifted from it once).
+    # NOT class inheritance: inheriting TestIssue67Review's TestCase would
+    # re-collect and re-run its whole test suite here too.
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    _run_roster_step = TestIssue67Review._run_roster_step
+
+    # --- item 2: the roster-failure reason extractor must prefer the
+    # no-arms headline over an indented per-model detail line ------------
+
+    def test_roster_failure_reason_prefers_the_no_arms_headline_over_a_model_detail_line(self):
+        """roster.py's fatal "refusing to publish a roster with no arms" path
+        prints the headline FIRST, then one indented "  <id>: <reason>" line
+        per excluded/unranked model — production-shaped, built by actually
+        running roster.py on a no-arms input (every ranked model inside the
+        cooling-off), not hand-written. The old `tail -n 1` extractor picked
+        the LAST line — a model's detail, not the headline — and the comment
+        claimed otherwise.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps({
+                "fetched_at": "2026-09-04T11:00:00Z",
+                "models": [TestIssue67._model("claude-haiku-9",
+                                              "2026-09-02T00:00:00Z")],
+            }), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            proc = subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "roster.py"),
+                 "--models", str(models), "--policy", str(self.POLICY),
+                 "--out", str(out)],
+                capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("refusing to publish a roster with no arms", proc.stderr)
+        self.assertTrue(
+            any(ln.startswith("  ") for ln in proc.stderr.splitlines()),
+            "fixture must carry at least one indented per-model detail line "
+            "— the production shape the old extractor got wrong")
+
+        got = self._run_roster_step(roster_fail_stderr=proc.stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        warning_line = next(ln for ln in got["out"].splitlines()
+                            if ln.startswith("::warning::"))
+        self.assertIn("refusing to publish a roster with no arms", warning_line)
+        self.assertNotIn("claude-haiku-9:", warning_line,
+                         "the per-model detail line leaked into the warning "
+                         "instead of the headline")
+        self.assertIn("refusing to publish a roster with no arms",
+                      got["summary"])
+
+    # --- item 7: the roster-warnings <details> block must render on the
+    # success path too, not only on failure -----------------------------
+
+    def test_roster_warnings_reach_the_step_summary_on_the_success_path_too(self):
+        """A stale/unreadable census or skipped bad rows can print
+        `roster: `-prefixed warnings and still let the roster refresh
+        succeed overall. The <details> block used to render only in the
+        failure branch, so these warnings reached the raw job log but
+        never the step summary on a run that otherwise succeeded.
+        """
+        got = self._run_roster_step(
+            roster_success_stderr="roster: census.json is present but "
+                                  "unreadable (JSONDecodeError)\n")
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("roster warnings", got["summary"])
+        self.assertIn("census.json is present but unreadable", got["summary"])
+
+    # --- item 3: a proxy alias carrying a family word (`claude-sonnet-
+    # proxy-route`) is `rung_of()`-ranked but not a catalogue model or a
+    # previous arm — its usage must not count as "usage this policy can
+    # rank" ------------------------------------------------------------
+
+    def test_proxy_alias_census_holds_previous_arms_not_credits_them(self):
+        """A census whose in-window usage is entirely a proxy alias that
+        merely carries a family word (not a real catalogue id, measured
+        end to end through the real census) used to be read as usable
+        evidence — rung_of() ranks it — crediting its usage to nobody's
+        numerator while still inflating every real arm's denominator, and
+        letting an otherwise-unattributable census retire a previous arm at
+        0.0%. This is the same failure round 2 closed for an entirely-
+        `other` census (test_census_entirely_unrankable_is_held_not_read_as
+        _usable), by a second route.
+        """
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-proxy-route":
+                  {w: 500 for w in TestIssue67.W[:4]}}
+        result = TestIssue67._compute(
+            census=TestIssue67._census_doc(counts=counts), previous=previous)
+        self.assertIn("claude-opus-4-8", TestIssue67._arm_ids(result),
+                      "a census with no attributable usage is not evidence "
+                      "to retire a previous arm")
+        reason = TestIssue67._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("no usage this policy can rank", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_real_id_census_still_computes_shares(self):
+        """The new attribution filter changes nothing when every census key
+        really is a catalogue id — the ordinary case must not regress."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {TestIssue67.W[0]: 250},
+             "claude-sonnet-5": {TestIssue67.W[0]: 250}}, lambda _m: None)
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+    def test_mixed_census_computes_share_against_real_ids_only(self):
+        """One real id at 60 turns and one alias at 1000 turns: the real
+        id's share is computed against real ids only — the alias's usage
+        must not inflate the denominator."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {TestIssue67.W[0]: 60},
+             "claude-sonnet-proxy-route": {TestIssue67.W[0]: 1000}},
+            lambda _m: None)
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5"}, previous_arms=set())
+        self.assertEqual(share, 100.0,
+                         "the alias's 1000 turns must not inflate the "
+                         "denominator for a real id's share")
+
+    # --- item 4: _clean_counts bounds a cell above zero, and usage_share
+    # stays safe even when a huge value gets past it anyway -------------
+
+    def test_clean_counts_rejects_a_cell_above_the_weekly_turn_ceiling(self):
+        """A week cannot hold more turns than roster.MAX_WEEKLY_TURNS. A
+        cell of `1e308` (a huge but finite float) or a several-hundred-
+        digit JSON integer both pass a bare `int()` cleanly — Python ints
+        are arbitrary precision — and used to ride straight into
+        usage_share's arithmetic."""
+        notes = []
+        huge_int = int("9" * 400)
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": 1e308, "2026-W35": huge_int,
+                               "2026-W34": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_usage_share_does_not_overflow_on_a_huge_count(self):
+        """usage_share is called directly by other tests on hand-built
+        counts that bypass _clean_counts's own upper bound, so it must stay
+        safe on its own: `100.0 * mine` converts a huge `mine` to a float
+        BEFORE dividing, which either overflows to `inf` (a `1e308`-sized
+        int, published as "carries inf% of census usage") or raises
+        OverflowError outright (a several-hundred-digit int)."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        huge = int(1e308)
+        cleaned = {"claude-opus-5": {TestIssue67.W[0]: huge},
+                  "claude-sonnet-5": {TestIssue67.W[0]: huge}}
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+        way_huge = int("9" * 400)
+        cleaned = {"claude-opus-5": {TestIssue67.W[0]: way_huge},
+                  "claude-sonnet-5": {TestIssue67.W[0]: way_huge}}
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+    # --- item 1: model_usage_census.py must not need PyYAML just to import
+    # or to fail an argument, only to actually build a census ---
+
+    def test_missing_pyyaml_is_a_named_exit_2_not_a_traceback(self):
+        """model_usage_census.py used to `import roster` (for `tier_words`)
+        and build MODEL_ID_RE at IMPORT TIME, so a machine with no PyYAML
+        installed died with a bare ImportError before argparse ever ran —
+        before even `--help` worked. The roster import is now lazy
+        (`_require_model_id_re()`), and main() turns a missing PyYAML into
+        one named line on stderr and exit 2, never a traceback.
+        """
+        import model_usage_census
+        saved = {name: sys.modules.get(name) for name in ("yaml", "roster")}
+        saved_re = model_usage_census.MODEL_ID_RE
+        for name in ("yaml", "roster"):
+            sys.modules.pop(name, None)
+        sys.modules["yaml"] = None  # the standard "this module is not installed" shim
+        model_usage_census.MODEL_ID_RE = None  # force a fresh (failing) resolve
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "usage.json"
+                argv = ["model_usage_census.py", "--out", str(out)]
+                err = io.StringIO()
+                with mock.patch.object(sys, "argv", argv), \
+                     contextlib.redirect_stderr(err), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    rc = model_usage_census.main()
+                self.assertFalse(out.exists())
+        finally:
+            for name, mod in saved.items():
+                if mod is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = mod
+            model_usage_census.MODEL_ID_RE = saved_re
+        self.assertEqual(rc, 2)
+        self.assertIn(model_usage_census.PYYAML_MISSING_MESSAGE, err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+
+class TestIssue67Review4(unittest.TestCase):
+    """Round 4 fixes for #67, one test per fix. See run_tests.py's
+    class-per-review-round convention (TestIssue67Review, TestIssue67Review2,
+    TestIssue67Review3) — a SIBLING of TestIssue67, reusing its canned
+    documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- item 1: `_is_attributable` must attribute a candidate whose RAW
+    # (unfolded) spelling is itself an api id, or whose folded spelling
+    # matches an api id folded through the SAME alias map — not only a
+    # candidate whose folded spelling is a bare (unfolded) api id. -------
+
+    def test_dated_only_catalogue_with_usage_under_the_undated_alias_is_attributed(self):
+        """(a) The Models API publishes only the dated snapshot id; the
+        census recorded most usage under that exact id but a handful of
+        turns under the bare (undated) alias — a shape roster-policy.yml
+        and alias_map's own docstring call legitimate. The OLD
+        `_is_attributable` folded the DATED candidate onto its undated
+        alias and found neither spelling in `api_ids` (the alias itself
+        is not a catalogue id), so all 2000 of its turns read as
+        unattributable and the census read as CENSUS_UNRANKED. Measured
+        against fc5de5c the same input gave 100% for this model; this is
+        the regression floor.
+        """
+        models_solo = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-06-01T00:00:00Z"),
+        ]}
+        counts_solo = {"claude-sonnet-4-9-20260101": {w: 500 for w in self.W[:4]},
+                       "claude-sonnet-4-9": {self.W[0]: 4}}
+
+        rungs = roster.tier_rungs(self._policy())
+        cleaned = roster._clean_counts(counts_solo, lambda _m: None)
+        aliases = roster.alias_map(["claude-sonnet-4-9-20260101"] + list(cleaned))
+        raw_total, ranked_total = roster._in_window_totals(
+            cleaned, set(self.W[:4]), rungs, aliases=aliases,
+            api_ids={"claude-sonnet-4-9-20260101"}, previous_arms=set())
+        self.assertEqual(raw_total, 2004)
+        self.assertEqual(ranked_total, 2004,
+                         "the dated id's own 2000 turns must count as "
+                         "ranked, attributable usage")
+
+        # A second, ordinary model in the mix (its own id published and
+        # attributed with no aliasing involved at all) is what turns the
+        # dated model's own combined 2004 turns into a measured SHARE
+        # rather than the trivial 100% of a one-model universe.
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-06-01T00:00:00Z"),
+            self._model("claude-haiku-4-9", "2026-06-01T00:00:00Z"),
+        ]}
+        counts = dict(counts_solo, **{"claude-haiku-4-9": {self.W[0]: 4}})
+        census = TestIssue67._census_doc(counts=counts)
+
+        result = self._compute(models=models, census=census, previous=None)
+        self.assertIn("claude-sonnet-4-9-20260101", self._arm_ids(result))
+        reason = self._reason(result, "claude-sonnet-4-9-20260101")
+        self.assertIn("99.8%", reason)
+        self.assertNotIn("no fresh census", reason.lower())
+
+    def test_mixed_dated_and_undated_ids_do_not_give_a_false_100_percent(self):
+        """(b) A mixed catalogue: one family published dated-only while its
+        census usage is recorded under the undated alias (the same shape as
+        (a)), alongside a second family whose census key matches its api id
+        exactly. Under the old code the first family's usage was excluded
+        (unattributable) while the second's was not, so the second family's
+        tiny usage read as ALL the rankable census."""
+        rungs = roster.tier_rungs(self._policy())
+        counts_raw = {"claude-sonnet-4-9": {self.W[0]: 100000},
+                      "claude-haiku-4-9-20251001": {self.W[0]: 5}}
+        cleaned = roster._clean_counts(counts_raw, lambda _m: None)
+        api_ids = {"claude-sonnet-4-9-20260101", "claude-haiku-4-9-20251001"}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-haiku-4-9-20251001", self.W[:1], rungs,
+            aliases, api_ids=api_ids, previous_arms=set())
+        self.assertLess(share, 1.0,
+                        "sonnet's 100000 turns under its undated alias must "
+                        "count toward the denominator; haiku's 5 turns must "
+                        "not read as the entire rankable census")
+
+    def test_a_heavily_used_dated_previous_arm_is_not_retired_at_zero_percent(self):
+        """(b), continued: end to end through compute_roster. A previous
+        arm published only under a dated id, whose census usage is
+        recorded under its undated alias, carries real usage and must not
+        be retired at a false 0.0% — nor should it lose its seat to a
+        newer same-tier model it is genuinely outperforming."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-01-01T00:00:00Z"),
+            self._model("claude-sonnet-4-10-20260201", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-9-20251001", "2025-10-01T00:00:00Z"),
+        ]}
+        counts = {"claude-sonnet-4-9": {self.W[0]: 100000},
+                  "claude-haiku-4-9-20251001": {self.W[0]: 5}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-9-20260101",
+                              "reason": "was an arm"}]}
+        result = self._compute(models=models, census=census, previous=previous)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertNotIn("claude-sonnet-4-9-20260101", retired,
+                         f"a model carrying ~100000 turns under its own "
+                         f"alias must not be retired: {retired}")
+        # S3 (#129 review round 5): this test passed even before item 1's
+        # fix existed, rescued by the `min_ranked_turns` floor's "no
+        # evidence to retire it" bailout rather than by a genuine usage
+        # measurement — the floor's own reason names "floor", never
+        # "rankable census usage". Pin the ARM's actual reason so a
+        # regression that breaks the real attribution path but leaves the
+        # floor rescuing it by coincidence still shows red here.
+        reason = self._reason(result, "claude-sonnet-4-9-20260101")
+        self.assertIn("rankable census usage", reason)
+        self.assertNotIn("floor", reason)
+
+    def test_proxy_and_implausible_aliases_stay_unattributable(self):
+        """Every shape a proxy/routing layer — or a plausible-looking fake
+        version that was never a real catalogue id — can carry: `rung_of()`
+        ranks all of these (a recognised family word is present), yet none
+        is a real catalogue id or a previous arm under any spelling, and
+        none was ever in `catalogue_seen` either (it is built only from
+        real Models API responses). Regression floor for round 3's
+        proxy-alias fix, and for round 5's withdrawal of the canonical-
+        shape route: the last three entries are exactly the three holes
+        that route shipped with (see `_is_attributable`'s docstring) —
+        a Unicode decimal digit in the version segment, a plausible but
+        entirely invented version number, and a region-suffixed alias.
+        (Consolidates what were two near-duplicate tests, N7 — one for a
+        bare `api_ids`/`previous_arms` and one adding `previous_arms`; both
+        asserted the identical `ranked_total == 0` outcome.)
+        """
+        rungs = roster.tier_rungs(self._policy())
+        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route",
+                      "claude-sonnet-9-9", "claude-opus-٤", "claude-opus-4-eu"):
+            cleaned = roster._clean_counts(
+                {alias: {self.W[0]: 500}}, lambda _m: None)
+            api_ids = {"claude-opus-4-8"}
+            previous_arms = {"claude-opus-4-8"}
+            aliases = roster.alias_map(list(api_ids) + list(cleaned))
+            raw_total, ranked_total = roster._in_window_totals(
+                cleaned, set(self.W[:1]), rungs, aliases=aliases,
+                api_ids=api_ids, previous_arms=previous_arms)
+            self.assertEqual(ranked_total, 0, alias)
+
+    # --- item 1 (design decision, #129 review round 5): a since-retired
+    # real model id must still count in the usage denominator — attribution
+    # by catalogue HISTORY (`catalogue_seen`), not id SHAPE. A proxy alias
+    # must not gain a seat just because it carries a family word. ---------
+
+    def test_a_since_retired_real_model_still_counts_via_catalogue_seen(self):
+        """`claude-opus-4-8` leaves the Models API and was never a previous
+        arm. Its 1000-turns/week usage is real work that happened, and
+        DESIGN.md's own property says it belongs in the denominator. Round
+        4 attributed it by id SHAPE (`_canonical_id_re`, withdrawn in round
+        5 for the reasons in `_is_attributable`'s docstring); the
+        replacement is catalogue HISTORY — a previous run's published
+        roster recorded seeing `claude-opus-4-8` in the Models API, so it
+        rides in `catalogue_seen` this run even with no census usage of its
+        own and no seat. Without either mechanism, item 1 alone still
+        excludes it (neither a bare/folded api id nor a previous arm),
+        starving the denominator down to `claude-sonnet-4-6`'s own usage
+        and inflating its measured share from ~5.66% (correctly below the
+        10% entry bar) to a false 100%, seating it as a paid arm on no real
+        evidence.
+        """
+        rungs = roster.tier_rungs(self._policy())
+        counts = {"claude-sonnet-4-6": {w: 60 for w in self.W},
+                  "claude-opus-4-8": {w: 1000 for w in self.W}}
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        api_ids = {"claude-sonnet-4-6"}  # opus-4-8 dropped from the catalogue
+        catalogue_seen = {"claude-sonnet-4-6", "claude-opus-4-8"}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
+            api_ids=api_ids, previous_arms=set(), catalogue_seen=catalogue_seen)
+        self.assertAlmostEqual(share, 100 * 240 / 4240, places=6)
+        self.assertLess(share, 10.0,
+                        "below the 10% entry bar — opus-4-8's usage must "
+                        "still be in the denominator")
+
+        # End to end: `claude-sonnet-5` (the DEFAULT fixture's newer sonnet)
+        # stays in the catalogue so `claude-sonnet-4-6` is NOT the newest in
+        # its tier — its only possible route to a seat is the usage share
+        # above, which must legitimately fail, so the assertion below is
+        # unconditional (N5, #129 review round 5 — the round 4 version of
+        # this test only checked the reason's wording IF the model ended up
+        # seated, which a regression could dodge simply by also breaking
+        # the newest-in-tier fallback in a way that happened to keep this
+        # model out of `arms`).
+        models = TestIssue67._models_doc(drop={"claude-opus-4-8"})
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": ["claude-opus-4-8"]}
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "opus-4-8's usage must count in the denominator, "
+                         "keeping sonnet-4-6's share below the entry bar "
+                         "rather than seating it at a false 100%")
+
+    # --- item 3: CENSUS_UNRANKED's published reason must name the
+    # unattributable cause too, not only "the tier ladder cannot place" ---
+
+    def test_census_unranked_reason_names_the_unattributable_cause_too(self):
+        """For a census whose only in-window usage is a proxy alias, the
+        ladder DID place it (`rung_of` ranks it) — `_is_attributable`
+        excludes it, a different fact entirely. The old CENSUS_UNRANKED
+        wording named only `other` and 'an id the tier ladder cannot
+        place', which is false for this case and does not name the real
+        cause."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-proxy-route": {w: 500 for w in self.W[:4]}}
+        result = self._compute(census=TestIssue67._census_doc(counts=counts),
+                               previous=previous)
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("neither the Models API nor the previous roster "
+                      "attributes", reason)
+
+    # --- item 4 (nit): every share-percentage reason must say "of
+    # rankable census usage" — the denominator is ranked, attributable
+    # usage, not literally everything the census recorded -----------------
+
+    def test_share_reasons_say_rankable_census_usage_not_census_usage(self):
+        result = self._compute()
+        entry_reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("of rankable census usage", entry_reason)
+        self.assertNotIn("% of census usage", entry_reason)
+
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"},
+                             {"id": "claude-opus-4-8", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {w: 100 for w in self.W},
+            "claude-sonnet-4-6": {w: 10 for w in self.W},
+            "claude-opus-4-8": {self.W[7]: 2},
+        })
+        result2 = self._compute(census=census, previous=previous)
+        held_reason = self._reason(result2, "claude-sonnet-4-6")
+        self.assertIn("of rankable census usage", held_reason)
+        self.assertNotIn("% of census usage", held_reason)
+
+        retired = {r["id"]: r["reason"] for r in result2["retired_since_last"]}
+        self.assertIn("rankable census usage", retired["claude-opus-4-8"])
+
+    def test_a_tiny_ranked_count_dominated_by_other_does_not_retire_a_previous_arm(self):
+        """Item 4 (nit): the census can hold a handful of genuinely-ranked,
+        attributable turns swamped by literally everything else being
+        `other` (a fleet almost entirely routed through Bedrock/Vertex, say,
+        with one stray direct-API turn). `ranked_total > 0` alone used to
+        read as CENSUS_FRESH; below the `min_ranked_turns` floor it must
+        fall back the same way an entirely-unranked census does, so a
+        previous arm with no counted usage of its own is held, not retired
+        at a false 0.0%.
+        """
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"other": {w: 100000 for w in self.W},
+                  "claude-haiku-4-5": {self.W[0]: 1}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    # --- item 5 (nit): a previous roster's `arms` ids must be shape-checked,
+    # not merely typed-checked — render_summary interpolates them verbatim
+    # into Markdown that eval.yml `tee`s to stdout, where GitHub parses
+    # `::` workflow commands. ----------------------------------------------
+
+    def test_previous_arm_ids_are_shape_checked_before_they_reach_the_summary(self):
+        """`_clean_previous_arms` validated the SHAPE of the `arms` entry (a
+        dict with a non-empty string `id`) but not the id's CONTENT. An id
+        carrying a newline and an `::error::` line reached the published
+        roster's `retired_since_last` (no current model matches it, and it
+        is not in api_ids either) and, from there, render_summary's
+        Markdown verbatim — which eval.yml prints to stdout.
+        """
+        hostile_id = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [{"id": hostile_id, "reason": "was an arm"}]}
+        result = self._compute(previous=previous)
+        retired_ids = [r["id"] for r in result["retired_since_last"]]
+        self.assertNotIn(hostile_id, retired_ids)
+        summary = roster.render_summary(result)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile_id, summary)
+
+    # --- item 7 (nit): _clean_counts must reject JSON booleans, and its
+    # bad-cell warning must cover more than "not a number" -----------------
+
+    def test_clean_counts_rejects_json_booleans(self):
+        """`bool` is an `int` subclass in Python — `int(True)` is `1`,
+        `int(False)` is `0` — so a census cell holding the JSON literal
+        `true`/`false` silently coerced into a real count instead of being
+        rejected as the wrong shape."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": True, "2026-W35": False,
+                               "2026-W34": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_clean_counts_bad_cell_warning_covers_more_than_not_a_number(self):
+        """The bad-cell warning said "not a number", but a negative count
+        and a count above MAX_WEEKLY_TURNS both ARE numbers — they are
+        rejected for being out of range, not for failing to parse as a
+        number at all. "not a usable count" covers every rejection reason
+        (non-numeric, boolean, negative, out of range) accurately."""
+        notes = []
+        roster._clean_counts({"claude-opus-5": {"2026-W36": -5}}, notes.append)
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+        self.assertFalse(any("not a number" in n for n in notes), notes)
+
+    # --- item 10: model_usage_census.py's lazy PyYAML import has a test for
+    # main()'s own `--out` guard, but not for `--help` — the case the
+    # laziness exists to fix in the first place ---------------------------
+
+    def test_census_help_succeeds_with_pyyaml_unimportable(self):
+        """`_require_model_id_re()` is called only when actually building a
+        census; `--help` is handled by argparse inside `parser.parse_args()`
+        and exits before that call is ever reached. A machine with no
+        PyYAML installed at all must still get `--help` — this is the case
+        the lazy import exists to fix, and it had no test of its own."""
+        saved = {name: sys.modules.get(name) for name in ("yaml", "roster")}
+        saved_re = model_usage_census.MODEL_ID_RE
+        for name in ("yaml", "roster"):
+            sys.modules.pop(name, None)
+        sys.modules["yaml"] = None
+        model_usage_census.MODEL_ID_RE = None
+        try:
+            argv = ["model_usage_census.py", "--help"]
+            out = io.StringIO()
+            err = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(out), \
+                 contextlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as ctx:
+                    model_usage_census.main()
+        finally:
+            for name, mod in saved.items():
+                if mod is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = mod
+            model_usage_census.MODEL_ID_RE = saved_re
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("usage:", out.getvalue().lower())
+        self.assertNotIn("Traceback", err.getvalue())
+
+
+class TestIssue67Review5(unittest.TestCase):
+    """Round 5 fixes for #67 (PR #129 review round 5), one test per item.
+    See run_tests.py's class-per-review-round convention (TestIssue67Review,
+    TestIssue67Review2, TestIssue67Review3, TestIssue67Review4) — a SIBLING
+    of TestIssue67, reusing its canned documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- design decision: catalogue_seen replaces _canonical_id_re -------
+
+    def test_legacy_shaped_previously_seen_model_is_attributed_via_catalogue_seen(self):
+        """A pre-#67 legacy-shaped id (family word AFTER a leading numeric
+        segment, e.g. a `claude-3-...` id) that has since left the Models
+        API is attributable when this harness's own history says it was
+        once in the catalogue — `catalogue_seen`, not id SHAPE. The
+        withdrawn `_canonical_id_re` never matched this shape at all (its
+        pattern required the family word immediately after `claude-`), so
+        this legacy model would have been starved out of the denominator
+        even under round 4's code; `catalogue_seen` fixes it a different
+        way — by evidence, not shape.
+        """
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+            self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
+        ]}
+        legacy_id = "claude-3-opus-20240229"
+        previous = {"arms": [], "catalogue_seen": [legacy_id]}
+        counts = {legacy_id: {w: 112 for w in self.W[:4]},
+                  "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "sonnet-4-6 is not newest (sonnet-5-0 is) and its "
+                         "real ~9.68% share must not seat it")
+
+        rungs = roster.tier_rungs(self._policy())
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        api_ids = {m["id"] for m in models["models"]}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
+            api_ids=api_ids, previous_arms=set(),
+            catalogue_seen={legacy_id} | api_ids)
+        self.assertAlmostEqual(share, 100 * 48 / 496, places=2)
+        self.assertAlmostEqual(share, 9.68, places=2)
+
+        # Mutation check (manual, not automated): deleting the
+        # `catalogue_seen` clause from `_is_attributable` drops the legacy
+        # id's 448 turns from the denominator, leaving sonnet-4-6 at a
+        # false 48/48 = 100.0% and seating it — turning the `assertNotIn`
+        # above red.
+
+    def test_legacy_shaped_model_with_no_catalogue_history_documents_the_first_run_caveat(self):
+        """Same scenario, but `catalogue_seen` starts EMPTY — the
+        documented first-run caveat: with no history yet, a model retired
+        before this harness's first run is unattributable, and its usage
+        silently drops from the denominator. This is expected, current
+        behavior, not a bug — see `_is_attributable`'s docstring and
+        DESIGN.md's roster properties."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+            self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
+        ]}
+        legacy_id = "claude-3-opus-20240229"
+        previous = {"arms": [], "catalogue_seen": []}
+        counts = {legacy_id: {w: 112 for w in self.W[:4]},
+                  "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertIn("claude-sonnet-4-6", self._arm_ids(result))
+        self.assertIn("100.0%", self._reason(result, "claude-sonnet-4-6"))
+
+    def test_previous_arm_alias_usage_counts_via_widened_alias_map(self):
+        """B1 (#129 review round 6): a previous arm published under a
+        DATED id that has since left the Models API, whose real usage the
+        census records under its UNDATED alias, must still count in the
+        denominator. `aliases = alias_map(api_ids + list(counts))` never
+        saw the dated id at all — it is neither an api id nor a census
+        key, only its undated alias is (and only that alias is in
+        `counts`) — so `alias_map` had no dated/undated PAIR to fold at
+        all, and `previous_arms_folded` (built by running `previous_arms`
+        through that same, blind `aliases` map) stayed identical to
+        `previous_arms`, never matching the undated candidate. Measured
+        through `compute_roster` on a946c9b: `claude-sonnet-5` reads
+        "carries 97.1% of rankable census usage" off a denominator of 103
+        instead of the real 5103. (The previous round's test built its own
+        alias map with `previous_arms` already added to the ids list,
+        which is exactly this fix — so it exercised the fixed formula
+        without ever calling the buggy `compute_roster` code path, and
+        passed on the buggy commit too.)
+        """
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+        counts = {
+            "claude-sonnet-4-9": {self.W[0]: 5000},  # previous arm's usage, undated alias
+            "claude-sonnet-5": {self.W[0]: 100},
+            "claude-haiku-4-5": {self.W[0]: 3},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-9-20260101",
+                              "reason": "was an arm"}]}
+        result = self._compute(models=models, census=census, previous=previous)
+
+        for arm in result["arms"]:
+            self.assertNotIn("carries 97", arm["reason"], arm)
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("newest", reason)
+        self.assertNotIn("carries", reason)
+
+        # Reproduces `compute_roster`'s OWN widened alias-map formula (not
+        # a hand-picked ids list) only to pin the exact measured share and
+        # totals the reason text above implies.
+        rungs = roster.tier_rungs(self._policy())
+        api_ids = {m["id"] for m in models["models"]}
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        previous_arms = {"claude-sonnet-4-9-20260101"}
+        catalogue_seen = set(api_ids)
+        aliases = roster.alias_map(
+            list(api_ids) + list(cleaned) + list(previous_arms) + list(catalogue_seen))
+        raw_total, ranked_total = roster._in_window_totals(
+            cleaned, set(self.W[:1]), rungs, aliases=aliases,
+            api_ids=api_ids, previous_arms=previous_arms,
+            catalogue_seen=catalogue_seen)
+        self.assertEqual(raw_total, 5103)
+        self.assertEqual(ranked_total, 5103)
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-5", self.W[:1], rungs, aliases,
+            api_ids=api_ids, previous_arms=previous_arms,
+            catalogue_seen=catalogue_seen)
+        self.assertGreater(share, 1.9)
+        self.assertLess(share, 2.0)
+        # Mutation check (manual): reverting `compute_roster`'s `aliases`
+        # line to `alias_map(api_ids + list(counts))` (dropping
+        # `previous_arms`/`catalogue_seen` from the ids fed to
+        # `alias_map`) turns every assertion above red again — the
+        # denominator collapses back to 103 and `claude-sonnet-5` reads
+        # "carries 97.09%" instead of the newest-in-tier reason.
+
+    def test_catalogue_seen_round_trips_through_the_published_roster(self):
+        """`catalogue_seen` is the union of api ids seen this run and
+        whatever the previous roster already accumulated, sorted and
+        deduplicated, and it is shape-checked before being read back —
+        the same `_clean_previous_arms`-style treatment as `arms`,
+        including the count-only warning on a hostile entry."""
+        models = TestIssue67._models_doc()
+        result = self._compute(models=models, previous=None)
+        api_ids = {m["id"] for m in models["models"]}
+        seen_ids = [e["id"] for e in result["catalogue_seen"]]
+        self.assertEqual(set(seen_ids), api_ids)
+        self.assertEqual(seen_ids, sorted(seen_ids))
+        for entry in result["catalogue_seen"]:
+            self.assertIn("last_seen", entry)
+
+        hostile = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [], "catalogue_seen": result["catalogue_seen"] +
+                   [hostile, 123, None]}
+        warnings = []
+        roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertTrue(
+            any("catalogue_seen" in w and "skipped" in w for w in warnings),
+            warnings)
+        for w in warnings:
+            self.assertNotIn(hostile, w)
+
+        result2 = self._compute(models=models, previous=previous)
+        # `catalogue_seen` itself never reaches render_summary's Markdown
+        # (N2, #129 review round 6) — its safety property is the round
+        # trip above (published, read back, re-published), not a summary
+        # check, which would pass here whether or not the hostile entry
+        # were sanitized.
+        self.assertNotIn(hostile, [e["id"] for e in result2["catalogue_seen"]])
+
+    # --- S1: the min_ranked_turns floor must apply PER WINDOW, not only
+    # over the 8-week union -------------------------------------------------
+
+    def test_min_ranked_turns_floor_applies_to_the_enter_window_on_its_own(self):
+        """30 ranked turns in weeks 5-8 (outside the 4-week enter window)
+        clear the union floor, while the enter window itself carries a
+        single turn — that one turn used to compute a 100.0% entry share
+        and seat `claude-sonnet-4-6` (not the newest in its tier; the
+        DEFAULT fixture's `claude-sonnet-5` is), on evidence of a single
+        turn.
+        """
+        counts = {
+            "claude-sonnet-4-6": {self.W[0]: 1},                     # enter window: 1 turn
+            "claude-opus-5": {w: 6 for w in self.W[4:8]},             # weeks 5-8: 24 turns
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=None)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "one turn inside a 4-turn-total enter window must "
+                         "not clear the 20-turn floor just because weeks "
+                         "5-8 do")
+        # Mutation check (manual): gating the entry share check on the
+        # union's `usable` alone (reverting `enter_usable` back to
+        # `usable`) seats claude-sonnet-4-6 at "100.0%" here — red.
+
+    # --- S2: an absolute floor alone is not enough; a RELATIVE guard too ---
+
+    def test_min_ranked_share_holds_a_previous_arm_at_the_absolute_floor(self):
+        """`other` dominates the window (100000 turns/week for 8 weeks) with
+        exactly `min_ranked_turns` (20) genuinely ranked turns on a
+        DIFFERENT model — the absolute floor alone reads this as usable
+        evidence and retires `claude-opus-4-8` (no counted usage of its
+        own) at a literal 0.0% against 800,020 raw turns. The relative
+        floor (`min_ranked_share`) must hold it instead."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"other": {w: 100000 for w in self.W},
+                  "claude-haiku-4-5": {self.W[0]: 20}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_min_ranked_share_does_not_hold_a_genuinely_ranked_census(self):
+        """A census that is genuinely ranked over a meaningful share of the
+        raw window total must not be held back by the new relative guard —
+        retirement proceeds normally."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-5": {w: 100 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("exit bar", retired["claude-opus-4-8"])
+
+    # --- S4: a models.json entry's id must be shape-checked too -----------
+
+    def test_malformed_model_id_in_the_models_document_is_dropped_with_a_warning(self):
+        """A models.json entry carrying a hostile id (a newline and an
+        `::error::` line) must not reach `unranked`/`excluded` — and from
+        there render_summary's Markdown, which eval.yml prints to stdout
+        — or `catalogue_seen` (checked separately below: `catalogue_seen`
+        never itself reaches render_summary's Markdown, so a summary
+        check would not exercise its own sanitization — N2, #129 review
+        round 6)."""
+        hostile = "claude-opus-4\n::error::pwned::"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model(hostile, "2026-01-01T00:00:00Z"),
+        ]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=None, now=self.NOW, warn=warnings.append)
+        self.assertTrue(any("malformed model-id-shaped" in w for w in warnings), warnings)
+        self.assertNotIn(hostile, [e["id"] for e in result["catalogue_seen"]])
+        for entries in (result["arms"], result["unranked"], result["excluded"]):
+            self.assertNotIn(hostile, [e["id"] for e in entries])
+        summary = roster.render_summary(result)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile, summary)
+
+    # --- S6: the `\Z` anchor in PREVIOUS_ARM_ID_RE, pinned ------------------
+
+    def test_previous_arm_id_re_rejects_a_trailing_newline(self):
+        """`$` also matches just before a trailing newline; `\\Z` does not.
+        Reverting the anchor to `$` would let `claude-opus-4\\n` through as
+        a "well-formed" id."""
+        self.assertIsNone(roster.PREVIOUS_ARM_ID_RE.match("claude-opus-4\n"))
+        self.assertIsNotNone(roster.PREVIOUS_ARM_ID_RE.match("claude-opus-4"))
+
+    # --- N1: a rounded share must not contradict its own bar ---------------
+
+    def test_retirement_reason_uses_two_decimals_when_one_would_touch_the_bar(self):
+        """A previous arm at a true 1.96% exit-window share rounds to
+        "2.0%" at one decimal — "below the 2% exit bar (2.0%)" reads as
+        self-contradictory. Two decimals only when the tie actually
+        happens."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-opus-4-8": {self.W[0]: 98},
+                  "claude-sonnet-5": {self.W[0]: 4902}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("1.96%", retired["claude-opus-4-8"])
+        self.assertNotIn("2.0%", retired["claude-opus-4-8"])
+
+    def test_retirement_reason_escalates_past_two_decimals_when_needed(self):
+        """S2 (#129 review round 6): two decimals is not always enough to
+        stop touching the bar (1.9999% still rounds to "2.00%" at two
+        decimals), and a genuinely tiny nonzero share (0.04%, 0.004%)
+        must not render as the misleading "0.0%" — about a model that
+        DID carry turns, not one with none. `_format_share` escalates
+        through 1/2/3/4/6 decimals until the text differs from the bar
+        and, for a nonzero value, does not read as "0.0...0"."""
+        cases = [
+            (1999, 98001, "1.999%", "2.0%"),
+            (19999, 980001, "1.9999%", "2.00%"),
+            (4, 9996, "0.04%", "0.0%"),
+            (40, 999960, "0.004%", "0.00%"),
+        ]
+        for opus, sonnet, expect, forbid in cases:
+            with self.subTest(opus=opus, sonnet=sonnet):
+                previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+                counts = {"claude-opus-4-8": {self.W[0]: opus},
+                         "claude-sonnet-5": {self.W[0]: sonnet}}
+                census = TestIssue67._census_doc(counts=counts)
+                result = self._compute(census=census, previous=previous)
+                retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+                self.assertIn("claude-opus-4-8", retired)
+                self.assertIn(expect, retired["claude-opus-4-8"])
+                self.assertNotIn(forbid, retired["claude-opus-4-8"])
+        # Mutation check (manual): reverting `_format_share` to stop after
+        # two decimals renders 1.9999% as "2.00%" (touches the bar) and
+        # 0.004% as "0.00%" (reads as no usage) — turning the
+        # corresponding subTest red.
+
+    def test_at_or_above_reasons_are_not_escalated(self):
+        """A model at EXACTLY its bar in the "at or above" direction is
+        not self-contradictory ("carries 10.0% ... at or above the 10%
+        entry bar" is correct at a true 10.0%) — `_format_share` must not
+        escalate past one decimal there."""
+        self.assertEqual(roster._format_share(10.0, 10), "10.0")
+        self.assertEqual(roster._format_share(2.0, 2), "2.0")
+
+    # --- N2: _clean_counts must require an actual int, not a coercible
+    # string/float --------------------------------------------------------
+
+    def test_clean_counts_requires_actual_ints_not_coercible_strings_or_floats(self):
+        """`1.9` (a float) silently truncated to `1`; `"5"` (a JSON string)
+        parsed as `5`; `"5_0"` parsed as `50` (Python's `int()` honors the
+        digit-group underscore numeric-literal syntax inside a string);
+        `"٥"` (an Arabic-Indic digit) parsed as `5` (`int()` accepts
+        non-ASCII Unicode decimal digits). None of these is a value
+        `json.load` ever hands back for a JSON number."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": 1.9, "2026-W35": "5",
+                               "2026-W34": "5_0", "2026-W33": "٥",
+                               "2026-W32": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W32": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    # --- N4: min_ranked_turns/min_ranked_share validated with the other
+    # thresholds -------------------------------------------------------------
+
+    def test_roster_policy_is_the_single_source_of_thresholds(self):
+        base = dict(self._policy())
+        for key in ("min_ranked_turns", "min_ranked_share", "cooling_off_days",
+                   "arm_enter_usage_pct", "arm_exit_window_weeks"):
+            for bad, label in ((None, "missing"), ("20", "string"),
+                              (-5, "negative"), (None, "None")):
+                policy = dict(base)
+                if label == "missing":
+                    del policy[key]
+                else:
+                    policy[key] = bad
+                with self.subTest(key=key, bad=label):
+                    with self.assertRaises(ValueError) as ctx:
+                        roster.validate_policy(policy)
+                    self.assertIn(key, str(ctx.exception))
+        # min_ranked_share also has an upper bound: a share above 1 (100%)
+        # is not a fraction.
+        policy = dict(base)
+        policy["min_ranked_share"] = 1.5
+        with self.assertRaises(ValueError) as ctx:
+            roster.validate_policy(policy)
+        self.assertIn("min_ranked_share", str(ctx.exception))
+        # The real policy file must itself validate cleanly.
+        roster.validate_policy(base)
+
+    def test_validate_policy_requires_a_well_formed_tiers_ladder(self):
+        """N6 (#129 review round 6): `validate_policy` checked numeric
+        thresholds only — a policy missing `tiers` (or with a malformed
+        one) sailed through and KeyErrored deep inside `tier_rungs`
+        instead of failing loudly, by name, at the same point every other
+        bad threshold does."""
+        base = dict(self._policy())
+        for bad, label in (
+            (None, "missing"), ([], "empty list"), ("sonnet", "not a list"),
+            ([""], "empty string rung"), ([[]], "empty peer list"),
+            ([["sonnet", 5]], "non-string peer"), ([123], "non-string rung"),
+        ):
+            policy = dict(base)
+            if label == "missing":
+                del policy["tiers"]
+            else:
+                policy["tiers"] = bad
+            with self.subTest(bad=label):
+                with self.assertRaises(ValueError) as ctx:
+                    roster.validate_policy(policy)
+                self.assertIn("tiers", str(ctx.exception))
+        # The real policy file's tiers must validate cleanly.
+        roster.validate_policy(base)
+        # Mutation check (manual): removing the `tiers` check from
+        # `validate_policy` turns every subTest above red — `tiers`
+        # sails through unvalidated and `tier_rungs` KeyErrors instead
+        # (for the "missing" case) or misbehaves silently.
+
+
+class TestIssue67Review6(unittest.TestCase):
+    """Round 6 fixes for #67 (PR #129 review round 6), one test per fix.
+    See run_tests.py's class-per-review-round convention — a SIBLING of
+    TestIssue67, reusing its canned documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- B2: `_is_attributable` has exactly three routes left after round
+    # 6 dropped `candidate in api_ids`/`folded in api_ids` and the plain
+    # `candidate in previous_arms`/`folded in previous_arms` clauses as
+    # provably dead. One isolated regression floor per surviving route,
+    # all built on the same legacy-shaped dated/undated pair, and each
+    # scenario's previous roster's `catalogue_seen` deliberately excludes
+    # the id under test so the OTHER routes cannot rescue it by accident.
+
+    DATED = "claude-3-5-sonnet-20241022"
+    UNDATED = "claude-3-5-sonnet"
+
+    def test_route_folded_in_api_ids_folded(self):
+        """The catalogue publishes ONLY the dated snapshot id; the census
+        records its usage under the bare undated alias. Neither
+        `previous_arms` nor `catalogue_seen` names either spelling — the
+        only possible route is `folded in api_ids_folded`."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                 "models": [self._model(self.DATED, "2026-01-01T00:00:00Z")]}
+        counts = {self.UNDATED: {self.W[0]: 500}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": []}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, self.DATED)
+        self.assertIn("carries", reason)
+        self.assertIn("100.0%", reason)
+        self.assertNotIn(self.UNDATED, self._seen_ids(result))
+        # Mutation check (manual): deleting `folded in (api_ids_folded or
+        # ())` from `_is_attributable` makes the 500 turns under
+        # `claude-3-5-sonnet` unattributable (neither remaining route
+        # names it), so the window carries zero rankable usage and
+        # `claude-3-5-sonnet-20241022` falls back to "no fresh census
+        # ...; fell back to newest per tier" — turning both assertions
+        # above red.
+
+    def test_route_previous_arms_folded(self):
+        """A previous arm published under the dated id, since retired
+        from the Models API; the census records its usage under the bare
+        undated alias. `catalogue_seen` names neither spelling — the only
+        possible route is `previous_arms_folded`."""
+        models = TestIssue67._models_doc(drop={
+            "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+            "claude-opus-5", "claude-fable-5-1"})  # haiku only
+        counts = {self.UNDATED: {self.W[0]: 500},
+                 "claude-haiku-4-5": {self.W[0]: 25}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": self.DATED, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, "claude-haiku-4-5")
+        self.assertIn("newest", reason)
+        self.assertNotIn("carries", reason)
+        self.assertNotIn(self.UNDATED, self._seen_ids(result))
+        self.assertNotIn(self.DATED, self._seen_ids(result))
+        # Mutation check (manual): deleting `candidate in
+        # previous_arms_folded or folded in previous_arms_folded` makes
+        # the 500 turns unattributable, shrinking the denominator to
+        # haiku's own 25 turns (still above min_ranked_turns, so the
+        # census still reads as usable rather than merely falling back)
+        # and inflating its share to a false 100% — its reason becomes
+        # "carries 100.0%..." instead of the newest-in-tier one, turning
+        # both assertions above red.
+
+    def test_route_catalogue_seen(self):
+        """Both the dated and undated spellings have left the Models API
+        and neither was ever a previous arm; only the UNDATED spelling
+        was ever recorded in `catalogue_seen` history. Usage is recorded
+        under the DATED spelling, so only the FOLDED form matches
+        `catalogue_seen` — the only possible route."""
+        models = TestIssue67._models_doc(drop={
+            "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+            "claude-opus-5", "claude-fable-5-1"})  # haiku only
+        counts = {self.DATED: {self.W[0]: 500},
+                 "claude-haiku-4-5": {self.W[0]: 25}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": [self.UNDATED]}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, "claude-haiku-4-5")
+        self.assertIn("newest", reason)
+        self.assertNotIn("carries", reason)
+        # Mutation check (manual): deleting `candidate in catalogue_seen
+        # or folded in catalogue_seen` makes the 500 turns unattributable
+        # (neither of the other two routes names the dated id or its
+        # fold), shrinking the denominator to haiku's own 5 turns and
+        # inflating its share to a false 100% — turning both assertions
+        # above red.
+
+    def test_catalogue_seen_is_always_a_superset_of_this_runs_api_ids(self):
+        """`catalogue_seen = set(api_ids) | previous.catalogue_seen`
+        (compute_roster) — every id this run's Models API returned is in
+        `catalogue_seen` by construction, which is also why a bare
+        `candidate in api_ids`/`folded in api_ids` check added nothing
+        `catalogue_seen` didn't already cover."""
+        models = TestIssue67._models_doc()
+        result = self._compute(models=models, previous=None)
+        api_ids = {m["id"] for m in models["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(result))
+
+    def test_two_dead_clauses_stay_deleted(self):
+        """Regression floor for the deletion itself, not just for the
+        routes that remain: `_is_attributable`'s EXECUTABLE body (the
+        `return` statement, not its prose docstring, which names the
+        deleted clauses on purpose to explain why they're gone) must not
+        contain the bare, unfolded `candidate in api_ids`/`candidate in
+        previous_arms` checks — both provably subsumed by their `_folded`
+        siblings."""
+        import inspect
+        src = inspect.getsource(roster._is_attributable)
+        body = src.rsplit('"""', 1)[-1]
+        self.assertNotIn("candidate in api_ids", body)
+        self.assertNotIn("candidate in previous_arms or", body)
+
+    # --- S1: the relative min_ranked_share floor must apply PER WINDOW,
+    # not only over the 8-week union -----------------------------------
+
+    def test_min_ranked_share_floor_applies_to_the_enter_window_on_its_own(self):
+        """`other` dominates weeks 1-4 (the enter window) while a real
+        model's usage sits in weeks 5-8 (inside the union, outside the
+        enter window) — together they clear the UNION's relative floor
+        (100,025 of 4,100,025), but the enter window's OWN 25 ranked
+        turns against 4,000,025 raw ones fail its own relative floor.
+        Before this fix, only the ABSOLUTE per-window floor existed
+        (round 5), and 25 >= 20 cleared it — computing a false 100.0%
+        entry share for `claude-sonnet-4-6`, which is not the newest in
+        its tier (`claude-sonnet-5` is, in the DEFAULT fixture)."""
+        counts = {
+            "other": {w: 1_000_000 for w in self.W[:4]},
+            "claude-sonnet-4-6": {self.W[0]: 25},
+            "claude-opus-5": {w: 25_000 for w in self.W[4:8]},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=None)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "25 ranked turns against 4,000,025 raw ones in "
+                         "the enter window must not clear the relative "
+                         "floor just because weeks 5-8 do")
+        # Mutation check (manual): dropping the
+        # `enter_ranked_total >= policy["min_ranked_share"] *
+        # enter_raw_total` clause from `enter_usable` (reverting to the
+        # absolute-only check) seats claude-sonnet-4-6 at "carries
+        # 100.0%" here — red.
+
+    # --- N5 / S1: the exit-side per-window gate is unreachable under the
+    # SHIPPED policy (arm_exit_window_weeks >= arm_enter_window_weeks
+    # makes the exit window the union); a test-only policy with a
+    # shorter exit window makes it reachable and pins both branches of
+    # the widened floor note. ------------------------------------------
+
+    @staticmethod
+    def _short_exit_policy():
+        policy = dict(TestIssue67Review6._policy())
+        policy["arm_exit_window_weeks"] = 2
+        return policy
+
+    def test_exit_side_floor_note_names_the_absolute_floor(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-5": {self.W[2]: 30, self.W[3]: 30}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=census,
+            policy=self._short_exit_policy(), previous=previous, now=self.NOW)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("0 turn(s)", reason)
+        self.assertIn("turn floor", reason)
+        self.assertNotIn("relative floor", reason)
+
+    def test_exit_side_floor_note_names_the_relative_floor(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {
+            "other": {self.W[0]: 1500, self.W[1]: 1500},
+            "claude-opus-4-8": {self.W[0]: 13, self.W[1]: 12},
+            "claude-sonnet-5": {self.W[2]: 250, self.W[3]: 250},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=census,
+            policy=self._short_exit_policy(), previous=previous, now=self.NOW)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("relative floor for this window", reason)
+        self.assertNotIn("turn floor", reason)
+        # Mutation check (manual, both tests above): reverting
+        # `exit_usable` to its pre-S1 absolute-only definition, or
+        # deleting the `elif not exit_usable:` branch outright, turns
+        # these red — the first because the relative-cause test's 25
+        # exit-window turns clear the absolute floor alone (`exit_usable`
+        # would read True, giving opus-4-8 a "held over ... still X%"
+        # reason via the usage_share branch instead), the second because
+        # opus-4-8 would fall through to the "below the exit bar" branch
+        # and be retired instead of held.
+
+    # --- S3: catalogue_seen needs an age, a cap, and a migration path for
+    # the bare-string shape it used to publish ---------------------------
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    def test_catalogue_seen_migrates_the_bare_string_shape(self):
+        """The shape `catalogue_seen` used to publish (a bare list of id
+        strings) must still be READABLE for one migration run: no crash,
+        no shape warning, and the ids come through into this run's
+        (now dict-shaped) output."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": ["claude-opus-4-7"]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertIn("claude-opus-4-7", self._seen_ids(result))
+        for entry in result["catalogue_seen"]:
+            self.assertIn("id", entry)
+            self.assertIn("last_seen", entry)
+        self.assertFalse(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+
+    def test_catalogue_seen_entry_ages_out_and_stops_diluting_a_held_over_arm(self):
+        """S3 (#129 review round 6): a valid-shaped id planted directly in
+        `catalogue_seen` with a stale `last_seen` — never actually
+        returned by the Models API, so nothing ever refreshes it — must
+        drop out of `catalogue_seen` once it is older than
+        `catalogue_seen_max_age_days`. Before this fix, catalogue_seen had
+        no age at all: the plant stayed attributable forever, and its
+        fabricated usage diluted a real held-over arm's measured share
+        from 100% to a false 0.1%, retiring it on no real evidence.
+        """
+        stale = (self.NOW - timedelta(days=181)).strftime("%Y-%m-%d")
+        previous = {
+            "arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}],
+            "catalogue_seen": [{"id": "claude-sonnet-9-9", "last_seen": stale}],
+        }
+        # opus-4-8's own 96 turns alone are 100% of the rankable window;
+        # with the plant credited too (95904 more, under a different
+        # model) they dilute to exactly 96/96000 = 0.1%.
+        counts = {"claude-sonnet-9-9": {w: 11988 for w in self.W},
+                 "claude-opus-4-8": {w: 12 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-9-9", self._seen_ids(result),
+                         "a plant never returned by the Models API, aged "
+                         "past the policy window, must not survive into "
+                         "this run's catalogue_seen")
+        # Once excluded, the plant's own huge (fabricated) volume still
+        # shows up in the RAW window total (attribution-blind), which now
+        # also trips S1's relative floor — a second, independent reason
+        # the real arm is held rather than retired on manufactured
+        # evidence, whichever text names it.
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        # "0.1%" legitimately appears here now (N7, #129 review round 6):
+        # it's the RAW-vs-ranked ratio S1's relative floor reports (96 of
+        # 96000 raw turns are rankable), not the old per-model DILUTED
+        # share this test guards against — that specific phrasing is what
+        # must stay absent.
+        self.assertNotIn("still 0.1%", reason)
+        self.assertNotIn("claude-opus-4-8",
+                         {r["id"] for r in result["retired_since_last"]})
+        # Mutation check (manual): skipping the age-eviction step in
+        # `_update_catalogue_seen` (treat every previously-seen id as
+        # kept regardless of `last_seen`) keeps `claude-sonnet-9-9`
+        # attributable, diluting opus-4-8's exit-window share to a false
+        # 0.1% and RETIRING it (not merely leaving it unheld) — the
+        # `assertNotIn("claude-sonnet-9-9", ...)` above goes red directly,
+        # and opus-4-8 no longer appears in `arms` at all.
+
+    def test_real_since_retired_model_stays_attributable_within_the_age_window(self):
+        """The normal case S3 must not break: an id genuinely seen
+        recently (well within `catalogue_seen_max_age_days`) stays
+        attributable, dict-shaped `last_seen` and all."""
+        recent = (self.NOW - timedelta(days=10)).strftime("%Y-%m-%d")
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+        ]}
+        previous = {"arms": [],
+                   "catalogue_seen": [{"id": "claude-opus-4-8", "last_seen": recent}]}
+        counts = {"claude-opus-4-8": {w: 1000 for w in self.W},
+                 "claude-sonnet-4-6": {w: 60 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "claude-opus-4-8's usage must still count in the "
+                         "denominator, keeping sonnet-4-6's share below "
+                         "the entry bar")
+        self.assertIn("claude-opus-4-8", self._seen_ids(result))
+
+    def test_three_chained_runs_drop_the_plant_after_its_age(self):
+        """The plant is republished by the harness as its own output on
+        every later run — reverting it on the branch does not remove it
+        — until it ages out on its own. Simulates three chained runs,
+        each feeding the previous run's own `catalogue_seen` output
+        forward, `now` advancing between them; the plant is never
+        returned by the Models API in any of the three runs, so nothing
+        ever refreshes it."""
+        models = TestIssue67._models_doc(drop={"claude-opus-4-8"})
+        plant = "claude-sonnet-9-9"
+        previous = {"arms": [], "catalogue_seen": [plant]}  # migrates: last_seen = run 1's date
+        now = self.NOW
+        for run in range(3):
+            result = roster.compute_roster(
+                models_doc=models, census_doc=None, policy=self._policy(),
+                previous=previous, now=now)
+            if run < 2:
+                self.assertIn(plant, self._seen_ids(result),
+                             f"run {run}: still within the age window")
+            previous = result
+            now = now + timedelta(days=100)  # 3 runs span 200 days > 180-day policy
+        self.assertNotIn(plant, self._seen_ids(result),
+                         "the plant must not survive past its age even "
+                         "though every run kept republishing it forward")
+
+    def test_catalogue_seen_caps_length_with_a_count_only_warning(self):
+        """N3, merged into S3's rewrite: `catalogue_seen` accepts at most
+        500 entries (relevance-ordered head kept), past which the warning
+        names only the count — not one dropped id, which would be a value
+        from an untrusted branch reaching a log."""
+        previous = {"arms": [], "catalogue_seen": sorted(
+            f"claude-sonnet-{i}-9" for i in range(600))}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=None,
+            policy=self._policy(), previous=previous, now=self.NOW,
+            warn=warnings.append)
+        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        api_ids = {m["id"] for m in TestIssue67._models_doc()["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(result),
+                             "the cap must never evict this run's own live ids")
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            self.assertNotIn("claude-sonnet-599-9", w)
+
+    # --- N3: `_clean_previous_arms` dedup must be O(1)-membership and
+    # cap its accepted list the same way catalogue_seen does -------------
+
+    def test_previous_arms_caps_length_with_a_count_only_warning(self):
+        """`_clean_previous_arms` dedup used `entry not in ids` over a
+        growing list — O(n^2) — and had no cap at all. A set for
+        membership plus a 500-entry cap (relevance-ordered head,
+        count-only warning) matches the treatment `catalogue_seen`
+        already got.
+
+        F3 (round 8) moved what the cap bounds: it trims the set carried
+        forward for attribution, and says so in a count-only warning,
+        while `retired_since_last` reports every arm the previous roster
+        named — so 600 arms are 600 retirements and 100 dropped."""
+        previous = {"arms": [{"id": f"claude-sonnet-{i}-9", "reason": "x"}
+                             for i in range(600)]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=None,
+            policy=self._policy(), previous=previous, now=self.NOW,
+            warn=warnings.append)
+        retired_ids = {r["id"] for r in result["retired_since_last"]}
+        self.assertEqual(len(retired_ids), 600)
+        capped = [w for w in warnings if "cap" in w and "arms" in w]
+        self.assertTrue(capped, warnings)
+        self.assertIn("dropped 100", capped[0])
+        for w in warnings:
+            self.assertNotIn("claude-sonnet-599-9", w)
+
+    # --- N7: the policy's own relative-floor percentage must not round
+    # to "0%" via `:.0f` -------------------------------------------------
+
+    def test_census_unranked_relative_floor_reason_does_not_round_the_bar_to_zero(self):
+        """`f"{100 * policy['min_ranked_share']:.0f}%"` rendered a 0.5%
+        policy floor as "0%" — self-contradictory next to a measured
+        share that IS under 0.5% but reads as "under the 0% floor".
+        `:g` for the policy bar, and the S2 escalating formatter for the
+        measured share."""
+        policy = dict(self._policy())
+        policy["min_ranked_share"] = 0.005
+        _, note, code = roster._census_verdict(
+            {"generated_at": self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ")},
+            raw_total=100000, ranked_total=499, policy=policy, now=self.NOW)
+        self.assertEqual(code, roster.CENSUS_UNRANKED)
+        self.assertIn("0.5% relative", note)
+        self.assertNotIn("0% relative", note)
+        self.assertIn("0.499%", note)
+        # Mutation check (manual): reverting the bar's format spec to
+        # `:.0f` renders "0% relative floor" — red.
+
+    # --- N8: source.census_at must publish the PARSED timestamp,
+    # re-rendered, not the raw string ------------------------------------
+
+    def test_census_at_publishes_the_parsed_timestamp_not_the_raw_string(self):
+        """`parse_ts` strips a census `generated_at` before comparing it
+        against `now`, but `source.census_at` used to publish the RAW
+        string verbatim — a trailing newline or `\\r` would reach
+        `latest.json`, summary.md, and eval.yml's stdout as a literal
+        control character."""
+        census = TestIssue67._census_doc(generated_at="2026-09-03T00:00:00Z\n")
+        result = self._compute(census=census, previous=None)
+        self.assertEqual(result["source"]["census_at"], "2026-09-03T00:00:00Z")
+        summary = roster.render_summary(result)
+        self.assertNotIn("\n\n·", summary)
+        self.assertNotIn("Z\n`", summary)
+        # Mutation check (manual): reverting `census_at_published` to
+        # `(census_doc or {}).get("generated_at")` (the raw string)
+        # republishes the trailing newline — the assertEqual above
+        # turns red.
+
+    # --- N9: SNAPSHOT_SUFFIX must anchor at the true end of string -------
+
+    def test_snapshot_suffix_rejects_a_trailing_control_character(self):
+        """`$` matches just before a trailing newline as well as at the
+        true end of string; `\\Z` does not."""
+        self.assertIsNone(roster.SNAPSHOT_SUFFIX.match("claude-sonnet-4-5-20260101\n"))
+        match = roster.SNAPSHOT_SUFFIX.match("claude-sonnet-4-5-20260101")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group("base"), "claude-sonnet-4-5")
+
+    def test_snapshot_suffix_anchor_end_to_end_through_compute_roster(self):
+        """A census key `claude-sonnet-4-5-20260101\\n` folded onto
+        `claude-sonnet-4-5` under the old `$`-anchored regex, inflating
+        its measured share from a real 50.0% to a false ~99.9%."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-5", "2026-01-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        counts = {"claude-sonnet-4-5-20260101\n": {self.W[0]: 9800},
+                 "claude-sonnet-4-5": {self.W[0]: 100},
+                 "claude-haiku-4-5": {self.W[0]: 100}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=None)
+        reason = self._reason(result, "claude-sonnet-4-5")
+        self.assertIn("50.0%", reason)
+        self.assertNotIn("99.0%", reason)
+        # Mutation check (manual): reverting the anchor to `$` folds the
+        # malformed key onto claude-sonnet-4-5 again, changing the
+        # reason to "carries 99.0%" — turning both assertions red.
 
 
 class SetupHookTests(unittest.TestCase):
@@ -4950,8 +8774,16 @@ class SetupHookTests(unittest.TestCase):
             seed = Path(tmp) / "seed"
             seed.mkdir()
             (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            # `model:` pinned, and it is not incidental: #129's roster-aware
+            # `select_models` FAILS CLOSED, so an unpinned fixture with no
+            # roster is a model-selection error raised BEFORE any workspace
+            # is materialized — which would short-circuit this test ahead of
+            # the `setup:` it exists to exercise. Pinning the model (with
+            # `no_judge=True` below) makes `select_models` return without
+            # reading a roster at all, leaving `setup:` the only thing this
+            # test can fail on.
             fixture = {"skill": "some-skill", "prompt": "do the thing",
-                      "setup": "exit 7"}
+                      "model": "pinned-test-model", "setup": "exit 7"}
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
@@ -7638,6 +11470,7 @@ class TestIssue85(unittest.TestCase):
         self.assertAlmostEqual(judge._weighted_overall(dimensions, weights),
                                expected, places=6)
 
+
 class TestIssue86(unittest.TestCase):
     """Issue #86: the post-failure-comment eval fixture, and the two new
     structural objective-check types it needed in
@@ -9752,6 +13585,2585 @@ class TestIssue82(unittest.TestCase):
              "--arm", "objective-only", "--workspace", str(ws)],
             capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+
+class TestIssue67Review7(unittest.TestCase):
+    """Round 7 fixes for #67 (PR #129 review round 7), one test per fix.
+
+    A SIBLING of TestIssue67, reusing its canned documents rather than
+    subclassing — run_tests.py's class-per-review-round convention. Every
+    model id below is TEST FIXTURE data; the policy code under test carries
+    none (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None, warn=None, policy=None):
+        """`compute_roster` — the production entry point — with the canned
+        documents. `warn` defaults to a sink so a test that is not about
+        warnings does not print to the suite's stderr."""
+        return roster.compute_roster(
+            models_doc=(TestIssue67._models_doc() if models is TestIssue67.DEFAULT
+                        else models),
+            census_doc=(TestIssue67._census_doc() if census is TestIssue67.DEFAULT
+                        else census),
+            policy=policy or cls._policy(), previous=previous, now=cls.NOW,
+            warn=warn if warn is not None else (lambda _m: None))
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # --- B1: an id the Models API returns THIS run is never re-targeted by
+    # the WIDE usage alias map ------------------------------------------
+    #
+    # Round 6's B1 widened that map to
+    # `alias_map(api_ids + counts + previous_arms + catalogue_seen)` and
+    # `usage_share` used it for the MODEL's own target as well as for census
+    # keys. When the catalogue lists TWO dated snapshots of one base and the
+    # bare alias is present only in the previous roster (its `arms` or its
+    # `catalogue_seen`), both snapshots folded onto that bare alias, each
+    # one's numerator collected the other's turns, and both were published
+    # "carries 100.0%". The fix: a live catalogue id's target comes from
+    # `seat_aliases` (the catalogue-only map), so two ids the seat map keeps
+    # distinct always keep distinct numerators.
+
+    SNAP_OLD = "claude-opus-5-20260101"
+    SNAP_NEW = "claude-opus-5-20260601"
+    SNAP_BASE = "claude-opus-5"
+
+    @classmethod
+    def _two_snapshot_models(cls):
+        """A catalogue listing TWO dated snapshots of one base and no bare
+        alias of it at all, beside two ordinary models."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.SNAP_OLD, "2026-01-01T00:00:00Z"),
+            cls._model(cls.SNAP_NEW, "2026-06-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _two_snapshot_census(cls, old=40, new=4000):
+        """Usage recorded under each snapshot's OWN id: 40 turns for the
+        older, 4000 for the newer, 4040 in the enter window all told."""
+        return TestIssue67._census_doc(counts={
+            cls.SNAP_OLD: {cls.W[0]: old}, cls.SNAP_NEW: {cls.W[0]: new}})
+
+    def _assert_snapshots_are_not_both_at_100(self, result):
+        self.assertIn(self.SNAP_NEW, self._arm_ids(result))
+        self.assertIn("99.0%", self._reason(result, self.SNAP_NEW))
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result),
+                         "a snapshot carrying 40 of 4040 enter-window turns "
+                         "(0.99%) must not be seated")
+        for arm in result["arms"]:
+            self.assertNotIn("100.0%", arm["reason"], arm)
+
+    def test_two_live_snapshots_keep_distinct_numerators_via_previous_arms(self):
+        """The bare alias is present only in `previous.arms`."""
+        previous = {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self._assert_snapshots_are_not_both_at_100(result)
+        # Mutation check (manual): restoring the single wide-map target
+        # (`aliases = alias_map(api_ids + list(counts) + previous_arms +
+        # list(catalogue_seen))`, used for the model's own target too)
+        # folds BOTH snapshots onto `claude-opus-5` and publishes both at
+        # "carries 100.0%" — red.
+
+    def test_two_live_snapshots_keep_distinct_numerators_via_catalogue_seen(self):
+        """The bare alias is present only in `previous.catalogue_seen` —
+        which is where run 1 puts it, by design, whenever the catalogue
+        listed it once."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self._assert_snapshots_are_not_both_at_100(result)
+        # Mutation check (manual): as above — red.
+
+    def test_the_organic_two_run_chain_keeps_numerators_distinct(self):
+        """No hostile input anywhere: run 1's catalogue lists the bare
+        alias (so run 1 records it in `catalogue_seen` by design), and run 2
+        — fed run 1's OWN published roster as `previous` — sees the bare
+        alias replaced by two dated snapshots."""
+        run1_models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(self.SNAP_BASE, "2026-01-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+        first = self._compute(
+            models=run1_models,
+            census=TestIssue67._census_doc(counts={self.SNAP_BASE: {self.W[0]: 4040}}),
+            previous=None)
+        self.assertIn(self.SNAP_BASE, self._seen_ids(first))
+
+        second = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=first)
+        self._assert_snapshots_are_not_both_at_100(second)
+        # Mutation check (manual): as above — red.
+
+    def test_a_previous_arm_with_no_census_turns_is_retired_at_zero(self):
+        """The older snapshot is a previous arm with LITERALLY no turns of
+        its own; the bare alias sits in history. It must be retired at
+        0.0%, not kept on the newer snapshot's turns."""
+        census = TestIssue67._census_doc(counts={
+            self.SNAP_NEW: {self.W[0]: 4000},
+            "claude-sonnet-5": {self.W[0]: 40}})
+        previous = {"arms": [{"id": self.SNAP_OLD, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=census, previous=previous)
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result))
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == self.SNAP_OLD)
+        self.assertIn("exit bar", entry["reason"])
+        self.assertIn("0.0%", entry["reason"])
+        # Mutation check (manual): as above — the wide map gives SNAP_OLD
+        # the newer snapshot's 4000 turns, seats it at "carries 100.0%",
+        # and `retired_since_last` is empty — `next(...)` raises
+        # StopIteration and the test errors.
+
+    def test_the_two_snapshot_roster_still_offers_a_non_arm_judge(self):
+        """The extra seat consumed the last non-arm model, so the judge
+        became an arm and `run_eval.select_models` refused every unpinned
+        fixture. Driven through the runner's own entry point, on a roster
+        `compute_roster` actually produced."""
+        previous = {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self.assertFalse(result["judge"]["is_arm"], result["judge"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.json"
+            path.write_text(json.dumps(result), encoding="utf-8")
+            fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
+            args = argparse.Namespace(model=None, roster=path, no_judge=False)
+            agent, judge_model, error = run_eval.select_models(fixture, args)
+        self.assertIsNone(error, error)
+        self.assertNotEqual(agent, judge_model)
+        # Mutation check (manual): as above — both snapshots are seated,
+        # nothing available is left un-seated except the models already
+        # taken, `judge.is_arm` is True, and select_models returns "names a
+        # judge that is also an arm".
+
+    # The invariant itself, over a few catalogues: two ids the SEAT map
+    # keeps distinct never collect the same census turns. Observed through
+    # `compute_roster` with a test-only 0% entry bar, which makes every
+    # available model publish its measured share in words — disjoint
+    # numerators over one denominator can never sum past 100%.
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    _SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    def test_usage_numerators_are_disjoint_across_distinct_seat_ids(self):
+        catalogues = [
+            # two dated snapshots of one base, the bare alias only in history
+            (self._two_snapshot_models(), self._two_snapshot_census(),
+             {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}),
+            # ... and with the bare alias as a census key as well
+            (self._two_snapshot_models(),
+             TestIssue67._census_doc(counts={
+                 self.SNAP_OLD: {self.W[0]: 40},
+                 self.SNAP_NEW: {self.W[0]: 4000},
+                 self.SNAP_BASE: {self.W[0]: 1000}}),
+             {"arms": [], "catalogue_seen": [
+                 {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}),
+            # a base that IS live beside one of its snapshots (one model,
+            # one seat, one share — the seat map collapses them)
+            ({"fetched_at": "2026-09-04T11:00:00Z", "models": [
+                self._model(self.SNAP_BASE, "2026-01-01T00:00:00Z"),
+                self._model(self.SNAP_NEW, "2026-06-01T00:00:00Z"),
+                self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z")]},
+             self._two_snapshot_census(), None),
+            # the ordinary catalogue, with the ordinary census
+            (TestIssue67._models_doc(), TestIssue67._census_doc(), None),
+        ]
+        for index, (models, census, previous) in enumerate(catalogues):
+            with self.subTest(catalogue=index):
+                result = self._compute(models=models, census=census,
+                                       previous=previous,
+                                       policy=self._zero_bar_policy())
+                shares = [float(m.group(1))
+                          for m in (self._SHARE_RE.search(a["reason"])
+                                    for a in result["arms"]) if m]
+                self.assertTrue(shares, result["arms"])
+                # One decimal place per share, so allow half a unit of
+                # last-digit rounding per arm and nothing more.
+                self.assertLessEqual(sum(shares), 100.0 + 0.05 * len(shares),
+                                     f"{shares} sum past one denominator")
+        # Mutation check (manual): restoring the single wide-map target
+        # makes catalogue 0's two snapshots report 100.0% each — 200.0% of
+        # one denominator — red.
+
+    # --- S2: the `catalogue_seen` cap evicts the OLDEST entry, not the
+    # lowest-sorting id ---------------------------------------------------
+    #
+    # `historical = sorted(...)` then `kept = live + historical[:room]`
+    # evicted by ALPHABETICAL id, and `PREVIOUS_ARM_ID_RE` allows a leading
+    # digit — so 500 low-sorting valid-shaped ids pushed a real
+    # since-retired model out of history, took its turns out of the
+    # denominator, and published a false 100.0% share for an unrelated
+    # model. Age is the property the field is about; the cap now agrees
+    # with it.
+
+    CAP_PLANTS = [f"0plant-{i:03d}" for i in range(500)]
+    RETIRED_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _capped_history_previous(cls):
+        """500 low-sorting plants, all within the age window, beside ONE
+        real since-retired model seen a day ago. 501 historical entries
+        against a 500-entry cap: exactly one thing has to go."""
+        stale = cls._days_ago(100)
+        return {"arms": [], "catalogue_seen":
+                [{"id": i, "last_seen": stale} for i in cls.CAP_PLANTS] +
+                [{"id": cls.RETIRED_REAL, "last_seen": cls._days_ago(1)}]}
+
+    @classmethod
+    def _b1_style_census(cls):
+        """The census that names the real since-retired entry and the live
+        model beside it — 8000 of the window's 8800 rankable turns are the
+        retired one's, a true 9.09% for the live one."""
+        return TestIssue67._census_doc(counts={
+            cls.RETIRED_REAL: {cls.W[0]: 8000},
+            "claude-sonnet-5": {cls.W[0]: 800}})
+
+    @classmethod
+    def _capped_history_models(cls):
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+
+    def test_the_cap_keeps_a_recent_history_entry_over_five_hundred_stale_ones(self):
+        """WHAT KEEPS IT has changed twice since this was written. Round 7
+        kept it because it was the most recently seen; B1\' (#129 review
+        round 10) took `last_seen` out of the order entirely — the previous
+        roster writes it — and the census keeps it instead. The scenario is
+        unchanged and so is the assertion: 500 plants, one real entry, and
+        the real one survives."""
+        warnings = []
+        result = self._compute(models=self._capped_history_models(),
+                               census=self._b1_style_census(),
+                               previous=self._capped_history_previous(),
+                               warn=warnings.append)
+        seen = self._seen_ids(result)
+        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        self.assertIn(self.RETIRED_REAL, seen,
+                      "the entry the census names must outlive 500 entries "
+                      "it does not, whatever they sort like")
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            for plant in ("0plant-499", self.RETIRED_REAL):
+                self.assertNotIn(plant, w, "the cap warning names counts only")
+        # Mutation check (manual): reverting the historical order to a
+        # plain `sorted(...)` by id — `_no_relevance_order` in place of
+        # `relevant.rank` — drops `claude-sonnet-4-9` (the single
+        # alphabetically-last entry) instead of a plant: red.
+
+    def test_an_alphabetically_evicted_history_entry_falsifies_a_published_share(self):
+        """The measured consequence, through `compute_roster`: the real
+        since-retired model carries 8000 of the window's 8800 rankable
+        turns. Evicted from history by 500 low-sorting plants, its turns
+        leave the denominator and `claude-sonnet-5` is published as
+        carrying 100.0% of census usage where it really carries 9.09%
+        — under the 10% entry bar, so it rides in on newest-in-tier
+        instead and says so."""
+        census = TestIssue67._census_doc(counts={
+            self.RETIRED_REAL: {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        result = self._compute(models=self._capped_history_models(),
+                               census=census,
+                               previous=self._capped_history_previous())
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+        self.assertIn(self.RETIRED_REAL, self._seen_ids(result))
+        # Mutation check (manual): reverting to `sorted(...)` by id evicts
+        # `claude-sonnet-4-9`, and claude-sonnet-5's reason becomes
+        # "carries 100.0% of rankable census usage ..." — red.
+
+    def test_the_policy_describes_the_cap_the_code_implements(self):
+        """Updated for F1 (round 8): the cap orders by census relevance
+        FIRST, then by `last_seen`, then by id — the previous roster
+        writes the last two, so neither can be the thing that decides."""
+        text = self.POLICY.read_text(encoding="utf-8")
+        self.assertNotIn("oldest-by-id-sorted-out", text,
+                         "the cap evicts by `last_seen`, not by id order")
+        prose = " ".join(" ".join(line.lstrip("#").strip()
+                                  for line in text.splitlines()).split())
+        # `assertTrue` over `assertNotIn`: a failure here would otherwise
+        # dump the whole policy file into the log.
+        self.assertTrue("dropped are the oldest by `last_seen` first" not in prose,
+                        "age alone is not the order the code implements")
+        self.assertTrue("then the newest by `last_seen`" not in prose,
+                        "`last_seen` is out of the cap's order entirely "
+                        "(B1', #129 review round 10)")
+        self.assertIn("Within a tier the census's own in-window turn count "
+                      "decides, descending, and the id order breaks the tie",
+                      prose)
+        self.assertIn("eviction here is PERMANENT", prose)
+
+    # --- S3: the previous-arms cap must not omit a REAL retirement -------
+    #
+    # `_clean_previous_arms` capped with `sorted(ids)[:PREVIOUS_ARMS_CAP]`
+    # — the same alphabetical-head shape S2 fixes for `catalogue_seen`, and
+    # with the same consequence: a previous roster carrying 500 low-sorting
+    # filler ids beside one real departed arm reported 500 filler
+    # retirements and not the real one, so `retired_since_last` — the line
+    # the job summary leads with — silently lost the only retirement that
+    # actually happened.
+
+    ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
+
+    def test_the_previous_arms_cap_keeps_a_real_retirement_over_filler(self):
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.RETIRED_REAL, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            self.RETIRED_REAL: {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        warnings = []
+        result = self._compute(models=self._capped_history_models(),
+                               census=census, previous=previous,
+                               warn=warnings.append)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertTrue(self.RETIRED_REAL in retired,
+                        "the one arm that really left the Models API must not "
+                        "be capped out by 500 filler ids that sort below it")
+        self.assertIn("no longer returned", retired[self.RETIRED_REAL])
+        # What the cap now decides is what is CARRIED FORWARD, so that is
+        # where this keeps its teeth (F3, round 8 moved the report itself
+        # out from under the cap): capped out, the departed arm stops
+        # being attributable, its 8000 turns leave the denominator, and
+        # `claude-sonnet-5` is published as carrying 100.0% of census
+        # usage where it really carries 9.09%.
+        reason = TestIssue67._reason(result, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+        self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
+        for w in warnings:
+            self.assertNotIn("0arm-499", w, "the cap warning names counts only")
+        # Mutation check (manual): reverting the cap to
+        # `carried = sorted(ids)[:PREVIOUS_ARMS_CAP]` drops
+        # `claude-sonnet-4-9` — the single alphabetically-last id of 501 —
+        # so it is no longer carried forward, its turns leave the usage
+        # denominator, and the "carries" assertion goes red.
+
+    def test_the_previous_arms_cap_still_bounds_an_all_filler_roster(self):
+        """The bound itself is unchanged when nothing is relevant: 600
+        filler arms still trim the carried-forward set to 500, with a
+        count-only warning naming the 100 dropped. F3 (round 8) is what
+        moved `retired_since_last` out from under that bound — every arm
+        the previous roster named is reported."""
+        previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
+                             for i in range(600)]}
+        warnings = []
+        result = self._compute(models=self._capped_history_models(),
+                               census=None, previous=previous,
+                               warn=warnings.append)
+        self.assertEqual(len(result["retired_since_last"]), 600)
+        capped = [w for w in warnings if "cap" in w and "arms" in w]
+        self.assertTrue(capped, warnings)
+        self.assertIn("dropped 100", capped[0])
+        for w in warnings:
+            self.assertNotIn("0arm-599", w)
+
+    # --- S1: four of round 6's own catalogue_seen defences had no
+    # regression floor — each could be deleted with the whole suite still
+    # green. One test per defence, each red under the named mutation.
+    # (These are floors for code that is already correct, so unlike every
+    # other item in this round they are green before the change as well as
+    # after it: the mutation is what they exist to catch.)
+
+    HOSTILE_SEEN_ID = "claude-sonnet-4-5\n::error::pwned::"
+
+    def _chain(self, previous, models, runs=3, step=100):
+        """`compute_roster` fed its own published roster, `now` advancing
+        `step` days per run — how `catalogue_seen` actually round-trips."""
+        now = self.NOW
+        results = []
+        for _ in range(runs):
+            previous = roster.compute_roster(
+                models_doc=models, census_doc=None, policy=self._policy(),
+                previous=previous, now=now, warn=lambda _m: None)
+            results.append(previous)
+            now = now + timedelta(days=step)
+        return results
+
+    def test_a_future_dated_last_seen_is_clamped_and_still_ages_out(self):
+        """A `last_seen` in the future is clamped to today on read. Without
+        the clamp, `now - seen_at` is negative forever and the plant is
+        immortal: it can never age out, and it goes on being republished by
+        this harness as its own output on every later run."""
+        plant = "claude-sonnet-9-9"
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "9999-12-31"}]}
+        runs = self._chain(previous, models)
+        self.assertIn(plant, self._seen_ids(runs[0]),
+                      "the clamp keeps the entry for one age window, it does "
+                      "not drop it on sight")
+        self.assertNotIn(plant, self._seen_ids(runs[-1]),
+                         "200 days on, a plant the Models API never returned "
+                         "must be gone")
+        # Mutation check (manual): replacing the clamp
+        # (`today if parsed > now else entry["last_seen"]`) with
+        # `entry["last_seen"]` keeps `9999-12-31` verbatim, so the age
+        # check never fires and the plant survives every run — red.
+
+    def test_an_unparseable_last_seen_is_skipped_not_kept_forever(self):
+        """An entry whose `last_seen` does not parse is dropped on read,
+        with a count-only warning. Kept instead, it would read as
+        `parse_ts(...) or now` — today, every run, forever."""
+        plant = "claude-sonnet-9-9"
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "garbage"}]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertNotIn(plant, self._seen_ids(result))
+        self.assertTrue(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+        for w in warnings:
+            self.assertNotIn("garbage", w, "the warning names counts only")
+        # Mutation check (manual): dropping the `if parsed is None: ...
+        # continue` skip and guarding the comparison instead
+        # (`today if (parsed and parsed > now) else entry["last_seen"]`)
+        # stores `"garbage"`, which `_update_catalogue_seen` then reads as
+        # `parse_ts(...) or now` — today — so the plant never ages out and
+        # is republished forever: the first assertion goes red.
+
+    def test_a_hostile_id_in_the_dict_shape_is_skipped_too(self):
+        """The bare-string shape was shape-checked and the `{id, last_seen}`
+        shape was as well, but only the bare string had a test. An id
+        carrying a newline and a `::` workflow command reaches
+        `catalogue_seen`, which is published verbatim to the public
+        `eval-results` branch and read back next run."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.HOSTILE_SEEN_ID, "last_seen": self._days_ago(1)}]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertNotIn(self.HOSTILE_SEEN_ID, self._seen_ids(result))
+        for entry in result["catalogue_seen"]:
+            self.assertNotIn("::", entry["id"])
+            self.assertNotIn("\n", entry["id"])
+        self.assertTrue(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+        for w in warnings:
+            self.assertNotIn("pwned", w, "the warning names counts only")
+        # Mutation check (manual): dropping
+        # `and PREVIOUS_ARM_ID_RE.match(entry["id"])` from the dict branch
+        # of `_clean_catalogue_seen` republishes the hostile id into
+        # `catalogue_seen` — red.
+
+    def test_the_cap_never_evicts_a_live_id_even_for_lower_sorting_plants(self):
+        """The cap's live-id exemption, exercised with plants that sort
+        BEFORE every api id and carry the same `last_seen` (today) — so
+        neither the id order nor the age order would spare the real
+        catalogue. `catalogue_seen` must stay a superset of `api_ids`:
+        `usage_share` and `_is_attributable` both rely on it."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen":
+                    [f"a0000-{i:03d}" for i in range(600)]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        api_ids = {m["id"] for m in models["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(result),
+                             "the cap must never evict this run's own live ids")
+        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        for w in warnings:
+            self.assertNotIn("a0000-599", w)
+        # Mutation check (manual): dropping the live/historical split
+        # (`kept = <survivors, newest first, id ascending>[:CAP]`) fills
+        # all 500 slots with `a0000-...` plants — every api id is evicted
+        # and the superset assertion goes red.
+
+    # --- N1: `catalogue_seen[].last_seen` is republished NORMALIZED ------
+
+    def test_a_last_seen_with_control_characters_is_republished_normalized(self):
+        """`parse_ts` strips a `last_seen` before comparing it against
+        `now`, but the entry was stored — and republished to the public
+        branch — as the raw string it came in as, so a `\\r\\n` around a
+        date landed in `roster/latest.json` verbatim. The same fix
+        `source.census_at` already had (N8, round 6)."""
+        plant = "claude-sonnet-9-9"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "\r\n2026-09-01T00:00:00Z\r\n"}]}
+        result = self._compute(models=TestIssue67._models_doc(), census=None,
+                               previous=previous)
+        entry = next(e for e in result["catalogue_seen"] if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-01")
+        for e in result["catalogue_seen"]:
+            self.assertNotIn("\r", e["last_seen"])
+            self.assertNotIn("\n", e["last_seen"])
+        # Mutation check (manual): storing `entry["last_seen"]` instead of
+        # `parsed.strftime("%Y-%m-%d")` republishes the raw string — red.
+
+    # --- N2: `source.census_at` is converted to UTC before it is rendered
+
+    def test_census_at_is_converted_to_utc_before_it_is_rendered(self):
+        """`strftime("...Z")` on an offset-aware timestamp published the
+        LOCAL wall clock with a `Z` on the end — five hours wrong here, and
+        canonical-looking, which is worse than obviously wrong."""
+        census = TestIssue67._census_doc(generated_at="2026-09-03T00:00:00+05:00")
+        result = self._compute(census=census, previous=None)
+        self.assertEqual(result["source"]["census_at"], "2026-09-02T19:00:00Z")
+        # Mutation check (manual): dropping the
+        # `.astimezone(timezone.utc)` publishes "2026-09-03T00:00:00Z" —
+        # red.
+
+    # --- N3: `_format_share`'s last-resort fallback is checked too -------
+
+    def test_the_share_fallback_is_checked_against_the_bar_as_well(self):
+        """`_format_share` escalated 1, 2, 3, 4, 6 decimals against the
+        bar and then returned `:.6g` UNCHECKED. A share of 1.99999975%
+        renders as "2" there, so the reason read "below the 2% exit bar
+        (2% of rankable census usage)" — a sentence that contradicts
+        itself. Measured through `compute_roster`: 7,999,999 of
+        400,000,000 exit-window turns."""
+        counts = {
+            "claude-sonnet-4-6": dict(
+                [(w, 1_000_000) for w in self.W[:7]] + [(self.W[7], 999_999)]),
+            "claude-sonnet-5": {w: 10_000_000 for w in self.W},
+            "claude-opus-5": {w: 10_000_000 for w in self.W},
+            "claude-opus-4-8": {w: 10_000_000 for w in self.W},
+            "claude-haiku-4-5": {w: 10_000_000 for w in self.W},
+            "claude-fable-5-1": dict(
+                [(w, 9_000_000) for w in self.W[:7]] + [(self.W[7], 9_000_001)]),
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        result = self._compute(census=census, previous=previous)
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == "claude-sonnet-4-6")
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertNotIn("(2% of", entry["reason"],
+                         "the rendered share must not equal the bar it is "
+                         "said to be below")
+        self.assertIn("1.99999975", entry["reason"])
+        # Mutation check (manual): returning `f"{value:.6g}"` unchecked
+        # renders "2%" against the 2% bar — red.
+
+    # --- N4: a RecursionError from json.load is a named one-liner -------
+
+    def test_a_deeply_nested_previous_roster_is_named_not_traced(self):
+        """`read_json` caught `(json.JSONDecodeError, OSError,
+        UnicodeDecodeError)`; a deeply nested document raises
+        `RecursionError` instead, which escaped as a traceback carrying
+        the runner's absolute paths where the module docstring promises a
+        one-line named message. Driven through `main()`, with files on
+        disk."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(TestIssue67._models_doc()),
+                              encoding="utf-8")
+            previous = Path(tmp) / "previous.json"
+            previous.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--previous", str(previous),
+                    "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            err = stderr.getvalue()
+            self.assertEqual(rc, 0, stdout.getvalue() + err)
+            self.assertIn("previous.json is present but unreadable", err)
+            self.assertIn("RecursionError", err)
+            self.assertNotIn("Traceback", err)
+            self.assertTrue(out.is_file())
+        # Mutation check (manual): narrowing the `except` back to
+        # `(json.JSONDecodeError, OSError, UnicodeDecodeError)` lets the
+        # RecursionError propagate out of `main()` — the test errors.
+
+    # --- N5-N8: four claims the code does not make good on ---------------
+
+    ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
+
+    def test_the_migration_docstring_does_not_promise_a_one_run_window(self):
+        """`_clean_catalogue_seen` said the bare-string shape is accepted
+        "for ONE migration run". Nothing enforces that and nothing needs
+        to — what is true is that the shape is accepted on read and always
+        republished in the `{id, last_seen}` shape."""
+        doc = roster._clean_catalogue_seen.__doc__
+        self.assertNotIn("for ONE migration run", doc)
+        self.assertIn("republish", doc.lower())
+
+    def test_the_ageing_docs_say_a_retirement_is_not_undone(self):
+        """A planted `catalogue_seen` entry ages out — but a retirement its
+        fabricated usage already caused is not undone: the retired model is
+        no longer a previous arm, so a trickle of real usage never
+        re-seats it. Property 5 has to say so; ageing out reads as a full
+        repair otherwise."""
+        design = (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+        marker = design.split("## Model roster")[1].split("## Out of scope")[0]
+        self.assertIn("does not undo a retirement", marker)
+        self.assertIn("does not undo a retirement",
+                      roster._update_catalogue_seen.__doc__)
+
+    def test_the_module_docstring_forbids_the_environment_and_stray_stdout(self):
+        """eval.yml's roster step exports the Models API bearer for
+        `refresh_models.py` and runs this module in the SAME shell, so the
+        credential IS in this process's environment; the step's stdout goes
+        to the job summary and the public log. Neither fact is visible from
+        inside this file, so the rule it implies has to be written down."""
+        doc = roster.__doc__
+        self.assertIn("never read the environment", doc)
+        self.assertIn("render_summary", doc)
+        self.assertNotIn("os.environ", self.ROSTER_SRC.read_text(encoding="utf-8")
+                         .split('"""', 2)[2],
+                         "roster.py reads the environment outside its docstring")
+
+    def test_the_dedup_comment_names_what_actually_bounds_the_work(self):
+        """The O(1) set dedup has no deterministic regression floor — its
+        only symptom is wall-clock time. What bounds the work is the
+        500-entry cap; the comment should say which of the two is load
+        bearing, so a later reader does not treat a timing test as the
+        missing floor."""
+        doc = roster._clean_previous_arms.__doc__
+        self.assertIn("constant-factor courtesy", doc)
+
+
+class TestIssue67Review8(unittest.TestCase):
+    """Round 8 fixes for #67 (PR #129 review round 8 and its adversarial
+    pass), one test per fix.
+
+    A SIBLING of TestIssue67, reusing its canned documents rather than
+    subclassing — run_tests.py's class-per-review-round convention. Every
+    model id below is TEST FIXTURE data; the policy code under test carries
+    none (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard),
+    and the family words the random scenarios build ids out of are read
+    from the policy ladder rather than restated here.
+
+    Every scenario is driven through `compute_roster` or through `main()`
+    with files on disk, the way eval.yml invokes it. `main()` reads the
+    wall clock, so `_run_main` freezes it: the ISO-week windows, the
+    census freshness window and the cooling-off are all undecidable
+    against a moving `now`, and DESIGN.md's "hermetic, always" rule
+    applies to time as much as to network.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    class _FrozenNow(datetime):
+        """`datetime` with `now()` pinned, patched over `roster.datetime`
+        for the duration of a `main()` call. `timeweeks.parse_ts` keeps its
+        own real `datetime`, so parsing stays exactly what production
+        does."""
+
+        @classmethod
+        def now(cls, tz=None):
+            return TestIssue67.NOW
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None, warn=None, policy=None):
+        return roster.compute_roster(
+            models_doc=(TestIssue67._models_doc() if models is TestIssue67.DEFAULT
+                        else models),
+            census_doc=(TestIssue67._census_doc() if census is TestIssue67.DEFAULT
+                        else census),
+            policy=policy or cls._policy(), previous=previous, now=cls.NOW,
+            warn=warn if warn is not None else (lambda _m: None))
+
+    @classmethod
+    def _run_main(cls, tmp, models, census=None, previous=None):
+        """`roster.main()` — eval.yml's own entry point — over files on
+        disk, with `now` frozen. Returns (rc, published, stdout, stderr);
+        `published` is None when main() refused to write a roster."""
+        tmp = Path(tmp)
+        models_path = tmp / "models.json"
+        models_path.write_text(json.dumps(models), encoding="utf-8")
+        out = tmp / "roster" / "latest.json"
+        argv = ["roster.py", "--models", str(models_path), "--policy",
+                str(cls.POLICY), "--out", str(out)]
+        if census is not None:
+            census_path = tmp / "census.json"
+            census_path.write_text(json.dumps(census), encoding="utf-8")
+            argv += ["--census", str(census_path)]
+        if previous is not None:
+            previous_path = tmp / "previous.json"
+            previous_path.write_text(json.dumps(previous), encoding="utf-8")
+            argv += ["--previous", str(previous_path)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(roster, "datetime", cls._FrozenNow), \
+             contextlib.redirect_stdout(stdout), \
+             contextlib.redirect_stderr(stderr):
+            rc = roster.main()
+        published = (json.loads(out.read_text(encoding="utf-8"))
+                     if out.is_file() else None)
+        return rc, published, stdout.getvalue(), stderr.getvalue()
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    _SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        """The shipped policy with a 0% entry bar, so EVERY available model
+        publishes its measured share in words — the only way to read the
+        numerators off the roster the production code actually produces."""
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    # --- A1: the usage alias map is COMPOSED, so a census key two hops
+    # from a live model is credited rather than orphaned ------------------
+    #
+    # Round 7's B1 fix left three rules that each map ONE hop: rule (2)
+    # folds a non-live dated id onto its bare alias when that alias is
+    # anywhere in `counts + previous_arms + catalogue_seen`, and rule (3)
+    # folds a bare alias that is not itself in the catalogue onward onto
+    # the newest live snapshot of it. Every consumer applies the map
+    # exactly ONCE, so a key needing both hops landed on the bare alias:
+    # in `catalogue_seen`, therefore attributable and inside the
+    # denominator, and equal to no live model's target, therefore inside
+    # nobody's numerator.
+
+    HOP_BASE = "claude-haiku-4"
+    HOP_OLD = "claude-haiku-4-20250101"
+    HOP_LIVE = "claude-haiku-4-20260601"
+    HOP_NEXT = "claude-haiku-5"
+
+    @classmethod
+    def _hop_run1_models(cls):
+        """Run 1's catalogue: the bare alias is live, so run 1 records it
+        in `catalogue_seen` BY DESIGN."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.HOP_BASE, "2025-06-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _hop_run2_models(cls):
+        """Run 2's catalogue: the bare alias is gone, replaced by a dated
+        snapshot of it (roster-policy.yml's own documented shape), and a
+        newer model has shipped in the same tier — so the snapshot can only
+        be seated on measured usage, never on newest-in-tier."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.HOP_LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls.HOP_NEXT, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _hop_census(cls):
+        """The family's work recorded under the OLDER dated spelling — the
+        one that has left the API — beside 300 turns of a live model:
+        5000 of 5300 rankable turns, 94.3%."""
+        return TestIssue67._census_doc(counts={
+            cls.HOP_OLD: {cls.W[0]: 5000},
+            "claude-sonnet-5": {cls.W[0]: 300}})
+
+    def test_the_organic_chain_credits_a_two_hop_census_key(self):
+        """No hostile input anywhere, and both runs through `main()` with
+        files on disk: run 1's catalogue lists the bare alias, run 2's
+        lists a dated snapshot of it beside a newer model, and the census
+        records the family's work under an older dated spelling. The live
+        snapshot must carry those 5000 turns."""
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, _ = self._run_main(first, self._hop_run1_models())
+            self.assertEqual(rc, 0)
+            self.assertIn(self.HOP_BASE, self._seen_ids(run1))
+
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._hop_run2_models(), census=self._hop_census(),
+                previous=run1)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.HOP_LIVE, self._arm_ids(run2),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, two hops away")
+        self.assertIn("94.3%", self._reason(run2, self.HOP_LIVE))
+        # Mutation check (manual): deleting the composition step at the end
+        # of `_usage_alias_map` leaves the census key folded onto the bare
+        # alias, which is in `catalogue_seen` — attributable, in the
+        # denominator, in nobody's numerator — and the live snapshot is not
+        # seated at all: red.
+
+    def test_a_two_hop_previous_arm_is_kept_not_retired_at_zero(self):
+        """The same shape with the snapshot ALREADY an arm: it must be held
+        on its own 94.3%, not retired at a false 0.0% while 5000 of its
+        family's turns sit inside that very denominator."""
+        previous = {"arms": [{"id": self.HOP_LIVE, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.HOP_BASE, "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._hop_run2_models(), census=self._hop_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.HOP_LIVE, self._arm_ids(published))
+        self.assertIn("94.3%", self._reason(published, self.HOP_LIVE))
+        self.assertEqual(
+            [r for r in published["retired_since_last"]
+             if r["id"] == self.HOP_LIVE], [],
+            "a model carrying 94.3% of the window must not be retired")
+        # Mutation check (manual): deleting the composition step retires it
+        # with "below the 2% exit bar ... (0.0% of rankable census usage)"
+        # — red.
+
+    # The invariants, over random catalogues. `_random_scenario` decides
+    # the id each census key's turns BELONG to from the shape it builds,
+    # never from the code under test.
+
+    _SHAPES = ("bare-live", "dated-only-live", "retired")
+
+    @classmethod
+    def _random_scenario(cls, rng):
+        """(models_doc, census_doc, previous, owner) for one random
+        catalogue.
+
+        Three family shapes, which between them cover every route the
+        usage alias map has: a bare alias that IS in the catalogue (it
+        holds the seat and every spelling of the family folds onto it);
+        a catalogue that publishes only DATED snapshots of a family (the
+        newest live snapshot claims the bare alias, and every other
+        spelling folds there — this is the shape the two-hop defect lives
+        in); and a family with no live model at all (its turns are
+        attributable through `catalogue_seen` and belong to nobody's
+        numerator, which is what round 6's B1 fix intends).
+
+        `owner` maps each id to the id whose numerator must collect its
+        census turns. Family words come from the policy ladder.
+        """
+        words = roster.tier_words(cls._policy())
+        models = []
+        counts = {}
+        history = []
+        owner = {}
+        for index in range(rng.randint(2, 4)):
+            base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
+            snaps = [(f"{base}-2026{month:02d}01",
+                      f"2026-{month:02d}-01T00:00:00Z") for month in (1, 4, 6)]
+            family = [base] + [sid for sid, _ in snaps]
+            # Family 0 is always live, so every scenario has a catalogue
+            # this policy can seat something out of.
+            shape = "bare-live" if index == 0 else rng.choice(cls._SHAPES)
+            if shape == "bare-live":
+                models.append(cls._model(base, "2025-06-01T00:00:00Z"))
+                models += [cls._model(sid, created) for sid, created in snaps
+                           if rng.random() < 0.4]
+                owner.update({i: base for i in family})
+            elif shape == "dated-only-live":
+                live = snaps[:rng.randint(1, 3)]
+                models += [cls._model(sid, created) for sid, created in live]
+                owner.update({i: live[-1][0] for i in family})
+                owner.update({sid: sid for sid, _ in live})
+                history.append(base)
+            else:
+                owner.update({i: base for i in family})
+                history.append(base)
+            for key in [i for i in family if rng.random() < 0.6] or [base]:
+                counts[key] = {cls.W[0]: rng.randrange(1, 40) * 100}
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": i, "last_seen": cls._days_ago(rng.randint(1, 60))}
+            for i in history]}
+        return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
+                TestIssue67._census_doc(counts=counts), previous, owner)
+
+    def test_the_usage_alias_map_is_idempotent_over_random_catalogues(self):
+        """Invariants (i) and (ii) of `_usage_alias_map`. Called directly,
+        because they are properties OF the map rather than of any one
+        roster: folding a key twice must give what folding it once gives
+        (every consumer applies the map exactly once), and a value must be
+        a live catalogue id or an id no live id claims — a value that is
+        both non-live and claimed is a census key stranded one hop short
+        of the model whose work it is."""
+        rng = random.Random(670801)
+        rungs = roster.tier_rungs(self._policy())
+        two_hop = 0
+        for index in range(60):
+            models, census, previous, _ = self._random_scenario(rng)
+            api_ids = [m["id"] for m in models["models"]]
+            seat = roster.alias_map(api_ids)
+            live_order = [m["id"] for m
+                          in sorted((m for m in models["models"]
+                                     if m["id"] not in seat),
+                                    key=lambda m: roster._rank(m, rungs))]
+            other = (list(census["counts"])
+                     + [e["id"] for e in previous["catalogue_seen"]])
+            mapping = roster._usage_alias_map(api_ids, other, seat, live_order)
+            live = set(api_ids)
+            claimed_bases = set()
+            for model_id in live:
+                match = roster.SNAPSHOT_SUFFIX.match(model_id)
+                if match and match.group("base") not in live:
+                    claimed_bases.add(match.group("base"))
+            with self.subTest(scenario=index):
+                for key, target in mapping.items():
+                    self.assertEqual(
+                        mapping.get(target, target), target,
+                        f"{key} needs two hops to reach {mapping.get(target)}")
+                    self.assertTrue(
+                        target in live or target not in claimed_bases,
+                        f"{key} lands on {target}, which a live id claims")
+            # Self-check: count the keys that NEED two hops — a non-live
+            # dated id whose bare base a live snapshot claims. Counted off
+            # the key's own shape, not off where the map sends it, so the
+            # count is the same before and after the fix.
+            for key in mapping:
+                match = roster.SNAPSHOT_SUFFIX.match(key)
+                if (key not in live and match
+                        and match.group("base") in claimed_bases):
+                    two_hop += 1
+        self.assertGreater(two_hop, 0,
+                           "no scenario exercised a two-hop key: the "
+                           "property has no teeth on this seed")
+        # Mutation check (manual): deleting the composition step at the end
+        # of `_usage_alias_map` leaves `<base>-YYYYMMDD -> <base>` beside
+        # `<base> -> <newest live snapshot>` — red on both assertions.
+
+    def test_the_numerators_partition_the_denominator_over_random_catalogues(self):
+        """Invariant (iii), through `compute_roster` with a 0% entry bar so
+        every available model publishes its measured share: each
+        attributable ranked census key is credited to exactly ONE model, so
+        every published share equals the turns that key-set actually holds,
+        and the shares sum to 100% less only the turns of families no live
+        model claims.
+
+        Round 7's property test asserts `sum(shares) <= 100`, which cannot
+        see turns lost from every numerator at once."""
+        rng = random.Random(670802)
+        checked = 0
+        for index in range(60):
+            models, census, previous, owner = self._random_scenario(rng)
+            counts = census["counts"]
+            total = sum(sum(w.values()) for w in counts.values())
+            expected: dict[str, int] = {}
+            for key, by_week in counts.items():
+                expected[owner[key]] = (expected.get(owner[key], 0)
+                                        + sum(by_week.values()))
+            result = self._compute(models=models, census=census,
+                                   previous=previous,
+                                   policy=self._zero_bar_policy())
+            arm_ids = {a["id"] for a in result["arms"]}
+            shares = []
+            with self.subTest(scenario=index):
+                for arm in result["arms"]:
+                    match = self._SHARE_RE.search(arm["reason"])
+                    self.assertTrue(match, arm)
+                    published = float(match.group(1))
+                    shares.append(published)
+                    self.assertAlmostEqual(
+                        published, 100 * expected.get(arm["id"], 0) / total,
+                        delta=0.051, msg=f"{arm['id']} in {counts}")
+                unclaimed = sum(turns for model_id, turns in expected.items()
+                                if model_id not in arm_ids)
+                self.assertAlmostEqual(
+                    sum(shares), 100 * (total - unclaimed) / total,
+                    delta=0.051 * len(shares),
+                    msg=f"turns lost from every numerator: {counts}")
+            checked += 1
+        self.assertEqual(checked, 60)
+        # Mutation check (manual): deleting the composition step strands a
+        # two-hop key's turns in the denominator and in no numerator, so
+        # the claiming snapshot's published share falls short — red.
+        # Restoring round 7's single wide map instead makes two live
+        # snapshots collect each other's turns and the shares sum past
+        # 100% — also red.
+
+    # --- A2: `catalogue_seen[].last_seen` is republished as a date this
+    # module can read back ------------------------------------------------
+    #
+    # Round 7's N1 fix re-renders the PARSED timestamp with
+    # `strftime("%Y-%m-%d")`, which does not zero-pad a year below 1000 on
+    # this platform: `0001-01-01` published as `1-01-01`, which `parse_ts`
+    # cannot read. `_update_catalogue_seen` then gave the unparseable value
+    # the benefit of the doubt (`parse_ts(last_seen) or now`) and aged the
+    # entry as if it had been seen TODAY — so an entry that used to be
+    # dropped as older than the 180-day window survived it, the public
+    # branch carried a date this module cannot parse, and 500 such plants
+    # sorted as the newest history there is.
+
+    YEAR_ONE_PLANT = "claude-sonnet-9-9"
+    A2_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _two_model_catalogue(cls):
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+
+    def test_a_year_one_last_seen_ages_out_instead_of_reading_as_today(self):
+        """Through `main()` with files on disk: a `last_seen` of
+        `0001-01-01` is two thousand years older than the window, so
+        nothing of it may reach the published roster — and least of all a
+        `1-01-01` this module's own `parse_ts` refuses."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.YEAR_ONE_PLANT, "last_seen": "0001-01-01"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            text = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0)
+        self.assertNotIn(self.YEAR_ONE_PLANT, self._seen_ids(published),
+                         "an entry older than the window is dropped, not "
+                         "aged as if it had been seen today")
+        self.assertNotIn("1-01-01", text,
+                         "the published date must be one `parse_ts` reads")
+        # Mutation check (manual): reverting the rendering to
+        # `parsed.strftime("%Y-%m-%d")` publishes `1-01-01`, which
+        # `parse_ts` refuses, so `_update_catalogue_seen` reads it as today
+        # and republishes the plant — red on both assertions.
+
+    def test_five_hundred_year_one_plants_do_not_evict_real_history(self):
+        """The measured consequence: 500 plants dated `0001-01-01` read as
+        the newest history there is and filled the cap, evicting the one
+        genuinely since-retired id seen a day ago."""
+        plants = [f"0plant-{i:03d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": "0001-01-01"} for i in plants] +
+                    [{"id": self.A2_REAL, "last_seen": self._days_ago(1)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        seen = self._seen_ids(published)
+        self.assertTrue(self.A2_REAL in seen,
+                        "a real id seen yesterday must outlive 500 entries "
+                        "dated in the year 1")
+        self.assertEqual(sorted(seen - {self.A2_REAL}),
+                         sorted(m["id"] for m
+                                in self._two_model_catalogue()["models"]),
+                         "every year-1 plant is older than the window")
+        # Mutation check (manual): as above — the plants read as today,
+        # survive the age check, sort ahead of the real id and take all 500
+        # slots: red.
+
+    def test_every_published_last_seen_round_trips_through_parse_ts(self):
+        """The property behind both tests above, over the shapes a public
+        branch can actually deliver: whatever `catalogue_seen` publishes,
+        this module's own `parse_ts` must read back to the same date. A
+        date this harness writes and cannot re-read is one that silently
+        stops ageing."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": "claude-opus-3-1", "last_seen": self._days_ago(2)},
+            {"id": "claude-opus-3-2", "last_seen": "\r\n2026-09-01T00:00:00Z\r\n"},
+            {"id": "claude-opus-3-3", "last_seen": "2026-09-01T23:00:00-08:00"},
+            {"id": "claude-opus-3-4", "last_seen": "9999-12-31"},
+            {"id": "claude-opus-3-5", "last_seen": "0001-01-01"},
+        ]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertTrue(published["catalogue_seen"])
+        for entry in published["catalogue_seen"]:
+            with self.subTest(entry=entry["id"]):
+                parsed = timeweeks.parse_ts(entry["last_seen"])
+                self.assertIsNotNone(parsed, entry)
+                self.assertEqual(
+                    parsed.astimezone(timezone.utc).date().isoformat(),
+                    entry["last_seen"], entry)
+        # Mutation check (manual): reverting to `strftime("%Y-%m-%d")`
+        # publishes `1-01-01` for the year-1 entry, which `parse_ts`
+        # returns None for — red.
+
+    # --- F1: the `catalogue_seen` cap's ORDER is decided by data the
+    # previous roster does not control ------------------------------------
+    #
+    # THE INVARIANT: an entry the census names outlives any number of
+    # entries the census does not name, whatever their dates or ids.
+    # Round 7's S2 made the cap evict the oldest `last_seen` first — but
+    # the planter CONTROLS `last_seen`: a future value clamps to today,
+    # and every bare string migrates stamped today. So 498 entries dated
+    # today, or 500 bare strings, still evicted the one genuinely
+    # since-retired id, still took its 8000 turns out of the denominator,
+    # and still published "carries 100.0%" for a model whose true share is
+    # 800 of 8800 — 9.09%. The plants below sort AFTER the real id, so
+    # nothing but the date is doing the eviction.
+
+    F1_PLANTS = [f"zplant-{i:03d}" for i in range(500)]
+    F1_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _f1_census(cls):
+        """The real since-retired model carries 8000 of the window's 8800
+        rankable turns; the live model carries 800 — 9.09%, under the 10%
+        entry bar, so it rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.F1_REAL: {cls.W[0]: 8000},
+            "claude-sonnet-5": {cls.W[0]: 800}})
+
+    def _assert_the_real_history_survived(self, published):
+        # `assertTrue` over `assertIn`: a failure here would otherwise
+        # dump 500 plant ids into the log.
+        self.assertTrue(self.F1_REAL in self._seen_ids(published),
+                        "the entry the census names outlives entries the "
+                        "census does not name, whatever their dates")
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+        for arm in published["arms"]:
+            self.assertNotIn("100.0%", arm["reason"], arm)
+        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+
+    def test_five_hundred_plants_dated_today_do_not_evict_named_history(self):
+        """Through `main()` with files on disk: 500 entries dated TODAY —
+        the date a future-dated plant clamps to — against one the census
+        names, seen 100 days ago."""
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)}
+                     for i in self.F1_PLANTS] +
+                    [{"id": self.F1_REAL, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._f1_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self._assert_the_real_history_survived(published)
+        # Mutation check (manual): dropping the relevance sort (leaving the
+        # age-only order round 7 shipped) evicts `claude-sonnet-4-9`, takes
+        # its 8000 turns out of the denominator, and publishes
+        # "carries 100.0% of rankable census usage" for a model whose true
+        # share is 9.09% — red.
+
+    def test_five_hundred_bare_string_plants_do_not_evict_named_history(self):
+        """The same, through the bare-string migration: every bare entry is
+        stamped TODAY on read, because seeing it is the only evidence there
+        is — so on a migration run pure age order decides nothing at all."""
+        previous = {"arms": [], "catalogue_seen":
+                    list(self.F1_PLANTS) +
+                    [{"id": self.F1_REAL, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._f1_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self._assert_the_real_history_survived(published)
+        # Mutation check (manual): as above — red.
+
+    def test_the_cap_keeps_every_live_id_even_against_named_plants(self):
+        """`catalogue_seen` stays a superset of the live catalogue. The
+        plants here are dated today AND named by the census, so neither
+        half of the new order would spare the real catalogue on its own —
+        only the live/historical split does."""
+        plants = [f"zplant-{i:03d}" for i in range(600)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants]}
+        # IN-WINDOW turns, not the 2020 week this used to carry: a census
+        # key with no in-window turns names nothing at all (A, #129 review
+        # round 10), so out-of-window rows would leave these plants
+        # unnamed and the test would no longer be about named plants.
+        census = TestIssue67._census_doc(counts={
+            i: {self.W[0]: 1} for i in plants})
+        warnings = []
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+            warnings = [line for line in err.splitlines()
+                        if line.startswith("roster: ")]
+        self.assertEqual(rc, 0)
+        api_ids = {m["id"] for m in self._two_model_catalogue()["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(published),
+                             "the cap must never evict this run's own live ids")
+        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+        self.assertTrue([w for w in warnings if "cap" in w], warnings)
+        for warning in warnings:
+            self.assertNotIn("zplant-599", warning,
+                             "the cap warning names counts only")
+
+    # --- A3: regression floors for the defences round 7 introduced -------
+    #
+    # A REPEAT of round 7's own should-fix ("four of S3's defences have no
+    # regression floor"), on this round's defences. Six mutations left the
+    # suite at 411 green while changing behaviour; five are pinned below.
+    # Each of those names its mutation, is red under it, and green
+    # otherwise.
+    #
+    # The sixth — the cap sort's `or now`, replaced by `_LAST_SEEN_FLOOR`
+    # under A2 — is an EQUIVALENT MUTANT: unreachable because
+    # `_clean_catalogue_seen` re-renders every date through `_as_date`
+    # before the cap ever runs, so nothing arriving there fails to parse.
+    # Restoring `or now` leaves the whole suite green,
+    # `test_five_hundred_year_one_plants_do_not_evict_real_history`
+    # included (measured, #129 review round 9 — round 8's comment here
+    # claimed that test pinned it, and it does not). Nothing pins it and
+    # nothing can; roster.py's own comment over the sort says so
+    # correctly, and calls the branch a floor rather than a live one. Do
+    # not invent a test for an unreachable branch.
+
+    ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
+    A3_DEPARTED = "claude-sonnet-4-9"
+
+    def test_the_newest_live_snapshot_claims_the_bare_alias_not_the_oldest(self):
+        """MUTATION: iterating `live_order` in reverse in rule (3) of
+        `_usage_alias_map`. The brief for round 7's B1 says the NEWER
+        snapshot carries the usage; nothing asserted WHICH one did, and
+        reversing the iteration seats the older one on the same turns with
+        the whole suite still green."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-opus-5-20260101", "2026-01-01T00:00:00Z"),
+            self._model("claude-opus-5-20260601", "2026-06-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts={
+            "claude-opus-5": {self.W[0]: 4000},
+            "claude-sonnet-5": {self.W[0]: 300}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(tmp, models, census=census)
+        self.assertEqual(rc, 0)
+        self.assertIn("claude-opus-5-20260601", self._arm_ids(published))
+        self.assertIn("93.0%", self._reason(published, "claude-opus-5-20260601"),
+                      "the NEWEST live snapshot claims the bare alias")
+        self.assertNotIn("claude-opus-5-20260101", self._arm_ids(published),
+                         "the older snapshot has no turns of its own")
+
+    def test_a_departed_arm_named_by_a_dated_census_key_survives_the_cap(self):
+        """MUTATION: dropping route (c1) (`named_bases = set()`) from
+        `_relevance`. A departed arm whose census key is a DATED spelling
+        of it is relevant only through that set; capped out, its 8000
+        turns leave the usage denominator and the live model is published
+        as carrying 100.0% of census usage where it really carries 9.09%.
+
+        The set is CENSUS-derived — a planter cannot add a census key, so
+        it cannot add a member — which is why B1 (#129 review round 9)
+        kept this direction of the fold and deleted the other one; see
+        `_relevance`."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            f"{self.A3_DEPARTED}-20250101": {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+
+    # RETIRED: `test_a_dated_arm_gets_no_relevance_from_its_own_spelling`.
+    #
+    # It pinned round 9's COST — a departed arm spelled `<census key>-YYYY
+    # MMDD` got no relevance from its own spelling, so past the cap it
+    # shared the fate F3 records for a departed arm with no census turns
+    # at all, and the live model beside it published "carries 100.0%" for
+    # a true 9.09%. Round 9 called that cost a canary and asked for it to
+    # go red the moment a predicate over the entry's own spelling came
+    # back.
+    #
+    # B1' (#129 review round 10) removes the cost instead. Nothing about
+    # the arm's SPELLING makes it relevant now either — what does is that
+    # the census key `<census key>` needs an entry that folds onto it and
+    # has none other, so the arm takes that key's one tier-2 slot (see
+    # `_Relevance.rank`). The canary's own scenario is now
+    # TestIssue67Review10::test_a_dated_arm_whose_census_key_is_undated
+    # _survives_five_hundred_fillers, asserting the opposite outcome, and
+    # the spelling route it guarded against is still red under
+    # TestIssue67Review9's rows A-C.
+
+    def test_a_live_previous_arm_survives_the_cap_and_is_held_over(self):
+        """MUTATION: dropping `api_ids=api_ids` from the
+        `_clean_previous_arms` call site. A previous arm the catalogue
+        still lists, with no census to measure it against, is relevant
+        only through `api_ids`; capped out by 500 fillers it stops being a
+        previous arm at all, loses its "no evidence to retire it" hold-over
+        — staleness is not evidence of disuse — and is retired instead."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(tmp, models, previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn("claude-sonnet-4-6", self._arm_ids(published))
+        self.assertIn("no evidence to retire it",
+                      self._reason(published, "claude-sonnet-4-6"))
+
+    def test_the_cap_breaks_a_tie_by_id_not_by_input_order(self):
+        """MUTATION: dropping the `sorted(...)` that seeds the cap's
+        historical slice, leaving the survivors to whatever order the
+        input arrived in. Within a slice of entries the cap cannot tell
+        apart — same relevance, same `last_seen` — the id decides, and two
+        runs on the same input publish the same survivors."""
+        plants = [f"zplant-{i:03d}" for i in range(600)]
+        same_day = self._days_ago(5)
+        forward = {"arms": [], "catalogue_seen":
+                   [{"id": i, "last_seen": same_day} for i in plants]}
+        backward = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": same_day}
+                     for i in reversed(plants)]}
+        published = []
+        for previous in (forward, forward, backward):
+            with tempfile.TemporaryDirectory() as tmp:
+                rc, result, _, _ = self._run_main(
+                    tmp, self._two_model_catalogue(), previous=previous)
+            self.assertEqual(rc, 0)
+            published.append(sorted(self._seen_ids(result)))
+        self.assertEqual(published[0], published[1],
+                         "two runs on the same input publish the same "
+                         "survivors")
+        self.assertEqual(published[0], published[2],
+                         "the survivor is decided by id, not by the order "
+                         "the entries arrived in")
+        api_ids = {m["id"] for m in self._two_model_catalogue()["models"]}
+        room = 500 - len(api_ids)
+        self.assertEqual(published[0], sorted(api_ids | set(plants[:room])),
+                         "the id-ascending head of the tied slice survives")
+
+    # --- F3: the retirement report is computed BEFORE the cap ------------
+    #
+    # Round 7's S3 made the previous-arms cap keep an arm the run can say
+    # something about — one the catalogue lists, or one the census names —
+    # ahead of filler. A real departed arm with ZERO census turns is
+    # neither, so 500 fillers still capped it out and `retired_since_last`
+    # — the line the job summary leads with — still lost the only
+    # retirement that happened. S3's own test avoided the case by giving
+    # the arm 8,000 turns. Nothing in the data tells a filler apart from a
+    # real id here, so ordering cannot fix it: the report is computed from
+    # the uncapped, shape-validated list instead, and the cap now governs
+    # only what is carried forward for attribution.
+
+    def test_a_departed_arm_with_no_census_turns_is_still_reported_retired(self):
+        """500 fillers, one real departed arm, and a census that names
+        neither — so nothing but the cap decides whether the retirement is
+        reported at all."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, out, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        retired = {r["id"]: r["reason"] for r in published["retired_since_last"]}
+        self.assertTrue(self.A3_DEPARTED in retired,
+                        "the one arm that really left the Models API must be "
+                        "reported whether or not the census names it")
+        self.assertIn("no longer returned", retired[self.A3_DEPARTED])
+        self.assertIn(f"retired `{self.A3_DEPARTED}`", out,
+                      "and it reaches the rendered summary")
+        # Mutation check (manual): computing the report from the capped
+        # list again drops it — 500 filler retirements and not the real
+        # one: red.
+
+    def test_the_report_names_counts_only_for_a_hostile_previous_arm(self):
+        """Uncapping the report does not widen what reaches the public
+        branch: an id carrying a newline and a `::` workflow command is
+        still dropped by the shape check, still counted rather than
+        quoted, and still never reaches `retired_since_last` or the
+        Markdown eval.yml prints to stdout."""
+        hostile = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [{"id": hostile, "reason": "was an arm"},
+                             {"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, out, err = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            text = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0)
+        retired = [r["id"] for r in published["retired_since_last"]]
+        self.assertEqual(retired, [self.A3_DEPARTED])
+        for published_text in (text, out, err):
+            self.assertNotIn("pwned", published_text)
+            self.assertNotIn("::error::", published_text)
+        self.assertTrue([line for line in err.splitlines()
+                         if "`arms` entry/entries" in line], err)
+
+    def test_the_cap_still_bounds_what_is_carried_forward(self):
+        """The cap is unchanged for the set carried forward: 600 filler
+        arms still trim to 500, with a count-only warning naming the 100
+        dropped. What is no longer capped is the REPORT.
+
+        The published SHARE is the assertion that only the CAPPED list can
+        satisfy (S2, #129 review round 9). The two assertions below it —
+        600 retirements reported, 100 dropped by the warning — both read
+        the UNCAPPED list, so the mutation `return ids, carried` ->
+        `return ids, ids` (the cap removed outright) left them green.
+        Every filler here is a ranked id the census names, carrying 10
+        turns; 500 of them are carried and 100 are not, so the live
+        model's 1000 turns are 1000/6000 = 16.7% of the attributable
+        denominator. Uncapped they would be 1000/7000 = 14.3%."""
+        fillers = [f"claude-sonnet-3-{i:03d}" for i in range(600)]
+        previous = {"arms": [{"id": i, "reason": "filler"} for i in fillers]}
+        counts = {i: {self.W[0]: 10} for i in fillers}
+        counts["claude-sonnet-5"] = {self.W[0]: 1000}
+        census = TestIssue67._census_doc(counts=counts)
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 16.7%", reason,
+                      "1000 turns against the 500 carried arms' 5000")
+        self.assertNotIn("14.3%", reason,
+                         "that is the share with the cap removed")
+        self.assertEqual(len(published["retired_since_last"]), 600,
+                         "every arm the previous roster named is reported")
+        capped = [line for line in err.splitlines()
+                  if "cap" in line and "arms" in line]
+        self.assertTrue(capped, err)
+        self.assertIn("dropped 100", capped[0])
+        for line in capped:
+            self.assertNotIn("claude-sonnet-3-599", line)
+
+    # --- F2: `catalogue_seen[].last_seen` is converted to UTC before it
+    # is rendered ---------------------------------------------------------
+    #
+    # `parse_ts` keeps whatever offset the entry carried, so re-rendering
+    # it with `strftime("%Y-%m-%d")` published the LOCAL date: a day early
+    # west of UTC, a day late east of it. The sibling `source.census_at`
+    # rendering already converts (N2, round 7); this one did not, and a
+    # date that is off by one ages out a day early or a day late.
+
+    def test_a_last_seen_west_of_utc_is_not_published_a_day_early(self):
+        """`2026-09-01T23:00:00-08:00` is `2026-09-02` in UTC."""
+        plant = "claude-opus-3-1"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "2026-09-01T23:00:00-08:00"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(e for e in published["catalogue_seen"]
+                     if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-02")
+        # Mutation check (manual): dropping the `.astimezone(timezone.utc)`
+        # from `_as_date` publishes "2026-09-01" — red.
+
+    def test_a_last_seen_east_of_utc_is_not_published_a_day_late(self):
+        """`2026-09-02T01:00:00+05:00` is `2026-09-01` in UTC."""
+        plant = "claude-opus-3-2"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "2026-09-02T01:00:00+05:00"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(e for e in published["catalogue_seen"]
+                     if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-01")
+        # Mutation check (manual): as above — publishes "2026-09-02", red.
+
+    # --- F4: `_format_share`'s last rung is `repr`, not `:.17g` ----------
+    #
+    # Seventeen significant digits round-trips any float, but it is not
+    # the SHORTEST rendering that does: `:.17g` of a share of 1.9999999
+    # is "1.9999998999999999", which is both unreadable and wrong-looking
+    # about a number the reason is quoting exactly. `repr` gives
+    # "1.9999999" and satisfies `float(text) != bar` just as reliably.
+
+    F4_ARM = "claude-sonnet-4-6"
+    F4_FILLERS = [f"claude-opus-9-{i}" for i in range(13)]
+
+    @classmethod
+    def _f4_census(cls):
+        """19,999,999 of 1,000,000,000 exit-window turns — a share of
+        exactly 1.9999999%, just under the 2% exit bar. The bulk sits on
+        `catalogue_seen` history rather than in the catalogue, so the
+        denominator is large without the roster growing a dozen seats."""
+        counts = {cls.F4_ARM: dict(
+            [(w, 2_499_999) for w in cls.W[:7]] + [(cls.W[7], 2_500_006)])}
+        for filler in cls.F4_FILLERS[:12]:
+            counts[filler] = {w: 10_000_000 for w in cls.W}
+        counts[cls.F4_FILLERS[12]] = dict(
+            [(w, 2_500_000) for w in cls.W[:7]] + [(cls.W[7], 2_500_001)])
+        return TestIssue67._census_doc(counts=counts)
+
+    def test_the_last_share_rung_is_the_shortest_round_tripping_rendering(self):
+        """Measured through `main()`: the brief's own case, 19,999,999 of
+        1,000,000,000 exit-window turns."""
+        previous = {"arms": [{"id": self.F4_ARM, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(2)}
+                                       for i in self.F4_FILLERS]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, TestIssue67._models_doc(), census=self._f4_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(r for r in published["retired_since_last"]
+                     if r["id"] == self.F4_ARM)
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertIn("(1.9999999% of", entry["reason"])
+        self.assertNotIn("1.9999998999999999", entry["reason"])
+        # Mutation check (manual): restoring `:.17g` as the last rung
+        # renders "1.9999998999999999%" — red. Restoring round 7's
+        # UNCHECKED `:.6g` renders "2%" against the 2% bar, which
+        # TestIssue67Review7's own N3 test still catches.
+
+
+class TestIssue67Review9(unittest.TestCase):
+    """Round 9 fixes for #67 (PR #129 review round 9), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review8, reusing their canned
+    documents rather than subclassing — run_tests.py's class-per-review-round
+    convention. Every model id below is TEST FIXTURE data; the policy code
+    under test carries none (`test_no_model_ids_are_hardcoded_outside_fixtures`
+    is the guard), and the family words the random scenarios build ids out of
+    are read from the policy ladder rather than restated here.
+
+    Every scenario is driven through `compute_roster` or through `main()`
+    with files on disk, the way eval.yml invokes it. `main()` reads the wall
+    clock, so `_run_main` freezes it: the ISO-week windows, the census
+    freshness window and the cooling-off are all undecidable against a
+    moving `now`, and DESIGN.md's "hermetic, always" rule applies to time as
+    much as to network.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        """The shipped policy with a 0% entry bar, so EVERY available model
+        publishes its measured share in words — the only way to read the
+        numerators off the roster the production code actually produces."""
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    @classmethod
+    def _run_main(cls, tmp, models, census=None, previous=None, policy=None):
+        """`roster.main()` — eval.yml's own entry point — over files on
+        disk, with `now` frozen. `policy`, when given, is written out as a
+        real policy FILE and passed with `--policy`, so a test-only bar
+        still travels the production path. Returns (rc, published, stdout,
+        stderr); `published` is None when main() refused to write."""
+        tmp = Path(tmp)
+        models_path = tmp / "models.json"
+        models_path.write_text(json.dumps(models), encoding="utf-8")
+        policy_path = cls.POLICY
+        if policy is not None:
+            policy_path = tmp / "policy.yml"
+            policy_path.write_text(yaml.safe_dump(policy), encoding="utf-8")
+        out = tmp / "roster" / "latest.json"
+        argv = ["roster.py", "--models", str(models_path), "--policy",
+                str(policy_path), "--out", str(out)]
+        if census is not None:
+            census_path = tmp / "census.json"
+            census_path.write_text(json.dumps(census), encoding="utf-8")
+            argv += ["--census", str(census_path)]
+        if previous is not None:
+            previous_path = tmp / "previous.json"
+            previous_path.write_text(json.dumps(previous), encoding="utf-8")
+            argv += ["--previous", str(previous_path)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(roster, "datetime", cls._FrozenNow), \
+             contextlib.redirect_stdout(stdout), \
+             contextlib.redirect_stderr(stderr):
+            rc = roster.main()
+        published = (json.loads(out.read_text(encoding="utf-8"))
+                     if out.is_file() else None)
+        return rc, published, stdout.getvalue(), stderr.getvalue()
+
+    # --- B1: relevance is EXACT MEMBERSHIP in data the previous roster
+    # does not write ------------------------------------------------------
+    #
+    # THE INVARIANT: an entry that neither the live catalogue nor the census
+    # names, under any spelling, never outranks one that either names.
+    #
+    # Round 8's `_census_relevance` decided "the census names this" by
+    # SPELLING: `SNAPSHOT_SUFFIX` wants eight DIGITS, not a date, and
+    # `PREVIOUS_ARM_ID_RE` accepts the result — so anyone who can write
+    # `previous.json` and knows ONE census key (every live model id is one,
+    # and `usage/latest.json` and `roster/latest.json` are both public on
+    # `eval-results`) mints five hundred ids the predicate calls
+    # census-named. Round 6 keyed the cap on the id, round 7 on `last_seen`,
+    # round 8 on a predicate over the id — each on something the planter
+    # writes. The rows below are the three spellings that reached it.
+
+    B1_REAL = "claude-sonnet-4-9"
+    B1_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _b1_census(cls):
+        """The real since-retired model carries 8000 of the window's 8800
+        rankable turns; the live model carries 800 — a true 9.09%."""
+        return TestIssue67._census_doc(counts={
+            cls.B1_REAL: {cls.W[0]: 8000},
+            cls.B1_LIVE: {cls.W[0]: 800}})
+
+    def _assert_the_named_history_survived(self, published):
+        # `assertTrue` over `assertIn`: a failure here would otherwise dump
+        # 500 plant ids into the log.
+        self.assertTrue(self.B1_REAL in self._seen_ids(published),
+                        "an entry the census names outlives entries neither "
+                        "the catalogue nor the census names, however spelled")
+        reason = self._reason(published, self.B1_LIVE)
+        self.assertIn("carries 9.1%", reason,
+                      "800 of 8800 rankable turns is 9.09%")
+        self.assertNotIn("100.0%", reason)
+        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+
+    def test_dated_spellings_of_a_census_key_do_not_evict_named_history(self):
+        """Row A, through `main()` with files on disk: 500 plants spelled
+        `<census key>-00000000` … `-00000499` — eight DIGITS, which
+        `SNAPSHOT_SUFFIX` cannot tell from a date — dated today, against one
+        entry the census names outright, seen four days ago."""
+        plants = [f"{self.B1_LIVE}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+        # Mutation check (manual): restoring `_census_relevance`'s
+        # `SNAPSHOT_SUFFIX` route calls every plant census-named, so they
+        # tie with the real entry on relevance and win on `last_seen` —
+        # the real id is evicted, its 8000 turns leave the denominator and
+        # the live model is published "carries 100.0%": red.
+
+    def test_bare_string_dated_spellings_do_not_evict_named_history(self):
+        """Row B: the same 500 ids in the BARE-STRING shape `catalogue_seen`
+        used to publish. Every bare string migrates stamped today, because
+        seeing it is the only evidence there is — so on a migration run the
+        date order decides nothing at all and only relevance is left."""
+        plants = [f"{self.B1_LIVE}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    list(plants) +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+        # Mutation check (manual): as above — red.
+
+    def test_dated_spellings_of_the_victims_own_id_do_not_evict_it(self):
+        """Row C, the sharpest of the three: the plants are dated spellings
+        of the VICTIM'S OWN id, so the predicate that called them
+        census-named was reading the victim's own census key back."""
+        plants = [f"{self.B1_REAL}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+        # Mutation check (manual): as above — red.
+
+    def test_plants_the_census_never_names_still_do_not_evict_it(self):
+        """Row D, the round-8 control, restated against the new predicate
+        and against the ID order as well: `0plant-NNNN` sorts BEFORE the
+        real id and is dated today, so neither half of the tie-break would
+        spare the real entry — only relevance does."""
+        plants = [f"0plant-{i:04d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(published)
+
+    def test_the_eviction_does_not_become_permanent_across_two_runs(self):
+        """Eviction here is PERMANENT — the next run's `previous.json` is
+        this run's own output — so run 1's mistake used to be republished
+        for good. Both runs through `main()` with files on disk: run 2
+        reads run 1's published roster and must still name the real
+        entry and still publish its true 9.1%."""
+        plants = [f"{self.B1_LIVE}-{i:08d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.B1_REAL, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, _ = self._run_main(
+                first, self._two_model_catalogue(), census=self._b1_census(),
+                previous=previous, policy=self._zero_bar_policy())
+            self.assertEqual(rc, 0)
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._two_model_catalogue(), census=self._b1_census(),
+                previous=run1, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self._assert_the_named_history_survived(run2)
+        # Mutation check (manual): as above — run 1 evicts the real entry,
+        # run 2 reads run 1's own output back and publishes "carries
+        # 100.0%" a second time: red.
+
+    # The SAME predicate governs the previous-arms cap, so one mutation
+    # cannot quietly change only one of the two.
+
+    B1_ARM_PLANTS = [f"claude-haiku-4-5-{i:08d}" for i in range(500)]
+
+    def test_the_previous_arms_cap_keeps_the_arm_the_census_names(self):
+        """500 plants spelled as dated versions of a LIVE catalogue id —
+        census-named under the old predicate, and sorting ahead of the real
+        departed arm by id — against one departed arm the census names
+        outright. 8000 of the window's 9000 rankable turns are that arm's;
+        capping it out takes them off the denominator and publishes the
+        live model at 80.0% for a true 8.9%."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.B1_ARM_PLANTS] +
+                            [{"id": self.B1_REAL, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            self.B1_REAL: {self.W[0]: 8000},
+            self.B1_LIVE: {self.W[0]: 800},
+            "claude-haiku-4-5": {self.W[0]: 200}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, self.B1_LIVE)
+        self.assertIn("carries 8.9%", reason, "800 of 9000 rankable turns")
+        self.assertNotIn("80.0%", reason)
+        # Mutation check (manual): restoring the `SNAPSHOT_SUFFIX` route
+        # makes all 501 arms relevant, the plants win the id tie-break,
+        # the real arm is capped out of `carried_arms`, its 8000 turns stop
+        # being attributable and the reason reads "carries 80.0%" — red.
+
+    # --- B1, the other direction: the alias-map route must SURVIVE -------
+    #
+    # Relevance is exact membership in the live catalogue, in the census
+    # keys, or in what the PRODUCTION alias map — built from those two and
+    # nothing else — relates them to. That last route is not decoration:
+    # it is what keeps A1's organic two-run chain working once the cap
+    # actually fires.
+
+    C_BASE = "claude-haiku-4"
+    C_OLD = "claude-haiku-4-20250101"
+    C_LIVE = "claude-haiku-4-20260601"
+    C_NEXT = "claude-haiku-5"
+
+    @classmethod
+    def _c_models(cls):
+        """Run 2's catalogue in A1's chain: the bare alias has gone,
+        replaced by a dated snapshot of it (roster-policy.yml's own
+        documented shape), with a newer model beside it in the same tier so
+        the snapshot can only be seated on measured usage."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.C_LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls.C_NEXT, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _c_census(cls):
+        """5000 of the window's 5300 rankable turns recorded under the
+        OLDER dated spelling, which has left the API; 300 on a live model.
+        The live snapshot also carries a row of its own, OUTSIDE the
+        window — enough for the production alias map to relate the bare
+        alias to a census key, not enough to move a share."""
+        return TestIssue67._census_doc(counts={
+            cls.C_OLD: {cls.W[0]: 5000},
+            cls.C_LIVE: {"2026-W20": 700},
+            "claude-sonnet-5": {cls.W[0]: 300}})
+
+    def test_a_bare_alias_a_live_snapshot_claims_survives_the_cap(self):
+        """A1's chain with the cap firing: the bare alias sits in
+        `catalogue_seen` (run 1's catalogue listed it, BY DESIGN), it is
+        neither a live id nor a census key, and it is the only thing that
+        folds the older dated census key onto the live snapshot. 500 plants
+        dated today must not evict it, and the snapshot must still be
+        seated on its own 94.3%."""
+        plants = [f"zplant-{i:03d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.C_BASE, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._c_models(), census=self._c_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertTrue(self.C_BASE in self._seen_ids(published),
+                        "the bare alias the live snapshot claims is named "
+                        "by the catalogue through the production alias map")
+        self.assertIn(self.C_LIVE, self._arm_ids(published),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, two hops away")
+        self.assertIn("94.3%", self._reason(published, self.C_LIVE))
+        # Mutation check (manual): dropping the alias-map route from the
+        # relevance predicate leaves the bare alias unnamed, the plants
+        # evict it, the older dated census key stops folding, its 5000
+        # turns leave every numerator and the live snapshot is not seated
+        # at all — red.
+
+    # The property behind all of the above, over random catalogues,
+    # censuses and plant sets. `_plant_scenario` decides which entries are
+    # NAMED from the catalogue and census it just built, never by asking
+    # the code under test, and draws every plant from ids that are neither
+    # a live id nor a census key.
+
+    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired", "dated-retired")
+
+    @classmethod
+    def _plant_scenario(cls, rng):
+        """(models_doc, census_doc, previous, protected, owner) for one
+        random run.
+
+        REWRITTEN for B1\' (#129 review round 10). The generator now
+        populates `previous["arms"]` as well as `catalogue_seen` — round
+        9\'s version left `arms` empty in every scenario, so the arms cap
+        was never exercised by it at all — and it generates dated
+        spellings of census keys as REAL entries, in history and in arms,
+        not only as plants. That last shape is the blocker: a departed arm
+        `<alias>-YYYYMMDD` whose usage the census records under `<alias>`,
+        which round 9 could relate to nothing.
+
+        `protected` is the set of entries the census names OUTRIGHT (an
+        in-window census key) — decided from the census this generator
+        just built, never by asking the code under test. `owner` maps each
+        census key to the id whose numerator must collect its turns, which
+        is what turns "the fold group kept somebody" into a number the
+        published roster states.
+
+        Four family shapes:
+
+        bare-live        the bare alias is in the catalogue and holds the
+                         seat; its own census turns are its own.
+        dated-only-live  the catalogue publishes only DATED snapshots
+                         (roster-policy.yml\'s documented shape); the
+                         newest live one claims the bare alias, an OLDER
+                         dated key carries census turns, and the bare
+                         alias — in `catalogue_seen` because run 1\'s
+                         catalogue listed it — is the only thing that
+                         folds the one onto the other.
+        retired          no live model; the census names the bare alias
+                         and the bare alias is itself an entry.
+        dated-retired    no live model; the census names the bare alias
+                         and the ENTRY is a dated spelling of it. THE
+                         BLOCKER\'S SHAPE: nothing about the entry is a
+                         census key or a live id, and the only thing that
+                         keeps the key attributable is that the entry
+                         folds onto it.
+        """
+        words = roster.tier_words(cls._policy())
+        models, counts, owner = [], {}, {}
+        protected, arms, history = set(), set(), set()
+        for index in range(rng.randint(3, 4)):
+            base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
+            snaps = [f"{base}-2026{month:02d}01" for month in (1, 4, 6)]
+            # Family 0 is always live, so every scenario has a catalogue
+            # this policy can seat something out of; family 1 is always
+            # the blocker\'s shape, so every scenario carries at least one
+            # entry that is relevant through the fold relation ALONE.
+            shape = ("bare-live" if index == 0
+                     else "dated-retired" if index == 1
+                     else rng.choice(cls._PLANT_SHAPES))
+            into = arms if rng.random() < 0.5 else history
+            if shape == "bare-live":
+                models.append(cls._model(base, "2025-06-01T00:00:00Z"))
+                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[base] = base
+            elif shape == "dated-only-live":
+                live = snaps[:rng.randint(1, 2)]
+                models += [cls._model(sid, "2026-01-01T00:00:00Z")
+                           for sid in live]
+                counts[live[-1]] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[live[-1]] = live[-1]
+                # An OLDER dated key, not live, whose turns only reach the
+                # live snapshot through the bare alias below.
+                counts[snaps[2]] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[snaps[2]] = live[-1]
+                history.add(base)
+            elif shape == "retired":
+                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[base] = base
+                into.add(base)
+                protected.add(base)
+            else:
+                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[base] = base
+                into.add(f"{base}-20250101")
+        live_ids = {m["id"] for m in models}
+        real = arms | history | live_ids | set(counts)
+        keys = sorted(counts)
+        plants = set()
+        # Deliberately more plants than either cap has room for, in the
+        # four spellings a planter can reach. A FULL CAP'S WORTH of them
+        # sort before every `claude-` id: 500 `0plant-NNNN` is what makes
+        # the id order alone insufficient, and without that many the
+        # alphabetical head still had room for every real entry and the
+        # property had no teeth at all (measured against the pre-fix head
+        # — green).
+        for i in range(700):
+            if i < roster.CATALOGUE_SEEN_CAP:
+                plant = f"0plant-{i:04d}"
+            elif i % 3 == 0:
+                plant = (f"{rng.choice(keys)}-2025"
+                         f"{rng.randint(1, 12):02d}{rng.randint(1, 28):02d}")
+            elif i % 3 == 1:
+                plant = f"{rng.choice(keys)}-{i:08d}"
+            else:
+                plant = f"zplant-{i:04d}"
+            if plant not in real:
+                plants.add(plant)
+        plants = sorted(plants)
+        # The real entries are the OLDER ones and the plants the newer
+        # ones, so a date order alone would evict exactly what matters.
+        entries = ([{"id": i, "last_seen": cls._days_ago(rng.randint(20, 60))}
+                    for i in sorted(history)] +
+                   [{"id": i, "last_seen": cls._days_ago(rng.randint(0, 2))}
+                    for i in plants])
+        rng.shuffle(entries)
+        # The SAME plants in both lists: each cap has to survive them on
+        # its own, and a plant that is in one list and not the other would
+        # let the other list's attribution quietly cover for it.
+        arm_entries = ([{"id": i, "reason": "was an arm"}
+                        for i in sorted(arms)] +
+                       [{"id": i, "reason": "filler"} for i in plants])
+        rng.shuffle(arm_entries)
+        return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
+                TestIssue67._census_doc(counts=counts),
+                {"arms": arm_entries, "catalogue_seen": entries},
+                protected & history, owner)
+
+    _PROP_SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    def test_both_halves_of_the_invariant_hold_over_random_plant_sets(self):
+        """3 seeds x 400 scenarios through `compute_roster`, asserting BOTH
+        halves of the invariant the caps exist to keep.
+
+        HALF ONE — every census key with in-window turns that any entry
+        folds onto keeps at least one entry that folds onto it — is
+        asserted through its only observable consequence, and the only one
+        that matters: every published share equals the turns that model
+        really carries, computed from the generator\'s own `owner` map. A
+        fold group that loses its last entry takes its census key out of
+        the denominator, and every other share goes UP.
+
+        HALF TWO — an entry that neither the live catalogue nor the census
+        names, under any spelling, never outranks one that either names —
+        is asserted directly: every entry the census names outright
+        survives the cap, against 500 plants per list that sort ahead of
+        it on both of the orders a planter can write.
+
+        The named set is two orders of magnitude under the cap in every
+        scenario, so nothing but relevance can decide who is evicted."""
+        checked = 0
+        evicting = 0
+        for seed in (671001, 671002, 671003):
+            rng = random.Random(seed)
+            for index in range(400):
+                models, census, previous, protected, owner = \
+                    self._plant_scenario(rng)
+                api_ids = {m["id"] for m in models["models"]}
+                counts = census["counts"]
+                total = sum(sum(w.values()) for w in counts.values())
+                expected: dict[str, int] = {}
+                for key, by_week in counts.items():
+                    expected[owner[key]] = (expected.get(owner[key], 0)
+                                            + sum(by_week.values()))
+                self.assertLessEqual(len(protected | api_ids),
+                                     roster.CATALOGUE_SEEN_CAP)
+                result = roster.compute_roster(
+                    models_doc=models, census_doc=census,
+                    policy=self._zero_bar_policy(), previous=previous,
+                    now=self.NOW, warn=lambda _m: None)
+                survivors = self._seen_ids(result)
+                with self.subTest(seed=seed, scenario=index):
+                    # Half two.
+                    self.assertEqual(sorted(protected - survivors), [],
+                                     "an entry the census names outright "
+                                     "was evicted by plants")
+                    self.assertLessEqual(len(survivors),
+                                         roster.CATALOGUE_SEEN_CAP)
+                    # Half one, as the number it moves.
+                    for arm in result["arms"]:
+                        match = self._PROP_SHARE_RE.search(arm["reason"])
+                        self.assertTrue(match, arm)
+                        self.assertAlmostEqual(
+                            float(match.group(1)),
+                            100 * expected.get(arm["id"], 0) / total,
+                            delta=0.051,
+                            msg=f"{arm['id']}: a fold group lost its last "
+                                f"entry and its census key left the "
+                                f"denominator")
+                # Self-check: both caps have to have actually evicted
+                # something, or the property has no teeth on this seed.
+                if (len(previous["catalogue_seen"]) + len(api_ids)
+                        > roster.CATALOGUE_SEEN_CAP
+                        and len(previous["arms"]) > roster.PREVIOUS_ARMS_CAP):
+                    evicting += 1
+                checked += 1
+        self.assertEqual(checked, 1200)
+        self.assertEqual(evicting, 1200,
+                         "the caps did not fire in every scenario: the "
+                         "property has no teeth on these seeds")
+        # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
+        # (`tier2 = {}`) leaves the dated-retired families\' entries in
+        # tier 3, the `0plant-NNNN` plants outrank them, their census keys
+        # stop being attributable and every other share comes out too
+        # high — red on the share assertion. Restoring round 8\'s
+        # `SNAPSHOT_SUFFIX` route makes the dated plants relevant too, so
+        # they tie with the named entries and the id order evicts them —
+        # red on the half-two assertion.
+
+
+    # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
+    # not raised ----------------------------------------------------------
+    #
+    # Introduced by round 8's A2/F2 fix. `_as_date` converts to UTC before
+    # rendering — `parse_ts` keeps whatever offset the entry carried — and
+    # converting a year-1 timestamp with a POSITIVE offset lands before
+    # `datetime.min`, which raises `OverflowError`. Measured through
+    # `main()`: rc 1, a ten-line traceback carrying the runner's absolute
+    # paths, and NO roster published, where the module docstring promises
+    # "a one-line named message, never a traceback" about every untrusted
+    # input. Round 7's N4 guard wraps the JSON load and cannot reach this.
+    # eval.yml turns the non-zero rc into a `::warning::` and the eval runs
+    # on the fixture pins — so one planted entry disables the feature until
+    # `eval-results` is edited by hand.
+
+    S1_PLANT = "claude-opus-4-1"
+    S1_CRASHING = ("0001-01-01T00:00:00+05:00", "0001-01-01T00:00:00+00:01",
+                   "0001-01-01T00:00:00+14:00")
+    S1_SURVIVING = ("0001-01-01", "0001-01-01T00:00:00-05:00",
+                    "0001-01-01T00:00:01+00:00", "9999-12-31")
+
+    def test_an_unconvertible_last_seen_is_named_not_traced(self):
+        """Through `main()` with files on disk: each of the three stamps
+        that used to raise must leave rc 0, a published roster, no
+        traceback, and exactly one count-only warning that quotes no
+        value."""
+        for stamp in self.S1_CRASHING:
+            previous = {"arms": [], "catalogue_seen": [
+                {"id": self.S1_PLANT, "last_seen": stamp}]}
+            with self.subTest(last_seen=stamp):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, out, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 0, out + err)
+                self.assertIsNotNone(published, "no roster was published")
+                self.assertNotIn(self.S1_PLANT, self._seen_ids(published))
+                self.assertNotIn("Traceback", err)
+                warnings = [line for line in err.splitlines()
+                            if line.startswith("roster: ")]
+                self.assertEqual(len(warnings), 1, err)
+                self.assertNotIn(stamp, err, "the warning names no value")
+                self.assertNotIn("0001", err)
+                self.assertIn("1 `catalogue_seen` entry/entries", warnings[0])
+
+    def test_the_neighbouring_year_one_stamps_are_unchanged(self):
+        """The stamps either side of the crash — naive, a NEGATIVE offset
+        (which lands after `datetime.min`), one second past midnight, and
+        the year-9999 end (clamped by `parsed > now`) — never raised and
+        must still behave exactly as they did: the year-1 ones age out of
+        the 180-day window, the year-9999 one is clamped to today."""
+        for stamp in self.S1_SURVIVING:
+            previous = {"arms": [], "catalogue_seen": [
+                {"id": self.S1_PLANT, "last_seen": stamp}]}
+            with self.subTest(last_seen=stamp):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, out, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 0, out + err)
+                self.assertNotIn("Traceback", err)
+                if stamp.startswith("9999"):
+                    entry = next(e for e in published["catalogue_seen"]
+                                 if e["id"] == self.S1_PLANT)
+                    self.assertEqual(entry["last_seen"], self._days_ago(0))
+                else:
+                    self.assertNotIn(self.S1_PLANT,
+                                     self._seen_ids(published),
+                                     "two thousand years is past the window")
+        # Mutation check (manual): removing the
+        # `except (OverflowError, ValueError, OSError)` around the
+        # conversion in `_clean_catalogue_seen` turns
+        # `test_an_unconvertible_last_seen_is_named_not_traced` red — the
+        # OverflowError escapes `main()` and the test errors out — while
+        # leaving this one green, which is the pair's whole point.
+
+    # --- S2(a): a regression FLOOR for the alias map's composition -------
+    #
+    # `_usage_alias_map` follows each chain to its end with a `while`, and
+    # round 8's A1 tests pin TWO hops. Nothing pinned more than two: the
+    # mutation `while` -> `if` left the whole suite green while changing
+    # behaviour. This is that floor, and it is a floor rather than a
+    # red-first fix — the code is already right.
+
+    S2_KEY = "claude-haiku-4-20250101-20260101"
+    S2_MID = "claude-haiku-4-20250101"
+    S2_BASE = "claude-haiku-4"
+    S2_LIVE = "claude-haiku-4-20260601"
+    S2_NEXT = "claude-haiku-5"
+
+    def test_a_three_hop_census_key_still_reaches_the_live_snapshot(self):
+        """MUTATION: `while` -> `if` in `_usage_alias_map`'s composition
+        step. Three hops, each supplied by a different input, the way a
+        real chain accumulates: the census key is a dated spelling of a
+        `catalogue_seen` entry, that entry is a dated spelling of a
+        previous arm, and that arm is the bare alias the live snapshot
+        claims. Every consumer folds exactly once, so a chain the map
+        stops following early lands its turns on an id that is
+        attributable (it is in `catalogue_seen`) and in nobody's
+        numerator: the denominator keeps them and the model whose work
+        they are is not seated at all."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(self.S2_LIVE, "2026-06-01T00:00:00Z"),
+            self._model(self.S2_NEXT, "2026-07-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts={
+            self.S2_KEY: {self.W[0]: 5000},
+            "claude-sonnet-5": {self.W[0]: 300}})
+        previous = {"arms": [{"id": self.S2_BASE, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.S2_MID, "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.S2_LIVE, self._arm_ids(published),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, three hops away")
+        self.assertIn("94.3%", self._reason(published, self.S2_LIVE))
+        # And the map really did need all three hops: the two ids in the
+        # middle of the chain hold no seat of their own.
+        self.assertNotIn(self.S2_MID, self._arm_ids(published))
+        self.assertNotIn(self.S2_BASE, self._arm_ids(published))
+
+    # --- S2(b): a regression floor for the previous-arms CAP itself ------
+    #
+    # The cap could be removed outright with the suite green: the mutation
+    # `return ids, carried` -> `return ids, ids` left all 605 tests
+    # passing, `test_the_cap_still_bounds_what_is_carried_forward`
+    # included — that test reads the UNCAPPED list (`retired_since_last`
+    # is 600 long, the warning names 100 dropped) and both survive the
+    # mutation untouched. What the cap actually decides is who is CARRIED
+    # FORWARD for attribution, so the floor has to be a scenario where the
+    # cap's own eviction moves the denominator.
+
+    S2B_ARMS = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
+    S2B_BIG = "claude-sonnet-4-9"
+    S2B_DATED = "claude-sonnet-4-9-20250101"
+
+    def test_the_arms_cap_decides_the_attributable_denominator(self):
+        """MUTATION: `return ids, carried` -> `return ids, ids` in
+        `_clean_previous_arms`. 500 departed ranked arms the census names
+        outright — TIER 1, three turns each — and one more that is a dated
+        spelling of a census key nothing else folds onto, so it holds that
+        key's single TIER 2 slot and sorts after all 500 of them. The key
+        holds 900,000 of the window's 901,500 raw turns. Capped at 500,
+        the tier-2 entry is the one that goes, those turns are not
+        attributable to anything, the census reads as almost entirely
+        unrankable and the roster falls back to newest-per-tier and says
+        so; uncapped, they are attributable and the fallback never happens.
+
+        THE RESIDUAL COST OF B1\' (#129 review round 10), stated here
+        because this is where it is measured: the invariant holds SUBJECT
+        TO THE CAP. Tier 1 plus tier 2 can exceed 500 — this scenario is
+        the smallest case where it does — and then something the census
+        names is dropped after all, lowest turns last. Filling tier 1 that
+        way costs a planter 500 entries that are themselves in-window
+        census keys, and planting a census key does not remove its own
+        attributability; what it can displace is another key's dated
+        stand-in. Raising the cap moves the number, it does not remove the
+        case."""
+        previous = {"arms": [{"id": i, "reason": "was an arm"}
+                             for i in self.S2B_ARMS] +
+                            [{"id": self.S2B_DATED, "reason": "was an arm"}]}
+        counts = {i: {self.W[0]: 3} for i in self.S2B_ARMS}
+        counts[self.S2B_BIG] = {self.W[0]: 900_000}
+        census = TestIssue67._census_doc(counts=counts)
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("only 1500 of 901500 raw turns", reason,
+                      "the capped-out arm's 900,000 turns are not "
+                      "attributable to anything")
+        self.assertIn("under the 1% relative floor", reason)
+        self.assertIn("fell back to newest per tier", reason)
+        # Mutation check (manual): with the cap removed the tier-2 arm is
+        # carried, the 900,000 turns it folds onto are attributable, the
+        # census reads as usable and the reason is a bare "newest model in
+        # the sonnet tier, ... days old" with no census-quality sentence
+        # at all — red on all three assertions.
+
+    # --- N3: no published reason carries scientific notation -------------
+    #
+    # Pre-existing, and identical on both of this branch's earlier heads.
+    # `_format_share`'s `6g` and `repr` rungs render a very small share in
+    # SCIENTIFIC notation, so a reason read "below the 2% exit bar
+    # (1e-09% of rankable census usage)". THE INVARIANT: no published
+    # reason carries scientific notation; a share too small for the fixed
+    # rungs renders as a fixed-point FLOOR that can never read as equal to
+    # the bar.
+
+    #: In the catalogue, so the retirement reaches the EXIT-BAR branch and
+    #: quotes a share at all — a departed id retires with "no longer
+    #: returned by the Models API" and never renders one.
+    N3_ARM = "claude-sonnet-4-6"
+    N3_BULK = ("claude-sonnet-5", "claude-opus-5", "claude-opus-4-8")
+    #: Scientific notation, and only that — the floor rendering the fix
+    #: introduces is prose ("under 0.000001") and carries a bare `e` of
+    #: its own, so a plain "no letter e" check would reject the fix.
+    _EXPONENT = re.compile(r"[0-9][eE][-+]?[0-9]")
+
+    def test_a_vanishing_share_renders_as_a_floor_not_in_scientific_notation(self):
+        """Measured through `main()` with files on disk: one turn against
+        240,000,000 over the exit window is a share of 4.1666e-07%, which
+        every fixed rung rounds to zero and `6g` used to render as
+        `4.16667e-07`."""
+        counts = {i: {w: 10_000_000 for w in self.W} for i in self.N3_BULK}
+        counts[self.N3_ARM] = {self.W[0]: 1}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": self.N3_ARM, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, TestIssue67._models_doc(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(r for r in published["retired_since_last"]
+                     if r["id"] == self.N3_ARM)
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertIsNone(self._EXPONENT.search(entry["reason"]),
+                          "no published reason carries scientific notation")
+        self.assertIn("under 0.000001%", entry["reason"])
+        # Mutation check (manual): restoring the `6g`/`repr` rungs without
+        # the floor renders "(4.16667e-07% of rankable census usage)" —
+        # red.
+
+    def test_the_smallest_shares_render_without_scientific_notation(self):
+        """The values from the finding, straight at `_format_share`: a
+        share that is nonzero but far below any fixed rendering must still
+        say something a reader can weigh against a bar, and must not say
+        it in scientific notation."""
+        for value in (1e-9, 1e-300, 4.94e-324, 5e-7):
+            with self.subTest(value=value):
+                text = roster._format_share(value, 2, under=True)
+                self.assertIsNone(self._EXPONENT.search(text), text)
+                self.assertEqual(text, "under 0.000001")
+
+    def test_no_rendering_equals_its_bar_or_uses_scientific_notation(self):
+        """The F4 property, swept over bars in BOTH directions: whatever
+        the bar, a rendering never reads as equal to it in the "below"
+        direction, never reads as "0" about a nonzero share, and never
+        carries an exponent."""
+        bars = (0, 0.5, 1, 2, 10, 100)
+        values = (0.0, 4.94e-324, 1e-300, 1e-9, 1e-6, 0.004, 0.04, 1.96,
+                  1.9999, 1.99999975, 1.9999999, 2.0, 9.09, 10.0, 64.5,
+                  99.9999999, 100.0)
+        for bar in bars:
+            for value in values:
+                with self.subTest(bar=bar, value=value):
+                    for under in (False, True):
+                        text = roster._format_share(value, bar, under=under)
+                        self.assertIsNone(self._EXPONENT.search(text), text)
+                        try:
+                            parsed = float(text)
+                        except ValueError:
+                            # The floor rung is not a number at all, so it
+                            # cannot read as equal to any bar.
+                            self.assertTrue(under and 0 < value < 1e-6, text)
+                            continue
+                        if under and value < bar:
+                            self.assertNotEqual(parsed, bar, text)
+                            if value > 0:
+                                self.assertNotEqual(parsed, 0.0, text)
+
+
+
+class TestIssue67Review10(unittest.TestCase):
+    """Round 10 fixes for #67 (PR #129 review round 10), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review9, reusing their canned
+    documents rather than subclassing — run_tests.py\'s
+    class-per-review-round convention. Every model id below is TEST FIXTURE
+    data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every scenario is driven through `main()` with files on disk, the way
+    eval.yml invokes it, or through `compute_roster`. `main()` reads the
+    wall clock, so `_run_main` freezes it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _zero_bar_policy = TestIssue67Review9._zero_bar_policy
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- B1\': attribution reads the FOLD SET, not the entry that produced
+    # it ------------------------------------------------------------------
+    #
+    # THE INVARIANT: every census key with in-window turns that any entry
+    # folds onto keeps at least one entry that folds onto it, and an entry
+    # that neither the live catalogue nor the census names, under any
+    # spelling, never outranks one that either names.
+    #
+    # Round 9 keyed the caps on the live catalogue and the census at last,
+    # but read the relation in ONE direction only: census key -> base,
+    # never entry -> census key. So a DATED departed arm whose usage the
+    # census records under its UNDATED alias — the shape roster-policy.yml
+    # has documented since round 6 — was relevant to nothing, and 500
+    # filler arms evicted it exactly the way 500 low-sorting ids used to.
+    # Its turns left the usage denominator and the live model beside it
+    # was published "carries 100.0%" for a true 33.3%.
+    #
+    # Restoring round 8\'s spelling route would re-open round 9\'s blocker,
+    # so the fix is neither direction of the old predicate: what tells the
+    # real arm from 500 plants is not how either is SPELLED but what the
+    # census still NEEDS. The census key `<alias>` is attributable only
+    # through an entry that folds onto it, and the census — which a
+    # planter does not write — fixes how many such slots there are.
+
+    B1P_BASE = "claude-haiku-4"
+    B1P_DATED = "claude-haiku-4-20250101"
+    B1P_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _b1p_census(cls):
+        """The departed arm\'s usage is recorded under its UNDATED alias:
+        8000 turns on `claude-haiku-4`, 4000 on the live model — a true
+        33.3% for the live one."""
+        return TestIssue67._census_doc(counts={
+            cls.B1P_BASE: {cls.W[0]: 8000},
+            cls.B1P_LIVE: {cls.W[0]: 4000}})
+
+    def _b1p_run(self, fillers):
+        previous = {"arms": [{"id": i, "reason": "filler"} for i in fillers]
+                            + [{"id": self.B1P_DATED, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1p_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return self._reason(published, self.B1P_LIVE)
+
+    def _assert_the_true_share(self, reason):
+        # `assertIn` on the share alone: a failure would otherwise dump
+        # 500 filler ids into the log along with the whole roster.
+        self.assertIn("carries 33.3%", reason,
+                      "4000 of 12000 rankable turns is 33.3%")
+        self.assertNotIn("100.0%", reason)
+
+    def test_the_control_publishes_the_true_share(self):
+        """Control row: no fillers, so no cap fires and the departed arm
+        is carried whatever the order is. 4000 of 12000 rankable turns."""
+        self._assert_the_true_share(self._b1p_run([]))
+
+    def test_a_dated_arm_whose_census_key_is_undated_survives_the_cap(self):
+        """Row A, the blocker itself: 500 `0filler-NNNN` arms, which sort
+        BEFORE the real one, against a departed arm the census names only
+        through its undated alias. The arm is no census key and no live
+        catalogue id, so no tier-1 route reaches it; what keeps it is that
+        the census key `claude-haiku-4` has no other entry folding onto it,
+        so the arm takes that key\'s one tier-2 slot."""
+        self._assert_the_true_share(
+            self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
+        # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
+        # (`tier2 = {}`) leaves the arm in tier 3 with 500 fillers that
+        # sort ahead of it, its 8000 turns stop being attributable and the
+        # reason reads "carries 100.0%" — red.
+
+    def test_high_sorting_fillers_do_not_evict_it_either(self):
+        """Row B: the same 500 fillers spelled to sort AFTER the real arm.
+        The id order alone would spare it here, which is exactly why row A
+        needs a companion — this row stayed green through the whole
+        defect and says nothing about the fix on its own."""
+        self._assert_the_true_share(
+            self._b1p_run([f"zfiller-{i:04d}" for i in range(500)]))
+
+    def test_a_plant_in_the_fold_group_keeps_the_key_attributable(self):
+        """Row D, the tier-2 slot\'s own cost, measured: 500 plants spelled
+        `claude-haiku-4-000000NN` are all in the census key\'s fold group
+        and the smallest of them WINS the slot, so the real arm is capped
+        out after all. Nothing moves: the plant folds onto the same census
+        key, so the key stays attributable through it and the published
+        share is still the true one. That is the point of bounding the
+        slot count by the census rather than by the entries — a planter
+        can take the slot, but cannot take the key\'s attributability."""
+        self._assert_the_true_share(
+            self._b1p_run([f"{self.B1P_BASE}-{i:08d}" for i in range(500)]))
+
+    def test_under_the_cap_nothing_is_evicted_at_all(self):
+        """Row E: 498 fillers plus the arm is 499 entries against a
+        500-entry cap, so the cap never fires and the order is not
+        consulted. The row exists to show the defect was the CAP\'s, not
+        the attribution machinery\'s."""
+        self._assert_the_true_share(
+            self._b1p_run([f"0filler-{i:04d}" for i in range(498)]))
+
+    # The two scenarios round 10\'s reviewer found by re-running round 8\'s
+    # own 3,000-scenario generator with both caps forced (500 filler arms
+    # and 500 filler history entries per scenario). Six scenarios differed
+    # from the pre-round-9 head; 11 published shares came out HIGHER than
+    # the truth, none lower. These are the two worst, restated as fixtures
+    # with round numbers so the true share is readable off the counts.
+
+    def _fuzz_run(self, api, counts, arm, watch):
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in api]}
+        census = TestIssue67._census_doc(counts={
+            key: {self.W[0]: turns} for key, turns in counts.items()})
+        previous = {"arms": [{"id": f"0filler-{i:04d}", "reason": "filler"}
+                             for i in range(500)]
+                            + [{"id": arm, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous,
+                policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return self._reason(published, watch)
+
+    def test_the_first_fuzz_scenario_publishes_its_true_share(self):
+        """A one-model catalogue, the departed arm a dated spelling of a
+        census key in a tier the catalogue no longer carries at all."""
+        reason = self._fuzz_run(
+            api=["claude-haiku-5"],
+            counts={"claude-haiku-5": 2990, "claude-fable-5": 7010},
+            arm="claude-fable-5-20250101", watch="claude-haiku-5")
+        self.assertIn("carries 29.9%", reason, "2990 of 10000 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+    def test_the_second_fuzz_scenario_publishes_its_true_share(self):
+        """A catalogue that publishes a DATED id beside a bare one, and a
+        departed arm dated in the future relative to the census key it
+        folds onto — neither of which changes the answer."""
+        reason = self._fuzz_run(
+            api=["claude-fable-4-20250101", "claude-sonnet-4"],
+            counts={"claude-sonnet-4": 493, "claude-opus-5": 507},
+            arm="claude-opus-5-20260601", watch="claude-sonnet-4")
+        self.assertIn("carries 49.3%", reason, "493 of 1000 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+    # --- the ordering inside a tier --------------------------------------
+
+    def test_a_tier_is_ordered_by_census_turns_not_by_last_seen(self):
+        """MUTATION: ordering a tier by `last_seen` first. 501 entries the
+        census names, so every one of them is tier 1 and only the order
+        within the tier decides who the cap drops. The entry carrying
+        almost all of the window\'s turns is dated OLDEST, so a
+        `last_seen`-first order drops exactly it — and with it 900,000 of
+        the window\'s 901,500 turns, leaving the census unrankable and the
+        roster on its newest-per-tier fallback."""
+        small = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
+        big = "claude-sonnet-4-9"
+        counts = {i: {self.W[0]: 3} for i in small}
+        counts[big] = {self.W[0]: 900_000}
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in small]
+                    + [{"id": big, "last_seen": self._days_ago(120)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self.assertIn(big, self._seen_ids(published),
+                      "the census's own turn count orders a tier, and this "
+                      "entry carries 900,000 of the window's 901,500")
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 0.0%", reason,
+                      "claude-sonnet-5 has no turns of its own; the "
+                      "denominator is the other 901,500")
+        # Mutation check (manual): sorting a tier by `last_seen` descending
+        # ahead of the turns — `(tier, survivors[i], -turns, i)` — drops
+        # the 120-day-old entry, its 900,000 turns leave the denominator,
+        # the census reads as unrankable and claude-sonnet-5's reason is
+        # the newest-per-tier fallback with no share in it at all: red.
 
 
 if __name__ == "__main__":

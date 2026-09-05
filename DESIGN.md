@@ -392,6 +392,92 @@ this account and has grown a run-a-script grader; until then this harness
 stays the system of record. If `results/` is ever restructured, mirror its
 report schema to keep a future migration cheap.
 
+## Model roster (2026-09-04, #67)
+
+The harness's model choices were literals: an arm pinned in each fixture, a
+judge beside it, a preflight model in `eval.yml`. Nothing in the repo noticed
+when a model shipped or retired, and the first symptom would have been a run
+against a model that no longer exists.
+
+`harness/roster.py` computes the set instead, as **a pure function over
+files** — already-parsed documents and a frozen `now` in, a roster dict out.
+No network, no clock, no environment, which is what makes the whole policy
+testable at the granularity of one threshold. The single network call in the
+feature is `scripts/refresh_models.py`; the usage side is
+`scripts/model_usage_census.py`, which runs on a durable machine (a CI runner
+has no transcripts) as a best-effort passenger on the Tier-3 account-store
+Routine.
+
+Five properties are load-bearing and should survive any rework:
+
+1. **No model id in the machinery.** Tier comes from the family word in a
+   model's own id, matched against a ladder in `evals/roster-policy.yml`. A
+   model that ships after this was written needs no edit anywhere.
+2. **Every entry carries its reason in words**, and every degradation says
+   which degradation it was — absent census, stale census, future-dated
+   census, census present but empty over the window. A roster that falls back
+   silently is indistinguishable from one that did not need to.
+3. **No evidence is not evidence.** Nothing retires an arm except leaving the
+   Models API or measurably falling under the exit bar. A missing or stale
+   census retires nothing.
+4. **Three previous-roster states, not two.** The published `previous_state`
+   is `compared`, `none` (first run), or `unavailable` (a previous roster
+   exists but could not be read this run) — collapsing the last two into one
+   boolean once let the rendered summary claim "no change since the last
+   run" about a comparison that never happened.
+5. **A since-retired model counts by catalogue HISTORY, not id shape.** The
+   published roster carries `catalogue_seen`: the union of every model id
+   the Models API has ever listed across runs. A model that has left the
+   API but that this harness has actually observed before still counts in
+   the usage denominator — real work that happened does not stop counting
+   just because the model is gone. An earlier approach inferred this from
+   the id's SHAPE instead (a family word plus a numeric version); that was
+   withdrawn because shape cannot distinguish a since-retired real model
+   from a plausibly-named proxy alias, and it missed the pre-#67 legacy id
+   shape entirely. **First-run caveat:** with no `catalogue_seen` history
+   yet (a genuine first run, or a previous roster that could not be read
+   — **or the migration case**, where the `previous.json` already
+   published on `eval-results` predates this field entirely, so the first
+   run after it merges behaves exactly like a genuine first run), a model
+   retired before this harness ever observed it is unattributable — its
+   usage silently drops from the denominator until a run observes it
+   directly. A second, independent migration applies to `catalogue_seen`'s
+   own shape (below): the bare id string it used to publish is read for
+   one run and rewritten with an age.
+
+   `catalogue_seen` is READ BACK from `previous.json` on `eval-results` —
+   a branch other jobs on other machines write to, which this harness
+   treats as untrusted input, not an invariant (see roster.py's module
+   docstring). Each entry carries a `last_seen` date rather than living
+   forever: it is refreshed to today whenever the Models API actually
+   returns that id THIS run, and an entry leaves `catalogue_seen` once its
+   `last_seen` is older than `catalogue_seen_max_age_days` (roster-policy.yml,
+   180 by default) — the only exit besides a length cap (`CATALOGUE_SEEN_CAP`
+   in roster.py, currently 500, never evicting this run's own live ids).
+   Without an age, a single id planted directly on the branch stayed
+   attributable forever and was republished by this harness as its own
+   output on every later run — reverting the plant on the branch did not
+   undo that, because the harness's own prior output had already carried
+   it forward. A second, independent migration applies here too: the field
+   used to publish as a bare list of id strings with no age at all; that
+   shape is still accepted on read — on every read, since this harness
+   always republishes the dict shape — and rewritten with `last_seen` =
+   that run's date, since seeing the bare string is the only evidence
+   there is.
+
+   **Ageing out is not a repair.** It ends a plant's future effect, but
+   it does not undo a retirement the plant already caused: a model whose
+   measured share the fabricated usage pushed under the exit bar is
+   retired, and by the time the plant expires that model is no longer a
+   previous arm, so the exit bar no longer applies to it and a dozen turns
+   a week never re-seats it. It returns only by clearing the ENTRY bar, by
+   being the newest in its tier, or by hand.
+
+Thresholds, and the reasoning behind the numbers, belong in an ADR —
+[#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the
+README's "Model roster" section for the precedence rule and the census's
+public-output contract.
+
 ## Out of scope
 
 - `GHA-bench` as the harness (#18 caveat) — this is a dedicated harness.
