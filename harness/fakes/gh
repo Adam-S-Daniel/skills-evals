@@ -1,41 +1,42 @@
 #!/usr/bin/env python3
-"""Hermetic stand-in for the `gh` CLI, shared by every Class B eval fixture.
+"""Offline `gh`: answer from a directory of recorded responses, never the network.
 
-DESIGN.md's Class B instrument is "a fake `gh` on the seed workspace's PATH
-serving canned JSON captured from the real incident" — the same substitution
-move as `$CLAUDE_BIN`/`test/fake-claude`, and as
-`windows-elevation-from-wsl`'s fake `powershell.exe`, applied to the tool the
-skill under test consults. This is that fake. It is deliberately generic: a
-fixture supplies payloads, not code.
+Point `$GH_REPLAY_DIR` at a directory of responses recorded from a real
+repository and this replays them, keyed by the NORMALIZED command line, so a
+session can be re-run on a machine with no network and no token. Three
+behaviours, and nothing else:
 
-Three behaviours, and nothing else:
-
-  * READS are answered from `$FAKE_GH_PAYLOADS`, keyed by the NORMALIZED
-    argv (see `payload_key`), and classed `read`.
+  * READS are answered from `$GH_REPLAY_DIR`, keyed by the normalized argv
+    (see `payload_key`), and classed `read`.
   * WRITES — `pr merge`, `pr close`, `workflow run`, `gh api -X POST` and
-    friends — are refused with a real-shaped HTTP 403 and classed `write`.
-    Triage recommends; it does not act. Nothing here can mutate anything.
+    friends — are refused with a real-shaped HTTP 403, the way a read-only
+    token is refused, and classed `write`. Nothing here can mutate anything.
     The class records INTENT: a verb that would reach the network or write
-    the workspace (`pr checkout`, `repo clone`, `run download`) is refused
-    the same way, because what a fixture needs to know is what the agent
-    reached for.
-  * An UNKNOWN read is answered with a `gh`-shaped 404 and classed
-    `unknown`, never a Python traceback: an agent that guesses an endpoint
-    must see what `gh` would have shown it, not this file's internals. The
-    resolved payload key goes to the log only — never to stderr, where it
-    would tell the agent it is talking to a harness.
+    the working tree (`pr checkout`, `repo clone`, `run download`) is refused
+    the same way, because what matters afterwards is what was reached for.
+  * An UNKNOWN read is answered with `gh`'s own 404 and classed `unknown`,
+    never a Python traceback: whoever guesses an endpoint must see what `gh`
+    would have shown them, not this file's internals. The resolved key goes
+    to the log only, never to stderr.
 
-Every invocation is appended to the invocation log as ONE line carrying its
-class, its resolved payload key, its exit code and its JSON-encoded argv, so
-a fixture's objective checks can decide what the agent did from the log
-alone — and so no argv can forge a second record by carrying a newline. The
-record is written BEFORE any output, and a log that cannot be written is
-swallowed, so no failure downstream can cost the log its evidence.
+Every invocation is appended to `.gh-invocations.log` as ONE line carrying
+its class, its normalized argv key, its exit code and its JSON-encoded argv,
+so a replayed session can be audited from the log alone — and so no argv can
+forge a second record by carrying a newline. A log that cannot be written is
+swallowed, so no failure downstream costs the log its record.
+
+The key is recorded for EVERY class, not only for the reads a file backed:
+it is the identity of the normalized argv (see `payload_key`), not a claim
+that a file was served. An `unknown` read logs the key that resolved to
+nothing; a refused write logs the key its argv normalizes to, which is what
+makes "was a write aimed at #421?" answerable mechanically — flags are
+dropped from the key, so `pr close --delete-branch 421` and `pr close 421
+--delete-branch` are one and the same record.
 
 Not implemented, on purpose: `--jq`, `-q`, `--json` field selection and
-`--template` are accepted and IGNORED — the whole payload is returned. A
-fixture must therefore stay readable as raw JSON, and must not depend on a
-system `jq`. See harness/fakes/README.md.
+`--template` are accepted and IGNORED — the whole response is returned. A
+recorded response must therefore stay readable as raw JSON, and nothing here
+needs a system `jq`.
 """
 
 from __future__ import annotations
@@ -53,8 +54,7 @@ import sys
 # A shorthand whose meaning DIFFERS per subcommand cannot live here: `-w` is
 # boolean `--web` on `gh pr view` but `--workflow <name>` on `gh run list`,
 # and a flat set gets one of them wrong whichever way it is listed. Such
-# shorthands are deliberately absent, and the README tells a fixture to write
-# them long-form.
+# shorthands are deliberately absent; write them long-form.
 BOOLEAN_FLAGS = {
     "-h", "--help", "--version", "--verbose", "-y", "--yes",
     "--log", "--log-failed", "--failed", "--exit-status", "--web", "--watch",
@@ -76,8 +76,8 @@ API_BODY_FLAGS = {"-f", "--raw-field", "-F", "--field", "--input"}
 WRITE_METHODS = {"POST", "PATCH", "PUT", "DELETE"}
 
 # Verbs that mutate REMOTE state. A pair in neither this set nor the one
-# added just below is treated as a read, so a fixture that needs a new write
-# refused adds it here rather than in its own copy of this file.
+# added just below is treated as a read, so a new verb to refuse is added
+# here rather than in a private copy of this file.
 WRITE_SUBCOMMANDS = {
     ("pr", "merge"), ("pr", "close"), ("pr", "create"), ("pr", "edit"),
     ("pr", "comment"), ("pr", "reopen"), ("pr", "ready"), ("pr", "review"),
@@ -106,18 +106,18 @@ WRITE_SUBCOMMANDS = {
     ("gpg-key", "delete"), ("ruleset", "create"),
 }
 
-# Verbs that mutate nothing remotely but WRITE THE WORKSPACE or reach the
+# Verbs that mutate nothing remotely but WRITE THE WORKING TREE or reach the
 # network to do it. `gh release download` is a plain read against the API and
-# still belongs here: what it does locally is a side effect the fake cannot
-# perform and an arm must not acquire. They join the same class, because the
-# class records intent — see the README.
+# still belongs here: what it does locally is a side effect no recorded
+# response can honestly reproduce. They join the same class, because the
+# class records intent.
 WRITE_SUBCOMMANDS |= {
     ("pr", "checkout"), ("repo", "clone"), ("run", "download"),
     ("release", "download"), ("issue", "develop"),
 }
 
 # The endpoint each refused write would have hit, so the 403 names a real
-# URL the way `gh` does. `{repo}` is the --repo flag, else $FAKE_GH_REPO.
+# URL the way `gh` does. `{repo}` is the --repo flag, else $GH_REPO.
 WRITE_ENDPOINTS = {
     ("pr", "merge"): "repos/{repo}/pulls/{arg}/merge",
     ("pr", "close"): "repos/{repo}/pulls/{arg}",
@@ -204,7 +204,7 @@ def first(flags: dict[str, list], *names: str) -> str | None:
 def payload_key(positionals: list[str], flags: dict[str, list]) -> str | None:
     """The payload file the normalized argv names, relative to the payload dir.
 
-    Two rules, and they are the fake's whole contract with a fixture:
+    Two rules, and they are the whole contract:
 
       * `api <endpoint>`   -> `api/<endpoint>.json`
         (`repos/o/r/pulls/7` -> `api/repos/o/r/pulls/7.json`; a leading
@@ -215,8 +215,8 @@ def payload_key(positionals: list[str], flags: dict[str, list]) -> str | None:
 
     Only `api` nests. Any other verb's positionals are flattened — a `/` in
     one of them (`repo view owner/name`) becomes a `-`, so every non-`api`
-    payload is one flat file and no key can name a directory a fixture did
-    not mean to create.
+    payload is one flat file and no key can name a directory nobody meant to
+    create.
 
     `--log` / `--log-failed` are the only flags that reach the key, and only
     by choosing the extension: a run's log is a different artifact from its
@@ -239,7 +239,7 @@ def payload_key(positionals: list[str], flags: dict[str, list]) -> str | None:
 def resolve_payload(payload_dir: str, key: str) -> str | None:
     """The absolute path `key` names, or None if it escapes or is absent.
 
-    A key is built from agent-supplied argv, so `api ../../etc/passwd` has to
+    A key is built from the caller's argv, so `api ../../etc/passwd` has to
     resolve to nothing rather than to a file outside the payload directory.
     """
     root = os.path.realpath(payload_dir)
@@ -277,7 +277,7 @@ def classify(positionals: list[str], flags: dict[str, list]) -> str:
 
 def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
     """The API URL path a refused write would have hit."""
-    repo = first(flags, "--repo", "-R") or os.environ.get("FAKE_GH_REPO", "OWNER/REPO")
+    repo = first(flags, "--repo", "-R") or os.environ.get("GH_REPO", "OWNER/REPO")
     if positionals and positionals[0] == "api":
         return positionals[1].split("?", 1)[0].strip("/") if len(positionals) > 1 else "graphql"
     pair = (positionals[0], positionals[1] if len(positionals) > 1 else "")
@@ -289,18 +289,16 @@ def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
 def log_dir() -> str:
     """Where `.gh-invocations.log` goes.
 
-    The workspace is the arm's temp dir, which run_eval.py exports as
-    `$WORKSPACE` (see agent_env). Outside a real arm, fall back to the
-    payload directory's own workspace rather than to the cwd: the agent
-    chooses the cwd, so a log written there is a log a fixture cannot find.
-    A fixture may hide its payloads in a dot-directory (`.fake-gh/payloads`)
-    so the seed reads as a plain checkout; the log belongs beside the
-    workspace, not inside that hiding place.
+    `$WORKSPACE` when it is set — the checkout being replayed against.
+    Otherwise the checkout the replay directory sits in, and never the cwd,
+    which the caller chooses. A replay directory may live in a dot-directory
+    (`.gh/replay`) so the checkout still reads as an ordinary one; the log
+    belongs beside the checkout, not inside it.
     """
     workspace = os.environ.get("WORKSPACE")
     if workspace:
         return workspace
-    payloads = os.environ.get("FAKE_GH_PAYLOADS")
+    payloads = os.environ.get("GH_REPLAY_DIR")
     if payloads:
         parent = os.path.dirname(os.path.abspath(payloads))
         if os.path.basename(parent).startswith("."):
@@ -319,20 +317,19 @@ def log_invocation(argv: list[str], klass: str, key: str | None, code: int) -> N
     """Append ONE record to `<log_dir()>/.gh-invocations.log`.
 
     One line per invocation, with the argv JSON-encoded: an argv element
-    carrying a newline would otherwise write extra records, and a fixture's
-    `must_match` over the log could be satisfied without the command ever
-    having run. `json.dumps` escapes the newline instead, and a fixture
-    anchors its patterns at `^` so nothing inside the argv can pose as a
-    record.
+    carrying a newline would otherwise write extra records, and a pattern
+    matched over the log could be satisfied without the command ever having
+    run. `json.dumps` escapes the newline instead, so a reader anchoring its
+    patterns at `^` cannot be fooled by anything inside an argv.
 
     Nothing raised here may reach the caller: the record is the only
-    evidence a restraint check has, and a run that could not be logged must
-    still behave exactly like one that could.
+    evidence of what ran, and a run that could not be logged must still
+    behave exactly like one that could.
     """
     try:
         safe = [a.encode("utf-8", "backslashreplace").decode("utf-8") for a in argv]
         # The key is built from argv too, so it is escaped for the same
-        # reason: one record, one line, whatever the agent typed.
+        # reason: one record, one line, whatever was typed.
         field = one_line(key) if key else "-"
         record = (f"--- invocation (class={klass} key={field} exit={code}) "
                   f"--- {json.dumps(safe)}\n")
@@ -356,20 +353,20 @@ def refuse_write(positionals: list[str], flags: dict[str, list]) -> int:
 
 
 def not_found() -> int:
-    """`gh`'s own 404, for a read this fixture has no payload for.
+    """`gh`'s own 404, for a read with no recorded response.
 
-    Deliberately says nothing about payloads or keys: the resolved key goes
-    to the log, where the fixture reads it, and never to stderr, where it
-    would tell the agent it is talking to a stand-in rather than to `gh`.
+    Deliberately says nothing about the replay directory or the key: the
+    resolved key goes to the log, and never to stderr, where it would say
+    that this is a replay rather than `gh` itself.
     """
     sys.stderr.write("gh: Not Found (HTTP 404)\n")
     return 1
 
 
-# What `gh --version` reports. Fixture-independent: every `gh` answers this,
-# and a 404 here would read as "the tool is broken" and derail a run before
-# the fixture's own surface is even touched. Bare `gh` prints the usage and
-# exits 0, the way the real one does.
+# What `gh --version` reports. Answered without a recorded response: every
+# `gh` answers this, and a 404 here would read as "the tool is broken" and
+# derail a session before it reached anything real. Bare `gh` prints the
+# usage and exits 0, the way the real one does.
 GH_VERSION = "gh version 2.81.0 (2026-08-19)\nhttps://github.com/cli/cli/releases/latest\n"
 GH_USAGE = (
     "Work seamlessly with GitHub from the command line.\n"
@@ -379,7 +376,7 @@ GH_USAGE = (
 
 
 def main(argv: list[str]) -> int:
-    payload_dir = os.environ.get("FAKE_GH_PAYLOADS")
+    payload_dir = os.environ.get("GH_REPLAY_DIR")
     positionals, flags = parse_argv(argv)
 
     # Answered before any payload lookup, and only when they are the whole
@@ -421,7 +418,7 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except BaseException as exc:  # noqa: BLE001
-        # An agent must never see this file's internals: a stand-in that
-        # tracebacks teaches the agent about the harness, not about `gh`.
+        # A caller must never see this file's internals: a traceback here
+        # teaches them about this file, not about `gh`.
         sys.stderr.write(f"gh: unexpected error: {type(exc).__name__}: {exc}\n")
         raise SystemExit(1)

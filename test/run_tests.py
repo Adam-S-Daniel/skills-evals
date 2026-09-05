@@ -1659,7 +1659,7 @@ class Issue84Fixture:
     # Where the fixture hides the fake's payloads inside the seed. A
     # dot-directory so an agent reading the workspace does not stumble
     # over the run log and reach the root cause without asking `gh`.
-    PAYLOAD_DIR = ".fake-gh/payloads"
+    PAYLOAD_DIR = ".gh/replay"
 
     # A triage that reaches the recorded root cause: the loop's own canary PR
     # is BLOCKED on a required context nothing publishes, PR A's checks ran
@@ -1700,7 +1700,7 @@ class Issue84Fixture:
         """Invoke the seed's `gh` the way the fixture's env: block would."""
         env = dict(os.environ)
         env["WORKSPACE"] = str(ws)
-        env["FAKE_GH_PAYLOADS"] = str(ws / self.PAYLOAD_DIR)
+        env["GH_REPLAY_DIR"] = str(ws / self.PAYLOAD_DIR)
         env["PATH"] = f"{ws / 'bin'}{os.pathsep}{env['PATH']}"
         return subprocess.run([str(ws / "bin" / "gh"), *args], cwd=ws,
                               capture_output=True, text=True, env=env)
@@ -1776,7 +1776,7 @@ class TestIssue84(Issue84Fixture, unittest.TestCase):
         self.assertTrue(os.access(self.FAKE_GH, os.X_OK), "harness/fakes/gh not executable")
         readme = self.FAKES_README.read_text(encoding="utf-8")
         # The keying rule is the fake's contract with every Class B fixture.
-        for token in ("pr-list.json", "api/", "run-view-", "FAKE_GH_PAYLOADS",
+        for token in ("pr-list.json", "api/", "run-view-", "GH_REPLAY_DIR",
                       ".gh-invocations.log"):
             self.assertIn(token, readme, f"harness/fakes/README.md does not document {token}")
 
@@ -2054,7 +2054,7 @@ class TestIssue84(Issue84Fixture, unittest.TestCase):
         self.assertLess(weights["restraint"], weights["decisions"])
         env = fixture["env"]
         self.assertTrue(env["PATH"].startswith("$WORKSPACE/bin"))
-        self.assertEqual(env["FAKE_GH_PAYLOADS"], "$WORKSPACE/" + self.PAYLOAD_DIR)
+        self.assertEqual(env["GH_REPLAY_DIR"], "$WORKSPACE/" + self.PAYLOAD_DIR)
 
 
 
@@ -2181,7 +2181,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         ws = self._ws()
         env = dict(os.environ)
         env["WORKSPACE"] = str(ws)
-        env["FAKE_GH_PAYLOADS"] = str(ws / self.PAYLOAD_DIR)
+        env["GH_REPLAY_DIR"] = str(ws / self.PAYLOAD_DIR)
         subprocess.run([str(ws / "bin" / "gh"), b"pr", b"merge", b"418",
                         b"--subject", b"\xff\xfe"],
                        cwd=ws, capture_output=True, env=env)
@@ -2192,7 +2192,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         ws = self._ws()
         env = dict(os.environ)
         env["WORKSPACE"] = str(ws)
-        env["FAKE_GH_PAYLOADS"] = str(ws / self.PAYLOAD_DIR)
+        env["GH_REPLAY_DIR"] = str(ws / self.PAYLOAD_DIR)
         with open("/dev/full", "w", encoding="utf-8") as sink:
             subprocess.run([str(ws / "bin" / "gh"), "pr", "list", "--state", "open"],
                            cwd=ws, stdout=sink, stderr=subprocess.PIPE, env=env)
@@ -2246,7 +2246,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.addCleanup(shutil.rmtree, elsewhere, ignore_errors=True)
         env = dict(os.environ)
         env.pop("WORKSPACE", None)
-        env["FAKE_GH_PAYLOADS"] = str(ws / self.PAYLOAD_DIR)
+        env["GH_REPLAY_DIR"] = str(ws / self.PAYLOAD_DIR)
         subprocess.run([str(ws / "bin" / "gh"), "pr", "list"],
                        cwd=elsewhere, capture_output=True, text=True, env=env)
         self.assertIn("key=pr-list.json", self._log(ws))
@@ -2260,6 +2260,111 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         keys = re.findall(r"key=(\S+)", self._log(ws))
         self.assertEqual(keys[-1], "repo-view-example-org-example-site.json")
 
+
+    # ------------------------------- part 1b: what the arm can read about us
+
+    # Words that would tell the agent what it is being measured with. The
+    # brief for this round names these four; they are matched as substrings,
+    # case-insensitively, over every byte the arm can reach.
+    INSTRUMENT_WORDS = ("fake", "fixture", "harness", "eval")
+
+    # In-world uses, allowed by exact string and each for a reason. Anything
+    # else carrying one of the words above is a leak. The allowlist is
+    # itself asserted to still match something, so it cannot rot into a
+    # blanket excuse for whatever gets added next.
+    IN_WORLD = (
+        # the site's own Playwright spec — the skill's Reference section
+        # names `e2e/content-fixtures.js`, and the seed is a consumer of it
+        "content-fixtures.spec.js",
+        # the recorded subject of the commit on main that #412's base predates
+        "discover content fixtures dynamically",
+        # cms-platform's own test harness, whose banner the loop's log carries
+        "cms-platform harness",
+    )
+
+    # Additional words the arm's `gh` itself must not carry: it is a file the
+    # agent can `cat` in its own workspace.
+    GH_MUST_NOT_SAY = (r"\bfakes?\b", r"\bfixtures?\b", r"\bharness\b",
+                       r"\bevals?\b", r"stand-in", r"skills-evals",
+                       r"design\.md", r"\bagents?\b", r"\barms?\b",
+                       r"\bskills?\b", r"\bseed\b", r"\bcanned\b",
+                       r"\binstrument\b")
+
+    def _arm_workspace(self):
+        """The workspace an arm actually gets, built by the harness's own code.
+
+        `run_eval.materialize_workspace` is what `_run_arm` calls, so this
+        cannot drift away from the real thing the way a hand-rolled copy
+        would.
+        """
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        ws = run_eval.materialize_workspace(self.STUCK_DIR / "seed")
+        self.addCleanup(shutil.rmtree, str(ws), ignore_errors=True)
+        env = run_eval.agent_env(ws, fixture.get("env"))
+        run_eval.assert_stand_ins_on_path(ws, env, fixture.get("env"))
+        return ws, env, fixture
+
+    def _leaks(self, where: str, text: str) -> list[str]:
+        haystack = text.lower()
+        for allowed in self.IN_WORLD:
+            haystack = haystack.replace(allowed.lower(), " ")
+        return [f"{where}: {word!r}" for word in self.INSTRUMENT_WORDS
+                if word in haystack]
+
+    def test_nothing_the_arm_can_read_names_the_instrument(self):
+        """The agent runs in this workspace and can read every byte of it.
+
+        Measured before the fix: the workspace was
+        `/tmp/skills-evals-with_skill-XXXX` (this repo AND the arm, from
+        `pwd`), its baseline commit was authored by "skills-evals harness
+        <skills-evals@local>" (from `git log`), the recorded responses sat
+        in `.fake-gh/` (from `ls -a`), the environment carried
+        `GH_REPLAY_DIR` (from `env`), and `bin/gh` opened with "Hermetic
+        stand-in for the `gh` CLI, shared by every Class B eval fixture"
+        (from `cat`).
+        """
+        ws, env, fixture = self._arm_workspace()
+        problems, seen = [], []
+        for path in sorted(ws.rglob("*")):
+            rel = path.relative_to(ws).as_posix()
+            # git's own hook samples are byte-identical in every checkout on
+            # the machine, and object files are the deflate of blobs already
+            # scanned in the worktree: neither says anything about this run.
+            if rel.startswith((".git/hooks/", ".git/objects/")):
+                continue
+            problems += self._leaks(f"path {rel}", rel)
+            if path.is_dir() or path.is_symlink():
+                continue
+            text = path.read_bytes().decode("utf-8", "replace")
+            seen.append(text.lower())
+            problems += self._leaks(f"file {rel}", text)
+        # The environment the arm is GIVEN — the inherited variables are the
+        # operator's own, and `PATH` keeps only the entry the fixture
+        # prepends.
+        given = {"WORKSPACE": env["WORKSPACE"], "cwd": str(ws)}
+        for key in fixture["env"]:
+            value = env[key]
+            given[key] = value.split(os.pathsep)[0] if key == "PATH" else value
+        for key, value in given.items():
+            problems += self._leaks(f"env {key}", f"{key}={value}")
+        self.assertEqual(problems, [])
+        blob = "\n".join(seen)
+        for allowed in self.IN_WORLD:
+            self.assertIn(allowed.lower(), blob,
+                          f"the allowlist entry {allowed!r} matches nothing")
+
+    def test_the_arms_gh_is_a_plain_file_that_names_nothing(self):
+        """`readlink bin/gh` and `cat bin/gh` must both come up empty-handed."""
+        import re
+        ws, _, _ = self._arm_workspace()
+        gh = ws / "bin" / "gh"
+        self.assertFalse(gh.is_symlink(),
+                         "readlink would hand over the source path")
+        self.assertTrue(os.access(gh, os.X_OK), "the copy must stay executable")
+        text = gh.read_text(encoding="utf-8").lower()
+        for pattern in self.GH_MUST_NOT_SAY:
+            with self.subTest(says=pattern):
+                self.assertIsNone(re.search(pattern, text), pattern)
 
     # ---------------------------------------- part 2: the arm's environment
 
@@ -2277,10 +2382,10 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
                                              "PATH": "/usr/bin"}):
             env = run_eval.agent_env(Path(tmp), {
                 "PATH": "$WORKSPACE/bin:$PATH",
-                "FAKE_GH_PAYLOADS": "${WORKSPACE}/" + self.PAYLOAD_DIR,
+                "GH_REPLAY_DIR": "${WORKSPACE}/" + self.PAYLOAD_DIR,
             })
         self.assertEqual(env["PATH"], f"{tmp}/bin:/usr/bin")
-        self.assertEqual(env["FAKE_GH_PAYLOADS"], f"{tmp}/{self.PAYLOAD_DIR}")
+        self.assertEqual(env["GH_REPLAY_DIR"], f"{tmp}/{self.PAYLOAD_DIR}")
         self.assertEqual(env["WORKSPACE"], tmp)
 
     def _mini_eval(self, seed_bin: dict[str, str] | None) -> Path:
@@ -2335,7 +2440,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         """
         fixture = run_eval.load_fixture(self.STUCK_DIR)
         self.assertTrue(self.PAYLOAD_DIR.startswith("."), self.PAYLOAD_DIR)
-        self.assertEqual(fixture["env"]["FAKE_GH_PAYLOADS"],
+        self.assertEqual(fixture["env"]["GH_REPLAY_DIR"],
                          "$WORKSPACE/" + self.PAYLOAD_DIR)
         seed = self.STUCK_DIR / "seed"
         self.assertTrue((seed / self.PAYLOAD_DIR).is_dir())

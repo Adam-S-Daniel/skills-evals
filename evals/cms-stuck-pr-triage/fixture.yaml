@@ -7,13 +7,17 @@
 #
 # Class B in DESIGN.md's four instruments: correctness is reaching a recorded
 # root cause, so the instrument is the shared fake `gh` (harness/fakes/gh) on
-# the arm's PATH, answering from `seed/.fake-gh/payloads/` and refusing every
-# write. The verdict is scored objectively against what the payloads actually
-# say; the judge grades reasoning quality only.
+# the arm's PATH, answering from `seed/.gh/replay/` and refusing every write.
+# The verdict is scored objectively against what the payloads actually say;
+# the judge grades reasoning quality only.
 #
 # This directory is NOT self-contained: `seed/bin/gh` is a RELATIVE symlink to
 # harness/fakes/gh, which is what keeps one source of truth for the fake. Copy
-# the repo, not this directory alone, or the link dangles.
+# the repo, not this directory alone, or the link dangles. In the ARM the link
+# is gone — `shutil.copytree` resolves it into a plain executable — so
+# `readlink bin/gh` tells the agent nothing, and neither does `cat bin/gh`:
+# nothing the arm can read names a fake, a fixture, this harness or an eval.
+# See harness/fakes/README.md's "name nothing after this harness".
 #
 # The recorded shape, and what a correct triage reaches:
 #   * #418 (the loop's own canary PR) is BLOCKED with every check-run on its
@@ -99,10 +103,14 @@ judge:
 # The payloads live in a dot-directory so the seed reads as a plain site
 # checkout: in plain view, an agent can `cat` the recorded run log off disk,
 # reach the root cause without asking `gh`, and then fail `loop-log-was-read`.
+# The names are the ones an offline `gh` would plausibly carry — `GH_REPO` is
+# a variable the real CLI honours, and `GH_REPLAY_DIR` reads as a replay
+# cache. They were `FAKE_GH_REPO` / `FAKE_GH_PAYLOADS`, which announced the
+# instrument to anything that ran `env`.
 env:
   PATH: "$WORKSPACE/bin:$PATH"
-  FAKE_GH_PAYLOADS: "$WORKSPACE/.fake-gh/payloads"
-  FAKE_GH_REPO: "example-org/example-site"
+  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
+  GH_REPO: "example-org/example-site"
 
 # The operator's own words, deliberately: it names no diagnosis, no rule and
 # no skill, so an arm that reaches the root cause reached it from the evidence.
@@ -236,18 +244,18 @@ objective_checks:
     type: files_unchanged
     paths:
       - "bin/gh"
-      - ".fake-gh/payloads/*.json"
-      - ".fake-gh/payloads/*.txt"
-      - ".fake-gh/payloads/*.log"
-      - ".fake-gh/payloads/api/repos/*/*/rulesets.json"
-      - ".fake-gh/payloads/api/repos/*/*/pulls.json"
-      - ".fake-gh/payloads/api/repos/*/*/branches/*/protection.json"
-      - ".fake-gh/payloads/api/repos/*/*/pulls/*.json"
-      - ".fake-gh/payloads/api/repos/*/*/rulesets/*.json"
-      - ".fake-gh/payloads/api/repos/*/*/commits/*.json"
-      - ".fake-gh/payloads/api/repos/*/*/commits/*/check-runs.json"
-      - ".fake-gh/payloads/api/repos/*/*/rules/branches/*.json"
-      - ".fake-gh/payloads/api/repos/*/*/git/ref/heads/*.json"
+      - ".gh/replay/*.json"
+      - ".gh/replay/*.txt"
+      - ".gh/replay/*.log"
+      - ".gh/replay/api/repos/*/*/rulesets.json"
+      - ".gh/replay/api/repos/*/*/pulls.json"
+      - ".gh/replay/api/repos/*/*/branches/*/protection.json"
+      - ".gh/replay/api/repos/*/*/pulls/*.json"
+      - ".gh/replay/api/repos/*/*/rulesets/*.json"
+      - ".gh/replay/api/repos/*/*/commits/*.json"
+      - ".gh/replay/api/repos/*/*/commits/*/check-runs.json"
+      - ".gh/replay/api/repos/*/*/rules/branches/*.json"
+      - ".gh/replay/api/repos/*/*/git/ref/heads/*.json"
 
 # The judge is left what a regex cannot decide: whether the agent understood
 # WHY each PR is where it is, whether its per-PR decisions follow from that,

@@ -478,13 +478,41 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     }
 
 
+# The arm's workspace is the agent's cwd, and it can read every byte of it:
+# `pwd`, `git log`, `ls -a`, `cat bin/gh`, `env`. So neither the directory
+# name nor the baseline commit's identity may name this repository, this
+# harness or the arm — `/tmp/skills-evals-with_skill-XXXX` and a commit
+# authored by "skills-evals harness" told the agent what it was being
+# measured with before it had read a single line of the seed.
+WORKSPACE_PREFIX = "workspace-"
+SEED_COMMIT_IDENTITY = ("ci@example.com", "ci")
+SEED_COMMIT_MESSAGE = "initial commit"
+
+
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     """Run git in `cwd` with a fixed local identity (don't rely on global config)."""
+    email, name = SEED_COMMIT_IDENTITY
     return subprocess.run(
-        ["git", "-c", "user.email=skills-evals@local",
-         "-c", "user.name=skills-evals harness", *args],
+        ["git", "-c", f"user.email={email}",
+         "-c", f"user.name={name}", *args],
         cwd=cwd, check=True, capture_output=True, text=True,
     )
+
+
+def materialize_workspace(seed: Path) -> Path:
+    """A fresh arm workspace: the seed copied in, under a baseline git commit.
+
+    Extracted from `_run_arm` so a test can build the workspace the arm
+    actually gets rather than a hand-rolled lookalike — what an agent can
+    read in here is a property of THIS function, and a copy in a test would
+    drift away from it silently.
+    """
+    workspace = Path(tempfile.mkdtemp(prefix=WORKSPACE_PREFIX))
+    shutil.copytree(seed, workspace, dirs_exist_ok=True)
+    _git("init", "-q", cwd=workspace)
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
+    return workspace
 
 
 def _write_summary(results_dir: Path, skill: str, arm_name: str, timestamp: str,
@@ -551,13 +579,8 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up."""
-    workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
+    workspace = materialize_workspace(seed)
     try:
-        shutil.copytree(seed, workspace, dirs_exist_ok=True)
-        _git("init", "-q", cwd=workspace)
-        _git("add", "-A", cwd=workspace)
-        _git("commit", "-q", "-m", "seed", cwd=workspace)
-
         assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
                                  fixture.get("env"))
 

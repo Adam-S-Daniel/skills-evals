@@ -12,7 +12,7 @@ directory, so a behaviour fixed here is fixed for every fixture at once.
 
 | Fake | Stands in for | Payload dir |
 |---|---|---|
-| [`gh`](gh) | the GitHub CLI | `$FAKE_GH_PAYLOADS` |
+| [`gh`](gh) | the GitHub CLI | `$GH_REPLAY_DIR` |
 
 (`evals/windows-elevation-from-wsl/seed/bin/powershell.exe` predates this
 directory and stays with its fixture — it is machine-specific and no second
@@ -26,8 +26,8 @@ fixture reuses it.)
 # evals/<skill>/fixture.yaml
 env:
   PATH: "$WORKSPACE/bin:$PATH"          # the fake shadows any real gh
-  FAKE_GH_PAYLOADS: "$WORKSPACE/.fake-gh/payloads"   # a dot-dir: see below
-  FAKE_GH_REPO: "example-org/example-site"   # only shapes the 403's URL
+  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"   # a dot-dir: see below
+  GH_REPO: "example-org/example-site"   # only shapes the 403's URL
 ```
 
 ```bash
@@ -43,8 +43,21 @@ and the repo keeps one source of truth.
 **Keep the payloads in a dot-directory.** A payload tree beside the seed's own
 files is part of the workspace the agent reads: it can `cat` the recorded run
 log straight off disk, reach the root cause without asking `gh`, and then fail
-the very check that was meant to tell those two apart. A `.fake-gh/` sibling
+the very check that was meant to tell those two apart. A `.gh/replay/` sibling
 keeps them out of plain view, and the seed's README says nothing about them.
+
+**And name nothing after this harness.** The arm's workspace is the agent's
+cwd under `bypassPermissions`, so `pwd`, `ls -a`, `git log`, `env` and `cat
+bin/gh` are all reachable. That is why the variables are `GH_REPLAY_DIR` and
+`GH_REPO` rather than `FAKE_GH_*`, why the payload directory is `.gh/replay`
+rather than `.fake-gh/payloads`, why `run_eval.py`'s `WORKSPACE_PREFIX` and
+`SEED_COMMIT_IDENTITY` say nothing about this repository or the arm, and why
+[`gh`](gh) reads as a plain offline replay of the CLI: the word "fake"
+appears nowhere in it. Keep it that way — the source of truth for what an arm
+may read is here, not in the file the agent gets a copy of.
+`TestIssue84Review.test_nothing_the_arm_can_read_names_the_instrument`
+materializes an arm workspace with the harness's own code and greps every
+byte of it.
 
 ### The keying rule
 
