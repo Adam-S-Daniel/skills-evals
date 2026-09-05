@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import textwrap
+import unicodedata
 import unittest
 import yaml
 from pathlib import Path
@@ -44,7 +45,7 @@ RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
-from scorers import judge, objective  # noqa: E402
+from scorers import invisibles, judge, objective  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import make_badge  # noqa: E402
@@ -2651,6 +2652,49 @@ class TestIssue81(unittest.TestCase):
         self.assertTrue(results, f"{name} declares no objective checks")
         return {r["id"]: r for r in results}
 
+    # One pristine copy of each fixture's seed, made once for the whole
+    # class. `_score` copies the seed for every transcript it scores, which
+    # is the right shape for a handful of drafts and the wrong one for a
+    # BATTERY: the format-control sweep scores 168 transcripts and the two
+    # provenance batteries several dozen more, and copying a three-file seed
+    # that many times was most of this class's runtime. No check here writes
+    # to the workspace — every one of them is `transcript_matches` — so one
+    # copy answers for all of them, and the fixture, the seed and
+    # `objective.run_checks` are the real ones either way.
+    _SHARED_WORKSPACES: dict[str, str] = {}
+    _SHARED_ROOT: str | None = None
+
+    @classmethod
+    def setUpClass(cls):
+        cls._SHARED_ROOT = tempfile.mkdtemp(prefix="issue81-shared-")
+        cls._SHARED_WORKSPACES = {}
+
+    @classmethod
+    def tearDownClass(cls):
+        if cls._SHARED_ROOT:
+            shutil.rmtree(cls._SHARED_ROOT, ignore_errors=True)
+        cls._SHARED_ROOT = None
+        cls._SHARED_WORKSPACES = {}
+
+    @classmethod
+    def _shared_workspace(cls, name: str) -> str:
+        workspace = cls._SHARED_WORKSPACES.get(name)
+        if workspace is None:
+            workspace = str(Path(cls._SHARED_ROOT) / name)
+            shutil.copytree(cls.STYLE_DIR / name / "seed", workspace)
+            cls._SHARED_WORKSPACES[name] = workspace
+        return workspace
+
+    def _score_reusing_workspace(self, name: str,
+                                 transcript: str | None) -> dict:
+        """`_score`, over the shared workspace instead of a fresh copy."""
+        fixture = self._fixture(name)
+        seed = self.STYLE_DIR / name / "seed"
+        results = objective.run_checks(fixture, self._shared_workspace(name),
+                                       str(seed), transcript=transcript)
+        self.assertTrue(results, f"{name} declares no objective checks")
+        return {r["id"]: r for r in results}
+
     def _reference(self, name: str, which: str) -> str:
         # Without the fiction marker, same as judge.load_references: it is
         # a note to a reader of the repo, not part of the writing, and a
@@ -4203,9 +4247,111 @@ class TestIssue81(unittest.TestCase):
     def test_the_two_invisible_classes_are_the_same_class(self):
         # A character the judge folds and the scorer does not reads as
         # nothing to the judge and as something to the objective column, on
-        # the same draft.
-        self.assertEqual(objective._INVISIBLE_RE.pattern,
-                         judge._INVISIBLE_RE.pattern)
+        # the same draft. They used to be two hand-written character
+        # classes compared by their patterns, which is a test that two
+        # copies of the same mistake agree; it is one function now, and
+        # this asserts they hold the same one rather than equal text.
+        self.assertIs(objective._fold_invisibles, invisibles.fold)
+        self.assertIs(judge._fold_invisibles, invisibles.fold)
+
+    # ------------------------------------------------------------------
+    # S3: the fold is a RULE, not a list
+    # ------------------------------------------------------------------
+    #
+    # Round 5 measured the enumeration that used to sit in both modules: 20
+    # of Unicode's 163 `Cf` code points and 20 of its 1,950 `Mn` ones. What
+    # it missed included the bidi embeddings and overrides U+202A-U+202E and
+    # the isolates U+2066-U+2069 that its own comment claimed, the TAG block
+    # U+E0000-U+E007F, the supplementary variation selectors U+E0100-U+E01EF,
+    # the musical format controls U+1D173-U+1D17A, the interlinear
+    # annotation marks U+FFF9-U+FFFB and the Hangul fillers — so one such
+    # character inside `leverage` switched the ban off and one mid-word in a
+    # pasted seed sentence defeated provenance, while all three fixture
+    # headers assert that a paste "salted with invisibles" is covered.
+    #
+    # The loop below is the point: it does not name characters, it walks
+    # `sys.maxunicode` and asks the interpreter's own tables which ones
+    # render as nothing. A list cannot pass it.
+
+    @staticmethod
+    def _zero_width_code_points() -> list[str]:
+        """Every `Cf` code point, plus the ones that are invisible anyway.
+
+        `Mn` is left out of the per-draft loops below and covered whole by
+        `test_the_fold_covers_every_invisible_category`: there are 1,950 of
+        them, most compose into the letter in front of them under NFKC
+        (which is exactly why `café` survives), and the ones that do not are
+        the same case as a `Cf` for everything these two loops measure.
+        """
+        return [chr(cp) for cp in range(sys.maxunicode + 1)
+                if unicodedata.category(chr(cp)) == "Cf"] + list(
+                    invisibles.ZERO_WIDTH_OTHERS)
+
+    def test_the_fold_covers_every_invisible_category(self):
+        # Cf and Mn whole, and the non-category fillers with them. Not a
+        # sample: every code point the interpreter's tables call invisible.
+        survived = []
+        counts = {"Cf": 0, "Mn": 0}
+        for cp in range(sys.maxunicode + 1):
+            char = chr(cp)
+            category = unicodedata.category(char)
+            if category not in ("Cf", "Mn"):
+                continue
+            counts[category] += 1
+            # NFKC composes a combining mark onto the letter in front of it,
+            # so a mark is only "still there" when it stands alone.
+            if invisibles.fold(char):
+                survived.append(hex(cp))
+        self.assertEqual(survived, [], "code points that survived the fold")
+        # The scale, pinned: a future enumeration that replaced the rule
+        # would have to name this many characters to pass.
+        self.assertGreaterEqual(counts["Cf"], 160)
+        self.assertGreaterEqual(counts["Mn"], 1900)
+        for filler in invisibles.ZERO_WIDTH_OTHERS:
+            with self.subTest(filler=hex(ord(filler))):
+                self.assertEqual(invisibles.fold(filler), "")
+
+    def test_no_format_control_hides_a_banned_term(self):
+        # Through the real check: one code point mid-`leverage`, in a draft
+        # that otherwise passes everything, and the avoid check is the only
+        # one that moves.
+        for char in self._zero_width_code_points():
+            banned = self._REPLY_IN_ITS_OWN_WORDS.replace(
+                "Thanks,",
+                "I would rather not lever" + char + "age a move right "
+                "now.\n\nThanks,")
+            with self.subTest(code_point=hex(ord(char))):
+                self._assert_only_failure(
+                    self._score_reusing_workspace("recruiter-reply", banned),
+                    self.AVOID_CHECK_ID)
+
+    def test_no_format_control_defeats_provenance(self):
+        # The other direction: one code point mid-word inside a pasted seed
+        # sentence, which used to break the paste into pieces no run
+        # matched. `strip_seed_material` is the scorer's own function, the
+        # one `transcript_matches` calls when a check sets `strip_seed`.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        material = ("Your name came up while I was looking for platform "
+                    "engineers with public-sector delivery experience")
+        for char in self._zero_width_code_points():
+            salted = material[:20] + char + material[20:]
+            with self.subTest(code_point=hex(ord(char))):
+                self.assertEqual(
+                    objective.strip_seed_material(salted + "\n", seed), "")
+
+    def test_a_combining_accent_is_not_an_invisible(self):
+        # The cost of dropping every `Mn` without normalising first would be
+        # the accent off every accented word. NFKC composes it into the
+        # letter instead, so `cafe` + U+0301 is a word with an e-acute in
+        # it, not the word with its accent deleted.
+        self.assertEqual(invisibles.fold("cafe\u0301"), "caf\u00e9")
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        draft = self._REPLY_IN_ITS_OWN_WORDS.replace(
+            "hear about it.",
+            "hear about it over a cafe\u0301 conversation.")
+        self.assertIn("caf\u00e9", objective.strip_seed_material(draft, seed))
+        self._assert_all_pass("recruiter-reply", draft,
+                              "a genuine reply with an accented word")
 
     # N2: `strip_seed` used to be read by truthiness, so a fixture that
     # said `strip_seed: "no"` turned the pre-pass ON — the opposite of what

@@ -16,7 +16,7 @@ import re
 import subprocess
 from collections import Counter
 
-from . import wrapping
+from . import invisibles, wrapping
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -1078,16 +1078,19 @@ _TABLE_RULE_RE = re.compile(r"^[^\S\n]*\|[-:|\s]*\|[^\S\n]*$")
 _TABLE_ROW_RE = wrapping.TABLE_ROW_RE
 
 # Characters that take up no width and can hide a banned term inside a word,
-# or break a paste into pieces the seed index cannot match: the soft hyphen,
-# the zero-width and bidi marks, the invisible operators, the combining
-# grapheme joiner, the Mongolian vowel separator, the variation selectors,
-# the BOM, a stray NUL, and the two blank glyphs `\s` does not match
-# (Braille blank, Hangul filler). `lever­age` and `deep​ dive` read
-# to the operator as the banned terms and are scored as them, and one
-# U+2062 per line no longer buys a paste its provenance back.
-_INVISIBLE_RE = re.compile(
-    "[\u00ad\u034f\u061c\u180b-\u180e\u200b-\u200f\u2060-\u2064"
-    "\u206a-\u206f\u2800\u3164\ufe00-\ufe0f\ufeff\uffa0\x00]")
+# or break a paste into pieces the seed index cannot match. `lever­age` and
+# `deep​ dive` read to the operator as the banned terms and are scored as
+# them, and one U+2062 mid-word no longer buys a paste its provenance back.
+#
+# This used to be a hand-written character class, and an enumeration is the
+# wrong shape for "everything invisible": it named 20 of Unicode's 163 `Cf`
+# code points and 20 of its 1,950 `Mn` ones, so the bidi overrides and
+# isolates its own comment claimed, the TAG block, the supplementary
+# variation selectors, the musical format controls, the interlinear
+# annotation marks and the Hangul fillers all walked past it. The rule is a
+# rule now — see `invisibles.fold`, which `judge` folds with too so a
+# character cannot read as nothing to the judge and as something here.
+_fold_invisibles = invisibles.fold
 
 # A sentence ends at `.`, `!`, `?` or `;` FOLLOWED BY WHITESPACE, or at the
 # end of a line. The trailing-whitespace requirement is what keeps
@@ -1211,7 +1214,7 @@ def _seed_index(seed: str | None) -> tuple[set[str], list[str]]:
                     f"than the {_SEED_READ_CAP}-byte provenance read cap: a "
                     "truncated index would call the material past the cap "
                     "the agent's own writing")
-            text = _INVISIBLE_RE.sub("", raw.decode("utf-8", errors="replace"))
+            text = _fold_invisibles(raw.decode("utf-8", errors="replace"))
             here = []
             for line in text.splitlines():
                 if _FENCE_RE.match(line) or _TABLE_RULE_RE.match(line):
@@ -1370,7 +1373,7 @@ def strip_seed_material(text: str, seed: str | None) -> str:
     8). Dropping it costs no check: the thing a check looks for is never
     only in a line the agent could have copied.
     """
-    raw = _INVISIBLE_RE.sub("", text or "").splitlines()
+    raw = _fold_invisibles(text or "").splitlines()
     if not raw:
         return ""
     index = _seed_index(seed)
@@ -1555,7 +1558,7 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     """
     if transcript is None:
         return (False, "no transcript (objective-only run, or the agent produced none)")
-    text = _INVISIBLE_RE.sub("", transcript)
+    text = _fold_invisibles(transcript)
     if seed is not None:
         text = strip_seed_material(text, seed)
     return _text_matches(text, must_match or [], must_not_match or [],
