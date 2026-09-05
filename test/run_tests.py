@@ -8587,9 +8587,9 @@ class TestIssue67Review6(unittest.TestCase):
 
     def test_catalogue_seen_caps_length_with_a_count_only_warning(self):
         """N3, merged into S3's rewrite: `catalogue_seen` accepts at most
-        500 entries (sorted head kept), past which the warning names only
-        the count — not one dropped id, which would be a value from an
-        untrusted branch reaching a log."""
+        500 entries (relevance-ordered head kept), past which the warning
+        names only the count — not one dropped id, which would be a value
+        from an untrusted branch reaching a log."""
         previous = {"arms": [], "catalogue_seen": sorted(
             f"claude-sonnet-{i}-9" for i in range(600))}
         warnings = []
@@ -13846,6 +13846,15 @@ class TestIssue67Review7(unittest.TestCase):
                 [{"id": cls.RETIRED_REAL, "last_seen": cls._days_ago(1)}]}
 
     @classmethod
+    def _b1_style_census(cls):
+        """The census that names the real since-retired entry and the live
+        model beside it — 8000 of the window's 8800 rankable turns are the
+        retired one's, a true 9.09% for the live one."""
+        return TestIssue67._census_doc(counts={
+            cls.RETIRED_REAL: {cls.W[0]: 8000},
+            "claude-sonnet-5": {cls.W[0]: 800}})
+
+    @classmethod
     def _capped_history_models(cls):
         return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
             cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
@@ -13853,23 +13862,30 @@ class TestIssue67Review7(unittest.TestCase):
         ]}
 
     def test_the_cap_keeps_a_recent_history_entry_over_five_hundred_stale_ones(self):
+        """WHAT KEEPS IT has changed twice since this was written. Round 7
+        kept it because it was the most recently seen; B1\' (#129 review
+        round 10) took `last_seen` out of the order entirely — the previous
+        roster writes it — and the census keeps it instead. The scenario is
+        unchanged and so is the assertion: 500 plants, one real entry, and
+        the real one survives."""
         warnings = []
         result = self._compute(models=self._capped_history_models(),
-                               census=None,
+                               census=self._b1_style_census(),
                                previous=self._capped_history_previous(),
                                warn=warnings.append)
         seen = self._seen_ids(result)
         self.assertLessEqual(len(result["catalogue_seen"]), 500)
         self.assertIn(self.RETIRED_REAL, seen,
-                      "the entry seen a day ago must outlive 500 entries "
-                      "seen 100 days ago, whatever they sort like")
+                      "the entry the census names must outlive 500 entries "
+                      "it does not, whatever they sort like")
         self.assertTrue(any("cap" in w or "500" in w for w in warnings), warnings)
         for w in warnings:
             for plant in ("0plant-499", self.RETIRED_REAL):
                 self.assertNotIn(plant, w, "the cap warning names counts only")
         # Mutation check (manual): reverting the historical order to a
-        # plain `sorted(...)` by id drops `claude-sonnet-4-9` (the single
-        # alphabetically-last entry) instead of a stale plant — red.
+        # plain `sorted(...)` by id — `_no_relevance_order` in place of
+        # `relevant.rank` — drops `claude-sonnet-4-9` (the single
+        # alphabetically-last entry) instead of a plant: red.
 
     def test_an_alphabetically_evicted_history_entry_falsifies_a_published_share(self):
         """The measured consequence, through `compute_roster`: the real
@@ -13906,8 +13922,12 @@ class TestIssue67Review7(unittest.TestCase):
         # dump the whole policy file into the log.
         self.assertTrue("dropped are the oldest by `last_seen` first" not in prose,
                         "age alone is not the order the code implements")
-        self.assertIn("census names come first, then the newest by "
-                      "`last_seen`, then the id order as a tie-break", prose)
+        self.assertTrue("then the newest by `last_seen`" not in prose,
+                        "`last_seen` is out of the cap's order entirely "
+                        "(B1', #129 review round 10)")
+        self.assertIn("Within a tier the census's own in-window turn count "
+                      "decides, descending, and the id order breaks the tie",
+                      prose)
         self.assertIn("eviction here is PERMANENT", prose)
 
     # --- S3: the previous-arms cap must not omit a REAL retirement -------
@@ -14784,8 +14804,12 @@ class TestIssue67Review8(unittest.TestCase):
         plants = [f"zplant-{i:03d}" for i in range(600)]
         previous = {"arms": [], "catalogue_seen":
                     [{"id": i, "last_seen": self._days_ago(0)} for i in plants]}
+        # IN-WINDOW turns, not the 2020 week this used to carry: a census
+        # key with no in-window turns names nothing at all (A, #129 review
+        # round 10), so out-of-window rows would leave these plants
+        # unnamed and the test would no longer be about named plants.
         census = TestIssue67._census_doc(counts={
-            i: {"2020-W01": 1} for i in plants})
+            i: {self.W[0]: 1} for i in plants})
         warnings = []
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, err = self._run_main(
@@ -14876,46 +14900,25 @@ class TestIssue67Review8(unittest.TestCase):
         self.assertNotIn("carries", reason)
         self.assertIn("newest", reason)
 
-    def test_a_dated_arm_gets_no_relevance_from_its_own_spelling(self):
-        """WAS the floor for `_census_relevance`'s third route — the arm is
-        itself a DATED spelling of an id the census names bare. B1 (#129
-        review round 9) DELETED that route, and this test records why, and
-        what deleting it cost.
-
-        The route ran `SNAPSHOT_SUFFIX` over THE ENTRY, and eight digits
-        are not a date: an arm spelled `<census key>-20250101` and a plant
-        spelled `<census key>-00000042` are the same shape to it, so the
-        route that kept this arm is the route that let 500 planted entries
-        evict a real since-retired id and publish "carries 100.0%" for a
-        true 9.09% — TestIssue67Review9's rows A-C measure exactly that.
-        The arm therefore now shares the fate F3 already recorded for a
-        departed arm with no census turns at all: past the cap nothing in
-        the data tells it apart from filler.
-
-        THE COST IS BOUNDED TO THE CAP. Below it (the second half here)
-        the arm is carried whatever its spelling, and its 8000 turns still
-        count. Above it, this test is the CANARY: it goes red the moment a
-        predicate over the entry's own spelling comes back."""
-        dated_arm = f"{self.A3_DEPARTED}-20250101"
-        census = TestIssue67._census_doc(counts={
-            self.A3_DEPARTED: {self.W[0]: 8000},
-            "claude-sonnet-5": {self.W[0]: 800}})
-        for fillers, expect, forbid in ((self.ARM_FILLERS, "carries 100.0%",
-                                         "newest"),
-                                        (self.ARM_FILLERS[:400], "newest",
-                                         "carries")):
-            previous = {"arms": [{"id": i, "reason": "filler"}
-                                 for i in fillers] +
-                                [{"id": dated_arm, "reason": "was an arm"}]}
-            with self.subTest(fillers=len(fillers)):
-                with tempfile.TemporaryDirectory() as tmp:
-                    rc, published, _, _ = self._run_main(
-                        tmp, self._two_model_catalogue(), census=census,
-                        previous=previous)
-                self.assertEqual(rc, 0)
-                reason = self._reason(published, "claude-sonnet-5")
-                self.assertIn(expect, reason)
-                self.assertNotIn(forbid, reason)
+    # RETIRED: `test_a_dated_arm_gets_no_relevance_from_its_own_spelling`.
+    #
+    # It pinned round 9's COST — a departed arm spelled `<census key>-YYYY
+    # MMDD` got no relevance from its own spelling, so past the cap it
+    # shared the fate F3 records for a departed arm with no census turns
+    # at all, and the live model beside it published "carries 100.0%" for
+    # a true 9.09%. Round 9 called that cost a canary and asked for it to
+    # go red the moment a predicate over the entry's own spelling came
+    # back.
+    #
+    # B1' (#129 review round 10) removes the cost instead. Nothing about
+    # the arm's SPELLING makes it relevant now either — what does is that
+    # the census key `<census key>` needs an entry that folds onto it and
+    # has none other, so the arm takes that key's one tier-2 slot (see
+    # `_Relevance.rank`). The canary's own scenario is now
+    # TestIssue67Review10::test_a_dated_arm_whose_census_key_is_undated
+    # _survives_five_hundred_fillers, asserting the opposite outcome, and
+    # the spelling route it guarded against is still red under
+    # TestIssue67Review9's rows A-C.
 
     def test_a_live_previous_arm_survives_the_cap_and_is_held_over(self):
         """MUTATION: dropping `api_ids=api_ids` from the
@@ -15477,131 +15480,211 @@ class TestIssue67Review9(unittest.TestCase):
     # the code under test, and draws every plant from ids that are neither
     # a live id nor a census key.
 
-    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired")
+    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired", "dated-retired")
 
     @classmethod
     def _plant_scenario(cls, rng):
-        """(models_doc, census_doc, previous, history) for one random run.
+        """(models_doc, census_doc, previous, protected, owner) for one
+        random run.
 
-        `history` is the set of `catalogue_seen` entries the live catalogue
-        or the census names, minus this run's own live ids (which the cap
-        never touches anyway). Every OTHER entry is a plant, in one of the
-        four spellings a planter can reach: a bare id nothing relates to
-        anything; a dated spelling of a census key with a REAL date; the
-        same with `00000000`-style digits, which `SNAPSHOT_SUFFIX` cannot
-        tell from a date; and a dated spelling of one of the named entries
-        — the victim's own id.
+        REWRITTEN for B1\' (#129 review round 10). The generator now
+        populates `previous["arms"]` as well as `catalogue_seen` — round
+        9\'s version left `arms` empty in every scenario, so the arms cap
+        was never exercised by it at all — and it generates dated
+        spellings of census keys as REAL entries, in history and in arms,
+        not only as plants. That last shape is the blocker: a departed arm
+        `<alias>-YYYYMMDD` whose usage the census records under `<alias>`,
+        which round 9 could relate to nothing.
+
+        `protected` is the set of entries the census names OUTRIGHT (an
+        in-window census key) — decided from the census this generator
+        just built, never by asking the code under test. `owner` maps each
+        census key to the id whose numerator must collect its turns, which
+        is what turns "the fold group kept somebody" into a number the
+        published roster states.
+
+        Four family shapes:
+
+        bare-live        the bare alias is in the catalogue and holds the
+                         seat; its own census turns are its own.
+        dated-only-live  the catalogue publishes only DATED snapshots
+                         (roster-policy.yml\'s documented shape); the
+                         newest live one claims the bare alias, an OLDER
+                         dated key carries census turns, and the bare
+                         alias — in `catalogue_seen` because run 1\'s
+                         catalogue listed it — is the only thing that
+                         folds the one onto the other.
+        retired          no live model; the census names the bare alias
+                         and the bare alias is itself an entry.
+        dated-retired    no live model; the census names the bare alias
+                         and the ENTRY is a dated spelling of it. THE
+                         BLOCKER\'S SHAPE: nothing about the entry is a
+                         census key or a live id, and the only thing that
+                         keeps the key attributable is that the entry
+                         folds onto it.
         """
         words = roster.tier_words(cls._policy())
-        models = []
-        counts = {}
-        history = set()
+        models, counts, owner = [], {}, {}
+        protected, arms, history = set(), set(), set()
         for index in range(rng.randint(3, 4)):
             base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
             snaps = [f"{base}-2026{month:02d}01" for month in (1, 4, 6)]
             # Family 0 is always live, so every scenario has a catalogue
             # this policy can seat something out of; family 1 is always
-            # retired, so every scenario has at least one entry only the
-            # census names — the entry the plants are trying to evict.
+            # the blocker\'s shape, so every scenario carries at least one
+            # entry that is relevant through the fold relation ALONE.
             shape = ("bare-live" if index == 0
-                     else "retired" if index == 1
+                     else "dated-retired" if index == 1
                      else rng.choice(cls._PLANT_SHAPES))
+            into = arms if rng.random() < 0.5 else history
             if shape == "bare-live":
                 models.append(cls._model(base, "2025-06-01T00:00:00Z"))
-                if rng.random() < 0.7:
-                    counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[base] = base
             elif shape == "dated-only-live":
-                live = snaps[:rng.randint(1, 3)]
+                live = snaps[:rng.randint(1, 2)]
                 models += [cls._model(sid, "2026-01-01T00:00:00Z")
                            for sid in live]
-                if rng.random() < 0.7:
-                    # `live[-1]` is the NEWEST live snapshot, which is the
-                    # one the production alias map lets claim the bare
-                    # alias — so the bare alias is named through that map
-                    # and through nothing else.
-                    counts[live[-1]] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                    history.add(base)
+                counts[live[-1]] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[live[-1]] = live[-1]
+                # An OLDER dated key, not live, whose turns only reach the
+                # live snapshot through the bare alias below.
+                counts[snaps[2]] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[snaps[2]] = live[-1]
+                history.add(base)
+            elif shape == "retired":
+                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[base] = base
+                into.add(base)
+                protected.add(base)
             else:
                 counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[base] = base
+                into.add(f"{base}-20250101")
         live_ids = {m["id"] for m in models}
-        counts.setdefault(sorted(live_ids)[0], {cls.W[0]: 500})
-        history.update(i for i in counts if i not in live_ids)
+        real = arms | history | live_ids | set(counts)
         keys = sorted(counts)
-        seeds = sorted(history) or keys
         plants = set()
-        # Deliberately more DATED plants than the cap has room for: under
-        # the predicate this replaces every one of them read as
-        # census-named, so it is the dated spellings alone that have to
-        # lose to the named entries, not a shortage of them.
-        for i in range(600):
-            style = 0 if i % 15 == 0 else (i % 3) + 1
-            if style == 0:
-                plant = f"plant-{i:04d}"
-            elif style == 1:
+        # Deliberately more plants than either cap has room for, in the
+        # four spellings a planter can reach. A FULL CAP'S WORTH of them
+        # sort before every `claude-` id: 500 `0plant-NNNN` is what makes
+        # the id order alone insufficient, and without that many the
+        # alphabetical head still had room for every real entry and the
+        # property had no teeth at all (measured against the pre-fix head
+        # — green).
+        for i in range(700):
+            if i < roster.CATALOGUE_SEEN_CAP:
+                plant = f"0plant-{i:04d}"
+            elif i % 3 == 0:
                 plant = (f"{rng.choice(keys)}-2025"
                          f"{rng.randint(1, 12):02d}{rng.randint(1, 28):02d}")
-            elif style == 2:
+            elif i % 3 == 1:
                 plant = f"{rng.choice(keys)}-{i:08d}"
             else:
-                plant = f"{rng.choice(seeds)}-{i:08d}"
-            if plant not in counts and plant not in live_ids:
+                plant = f"zplant-{i:04d}"
+            if plant not in real:
                 plants.add(plant)
-        # The named entries are the OLDER ones and the plants the newer
-        # ones, so a date order alone would evict exactly the entries this
-        # property is about.
+        plants = sorted(plants)
+        # The real entries are the OLDER ones and the plants the newer
+        # ones, so a date order alone would evict exactly what matters.
         entries = ([{"id": i, "last_seen": cls._days_ago(rng.randint(20, 60))}
                     for i in sorted(history)] +
                    [{"id": i, "last_seen": cls._days_ago(rng.randint(0, 2))}
-                    for i in sorted(plants)])
+                    for i in plants])
         rng.shuffle(entries)
+        # The SAME plants in both lists: each cap has to survive them on
+        # its own, and a plant that is in one list and not the other would
+        # let the other list's attribution quietly cover for it.
+        arm_entries = ([{"id": i, "reason": "was an arm"}
+                        for i in sorted(arms)] +
+                       [{"id": i, "reason": "filler"} for i in plants])
+        rng.shuffle(arm_entries)
         return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
                 TestIssue67._census_doc(counts=counts),
-                {"arms": [], "catalogue_seen": entries}, history)
+                {"arms": arm_entries, "catalogue_seen": entries},
+                protected & history, owner)
 
-    def test_every_named_entry_survives_the_cap_over_random_plant_sets(self):
-        """3 seeds x 400 scenarios through `compute_roster`: whatever the
-        plants are spelled like, every entry the live catalogue or the
-        census names survives the cap. The named set is two orders of
-        magnitude under the cap in every scenario, so nothing but relevance
-        can decide who is evicted."""
+    _PROP_SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    def test_both_halves_of_the_invariant_hold_over_random_plant_sets(self):
+        """3 seeds x 400 scenarios through `compute_roster`, asserting BOTH
+        halves of the invariant the caps exist to keep.
+
+        HALF ONE — every census key with in-window turns that any entry
+        folds onto keeps at least one entry that folds onto it — is
+        asserted through its only observable consequence, and the only one
+        that matters: every published share equals the turns that model
+        really carries, computed from the generator\'s own `owner` map. A
+        fold group that loses its last entry takes its census key out of
+        the denominator, and every other share goes UP.
+
+        HALF TWO — an entry that neither the live catalogue nor the census
+        names, under any spelling, never outranks one that either names —
+        is asserted directly: every entry the census names outright
+        survives the cap, against 500 plants per list that sort ahead of
+        it on both of the orders a planter can write.
+
+        The named set is two orders of magnitude under the cap in every
+        scenario, so nothing but relevance can decide who is evicted."""
         checked = 0
         evicting = 0
-        for seed in (670901, 670902, 670903):
+        for seed in (671001, 671002, 671003):
             rng = random.Random(seed)
             for index in range(400):
-                models, census, previous, history = self._plant_scenario(rng)
+                models, census, previous, protected, owner = \
+                    self._plant_scenario(rng)
                 api_ids = {m["id"] for m in models["models"]}
-                wanted = history | api_ids
-                self.assertLessEqual(len(wanted), roster.CATALOGUE_SEEN_CAP)
-                self.assertTrue(history, "the scenario protects nothing")
+                counts = census["counts"]
+                total = sum(sum(w.values()) for w in counts.values())
+                expected: dict[str, int] = {}
+                for key, by_week in counts.items():
+                    expected[owner[key]] = (expected.get(owner[key], 0)
+                                            + sum(by_week.values()))
+                self.assertLessEqual(len(protected | api_ids),
+                                     roster.CATALOGUE_SEEN_CAP)
                 result = roster.compute_roster(
                     models_doc=models, census_doc=census,
-                    policy=self._policy(), previous=previous, now=self.NOW,
-                    warn=lambda _m: None)
+                    policy=self._zero_bar_policy(), previous=previous,
+                    now=self.NOW, warn=lambda _m: None)
                 survivors = self._seen_ids(result)
                 with self.subTest(seed=seed, scenario=index):
-                    self.assertEqual(sorted(wanted - survivors), [],
-                                     "an entry the catalogue or the census "
-                                     "names was evicted by plants")
+                    # Half two.
+                    self.assertEqual(sorted(protected - survivors), [],
+                                     "an entry the census names outright "
+                                     "was evicted by plants")
                     self.assertLessEqual(len(survivors),
                                          roster.CATALOGUE_SEEN_CAP)
-                # Self-check: the cap has to have actually evicted
+                    # Half one, as the number it moves.
+                    for arm in result["arms"]:
+                        match = self._PROP_SHARE_RE.search(arm["reason"])
+                        self.assertTrue(match, arm)
+                        self.assertAlmostEqual(
+                            float(match.group(1)),
+                            100 * expected.get(arm["id"], 0) / total,
+                            delta=0.051,
+                            msg=f"{arm['id']}: a fold group lost its last "
+                                f"entry and its census key left the "
+                                f"denominator")
+                # Self-check: both caps have to have actually evicted
                 # something, or the property has no teeth on this seed.
-                if len(previous["catalogue_seen"]) + len(api_ids) > \
-                        roster.CATALOGUE_SEEN_CAP:
+                if (len(previous["catalogue_seen"]) + len(api_ids)
+                        > roster.CATALOGUE_SEEN_CAP
+                        and len(previous["arms"]) > roster.PREVIOUS_ARMS_CAP):
                     evicting += 1
                 checked += 1
         self.assertEqual(checked, 1200)
-        self.assertGreater(evicting, 1000,
-                           "the cap did not fire in enough scenarios: the "
-                           "property has no teeth on these seeds")
-        # Mutation check (manual): restoring the `SNAPSHOT_SUFFIX` route
-        # makes the dated plants relevant, so they tie with the named
-        # entries and win on `last_seen` — named entries are evicted: red.
-        # Feeding the entries' own ids into the relevance inputs (relevance
-        # derived from `previous.json` rather than from the catalogue and
-        # the census) makes EVERY entry relevant, with the same
-        # consequence — also red.
+        self.assertEqual(evicting, 1200,
+                         "the caps did not fire in every scenario: the "
+                         "property has no teeth on these seeds")
+        # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
+        # (`tier2 = {}`) leaves the dated-retired families\' entries in
+        # tier 3, the `0plant-NNNN` plants outrank them, their census keys
+        # stop being attributable and every other share comes out too
+        # high — red on the share assertion. Restoring round 8\'s
+        # `SNAPSHOT_SUFFIX` route makes the dated plants relevant too, so
+        # they tie with the named entries and the id order evicts them —
+        # red on the half-two assertion.
+
 
     # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
     # not raised ----------------------------------------------------------
@@ -15738,22 +15821,37 @@ class TestIssue67Review9(unittest.TestCase):
     # FORWARD for attribution, so the floor has to be a scenario where the
     # cap's own eviction moves the denominator.
 
-    S2B_ARMS = [f"claude-sonnet-3-{i:03d}" for i in range(501)]
+    S2B_ARMS = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
+    S2B_BIG = "claude-sonnet-4-9"
+    S2B_DATED = "claude-sonnet-4-9-20250101"
 
     def test_the_arms_cap_decides_the_attributable_denominator(self):
         """MUTATION: `return ids, carried` -> `return ids, ids` in
-        `_clean_previous_arms`. 501 departed ranked arms, every one of them
-        named by the census, so relevance ties and the id order alone
-        decides who the cap drops — and the one it drops holds 900,000 of
-        the window's 901,500 raw turns. Capped, those turns are not
+        `_clean_previous_arms`. 500 departed ranked arms the census names
+        outright — TIER 1, three turns each — and one more that is a dated
+        spelling of a census key nothing else folds onto, so it holds that
+        key's single TIER 2 slot and sorts after all 500 of them. The key
+        holds 900,000 of the window's 901,500 raw turns. Capped at 500,
+        the tier-2 entry is the one that goes, those turns are not
         attributable to anything, the census reads as almost entirely
         unrankable and the roster falls back to newest-per-tier and says
-        so; uncapped, they are attributable and the fallback never
-        happens."""
+        so; uncapped, they are attributable and the fallback never happens.
+
+        THE RESIDUAL COST OF B1\' (#129 review round 10), stated here
+        because this is where it is measured: the invariant holds SUBJECT
+        TO THE CAP. Tier 1 plus tier 2 can exceed 500 — this scenario is
+        the smallest case where it does — and then something the census
+        names is dropped after all, lowest turns last. Filling tier 1 that
+        way costs a planter 500 entries that are themselves in-window
+        census keys, and planting a census key does not remove its own
+        attributability; what it can displace is another key's dated
+        stand-in. Raising the cap moves the number, it does not remove the
+        case."""
         previous = {"arms": [{"id": i, "reason": "was an arm"}
-                             for i in self.S2B_ARMS]}
-        counts = {i: {self.W[0]: 3} for i in self.S2B_ARMS[:500]}
-        counts[self.S2B_ARMS[500]] = {self.W[0]: 900_000}
+                             for i in self.S2B_ARMS] +
+                            [{"id": self.S2B_DATED, "reason": "was an arm"}]}
+        counts = {i: {self.W[0]: 3} for i in self.S2B_ARMS}
+        counts[self.S2B_BIG] = {self.W[0]: 900_000}
         census = TestIssue67._census_doc(counts=counts)
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, _ = self._run_main(
@@ -15766,11 +15864,11 @@ class TestIssue67Review9(unittest.TestCase):
                       "attributable to anything")
         self.assertIn("under the 1% relative floor", reason)
         self.assertIn("fell back to newest per tier", reason)
-        # Mutation check (manual): with the cap removed the 501st arm is
-        # carried, its 900,000 turns are attributable, the census reads as
-        # usable and the reason is a bare "newest model in the sonnet
-        # tier, ... days old" with no census-quality sentence at all —
-        # red on all three assertions.
+        # Mutation check (manual): with the cap removed the tier-2 arm is
+        # carried, the 900,000 turns it folds onto are attributable, the
+        # census reads as usable and the reason is a bare "newest model in
+        # the sonnet tier, ... days old" with no census-quality sentence
+        # at all — red on all three assertions.
 
     # --- N3: no published reason carries scientific notation -------------
     #
@@ -15853,6 +15951,219 @@ class TestIssue67Review9(unittest.TestCase):
                             self.assertNotEqual(parsed, bar, text)
                             if value > 0:
                                 self.assertNotEqual(parsed, 0.0, text)
+
+
+
+class TestIssue67Review10(unittest.TestCase):
+    """Round 10 fixes for #67 (PR #129 review round 10), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review9, reusing their canned
+    documents rather than subclassing — run_tests.py\'s
+    class-per-review-round convention. Every model id below is TEST FIXTURE
+    data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every scenario is driven through `main()` with files on disk, the way
+    eval.yml invokes it, or through `compute_roster`. `main()` reads the
+    wall clock, so `_run_main` freezes it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _zero_bar_policy = TestIssue67Review9._zero_bar_policy
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- B1\': attribution reads the FOLD SET, not the entry that produced
+    # it ------------------------------------------------------------------
+    #
+    # THE INVARIANT: every census key with in-window turns that any entry
+    # folds onto keeps at least one entry that folds onto it, and an entry
+    # that neither the live catalogue nor the census names, under any
+    # spelling, never outranks one that either names.
+    #
+    # Round 9 keyed the caps on the live catalogue and the census at last,
+    # but read the relation in ONE direction only: census key -> base,
+    # never entry -> census key. So a DATED departed arm whose usage the
+    # census records under its UNDATED alias — the shape roster-policy.yml
+    # has documented since round 6 — was relevant to nothing, and 500
+    # filler arms evicted it exactly the way 500 low-sorting ids used to.
+    # Its turns left the usage denominator and the live model beside it
+    # was published "carries 100.0%" for a true 33.3%.
+    #
+    # Restoring round 8\'s spelling route would re-open round 9\'s blocker,
+    # so the fix is neither direction of the old predicate: what tells the
+    # real arm from 500 plants is not how either is SPELLED but what the
+    # census still NEEDS. The census key `<alias>` is attributable only
+    # through an entry that folds onto it, and the census — which a
+    # planter does not write — fixes how many such slots there are.
+
+    B1P_BASE = "claude-haiku-4"
+    B1P_DATED = "claude-haiku-4-20250101"
+    B1P_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _b1p_census(cls):
+        """The departed arm\'s usage is recorded under its UNDATED alias:
+        8000 turns on `claude-haiku-4`, 4000 on the live model — a true
+        33.3% for the live one."""
+        return TestIssue67._census_doc(counts={
+            cls.B1P_BASE: {cls.W[0]: 8000},
+            cls.B1P_LIVE: {cls.W[0]: 4000}})
+
+    def _b1p_run(self, fillers):
+        previous = {"arms": [{"id": i, "reason": "filler"} for i in fillers]
+                            + [{"id": self.B1P_DATED, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1p_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return self._reason(published, self.B1P_LIVE)
+
+    def _assert_the_true_share(self, reason):
+        # `assertIn` on the share alone: a failure would otherwise dump
+        # 500 filler ids into the log along with the whole roster.
+        self.assertIn("carries 33.3%", reason,
+                      "4000 of 12000 rankable turns is 33.3%")
+        self.assertNotIn("100.0%", reason)
+
+    def test_the_control_publishes_the_true_share(self):
+        """Control row: no fillers, so no cap fires and the departed arm
+        is carried whatever the order is. 4000 of 12000 rankable turns."""
+        self._assert_the_true_share(self._b1p_run([]))
+
+    def test_a_dated_arm_whose_census_key_is_undated_survives_the_cap(self):
+        """Row A, the blocker itself: 500 `0filler-NNNN` arms, which sort
+        BEFORE the real one, against a departed arm the census names only
+        through its undated alias. The arm is no census key and no live
+        catalogue id, so no tier-1 route reaches it; what keeps it is that
+        the census key `claude-haiku-4` has no other entry folding onto it,
+        so the arm takes that key\'s one tier-2 slot."""
+        self._assert_the_true_share(
+            self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
+        # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
+        # (`tier2 = {}`) leaves the arm in tier 3 with 500 fillers that
+        # sort ahead of it, its 8000 turns stop being attributable and the
+        # reason reads "carries 100.0%" — red.
+
+    def test_high_sorting_fillers_do_not_evict_it_either(self):
+        """Row B: the same 500 fillers spelled to sort AFTER the real arm.
+        The id order alone would spare it here, which is exactly why row A
+        needs a companion — this row stayed green through the whole
+        defect and says nothing about the fix on its own."""
+        self._assert_the_true_share(
+            self._b1p_run([f"zfiller-{i:04d}" for i in range(500)]))
+
+    def test_a_plant_in_the_fold_group_keeps_the_key_attributable(self):
+        """Row D, the tier-2 slot\'s own cost, measured: 500 plants spelled
+        `claude-haiku-4-000000NN` are all in the census key\'s fold group
+        and the smallest of them WINS the slot, so the real arm is capped
+        out after all. Nothing moves: the plant folds onto the same census
+        key, so the key stays attributable through it and the published
+        share is still the true one. That is the point of bounding the
+        slot count by the census rather than by the entries — a planter
+        can take the slot, but cannot take the key\'s attributability."""
+        self._assert_the_true_share(
+            self._b1p_run([f"{self.B1P_BASE}-{i:08d}" for i in range(500)]))
+
+    def test_under_the_cap_nothing_is_evicted_at_all(self):
+        """Row E: 498 fillers plus the arm is 499 entries against a
+        500-entry cap, so the cap never fires and the order is not
+        consulted. The row exists to show the defect was the CAP\'s, not
+        the attribution machinery\'s."""
+        self._assert_the_true_share(
+            self._b1p_run([f"0filler-{i:04d}" for i in range(498)]))
+
+    # The two scenarios round 10\'s reviewer found by re-running round 8\'s
+    # own 3,000-scenario generator with both caps forced (500 filler arms
+    # and 500 filler history entries per scenario). Six scenarios differed
+    # from the pre-round-9 head; 11 published shares came out HIGHER than
+    # the truth, none lower. These are the two worst, restated as fixtures
+    # with round numbers so the true share is readable off the counts.
+
+    def _fuzz_run(self, api, counts, arm, watch):
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in api]}
+        census = TestIssue67._census_doc(counts={
+            key: {self.W[0]: turns} for key, turns in counts.items()})
+        previous = {"arms": [{"id": f"0filler-{i:04d}", "reason": "filler"}
+                             for i in range(500)]
+                            + [{"id": arm, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous,
+                policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return self._reason(published, watch)
+
+    def test_the_first_fuzz_scenario_publishes_its_true_share(self):
+        """A one-model catalogue, the departed arm a dated spelling of a
+        census key in a tier the catalogue no longer carries at all."""
+        reason = self._fuzz_run(
+            api=["claude-haiku-5"],
+            counts={"claude-haiku-5": 2990, "claude-fable-5": 7010},
+            arm="claude-fable-5-20250101", watch="claude-haiku-5")
+        self.assertIn("carries 29.9%", reason, "2990 of 10000 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+    def test_the_second_fuzz_scenario_publishes_its_true_share(self):
+        """A catalogue that publishes a DATED id beside a bare one, and a
+        departed arm dated in the future relative to the census key it
+        folds onto — neither of which changes the answer."""
+        reason = self._fuzz_run(
+            api=["claude-fable-4-20250101", "claude-sonnet-4"],
+            counts={"claude-sonnet-4": 493, "claude-opus-5": 507},
+            arm="claude-opus-5-20260601", watch="claude-sonnet-4")
+        self.assertIn("carries 49.3%", reason, "493 of 1000 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+    # --- the ordering inside a tier --------------------------------------
+
+    def test_a_tier_is_ordered_by_census_turns_not_by_last_seen(self):
+        """MUTATION: ordering a tier by `last_seen` first. 501 entries the
+        census names, so every one of them is tier 1 and only the order
+        within the tier decides who the cap drops. The entry carrying
+        almost all of the window\'s turns is dated OLDEST, so a
+        `last_seen`-first order drops exactly it — and with it 900,000 of
+        the window\'s 901,500 turns, leaving the census unrankable and the
+        roster on its newest-per-tier fallback."""
+        small = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
+        big = "claude-sonnet-4-9"
+        counts = {i: {self.W[0]: 3} for i in small}
+        counts[big] = {self.W[0]: 900_000}
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in small]
+                    + [{"id": big, "last_seen": self._days_ago(120)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self.assertIn(big, self._seen_ids(published),
+                      "the census's own turn count orders a tier, and this "
+                      "entry carries 900,000 of the window's 901,500")
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 0.0%", reason,
+                      "claude-sonnet-5 has no turns of its own; the "
+                      "denominator is the other 901,500")
+        # Mutation check (manual): sorting a tier by `last_seen` descending
+        # ahead of the turns — `(tier, survivors[i], -turns, i)` — drops
+        # the 120-day-old entry, its 900,000 turns leave the denominator,
+        # the census reads as unrankable and claude-sonnet-5's reason is
+        # the newest-per-tier fallback with no share in it at all: red.
 
 
 if __name__ == "__main__":

@@ -136,13 +136,18 @@ min_ranked_share: 0.01
 # never aged out by this (they get `last_seen` = today every run) — only
 # accumulated history can. See also the length cap in roster.py's
 # `CATALOGUE_SEEN_CAP` (currently 500 entries). Past it, who survives is
-# decided by data the previous roster does not write: entries the live
-# catalogue or the census names come first, then the newest by
-# `last_seen`, then the id order as a tie-break. This run's own live ids
-# are exempt from the cap entirely.
+# decided by data the previous roster does not write, in three tiers:
+# entries the census names outright (an in-window census key) or the live
+# catalogue lists; then ONE entry per census key that no tier-1 entry
+# folds onto, so that key keeps something it can be attributed through;
+# then everything else. Within a tier the census's own in-window turn
+# count decides, descending, and the id order breaks the tie. This run's
+# own live ids are exempt from the cap entirely.
 #
-# THE INVARIANT: an entry that neither the live catalogue nor the census
-# names, under any spelling, never outranks one that either names.
+# THE INVARIANT: every census key with in-window turns that any entry
+# folds onto keeps at least one entry that folds onto it, and an entry
+# that neither the live catalogue nor the census names, under any
+# spelling, never outranks one that either names.
 #
 # The order matters because eviction here is PERMANENT — the next run
 # reads this run's own output back — and because everything the previous
@@ -152,26 +157,49 @@ min_ranked_share: 0.01
 # its spelling (S2, #129 review round 7); ordering by `last_seen` alone
 # let 498 entries dated today, or 500 bare strings (which migrate stamped
 # today, since seeing one is the only evidence there is), do exactly the
-# same (F1, round 8); and deciding "the census names this" from the
-# entry's own spelling let 500 ids spelled `<census key>-00000000` …
+# same (F1, round 8); deciding "the census names this" from the entry's
+# own spelling let 500 ids spelled `<census key>-00000000` …
 # `-00000499` — eight digits, which is not a date, but nothing could tell
-# the difference — do it a third time (B1, round 9). Either way the
-# evicted model's turns left the usage denominator and an unrelated model
-# was published as carrying 100.0% of census usage where it really
-# carried 9.09%.
+# the difference — do it a third time (B1, round 9); and reading the
+# alias relation in ONE direction only (census key -> base, never entry
+# -> census key) let 500 plain fillers evict a DATED departed arm whose
+# usage the census records under its UNDATED alias, a fourth time (B1',
+# round 10). Either way the evicted model's turns left the usage
+# denominator and an unrelated model was published as carrying 100.0% of
+# census usage where it really carried 9.09%, or 33.3%.
 #
-# So relevance is EXACT MEMBERSHIP in those two documents, and in what
-# the alias relation computed FROM THEM ALONE relates them to (a census
-# key that is a dated spelling of the entry; the bare alias a live dated
-# snapshot claims, when the census names that snapshot) — never a test of
-# how the entry itself is spelled. See roster.py's `_relevance`. Among
-# ids neither document names, the order is only a tie-break, and those
-# entries move no share.
+# So relevance is decided by what the census still NEEDS, not by how
+# anything is spelled: a census key is attributable only through an entry
+# that FOLDS onto it, and the census — which a planter does not write —
+# fixes how many such slots exist, one per key. `fold` is the production
+# alias map (built from the live catalogue and the in-window census keys
+# alone) applied to the id with one trailing `-DDDDDDDD` stripped. A
+# planter who knows a census key can win that key's one slot with
+# `<key>-00000000`; the plant folds onto the same key, so the key stays
+# attributable and no published share moves. What a planter cannot do is
+# take the slot away. See roster.py's `_relevance`. Among ids the census
+# does not need, the order is only a tie-break, and those entries move no
+# share. The invariant holds SUBJECT TO THE CAP: tier 1 plus tier 2 can
+# exceed 500 if the census names more than that, and then the lowest-turn
+# entries go — raising the cap moves that number, it does not remove the
+# case.
+#
+# A census key with ZERO in-window turns names nothing: a census padded
+# with keys whose usage all falls outside the window is not evidence of
+# anything current, and treating it as evidence handed plants named after
+# those keys a relevance the census never had. When NO key has in-window
+# turns — the census absent, empty, the wrong type, or entirely
+# out-of-window — the census names nothing at all, and neither cap
+# evicts: what would be left to order by is `last_seen` and the id, both
+# of them written by whoever writes `previous.json`. Both lists are then
+# carried whole, with one count-only warning, up to roster.py's
+# `UNCAPPED_CARRY_CEILING`; past that the run refuses to publish with a
+# named error rather than keep 500 entries a planter chose.
 #
 # The previous roster's `arms` list is capped at the same 500, by
 # roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round 6), under the
-# same predicate and the same invariant: the ids this run can actually
-# say something about are kept ahead of filler. That cap governs what is
+# same tiering and the same invariant: the ids this run can actually say
+# something about are kept ahead of filler. That cap governs what is
 # carried forward for attribution; the roster's `retired_since_last`
 # report is computed BEFORE it, so a departed arm is reported whether or
 # not the census names it (F3, round 8). Neither list has any other bound
