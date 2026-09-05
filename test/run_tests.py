@@ -2777,7 +2777,7 @@ Accepted
 
 Order Sync's poller calls the fulfillment service and other upstream
 services that occasionally return a transient failure such as a 503. On
-2026-06-02 (PR #142), one such failure was retried in a tight loop with no
+2026-03 (PR #41), one such failure was retried in a tight loop with no
 cap and no delay, pinning a worker for 40 minutes and starving the queue
 behind it.
 
@@ -2803,7 +2803,7 @@ transient blip into a customer-facing error.
 
 ## References
 
-PR #142.
+PR #41.
 """
 
     # Same content with Context and Decision swapped — breaks section ORDER
@@ -2824,7 +2824,7 @@ Retry a failing call up to 5 times, backing off exponentially (1s, 2s, 4s,
 
 Order Sync's poller calls the fulfillment service and other upstream
 services that occasionally return a transient failure such as a 503. On
-2026-06-02 (PR #142), one such failure was retried in a tight loop with no
+2026-03 (PR #41), one such failure was retried in a tight loop with no
 cap and no delay, pinning a worker for 40 minutes and starving the queue
 behind it.
 
@@ -2939,7 +2939,7 @@ Copy everything between the rules into `NNNN-kebab-title.md`.
 
 Order Sync's poller calls the fulfillment service and other upstream
 services that occasionally return a transient failure such as a 503. On
-2026-06-02 (PR #142), one such failure was retried in a tight loop with no
+2026-03 (PR #41), one such failure was retried in a tight loop with no
 cap and no delay, pinning a worker for 40 minutes and starving the queue
 behind it.
 
@@ -2964,7 +2964,7 @@ transient blip into a customer-facing error.
 
 ## References
 
-PR #142.
+PR #41.
 """
 
     # Context/Decision swapped, same as the existing-convention wrong-order
@@ -2995,7 +2995,7 @@ Retrying forever with a fixed delay was rejected.
 
 ## References
 
-PR #142.
+PR #41.
 """
 
     BOOTSTRAP_RETRY_LINK = (
@@ -3161,10 +3161,6 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
     # ======================================================================
     # existing-convention
     # ======================================================================
-
-    # ---- N4: index rows can name a slug no file matches ---------------------
-
-
 
     def test_existing_pristine_seed_fails_every_check(self):
         ws = self._ws(ADRS_EXISTING_DIR)

@@ -6,6 +6,12 @@
 # default Nygard-style template — and to leave the index and the code
 # comment pointing at the new ADR, while resisting the urge to write a
 # second, unwarranted ADR for a routine CHANGELOG entry.
+#
+# Scope note (round 2, N4): the objective column only asserts on the paths
+# named below. A brand-new, unrelated file (e.g. a stray NOTES.md nothing
+# here names) is not caught by any objective_check and is not this
+# fixture's business to catch — that's the judge rubric's restraint
+# dimension.
 
 skill: writing-adrs
 registry: https://github.com/Adam-S-Daniel/agentskills
