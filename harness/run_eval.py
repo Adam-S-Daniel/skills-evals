@@ -345,54 +345,110 @@ def expand(value: str, env: dict) -> str:
     return _VAR_RE.sub(lambda m: env.get(m.group(1) or m.group(2), m.group(0)), value)
 
 
-# Inherited variables an arm must not receive, for every fixture.
+# The ONLY inherited variables an arm receives, for every fixture. An
+# ALLOWLIST, deliberately: a denylist forwards everything nobody thought to
+# name, and what reaches the arm then depends on the operator's shell.
+# Measured under the denylist this replaces, through `run_eval.py --arm
+# without_skill` with a stand-in `claude` that dumps its own environment:
+# `GH_HOST`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` — the other
+# half of `gh`'s own credential resolution — arrived verbatim, and so did
+# `AWS_*`, `NPM_TOKEN`, `GITLAB_TOKEN`, `OPENAI_API_KEY`, `HF_TOKEN`,
+# `SSH_AUTH_SOCK`, `KUBECONFIG`, `DOCKER_CONFIG`, `GIT_ASKPASS`,
+# `PYTHONPATH`, `LD_PRELOAD`, and variables whose VALUES name the operator's
+# own checkout. The arm's workspace is its cwd under bypassPermissions, `env`
+# is one of the first things a shell reaches for, and `_write_summary` writes
+# the arm's transcript to `results/<skill>/<ts>/<arm>/transcripts/raw.json`,
+# which `.github/workflows/eval.yml` pushes to the public `eval-results`
+# branch — so a variable that reaches the arm is a variable an arm can
+# publish.
 #
-# The arm's workspace is its cwd under bypassPermissions and `env` is one of
-# the first things a shell reaches for, so a variable that names this
-# repository, this workflow or this checkout tells the agent what it is being
-# measured with — the same leak `WORKSPACE_PREFIX` and `SEED_COMMIT_IDENTITY`
-# close for `pwd` and `git log`. On a GitHub runner that is `GITHUB_*` /
-# `RUNNER_*` / `ACTIONS_*`; locally it is `OLDPWD`, which carries the
-# operator's cwd, and `PWD`, which a runner sets to the checkout. `CI`
-# changes how tools behave, which a hermetic arm should not have decided for
-# it elsewhere.
-_DROPPED_ENV = ("OLDPWD", "PWD", "CI")
-_DROPPED_ENV_PREFIXES = ("GITHUB_", "RUNNER_", "ACTIONS_")
+# Each entry carries the reason the CLI or the operating system needs it. A
+# name is added here only because something in `run_agent`'s invocation,
+# `_run_arm`, or eval.yml demonstrably needs it — never because a test
+# wanted it.
+_ALLOWED_ENV = (
+    "PATH",                # find the CLI, and the fixture's own stand-ins
+    "HOME",                # the CLI's config, cache and credential store
+    "USER",                # some tools shell out and read it; cheap to keep
+    "LOGNAME",             # the POSIX spelling of the same thing
+    "SHELL",               # what the CLI spawns for its own tool calls
+    "TERM",                # terminal capabilities; absent, some tools hang
+    "LANG",                # locale: decides the CLI's default text encoding
+    "LANGUAGE",            # locale fallback list, same reason
+    "TZ",                  # local time in anything the agent formats
+    "TMPDIR",              # where the CLI and its children write temp files
+    "TMP",                 # the same, spelled the other way
+    "TEMP",                # and the third spelling
+    "HTTP_PROXY",          # a runner may only reach the API through a proxy
+    "HTTPS_PROXY",         # the API is HTTPS, so this is the load-bearing one
+    "NO_PROXY",            # hosts that must bypass it
+    "ALL_PROXY",           # the catch-all spelling some clients read
+    "http_proxy",          # not an alias: clients read one case or the other
+    "https_proxy",         # the lower-case spelling curl and requests prefer
+    "no_proxy",            # the lower-case bypass list, read by the same clients
+    "all_proxy",           # the lower-case catch-all, for completeness of the pair
+    "SSL_CERT_FILE",       # a corporate CA bundle, or TLS fails outright
+    "SSL_CERT_DIR",        # the directory spelling of the same bundle
+    "NODE_EXTRA_CA_CERTS", # the CLI is a Node program; this is its CA hook
+    "REQUESTS_CA_BUNDLE",  # anything Python the CLI shells out to
+    "CURL_CA_BUNDLE",      # anything curl-based it shells out to
+)
 
-# Emptied rather than dropped. `GH_TOKEN`/`GITHUB_TOKEN` are forwarded
-# whenever the operator's shell has them, and an arm under bypassPermissions
-# can call a real `gh` by absolute path — past the stand-in on PATH — and
-# spend a live credential against the real API. Empty rather than absent
-# because an absent token sends `gh` looking in its config and the keyring
-# for another one; `GH_CONFIG_DIR` moves that lookup inside the workspace,
-# where there is no host and no credential to find.
+# Prefixes, for families whose members are not knowable in advance.
+_ALLOWED_ENV_PREFIXES = (
+    "ANTHROPIC_",  # the API credential: eval.yml exports ANTHROPIC_AUTH_TOKEN
+                   # step-locally, local runs use ANTHROPIC_API_KEY
+    "CLAUDE_",     # the CLI's own knobs, including CLAUDE_CODE_OAUTH_TOKEN
+    "LC_",         # the per-category locale settings LANG does not cover
+    "XDG_",        # config/cache/data/state/runtime dirs the CLI writes under
+)
+
+# Emptied rather than dropped. `GH_TOKEN`/`GITHUB_TOKEN` are not on the
+# allowlist, so they no longer arrive on their own — but an arm under
+# bypassPermissions can call a real `gh` by absolute path, past the stand-in
+# on PATH, and an ABSENT token sends `gh` looking in its config and the
+# keyring for another one. Empty stops that search; `GH_CONFIG_DIR` points it
+# inside the workspace, where there is no host and no credential to find.
 _BLANKED_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
 _WORKSPACE_GH_CONFIG = ".gh/config"
 
 
-def agent_env(workspace: Path, env_spec: dict | None) -> dict:
+def agent_env(workspace: Path, env_spec: dict | None,
+              source: dict | None = None) -> dict:
     """The environment the agent under test runs in.
 
-    A fixture's `env:` mapping is applied over the harness's own environment,
-    with `$WORKSPACE` (and any other `$VAR`) expanded against the workspace
-    the arm actually got — a temp dir the fixture cannot know in advance.
-    That is what lets a seed put a fake binary on the agent's PATH
-    (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B "fake `gh` on the seed
-    workspace's PATH" move DESIGN.md prescribes, without the seed carrying an
-    absolute path. Values are strings; a non-string is stringified rather
-    than rejected, since YAML will happily hand over an int.
+    A fixture's `env:` mapping is applied over an allowlisted slice of the
+    harness's own environment, with `$WORKSPACE` (and any other `$VAR`)
+    expanded against the workspace the arm actually got — a temp dir the
+    fixture cannot know in advance. That is what lets a seed put a fake
+    binary on the agent's PATH (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B
+    "fake `gh` on the seed workspace's PATH" move DESIGN.md prescribes,
+    without the seed carrying an absolute path. Values are strings; a
+    non-string is stringified rather than rejected, since YAML will happily
+    hand over an int.
 
-    "Over the harness's own environment" is not "over all of it": the
-    variables named above are dropped or emptied first, for every fixture,
-    because they either tell the arm what it is being measured with or hand
-    it a credential it must not have. Everything else is inherited, because
-    the CLI needs it — `PATH`, `HOME`, the API credentials the CLI itself
-    authenticates with. The fixture's own block is applied last, so a fixture
-    that wants one of these back can say so.
+    What the arm receives, and nothing else:
+
+      * the names in `_ALLOWED_ENV` and the prefixes in
+        `_ALLOWED_ENV_PREFIXES` that are present in `source`, forwarded
+        verbatim — every other inherited variable is dropped;
+      * the harness's own `WORKSPACE`, `GH_CONFIG_DIR` (inside the
+        workspace) and `GH_TOKEN`/`GITHUB_TOKEN` (empty strings);
+      * the fixture's own `env:` block, applied last, so a fixture that
+        wants a name back can say so.
+
+    `gh`'s token variables cannot reach it from the harness's environment:
+    `GH_TOKEN` and `GITHUB_TOKEN` arrive empty, and `GH_ENTERPRISE_TOKEN`,
+    `GITHUB_ENTERPRISE_TOKEN` and `GH_HOST` are not on the list.
+
+    `source` is the parent environment to filter, defaulting to `os.environ`
+    — a test can hand over a mapping it built rather than mutating the
+    process's own environment, which is what makes "the arm received exactly
+    these names" decidable without depending on the operator's shell.
     """
-    env = {key: value for key, value in os.environ.items()
-           if key not in _DROPPED_ENV
-           and not key.startswith(_DROPPED_ENV_PREFIXES)}
+    parent = os.environ if source is None else source
+    env = {key: value for key, value in parent.items()
+           if key in _ALLOWED_ENV or key.startswith(_ALLOWED_ENV_PREFIXES)}
     env["WORKSPACE"] = str(workspace)
     for key in _BLANKED_ENV:
         env[key] = ""

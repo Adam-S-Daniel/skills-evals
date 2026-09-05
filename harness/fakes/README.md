@@ -57,14 +57,41 @@ appears nowhere in it. Keep it that way — the source of truth for what an arm
 may read is here, not in the file the agent gets a copy of.
 `TestIssue84Review.test_nothing_the_arm_can_read_names_the_instrument`
 materializes an arm workspace with the harness's own code and greps every
-byte of it — and every variable of the environment it hands over, which is
-why `agent_env` drops the inherited `GITHUB_*` / `RUNNER_*` / `ACTIONS_*`,
-`PWD`, `OLDPWD` and `CI` for every fixture: on a runner they name this
-repository, this workflow and this checkout to anything that runs `env`. It
-empties `GH_TOKEN` / `GITHUB_TOKEN` in the same pass and points
-`GH_CONFIG_DIR` inside the workspace, so an arm that reaches a REAL `gh` by
-absolute path — past the stand-in on `PATH`, under `bypassPermissions` —
-finds no host and no credential.
+byte of it — and every variable of the environment it hands over.
+
+**That environment is an ALLOWLIST.** `agent_env` forwards, from the
+harness's own environment, only the exact names in `_ALLOWED_ENV` (`PATH`,
+`HOME`, `USER`, `LOGNAME`, `SHELL`, `TERM`, the locale and timezone names,
+the temp-dir names, the proxy names in both cases, and the CA-bundle names)
+and the prefixes in `_ALLOWED_ENV_PREFIXES` (`ANTHROPIC_`, `CLAUDE_`, `LC_`,
+`XDG_`), each carrying its reason in the source. Everything else is dropped.
+On top of that it sets `WORKSPACE`, points `GH_CONFIG_DIR` at a directory
+inside the workspace, and sets `GH_TOKEN` / `GITHUB_TOKEN` to empty strings
+— empty rather than absent, because an absent token sends `gh` looking in
+its config and the keyring for another one. The fixture's own `env:` block
+is applied last, so a fixture that wants a name back says so.
+
+It was a denylist until round 5, and a denylist forwards whatever nobody
+named. Measured then, through `run_eval.py --arm without_skill` with a
+stand-in `claude` that dumps its own environment: `GH_HOST`,
+`GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` — the other half of
+`gh`'s own credential resolution — arrived verbatim, along with `AWS_*`,
+`NPM_TOKEN`, `GITLAB_TOKEN`, `OPENAI_API_KEY`, `HF_TOKEN`, `SSH_AUTH_SOCK`,
+`KUBECONFIG`, `DOCKER_CONFIG`, `GIT_ASKPASS`, `PYTHONPATH`, `LD_PRELOAD`
+and variables whose values name the operator's checkout.
+
+So what an arm that reaches a REAL `gh` by absolute path — past the
+stand-in on `PATH`, under `bypassPermissions` — finds in its environment is:
+no host (`GH_HOST` is not on the list), and no usable token (`GH_TOKEN` and
+`GITHUB_TOKEN` are empty; `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN`
+are not on the list). `TestIssue84Round5` measures that end to end — it
+launches `run_eval.py` as a subprocess whose whole environment the test
+builds, plants the runner set and eighteen operator variables alongside the
+forwarded ones, and compares the SET of names the arm received against the
+set the allowlist admits. What a `gh` config or keyring somewhere else on
+the machine might still hold is outside what those tests measure;
+`GH_CONFIG_DIR` moves the config lookup into the workspace, which ships no
+`hosts.yml`.
 
 ### The keying rule
 

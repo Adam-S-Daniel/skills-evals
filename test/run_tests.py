@@ -159,13 +159,19 @@ class WithSkillInstallTests(unittest.TestCase):
 
 class RunAgentModesTests(unittest.TestCase):
     def _run(self, mode, timeout=30, sleep=None):
-        env = {"CLAUDE_BIN": str(FAKE_CLAUDE), "FAKE_CLAUDE_MODE": mode}
+        # The mode reaches the stand-in CLI through the ARM's `env:` block,
+        # which `agent_env` applies last — `agent_env` forwards only its
+        # allowlist from the harness's own environment, and `FAKE_CLAUDE_MODE`
+        # is not on it (nor should it be: the allowlist is what the CLI needs,
+        # not what a test wants). `CLAUDE_BIN` stays in `os.environ` because
+        # `run_agent` reads it from there to build the command line.
+        arm_env = {"FAKE_CLAUDE_MODE": mode}
         if sleep is not None:
-            env["FAKE_CLAUDE_SLEEP"] = str(sleep)
+            arm_env["FAKE_CLAUDE_SLEEP"] = str(sleep)
         with tempfile.TemporaryDirectory() as tmp:
             workspace = Path(tmp)
-            arm = {"name": "without_skill", "timeout": timeout}
-            with mock.patch.dict(os.environ, env):
+            arm = {"name": "without_skill", "timeout": timeout, "env": arm_env}
+            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
                 return run_eval.run_agent(workspace, "audit the workflows", arm)
 
     def test_agent_success(self):
@@ -577,14 +583,17 @@ class AgentEnvTests(unittest.TestCase):
     """A fixture's `env:` block reaches the agent with $WORKSPACE expanded."""
 
     def test_workspace_and_existing_vars_expand(self):
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.dict(os.environ, {"PATH": "/usr/bin", "SKILLS_EVALS_X": "keep"}):
-            env = run_eval.agent_env(Path(tmp), {"PATH": "$WORKSPACE/bin:$PATH",
-                                                 "PROBE": "$WORKSPACE", "N": 7})
+        with tempfile.TemporaryDirectory() as tmp:
+            env = run_eval.agent_env(
+                Path(tmp), {"PATH": "$WORKSPACE/bin:$PATH",
+                            "PROBE": "$WORKSPACE", "N": 7},
+                source={"PATH": "/usr/bin", "LANG": "C.UTF-8"})
         self.assertEqual(env["PATH"], f"{tmp}/bin:/usr/bin")
         self.assertEqual(env["PROBE"], tmp)
         self.assertEqual(env["N"], "7")
-        self.assertEqual(env["SKILLS_EVALS_X"], "keep")  # inherited, not replaced
+        # Prepended to the inherited PATH, not replacing it — and an
+        # allowlisted neighbour comes through untouched.
+        self.assertEqual(env["LANG"], "C.UTF-8")
 
     def test_no_env_block_is_the_plain_environment_plus_workspace(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -598,9 +607,9 @@ class AgentEnvTests(unittest.TestCase):
             (workspace / "bin").mkdir()
             arm = {"name": "without_skill", "timeout": 30,
                    "env": {"PATH": "$WORKSPACE/bin:$PATH",
-                           "SKILLS_EVALS_PROBE": "$WORKSPACE/marker"}}
-            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE),
-                                              "FAKE_CLAUDE_MODE": "agent_env"}):
+                           "SKILLS_EVALS_PROBE": "$WORKSPACE/marker",
+                           "FAKE_CLAUDE_MODE": "agent_env"}}
+            with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
                 result = run_eval.run_agent(workspace, "probe", arm)
         self.assertNotIn("error", result)
         seen = json.loads(result["transcript"])
@@ -1700,6 +1709,12 @@ class Issue84Fixture:
     # over the run log and reach the root cause without asking `gh`.
     PAYLOAD_DIR = ".gh/replay"
 
+    # Words that would tell the agent what it is being measured with. They
+    # are matched as substrings, case-insensitively, over every byte the arm
+    # can reach — every file in its workspace, and every `KEY=value` of the
+    # environment it is handed.
+    INSTRUMENT_WORDS = ("fake", "fixture", "harness", "eval")
+
     # A triage that reaches the recorded root cause: the loop's own canary PR
     # is BLOCKED on a required context nothing publishes, PR A's checks ran
     # against a superseded base, PR C is simply young. Recommends; acts on
@@ -2369,11 +2384,6 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
 
     # ------------------------------- part 1b: what the arm can read about us
 
-    # Words that would tell the agent what it is being measured with. The
-    # brief for this round names these four; they are matched as substrings,
-    # case-insensitively, over every byte the arm can reach.
-    INSTRUMENT_WORDS = ("fake", "fixture", "harness", "eval")
-
     # In-world uses, allowed by exact string and each for a reason. Anything
     # else carrying one of the words above is a leak. The allowlist is
     # itself asserted to still match something, so it cannot rot into a
@@ -2396,17 +2406,47 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
                        r"\bskills?\b", r"\bseed\b", r"\bcanned\b",
                        r"\binstrument\b")
 
-    def _arm_workspace(self):
+    # The parent environment the scan below filters. Built here, never
+    # inherited: a scan over `os.environ` measures the operator's shell as
+    # much as the harness, so the suite passed or failed on whether the
+    # machine running it happened to carry a variable whose value said
+    # "eval". Every name here is either one `agent_env` forwards or one a
+    # runner plants for it to drop.
+    SCAN_SOURCE = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "HOME": "/home/probe",
+        "LANG": "C.UTF-8",
+        "TERM": "dumb",
+        "ANTHROPIC_API_KEY": "sentinel-not-a-credential",
+        "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals",
+        "GITHUB_WORKFLOW": "eval",
+        "GITHUB_WORKSPACE": "/home/runner/work/skills-evals/skills-evals",
+        "RUNNER_TEMP": "/home/runner/work/_temp",
+        "ACTIONS_RUNTIME_TOKEN": "sentinel-not-a-credential",
+        "CI": "true",
+        "PWD": "/home/runner/work/skills-evals/skills-evals",
+        "OLDPWD": "/home/user/skills-evals",
+        "GH_TOKEN": "sentinel-not-a-credential",
+        "GITHUB_TOKEN": "sentinel-not-a-credential",
+        "GH_HOST": "ghe.example.com",
+        "SP": "/tmp/claude-0/-home-user-skills-evals/x",
+        "NOTE": "medieval",
+    }
+
+    def _arm_workspace(self, source: dict | None = None):
         """The workspace an arm actually gets, built by the harness's own code.
 
         `run_eval.materialize_workspace` is what `_run_arm` calls, so this
         cannot drift away from the real thing the way a hand-rolled copy
-        would.
+        would. `source` is the parent environment `agent_env` filters,
+        defaulting to `SCAN_SOURCE` so nothing here reads the operator's own.
         """
         fixture = run_eval.load_fixture(self.STUCK_DIR)
         ws = run_eval.materialize_workspace(self.STUCK_DIR / "seed")
         self.addCleanup(shutil.rmtree, str(ws), ignore_errors=True)
-        env = run_eval.agent_env(ws, fixture.get("env"))
+        env = run_eval.agent_env(ws, fixture.get("env"),
+                                 source=self.SCAN_SOURCE if source is None
+                                 else source)
         run_eval.assert_stand_ins_on_path(ws, env, fixture.get("env"))
         return ws, env, fixture
 
@@ -2429,8 +2469,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         stand-in for the `gh` CLI, shared by every Class B eval fixture"
         (from `cat`).
         """
-        with mock.patch.dict(os.environ, self.RUNNER_ENVIRONMENT):
-            ws, env, fixture = self._arm_workspace()
+        ws, env, fixture = self._arm_workspace()
         problems, seen = [], []
         for path in sorted(ws.rglob("*")):
             rel = path.relative_to(ws).as_posix()
@@ -2449,16 +2488,12 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         # fixture names: it used to start from `dict(os.environ)` and keep
         # everything, so on a runner the arm read `GITHUB_REPOSITORY`,
         # `GITHUB_WORKFLOW` and `GITHUB_WORKSPACE` — this repository, this
-        # workflow and this checkout — straight out of `env`. The planted
-        # values above are exactly that environment. `PATH` is the one
-        # exception, and only past the entry the fixture prepends: the rest
-        # is the operator's own PATH, which the CLI needs to run at all and
-        # which no harness can sanitise.
-        inherited_path = set(os.environ["PATH"].split(os.pathsep))
+        # workflow and this checkout — straight out of `env`. That parent
+        # environment is `SCAN_SOURCE`, built by this test: no entry of it is
+        # exempt from the scan, including `PATH`, because `agent_env` now
+        # forwards an allowlist rather than dropping a denylist and there is
+        # nothing left that "no harness can sanitise".
         for key, value in sorted(env.items()):
-            if key == "PATH":
-                value = os.pathsep.join(entry for entry in value.split(os.pathsep)
-                                        if entry not in inherited_path)
             problems += self._leaks(f"env {key}", f"{key}={value}")
         problems += self._leaks("cwd", str(ws))
         self.assertEqual(problems, [])
@@ -6977,6 +7012,13 @@ class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
         cwd. It also forwarded `GH_TOKEN`/`GITHUB_TOKEN` when the operator's
         shell had them, so an arm under `bypassPermissions` could reach a real
         `gh` by absolute path and spend a live credential on the real API.
+
+        This asserts key-by-key over the variables it plants, so it says
+        nothing about the ones it does not — which is how a denylist survived
+        it with `GH_HOST` and a dozen credentials still arriving. The guard
+        with teeth is
+        `TestIssue84Round5.test_the_arm_receives_only_the_allowlisted_environment`,
+        which compares the whole SET of names the arm received.
         """
         with tempfile.TemporaryDirectory() as tmp, \
                 mock.patch.dict(os.environ, self.RUNNER_ENVIRONMENT):
@@ -7172,6 +7214,240 @@ class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
         header = self._header().lower()
         self.assertIn("tamper", header)
         self.assertIn("forgery", header)
+
+class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
+    """Round 5 on issue #84: the last review round's residual list.
+
+    Its blocker is a design decision. `agent_env` sanitised by DENYLIST, so
+    everything nobody had thought to name reached the arm — `GH_HOST`,
+    `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` (the other half of
+    `gh`'s own credential resolution), the cloud and registry tokens an
+    operator's shell carries, `LD_PRELOAD`, `PYTHONPATH`, and variables whose
+    VALUES name the operator's checkout. 143-160 variables in all, measured
+    through `run_eval.py --arm without_skill` with a stand-in `claude` that
+    dumps its own environment. The arm's transcript is written to
+    `results/<skill>/<ts>/<arm>/transcripts/raw.json`, which eval.yml pushes
+    to the public `eval-results` branch, so an arm that runs `env` while
+    debugging publishes whatever the denylist did not name.
+
+    The rule is now an ALLOWLIST, and the test that measures it builds the
+    WHOLE environment itself rather than asserting key-by-key over the
+    handful of variables it planted: a key-by-key assertion passes with every
+    unplanted name present, which is how the denylist survived round 4.
+    """
+
+    # ------------------------------------------------------------------ B1
+
+    # A base environment a process needs to run at all, and nothing else.
+    # Built by the test, never inherited: an assertion about "the whole
+    # environment" is only as good as the environment the harness was given.
+    BASE_ENVIRONMENT = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "LANG": "C.UTF-8",
+        "TERM": "dumb",
+    }
+
+    # Planted and expected to be DROPPED. The runner set names this
+    # repository, this workflow and this checkout; the rest hand over a
+    # credential, a code-execution knob, or a path naming the operator's own
+    # working copy. `NOTE=medieval` is the reminder that the scan below is
+    # over VALUES too, not just names.
+    PLANTED_DROPPED = {
+        "GITHUB_REPOSITORY": "Adam-S-Daniel/skills-evals",
+        "GITHUB_WORKFLOW": "eval",
+        "GITHUB_WORKSPACE": "/home/runner/work/skills-evals/skills-evals",
+        "GITHUB_ACTOR": "Adam-S-Daniel",
+        "GITHUB_SHA": "0bd683943107e47377d1f83657e93f4ec4ce98ca",
+        "GITHUB_REF": "refs/heads/main",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "RUNNER_OS": "Linux",
+        "RUNNER_TEMP": "/home/runner/work/_temp",
+        "RUNNER_NAME": "GitHub Actions 7",
+        "ACTIONS_RUNTIME_TOKEN": "sentinel-not-a-credential",
+        "ACTIONS_ID_TOKEN_REQUEST_URL": "https://pipelines.example.com/token",
+        "ACTIONS_CACHE_URL": "https://cache.example.com/",
+        "CI": "true",
+        "PWD": "/home/runner/work/skills-evals/skills-evals",
+        "OLDPWD": "/home/user/skills-evals",
+        # gh's own credential resolution, the half the denylist never named.
+        "GH_HOST": "ghe.example.com",
+        "GH_ENTERPRISE_TOKEN": "sentinel-not-a-credential",
+        "GITHUB_ENTERPRISE_TOKEN": "sentinel-not-a-credential",
+        "GH_PAGER": "less",
+        "BROWSER": "/usr/bin/false",
+        # …and everything else an operator's shell happens to carry.
+        "AWS_ACCESS_KEY_ID": "sentinel-not-a-credential",
+        "AWS_SECRET_ACCESS_KEY": "sentinel-not-a-credential",
+        "AWS_SESSION_TOKEN": "sentinel-not-a-credential",
+        "AWS_PROFILE": "default",
+        "NPM_TOKEN": "sentinel-not-a-credential",
+        "GITLAB_TOKEN": "sentinel-not-a-credential",
+        "OPENAI_API_KEY": "sentinel-not-a-credential",
+        "HF_TOKEN": "sentinel-not-a-credential",
+        "SSH_AUTH_SOCK": "/run/user/1000/keyring/ssh",
+        "KUBECONFIG": "/home/user/.kube/config",
+        "DOCKER_CONFIG": "/home/user/.docker",
+        "GIT_ASKPASS": "/usr/bin/true",
+        "PYTHONPATH": "/home/user/site-packages",
+        "PYTHONSTARTUP": "/home/user/.pythonrc",
+        "LD_PRELOAD": "/home/user/preload.so",
+        "SP": "/tmp/claude-0/-home-user-skills-evals/x",
+        "MY_CHECKOUT": "/home/user/skills-evals",
+        "NOTE": "medieval",
+    }
+
+    # Planted and expected to ARRIVE INTACT: the credentials the CLI itself
+    # authenticates with, the proxy and CA settings an offline runner needs
+    # to reach the API at all, and the locale/XDG prefixes.
+    PLANTED_FORWARDED = {
+        "ANTHROPIC_API_KEY": "sentinel-not-a-credential",
+        "ANTHROPIC_AUTH_TOKEN": "sentinel-not-a-credential",
+        "CLAUDE_CODE_OAUTH_TOKEN": "sentinel-not-a-credential",
+        "HTTPS_PROXY": "http://proxy.example.com:3128",
+        "NODE_EXTRA_CA_CERTS": "/etc/ssl/example.pem",
+        "LC_ALL": "C.UTF-8",
+    }
+
+    # Emptied rather than dropped, and pointed inside the workspace: see
+    # `_BLANKED_ENV` and `_WORKSPACE_GH_CONFIG` in run_eval.
+    PLANTED_TOKENS = {
+        "GH_TOKEN": "sentinel-not-a-credential",
+        "GITHUB_TOKEN": "sentinel-not-a-credential",
+        "GH_CONFIG_DIR": "/decoy",
+    }
+
+    def _probe_cli(self, directory: Path, dump: Path) -> Path:
+        """A stand-in `claude` that writes its own environment to `dump`.
+
+        The dump path is baked into the script rather than passed in a
+        variable: a variable would have to survive the very filter under
+        test, and a test that needs one has already widened it.
+        """
+        path = directory / "claude"
+        path.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os\n"
+            f"json.dump(dict(os.environ), open({str(dump)!r}, 'w'))\n"
+            "print(json.dumps({'type': 'result', 'subtype': 'success',\n"
+            "                  'is_error': False, 'result': 'ok',\n"
+            "                  'total_cost_usd': 0.0, 'num_turns': 1,\n"
+            "                  'duration_ms': 1, 'usage': {}}))\n",
+            encoding="utf-8")
+        path.chmod(0o755)
+        return path
+
+    def _arm_environment(self, extra: dict | None = None) -> dict:
+        """Run one `without_skill` arm and return the environment it got.
+
+        The whole thing goes through `run_eval.py` as a SUBPROCESS whose
+        `env=` this test builds outright — nothing is inherited, so the
+        result is the same on a runner, in a container, and in whatever
+        shell an operator happens to have.
+        """
+        root = Path(tempfile.mkdtemp(prefix="probe-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        for name in ("home", "tmp", "xdg", "cli", "results", "cwd"):
+            (root / name).mkdir()
+        dump = root / "seen.json"
+        cli = self._probe_cli(root / "cli", dump)
+
+        env = dict(self.BASE_ENVIRONMENT)
+        env.update(self.PLANTED_DROPPED)
+        env.update(self.PLANTED_FORWARDED)
+        env.update(self.PLANTED_TOKENS)
+        env.update(extra or {})
+        env["HOME"] = str(root / "home")
+        env["TMPDIR"] = str(root / "tmp")
+        env["XDG_CONFIG_HOME"] = str(root / "xdg")
+        env["CLAUDE_BIN"] = str(cli)
+
+        proc = subprocess.run(
+            [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+             str(self.STUCK_DIR), "--arm", "without_skill", "--no-judge",
+             "--timeout", "60", "--results-dir", str(root / "results")],
+            capture_output=True, text=True, env=env, cwd=str(root / "cwd"))
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue(dump.is_file(), proc.stdout + proc.stderr)
+        return json.loads(dump.read_text(encoding="utf-8"))
+
+    def test_the_arm_receives_only_the_allowlisted_environment(self):
+        """The whole environment, not the twelve variables a test planted.
+
+        Round 4's version asserted key-by-key over its own plants, so it
+        passed with `GH_HOST`, three cloud credentials, `LD_PRELOAD`,
+        `PYTHONPATH` and the operator's checkout path all present. This one
+        compares the SET of names the arm received against the set the
+        allowlist admits, so anything unlisted fails it by arriving.
+        """
+        seen = self._arm_environment()
+        allowlisted = {name for name in
+                       (set(self.BASE_ENVIRONMENT) | set(self.PLANTED_FORWARDED)
+                        | {"HOME", "TMPDIR", "XDG_CONFIG_HOME", "CLAUDE_BIN"})}
+        fixture_env = set(run_eval.load_fixture(self.STUCK_DIR)["env"])
+        expected = (allowlisted | fixture_env
+                    | {"WORKSPACE", "GH_CONFIG_DIR", "GH_TOKEN", "GITHUB_TOKEN"})
+        self.assertEqual(set(seen), expected,
+                         f"unexpected: {sorted(set(seen) - expected)}; "
+                         f"missing: {sorted(expected - set(seen))}")
+
+    def test_every_forwarded_sentinel_arrives_intact(self):
+        """Dropping a name the CLI needs is the other way to get this wrong."""
+        seen = self._arm_environment()
+        for name, value in self.PLANTED_FORWARDED.items():
+            with self.subTest(variable=name):
+                self.assertEqual(seen.get(name), value)
+
+    def test_the_harnesss_own_variables_still_reach_the_arm(self):
+        """`WORKSPACE`, the emptied tokens, `GH_CONFIG_DIR`, and PATH order."""
+        seen = self._arm_environment()
+        workspace = seen["WORKSPACE"]
+        self.assertEqual(seen["GH_TOKEN"], "")
+        self.assertEqual(seen["GITHUB_TOKEN"], "")
+        self.assertTrue(seen["GH_CONFIG_DIR"].startswith(workspace + os.sep),
+                        seen["GH_CONFIG_DIR"])
+        self.assertTrue(seen["PATH"].startswith(workspace + "/bin:"), seen["PATH"])
+        self.assertEqual(seen["GH_REPO"], self.REPO)
+        self.assertEqual(seen["GH_REPLAY_DIR"], f"{workspace}/{self.PAYLOAD_DIR}")
+
+    def test_nothing_in_the_arms_environment_names_the_instrument(self):
+        """The scan of round 3's S8, over an environment the test built.
+
+        `NOTE=medieval` is planted for this: the words are matched over the
+        whole `KEY=value`, so a value carrying one leaks exactly as a name
+        would. It is dropped, so the scan comes back empty — and it is the
+        row that proves the scan reads values.
+        """
+        seen = self._arm_environment()
+        problems = [f"env {key}" for key, value in sorted(seen.items())
+                    for word in self.INSTRUMENT_WORDS
+                    if word in f"{key}={value}".lower()]
+        self.assertEqual(problems, [])
+
+    def test_agent_env_takes_its_parent_environment_as_an_argument(self):
+        """So a test can construct one instead of mutating `os.environ`."""
+        with tempfile.TemporaryDirectory() as tmp:
+            env = run_eval.agent_env(
+                Path(tmp), None,
+                source={"PATH": "/usr/bin", "GH_HOST": "ghe.example.com",
+                        "ANTHROPIC_API_KEY": "sentinel-not-a-credential"})
+        self.assertEqual(env["PATH"], "/usr/bin")
+        self.assertEqual(env["ANTHROPIC_API_KEY"], "sentinel-not-a-credential")
+        self.assertNotIn("GH_HOST", env)
+
+    def test_every_allowlist_entry_carries_a_reason_in_the_source(self):
+        """A name with no reason beside it is a name nobody can review."""
+        import re as _re
+        source = (HARNESS_DIR / "run_eval.py").read_text(encoding="utf-8")
+        block = source.split("_ALLOWED_ENV", 1)[1]
+        block = block[:block.index("\n\n\n")]
+        for line in block.splitlines():
+            entry = _re.match(r'\s*"([A-Za-z_]+)",\s*#\s*(\S.*)$', line)
+            listed = _re.match(r'\s*"([A-Za-z_]+)",\s*$', line)
+            with self.subTest(line=line.strip()):
+                self.assertIsNone(listed, "allowlist entry with no reason")
+                if entry:
+                    self.assertGreater(len(entry.group(2)), 10)
+
 
 if __name__ == "__main__":
     unittest.main()
