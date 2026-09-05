@@ -3222,10 +3222,28 @@ class TestIssue81(unittest.TestCase):
     _ALLOWED_HOSTS = ("example.com", "example.net")
     _EMAIL_RE = re.compile(r"[A-Za-z0-9._%+-]+@([A-Za-z0-9.-]+\.[A-Za-z]{2,})")
     _URL_RE = re.compile(r"https?://([^\s/)\"'>]+)")
+    # `\b` never fires inside GITHUB_TOKEN — the boundary is between `_`
+    # and `T`, both word characters — so the keyword is preceded by a start,
+    # a space or a `_`/`-` instead, and may carry the rest of an
+    # environment-variable name (`SECRET_ACCESS_KEY`) before its `:`/`=`.
+    # Requiring the separator to be followed by something keeps prose that
+    # merely mentions a keyword ("the secrets-remediation backlog") out.
+    # `Authorization:` carries its scheme rather than a keyword, so it is
+    # its own alternative.
     _SECRET_RE = re.compile(
-        r"(?i)\b(?:password|passwd|api[_-]?key|secret|token|bearer)s?\s*[:=]"
+        r"(?im)(?:^|[\s_\-])"
+        r"(?:password|passwd|api[_-]?key|secret|token|bearer|credential)"
+        r"[\w-]*\s*[:=]\s*\S"
+        r"|Authorization:\s*(?:Bearer|Basic)\s"
         r"|-----BEGIN [A-Z ]*PRIVATE KEY-----")
-    _PHONE_RE = re.compile(r"\(?\b\d{3}\)?[-. ]\d{3}[-. ]\d{4}\b")
+    # Three shapes: a separated ten-digit number with an optional country
+    # code, a bare ten-digit run, and an international number in two-to-four
+    # digit groups. The lookarounds keep it off the fixtures' own numbers —
+    # `2019–2024` (en dash), `REQ-4417`, `HRLS-2026-014`, `NIST 800-53`.
+    _PHONE_RE = re.compile(
+        r"(?<![\d-])(?:\+\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]\d{3}[ .-]\d{4}(?![\d-])"
+        r"|(?<![\d-])\d{10}(?![\d-])"
+        r"|(?<![\d-])\+\d{1,3}(?:[ .-]\d{2,4}){2,4}(?![\d-])")
     # Links into this account's own repositories are exempt, and only
     # those: `registry:` names the real registry repo, and the fixtures'
     # README links this repo's issue tracker. The fiction rule is about
@@ -3477,8 +3495,13 @@ class TestIssue81(unittest.TestCase):
                          hashlib.sha256(prompt.encode("utf-8")).hexdigest())
         # Nothing prompt-sized went through the argument vector.
         self.assertLess(reported["argv_max_len"], 200, reported["argv"])
-        self.assertNotIn("-p", [a for a in reported["argv"]
-                                if a.startswith("x" * 10)])
+        # The invariant, not a tautology: the assertion this replaced
+        # filtered argv down to entries starting with ten x's — an empty
+        # list on every possible input — and then checked "-p" was not in
+        # it, so it held whether or not the prompt travelled in argv.
+        self.assertEqual([a for a in reported["argv"] if "x" * 10 in a], [],
+                         "the prompt travelled in the argument vector")
+        self.assertNotIn(prompt, reported["argv"])
         self.assertIn("-p", reported["argv"])
 
     def test_judge_cli_reports_an_oserror_as_a_runtimeerror(self):
@@ -4326,6 +4349,72 @@ class TestIssue81(unittest.TestCase):
                 self.assertIn(f"N >= {cycle}", flat)
                 for stale in ("N >= 5", "N>=5"):
                     self.assertNotIn(stale, flat)
+
+    # ------------------------------------------------------------------
+    # what the credential and phone scans actually catch
+    # ------------------------------------------------------------------
+
+    # `\b` never fires inside GITHUB_TOKEN, and the keyword has to be
+    # followed by its `:`/`=` rather than by anything at all: four shapes a
+    # public fixture must never carry walked past the scan.
+    _CREDENTIAL_SHAPES = (
+        "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIbPxRfiCYEXAMPLEKEY",
+        "GITHUB_TOKEN=ghp_0123456789abcdefghijklmnopqrstuvwxyz",
+        "DJANGO_SECRET_KEY=django-insecure-abcdefghijklmnop",
+        "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.body.sig",
+        "Authorization: Basic YWRhbTpodW50ZXIy",
+        "api_key: hunter2",
+        "api-key=hunter2",
+        "password = hunter2",
+        "-----BEGIN RSA PRIVATE KEY-----",
+    )
+
+    # Prose that mentions one of the keywords and is not a credential. An
+    # over-broad scan that failed these would fail the fixtures themselves.
+    _NOT_CREDENTIALS = (
+        "I also took over the secrets-remediation backlog in August.",
+        "The token of appreciation was a mug.",
+        "He holds the AWS Solutions Architect – Professional certification.",
+        "Section 508 audit findings: 34 of 51 closed.",
+    )
+
+    def test_the_credential_scan_catches_the_shapes_it_missed(self):
+        for shape in self._CREDENTIAL_SHAPES:
+            with self.subTest(shape=shape):
+                self.assertRegex(shape, self._SECRET_RE)
+        for prose in self._NOT_CREDENTIALS:
+            with self.subTest(prose=prose):
+                self.assertNotRegex(prose, self._SECRET_RE)
+
+    _PHONE_SHAPES = ("555-867-5309", "(555) 867-5309", "555.867.5309",
+                     "5558675309", "+44 20 7946 0958", "+1 555 867 5309")
+
+    _NOT_PHONES = ("Halyard Civic Data (2019–2024)", "REQ-4417",
+                   "RFP HRLS-2026-014", "FISMA / NIST 800-53",
+                   "closed 34 of the 51 open findings",
+                   "from 26 minutes to 9", "a clean Section 508 audit")
+
+    def test_the_phone_scan_catches_the_shapes_it_missed(self):
+        for shape in self._PHONE_SHAPES:
+            with self.subTest(shape=shape):
+                self.assertRegex(shape, self._PHONE_RE)
+        for prose in self._NOT_PHONES:
+            with self.subTest(prose=prose):
+                self.assertNotRegex(prose, self._PHONE_RE)
+
+    def test_the_scan_reports_a_planted_credential_and_phone_number(self):
+        # Planted in a copy, so this covers the WALK as well as the
+        # matchers: a shape neither regex saw was a shape the scan could not
+        # report however loudly it was written.
+        with tempfile.TemporaryDirectory() as tmp:
+            planted = Path(tmp) / "style"
+            shutil.copytree(self.STYLE_DIR, planted)
+            with (planted / "README.md").open("a", encoding="utf-8") as f:
+                f.write("\nGITHUB_TOKEN=ghp_0123456789abcdefghij\n"
+                        "Call me on 5558675309 or +44 20 7946 0958.\n")
+            problems, _ = self._fiction_problems(planted)
+        self.assertIn("README.md: looks like a credential", problems)
+        self.assertIn("README.md: looks like a phone number", problems)
 
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it
