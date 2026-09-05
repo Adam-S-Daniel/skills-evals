@@ -97,7 +97,15 @@ objective_checks:
   # (and, for the pipe-free-line alternative, a non-comment/non-pipe run
   # after it too), so a `# was: ...` comment quoting the capture variable,
   # naming `PIPESTATUS`, or naming `gh run watch` cannot stand in for the
-  # command actually running.
+  # command actually running. The pipe-free alternative additionally
+  # tolerates any number of `||` groups after the pipe-free run (each still
+  # anchored to non-comment, non-single-pipe text) — a real `|` pipe (one
+  # `|` not paired into `||`) still can never be consumed, so `gh run watch
+  # "$RUN_ID" | tail -n 5` with no PIPESTATUS check still fails this
+  # alternative, but `gh run watch "$RUN_ID" || exit 1` (or the skill's own
+  # `|| { echo "ERROR: ..."; exit 1; }` idiom, transplanted here) is
+  # strictly stronger than the other two remedies and must not be rejected
+  # just because it, too, is "dropping the pipe entirely."
   - id: process-substitution-error-propagates
     description: >
       gh run watch's exit status is captured before any process substitution
@@ -109,7 +117,7 @@ objective_checks:
       - '^[^#\n]*<\s*<\(\s*gh run watch[^#\n]*'
       - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:)[^#\n]*'
     must_match:
-      - '(^[^#\n]*\w+=\$\(\s*gh run watch[^#\n]*|^[^#\n]*PIPESTATUS[^#\n]*|^[^#\n|]*\bgh run watch\b[^#\n|]*(\s*#.*)?$)'
+      - '(^[^#\n]*\w+=\$\(\s*gh run watch[^#\n]*|^[^#\n]*PIPESTATUS[^#\n]*|^[^#\n|]*\bgh run watch\b[^#\n|]*(\|\|[^#\n|]*)*(\s*#.*)?$)'
 
   # Finding 2 (off-skill — see header): `echo "$build_log" | grep -q ...` as
   # a bare statement under `pipefail` — if grep matches and exits before echo
@@ -125,6 +133,11 @@ objective_checks:
   # is the producer piping INTO grep -q, which must_not_match already bans
   # outright, not the mere presence of "grep -q ... Successfully published"
   # text — so there is no equivalent bare-pipe-without-remedy dodge to close.
+  # Because it has no closing `$`, this alternative is unaffected by the
+  # `||`-tolerance added to process-substitution-error-propagates's sibling
+  # alternative above: `grep -q "Successfully published" <<< "$build_log" ||
+  # { ...; exit 1; }` already passes here today. Do not add a trailing `$`
+  # to this alternative without adding the same `||` tolerance alongside it.
   - id: grep-q-avoids-broken-pipe
     description: grep -q consumes $build_log without a pipe (here-string, [[ ... ]], case, or a file argument)
     type: file_matches

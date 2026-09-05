@@ -2525,6 +2525,62 @@ class TestIssue74(unittest.TestCase):
         by_id = self._run(self._ws())
         self.assertIn("lacks", by_id["process-substitution-error-propagates"]["detail"])
 
+    # -- Round-5 review F1: the third must_match alternative's `[^#\n|]*`
+    # run excludes '|' entirely, and '||' is two of them, so a pipe-free
+    # `gh run watch` line that still carries its own `||` error handling
+    # could never reach the trailing `$` — even though dropping the pipe
+    # and handling the failure inline is strictly stronger than the other
+    # two accepted remedies, and is the fixture's own third prescribed fix
+    # (see the header comment above this check). --
+
+    def test_f1_watch_with_or_exit_passes(self):
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID" || exit 1')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    def test_f1_watch_with_skill_brace_idiom_passes(self):
+        # SKILL.md section 3's own `cmd || { echo "ERROR: ..."; exit 1; }`
+        # idiom, transplanted onto the gh run watch line.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID" || { echo "ERROR: gh run watch failed"; exit 1; }')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        self.assertTrue(by_id["process-substitution-error-propagates"]["passed"],
+                        by_id["process-substitution-error-propagates"]["detail"])
+
+    def test_f1_watch_with_or_true_still_fails_via_must_not_match(self):
+        # The '||' tolerance F1 adds to must_match must not reopen the door
+        # must_not_match's second alternative closes: '|| true' is still
+        # banned outright, whatever must_match now accepts.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID" || true')
+        path.write_text(text, encoding="utf-8")
+        by_id = self._run(ws)
+        result = by_id["process-substitution-error-propagates"]
+        self.assertFalse(result["passed"])
+        self.assertIn(r"(true|:)", result["detail"])
+
 
 class MakeBadgeTests(unittest.TestCase):
     """scripts/make_badge.py against hand-written run summaries, one per color."""
