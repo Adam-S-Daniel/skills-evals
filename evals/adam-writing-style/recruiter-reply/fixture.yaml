@@ -18,6 +18,16 @@
 #
 # References live beside this file, NOT in seed/: seed/ is copied into the
 # agent's workspace, so a reference in there would hand the agent the answer.
+#
+# Known failure mode — commentary. Every check reads the agent's whole
+# final reply minus its quoted lines, so anything the agent wraps around
+# the writing is scored as if it were the writing: "I kept it free of
+# 'leverage'" fails no-avoid-list-words, and an unquoted trailing note that
+# supplies a fact the reply itself omitted passes cites-both-facts. The
+# first direction is the one that bites, because the arm that knows the
+# avoid list is the arm that mentions it. BRIEF.md asks for the reply alone
+# with nothing before or after it and nothing quoted, which keeps it rare;
+# the judge's register dimension backstops what is left.
 
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -48,48 +58,70 @@ objective_checks:
   # section. test/run_tests.py::TestIssue81 reads that section out of the
   # agentskills checkout at TEST time and fails if a term there is not
   # covered here, so the two cannot drift apart.
+  #
+  # Every pattern only looks at non-quoted lines, here and below: a reply
+  # that quotes the recruiter's email back is not using her words as its
+  # own, and the seed material is not the agent's writing.
   - id: no-avoid-list-words
     description: None of the skill's avoid-list buzzwords survived into the reply
     type: transcript_matches
     must_not_match:
-      - '(?i)\bleverag(?:e|es|ed|ing)\b'
-      - '(?i)\bsynerg(?:y|ies|istic)\b'
-      - '(?i)\brobust(?:ly|ness)?\b'
-      - '(?i)\bbest[- ]in[- ]class\b'
-      - '(?i)\bworld[- ]class\b'
-      - '(?i)\bdeep[- ]dives?\b'
-      - '(?i)\bdeep expertise in\b'
-      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
-      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
-      - '(?i)\btouch(?:es|ed|ing)? base\b'
-      - '(?i)\bping me\b'
+      - '(?im)^(?!>).*\bleverag(?:e|es|ed|ing)\b'
+      - '(?im)^(?!>).*\bsynerg(?:y|ies|istic)\b'
+      - '(?im)^(?!>).*\brobust(?:ly|ness)?\b'
+      - '(?im)^(?!>).*\bbest[- ]in[- ]class\b'
+      - '(?im)^(?!>).*\bworld[- ]class\b'
+      - '(?im)^(?!>).*\bdeep[- ]dives?\b'
+      - '(?im)^(?!>).*\bdeep expertise in\b'
+      - '(?im)^(?!>).*\bthought[- ]leader(?:ship)?s?\b'
+      - '(?im)^(?!>).*\bcircl(?:e|es|ed|ing) back\b'
+      - '(?im)^(?!>).*\btouch(?:es|ed|ing)? base\b'
+      - '(?im)^(?!>).*\bping me\b'
 
-  # Core move 1: greet warmly, by name.
+  # Core move 1: greet warmly, by name — in the greeting, not anywhere in
+  # the reply. Anchored to the first non-quoted paragraph: a reply that
+  # greets nobody and quotes her signature underneath used to pass on the
+  # name in that footer. Leading quoted lines are skipped, then the name
+  # must appear within the first three non-quoted lines.
   - id: greets-the-recruiter-by-name
-    description: The reply uses the recruiter's name
+    description: The reply greets the recruiter by name in its opening
     type: transcript_matches
     must_match:
-      - '\bDana\b'
+      - '\A(?:>[^\n]*\n|[ \t]*\n)*(?:(?!>)[^\n]*\n){0,2}(?!>)[^\n]*\bDana\b'
 
   # Core move 2: open with a hedge or apology. Any of the skill's shapes
-  # counts, but it has to be near the top — a hedge in the last paragraph is
-  # not the move, which is why this is anchored to the first 400 characters
-  # rather than searched over the whole reply. The window is generous enough
-  # to survive a short "Here's the reply:" preamble.
+  # counts, but it has to be the AGENT'S and it has to be near the top. The
+  # pattern skips a leading quoted block, allows up to five non-quoted
+  # lines, and requires the hedge to start a sentence — the skill lists
+  # these as sentence openers ("I'm guessing you're the right person",
+  # "Sorry, just realized"), and a mid-sentence "and I think" is rarely the
+  # disarming move it is after.
+  #
+  # It used to be a flat 400-character window over the whole reply, which
+  # the recruiter's own email satisfied whenever an agent quoted it at the
+  # top: her "I think your background lines up well" is a hedge inside the
+  # window and nothing of the agent's.
+  #
+  # Residual, accepted: "I think" is still a hedge shape in an assertive
+  # sentence ("I think you'd be a great fit"). Sentence-anchoring narrows
+  # that; the judge's register dimension carries the rest.
   - id: opens-with-a-hedge
     description: The reply opens with one of the skill's hedges rather than an assertion
     type: transcript_matches
     must_match:
-      - '(?s)\A.{0,400}?(?:I[''’]m guessing|I think\b|as far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
+      - '\A(?:>[^\n]*\n|[ \t]*\n)*(?:(?!>)[^\n]*\n){0,5}(?!>)(?:[^\n]*?[.!?—][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
 
   # Core move 3: be specific — paste the ID verbatim, name the date. Both
-  # facts are in the seed material; neither is asked for.
+  # facts are in the seed material; neither is asked for. Anchored to
+  # non-quoted lines: a reply that quotes her email back carries REQ-4417
+  # in the quote, and a fact the agent merely echoed is not the agent
+  # being specific.
   - id: cites-both-facts
     description: The reply quotes the requisition number and the contract end date
     type: transcript_matches
     must_match:
-      - '\bREQ-4417\b'
-      - '(?i)\bMarch 2027\b'
+      - '(?m)^(?!>).*\bREQ-4417\b'
+      - '(?im)^(?!>).*\bMarch 2027\b'
 
 # Pairwise: the judge ranks this reply against the two committed references
 # without being told which is which, and the rank is the score. The

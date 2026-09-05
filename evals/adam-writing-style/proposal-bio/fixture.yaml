@@ -16,6 +16,17 @@
 # The sixty-word cap is deliberately NOT an objective check: a regex cannot
 # count words, and objective.py is not this fixture's to extend. The judge's
 # register dimension carries it.
+#
+# Every check below reads only the agent's non-quoted lines: material the
+# agent quoted back is not the agent's writing.
+#
+# Known failure mode — commentary. What the agent wraps around the
+# paragraph is scored as if it were the paragraph: "I kept it free of
+# 'leverage'" fails no-avoid-list-words and "I kept it to 58 words" fails
+# bio-is-third-person, both of them checks about the bio. It is
+# directional against the with-skill arm, because the arm that knows the
+# rules is the arm that narrates them. BRIEF.md asks for the paragraph
+# alone with nothing before or after it; the judge backstops the rest.
 
 skill: adam-writing-style
 registry: https://github.com/Adam-S-Daniel/agentskills
@@ -42,46 +53,58 @@ objective_checks:
     description: None of the skill's avoid-list buzzwords survived into the bio
     type: transcript_matches
     must_not_match:
-      - '(?i)\bleverag(?:e|es|ed|ing)\b'
-      - '(?i)\bsynerg(?:y|ies|istic)\b'
-      - '(?i)\brobust(?:ly|ness)?\b'
-      - '(?i)\bbest[- ]in[- ]class\b'
-      - '(?i)\bworld[- ]class\b'
-      - '(?i)\bdeep[- ]dives?\b'
-      - '(?i)\bdeep expertise in\b'
-      - '(?i)\bthought[- ]leader(?:ship)?s?\b'
-      - '(?i)\bcircl(?:e|es|ed|ing) back\b'
-      - '(?i)\btouch(?:es|ed|ing)? base\b'
-      - '(?i)\bping me\b'
+      - '(?im)^(?!>).*\bleverag(?:e|es|ed|ing)\b'
+      - '(?im)^(?!>).*\bsynerg(?:y|ies|istic)\b'
+      - '(?im)^(?!>).*\brobust(?:ly|ness)?\b'
+      - '(?im)^(?!>).*\bbest[- ]in[- ]class\b'
+      - '(?im)^(?!>).*\bworld[- ]class\b'
+      - '(?im)^(?!>).*\bdeep[- ]dives?\b'
+      - '(?im)^(?!>).*\bdeep expertise in\b'
+      - '(?im)^(?!>).*\bthought[- ]leader(?:ship)?s?\b'
+      - '(?im)^(?!>).*\bcircl(?:e|es|ed|ing) back\b'
+      - '(?im)^(?!>).*\btouch(?:es|ed|ing)? base\b'
+      - '(?im)^(?!>).*\bping me\b'
 
-  # Core move 8: third person. Both halves matter — a bio with no
-  # third-person pronoun at all is as wrong as one that slips into "I", and
-  # checking only for the absence of "I" would pass an empty reply.
+  # Core move 8: third person. Both halves are kept — a bio with no
+  # third-person subject at all is as wrong as one that slips into "I", and
+  # checking only for the absence of "I" would pass an empty reply, which
+  # is why the must_match half stays rather than being left to the judge.
+  #
+  # What it accepts widened: it used to demand a masculine pronoun
+  # (`\b[Hh]e\b`), which fails a perfectly good surname-only bio
+  # ("...Daniel rebuilt the deployment pipeline..."). Any third-person
+  # marker counts now — a pronoun or the subject's own name.
   #
   # Known noise source: `\bI\b` is matched over the agent's whole final
-  # reply, so an agent that wraps the paragraph in commentary of its own
-  # ("I kept it to 58 words") fails a check about the bio's register. The
-  # brief asks for the paragraph on its own to keep that rare, and the
-  # judge's register dimension backstops it.
+  # reply minus its quoted lines, so an agent that wraps the paragraph in
+  # commentary of its own ("I kept it to 58 words") fails a check about the
+  # bio's register. The brief asks for the paragraph alone to keep that
+  # rare, and the judge's register dimension backstops it.
   - id: bio-is-third-person
     description: The bio is written in the third person, with no first-person "I"
     type: transcript_matches
     must_match:
-      - '\b[Hh]e\b'
+      - '(?m)^(?!>).*\b(?:[Hh]e|[Hh]is|[Tt]hey|[Tt]heir|Adam|Daniel)\b'
     must_not_match:
-      - '\bI\b'
+      - '(?m)^(?!>).*\bI\b'
 
   # Core move 3, in the bio register: concrete employer-and-dates structure
   # and the named standard, not "extensive accessibility experience". Both
-  # facts are in background.md; neither is asked for.
+  # facts are in background.md; neither is asked for. Non-quoted lines
+  # only: a quoted "no room for the 2019-2024 dates" note underneath a bio
+  # that omits them used to satisfy this check on the agent's behalf.
+  #
+  # Both patterns accept the phrasings a sixty-word budget actually
+  # produces: "2019-24" as well as "2019-2024", and "Sections 508 and 504"
+  # as well as "Section 508".
   - id: cites-both-facts
     description: The bio carries the employment dates and the named accessibility standard
     type: transcript_matches
     must_match:
-      - '\b2019\s*(?:[-–—]|to)\s*2024\b'
+      - '(?m)^(?!>).*\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
       # Case-sensitive on purpose: the skill's spelling rules say "Section
       # 508", capital S, never abbreviated.
-      - 'Section 508'
+      - '(?m)^(?!>).*\bSections? 508\b'
 
 judge_rubric: >
   Rank the drafts best to worst as a key-personnel paragraph for a public

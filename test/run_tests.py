@@ -2820,6 +2820,126 @@ class TestIssue81(unittest.TestCase):
         "fixes a coworker landed the same sprint.\n"
     )
 
+    # ------------------------------------------------------------------
+    # quoted material is not the agent's writing
+    # ------------------------------------------------------------------
+    #
+    # Every check reads the agent's final reply, so before the patterns were
+    # anchored to non-quoted lines a reply could satisfy a check out of
+    # material it merely quoted back. All three of these passed EVERY
+    # objective check while failing the thing the check is about.
+
+    # The recruiter's own email, quoted at the top of a reply that never
+    # hedges: her "I think your background lines up well" sat inside the
+    # opening window and satisfied the hedge check.
+    _REPLY_QUOTING_THE_COLD_EMAIL = (
+        "> From: Dana Whitcombe <dana.whitcombe@example.com>\n"
+        "> Subject: Staff Platform Engineer — REQ-4417\n"
+        ">\n"
+        "> Hi Adam,\n"
+        ">\n"
+        "> Your name came up while I was looking for platform engineers with\n"
+        "> public-sector delivery experience, and I think your background\n"
+        "> lines up well with what they are after.\n"
+        "\n"
+        "Hi Dana,\n"
+        "\n"
+        "Thanks for the note. I am going to pass on REQ-4417: my engagement\n"
+        "here is contracted through March 2027, and three days a week on site\n"
+        "would not work for me even if the timing were closer.\n"
+        "\n"
+        "If something remote-friendly comes up in 2027, I would be glad to\n"
+        "hear about it.\n"
+        "\n"
+        "Thanks,\nAdam Daniel\n")
+
+    # A reply that greets nobody, with the original's signature quoted
+    # underneath: her name in that footer satisfied "greets by name".
+    _REPLY_WITH_THE_NAME_ONLY_IN_A_FOOTER = (
+        "Hi there,\n"
+        "\n"
+        "Sorry for the slow reply — I am going to pass on REQ-4417. My\n"
+        "engagement here is contracted through March 2027, and three days a\n"
+        "week on site would not work for me either.\n"
+        "\n"
+        "Thanks,\nAdam Daniel\n"
+        "\n"
+        "> Best regards,\n"
+        "> Dana Whitcombe\n"
+        "> Senior Technical Recruiter, Northgate Bell Talent Group\n")
+
+    # A bio that spends its sixty words without either fact, and a quoted
+    # note underneath saying so: the note supplied both facts to the check.
+    _BIO_WITH_THE_FACTS_ONLY_IN_A_QUOTED_NOTE = (
+        "Adam Daniel leads delivery infrastructure at a civic technology\n"
+        "consultancy. He rebuilt the deployment pipeline behind eleven state\n"
+        "agency websites and ran the remediation program that carried all\n"
+        "eleven to a clean audit. He holds the AWS Solutions Architect –\n"
+        "Professional certification and the CISSP.\n"
+        "\n"
+        "> No room for the 2019–2024 dates or the Section 508 line inside\n"
+        "> sixty words — say the word and I will trade out the certifications.\n")
+
+    def test_a_quoted_cold_email_does_not_supply_the_opening_hedge(self):
+        self._assert_only_failure(
+            self._score("recruiter-reply", self._REPLY_QUOTING_THE_COLD_EMAIL),
+            "opens-with-a-hedge")
+
+    def test_a_quoted_footer_does_not_supply_the_recipients_name(self):
+        self._assert_only_failure(
+            self._score("recruiter-reply",
+                        self._REPLY_WITH_THE_NAME_ONLY_IN_A_FOOTER),
+            "greets-the-recruiter-by-name")
+
+    def test_a_quoted_note_does_not_supply_the_facts_the_bio_omits(self):
+        self._assert_only_failure(
+            self._score("proposal-bio",
+                        self._BIO_WITH_THE_FACTS_ONLY_IN_A_QUOTED_NOTE),
+            "cites-both-facts")
+
+    def test_commentary_around_the_text_is_a_known_failure_mode(self):
+        # The other direction, and the one that stays: an agent that wraps
+        # its own commentary around the writing is scored on the commentary
+        # too, and this one fails a check about the WRITING. It is
+        # directional against the with-skill arm (the arm that knows the
+        # avoid list is the arm that brags about it), which is why every
+        # BRIEF asks for the text alone and every fixture header records it.
+        # In the bio the same line trips a second check: the commentary is
+        # first person and the bio must not be. Both are recorded in that
+        # fixture's header.
+        expected = {"recruiter-reply": {self.AVOID_CHECK_ID},
+                    "proposal-bio": {self.AVOID_CHECK_ID,
+                                     "bio-is-third-person"},
+                    "self-appraisal-opening": {self.AVOID_CHECK_ID}}
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                commentary = (self._reference(name, "in-voice").rstrip("\n")
+                              + "\n\nI kept it free of \"leverage\" and the "
+                                "rest of the buzzwords.\n")
+                by_id = self._score(name, commentary)
+                self.assertEqual(
+                    {check_id for check_id, result in by_id.items()
+                     if not result["passed"]}, expected[name],
+                    {k: v["detail"] for k, v in by_id.items()})
+                header = (self.STYLE_DIR / name / "fixture.yaml").read_text(
+                    encoding="utf-8")
+                self.assertIn("commentary", header.lower(),
+                              f"{name} does not record commentary as a known "
+                              "failure mode")
+
+    def test_every_brief_asks_for_the_text_alone(self):
+        # The mitigation for both directions above: nothing wrapped around
+        # the writing, and nothing quoted back.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                # Unwrapped: the briefs are hard-wrapped prose, so the
+                # instruction can sit across a line break.
+                brief = " ".join((self.STYLE_DIR / name / "seed"
+                                  / "BRIEF.md").read_text(
+                                      encoding="utf-8").lower().split())
+                self.assertIn("nothing before it, nothing after it", brief)
+                self.assertIn("no quoting", brief)
+
     def test_recruiter_reply_requires_the_recipients_name(self):
         clean = self._reference("recruiter-reply", "in-voice")
         self.assertIn("Dana", clean)
@@ -2840,6 +2960,16 @@ class TestIssue81(unittest.TestCase):
             self._score("recruiter-reply", self._REPLY_LATE_HEDGE),
             "opens-with-a-hedge")
 
+    # A bio written as résumé fragments: no pronoun, no name, no subject at
+    # all. Everything else about it is fine — both facts, no avoid-list
+    # words — so bio-is-third-person is the only check that can catch it.
+    _BIO_WITHOUT_A_SUBJECT = (
+        "Leads delivery infrastructure at a civic technology consultancy.\n"
+        "Rebuilt the deployment pipeline behind eleven state agency websites\n"
+        "at Halyard Civic Data (2019–2024) and ran the remediation program\n"
+        "that carried all eleven to a clean Section 508 audit. Holds the AWS\n"
+        "Solutions Architect – Professional certification and the CISSP.\n")
+
     def test_bio_must_be_third_person(self):
         clean = self._reference("proposal-bio", "in-voice")
         # Substituted by regex, not by literal string: the references are
@@ -2849,18 +2979,82 @@ class TestIssue81(unittest.TestCase):
         mutations = {
             # First person creeping in: the bio register's one hard rule.
             "first person": re.sub(r"\b[Hh]e\b", "I", clean, count=1),
-            # And the other direction: strip the third-person pronouns
-            # entirely and the register check must notice their absence,
-            # not just the absence of "I".
-            "no third-person pronoun": re.sub(
-                r"\bhis\b", "the",
-                re.sub(r"\b[Hh]e\b", "Adam Daniel", clean)),
+            # And the other direction: a bio with no third-person subject at
+            # all — no pronoun, no name — is résumé fragments, not the bio
+            # register, and the check must notice the absence rather than
+            # only the presence of "I". (Not derived from the reference by
+            # substitution: every substitution that removes the pronouns
+            # leaves the name behind, and the name is a third-person
+            # subject.)
+            "no third-person subject": self._BIO_WITHOUT_A_SUBJECT,
         }
         for label, transcript in mutations.items():
             with self.subTest(mutation=label):
                 self._assert_only_failure(
                     self._score("proposal-bio", transcript),
                     "bio-is-third-person")
+
+    # A first-person paragraph that credits a coworker — which the rubric
+    # explicitly rewards ("Credit shared with a collaborator where the notes
+    # say so counts here too") — and which the deleted `he <verb>`
+    # alternation used to fail.
+    _APPRAISAL_CREDITING_A_COWORKER = (
+        "Most of this quarter went to deploy-scaffold, the shared deployment\n"
+        "repository I stood up in July; six application teams have adopted it\n"
+        "and two more are mid-migration. The cache and matrix rework pulled\n"
+        "the median pipeline run from 26 minutes to 9 — and a coworker\n"
+        "deserves half of that, since he built the build-cache fix that\n"
+        "landed the same sprint.\n")
+
+    # A bio that never reaches for a pronoun, which the old `\b[Hh]e\b`
+    # must_match failed: surname-only is a normal way to write a key
+    # personnel paragraph.
+    _BIO_BY_SURNAME_ONLY = (
+        "Daniel leads delivery infrastructure at a civic technology\n"
+        "consultancy. At Halyard Civic Data (2019–2024) Daniel rebuilt the\n"
+        "deployment pipeline behind eleven state agency websites and ran the\n"
+        "remediation program that carried all eleven to a clean Section 508\n"
+        "audit. Certifications: AWS Solutions Architect – Professional,\n"
+        "CISSP.\n")
+
+    def _assert_all_pass(self, name: str, transcript: str, why: str) -> None:
+        for check_id, result in self._score(name, transcript).items():
+            self.assertTrue(result["passed"], f"{name}/{check_id} ({why}): "
+                                              f"{result['detail']}")
+
+    def test_crediting_a_coworker_is_still_first_person(self):
+        self._assert_all_pass("self-appraisal-opening",
+                              self._APPRAISAL_CREDITING_A_COWORKER,
+                              "credits a coworker in the third person")
+
+    def test_a_surname_only_bio_is_third_person(self):
+        self._assert_all_pass("proposal-bio", self._BIO_BY_SURNAME_ONLY,
+                              "third person by surname, no pronoun")
+
+    def test_cites_both_facts_accepts_the_phrasings_the_facts_really_take(self):
+        # A sixty-word budget and a narrative sentence do not spell a fact
+        # one fixed way. Each of these is the same fact, phrased as a
+        # careful writer would phrase it.
+        cases = {
+            "proposal-bio": [
+                ("2019–2024", "2019–24"),
+                ("Section 508", "Sections 508 and 504"),
+            ],
+            "self-appraisal-opening": [
+                ("from 26 minutes to 9", "from 26 to 9 minutes"),
+                ("from 26 minutes to 9", "from a 26-minute median to 9"),
+                ("from 26 minutes to 9", "from 26 min to 9"),
+            ],
+        }
+        for name, phrasings in cases.items():
+            clean = self._reference(name, "in-voice")
+            for before, after in phrasings:
+                with self.subTest(fixture=name, phrasing=after):
+                    self.assertIn(before, clean,
+                                  f"{name}: the reference no longer says "
+                                  f"{before!r}")
+                    self._assert_all_pass(name, clean.replace(before, after),
+                                          f"fact phrased as {after!r}")
 
     def test_self_appraisal_must_be_first_person(self):
         self._assert_only_failure(

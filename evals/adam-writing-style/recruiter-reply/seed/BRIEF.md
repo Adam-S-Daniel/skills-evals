@@ -6,5 +6,5 @@ small enough market that she will be back.
 
 My own commitments are in `notes/current-commitments.md`.
 
-What I want back is the reply itself, ready to send, with nothing wrapped
-around it.
+Hand back only the reply itself, ready to send: nothing before it, nothing
+after it, and no quoting of her email or my notes.
