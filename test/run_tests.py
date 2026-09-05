@@ -3132,6 +3132,27 @@ class TestIssue82(unittest.TestCase):
         for check_id, result in by_id.items():
             self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
 
+    # -- nothing-outside-inbox: the script-decidable half of restraint -----
+
+    def test_something_outside_inbox_fails_the_nothing_outside_inbox_check(self):
+        def mutate(ws):
+            self._rename_correctly(ws)
+            (ws / "notes.txt").write_text("x", encoding="utf-8")
+        by_id = self._run(mutate)
+        self.assertFalse(by_id["nothing-outside-inbox"]["passed"])
+        self.assertTrue(by_id["inbox-renamed-per-convention"]["passed"])
+
+    def test_git_and_claude_dirs_at_the_workspace_root_are_ignored(self):
+        # _run_arm creates .git/ (git init) and, for with_skill, installs
+        # the skill under .claude/ — neither is something the agent did.
+        def mutate(ws):
+            self._rename_correctly(ws)
+            (ws / ".git").mkdir()
+            (ws / ".claude").mkdir()
+        by_id = self._run(mutate)
+        self.assertTrue(by_id["nothing-outside-inbox"]["passed"],
+                        by_id["nothing-outside-inbox"]["detail"])
+
     def test_five_of_six_correct_fails_exactly_one_per_file_check_plus_the_listing(self):
         def mutate(ws):
             self._rename_correctly(ws)
