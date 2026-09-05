@@ -21,13 +21,34 @@ never PASS, never FAIL.
 
 THE FIVE MODES (`mode:` on an arm):
 
-  none                — nothing delivered; the control.
+  none                — no GUIDANCE delivered; the control. It is not
+                        delivered nothing: it gets a DECOY, a fresh token of
+                        its own in an otherwise empty marked block, through
+                        the same hook. See the guard paragraph below.
   stub                — `agents-md/stub.md`, what a repo carries inline.
   section             — the section's own file's intro (everything before its
                         first `##`) plus the section's extent.
   full                — the whole delivered corpus: `base.md`, plus the
                         section's own file when it lives under `sections/`.
   full-minus-section  — that corpus with the section's extent removed.
+
+WHAT THE PER-ARM GUARD PROVES, exactly. For a TREATMENT arm: this arm was
+delivered its payload and reads it — its probe reports the run's magic token,
+which no earlier run could have left behind. For the CONTROL arm: it reads its
+OWN scratch user memory (its probe reports the DECOY token delivered to it,
+and only to it) and it was NOT delivered the treatment payload (its probe does
+not report the treatment token). Without the decoy the control's guard was
+vacuous: `mode: none` delivered nothing, so the probe could only ever answer
+"no magic word" — which is exactly what it answers when the arm IS
+contaminated, measured with an ambient file carrying a stale token and with
+the real base.md, both of which scored clean.
+
+THE RESIDUAL the guard does NOT settle: a control arm that reads its own
+scratch memory AND an ambient one in addition — a real `~/.claude/CLAUDE.md`
+alongside the delivered decoy — is prevented by the per-arm HOME and
+CLAUDE_CONFIG_DIR isolation rather than by the guard, because a probe asked
+for "the magic word" when its context carries two may report either; only a
+real dispatch settles it.
 
 `section` vs `none` asks "does this teach the behavior"; `full` vs
 `full-minus-section` is the ablation — the marginal value of the section IN
@@ -277,15 +298,34 @@ def token_paragraph(token: str) -> str:
     return f"\nThe magic word is {token}.\n"
 
 
-def new_token() -> str:
-    """A fresh token per run. Random, not derived from the clock or a counter:
-    a token an earlier run could reproduce would let a stale ~/.claude/CLAUDE.md
-    satisfy this run's guard, which is the exact contamination the guard exists
-    to catch.
-    """
+def _random_token() -> str:
     body = "".join(secrets.choice(string.ascii_uppercase) for _ in range(8))
     digits = "".join(secrets.choice(string.digits) for _ in range(4))
     return f"{body}-{digits}"
+
+
+def new_token() -> str:
+    """A fresh TREATMENT token per run. Random, not derived from the clock or a
+    counter: a token an earlier run could reproduce would let a stale
+    ~/.claude/CLAUDE.md satisfy this run's guard, which is the exact
+    contamination the guard exists to catch.
+    """
+    return _random_token()
+
+
+def new_decoy_token() -> str:
+    """A fresh CONTROL token, one per `none` arm.
+
+    The control is delivered this, and only this, through the same hook — so
+    its probe reporting the decoy proves the arm reads ITS OWN scratch user
+    memory, and its probe reporting the TREATMENT token proves it was
+    contaminated. A `none` arm's guard is two-sided for that reason.
+
+    Deliberately NOT `new_token()` under another name: a test that pins one to
+    a fixed value must not collapse the other into it, or the control arm
+    would be handed the treatment token and report itself contaminated.
+    """
+    return _random_token()
 
 
 def assemble(guidance_dir: Path, row: dict, mode: str,
@@ -300,9 +340,13 @@ def assemble(guidance_dir: Path, row: dict, mode: str,
         raise GuidanceError(
             f"unknown mode {mode!r} — expected one of {', '.join(MODES)}")
     if mode == "none":
-        # The control delivers NOTHING, token included: a `none` arm that
-        # carried the token would defeat its own guard.
-        return ""
+        # The control delivers no GUIDANCE. With a token it delivers the DECOY
+        # — that token alone, in an otherwise empty marked block, through the
+        # same hook — which is what makes the control's guard two-sided
+        # instead of vacuous. The caller passes the arm's OWN token here
+        # (`new_decoy_token()`), never the treatment token: a `none` arm
+        # carrying the treatment token would defeat its own guard.
+        return "" if token is None else token_paragraph(token)
 
     if mode == "stub":
         payload = _read(guidance_dir, STUB_REL)
@@ -439,18 +483,33 @@ def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,
 
 
 def guard_expectation(mode: str) -> bool:
-    """Does this arm's probe have to SEE the magic word?
+    """Does this arm's probe have to SEE the token it was delivered?
+
+    Every mode: yes. A treatment arm is delivered its payload plus the run's
+    magic token; the control is delivered a DECOY token of its own. An arm
+    that cannot report the token IT was handed did not read its own scratch
+    user memory, and nothing measured on it means anything — which is as true
+    of the control as of any treatment arm.
+
+    (This returned `mode != "none"` while the control was delivered nothing.
+    Its probe could then only ever answer "no magic word", which is also what
+    it answers when the arm IS contaminated: the control's guard passed
+    unconditionally.)
 
     Derived from the mode, not from the arm's name: an arm renamed in a
     fixture must not be able to change what its guard expects. `_validate_arms`
     is what keeps a `with_*` name from carrying `mode: none` in the first
     place, so the two can never disagree.
     """
-    return mode != "none"
+    if mode not in MODES:
+        raise GuidanceError(
+            f"unknown mode {mode!r} — expected one of {', '.join(MODES)}")
+    return True
 
 
 def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
               setting_sources: str, model: str | None, timeout: int,
+              forbidden_token: str | None = None,
               prompt: str = GUARD_PROMPT,
               disallowed_tools: str = GUARD_DISALLOWED_TOOLS) -> dict:
     """One tool-free probe against this arm's config dir and workspace.
@@ -458,6 +517,11 @@ def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
     Reuses run_canary.run_leg — the same probe the guidance-bridge canary
     runs, parametrized with this arm's `--setting-sources` and environment.
     Two cheap calls per run (one per arm of a pair) on the preflight model.
+
+    `token` is the token THIS arm was delivered — the run's magic token for a
+    treatment arm, its own decoy for the control. `forbidden_token` is the
+    other side of the control's two-sided check: the treatment token, which a
+    control arm's probe must NOT report. A treatment arm passes none.
 
     Returns a guard block: `ok` False means the arm is INCONCLUSIVE — no
     score is written for it and the run exits 2. A probe that could not run
@@ -468,12 +532,15 @@ def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
                                 model=model, timeout=timeout,
                                 setting_sources=setting_sources, env=env)
     if "error" in result:
-        return {"expected": expected, "observed": None, "ok": False,
-                "model": model, "setting_sources": setting_sources,
+        return {"expected": expected, "observed": None, "contaminated": None,
+                "ok": False, "model": model, "setting_sources": setting_sources,
                 "error": {"type": result["error"], "detail": result.get("detail", "")},
                 "reply": ""}
     reply = result["reply"]
     observed = token in reply
-    return {"expected": expected, "observed": observed, "ok": observed == expected,
+    contaminated = bool(forbidden_token) and forbidden_token in reply
+    return {"expected": expected, "observed": observed,
+            "contaminated": contaminated, "ok": observed == expected
+            and not contaminated,
             "model": model, "setting_sources": setting_sources, "error": None,
             "reply": reply[:500]}

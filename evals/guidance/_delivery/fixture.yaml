@@ -10,10 +10,14 @@
 # the hook, whose only signal was its own verdict line. Keep the bridge canary
 # for the repo-stub path; this one covers user memory.
 #
-# Every arm carries the run's magic word (a fresh token per run, never
-# reproducible from an earlier one), so `none` seeing it means the arm was
-# contaminated — a real ~/.claude/CLAUDE.md that already IS the guidance —
-# and the harness reports INCONCLUSIVE rather than a number.
+# Every treatment arm carries the run's magic word (a fresh token per run,
+# never reproducible from an earlier one). The CONTROL arm carries a DECOY: a
+# second fresh token, delivered to it and to nothing else, through the same
+# hook. That makes the control's checks two-sided — it must report its decoy
+# (so it did read its own scratch user memory) and must not report the
+# treatment token (so nothing else delivered the guidance to it). A control
+# arm that carried nothing could only ever answer "no magic word", which is
+# also what a CONTAMINATED arm answers, so its guard proved nothing at all.
 #
 # TWO LOOKS PER ARM, deliberately. The harness's per-arm delivery guard is the
 # authoritative one: tool-free, with the canary's disallowed-tools list, so the
@@ -58,12 +62,16 @@ arms:
   without_guidance:
     mode: none
     objective_checks:
-      - id: token-absent-under-none
+      - id: decoy-visible-and-treatment-absent-under-none
         description: >
-          The control arm delivers nothing, so the magic word must not be in
-          its context. If it is, some other channel delivered the guidance to
-          this arm and every without-arm number in the fleet is suspect.
+          Two-sided. The control's own decoy token must be in its context —
+          it was delivered that and nothing else, so its absence means this
+          arm never read its own scratch user memory and nothing measured on
+          it means anything. The treatment token must NOT be: if it is, some
+          other channel delivered the guidance to this arm and every
+          without-arm number in the fleet is suspect.
         type: transcript_matches
+        must_match: ["$DECOY_TOKEN"]
         must_not_match: ["$MAGIC_TOKEN"]
   with_guidance_stub:
     mode: stub

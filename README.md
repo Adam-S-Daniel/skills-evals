@@ -145,7 +145,8 @@ in the `_agent-guidance` checkout (`--guidance PATH`, else
 `$AGENT_GUIDANCE_DIR`, else the sibling `../_agent-guidance`) — and each arm
 carries a delivery `mode:`.
 
-**Five modes.** `none` delivers nothing (the control). `stub` delivers
+**Five modes.** `none` delivers no guidance — the control, which does get a
+decoy token of its own (see the guard below). `stub` delivers
 `agents-md/stub.md`, what a repo carries inline. `section` delivers that
 section's extent — its `##` heading through the line before the next `##`,
 `###` children included — with its file's intro prepended. `full` delivers the
@@ -173,14 +174,25 @@ whichever was used is recorded as `delivery:` in every summary.
 carrying the fleet hook, the real `~/.claude/CLAUDE.md` already *is* the
 guidance. A harness that does not isolate the config dir per arm delivers the
 guidance to both arms and reports a null delta that reads as "the guidance
-does nothing" — a quiet, plausible, wrong number. So every non-`none` payload
-carries a trailing `The magic word is <token>.` with a fresh token per run,
-and every arm is probed for it before it is allowed to score anything: a
-tool-free `run_canary.run_leg` call against that arm's own config dir. A
-`with_*` arm that does not see the token, a `none` arm that does, or a probe
-that could not run at all, makes the arm **INCONCLUSIVE** — the summary
-carries `guard: {expected, observed}`, no score is written for that arm, and
-the run exits `2`. Never PASS, never FAIL.
+does nothing" — a quiet, plausible, wrong number. So every payload carries a
+trailing `The magic word is <token>.` with a fresh token per run, and every
+arm is probed for it before it is allowed to score anything: a tool-free
+`run_canary.run_leg` call against that arm's own config dir. The control's
+token is a **decoy** — a second fresh token, delivered to it and to nothing
+else — so that its guard asks a question with a wrong answer. Without it,
+`mode: none` delivered nothing and the control's probe could only ever answer
+"no magic word", which is also what it answers when the arm is contaminated.
+
+The guard therefore claims exactly this: a treatment arm was delivered its
+payload and reads it; a control arm reads its own scratch user memory and was
+not delivered the treatment payload. An ambient memory read *in addition* to
+the scratch one is prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR`
+isolation rather than by the guard, and is settled only by a real dispatch. An
+arm that does not report the token it was delivered, a control arm that
+reports the treatment token, or a probe that could not run at all, makes the
+arm **INCONCLUSIVE** — the summary carries
+`guard: {expected, observed, contaminated}`, no score is written for that arm,
+and the run exits `2`. Never PASS, never FAIL.
 
 Results land under `results/guidance/<id>/<timestamp>/<arm>/summary.json`
 (with `subject`, `section`, `mode`, `bytes`, `delivery`, `guard`), and

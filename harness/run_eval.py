@@ -907,6 +907,8 @@ _ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 # The token is fresh per run, so a fixture cannot name it; `transcript_matches`
 # patterns (and any other check string) get it substituted in at score time.
 TOKEN_PLACEHOLDER = "$MAGIC_TOKEN"
+# The CONTROL arm's own token, delivered to it and to nothing else.
+DECOY_PLACEHOLDER = "$DECOY_TOKEN"
 
 
 def _validate_arm_entry(name: str, entry: dict) -> dict:
@@ -979,15 +981,23 @@ def guidance_arms(fixture: dict, arm_flag: str, ablation: bool = False) -> list[
         f"{', '.join(a['name'] for a in arms)}; or `both` for all of them)")
 
 
-def substitute_token(value, token: str):
+def substitute_token(value, token: str, decoy: str | None = None):
     """Replace the fixture's `$MAGIC_TOKEN` placeholder with this run's token,
-    recursively, in a copy — the fixture dict itself is never mutated."""
+    recursively, in a copy — the fixture dict itself is never mutated.
+
+    `$DECOY_TOKEN` is the control arm's own token, and is substituted only for
+    an arm that HAS one (`mode: none`). Left alone elsewhere it stays a
+    literal, and a check looking for it fails loudly rather than passing on a
+    placeholder nobody filled in.
+    """
     if isinstance(value, str):
-        return value.replace(TOKEN_PLACEHOLDER, token)
+        out = value.replace(TOKEN_PLACEHOLDER, token)
+        return out if decoy is None else out.replace(DECOY_PLACEHOLDER, decoy)
     if isinstance(value, list):
-        return [substitute_token(item, token) for item in value]
+        return [substitute_token(item, token, decoy) for item in value]
     if isinstance(value, dict):
-        return {key: substitute_token(item, token) for key, item in value.items()}
+        return {key: substitute_token(item, token, decoy)
+                for key, item in value.items()}
     return value
 
 
@@ -1003,13 +1013,21 @@ def _guard_error(guard: dict) -> dict:
         return {"type": "guard_error",
                 "detail": f"delivery guard could not run: {guard['error']['type']}: "
                           f"{guard['error']['detail']}"}
+    if guard.get("contaminated"):
+        return {"type": "guard_contaminated",
+                "detail": "the delivery guard's probe reported the TREATMENT "
+                          "token in a control arm — this arm was delivered the "
+                          "guidance by some channel the harness does not "
+                          "control, so every without-arm number in this run is "
+                          "suspect; no score is written for it"}
     expectation = "the magic word" if guard["expected"] else "no magic word"
     observed = "saw it" if guard["observed"] else "did not see it"
     return {"type": "guard_miss",
             "detail": f"delivery guard expected {expectation}, the probe "
-                      f"{observed} — this arm was not delivered what its mode "
-                      "says (or something else already had been); no score is "
-                      "written for it"}
+                      f"{observed} — this arm did not read the token it was "
+                      "delivered (a treatment arm its payload's, a control arm "
+                      "its decoy), so it never read its own scratch user "
+                      "memory; no score is written for it"}
 
 
 def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
@@ -1028,8 +1046,15 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         _git("commit", "-q", "--allow-empty", "-m", "seed", cwd=workspace)
 
         delivery = ctx["delivery"]
+        # The token THIS arm is delivered. A treatment arm gets the run's
+        # magic token; the control gets a DECOY of its own, so that its guard
+        # can ask a question with a wrong answer — "does this arm read its own
+        # scratch user memory?" — instead of the vacuous "no magic word?", the
+        # one answer a `none` arm gave whether it was clean or contaminated.
+        decoy = guidance.new_decoy_token() if arm["mode"] == "none" else None
+        arm_token = decoy if decoy is not None else ctx["token"]
         payload = guidance.assemble(ctx["guidance_dir"], ctx["row"], arm["mode"],
-                                    token=ctx["token"])
+                                    token=arm_token)
         info = guidance.deliver(
             ctx["guidance_dir"], scratch=scratch, home=home, payload=payload,
             dest_dir=config if delivery == "user" else workspace)
@@ -1044,7 +1069,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         extra = {"subject": "guidance", "section": ctx["section"],
                  "mode": arm["mode"], "bytes": info["bytes"],
                  "delivery": delivery, "hook_verdict": info["verdict"],
-                 "installed": info["installed"],
+                 "installed": info["installed"], "decoy": decoy,
                  "hook_returncode": info["returncode"], "guard": None}
         if info["returncode"] is not None and (
                 not info["installed"] or info["returncode"] != 0):
@@ -1069,8 +1094,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         # tool-free probe — is what this line consults instead.
         preflight_model = args.model or fixture.get("model")
         guard = guidance.run_guard(
-            workspace=workspace, token=ctx["token"],
+            workspace=workspace, token=arm_token,
             expected=guidance.guard_expectation(arm["mode"]), env=env,
+            # The control's other side: it must NOT report the treatment
+            # token. A treatment arm has nothing forbidden.
+            forbidden_token=ctx["token"] if decoy is not None else None,
             setting_sources=setting_sources, model=preflight_model,
             timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
@@ -1111,7 +1139,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             }
             checks = arm["objective_checks"] or fixture.get("objective_checks", [])
             scored = dict(fixture)
-            scored["objective_checks"] = substitute_token(checks, ctx["token"])
+            scored["objective_checks"] = substitute_token(
+                checks, ctx["token"], decoy)
             objective_checks = objective.run_checks(
                 scored, str(workspace), str(seed), transcript=result.get("transcript"))
 

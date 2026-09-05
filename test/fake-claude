@@ -223,8 +223,13 @@ def main() -> int:
         return 0
 
     if MODE in ("guidance_probe", "guidance_blind"):
-        found = None if MODE == "guidance_blind" else MAGIC_RE.search(_loaded_memory())
-        emit({"result": found.group(1) if found else "NO-MAGIC-WORD",
+        # EVERY magic word in context, not the first: an arm can carry more
+        # than one (the control's decoy plus a contaminating ambient file),
+        # and a probe that reported only the first would let the treatment
+        # token hide behind the decoy — the contamination case the guard's
+        # forbidden-token side exists to catch.
+        found = [] if MODE == "guidance_blind" else MAGIC_RE.findall(_loaded_memory())
+        emit({"result": " ".join(found) if found else "NO-MAGIC-WORD",
              "is_error": False, "usage": USAGE, "total_cost_usd": 0.01,
              "num_turns": 1, "duration_ms": 100, "session_id": "fake-session"})
         return 0

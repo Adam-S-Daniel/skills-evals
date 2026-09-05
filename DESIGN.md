@@ -404,7 +404,8 @@ whether a section stays is therefore not "does it teach the behavior" but
 to pay for its bytes. So a `subject: guidance` fixture names a `section:` (an
 id from `_agent-guidance`'s `agents-md/eval-coverage.yml`, stable across
 heading rewordings) and its arms carry a delivery `mode:`. Five exist:
-`none` (the control, nothing delivered), `stub` (`agents-md/stub.md`, what a
+`none` (the control: no guidance, but a DECOY token of its own — see the
+guard below), `stub` (`agents-md/stub.md`, what a
 repo carries inline), `section` (the section's extent — its `##` heading
 through the line before the next `##`, `###` children included — with its
 file's intro prepended), `full` (the whole delivered corpus: `base.md`, plus
@@ -445,17 +446,33 @@ hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already
 IS the guidance. A harness that does not isolate the config dir per arm
 delivers to BOTH arms and reports a null delta that reads as "the guidance
 does nothing" — the most expensive kind of wrong answer, because it looks like
-a result. So every non-`none` payload ends in `The magic word is <token>.`
-with a fresh random token per run (an earlier run's token would let a stale
-real config dir satisfy this run's guard), and every arm is probed for it
-before it may score anything: one tool-free `run_canary.run_leg` call, with
-the canary's own disallowed-tools list so the model cannot forage the token
-off disk, against that arm's config dir and workspace, on the preflight model
-(the fixture's `model:` pin today; the roster's `preflight` entry once
-skills-evals#67 lands). A `with_*` arm that does not see the token, a `none`
-arm that does, or a probe that could not run at all, is **INCONCLUSIVE**: the
-summary carries `guard: {expected, observed}`, no score is written for that
-arm, and the run exits `2`. Never PASS, never FAIL. Two cheap calls per pair.
+a result. So every payload ends in `The magic word is <token>.` with a fresh
+random token per run (an earlier run's token would let a stale real config dir
+satisfy this run's guard), and every arm is probed for it before it may score
+anything: one tool-free `run_canary.run_leg` call, with the canary's own
+disallowed-tools list so the model cannot forage the token off disk, against
+that arm's config dir and workspace, on the preflight model (the fixture's
+`model:` pin today; the roster's `preflight` entry once skills-evals#67
+lands).
+
+The control gets a **decoy**: no guidance, but a second fresh token of its
+own, delivered through the same hook into the same kind of scratch config dir.
+Without it the control's guard was vacuous — `mode: none` delivered nothing,
+so its probe could only ever answer "no magic word", which is also what it
+answers when the arm IS contaminated. So the guard claims exactly this: a
+treatment arm was delivered its payload and reads it; a control arm reads its
+own scratch user memory (it reports its decoy) and was not delivered the
+treatment payload (it does not report the treatment token). What it does NOT
+settle is an ambient memory read *in addition* to the scratch one — that is
+prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR` isolation, not by the
+guard, because a probe asked for "the magic word" with two in context may
+report either, and only a real dispatch settles it.
+
+An arm that does not report the token IT was delivered, a control arm that
+reports the treatment token, or a probe that could not run at all, is
+**INCONCLUSIVE**: the summary carries
+`guard: {expected, observed, contaminated}`, no score is written for that arm,
+and the run exits `2`. Never PASS, never FAIL. Two cheap calls per pair.
 The harness also refuses outright to point a delivery at the real `~/.claude`,
 and the hermetic suite asserts a whole run leaves the real file
 byte-identical.

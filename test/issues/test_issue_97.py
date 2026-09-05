@@ -359,10 +359,30 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(guidance.assemble(root, row, "full-minus-section"),
                          FIXTURE_BASE_MD)
 
-    def test_mode_none_delivers_nothing_at_all_not_even_the_token(self):
+    def test_mode_none_delivers_no_guidance_but_does_deliver_a_decoy(self):
+        # The control delivers no GUIDANCE — and it is not delivered nothing.
+        # It carries a DECOY: the token it is handed, alone, in an otherwise
+        # empty block. That is what lets its guard ask a question with a wrong
+        # answer ("does this arm read its own scratch user memory?") instead
+        # of the vacuous "no magic word?", which a `none` arm answered
+        # identically whether it was clean or contaminated.
         root = self._checkout()
         row = self._row(root, "alpha")
-        self.assertEqual(guidance.assemble(root, row, "none", token="TOK-1"), "")
+        self.assertEqual(guidance.assemble(root, row, "none", token=None), "",
+                         "with no token there is nothing to deliver at all")
+        self.assertEqual(guidance.assemble(root, row, "none", token="TOK-1"),
+                         guidance.token_paragraph("TOK-1"))
+        self.assertNotIn("magic word is TOK-1",
+                         guidance.assemble(root, row, "none", token=None))
+
+    def test_the_decoy_generator_is_independent_of_the_treatment_one(self):
+        # If `new_decoy_token` were `new_token` under another name, a test that
+        # pins one would collapse the other into it and the control arm would
+        # be handed the TREATMENT token — reporting itself contaminated on
+        # every run.
+        with mock.patch.object(guidance, "new_token", lambda: "PINNED-0000"):
+            self.assertNotEqual(guidance.new_decoy_token(), "PINNED-0000")
+        self.assertNotEqual(guidance.new_decoy_token(), guidance.new_decoy_token())
 
     def test_every_non_none_payload_carries_the_magic_word_paragraph(self):
         root = self._checkout()
@@ -653,6 +673,10 @@ class TestIssue97(unittest.TestCase):
     # ------------------------------------------------------------------
 
     TOKEN = "TOKENAAA-9999"
+    # The control arm's own token. Pinned SEPARATELY from TOKEN: if the two
+    # collapsed, every control arm would be handed the treatment token and
+    # report itself contaminated.
+    DECOY = "DECOYBBB-1111"
 
     def _guidance_fixture(self, tmp: Path, **overrides) -> Path:
         eval_dir = tmp / "eval"
@@ -683,6 +707,8 @@ class TestIssue97(unittest.TestCase):
         with mock.patch.object(sys, "argv", argv), \
                 mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}), \
                 mock.patch.object(guidance, "new_token", lambda: self.TOKEN), \
+                mock.patch.object(guidance, "new_decoy_token",
+                                  lambda: self.DECOY), \
                 contextlib.redirect_stdout(buf):
             rc = run_eval.main()
         return rc, buf.getvalue()
@@ -722,11 +748,21 @@ class TestIssue97(unittest.TestCase):
 
         without = self._summary(results, "guidance/alpha", "without_guidance")
         self.assertEqual(without["mode"], "none")
-        self.assertEqual(without["bytes"], 0)
-        self.assertEqual(without["guard"]["expected"], False)
-        self.assertEqual(without["guard"]["observed"], False)
+        self.assertEqual(without["decoy"], self.DECOY)
+        self.assertGreater(without["bytes"], 0,
+                           "the control is delivered its decoy, so its "
+                           "payload is not empty — the GUIDANCE bytes are")
+        self.assertLess(without["bytes"], with_summary["bytes"],
+                        "and the decoy is a single paragraph, nothing like a "
+                        "section's payload")
+        self.assertEqual(without["guard"]["expected"], True)
+        self.assertEqual(without["guard"]["observed"], True,
+                         "the control must report ITS OWN decoy — that is the "
+                         "proof it read its own scratch user memory")
+        self.assertEqual(without["guard"]["contaminated"], False,
+                         "and must not report the treatment token")
         self.assertFalse(any(c["passed"] for c in without["objective_checks"]),
-                         "the control arm must not see the magic word")
+                         "the control arm must not see the TREATMENT token")
 
         report = (self._only_run_dir(results, "guidance/alpha")
                   / "report.md").read_text(encoding="utf-8")
@@ -878,9 +914,71 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(rc, 2, out)
         self.assertIn("INCONCLUSIVE", out)
         summary = self._summary(results, "guidance/alpha", "without_guidance")
-        self.assertFalse(summary["guard"]["expected"])
+        # The control reports BOTH tokens: its own decoy (it read its scratch
+        # memory) and the treatment token (something else delivered the
+        # guidance to it). The second is what condemns the arm.
+        self.assertTrue(summary["guard"]["expected"])
         self.assertTrue(summary["guard"]["observed"])
+        self.assertTrue(summary["guard"]["contaminated"])
+        self.assertFalse(summary["guard"]["ok"])
+        self.assertEqual(summary["error"]["type"], "guard_contaminated")
         self.assertIsNone(summary["objective_checks"])
+
+    def test_a_control_arm_whose_probe_is_blind_is_inconclusive_too(self):
+        # THE POINT OF THE DECOY. Before it, `mode: none` delivered nothing,
+        # so the control's probe could only ever answer "no magic word" — the
+        # same answer it gives when the arm IS contaminated, and the same
+        # answer it gives when the arm never read its own memory at all. The
+        # control's guard therefore passed unconditionally: this exact run
+        # scored clean. Now the control is delivered a decoy of its own, so a
+        # probe that reads nothing is caught the same way a treatment arm's is.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-blindcontrol-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "guidance_blind"})
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "without_guidance",
+                                  "--guidance", root, "--results-dir", results,
+                                  "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("INCONCLUSIVE", out)
+        summary = self._summary(results, "guidance/alpha", "without_guidance")
+        self.assertEqual(summary["mode"], "none")
+        self.assertTrue(summary["guard"]["expected"])
+        self.assertFalse(summary["guard"]["observed"])
+        self.assertFalse(summary["guard"]["contaminated"])
+        self.assertEqual(summary["error"]["type"], "guard_miss")
+        self.assertIsNone(summary["objective_checks"],
+                          "no score may be written for a control arm that "
+                          "never proved it reads its own scratch memory")
+
+    def test_the_control_arms_decoy_is_delivered_through_the_real_hook(self):
+        # The decoy travels the SAME path as a treatment payload — the real
+        # fleet-memory.sh, into the arm's own scratch config dir — not a
+        # shortcut the harness writes itself.
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        scratch = Path(tempfile.mkdtemp(prefix="guidance-decoy-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        config, home = scratch / "config", scratch / "home"
+        for path in (config, home):
+            path.mkdir(parents=True)
+        decoy = guidance.new_decoy_token()
+        info = guidance.deliver(root, scratch=scratch, dest_dir=config,
+                                home=home, payload=guidance.assemble(
+                                    root, self._row(root, "alpha"), "none",
+                                    token=decoy))
+        self.assertTrue(info["installed"],
+                        "the real hook must install a block that carries only "
+                        "the decoy paragraph")
+        self.assertEqual(info["returncode"], 0)
+        delivered = (config / "CLAUDE.md").read_text(encoding="utf-8")
+        self.assertIn(guidance.BEGIN_MARK, delivered)
+        self.assertIn(decoy, delivered)
+        self.assertNotIn("alpha section body", delivered,
+                         "and no guidance with it")
 
     def test_a_guard_that_cannot_run_is_inconclusive_not_a_skipped_guard(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-guarderr-"))
@@ -1241,15 +1339,24 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(sorted(modes), sorted(guidance.MODES),
                          "the delivery canary runs one arm per mode")
         self.assertEqual(len(fixture["arms"]), 5)
-        # Every non-none arm asserts the token IS visible; the control arm
-        # asserts it is not. The token is fresh per run, so the fixture names
-        # it with the harness's placeholder.
+        # Every treatment arm asserts the treatment token IS visible. The
+        # control's check is TWO-SIDED: its own decoy must be visible (it read
+        # its own scratch user memory) and the treatment token must not be
+        # (nothing else delivered the guidance to it). Both tokens are fresh
+        # per run, so the fixture names them with the harness's placeholders.
         for name, arm in fixture["arms"].items():
             with self.subTest(arm=name):
                 checks = arm["objective_checks"]
                 self.assertEqual([c["type"] for c in checks], ["transcript_matches"])
-                key = "must_not_match" if arm["mode"] == "none" else "must_match"
-                self.assertEqual(checks[0][key], [run_eval.TOKEN_PLACEHOLDER])
+                if arm["mode"] == "none":
+                    self.assertEqual(checks[0]["must_match"],
+                                     [run_eval.DECOY_PLACEHOLDER])
+                    self.assertEqual(checks[0]["must_not_match"],
+                                     [run_eval.TOKEN_PLACEHOLDER])
+                else:
+                    self.assertEqual(checks[0]["must_match"],
+                                     [run_eval.TOKEN_PLACEHOLDER])
+                    self.assertNotIn("must_not_match", checks[0])
 
     def test_the_delivery_fixtures_section_exists_in_the_real_manifest(self):
         if not (REAL_GUIDANCE_DIR / guidance.MANIFEST_REL).is_file():
@@ -1286,8 +1393,13 @@ class TestIssue97(unittest.TestCase):
             with self.subTest(arm=name):
                 summary = self._summary(results, key, name)
                 self.assertTrue(summary["guard"]["ok"], summary["guard"])
-                self.assertEqual(summary["guard"]["expected"], arm["mode"] != "none")
-                self.assertEqual(summary["bytes"] > 0, arm["mode"] != "none")
+                self.assertTrue(summary["guard"]["expected"],
+                                "every arm reports the token IT was delivered")
+                self.assertTrue(summary["guard"]["observed"], summary["guard"])
+                self.assertFalse(summary["guard"]["contaminated"],
+                                 summary["guard"])
+                self.assertGreater(summary["bytes"], 0,
+                                   "the control's bytes are its decoy's")
                 self.assertTrue(all(c["passed"] for c in summary["objective_checks"]),
                                 summary["objective_checks"])
         stub = self._summary(results, key, "with_guidance_stub")["bytes"]
@@ -1596,7 +1708,9 @@ class TestIssue97(unittest.TestCase):
         # Both ablation arms are delivered arms, so both must SEE the token —
         # the ablation asks about marginal value in situ, not about delivery.
         for arm in arms:
-            self.assertTrue(guidance.guard_expectation(arm["mode"]))
+            self.assertTrue(guidance.guard_expectation(arm["mode"]),
+                            "every arm, control included, must report the "
+                            "token IT was delivered")
         for bad in ({}, {"ablation": ["full"]}, {"ablation": "full"},
                     {"ablation": ["full", "full"]}):
             with self.subTest(fixture=bad):
