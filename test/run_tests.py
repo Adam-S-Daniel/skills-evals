@@ -2816,6 +2816,137 @@ class TestIssue85(unittest.TestCase):
         self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
                          by_id["cms-platform-refs-stay-on-tag"]["detail"])
 
+    # -- the carve-out check is structural, not a text regex (review round 3,
+    # S-1) -- a `file_matches` must_match/must_not_match pair decides two YAML
+    # values by scanning raw concatenated text: a stale "# was ..." comment
+    # satisfies must_match even though the live value beneath it drifted, and
+    # quoting/spacing around a genuinely correct value defeats an exact-text
+    # must_match. `platform_refs_on_tag` composes the tree and compares each
+    # leaf node's own parsed value instead.
+
+    def test_platform_refs_on_tag_correct_audit_passes(self):
+        by_id = self._run(audited=True)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_comment_skew_on_platform_ref_fails(self):
+        """A '# was platform_ref: v0.1.104' comment left above a drifted
+        'platform_ref: v0.1.99' line must not satisfy the check — only the
+        live parsed value counts, and the failure must name the LIVE value's
+        own line, not the comment's.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "      platform_ref: v0.1.104",
+                          "      # was platform_ref: v0.1.104\n"
+                          "      platform_ref: v0.1.99")
+            text = deploy.read_text(encoding="utf-8")
+            target_line = next(i for i, line in enumerate(text.splitlines(), 1)
+                               if line.strip() == "platform_ref: v0.1.99")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn(f":{target_line} platform_ref: v0.1.99", detail)
+
+    def test_platform_refs_on_tag_comment_skew_on_uses_fails(self):
+        """Same trap, the `uses:` shape: a stale '# was ...@v0.1.104' comment
+        above a drifted '...@v0.1.99' live ref must not satisfy the check.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(
+                deploy,
+                "    uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.104",
+                "    # was Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.104\n"
+                "    uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.99")
+            text = deploy.read_text(encoding="utf-8")
+            target_line = next(
+                i for i, line in enumerate(text.splitlines(), 1)
+                if line.strip() == "uses: Adam-S-Daniel/cms-platform/"
+                                   ".github/workflows/e2e-tests.yml@v0.1.99")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn(f":{target_line} uses:", detail)
+
+    def test_platform_refs_on_tag_accepts_quoted_value(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          'platform_ref: "v0.1.104"')
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_accepts_double_spaced_value(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          "platform_ref:  v0.1.104")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_rejects_uses_sha_rewrite_with_tag_surviving_in_comment(self):
+        """The tag literal appearing elsewhere in the file (a trailing
+        comment) must not paper over a SHA-rewritten live `uses:` ref — the
+        check reads the value NODE, not whether the tag string appears
+        anywhere in the file's text.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "@v0.1.104",
+                          "@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8") + "\n# still on v0.1.104 elsewhere\n",
+                encoding="utf-8")
+            text = deploy.read_text(encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertIn("v0.1.104", text)  # the literal does survive, in a comment
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_rejects_platform_ref_sha_rewrite_with_tag_surviving_in_sibling_job(self):
+        """N2 revisited: a `platform_ref:` rewritten to a SHA must fail even
+        though the tag literal survives elsewhere in the same file (the
+        sibling `uses:` line, left untouched) — the old
+        `platform_ref: [0-9a-fA-F]{40}` must_not_match line covered this only
+        accidentally (must_match already failed once the literal text
+        'platform_ref: v0.1.104' was gone); the structural check must fail
+        it directly, by reading the platform_ref value node itself.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(deploy, "platform_ref: v0.1.104",
+                          "platform_ref: 1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            text = deploy.read_text(encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertIn("uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                     "e2e-tests.yml@v0.1.104", text)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
     # -- the restraint checks have teeth too ---------------------------------
 
     def test_editing_local_docker_workflow_fails_restraint(self):

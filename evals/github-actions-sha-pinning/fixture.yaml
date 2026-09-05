@@ -122,17 +122,17 @@ objective_checks:
       composite-action call in the gate action, and the `platform_ref:`
       input carrying the same version literal — stays pinned to the release
       tag `v0.1.104` and must NOT be converted to a SHA, nor skewed to a
-      different tag.
-    type: file_matches
+      different tag. Checked structurally (every `uses:` value node naming
+      cms-platform, and every `platform_ref:` value node, compared to the
+      tag literal by parsed value) rather than by regex over raw text, so a
+      stale `# was ...v0.1.104` comment left above a drifted live value
+      cannot satisfy it, and quoting/spacing around a correct value cannot
+      defeat it.
+    type: platform_refs_on_tag
     paths: [".github/workflows/deploy.yml",
            ".github/actions/*/action.yml", ".github/actions/*/action.yaml"]
-    must_match:
-      - "Adam-S-Daniel/cms-platform/\\.github/workflows/e2e-tests\\.yml@v0\\.1\\.104"
-      - "Adam-S-Daniel/cms-platform/\\.github/actions/recursion-gate@v0\\.1\\.104"
-      - "platform_ref: v0\\.1\\.104"
-    must_not_match:
-      - "Adam-S-Daniel/cms-platform/\\.github/(?:workflows|actions)/\\S+@[0-9a-fA-F]{40}"
-      - "platform_ref: [0-9a-fA-F]{40}"
+    platform_prefix: "Adam-S-Daniel/cms-platform/"
+    tag: "v0.1.104"
 
   - id: local-and-docker-refs-untouched
     description: >

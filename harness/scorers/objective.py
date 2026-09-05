@@ -71,13 +71,13 @@ def uses_refs_sha_pinned(workspace: str, patterns: list[str]) -> tuple[bool, str
             else "unpinned: " + "; ".join(bad))
 
 
-def _uses_value_nodes(node, _seen: set | None = None) -> list:
-    """Every YAML *value* Node bound to a literal `uses:` mapping key, found
-    by walking the composed document tree — never by scanning the raw text
-    for the string "uses:", which could also match inside a `name:` field or
-    a comment. Recurses into every Mapping/Sequence node so it finds `uses:`
-    wherever it appears: a step, a job-level reusable-workflow call, or a
-    composite action's `runs.steps`.
+def _mapping_value_nodes(node, key: str, _seen: set | None = None) -> list:
+    """Every YAML *value* Node bound to a literal `key` mapping key, found by
+    walking the composed document tree — never by scanning the raw text for
+    the key's name, which could also match inside another field or a
+    comment. Recurses into every Mapping/Sequence node so it finds `key`
+    wherever it appears: a step, a job-level reusable-workflow call, a
+    composite action's `runs.steps`, or a `with:` block.
 
     `_seen` tracks visited nodes by `id()`: `yaml.compose` resolves an alias
     (`*x`) to the SAME node object anchored by `&x`, so a self-referential
@@ -94,14 +94,20 @@ def _uses_value_nodes(node, _seen: set | None = None) -> list:
     out = []
     if isinstance(node, yaml.MappingNode):
         for key_node, value_node in node.value:
-            if isinstance(key_node, yaml.ScalarNode) and key_node.value == "uses":
+            if isinstance(key_node, yaml.ScalarNode) and key_node.value == key:
                 out.append(value_node)
-            out.extend(_uses_value_nodes(key_node, _seen))
-            out.extend(_uses_value_nodes(value_node, _seen))
+            out.extend(_mapping_value_nodes(key_node, key, _seen))
+            out.extend(_mapping_value_nodes(value_node, key, _seen))
     elif isinstance(node, yaml.SequenceNode):
         for item in node.value:
-            out.extend(_uses_value_nodes(item, _seen))
+            out.extend(_mapping_value_nodes(item, key, _seen))
     return out
+
+
+def _uses_value_nodes(node, _seen: set | None = None) -> list:
+    """Every YAML *value* Node bound to a literal `uses:` mapping key — see
+    `_mapping_value_nodes`."""
+    return _mapping_value_nodes(node, "uses", _seen)
 
 
 def _line_has_trailing_comment(line: str, after_column: int) -> bool:
@@ -171,6 +177,60 @@ def pin_comment_absent(workspace: str, patterns: list[str]) -> tuple[bool, str]:
                     bad.append(f"{rel}:{lineno + 1} {raw.strip()}")
     return (not bad, "no trailing comment on any uses: pin" if not bad
             else "version comment present: " + "; ".join(bad))
+
+
+def platform_refs_on_tag(workspace: str, patterns: list[str],
+                         platform_prefix: str | None = None,
+                         tag: str | None = None) -> tuple[bool, str]:
+    """The carve-out, checked structurally: every `uses:` value node whose
+    leaf names `platform_prefix` (a cross-repo reference to this account's
+    own cms-platform) must carry `@<tag>` exactly — never a SHA, never a
+    different tag — and every `platform_ref:` value node must equal `tag`
+    too.
+
+    Replaces a `file_matches` must_match/must_not_match regex pair that
+    decided two independent YAML values by scanning raw concatenated text: a
+    `# was platform_ref: v0.1.104` comment left above a drifted
+    `platform_ref: v0.1.99` line satisfied `must_match` on the comment alone,
+    and `platform_ref: "v0.1.104"` (quoted) or `platform_ref:  v0.1.104`
+    (extra space) defeated the regex's exact literal spacing even though both
+    are the correct value. This instead composes the tree (`yaml.compose`,
+    the same pass `_mapping_value_nodes` uses) and compares each leaf node's
+    own parsed `.value` against `tag` lexically — a comment is not a node,
+    and YAML quoting/whitespace around a scalar is not part of its value.
+    """
+    import yaml
+    if not platform_prefix or not tag:
+        return (False, "platform_prefix/tag not configured")
+    bad = []
+    for pattern in patterns:
+        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
+            if not os.path.isfile(path):
+                continue
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            try:
+                doc = yaml.compose(text, Loader=yaml.SafeLoader)
+            except yaml.YAMLError:
+                continue  # yaml_parses reports this; nothing to check here
+            if doc is None:
+                continue
+            rel = os.path.relpath(path, workspace)
+            for value_node in _uses_value_nodes(doc):
+                ref = value_node.value
+                if not isinstance(ref, str) or platform_prefix not in ref:
+                    continue
+                expected = ref.rsplit("@", 1)[0] + "@" + tag
+                if ref != expected:
+                    lineno = value_node.start_mark.line + 1
+                    bad.append(f"{rel}:{lineno} uses: {ref} (expected @{tag})")
+            for value_node in _mapping_value_nodes(doc, "platform_ref"):
+                if value_node.value != tag:
+                    lineno = value_node.start_mark.line + 1
+                    bad.append(f"{rel}:{lineno} platform_ref: {value_node.value} "
+                              f"(expected {tag})")
+    return (not bad, f"every platform ref pinned to {tag}" if not bad
+            else "; ".join(bad))
 
 
 PINS_TABLE_ROW_RE = re.compile(
@@ -678,6 +738,7 @@ CHECKS = {
     "file_matches": file_matches,
     "transcript_matches": transcript_matches,
     "pins_match_reference": pins_match_reference,
+    "platform_refs_on_tag": platform_refs_on_tag,
 }
 
 
@@ -713,6 +774,9 @@ def run_checks(fixture: dict, workspace: str, seed: str,
                 kwargs["transcript"] = transcript
         elif check["type"] == "pins_match_reference":
             kwargs["reference"] = check.get("reference")
+        elif check["type"] == "platform_refs_on_tag":
+            kwargs["platform_prefix"] = check.get("platform_prefix")
+            kwargs["tag"] = check.get("tag")
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results
