@@ -2976,7 +2976,6 @@ One fewer dependency to update.
     # under that heading — see the two seeds' AGENTS.md files themselves,
     # and test_seed_files_are_byte_identical_except_for_their_premise below.
     BOOTSTRAP_AGENTS_MD_POINTER = """
-
 ### Architecture Decision Records
 
 Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
@@ -3566,6 +3565,50 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
     def test_readme_lists_the_writing_adrs_eval_directory(self):
         readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("writing-adrs/", readme_text)
+
+    # ======================================================================
+    # N7: the two seeds must stay byte-identical except for what each
+    # fixture's premise changes (existing-convention already has
+    # docs/decisions/, and its AGENTS.md already carries the ADR pointer).
+    # ======================================================================
+
+    def test_seed_files_are_byte_identical_except_for_their_premise(self):
+        bootstrap_seed = ADRS_BOOTSTRAP_DIR / "seed"
+        existing_seed = ADRS_EXISTING_DIR / "seed"
+
+        for rel in ("README.md", "CHANGELOG.md", "scripts/retry.sh"):
+            with self.subTest(file=rel):
+                self.assertEqual(
+                    (bootstrap_seed / rel).read_bytes(),
+                    (existing_seed / rel).read_bytes(),
+                    f"{rel} differs between the two seeds")
+
+        # AGENTS.md differs by exactly the pointer paragraph the
+        # existing-convention premise (docs/decisions/ already exists) adds.
+        bootstrap_agents = (bootstrap_seed / "AGENTS.md").read_text(encoding="utf-8")
+        existing_agents = (existing_seed / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertEqual(
+            existing_agents, bootstrap_agents + self.BOOTSTRAP_AGENTS_MD_POINTER,
+            "AGENTS.md diverges by more than the ADR pointer paragraph")
+
+        # docs/decisions/ is the other premise difference: bootstrap has none.
+        self.assertFalse((bootstrap_seed / "docs").exists())
+        self.assertTrue((existing_seed / "docs" / "decisions" / "README.md").is_file())
+
+        def _files(root: Path) -> set[str]:
+            return {str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()}
+
+        bootstrap_files = _files(bootstrap_seed)
+        existing_files = _files(existing_seed)
+        self.assertEqual(bootstrap_files - existing_files, set(),
+                         "bootstrap seed has files existing-convention lacks")
+        self.assertEqual(existing_files - bootstrap_files, {
+            "docs/decisions/README.md",
+            "docs/decisions/0001-cache-order-status-in-redis.md",
+            "docs/decisions/0002-poll-fulfillment-service-every-30s.md",
+            "docs/decisions/0003-poll-fulfillment-service-every-10s.md",
+        }, "existing-convention seed's extra files are not exactly its "
+           "docs/decisions/ premise")
 
 
 if __name__ == "__main__":
