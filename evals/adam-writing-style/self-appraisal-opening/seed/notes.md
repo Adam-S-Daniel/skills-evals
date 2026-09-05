@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 # Q3 notes
 
 - Stood up `deploy-scaffold`, the shared deployment repository. Six

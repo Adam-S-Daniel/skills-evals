@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 # Brief
 
 We are responding to RFP HRLS-2026-014, "Website modernization and

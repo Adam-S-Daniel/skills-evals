@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 # Brief
 
 Q3 self-appraisal. The form wants a narrative opening before the bulleted

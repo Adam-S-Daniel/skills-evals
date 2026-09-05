@@ -2633,8 +2633,12 @@ class TestIssue81(unittest.TestCase):
         return {r["id"]: r for r in results}
 
     def _reference(self, name: str, which: str) -> str:
-        return (self.STYLE_DIR / name / "references"
-                / f"{which}.md").read_text(encoding="utf-8")
+        # Without the fiction marker, same as judge.load_references: it is
+        # a note to a reader of the repo, not part of the writing, and a
+        # check that saw it would be scoring a line no draft ever has.
+        return judge.strip_fiction_marker(
+            (self.STYLE_DIR / name / "references"
+             / f"{which}.md").read_text(encoding="utf-8"))
 
     def _seed_text(self, name: str) -> str:
         seed = self.STYLE_DIR / name / "seed"
@@ -3253,6 +3257,32 @@ class TestIssue81(unittest.TestCase):
             if cls._PHONE_RE.search(text):
                 problems.append(f"{rel}: looks like a phone number")
         return problems, scanned
+
+    FICTION_MARKER = "<!-- fictional -->"
+
+    def test_every_reference_and_seed_prose_file_is_marked_fictional(self):
+        # One line at the top of every piece of prose in here, so a reader
+        # who lands on a single file — on GitHub, in a diff, in a search
+        # result — knows the recruiter, the employer and the RFP are
+        # invented before reading a word of them.
+        marked = 0
+        for name in self.FIXTURES:
+            for path in sorted((self.STYLE_DIR / name).rglob("*.md")):
+                with self.subTest(path=str(path.relative_to(self.STYLE_DIR))):
+                    first = path.read_text(encoding="utf-8").splitlines()[0]
+                    self.assertEqual(first.strip(), self.FICTION_MARKER)
+                    marked += 1
+        self.assertGreaterEqual(marked, 13, "the prose files moved")
+
+    def test_the_fiction_marker_never_reaches_the_judge(self):
+        # It is on every reference and on no model's reply, so leaving it
+        # in would label the references for the judge — the loudest tell
+        # there is, and the exact thing the blinding exists to remove.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                prompt, _ = self._trial_zero_prompt(name)
+                self.assertNotIn("fictional", prompt.lower())
+                self.assertNotIn("<!--", prompt)
 
     def test_fixtures_are_fictional_and_carry_no_credentials(self):
         problems, scanned = self._fiction_problems(self.STYLE_DIR)

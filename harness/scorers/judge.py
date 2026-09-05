@@ -356,6 +356,19 @@ def blind_order(candidate_text: str, references: list,
 _DRAFT_CLOSE = "</draft>"
 
 
+# Every committed reference and every seed prose file in a Class C fixture
+# opens with this line, so a reader who lands on one file alone knows the
+# people and employers in it are invented. It is stripped out of a
+# reference before the judge sees it: it is on every reference and on no
+# model's reply, which would make it the loudest tell in the prompt.
+FICTION_MARKER_RE = re.compile(r"\A\s*<!--\s*fictional\s*-->[ \t]*\n?",
+                               re.IGNORECASE)
+
+
+def strip_fiction_marker(text: str) -> str:
+    return FICTION_MARKER_RE.sub("", text or "", count=1)
+
+
 def _normalize_draft_text(text: str) -> str:
     """One draft, reduced to the line shape every other draft has.
 
@@ -577,7 +590,8 @@ def load_references(eval_dir, judge_cfg: dict) -> list[dict]:
             raise ValueError(f"reference file {resolved} not found")
         name = entry.get("name")
         loaded.append({"name": f"reference-{i}" if name is None else name,
-                       "text": resolved.read_text(encoding="utf-8")})
+                       "text": strip_fiction_marker(
+                           resolved.read_text(encoding="utf-8"))})
     return _normalize_references(loaded)
 
 

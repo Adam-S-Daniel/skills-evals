@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 Most of this quarter went to the deployment work. I stood up
 deploy-scaffold as the shared deployment repository; six application teams
 have adopted it and two more are mid-migration. The cache and matrix rework

@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 This quarter I made significant contributions across a number of strategic
 initiatives. I leveraged my platform experience to drive adoption of a
 robust, standardized deployment solution that delivered meaningful

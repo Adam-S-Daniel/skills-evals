@@ -1,3 +1,5 @@
+<!-- fictional -->
+
 # Brief
 
 Dana Whitcombe's cold email is in `inbox/cold-email.md`. I am not taking
