@@ -2786,6 +2786,11 @@ forever.
                           "Retry transient failures up to 5 times with capped "
                           "exponential backoff | Accepted |\n")
 
+    # Captures the linked filename in group 1 — used by
+    # _assert_index_link_target_exists (issue #80 review N4).
+    EXISTING_INDEX_LINK_RE = r'\[0004\]\((0004-[a-z0-9-]+\.md)\)'
+    BOOTSTRAP_INDEX_LINK_RE = r'\[0001\]\((0001-[a-z0-9-]+\.md)\)'
+
     EXISTING_README_ANCHOR = (
         "| [0003](0003-poll-fulfillment-service-every-10s.md) | Poll the "
         "fulfillment service every 10 seconds | Accepted |\n")
@@ -3080,9 +3085,34 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self._link_retry_sh_bootstrap(ws)
         self._add_agents_md_pointer_bootstrap(ws)
 
+    # ---- N4: index rows can name a slug no file matches ---------------------
+
+    def _assert_index_link_target_exists(self, ws: Path, index_pattern: str) -> None:
+        """`index-gained-a-row-for-*`'s file_matches regex only confirms a row
+        of the right SHAPE is present in docs/decisions/README.md — it never
+        cross-checks the linked filename against the filesystem, so an index
+        row naming a slug no file matches would still satisfy it. No fixture
+        check type does this cross-check (issue #80 review N4); done here at
+        the test level instead of widening objective.py's check surface for
+        one fixture. `index_pattern` must capture the linked filename in
+        group 1.
+        """
+        text = (ws / "docs" / "decisions" / "README.md").read_text(encoding="utf-8")
+        m = re.search(index_pattern, text)
+        self.assertIsNotNone(
+            m, f"docs/decisions/README.md has no index row matching {index_pattern}")
+        linked = m.group(1)
+        self.assertTrue(
+            (ws / "docs" / "decisions" / linked).is_file(),
+            f"README.md's index links docs/decisions/{linked}, which doesn't exist")
+
     # ======================================================================
     # existing-convention
     # ======================================================================
+
+    # ---- N4: index rows can name a slug no file matches ---------------------
+
+
 
     def test_existing_pristine_seed_fails_every_check(self):
         ws = self._ws(ADRS_EXISTING_DIR)
@@ -3100,6 +3130,30 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         by_id = self._checks(ADRS_EXISTING_DIR, ws)
         for check_id, result in by_id.items():
             self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+        self._assert_index_link_target_exists(ws, self.EXISTING_INDEX_LINK_RE)
+
+    def test_existing_mismatched_index_slug_passes_every_fixture_check_but_fails_the_cross_check(self):
+        # N4: index-gained-a-row-for-0004's must_match only checks the row's
+        # SHAPE. Point the index row at a slug that names no real file (the
+        # actual ADR file keeps its correct name) and every fixture check
+        # still passes — the cross-check above is what catches it.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        readme = ws / "docs" / "decisions" / "README.md"
+        text = readme.read_text(encoding="utf-8")
+        self.assertIn(self.EXISTING_INDEX_ROW, text)
+        mismatched_row = self.EXISTING_INDEX_ROW.replace(
+            "0004-retry-with-capped-exponential-backoff.md", "0004-retry-policy.md")
+        readme.write_text(text.replace(self.EXISTING_INDEX_ROW, mismatched_row),
+                          encoding="utf-8")
+
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        for check_id in ("adr-0004-house-format-sections-in-order",
+                        "index-gained-a-row-for-0004", "retry-sh-links-the-adr",
+                        "exactly-one-new-adr-file", "nothing-else-touched"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+        with self.assertRaises(AssertionError):
+            self._assert_index_link_target_exists(ws, self.EXISTING_INDEX_LINK_RE)
 
     def test_existing_cli_objective_only_exit_codes(self):
         ws_pristine = self._ws(ADRS_EXISTING_DIR)
@@ -3225,6 +3279,31 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
         for check_id, result in by_id.items():
             self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+        self._assert_index_link_target_exists(ws, self.BOOTSTRAP_INDEX_LINK_RE)
+
+    def test_bootstrap_mismatched_index_slug_passes_every_fixture_check_but_fails_the_cross_check(self):
+        # N4, bootstrap side: same gap as existing-convention's twin test —
+        # a mismatched index-row slug still satisfies every fixture check.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        readme = ws / "docs" / "decisions" / "README.md"
+        text = readme.read_text(encoding="utf-8")
+        original_row = ("| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry "
+                        "transient failures up to 5 times with capped exponential "
+                        "backoff | Accepted |")
+        self.assertIn(original_row, text)
+        mismatched_row = original_row.replace(
+            "0001-retry-with-capped-exponential-backoff.md", "0001-retry-policy.md")
+        readme.write_text(text.replace(original_row, mismatched_row), encoding="utf-8")
+
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        for check_id in ("readme-bootstrapped-in-skill-shape",
+                        "index-gained-a-row-for-0001", "adr-0001-sections-in-order",
+                        "retry-sh-links-the-adr", "exactly-one-adr-file",
+                        "nothing-else-touched", "agents-md-gained-the-pointer"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+        with self.assertRaises(AssertionError):
+            self._assert_index_link_target_exists(ws, self.BOOTSTRAP_INDEX_LINK_RE)
 
     def test_bootstrap_cli_objective_only_exit_codes(self):
         ws_pristine = self._ws(ADRS_BOOTSTRAP_DIR)
