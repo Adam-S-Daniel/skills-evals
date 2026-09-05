@@ -57,14 +57,15 @@ registry: https://github.com/Adam-S-Daniel/agentskills
 # model across releases.
 model: claude-sonnet-5
 
-# What the agent under test (and, transitively, this fixture's seed
-# generator) needs beyond a bare Python 3 interpreter. Not consumed by this
-# fixture's own objective checks or by test/run_tests.py — those run against
-# the already-committed, static seed/inbox/*.pdf and never regenerate or
-# read them with pypdf. This is what the harness lane's with_skill/
-# without_skill agent run needs installed before invoking the CLI, since
+# What the agent under test needs beyond a bare Python 3 interpreter, since
 # scripts/extract_pdf_context.py (the skill's own helper) imports pypdf to
-# read the seed PDFs' text.
+# read the seed PDFs' text. Nothing consumes this block yet — not this
+# fixture's own objective checks, not test/run_tests.py (both run only
+# against the already-committed, static seed/inbox/*.pdf, never regenerating
+# or reading them with pypdf), and not run_eval.py, which does not install
+# anything before invoking the CLI. It is documentation only until the
+# harness lane (#97) is built to actually install pinned packages ahead of
+# a real with_skill/without_skill run.
 requires:
   python:
     - package: pypdf
