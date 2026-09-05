@@ -1171,6 +1171,9 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
     workspace_real = os.path.realpath(workspace)
     base_dir = os.path.join(workspace, base)
     base_real = os.path.realpath(base_dir)
+    # os.path.commonpath raises ValueError for paths on different drives — unreachable on
+    # POSIX (Windows-only), and CI runs ubuntu, so this and the commonpath call below are
+    # both left to raise rather than guarded against a case this fleet never runs on.
     if os.path.commonpath([workspace_real, base_real]) != workspace_real:
         return (False, f"{base}: resolves outside the workspace")
     matched = set()
