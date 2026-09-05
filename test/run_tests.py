@@ -3218,6 +3218,27 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
 
+    def test_existing_retry_sh_header_gutted_fails_only_the_link_check(self):
+        # N5: retry-sh-links-the-adr used to pass on the ADR path appearing
+        # ANYWHERE in retry.sh, with nothing guarding the header's own
+        # decision sentence — the thing the judge rubric leans on to grade
+        # the ADR's content against. Keep the ADR link but gut that
+        # sentence; only this check should now catch it.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        retry_sh = ws / "scripts" / "retry.sh"
+        text = retry_sh.read_text(encoding="utf-8")
+        sentence = "retry a transient command failure with capped exponential backoff"
+        self.assertIn(sentence, text, "retry.sh header sentence drifted out of the seed")
+        retry_sh.write_text(text.replace(sentence, "do a thing"), encoding="utf-8")
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"],
+                         by_id["retry-sh-links-the-adr"]["detail"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
     def test_existing_second_adr_for_changelog_fact_fails_only_count_check(self):
         # The correct fix, PLUS an extra ADR nobody asked for, recording
         # CHANGELOG.md's routine dependency-removal fact. Everything about
@@ -3359,6 +3380,25 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
         self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
+
+    def test_bootstrap_retry_sh_header_gutted_fails_only_the_link_check(self):
+        # N5, bootstrap side: same guard as existing-convention's twin test.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        retry_sh = ws / "scripts" / "retry.sh"
+        text = retry_sh.read_text(encoding="utf-8")
+        sentence = "retry a transient command failure with capped exponential backoff"
+        self.assertIn(sentence, text, "retry.sh header sentence drifted out of the seed")
+        retry_sh.write_text(text.replace(sentence, "do a thing"), encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"],
+                         by_id["retry-sh-links-the-adr"]["detail"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
         self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
