@@ -4505,6 +4505,57 @@ class TestIssue81(unittest.TestCase):
                     "recruiter-reply", reply + "\n\n" + line + "\n")
                 self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
 
+    # S5 (the code review's should-fix): `_FENCE_RE` matches only the
+    # delimiter run, but the whole LINE was dropped — so the info string,
+    # which is the agent's own writing, went with it and avoid-list words
+    # parked on the opening fence switched the ban off. Five spellings
+    # ALL-PASSED on the merged tree.
+    _FENCE_INFO_LINES = (
+        "```leverage synergy",
+        "~~~robust",
+        "````best-in-class",
+        "   ```world-class",
+        "```text deep dive",
+    )
+
+    def test_avoid_list_words_on_a_fence_line_still_fire(self):
+        reply = self._reference("recruiter-reply", "in-voice").strip()
+        for fence in self._FENCE_INFO_LINES:
+            with self.subTest(fence=fence):
+                by_id = self._score_reusing_workspace(
+                    "recruiter-reply",
+                    reply + "\n\n" + fence + "\nsome code\n```\n")
+                self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
+
+    def test_a_plain_fence_line_is_still_a_delimiter(self):
+        # The delimiter itself is still scaffolding: a fenced paste of her
+        # whole email leaves nothing behind, and a bare fence contributes no
+        # words of its own.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        cold = (self.STYLE_DIR / "recruiter-reply" / "seed" / "inbox"
+                / "cold-email.md").read_text(encoding="utf-8")
+        for opener in ("```", "~~~", "````", "```text"):
+            with self.subTest(opener=opener):
+                fenced = opener + "\n" + cold + "\n```\n"
+                residue = objective.strip_seed_material(fenced, seed)
+                self.assertEqual(residue.replace("text", "").strip(), "")
+        self.assertEqual(
+            objective.strip_seed_material("```\n```\n", seed), "")
+
+    def test_a_fence_opened_under_a_paste_does_not_rescue_it(self):
+        # Why the info string stands alone rather than joining the
+        # paragraph: a fence opened directly under a pasted seed line must
+        # not change that line's words and hand the paste its provenance
+        # back.
+        for name in self.FIXTURES:
+            material = self._seed_text(name)
+            transcript = (self._REGISTER_FILLER[name] + "\n"
+                          + " ".join(material.split()) + "\n```note\ncode\n```\n")
+            with self.subTest(fixture=name):
+                by_id = self._score_reusing_workspace(name, transcript)
+                self.assertFalse(by_id["cites-both-facts"]["passed"],
+                                 f"{name}: a fence rescued the paste")
+
     def test_a_bare_wrapper_tag_line_is_still_a_block_delimiter(self):
         # The space must not cost the tag its OTHER job. A bare wrapper tag
         # on a line of its own is a delimiter under either reading, so an

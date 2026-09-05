@@ -1180,6 +1180,28 @@ def _strip_wrapper(line: str, tag_gap: str = " ") -> tuple[str, bool]:
     return bare, bool(stripped) and not bare
 
 
+def _fence_payload(line: str) -> tuple[str, bool]:
+    """(what the agent wrote ON a fence delimiter line, was this one?).
+
+    A fence delimiter is the run of backticks or tildes and nothing else.
+    What follows it on an opening fence is an INFO STRING, and an info
+    string is the agent's own writing: `_FENCE_RE` matches only the prefix,
+    so dropping the whole line dropped that writing too, and avoid-list
+    words parked on the fence (```` ```leverage synergy ````) switched the
+    ban off. Five spellings ALL-PASSED on the merged tree.
+
+    The delimiter itself is scaffolding and goes. The payload is kept as its
+    own logical line rather than folded into the paragraph around it: an
+    info string is not prose, and letting the unwrap join it to a neighbour
+    would let a fence opened directly under a pasted seed line change that
+    line's words and hand the paste its provenance back.
+    """
+    match = _FENCE_RE.match(line)
+    if not match:
+        return line, False
+    return line[match.end():].strip(), True
+
+
 def _strip_table_pipes(line: str) -> str:
     """A table row's cell separators turned back into spaces."""
     return line.replace("|", " ").strip() if _TABLE_ROW_RE.match(line) else line
@@ -1400,11 +1422,17 @@ def strip_seed_material(text: str, seed: str | None,
     # what the agent actually wrote on that line, empty where the line was
     # wrapper and nothing else.
     dequoted, payload = [], []
-    for line in raw:
+    fences: set[int] = set()
+    for i, line in enumerate(raw):
         body, only_wrapper = _strip_wrapper(line, tag_gap)
         dequoted.append(_dequote(line))
-        payload.append("" if (only_wrapper or _FENCE_RE.match(line)
-                              or _TABLE_RULE_RE.match(line)) else body)
+        info, is_fence = _fence_payload(line)
+        if is_fence:
+            fences.add(i)
+            payload.append(_strip_wrapper(info, tag_gap)[0])
+        else:
+            payload.append("" if (only_wrapper or _TABLE_RULE_RE.match(line))
+                           else body)
 
     # Lines inside a marked quotation. There the floor is nil: the markup
     # already says the block is a quotation, so a short sentence in it needs
@@ -1416,6 +1444,15 @@ def strip_seed_material(text: str, seed: str | None,
     groups: list[list[int]] = []
     current: list[int] = []
     for i, body in enumerate(payload):
+        # A fence delimiter still ends the paragraph above it, as it always
+        # did; what it carries after the delimiter run stands alone.
+        if i in fences:
+            if current:
+                groups.append(current)
+                current = []
+            if body:
+                groups.append([i])
+            continue
         if body:
             current.append(i)
         elif current:
