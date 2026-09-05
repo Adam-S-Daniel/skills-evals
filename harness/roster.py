@@ -352,6 +352,14 @@ def _usage_alias_map(api_ids, other_ids, seat_aliases: dict,
     # previous arm retired "below the 2% exit bar (0.0% ...)" on its own
     # family's usage. Following each chain to its end is still a FUNCTION
     # into at most one id per key, so rule (1)'s disjointness survives.
+    #
+    # To its END, not one hop further than round 8 needed: `while`, not
+    # `if`. Round 8's own tests pinned two hops only, so `while` -> `if`
+    # left the suite green while a three-hop chain lost its arm entirely
+    # (S2, #129 review round 9). The floor is TestIssue67Review9::
+    # test_a_three_hop_census_key_still_reaches_the_live_snapshot — census
+    # key, `catalogue_seen` entry, previous arm, live snapshot, one hop
+    # each.
     for model_id in list(mapping):
         seen = {model_id}
         target = mapping[model_id]
