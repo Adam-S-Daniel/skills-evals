@@ -160,7 +160,20 @@ def _canonical_id_re(rungs: list[list[str]]) -> re.Pattern:
     examples for both shapes.
     """
     words = "|".join(re.escape(w) for rung in rungs for w in rung)
-    return re.compile(rf"^claude-(?:{words})-\d+(?:-\d+)*(?:-[0-9]{{8}})?$")
+    # `\Z`, not `$`: `$` also matches just before a trailing newline, which
+    # would let an otherwise-canonical id with one appended slip through —
+    # the same footgun model_usage_census.py's own MODEL_ID_RE documents.
+    return re.compile(rf"^claude-(?:{words})-\d+(?:-\d+)*(?:-[0-9]{{8}})?\Z")
+
+
+#: A SAFETY shape for a previous-arm id, not a "is this a real model" check
+#: — that's `rung_of`/`unranked_ids`, applied elsewhere, and deliberately
+#: NOT required here: a previous arm whose family word has since left the
+#: ladder must still be recognized (and retired FOR that reason) rather
+#: than silently dropped as malformed. This shape only excludes what a
+#: real id never contains and a control-character injection needs: no
+#: newline, no `:`, no other punctuation — see `_clean_previous_arms`.
+PREVIOUS_ARM_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 
 
 def alias_map(ids) -> dict[str, str]:
@@ -431,7 +444,15 @@ def _clean_counts(counts, warn) -> dict:
 
 
 def _clean_previous_arms(previous, warn) -> list[str]:
-    """The previous roster's arm ids. A malformed entry is skipped, not fatal."""
+    """The previous roster's arm ids. A malformed entry is skipped, not fatal.
+
+    Shape-checked with `PREVIOUS_ARM_ID_RE`, not just type-checked: a
+    previous roster is a JSON file read off a public branch, and every id
+    from it is interpolated verbatim into render_summary's Markdown, which
+    eval.yml prints to stdout — where GitHub parses `::` workflow commands.
+    An offender is dropped the same way a bad-shaped `entry` is, and the
+    warning names no value — only the count.
+    """
     if previous is None:
         return []
     entries = previous.get("arms") if isinstance(previous, dict) else None
@@ -443,14 +464,15 @@ def _clean_previous_arms(previous, warn) -> list[str]:
     ids = []
     skipped = 0
     for entry in entries:
-        if isinstance(entry, dict) and isinstance(entry.get("id"), str) and entry["id"]:
+        if (isinstance(entry, dict) and isinstance(entry.get("id"), str)
+                and entry["id"] and PREVIOUS_ARM_ID_RE.match(entry["id"])):
             if entry["id"] not in ids:
                 ids.append(entry["id"])
         else:
             skipped += 1
     if skipped:
         warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
-             f"not an object with a string `id`")
+             f"not an object with a well-formed model-id-shaped `id`")
     return ids
 
 

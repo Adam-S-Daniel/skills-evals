@@ -5417,6 +5417,28 @@ class TestIssue67Review4(unittest.TestCase):
         self.assertIn("no evidence to retire it", reason)
         self.assertEqual(result["retired_since_last"], [])
 
+    # --- item 5 (nit): a previous roster's `arms` ids must be shape-checked,
+    # not merely typed-checked — render_summary interpolates them verbatim
+    # into Markdown that eval.yml `tee`s to stdout, where GitHub parses
+    # `::` workflow commands. ----------------------------------------------
+
+    def test_previous_arm_ids_are_shape_checked_before_they_reach_the_summary(self):
+        """`_clean_previous_arms` validated the SHAPE of the `arms` entry (a
+        dict with a non-empty string `id`) but not the id's CONTENT. An id
+        carrying a newline and an `::error::` line reached the published
+        roster's `retired_since_last` (no current model matches it, and it
+        is not in api_ids either) and, from there, render_summary's
+        Markdown verbatim — which eval.yml prints to stdout.
+        """
+        hostile_id = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [{"id": hostile_id, "reason": "was an arm"}]}
+        result = self._compute(previous=previous)
+        retired_ids = [r["id"] for r in result["retired_since_last"]]
+        self.assertNotIn(hostile_id, retired_ids)
+        summary = roster.render_summary(result)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile_id, summary)
+
 
 if __name__ == "__main__":
     unittest.main()
