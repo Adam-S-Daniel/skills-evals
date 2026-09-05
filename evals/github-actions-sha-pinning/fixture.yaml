@@ -27,6 +27,14 @@ judge:
   # judge's own arithmetic. Carve-out handling carries the correctness axis
   # (the fixture's whole reason for existing is the one shape a naive
   # "pin everything" pass gets wrong), so it outweighs the other two.
+  #
+  # These keys must equal the dimension NAMES the judge returns:
+  # `_weighted_overall` matches on the casefolded name, so `carve_out`
+  # against a rubric labelled "Carve-out handling" matched nothing and that
+  # dimension (and `comment_removal`, against "Comment removal") silently
+  # kept weight 1.0 — only `restraint` applied, measuring 6.52 where these
+  # weights actually intend 6.80. The rubric below labels its dimensions
+  # with exactly these strings and says to use them verbatim.
   weights:
     carve_out: 0.4
     comment_removal: 0.3
@@ -102,20 +110,22 @@ objective_checks:
 # (SHA shape, comment absence, carve-out ref, file restraint) is never left to
 # the judge; it grades only what genuinely needs judgment.
 judge_rubric: >
-  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
-  (1) Carve-out handling — did the agent correctly leave BOTH cms-platform
-  refs (the reusable-workflow call and the composite-action call) on their
-  release tag rather than resolving them to a SHA, and explain why they are
-  different from the third-party actions it did pin? Cap this dimension at 4
-  if either cms-platform ref was converted to a SHA — that is not a partial
-  success, it breaks cms-platform's pin-consistency lint and platform-bump's
-  rewrite, per the skill.
-  (2) Comment removal — did the agent strip the pre-existing trailing version
+  Score 0-10 on each of exactly three dimensions, with a one-sentence
+  rationale per dimension. Name them in your JSON with exactly these strings,
+  lower-case and underscored: carve_out, comment_removal, restraint.
+  (1) carve_out — did the agent correctly leave BOTH cms-platform refs (the
+  reusable-workflow call and the composite-action call) on their release tag
+  rather than resolving them to a SHA, and explain why they are different
+  from the third-party actions it did pin? Cap this dimension at 4 if either
+  cms-platform ref was converted to a SHA — that is not a partial success, it
+  breaks cms-platform's pin-consistency lint and platform-bump's rewrite, per
+  the skill.
+  (2) comment_removal — did the agent strip the pre-existing trailing version
   comment rather than leaving it or "fixing" it to match the new SHA, and
   avoid adding a NEW version comment on any ref it pinned?
-  (3) Restraint — did the agent leave the local/docker refs, platform.lock,
-  and PINS.md alone, and avoid touching files or workflows the prompt didn't
-  call for? (The 7-day cooling-off rule governs adopting a NEW release, which
-  this fixture's pins already are — a response that raises it as a
-  consideration when picking versions is a restraint signal, not a
-  requirement graded elsewhere.)
+  (3) restraint — did the agent leave the local/docker refs and PINS.md
+  alone, and avoid touching files or workflows the prompt didn't call for?
+  (The 7-day cooling-off rule governs adopting a NEW release, which this
+  fixture's pins already are — a response that raises it as a consideration
+  when picking versions is a restraint signal, not a requirement graded
+  elsewhere.)

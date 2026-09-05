@@ -2879,6 +2879,36 @@ class TestIssue85(unittest.TestCase):
             proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
+    # -- the judge weights must bind (review #133, S2) ------------------------
+
+    def test_the_judge_weights_reach_the_dimensions_the_rubric_names(self):
+        """A weight keyed to a name the judge never returns is no weight.
+
+        `carve_out: 0.4` against a rubric labelled "Carve-out handling"
+        matched nothing — `_weighted_overall` keys on the casefolded
+        dimension NAME — so that dimension (and `comment_removal`) silently
+        kept weight 1.0 and only `restraint` applied, measuring 6.52 where
+        the fixture's weights actually intend 6.80. The rubric now dictates
+        its dimension names verbatim; this test drives `_weighted_overall`
+        with the fixture's own weights and the names its own rubric text
+        names, the same pattern as claude/skills-evals-84's
+        TestIssue84Review.test_the_judge_weights_reach_the_dimensions_the_rubric_names.
+        """
+        fixture = run_eval.load_fixture(GHA_SHA_PINNING_DIR)
+        weights = fixture["judge"]["weights"]
+        labels = re.findall(r"\(\d\)\s+`?([A-Za-z_ ]+?)`?\s+—", fixture["judge_rubric"])
+        self.assertEqual(len(labels), 3, labels)
+        self.assertEqual(sorted(name.strip().casefold() for name in labels),
+                         sorted(str(k).strip().casefold() for k in weights))
+        scores = (8, 6, 6)
+        dimensions = [{"name": name, "score": score, "rationale": ""}
+                      for name, score in zip(labels, scores)]
+        expected = sum(weights[name] * score for name, score in zip(labels, scores))
+        self.assertAlmostEqual(expected, 6.8, places=6,
+                               msg="the fixture's own weights no longer intend 6.80")
+        self.assertAlmostEqual(judge._weighted_overall(dimensions, weights),
+                               expected, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()
