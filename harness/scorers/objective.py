@@ -452,21 +452,41 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     return _text_matches(transcript, must_match or [], must_not_match or [], "transcript")
 
 
-def file_count(workspace: str, patterns: list[str], min_count: int = 0,
+def file_count(workspace: str, patterns: list[str], min_count: int | None = None,
                max_count: int | None = None) -> tuple[bool, str]:
     """Assert the number of files matched by `patterns` falls in [min_count, max_count].
 
     `max_count=None` means no upper bound. A file matched by more than one
     pattern is counted once (patterns are pooled through a set of paths, not
-    summed), so overlapping globs can't inflate the count. This is the check
-    for "exactly N files exist" shapes a regex over content can't express —
-    e.g. asserting exactly one new file was added to a directory that
-    already had others, which `file_matches`/`files_unchanged` have no way
-    to state.
+    summed), so overlapping globs can't inflate the count. Only files are
+    counted — a directory whose name happens to match the glob (e.g. a stray
+    `NNNN-*.md/` left by a bad rename) is excluded, the same as
+    `_read_matched` excludes directories. This is the check for "exactly N
+    files exist" shapes a regex over content can't express — e.g. asserting
+    exactly one new file was added to a directory that already had others,
+    which `file_matches`/`files_unchanged` have no way to state. As with
+    every other check type here, `**` is NOT recursive — patterns are
+    globbed with `glob.glob`, not `glob.glob(..., recursive=True)`.
+
+    A check naming neither bound, a negative bound, or a `max_count` below
+    `min_count` is a fixture config mistake, not a vacuous pass: each of
+    those returns `(False, ...)` with a detail naming the specific problem,
+    before any file is counted.
     """
+    if min_count is None and max_count is None:
+        return (False, "file_count check names neither a min nor a max bound")
+    if min_count is not None and min_count < 0:
+        return (False, f"file_count min bound is negative: {min_count}")
+    if max_count is not None and max_count < 0:
+        return (False, f"file_count max bound is negative: {max_count}")
+    if min_count is not None and max_count is not None and max_count < min_count:
+        return (False, f"file_count max ({max_count}) is less than min ({min_count})")
+
+    min_count = min_count if min_count is not None else 0
     matched = set()
     for pattern in patterns:
-        matched.update(glob.glob(os.path.join(workspace, pattern)))
+        matched.update(p for p in glob.glob(os.path.join(workspace, pattern))
+                       if os.path.isfile(p))
     count = len(matched)
     problems = []
     if count < min_count:
@@ -522,8 +542,12 @@ def run_checks(fixture: dict, workspace: str, seed: str,
             if check["type"] == "transcript_matches":
                 kwargs["transcript"] = transcript
         elif check["type"] == "file_count":
-            kwargs["min_count"] = check.get("min", 0)
-            kwargs["max_count"] = check.get("max")
+            # Accept both the fixture-YAML spelling ("min"/"max") and the
+            # Python-parameter spelling ("min_count"/"max_count") — a
+            # fixture author writing the latter used to fall through to the
+            # `.get("min", 0)` default silently instead of erroring.
+            kwargs["min_count"] = check.get("min", check.get("min_count"))
+            kwargs["max_count"] = check.get("max", check.get("max_count"))
         passed, detail = fn(workspace, check.get("paths", []), **kwargs)
         results.append({"id": check["id"], "passed": passed, "detail": detail})
     return results

@@ -741,6 +741,64 @@ class FileCountCheckTests(unittest.TestCase):
         self.assertIn("file_count", objective.CHECKS)
         self.assertIs(objective.CHECKS["file_count"], objective.file_count)
 
+    # --- Review round 1 on PR #136 (issue #80), item S3: run_checks read
+    # only "min"/"max" from the fixture dict, so a fixture typo'd as
+    # "min_count"/"max_count" (the Python parameter names) silently
+    # resolved to no bound at all and passed unconditionally. ---
+
+    def test_run_checks_accepts_min_count_max_count_alias(self):
+        ws = self._ws(["a.md"])  # only 1 file
+        fixture = {"objective_checks": [
+            {"id": "count", "type": "file_count", "paths": ["*.md"],
+             "min_count": 2, "max_count": 2},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(ws))}
+        self.assertFalse(by_id["count"]["passed"], by_id["count"]["detail"])
+        self.assertIn("found 1, expected at least 2", by_id["count"]["detail"])
+
+    def test_file_count_check_naming_neither_bound_fails(self):
+        ws = self._ws(["a.md"])
+        fixture = {"objective_checks": [
+            {"id": "count", "type": "file_count", "paths": ["*.md"]},
+        ]}
+        by_id = {r["id"]: r for r in objective.run_checks(fixture, str(ws), str(ws))}
+        self.assertFalse(by_id["count"]["passed"])
+        self.assertIn("neither", by_id["count"]["detail"].lower())
+
+    def test_file_count_negative_min_bound_fails(self):
+        ws = self._ws(["a.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=-1)
+        self.assertFalse(passed, detail)
+        self.assertIn("negative", detail.lower())
+
+    def test_file_count_negative_max_bound_fails(self):
+        ws = self._ws(["a.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], max_count=-1)
+        self.assertFalse(passed, detail)
+        self.assertIn("negative", detail.lower())
+
+    def test_file_count_max_less_than_min_fails_with_named_detail(self):
+        ws = self._ws(["a.md", "b.md", "c.md"])
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=5, max_count=2)
+        self.assertFalse(passed)
+        self.assertIn("max", detail.lower())
+        self.assertIn("min", detail.lower())
+        # The config error is reported before any counting happens, so the
+        # "found N, expected..." wording (which would be misleading here —
+        # no count could ever satisfy an impossible range) must not appear.
+        self.assertNotIn("found", detail.lower())
+
+    # --- item S4: file_count had no os.path.isfile filter (unlike
+    # _read_matched), so a directory whose name happens to match the glob
+    # inflated the count. ---
+
+    def test_directories_matching_the_pattern_are_not_counted(self):
+        ws = self._ws(["0001-real.md"])
+        (ws / "0002-fake-dir.md").mkdir()
+        passed, detail = objective.file_count(str(ws), ["*.md"], min_count=1, max_count=1)
+        self.assertTrue(passed, detail)
+        self.assertIn("1 file(s)", detail)
+
 
 class FakePowershellTests(unittest.TestCase):
     """The windows-elevation-from-wsl seed's stand-in powershell.exe.
