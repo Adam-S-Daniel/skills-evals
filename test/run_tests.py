@@ -4472,6 +4472,60 @@ class TestIssue81(unittest.TestCase):
                 self.assertEqual(
                     objective.strip_seed_material(line + "\n", seed), "")
 
+    # S5 (round 5): the bare-wrapper-tag substitution used to be the EMPTY
+    # STRING, which welds the text on either side of the tag together.
+    # Measured: `We x<code>leverage this every quarter.` normalised to
+    # `...xleverage...`, `\bleverage\b` stopped matching, and the reply
+    # ALL-PASSED on all eight wrapper tags. A space is the other half of the
+    # answer and breaks its own case — `lever<br>age`, which a reader sees
+    # as the banned word, becomes two words — so `transcript_matches` scores
+    # BOTH readings and a ban fires on either.
+
+    def test_a_wrapper_tag_mid_word_cannot_switch_the_ban_off(self):
+        reply = self._reference("recruiter-reply", "in-voice").strip()
+        for tag in objective._WRAPPER_TAGS:
+            for shape in ("We x<{0}>leverage this every quarter.",
+                          "We x</{0}>leverage this every quarter.",
+                          "We x<{0}/>leverage this every quarter."):
+                line = shape.format(tag)
+                with self.subTest(line=line):
+                    by_id = self._score_reusing_workspace(
+                        "recruiter-reply", reply + "\n\n" + line + "\n")
+                    self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
+
+    def test_a_wrapper_tag_splitting_a_banned_word_still_fires(self):
+        # The reading a space would lose: the tag is INSIDE the word, so the
+        # joined reading is the one a human reads, and the ban has to fire
+        # in it.
+        reply = self._reference("recruiter-reply", "in-voice").strip()
+        for tag in objective._WRAPPER_TAGS:
+            line = f"I would rather not lever<{tag}>age a move right now."
+            with self.subTest(line=line):
+                by_id = self._score_reusing_workspace(
+                    "recruiter-reply", reply + "\n\n" + line + "\n")
+                self._assert_only_failure(by_id, self.AVOID_CHECK_ID)
+
+    def test_a_bare_wrapper_tag_line_is_still_a_block_delimiter(self):
+        # The space must not cost the tag its OTHER job. A bare wrapper tag
+        # on a line of its own is a delimiter under either reading, so an
+        # HTML-wrapped quotation is still a marked quotation — where the
+        # floors are nil and even a short seed line goes.
+        seed = str(self.STYLE_DIR / "recruiter-reply" / "seed")
+        for line in ("<blockquote>", "</details>", "<pre>", "</blockquote>",
+                     "<details>", "</pre>", "<code>", "<br/>"):
+            with self.subTest(line=line):
+                body, only_wrapper = objective._strip_wrapper(line)
+                self.assertEqual(body, "")
+                self.assertTrue(only_wrapper)
+                self.assertEqual(
+                    objective.strip_seed_material(line + "\n", seed), "")
+        # And end to end: her signature, four characters long on its last
+        # line, inside an HTML block still leaves nothing behind.
+        cold = (self.STYLE_DIR / "recruiter-reply" / "seed" / "inbox"
+                / "cold-email.md").read_text(encoding="utf-8")
+        wrapped = "<blockquote>\n" + cold + "\n</blockquote>\n"
+        self.assertEqual(objective.strip_seed_material(wrapped, seed), "")
+
     def test_a_tag_inside_a_line_does_not_shorten_it_onto_a_seed_line(self):
         # The same bug from the other end: a general tag strip inside the
         # normalisation let `I<...> was looking for platform engineers with`

@@ -1143,7 +1143,7 @@ def _sentences(line: str) -> list[str]:
             if part.strip()]
 
 
-def _strip_wrapper(line: str) -> tuple[str, bool]:
+def _strip_wrapper(line: str, tag_gap: str = " ") -> tuple[str, bool]:
     """(`line` with its wrapper removed, was it wrapper and nothing else?).
 
     Wrapper is leading whitespace, `>` runs with any number of spaces after
@@ -1151,6 +1151,22 @@ def _strip_wrapper(line: str) -> tuple[str, bool]:
     else is the agent's text and stays exactly as it arrived — an HTML
     comment, a tag outside that set, a tag carrying attributes, and the
     attribute values with it.
+
+    `tag_gap` is what a bare wrapper tag leaves behind, and it is a
+    parameter because the two answers are both right and neither is right
+    alone. It used to be the empty string unconditionally, which WELDS the
+    text on either side of the tag: `We x<code>leverage this every quarter.`
+    normalised to `xleverage`, `\bleverage\b` no longer matched, and the
+    avoid-list ban was off — on all eight wrapper tags. A space fixes that
+    and breaks the other direction, because `lever<br>age` reads to a human
+    as the banned word and normalises to `lever age`. `transcript_matches`
+    therefore scores BOTH readings and a ban fires on either; see
+    `_text_matches_any`.
+
+    The "wrapper and nothing else" verdict does not depend on `tag_gap`: it
+    is taken on the stripped-and-`.strip()`ed line, so a bare
+    `<blockquote>` or `</details>` line is a block delimiter under either
+    reading.
     """
     stripped = line
     while True:
@@ -1160,7 +1176,7 @@ def _strip_wrapper(line: str) -> tuple[str, bool]:
             break
         stripped = shorter
     stripped = stripped.strip()
-    bare = _BARE_WRAPPER_TAG_RE.sub("", stripped).strip()
+    bare = _BARE_WRAPPER_TAG_RE.sub(tag_gap, stripped).strip()
     return bare, bool(stripped) and not bare
 
 
@@ -1314,7 +1330,8 @@ def _quote_runs(raw: list[str]) -> list[tuple[int, int]]:
         out.append((start, len(raw) - 1))
     return out
 
-def strip_seed_material(text: str, seed: str | None) -> str:
+def strip_seed_material(text: str, seed: str | None,
+                        tag_gap: str = " ") -> str:
     """`text` with the fixture's own seed material removed, unwrapped.
 
     The unit of provenance is the SENTENCE, never the line, and the decision
@@ -1384,7 +1401,7 @@ def strip_seed_material(text: str, seed: str | None) -> str:
     # wrapper and nothing else.
     dequoted, payload = [], []
     for line in raw:
-        body, only_wrapper = _strip_wrapper(line)
+        body, only_wrapper = _strip_wrapper(line, tag_gap)
         dequoted.append(_dequote(line))
         payload.append("" if (only_wrapper or _FENCE_RE.match(line)
                               or _TABLE_RULE_RE.match(line)) else body)
@@ -1470,6 +1487,33 @@ def strip_seed_material(text: str, seed: str | None) -> str:
     return "\n\n".join(out)
 
 
+def _text_matches_any(texts: list[str], must_match: list[str],
+                      must_not_match: list[str],
+                      subject: str) -> tuple[bool, str]:
+    """`_text_matches` over more than one READING of the same text.
+
+    One text is the ordinary case and behaves exactly as it always did.
+    More than one arrives when a normalisation has two defensible answers
+    and taking either alone loses a check — today that is the bare wrapper
+    tag (`_strip_wrapper`'s `tag_gap`), where `x<code>leverage` needs the
+    space reading and `lever<br>age` needs the joined one.
+
+    The asymmetry is the point. A `must_match` pattern has to hit in at
+    least ONE reading, because a fact the agent stated is stated however the
+    tag is read and a check must not be lost to a normalisation artefact. A
+    `must_not_match` pattern may not hit in ANY of them, because a banned
+    word is banned under every reading that a human would read it under —
+    which is what makes the tag useless as a way to smuggle one in.
+    """
+    missing = [pat for pat in must_match
+               if not any(re.search(pat, text, re.MULTILINE) for text in texts)]
+    present = [pat for pat in must_not_match
+               if any(re.search(pat, text, re.MULTILINE) for text in texts)]
+    problems = [f"{subject} lacks /{pat}/" for pat in missing]
+    problems += [f"{subject} contains /{pat}/" for pat in present]
+    return (not problems, f"{subject} matches" if not problems else "; ".join(problems))
+
+
 def _text_matches(text: str, must_match: list[str], must_not_match: list[str],
                   subject: str) -> tuple[bool, str]:
     """Shared body of file_matches / transcript_matches.
@@ -1479,11 +1523,7 @@ def _text_matches(text: str, must_match: list[str], must_not_match: list[str],
     and `$` mean line boundaries; a pattern that needs to span lines says so
     itself with `(?s)`.
     """
-    missing = [pat for pat in must_match if not re.search(pat, text, re.MULTILINE)]
-    present = [pat for pat in must_not_match if re.search(pat, text, re.MULTILINE)]
-    problems = [f"{subject} lacks /{pat}/" for pat in missing]
-    problems += [f"{subject} contains /{pat}/" for pat in present]
-    return (not problems, f"{subject} matches" if not problems else "; ".join(problems))
+    return _text_matches_any([text], must_match, must_not_match, subject)
 
 
 def file_matches(workspace: str, patterns: list[str], must_match=None,
@@ -1559,10 +1599,22 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     if transcript is None:
         return (False, "no transcript (objective-only run, or the agent produced none)")
     text = _fold_invisibles(transcript)
-    if seed is not None:
-        text = strip_seed_material(text, seed)
-    return _text_matches(text, must_match or [], must_not_match or [],
-                         "transcript")
+    if seed is None:
+        readings = [text]
+    else:
+        # Both readings of a bare wrapper tag, because a tag mid-word has
+        # two honest normalisations and taking either alone loses a case:
+        # deleting it welds `x<code>leverage` into `xleverage` and switches
+        # the ban off, and spacing it splits `lever<br>age` into two words
+        # that no longer read as the banned one. `_text_matches_any` wants
+        # a `must_match` in one of them and forbids a `must_not_match` in
+        # all of them. The two are the same string unless the reply
+        # actually carries a bare wrapper tag mid-line.
+        readings = [strip_seed_material(text, seed, gap) for gap in (" ", "")]
+        if readings[1] == readings[0]:
+            readings.pop()
+    return _text_matches_any(readings, must_match or [], must_not_match or [],
+                             "transcript")
 
 
 # --------------------------------------------------------------------------
