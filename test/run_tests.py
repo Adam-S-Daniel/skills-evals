@@ -6345,6 +6345,36 @@ class TestIssue67Review6(unittest.TestCase):
         # republishes the trailing newline — the assertEqual above
         # turns red.
 
+    # --- N9: SNAPSHOT_SUFFIX must anchor at the true end of string -------
+
+    def test_snapshot_suffix_rejects_a_trailing_control_character(self):
+        """`$` matches just before a trailing newline as well as at the
+        true end of string; `\\Z` does not."""
+        self.assertIsNone(roster.SNAPSHOT_SUFFIX.match("claude-sonnet-4-5-20260101\n"))
+        match = roster.SNAPSHOT_SUFFIX.match("claude-sonnet-4-5-20260101")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group("base"), "claude-sonnet-4-5")
+
+    def test_snapshot_suffix_anchor_end_to_end_through_compute_roster(self):
+        """A census key `claude-sonnet-4-5-20260101\\n` folded onto
+        `claude-sonnet-4-5` under the old `$`-anchored regex, inflating
+        its measured share from a real 50.0% to a false ~99.9%."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-5", "2026-01-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        counts = {"claude-sonnet-4-5-20260101\n": {self.W[0]: 9800},
+                 "claude-sonnet-4-5": {self.W[0]: 100},
+                 "claude-haiku-4-5": {self.W[0]: 100}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=None)
+        reason = self._reason(result, "claude-sonnet-4-5")
+        self.assertIn("50.0%", reason)
+        self.assertNotIn("99.0%", reason)
+        # Mutation check (manual): reverting the anchor to `$` folds the
+        # malformed key onto claude-sonnet-4-5 again, changing the
+        # reason to "carries 99.0%" — turning both assertions red.
+
 
 if __name__ == "__main__":
     unittest.main()

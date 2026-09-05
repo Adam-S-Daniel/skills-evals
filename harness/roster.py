@@ -68,7 +68,11 @@ from timeweeks import iso_week  # noqa: F401 -- re-exported: identity-checked
 
 #: An id that is another id plus a date is a pinned snapshot of it, not a
 #: second model. See `alias_map`.
-SNAPSHOT_SUFFIX = re.compile(r"^(?P<base>.+)-[0-9]{8}$")
+#: `\Z`, not `$`: `$` also matches just before a trailing newline, so a
+#: census key `<alias>-YYYYMMDD\n` (a stray newline, not a real snapshot
+#: id) folded onto `<alias>` and inflated its measured share — measured:
+#: a false ~99.9% instead of a real 50.0% (N9, #129 review round 6).
+SNAPSHOT_SUFFIX = re.compile(r"^(?P<base>.+)-[0-9]{8}\Z")
 
 
 def _stderr(message: str) -> None:
