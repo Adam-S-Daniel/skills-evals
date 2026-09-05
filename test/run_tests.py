@@ -2621,6 +2621,16 @@ class DirListingMatchesCheckTests(unittest.TestCase):
         self.assertFalse(passed)
         self.assertIn("required", detail)
 
+    def test_duplicated_expected_line_is_not_conflated_with_a_single_occurrence(self):
+        # Guards the list comparison in `if actual == expected:` — mutating
+        # it to a set comparison would collapse the duplicate and wrongly
+        # pass this case.
+        ws = self._ws(["a.pdf"])
+        passed, detail = objective.dir_listing_matches(
+            str(ws), ["inbox"], expected=["a.pdf", "a.pdf"])
+        self.assertFalse(passed)
+        self.assertIn("listing differs", detail)
+
     def test_expected_as_a_bare_string_is_a_named_error_not_silently_iterated(self):
         # A YAML scalar (a contributor forgetting the list dashes) iterates
         # character by character in Python, silently comparing against the
