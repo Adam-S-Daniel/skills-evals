@@ -3226,6 +3226,53 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
         self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
 
+    def test_existing_mismatched_index_slug_fails_only_the_link_targets_check(self):
+        # S3 (round 2): a dangling slug in the index row — naming a file
+        # nothing wrote — used to be invisible to every REAL fixture check;
+        # only the test-level cross-check above caught it, so a real eval
+        # run was blind to it. link_targets_exist closes that gap for real.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        readme = ws / "docs" / "decisions" / "README.md"
+        text = readme.read_text(encoding="utf-8")
+        self.assertIn(self.EXISTING_INDEX_ROW, text)
+        mismatched_row = self.EXISTING_INDEX_ROW.replace(
+            "0004-retry-with-capped-exponential-backoff.md", "0004-retry-policy.md")
+        readme.write_text(text.replace(self.EXISTING_INDEX_ROW, mismatched_row),
+                          encoding="utf-8")
+
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"],
+                         by_id["readme-index-links-resolve"]["detail"])
+        for check_id in ("adr-0004-house-format-sections-in-order",
+                        "index-gained-a-row-for-0004", "retry-sh-links-the-adr",
+                        "retry-sh-link-resolves", "exactly-one-new-adr-file",
+                        "nothing-else-touched"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+
+    def test_existing_retry_sh_dangling_link_fails_only_the_link_targets_check(self):
+        # S3 (round 2): a retry.sh comment naming a slug no file has — the
+        # ADR itself keeps its correct name — is the twin dodge to the
+        # index-row one above.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._apply_correct_existing(ws)
+        retry_sh = ws / "scripts" / "retry.sh"
+        text = retry_sh.read_text(encoding="utf-8")
+        self.assertIn("docs/decisions/0004-retry-with-capped-exponential-backoff.md", text)
+        retry_sh.write_text(
+            text.replace("docs/decisions/0004-retry-with-capped-exponential-backoff.md",
+                        "docs/decisions/0004-retry-policy.md"),
+            encoding="utf-8")
+
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["retry-sh-link-resolves"]["passed"],
+                         by_id["retry-sh-link-resolves"]["detail"])
+        for check_id in ("adr-0004-house-format-sections-in-order",
+                        "index-gained-a-row-for-0004", "retry-sh-links-the-adr",
+                        "readme-index-links-resolve", "exactly-one-new-adr-file",
+                        "nothing-else-touched"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+
     def test_existing_cli_objective_only_exit_codes(self):
         ws_pristine = self._ws(ADRS_EXISTING_DIR)
         code, _ = self._run_cli(ADRS_EXISTING_DIR, ws_pristine)
@@ -3310,6 +3357,26 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
         self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_existing_retry_sh_link_appended_after_body_fails_the_link_check(self):
+        # N1 (round 2): retry-sh-links-the-adr's description claimed the
+        # HEADER links the ADR, but the old regex matched the path ANYWHERE
+        # in the file — appending the link after the function body, nowhere
+        # near the header, still passed.
+        ws = self._ws(ADRS_EXISTING_DIR)
+        self._write_adr_0004(ws)
+        self._add_index_row_existing(ws)
+        retry_sh = ws / "scripts" / "retry.sh"
+        retry_sh.write_text(
+            retry_sh.read_text(encoding="utf-8") +
+            "\n# See docs/decisions/0004-retry-with-capped-exponential-backoff.md\n",
+            encoding="utf-8")
+        by_id = self._checks(ADRS_EXISTING_DIR, ws)
+        self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"],
+                         by_id["retry-sh-links-the-adr"]["detail"])
+        self.assertTrue(by_id["adr-0004-house-format-sections-in-order"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0004"]["passed"])
+        self.assertTrue(by_id["exactly-one-new-adr-file"]["passed"])
 
     def test_existing_second_adr_for_changelog_fact_fails_only_count_check(self):
         # The correct fix, PLUS an extra ADR nobody asked for, recording
@@ -3397,6 +3464,53 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         with self.assertRaises(AssertionError):
             self._assert_index_link_target_exists(ws, self.BOOTSTRAP_INDEX_LINK_RE)
 
+    def test_bootstrap_mismatched_index_slug_fails_only_the_link_targets_check(self):
+        # S3 (round 2), bootstrap side: same gap as existing-convention's
+        # twin test — a dangling index-row slug is now caught by a real
+        # fixture check, not only by the unit-test cross-check above.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        readme = ws / "docs" / "decisions" / "README.md"
+        text = readme.read_text(encoding="utf-8")
+        original_row = ("| [0001](0001-retry-with-capped-exponential-backoff.md) | Retry "
+                        "transient failures up to 5 times with capped exponential "
+                        "backoff | Accepted |")
+        self.assertIn(original_row, text)
+        mismatched_row = original_row.replace(
+            "0001-retry-with-capped-exponential-backoff.md", "0001-retry-policy.md")
+        readme.write_text(text.replace(original_row, mismatched_row), encoding="utf-8")
+
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["readme-index-links-resolve"]["passed"],
+                         by_id["readme-index-links-resolve"]["detail"])
+        for check_id in ("readme-bootstrapped-in-skill-shape", "index-gained-a-row-for-0001",
+                        "adr-0001-sections-in-order", "retry-sh-links-the-adr",
+                        "retry-sh-link-resolves", "exactly-one-adr-file",
+                        "nothing-else-touched", "agents-md-gained-the-pointer"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+
+    def test_bootstrap_retry_sh_dangling_link_fails_only_the_link_targets_check(self):
+        # S3 (round 2), bootstrap side: same twin dodge as existing-
+        # convention's retry.sh test.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        retry_sh = ws / "scripts" / "retry.sh"
+        text = retry_sh.read_text(encoding="utf-8")
+        self.assertIn("docs/decisions/0001-retry-with-capped-exponential-backoff.md", text)
+        retry_sh.write_text(
+            text.replace("docs/decisions/0001-retry-with-capped-exponential-backoff.md",
+                        "docs/decisions/0001-retry-policy.md"),
+            encoding="utf-8")
+
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["retry-sh-link-resolves"]["passed"],
+                         by_id["retry-sh-link-resolves"]["detail"])
+        for check_id in ("readme-bootstrapped-in-skill-shape", "index-gained-a-row-for-0001",
+                        "adr-0001-sections-in-order", "retry-sh-links-the-adr",
+                        "readme-index-links-resolve", "exactly-one-adr-file",
+                        "nothing-else-touched", "agents-md-gained-the-pointer"):
+            self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+
     def test_bootstrap_cli_objective_only_exit_codes(self):
         ws_pristine = self._ws(ADRS_BOOTSTRAP_DIR)
         code, _ = self._run_cli(ADRS_BOOTSTRAP_DIR, ws_pristine)
@@ -3473,6 +3587,26 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
+        self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
+
+    def test_bootstrap_retry_sh_link_appended_after_body_fails_the_link_check(self):
+        # N1 (round 2), bootstrap side: same anchoring gap as existing-
+        # convention's twin test.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
+        self._add_agents_md_pointer_bootstrap(ws)
+        retry_sh = ws / "scripts" / "retry.sh"
+        retry_sh.write_text(
+            retry_sh.read_text(encoding="utf-8") +
+            "\n# See docs/decisions/0001-retry-with-capped-exponential-backoff.md\n",
+            encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["retry-sh-links-the-adr"]["passed"],
+                         by_id["retry-sh-links-the-adr"]["detail"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["agents-md-gained-the-pointer"]["passed"])
 
     def test_bootstrap_second_adr_for_changelog_fact_fails_only_count_check(self):

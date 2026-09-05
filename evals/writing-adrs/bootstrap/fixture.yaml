@@ -77,15 +77,39 @@ objective_checks:
 
   - id: retry-sh-links-the-adr
     description: >
-      scripts/retry.sh's header points at the new ADR, and the header's own
-      decision sentence (what the judge rubric leans on to check the ADR's
-      content against) is still there — gutting the header to nothing but
-      a link would otherwise still pass this check.
+      scripts/retry.sh's HEADER points at the new ADR — the mention must
+      appear in a comment line before `set -euo pipefail`, not merely
+      anywhere in the file (e.g. appended after the function body) — and
+      the header's own decision sentence (what the judge rubric leans on to
+      check the ADR's content against) is still there.
     type: file_matches
     paths: ["scripts/retry.sh"]
     must_match:
-      - 'docs/decisions/0001-[a-z0-9-]+\.md'
+      - '(?s)^#[^\n]*docs/decisions/0001-[a-z0-9-]+\.md.*^set -euo pipefail$'
       - 'retry a transient command failure with capped exponential backoff'
+
+  - id: readme-index-links-resolve
+    description: >
+      Every ADR link in docs/decisions/README.md's index table names a file
+      that actually exists. Round 2 review item S3: an index row naming a
+      slug no file matches (the ADR file itself keeps its correct name) is
+      invisible to index-gained-a-row-for-0001's must_match, which only
+      checks the row's SHAPE — a real eval run was blind to this dodge.
+    type: link_targets_exist
+    paths: ["docs/decisions/README.md"]
+    link_pattern: '\[[0-9]{4}\]\(([0-9]{4}-[a-z0-9-]+\.md)\)'
+    base: "docs/decisions"
+
+  - id: retry-sh-link-resolves
+    description: >
+      scripts/retry.sh's header comment names an ADR file that actually
+      exists. Round 2 review item S3: retry-sh-links-the-adr's must_match
+      only checks that the path STRING appears, not that a file with that
+      name was written — the twin dodge to the index-row one above.
+    type: link_targets_exist
+    paths: ["scripts/retry.sh"]
+    link_pattern: '(docs/decisions/[0-9]{4}-[a-z0-9-]+\.md)'
+    base: "."
 
   - id: exactly-one-adr-file
     description: >
