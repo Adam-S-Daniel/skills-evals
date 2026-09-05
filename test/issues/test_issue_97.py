@@ -1156,3 +1156,40 @@ class TestIssue97(unittest.TestCase):
                                "fleet-memory"):
                     self.assertIn(phrase, text,
                                   f"{doc_path.name} must state the {phrase} rule")
+
+    def test_a_checkout_without_the_hook_exits_2_naming_the_hook(self):
+        # The guidance subject delivers through the REAL hook, so a checkout
+        # that has the manifest but not the hook is a configuration problem
+        # with a named message — never a traceback out of the middle of a run.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-nohook-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = tmp / "checkout"
+        make_guidance_checkout(root)
+        hook = root / guidance.HOOK_REL
+        hook.unlink(missing_ok=True)
+        eval_dir = self._guidance_fixture(tmp)
+        rc, out = self._run_main([eval_dir, "--arm", "with_guidance",
+                                  "--guidance", root,
+                                  "--results-dir", tmp / "results", "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("fleet-memory", out)
+
+    def test_ci_checks_out_agent_guidance_so_the_hook_tests_actually_run(self):
+        doc = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+        checkouts = [s for job in doc["jobs"].values()
+                     for s in job.get("steps", [])
+                     if (s.get("uses") or "").startswith("actions/checkout@")]
+        guidance_checkout = next(
+            (s for s in checkouts
+             if (s.get("with") or {}).get("repository", "").endswith("/_agent-guidance")),
+            None)
+        self.assertIsNotNone(
+            guidance_checkout,
+            "without an _agent-guidance checkout the real-hook delivery tests "
+            "skip in CI, and the delivery path is never exercised there")
+        self.assertEqual((guidance_checkout["with"] or {}).get("path"),
+                         "_agent-guidance")
+        self.assertIs((guidance_checkout["with"] or {}).get("persist-credentials"),
+                      False)
+        self.assertRegex(guidance_checkout["uses"],
+                         r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")

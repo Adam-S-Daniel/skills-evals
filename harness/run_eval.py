@@ -847,7 +847,16 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
 
             if not args.no_judge and fixture.get("judge_rubric"):
                 _git("add", "-A", cwd=workspace)
-                diff = _git("diff", "--cached", "--", ".", ":!.claude", cwd=workspace).stdout
+                # `:!CLAUDE.md` only under the project-delivery fallback, where
+                # the hook wrote the payload INTO the workspace: without it the
+                # judge would be handed the whole delivered corpus as if the
+                # agent had written it, which under `mode: full` is 56 KB of
+                # diff that says nothing about the agent's work.
+                excludes = [":!.claude"]
+                if delivery == "project":
+                    excludes.append(":!CLAUDE.md")
+                diff = _git("diff", "--cached", "--", ".", *excludes,
+                            cwd=workspace).stdout
                 judge_cfg = fixture.get("judge", {})
                 try:
                     judge_result = judge.score(
@@ -968,8 +977,15 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
            "token": guidance.new_token()}
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
-                     for arm in arms]
+    try:
+        arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
+                         for arm in arms]
+    except guidance.GuidanceError as exc:
+        # A checkout missing the hook, a heading that has drifted from its
+        # manifest row, a payload that cannot be read: all configuration, all
+        # exit 2, none of them a traceback out of the middle of a run.
+        print(f"guidance configuration error: {exc}")
+        return 2
 
     report_dir = args.results_dir / key / timestamp
     report_dir.mkdir(parents=True, exist_ok=True)
