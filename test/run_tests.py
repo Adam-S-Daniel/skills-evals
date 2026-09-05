@@ -2785,7 +2785,74 @@ class TestIssue74(unittest.TestCase):
         by_id = self._run(ws)
         result = by_id["process-substitution-error-propagates"]
         self.assertFalse(result["passed"])
-        self.assertIn(r"(true|:)", result["detail"])
+        self.assertIn(r"(true|:|echo)", result["detail"])
+    # -- Round-6 review A: the `||` tolerance F1 added to must_match accepts
+    # ANY `||` continuation, while must_not_match banned only `true` and `:`.
+    # So `gh run watch "$RUN_ID" || echo "watch failed, continuing"` scored
+    # 11/11 although `set -e` never sees the failure — contradicting the
+    # check's own description and the remedy's rationale. Pre-existing on
+    # 3dd563b, not introduced by F1. The lexical half is fixed by extending
+    # the ban to `(true|:|echo)`, the same three tokens the sibling gh api
+    # check already bans; every OTHER handler stays the judge's call. --
+
+    def test_a_watch_or_echo_handler_fails(self):
+        # `|| echo ...` swallows the failure exactly as `|| true` does: the
+        # echo succeeds, so `set -e` sees a zero status for the whole line.
+        ws = self._ws()
+        self._fix_all(ws)
+        path = ws / "scripts" / "publish.sh"
+        text = path.read_text(encoding="utf-8")
+        text = text.replace(
+            'watch_output=$(gh run watch "$RUN_ID")\n'
+            'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" | tail -n 5)',
+            'gh run watch "$RUN_ID" || echo "watch failed, continuing"')
+        path.write_text(text, encoding="utf-8")
+        result = self._run(ws)["process-substitution-error-propagates"]
+        self.assertFalse(result["passed"])
+        self.assertIn(r"(true|:|echo)", result["detail"])
+
+    def test_a_other_handlers_are_left_to_the_judge(self):
+        # The deliberate lexical silence the check's comment claims: whether
+        # `|| exit 0`, `|| /bin/true` or `|| continue` actually propagates
+        # the failure is a Correctness question for the judge, not something
+        # a regex may decide (rule 25). Each still scores 11/11 here — that
+        # is the design, not an oversight, and this test pins it so nobody
+        # closes it with a regex without deleting this test first.
+        for handler in ("|| exit 0", "|| /bin/true", "|| continue"):
+            with self.subTest(handler=handler):
+                ws = self._ws()
+                self._fix_all(ws)
+                path = ws / "scripts" / "publish.sh"
+                text = path.read_text(encoding="utf-8")
+                text = text.replace(
+                    'watch_output=$(gh run watch "$RUN_ID")\n'
+                    'mapfile -t WATCH_LOG < <(printf \'%s\\n\' "$watch_output" '
+                    '| tail -n 5)',
+                    f'gh run watch "$RUN_ID" {handler}')
+                path.write_text(text, encoding="utf-8")
+                by_id = self._run(ws)
+                for check_id, result in by_id.items():
+                    self.assertTrue(result["passed"],
+                                    f"{check_id}: {result['detail']}")
+
+    def test_a_finding_1_comment_pins_its_claims_to_named_tests(self):
+        # Same rule the gh api paragraph now obeys, applied to the one
+        # clause item A adds here: a claim about what this check decides
+        # (and deliberately does not) cites the test that measures it, and
+        # every cited name is a real TestIssue74 method (`ast`, not regex).
+        text = (BASH_CI_DIR / "fixture.yaml").read_text(encoding="utf-8")
+        start = text.index("# Finding 1:")
+        end = text.index("- id: process-substitution-error-propagates")
+        comment = text[start:end]
+        defined = self._test_issue_74_method_names()
+        cited = re.findall(r"\btest_[A-Za-z0-9_]+", comment)
+        self.assertTrue(cited, comment)
+        self.assertEqual(sorted({n for n in cited if n not in defined}), [],
+                         "cited test name(s) are not methods of TestIssue74")
+        for word in ("|| echo", "judge", "Correctness", "|| exit 0",
+                     "|| /bin/true", "|| continue"):
+            with self.subTest(word=word):
+                self.assertIn(word, comment)
 
 
 class MakeBadgeTests(unittest.TestCase):

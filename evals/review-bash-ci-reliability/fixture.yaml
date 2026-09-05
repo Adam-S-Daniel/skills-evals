@@ -101,7 +101,14 @@ objective_checks:
   # (into any variable), check `${PIPESTATUS[0]}` right after a direct (non
   # process-substituted) pipe, or drop the pipe entirely and let `set -e` see
   # the command's own exit status. The dodge of keeping the broken shape but
-  # swallowing its failure with `|| true`/`|| :` is forbidden outright. Each
+  # swallowing its failure with `|| true`, `|| :` or `|| echo ...` is
+  # forbidden outright — the same three tokens the sibling gh api check
+  # bans. Every OTHER `||` handler (`|| exit 0`, `|| /bin/true`,
+  # `|| continue`, …) is deliberately left alone here: whether a handler
+  # propagates the failure or swallows it is the judge's question
+  # (Correctness), not a lexical fact a regex may settle, so no regex is
+  # added for them — test_a_watch_or_echo_handler_fails,
+  # test_a_other_handlers_are_left_to_the_judge. Each
   # of the three must_match alternatives is anchored to a non-comment prefix
   # (and, for the pipe-free-line alternative, a non-comment/non-pipe run
   # after it too), so a `# was: ...` comment quoting the capture variable,
@@ -124,7 +131,7 @@ objective_checks:
     paths: ["scripts/publish.sh"]
     must_not_match:
       - '^[^#\n]*<\s*<\(\s*gh run watch[^#\n]*'
-      - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:)[^#\n]*'
+      - '^[^#\n]*gh run watch[^#\n]*\|\|\s*(true|:|echo)[^#\n]*'
     must_match:
       - '(^[^#\n]*\w+=\$\(\s*gh run watch[^#\n]*|^[^#\n]*PIPESTATUS[^#\n]*|^[^#\n|]*\bgh run watch\b[^#\n|]*(\|\|[^#\n|]*)*(\s*#.*)?$)'
 
