@@ -513,11 +513,11 @@ def _normalize_expr(value) -> str:
     consistency, so a skill-faithful `if: ${{ always() }}` must not fail a
     check written against the bare `always()` spelling.
 
-    Deliberately does NOT treat `!cancelled()` as equivalent to `always()`:
-    close in effect for a job that must run regardless of the upstream
-    matrix's outcome, but a different expression — `job_if_equals` asserts
-    exact equality with what the skill actually prescribes, not semantic
-    equivalence with every plausible variant nobody wrote.
+    Does NOT conflate `!cancelled()` with `always()` into one normalized
+    string — they stay textually distinct here. Whether a caller treats them
+    as interchangeably ACCEPTABLE is a `job_if_equals` decision (it may take
+    a list of equally-valid expressions), not something this function
+    decides on its own.
     """
     s = _stringify_if(value).strip()
     m = _WRAPPED_EXPR_RE.match(s)
@@ -685,7 +685,7 @@ def _log_file_reachable(log_file, download_paths: list[str]) -> bool:
 def workflow_step_uses(workspace: str, patterns: list[str], *,
                        uses_suffix: str | None = None,
                        job: str | None = None,
-                       job_if_equals: str | None = None,
+                       job_if_equals: str | list[str] | None = None,
                        job_needs_nonempty: bool = False,
                        job_permissions_include: dict | None = None,
                        if_contains: str | None = None,
@@ -710,7 +710,10 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     lexically" half of the house rule, not a shortcut around the structural
     half. `job_if_equals` compares against `_normalize_expr`, not the raw
     `if:` string, so a skill-faithful `if: ${{ always() }}` matches a check
-    written against the bare `always()` spelling.
+    written against the bare `always()` spelling. It takes either a single
+    expression or a list of equally-acceptable ones — e.g.
+    `["always()", "!cancelled()"]` where a skill leaves the exact spelling
+    unprescribed and more than one is a genuinely correct answer.
 
     `if_gates_on_outcome` (`"failure"` or `"success"`) asserts the step's
     `if:` reads, by `_gates_on_outcome`, as gating on that outcome — not
@@ -791,8 +794,10 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     for rel, doc, job_id, job_body, step, step_index in matches:
         if job is not None and not _job_matches(job_id, job_body, job):
             continue
-        if job_if_equals is not None and _normalize_expr(job_body.get("if")) != job_if_equals:
-            continue
+        if job_if_equals is not None:
+            accepted = [job_if_equals] if isinstance(job_if_equals, str) else job_if_equals
+            if _normalize_expr(job_body.get("if")) not in accepted:
+                continue
         if job_needs_nonempty:
             needs = job_body.get("needs")
             has_needs = (isinstance(needs, str) and bool(needs)) or \

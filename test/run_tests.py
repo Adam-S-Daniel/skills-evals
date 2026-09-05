@@ -2772,6 +2772,30 @@ class TestIssue86(unittest.TestCase):
             job_if_equals="always()")
         self.assertFalse(passed)
 
+    def test_job_if_equals_accepts_a_list_of_equally_valid_expressions(self):
+        # Review round 3, N7: SKILL.md's multi-job snippet shows no job-level
+        # `if:` at all, so requiring the exact string "always()" rejected
+        # `!cancelled()` — GitHub's own recommended, genuinely correct
+        # alternative — as if it were wrong. job_if_equals now takes a list
+        # of equally-acceptable expressions.
+        for if_expr in ('"!cancelled()"', "${{ !cancelled() }}"):
+            # A bare, unwrapped `!cancelled()` isn't even valid YAML here —
+            # a leading `!` opens a tag — so real workflows always quote or
+            # `${{ }}`-wrap it; both realistic spellings are covered.
+            wf = self.JOB_ALWAYS_WF.format(if_expr=if_expr)
+            ws = self._ws({".github/workflows/w.yml": wf})
+            passed, detail = objective.workflow_step_uses(
+                str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="report",
+                job_if_equals=["always()", "!cancelled()"])
+            self.assertTrue(passed, f"if_expr={if_expr!r}: {detail}")
+        # A genuinely different gate is still rejected.
+        wf = self.JOB_ALWAYS_WF.format(if_expr="success()")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment", job="report",
+            job_if_equals=["always()", "!cancelled()"])
+        self.assertFalse(passed)
+
     # ---- workflow_step_uses: job_permissions_include (issue #86 review, S1) -
 
     def test_job_permissions_include_from_workflow_level(self):
@@ -3354,6 +3378,25 @@ jobs:
                         "visual-regression-post-step",
                         "visual-regression-resolve-step"):
             self.assertTrue(by_id[check_id]["passed"], f"{check_id}: {by_id[check_id]['detail']}")
+
+    def test_downstream_job_gated_on_cancelled_scores_full_marks(self):
+        # Review round 3, N7: the fixture used to reject `!cancelled()` on
+        # the downstream job as if `always()` were the only correct
+        # spelling, even though SKILL.md's multi-job snippet shows no
+        # job-level `if:` at all and `!cancelled()` is GitHub's own
+        # recommended alternative. Swapping the correct workspace's
+        # `if: always()` for `if: ${{ !cancelled() }}` must still pass.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        self.assertIn("  finalize:\n    needs: [chromium, firefox]\n    if: always()\n", text)
+        path.write_text(text.replace(
+            "  finalize:\n    needs: [chromium, firefox]\n    if: always()\n",
+            "  finalize:\n    needs: [chromium, firefox]\n    if: ${{ !cancelled() }}\n"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertTrue(by_id["visual-regression-report-job-shape"]["passed"],
+                        by_id["visual-regression-report-job-shape"]["detail"])
 
     def test_remote_tag_pin_scores_full_marks(self):
         # Review round 1, B2: the literal remote carve-out

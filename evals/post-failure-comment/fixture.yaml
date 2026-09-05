@@ -114,19 +114,22 @@ objective_checks:
     description: >
       The multi-job workflow's failure-comment calls live in a final job that
       always runs regardless of the upstream jobs' outcome and depends on them
-      — the `needs:` + `if: always()` shape (job.status/failure()/success()
-      only reflect the FINALIZE job's own state, never the matrix's).
-      `job_if_equals` normalizes an outer `${{ ... }}` wrapper and whitespace
-      before comparing, so the skill's own `if: ${{ always() }}` spelling (and
-      the unwrapped `always()`) both satisfy this — but NOT `!cancelled()`:
-      close in effect (the job still runs unless the run itself was
-      cancelled) but a different expression, and this check asserts exact
-      equality with what the skill actually prescribes, not every
-      semantically-similar gate nobody wrote.
+      — the `needs:` + a run-regardless `if:` shape (job.status/failure()/
+      success() only reflect the FINALIZE job's own state, never the
+      matrix's). SKILL.md's own multi-job snippet shows no job-level `if:`
+      at all — some such gate is this fixture's OWN requirement, needed
+      because GitHub skips a job by default when a job it `needs:` fails.
+      `job_if_equals` accepts either `always()` (the spelling the skill's
+      snippet DOES show, on the single-job workflow's job-less shape,
+      carried over here) or `!cancelled()` — GitHub's own recommended
+      alternative for "run regardless of upstream failure" that additionally
+      skips on a cancelled RUN, which `always()` does not — normalizing an
+      outer `${{ ... }}` wrapper and whitespace before comparing either way,
+      so `if: ${{ always() }}` and the unwrapped `always()` both satisfy it.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
-    job_if_equals: always()
+    job_if_equals: ["always()", "!cancelled()"]
     job_needs_nonempty: true
 
   - id: visual-regression-post-step
