@@ -3130,6 +3130,107 @@ class TestIssue85(unittest.TestCase):
         self.assertIn("1", detail)
         self.assertIn("2", detail)
 
+    # -- the platform_ref leg needs a scalar guard (review round 4, S1) ------
+
+    def test_platform_refs_on_tag_skips_a_platform_ref_input_declaration(self):
+        """A composite that DECLARES an input named platform_ref (a mapping
+        under `inputs:`, not a version literal) is a false positive: the
+        value node bound to that key is a MappingNode, not a scalar, so
+        comparing its `.value` to `tag` is never equal and used to produce a
+        detail interpolating a raw list of Node objects.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            gate = ws / ".github" / "actions" / "gate" / "action.yml"
+            self._replace(
+                gate, "runs:\n",
+                "inputs:\n  platform_ref:\n    description: pinned platform tag\n"
+                "    required: true\nruns:\n")
+            by_id = self._checks(ws, seed)
+        self.assertTrue(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                        by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    def test_platform_refs_on_tag_matches_platform_ref_under_env(self):
+        # The key-path decision, recorded: platform_ref is matched at any
+        # depth, not only directly under a job's `with:` — a drifted value
+        # under `env:` must be caught exactly like one under `with:`.
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                deploy.read_text(encoding="utf-8")
+                + "  env-leg:\n    runs-on: ubuntu-latest\n"
+                  "    env:\n      platform_ref: v0.1.99\n"
+                  "    steps:\n      - run: echo hi\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- prefix matching is case-insensitive (review round 4, N2) -----------
+
+    def test_platform_refs_on_tag_catches_lowercased_owner_sha_pinned(self):
+        """GitHub's owner/repo path is case-insensitive, so a lowercased
+        'adam-s-daniel/cms-platform/...' ref naming this account's own
+        platform repo is the SAME cross-repo reference and must be caught if
+        it is SHA-pinned, not skipped as though it named something else.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            self._replace(
+                deploy,
+                "uses: Adam-S-Daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@v0.1.104",
+                "uses: adam-s-daniel/cms-platform/.github/workflows/"
+                "e2e-tests.yml@1e9a6937a11cbce43ac288d062ceec17fc51d43f")
+            by_id = self._checks(ws, seed)
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
+                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+
+    # -- an aliased platform_ref is one problem, not two (review round 4, N3)
+
+    def test_platform_refs_on_tag_dedupes_an_aliased_platform_ref(self):
+        """`yaml.compose` resolves an alias to the SAME Node object as its
+        anchor, so an anchored+aliased `platform_ref:` used in two places is
+        visited twice by `_mapping_value_nodes` — a drifted value must be
+        reported once, at the anchor's own line, not once per alias
+        occurrence.
+        """
+        ws = self._synthetic_ws({
+            "aliased.yml": (
+                "jobs:\n"
+                "  a:\n"
+                "    with:\n"
+                "      platform_ref: &pr v0.1.99\n"
+                "  b:\n"
+                "    with:\n"
+                "      platform_ref: *pr\n")})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["aliased.yml"],
+            platform_prefix="Adam-S-Daniel/cms-platform/", tag="v0.1.104")
+        self.assertFalse(passed)
+        self.assertEqual(detail.count("platform_ref: v0.1.99"), 1, detail)
+
+    # -- platform_refs_on_tag's own glob loop skips non-files too (N1) ------
+
+    def test_platform_refs_on_tag_glob_skips_non_files(self):
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            (ws / ".github" / "workflows" / "deploy.yml.d").mkdir()
+            passed, detail = objective.platform_refs_on_tag(
+                str(ws), [".github/workflows/deploy.yml*"],
+                platform_prefix="Adam-S-Daniel/cms-platform/", tag="v0.1.104")
+        self.assertTrue(passed, detail)
+
     # -- the restraint checks have teeth too ---------------------------------
 
     def test_editing_local_docker_workflow_fails_restraint(self):
