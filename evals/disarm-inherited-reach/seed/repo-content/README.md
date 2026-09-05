@@ -1,8 +1,8 @@
 # wsl-backup-prod
 
 Production checkout for the nightly backup rotation job. This history is the
-one copy of record — treat any clone of it as carrying full push access back
-here unless you have deliberately removed that access.
+one copy of record; anything landing here goes straight into the nightly
+rotation.
 
 Contact: ops@example.com
 

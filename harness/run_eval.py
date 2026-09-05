@@ -487,6 +487,65 @@ def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     )
 
 
+def _nested_repo_dirs(workspace: Path) -> list[Path]:
+    """Top-level directories in `workspace` that are themselves a git
+    repository (standalone, or a linked worktree) — the workspace's own
+    bookkeeping repo (see `_run_arm`) collapses each to a single gitlink
+    line in `git diff`, hiding exactly what changed inside from the judge.
+    `workspace/.git` (the bookkeeping repo itself) and `.claude` (skill
+    install noise) are excluded. A bare repository (e.g. a fixture's
+    `prod.git`) has no nested `.git` marker of its own — the directory IS
+    the git dir — so it is never picked up here; its raw internals
+    (objects, hooks/*.sample) are excluded from the bookkeeping repo
+    entirely instead (see `evals/disarm-inherited-reach/seed/setup.sh`'s
+    `.git/info/exclude` entry) since they are not a working tree to show a
+    patch for.
+    """
+    out = []
+    for entry in sorted(workspace.iterdir()):
+        if entry.name in (".git", ".claude"):
+            continue
+        if (entry / ".git").exists():
+            out.append(entry)
+    return out
+
+
+def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
+    """The last-commit patch for each nested repo dir in `dirs`, labelled by
+    its path relative to `workspace` — what a script running inside a
+    gitlink-collapsed copy actually did, which the workspace's own `git
+    diff` cannot show (a gitlink is a single line: the commit SHA it now
+    points at, not a patch).
+    """
+    sections = []
+    for d in dirs:
+        rel = d.relative_to(workspace)
+        log = subprocess.run(
+            ["git", "-C", str(d), "log", "--stat", "-p", "-1", "--format=%H %s"],
+            capture_output=True, text=True, timeout=10)
+        if log.returncode != 0 or not log.stdout.strip():
+            sections.append(f"=== {rel} (no commits) ===")
+        else:
+            sections.append(f"=== {rel}: last commit ===\n{log.stdout}")
+    return "\n\n".join(sections)
+
+
+def _build_judge_diff(workspace: Path) -> str:
+    """The text handed to the judge as "what changed": the workspace's own
+    bookkeeping diff, plus — for any top-level directory that is itself a
+    git repository and therefore collapsed to a single gitlink line in that
+    diff — its own last commit, so the judge can see what actually happened
+    inside a scratch copy the agent made rather than just a gitlink SHA
+    changing.
+    """
+    _git("add", "-A", cwd=workspace)
+    diff = _git("diff", "--cached", "--", ".", ":!.claude", cwd=workspace).stdout
+    nested = _nested_repo_diff(workspace, _nested_repo_dirs(workspace))
+    if nested:
+        diff = f"{diff}\n\n# Nested repository contents (collapsed to gitlinks above)\n{nested}"
+    return diff
+
+
 def _write_summary(results_dir: Path, skill: str, arm_name: str, timestamp: str,
                    error: dict | None, agent: dict | None,
                    objective_checks: list | None, judge_result: dict | None,
@@ -638,8 +697,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 fixture, str(workspace), str(seed), transcript=result.get("transcript"))
 
             if not args.no_judge:
-                _git("add", "-A", cwd=workspace)
-                diff = _git("diff", "--cached", "--", ".", ":!.claude", cwd=workspace).stdout
+                diff = _build_judge_diff(workspace)
                 judge_cfg = fixture.get("judge", {})
                 try:
                     judge_result = judge.score(
