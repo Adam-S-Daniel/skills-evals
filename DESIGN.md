@@ -48,13 +48,19 @@ skills-evals/
   DESIGN.md                # this file
   harness/                 # runner + scorers (Python)
     run_eval.py
+    registries.yml         # registry name -> URL -> skill-directory layout
     scorers/
       objective.py
       judge.py
+    fakes/                 # stand-in binaries shared across Class B fixtures
+      gh                   # offline GitHub CLI (see "Four instruments", B)
+      README.md            # its keying rule, classes, and invocation log
   evals/
     <skill>/
       fixture.yaml         # prompt, seed ref, objective checks, judge rubric
       seed/                # input workspace the agent starts from
+      seed/bin/<tool>      # symlink to ../../../../harness/fakes/<tool>, for
+                           # a fixture whose `env:` puts it first on PATH
   results/                 # summaries committed; raw transcripts gitignored
 ```
 
@@ -189,10 +195,12 @@ Not every skill takes the same eval, and some take none. Classify first:
   canned JSON captured from the real incident (the same substitution move as
   `$CLAUDE_BIN`/`test/fake-claude`, applied to the tool the skill consults).
   The verdict is scored objectively against the postmortem; the judge grades
-  reasoning quality only. Candidates: `cms-stuck-pr-triage`,
-  `debug-github-workflows`, `ci-watcher-loops`, `editorial-label-audit`,
-  `skills-doctor`, `consumer-repo-provisioning` (the
-  which-secret-is-missing half).
+  reasoning quality only. `cms-stuck-pr-triage` graduated out of this list:
+  covered by `evals/cms-stuck-pr-triage/` (issue #84), which is also where
+  the shared `harness/fakes/gh` every other Class B fixture reuses came
+  from. Candidates: `debug-github-workflows`, `ci-watcher-loops`,
+  `editorial-label-audit`, `skills-doctor`, `consumer-repo-provisioning`
+  (the which-secret-is-missing half).
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over

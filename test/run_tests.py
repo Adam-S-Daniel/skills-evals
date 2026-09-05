@@ -4999,5 +4999,42 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
         self.assertIn("pr 412", header)
         self.assertIn("spelling", header)
 
+    # ---------------------------------------- the repo's own map of itself
+
+    def _layout_block(self, path: Path) -> str:
+        """The fenced directory-layout block of README.md / DESIGN.md."""
+        text = path.read_text(encoding="utf-8")
+        blocks = [block for block in text.split("```")
+                  if "evals/" in block and "harness/" in block]
+        self.assertTrue(blocks, f"{path.name} has no directory-layout block")
+        return blocks[0]
+
+    def test_the_layout_sections_name_the_directories_that_exist(self):
+        """A map that stops at what shipped first is a map of nothing (S9).
+
+        `harness/fakes/` and `evals/cms-stuck-pr-triage/` are where a
+        contributor looks for the shared stand-in and the Class B fixture,
+        and neither appeared in either layout section — so the two files
+        that claim to say where things live said the fixture set was three
+        directories smaller than it is.
+        """
+        readme = self._layout_block(REPO_ROOT / "README.md")
+        for entry in ("fakes/", "gh", "cms-stuck-pr-triage/"):
+            with self.subTest(readme=entry):
+                self.assertIn(entry, readme)
+        design = self._layout_block(REPO_ROOT / "DESIGN.md")
+        for entry in ("fakes/", "gh"):
+            with self.subTest(design=entry):
+                self.assertIn(entry, design)
+
+    def test_every_eval_directory_is_named_in_the_readmes_layout(self):
+        """…and it stays that way when the next fixture lands."""
+        readme = self._layout_block(REPO_ROOT / "README.md")
+        for path in sorted((REPO_ROOT / "evals").iterdir()):
+            if not path.is_dir():
+                continue
+            with self.subTest(eval_dir=path.name):
+                self.assertIn(path.name + "/", readme)
+
 if __name__ == "__main__":
     unittest.main()
