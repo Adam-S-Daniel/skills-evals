@@ -258,14 +258,14 @@ Not every skill takes the same eval, and some take none. Classify first:
 
 - **A. Workspace transforms** — correctness is decidable from the resulting
   files alone. The `workflow-path-audit` shape applies unchanged: seed +
-  objective checks + thin judge. Candidates: `review-bash-ci-reliability`,
-  `code-quality`, `admin-config-render`, `writing-adrs` (the format half),
-  `pdf-ocr-audit`.
+  objective checks + thin judge. Candidates: `code-quality`,
+  `admin-config-render`, `writing-adrs` (the format half), `pdf-ocr-audit`.
   (`github-actions-sha-pinning` was also Class A; it has already shipped —
   see "Backfill order" below.) `rename-pdfs` graduated out of this list:
   covered by `evals/rename-pdfs/` (issue #82). `post-failure-comment`
   graduated out of this list: covered by `evals/post-failure-comment/`
-  (issue #86).
+  (issue #86). `review-bash-ci-reliability` graduated out of this list:
+  covered by `evals/review-bash-ci-reliability/` (issue #74).
 - **B. Diagnosis/triage** — correctness = reaching a recorded root cause.
   The hermetic trick is a fake `gh` on the seed workspace's `PATH` serving
   canned JSON captured from the real incident (the same substitution move as
@@ -344,11 +344,13 @@ Both gates belong in the registry's own contributor guidance (agentskills'
 the reference they point at.
 
 Backfill order, by usage × decidability × incident material:
-`review-bash-ci-reliability` (the incident record practically is its fixture
-set), `cms-stuck-pr-triage` (builds the fake-`gh` machinery every Class B eval
+`cms-stuck-pr-triage` (builds the fake-`gh` machinery every Class B eval
 reuses), `debug-github-workflows`, then `adam-writing-style` as the Class C
 pilot. (`github-actions-sha-pinning` — fully decidable, including the
-cms-platform tag carve-out — has shipped: `evals/github-actions-sha-pinning/`.)
+cms-platform tag carve-out — has shipped: `evals/github-actions-sha-pinning/`.
+`review-bash-ci-reliability`, which headed this list because the incident
+record practically is its fixture set, has shipped too:
+`evals/review-bash-ci-reliability/`.)
 
 ### Deliberate non-coverage
 

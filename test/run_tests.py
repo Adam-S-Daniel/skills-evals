@@ -2315,6 +2315,34 @@ class TestIssue74(unittest.TestCase):
         text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("review-bash-ci-reliability/", text)
 
+    # -- Round-6 review N-d: DESIGN.md still listed this eval as an
+    # unshipped Class A candidate and as the head of the backfill order,
+    # months after it shipped. Mirrors main's graduation wording for
+    # rename-pdfs / post-failure-comment / github-actions-sha-pinning. --
+
+    def test_n_d_design_md_no_longer_lists_this_eval_as_a_candidate(self):
+        design = (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+
+        class_a = design[design.index("- **A. Workspace transforms**"):
+                        design.index("- **B. Diagnosis/triage**")]
+        candidates = class_a[class_a.index("Candidates:"):
+                            class_a.index("(`github-actions-sha-pinning`")]
+        self.assertNotIn("review-bash-ci-reliability", candidates)
+        self.assertIn(
+            "`review-bash-ci-reliability` graduated out of this list: covered "
+            "by `evals/review-bash-ci-reliability/` (issue #74)",
+            " ".join(class_a.split()))
+
+        backfill = " ".join(
+            design[design.index("Backfill order, by usage"):
+                  design.index("### Deliberate non-coverage")].split())
+        self.assertTrue(
+            backfill.startswith("Backfill order, by usage × decidability × "
+                                "incident material: `cms-stuck-pr-triage`"),
+            backfill[:140])
+        self.assertIn("`evals/review-bash-ci-reliability/`", backfill)
+        self.assertIn("has shipped", backfill)
+
     # -- Round-3 review B1: must_match had no comment anchor at all, so a
     # comment merely quoting the fix (or, for a deleted call, quoting the old
     # bug under a `# was: ...` marker) satisfied the check with no live code
