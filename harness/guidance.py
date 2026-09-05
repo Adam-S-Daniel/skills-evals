@@ -91,6 +91,11 @@ MODES = ("none", "stub", "section", "full", "full-minus-section")
 # CLAUDE_CONFIG_DIR for memory — same hook, pointed at the workspace, read as
 # project memory. Whichever is used is recorded in every summary, and the
 # per-arm guard decides whether the arm counts either way.
+# The three names that ARE the per-arm isolation. A fixture's `env:` block is
+# applied after they are set, so a fixture allowed to name one could point an
+# arm at the operator's real config dir.
+ISOLATION_NAMES = ("HOME", "TMPDIR", "CLAUDE_CONFIG_DIR")
+
 DELIVERIES = ("user", "project")
 SETTING_SOURCES = {"user": "user,project", "project": "project"}
 
@@ -227,6 +232,13 @@ def h2_extents(text: str) -> list[dict]:
     `splitlines`-style line starts have one MORE entry than the file has
     newlines, and the trailing phantom line must not be charged a newline of
     its own or the last section in every file overcounts by exactly one.
+
+    The ARITHMETIC matches; the UNIT does not. These are Python CHARACTER
+    offsets, where the JS counts `Buffer.byteLength` — the same number only
+    for ASCII, and base.md is not ASCII (it is full of em dashes and arrows).
+    `test_extents_agree_with_the_real_manifests_generated_bytes` encodes
+    before comparing, which is why it agrees; do not "fix" either side to
+    match the other.
     """
     lines = text.split("\n")
     line_start = [0]
@@ -365,6 +377,27 @@ def assemble(guidance_dir: Path, row: dict, mode: str,
         extent = _extent_of(text, row["heading"], f"the corpus for {row['id']}")
         payload = text if mode == "full" else text[:extent["start"]] + text[extent["end"]:]
 
+    if not payload.strip():
+        # An EMPTY payload plus the magic-word paragraph would give the arm
+        # nothing but the token — and it would still pass its delivery guard,
+        # because the guard looks for the token. A clean-looking A/B measuring
+        # nothing at all. Refuse instead; the line arithmetic in `h2_extents`
+        # is NOT changed for this, because it deliberately matches
+        # check-guidance-coverage.js:95.
+        #
+        # A truncated `agents-md/stub.md` is the reachable cause today. The
+        # lone-CR file the round-1 review named does NOT reach here: `_read`
+        # uses `Path.read_text()`, whose universal-newline translation turns
+        # `\r` into `\n` before either the parse or `text.split("\n")` sees it
+        # (measured: b"# T\r\r## A\r\rbody\r" reads back as "# T\n\n## A\n\nbody\n"
+        # and yields one correct extent). This refusal is the floor over the
+        # whole class, not a fix for that one cause.
+        raise GuidanceError(
+            f"the `{mode}` payload for section {row.get('id')!r} is empty — "
+            f"{guidance_dir / row['file']} yielded no section text (a file "
+            "with lone-CR line endings does this). Delivering it would give "
+            "the arm the magic word and no guidance, which passes the "
+            "delivery guard and measures nothing.")
     if token is None:
         return payload
     if not payload.endswith("\n"):
@@ -478,6 +511,12 @@ def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,
     env["CLAUDE_CONFIG_DIR"] = str(config_dir)
     env["WORKSPACE"] = str(workspace)
     for key, value in (env_spec or {}).items():
+        if str(key) in ISOLATION_NAMES:
+            raise GuidanceError(
+                f"a fixture's `env:` may not set {key} — HOME, TMPDIR and "
+                "CLAUDE_CONFIG_DIR ARE the per-arm isolation, and this block "
+                "is applied after they are set, so a fixture naming one could "
+                "point an arm at the real config dir")
         env[str(key)] = string.Template(str(value)).safe_substitute(env)
     return env
 

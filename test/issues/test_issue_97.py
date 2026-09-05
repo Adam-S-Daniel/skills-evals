@@ -418,6 +418,83 @@ class TestIssue97(unittest.TestCase):
                       "to go and look at")
         self.assertIn("alpha", message, "and list the ids it does know")
 
+    def test_an_empty_payload_is_refused_rather_than_delivered_as_a_token(self):
+        # N-a. An empty payload plus the magic-word paragraph gives the arm
+        # nothing but the token — and passes the delivery guard, because the
+        # guard looks for the token. A truncated `agents-md/stub.md` is the
+        # reachable cause; the lone-CR file the review named is NOT (see the
+        # test below).
+        root = self._checkout()
+        row = self._row(root, "alpha")
+        (root / guidance.STUB_REL).write_text("   \n\n", encoding="utf-8")
+        with self.assertRaises(guidance.GuidanceError) as ctx:
+            guidance.assemble(root, row, "stub", token="TOK-1")
+        self.assertIn("empty", str(ctx.exception))
+        self.assertIn("alpha", str(ctx.exception))
+
+    def test_an_empty_payload_exits_2_through_main(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-emptypayload-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        (root / guidance.STUB_REL).write_text("\n", encoding="utf-8")
+        eval_dir = self._guidance_fixture(
+            tmp, arms={"with_guidance_stub": {"mode": "stub"},
+                       "without_guidance": {"mode": "none"}})
+        rc, out = self._run_main([eval_dir, "--arm", "with_guidance_stub",
+                                  "--guidance", root,
+                                  "--results-dir", tmp / "results", "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("empty", out)
+        self.assertNotIn("Traceback", out)
+
+    def test_a_lone_cr_file_never_reaches_the_line_arithmetic(self):
+        # The round-1 review's stated trigger for N-a, measured: `_read` uses
+        # `Path.read_text()`, whose universal-newline translation turns a lone
+        # \r into \n before either the markdown parse or `text.split("\n")`
+        # sees it. So the parse and the arithmetic cannot disagree about line
+        # endings through the production path, and the empty-payload refusal
+        # above is a floor over the whole class rather than a fix for this
+        # cause. Pinned so a future `newline=""` read is caught.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-cr-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "x.md").write_bytes(b"# T\r\r## A\r\rbody\r")
+        text = guidance._read(tmp, Path("x.md"))
+        self.assertNotIn("\r", text)
+        extents = guidance.h2_extents(text)
+        self.assertEqual([e["heading"] for e in extents], ["A"])
+        self.assertIn("body", text[extents[0]["start"]:extents[0]["end"]])
+
+    def test_a_fixture_env_may_not_repoint_the_per_arm_isolation(self):
+        # N-h. The fixture's `env:` block is applied AFTER HOME, TMPDIR and
+        # CLAUDE_CONFIG_DIR are set, so a fixture naming one could point an
+        # arm at the operator's real config dir.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-envnames-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        paths = {n: tmp / n for n in ("ws", "home", "tmp", "config")}
+        for path in paths.values():
+            path.mkdir(parents=True)
+        kwargs = dict(workspace=paths["ws"], home=paths["home"],
+                      tmpdir=paths["tmp"], config_dir=paths["config"])
+        for name in guidance.ISOLATION_NAMES:
+            with self.subTest(name=name):
+                with self.assertRaises(guidance.GuidanceError) as ctx:
+                    guidance.agent_env(**kwargs, env_spec={name: "/etc"})
+                self.assertIn(name, str(ctx.exception))
+        env = guidance.agent_env(**kwargs, env_spec={"FOO": "bar"})
+        self.assertEqual(env["FOO"], "bar")
+        self.assertEqual(env["HOME"], str(paths["home"]))
+        self.assertEqual(env["CLAUDE_CONFIG_DIR"], str(paths["config"]))
+
+    def test_the_extent_docstring_says_the_unit_differs_from_the_js(self):
+        # N-b. The arithmetic matches check-guidance-coverage.js; the UNIT
+        # does not (characters here, Buffer.byteLength there). Pin the clause
+        # so the next reader does not "fix" one side to match the other.
+        doc = guidance.h2_extents.__doc__
+        self.assertIn("byteLength", doc)
+        self.assertIn("CHARACTER", doc)
+        self.assertIn("test_extents_agree_with_the_real_manifests_generated_bytes",
+                      doc)
+
     def test_unknown_mode_is_rejected_by_name(self):
         root = self._checkout()
         with self.assertRaises(guidance.GuidanceError) as ctx:
