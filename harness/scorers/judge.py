@@ -319,6 +319,26 @@ def blind_order(candidate_text: str, references: list,
 _DRAFT_CLOSE = "</draft>"
 
 
+def _normalize_draft_text(text: str) -> str:
+    """One draft, reduced to the line shape every other draft has.
+
+    The committed references are hand-written prose, hard-wrapped at 74-77
+    columns; a model's reply is one long line per paragraph. Rendered as
+    they arrive, the odd draft out is the agent's on EVERY trial, and a
+    judge can pick it by line shape without reading a word — the shuffle
+    hides which slot the draft under test is in and hides nothing else.
+
+    So every draft gets the same treatment: trailing whitespace goes,
+    newlines inside a paragraph become spaces, runs of spaces collapse, and
+    a run of blank lines becomes one paragraph break. Paragraph structure is
+    the only shape that survives, which is why the fixtures' rubrics ask the
+    judge to rank "as writing rather than formatting".
+    """
+    lines = [line.strip() for line in (text or "").strip().splitlines()]
+    joined = re.sub(r"(?<!\n)\n(?!\n)", " ", "\n".join(lines))
+    return re.sub(r"[ \t]+", " ", re.sub(r"\n{3,}", "\n\n", joined)).strip()
+
+
 def _draft_block(label: str, text: str, nonce: str) -> str:
     """One draft, fenced so nothing inside it can pose as the prompt.
 
@@ -359,8 +379,9 @@ def _build_pairwise_prompt(rubric: str, ordered: list[dict],
     """
     nonce = nonce or secrets.token_hex(8)
     labels = [c["label"] for c in ordered]
-    drafts = "\n\n".join(_draft_block(c["label"], c["text"].strip(), nonce)
-                         for c in ordered)
+    drafts = "\n\n".join(
+        _draft_block(c["label"], _normalize_draft_text(c["text"]), nonce)
+        for c in ordered)
     return (
         f"Below are {len(ordered)} drafts of the same piece of writing, by "
         "different authors, in no particular order. You do not know who "

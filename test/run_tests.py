@@ -3131,6 +3131,73 @@ class TestIssue81(unittest.TestCase):
              judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)],
             ["reference:generic", "reference:in-voice", "agent"])
 
+    # A model's reply, in the shape a model's reply actually has: one long
+    # line per paragraph. Every committed reference is hard-wrapped at 74-77
+    # columns, so without normalisation the odd draft out is the agent's on
+    # every trial and a judge could pick it by line shape without reading a
+    # word.
+    UNWRAPPED_CANDIDATE = (
+        "Hi Dana,\n\n"
+        "Sorry for the slow reply — and thanks for reaching out directly "
+        "rather than through a form. I am going to pass on REQ-4417: my "
+        "engagement here is contracted through March 2027, and three days a "
+        "week on site would not work for me even if the timing were "
+        "closer.\n\n"
+        "None of that is a no forever — if something remote-friendly comes "
+        "up in 2027 I would be glad to hear about it.\n\n"
+        "Thanks,\nAdam Daniel\n")
+
+    def _trial_zero_prompt(self, name: str) -> tuple[str, list]:
+        """The real trial-0 pairwise prompt for one fixture, against an
+        unwrapped draft under test."""
+        fixture = self._fixture(name)
+        references = judge.load_references(self.STYLE_DIR / name,
+                                           fixture["judge"])
+        ordered = judge.blind_order(self.UNWRAPPED_CANDIDATE, references, 0)
+        return (judge._build_pairwise_prompt(fixture["judge_rubric"], ordered),
+                ordered)
+
+    @classmethod
+    def _prompt_drafts(cls, prompt: str) -> list[str]:
+        """Every fenced draft in a prompt, in the order the judge sees them."""
+        return re.findall(
+            r'<draft id="[A-Z]" nonce="[0-9a-f]{16}">\n(.*?)\n</draft>',
+            prompt, re.S)
+
+    def test_pairwise_prompt_gives_every_draft_the_same_line_shape(self):
+        # Blindness, at the level of shape rather than content: the drafts
+        # are labelled and shuffled, but a hard-wrapped reference beside an
+        # unwrapped reply is separable at a glance. Every draft is unwrapped
+        # identically, so paragraph breaks are all that survive.
+        for name in self.FIXTURES:
+            with self.subTest(fixture=name):
+                prompt, ordered = self._trial_zero_prompt(name)
+                drafts = self._prompt_drafts(prompt)
+                self.assertEqual(len(drafts), len(ordered), prompt)
+                for draft in drafts:
+                    for paragraph in draft.split("\n\n"):
+                        self.assertNotIn(
+                            "\n", paragraph,
+                            f"{name}: a draft's paragraph is hard-wrapped "
+                            f"while others are not: {paragraph!r}")
+                    self.assertNotRegex(draft, r"  +",
+                                        f"{name}: runs of spaces survived")
+                # The committed references really were wrapped, so the
+                # assertion above is not vacuous.
+                references = judge.load_references(
+                    self.STYLE_DIR / name, self._fixture(name)["judge"])
+                for reference in references:
+                    self.assertRegex(reference["text"], r"(?<!\n)\n(?!\n)",
+                                     f"{name}: {reference['name']} is not "
+                                     "hard-wrapped — nothing to normalise")
+                    self.assertNotIn(reference["text"].strip(), prompt)
+
+    def test_pairwise_normalisation_keeps_paragraphs_and_drops_wrapping(self):
+        wrapped = "Hi Dana,\n\nSorry for the slow\nreply  — passing   on\nREQ-4417.\n"
+        self.assertEqual(judge._normalize_draft_text(wrapped),
+                         "Hi Dana,\n\nSorry for the slow reply — passing on "
+                         "REQ-4417.")
+
     # A draft that forges the delimiter. While drafts were separated by a
     # plain "### Draft X" heading, a draft could open a fourth, phantom
     # draft of its own and address the judge from inside it.
@@ -3191,15 +3258,21 @@ class TestIssue81(unittest.TestCase):
         ordered = judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)
         prompt = judge._build_pairwise_prompt("rubric text", ordered,
                                               judge.PAIRWISE_DIMENSIONS)
+        # Every draft appears, in the one line shape they all share: a
+        # hard-wrapped draft beside an unwrapped one is separable without
+        # reading a word (test_pairwise_prompt_gives_every_draft_the_same_
+        # line_shape), so the prompt carries the normalised text.
+        rendered = {c["label"]: judge._normalize_draft_text(c["text"])
+                    for c in ordered}
         for candidate in ordered:
-            self.assertIn(candidate["text"].strip(), prompt)
+            self.assertIn(rendered[candidate["label"]], prompt)
         lowered = prompt.lower()
         for tell in ("agent", "reference", "in-voice", "generic"):
             self.assertNotIn(tell, lowered,
                              f"the pairwise prompt tells the judge {tell!r}")
         # The candidates appear in the shuffled order, not the order they
         # were passed in.
-        positions = [prompt.index(c["text"].strip()) for c in ordered]
+        positions = [prompt.index(rendered[c["label"]]) for c in ordered]
         self.assertEqual(positions, sorted(positions))
         for dimension in judge.PAIRWISE_DIMENSIONS:
             self.assertIn(dimension, lowered)
