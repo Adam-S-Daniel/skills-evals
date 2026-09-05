@@ -3840,6 +3840,90 @@ class TestIssue81(unittest.TestCase):
                 judge.blind_order(hostile, self.REFERENCES, 0), nonce=nonce)
         self.assertIn("nonce", str(ctx.exception))
 
+    # ------------------------------------------------------------------
+    # the opening window, and the punctuation a real greeting uses
+    # ------------------------------------------------------------------
+
+    _REPLY_TAIL = (
+        "\n"
+        "My engagement here is contracted through March 2027, and three days\n"
+        "a week on site would not work for me even if the timing were closer,\n"
+        "so REQ-4417 is not one I can take.\n"
+        "\n"
+        "Thanks,\nAdam Daniel\n")
+
+    # The hedge's sentence anchor used to accept only `.`, `!`, `?` or an em
+    # dash before the hedge, so a greeting joined to its hedge by ordinary
+    # punctuation failed a check the draft plainly satisfies. All four of
+    # these passed under round 1's flat 400-character window.
+    _HEDGED_OPENINGS = (
+        "Hi Dana, sorry for the slow reply.",
+        "Hi Dana: apologies for taking so long to come back to you.",
+        "Thanks for the note; sorry to be slow coming back to you, Dana.",
+        "Dana, my apologies for the slow reply.",
+    )
+
+    def test_a_hedge_joined_by_ordinary_punctuation_still_counts(self):
+        for opening in self._HEDGED_OPENINGS:
+            with self.subTest(opening=opening):
+                self._assert_all_pass("recruiter-reply",
+                                      opening + "\n" + self._REPLY_TAIL,
+                                      "greeting and hedge in one line")
+
+    # One window, and this is the number: the marker must fall inside the
+    # first FOUR lines of the reply's own text — the greeting, a blank line,
+    # the opening paragraph, and one line of slack. The two checks used to
+    # carry different windows (three lines and six), and the comment on one
+    # of them described neither.
+    OPENING_WINDOW = 4
+
+    def test_both_opening_checks_use_the_same_window(self):
+        for check_id, marker in (
+                ("greets-the-recruiter-by-name", "Hi Dana,"),
+                ("opens-with-a-hedge",
+                 "Sorry for the slow reply — this one is not for me.")):
+            for line_number in range(1, self.OPENING_WINDOW + 3):
+                # Filler that carries neither marker, one line each, so the
+                # marker lands exactly on `line_number`.
+                filler = "".join(f"Preamble line {i} of this reply.\n"
+                                 for i in range(1, line_number))
+                draft = filler + marker + "\n" + self._REPLY_TAIL
+                with self.subTest(check=check_id, line=line_number):
+                    self.assertEqual(
+                        self._score("recruiter-reply", draft)[check_id]["passed"],
+                        line_number <= self.OPENING_WINDOW,
+                        f"{check_id} on line {line_number} of "
+                        f"{self.OPENING_WINDOW}")
+
+    # A bio with no subject of its own, whose only third-person marker is a
+    # `their` belonging to the clients. The widened alternation accepted it,
+    # which is exactly the résumé-fragment register the check exists to
+    # catch.
+    _BIO_WITHOUT_A_SUBJECT_BUT_WITH_THEIR = (
+        "Leads delivery infrastructure at a civic technology consultancy,\n"
+        "building for public-sector clients and their users.\n"
+        "Rebuilt the deployment pipeline behind eleven state agency websites\n"
+        "at Halyard Civic Data (2019–2024) and ran the remediation program\n"
+        "that carried all eleven to a clean Section 508 audit. Holds the AWS\n"
+        "Solutions Architect – Professional certification and the CISSP.\n")
+
+    def test_a_their_belonging_to_someone_else_is_not_a_third_person_subject(self):
+        self._assert_only_failure(
+            self._score("proposal-bio",
+                        self._BIO_WITHOUT_A_SUBJECT_BUT_WITH_THEIR),
+            "bio-is-third-person")
+
+    def test_the_named_standard_is_cited_in_either_order(self):
+        # A sixty-word budget writes "Sections 504 and 508" as readily as
+        # "Sections 508 and 504", and the pattern only accepted the second.
+        clean = self._reference("proposal-bio", "in-voice")
+        for phrasing in ("Section 508", "Sections 508 and 504",
+                         "Sections 504 and 508"):
+            with self.subTest(phrasing=phrasing):
+                self._assert_all_pass(
+                    "proposal-bio", clean.replace("Section 508", phrasing),
+                    f"standard phrased as {phrasing!r}")
+
     def test_pairwise_rejects_a_draft_carrying_the_closing_fence(self):
         # A draft that closes its own fence would put everything after it
         # back into the judge's own voice. There is no way to render that

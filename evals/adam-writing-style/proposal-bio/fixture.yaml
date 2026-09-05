@@ -74,8 +74,14 @@ objective_checks:
   #
   # What it accepts widened: it used to demand a masculine pronoun
   # (`\b[Hh]e\b`), which fails a perfectly good surname-only bio
-  # ("...Daniel rebuilt the deployment pipeline..."). Any third-person
-  # marker counts now — a pronoun or the subject's own name.
+  # ("...Daniel rebuilt the deployment pipeline..."). A pronoun for the
+  # subject or the subject's own name counts now.
+  #
+  # `they`/`their` are NOT on that list, though the widening once put them
+  # there: a `their` belongs to whatever noun precedes it, so a
+  # subject-less résumé fragment ("...for public-sector clients and their
+  # users") passed a check about having a subject. He/his/Adam/Daniel can
+  # only be the person.
   #
   # Known noise source: `\bI\b` is matched over the agent's whole final
   # reply minus its quoted lines, so an agent that wraps the paragraph in
@@ -86,7 +92,7 @@ objective_checks:
     description: The bio is written in the third person, with no first-person "I"
     type: transcript_matches
     must_match:
-      - '\b(?:[Hh]e|[Hh]is|[Tt]hey|[Tt]heir|Adam|Daniel)\b'
+      - '\b(?:[Hh]e|[Hh]is|Adam|Daniel)\b'
     must_not_match:
       - '\bI\b'
 
@@ -98,8 +104,9 @@ objective_checks:
   # agent's behalf.
   #
   # Both patterns accept the phrasings a sixty-word budget actually
-  # produces: "2019-24" as well as "2019-2024", and "Sections 508 and 504"
-  # as well as "Section 508".
+  # produces: "2019-24" as well as "2019-2024", and "Sections 504 and 508"
+  # in either order as well as "Section 508". The standard's number has to
+  # sit in the same sentence as the word, which is what `[^.\n]*` bounds.
   - id: cites-both-facts
     description: The bio carries the employment dates and the named accessibility standard
     type: transcript_matches
@@ -107,7 +114,7 @@ objective_checks:
       - '\b2019\s*(?:[-–—]|to)\s*(?:20)?24\b'
       # Case-sensitive on purpose: the skill's spelling rules say "Section
       # 508", capital S, never abbreviated.
-      - '\bSections? 508\b'
+      - '\bSections?\b[^.\n]*\b508\b'
 
 judge_rubric: >
   Rank the drafts best to worst as a key-personnel paragraph for a public

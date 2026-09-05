@@ -87,20 +87,28 @@ objective_checks:
   # quotes her signature underneath used to pass on the name in that
   # footer, and the quoted footer is not part of the text this pattern
   # sees. Leading blank lines are skipped, then the name must appear
-  # within the first three lines of the reply's own text.
+  # inside the OPENING WINDOW: the first four lines of the reply's own
+  # text — the greeting, a blank line, the opening paragraph, and one line
+  # of slack. The hedge below uses the same four; they used to differ
+  # (three lines here, six there) and one of the two comments described
+  # neither.
   - id: greets-the-recruiter-by-name
     description: The reply greets the recruiter by name in its opening
     type: transcript_matches
     must_match:
-      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,2}[^\n]*\bDana\b'
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,3}[^\n]*\bDana\b'
 
   # Core move 2: open with a hedge or apology. Any of the skill's shapes
-  # counts, but it has to be the AGENT'S and it has to be near the top. The
-  # pattern skips a leading quoted block, allows up to five non-quoted
-  # lines, and requires the hedge to start a sentence — the skill lists
-  # these as sentence openers ("I'm guessing you're the right person",
-  # "Sorry, just realized"), and a mid-sentence "and I think" is rarely the
-  # disarming move it is after.
+  # counts, but it has to be the AGENT'S and it has to be near the top: the
+  # same four-line opening window as the greeting above, and the hedge has
+  # to start a sentence — the skill lists these as sentence openers ("I'm
+  # guessing you're the right person", "Sorry, just realized"), and a
+  # mid-sentence "and I think" is rarely the disarming move it is after.
+  #
+  # A sentence ends at `,;:` here as well as at `.!?—`, because a greeting
+  # and its hedge are routinely one line: "Hi Dana, sorry for the slow
+  # reply", "Thanks for the note; sorry to be slow". All four of those
+  # shapes failed while the class held only `.!?—`.
   #
   # It used to be a flat 400-character window over the whole reply, which
   # the recruiter's own email satisfied whenever an agent quoted it at the
@@ -114,7 +122,7 @@ objective_checks:
     description: The reply opens with one of the skill's hedges rather than an assertion
     type: transcript_matches
     must_match:
-      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,5}(?:[^\n]*?[.!?—][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
+      - '\A(?:[ \t]*\n)*(?:[^\n]*\n){0,3}(?:[^\n]*?[.!?—,;:][ \t]+)?(?:I[''’]m guessing|I think\b|[Aa]s far as I can tell|[Ss]orry\b|[Mm]y apologies|[Aa]pologies\b)'
 
   # Core move 3: be specific — paste the ID verbatim, name the date. Both
   # facts are in the seed material; neither is asked for. Anchored to
