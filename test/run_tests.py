@@ -3506,7 +3506,7 @@ class TestIssue81(unittest.TestCase):
         self.assertEqual(
             [c["identity"] for c in
              judge.blind_order(self.CANDIDATE, self.REFERENCES, 0)],
-            ["reference:generic", "reference:in-voice", "agent"])
+            ["reference:in-voice", "reference:generic", "agent"])
 
     # ------------------------------------------------------------------
     # how the prompt reaches the judge CLI
@@ -4858,19 +4858,21 @@ class TestIssue81(unittest.TestCase):
     # ------------------------------------------------------------------
 
     # Trial 0's order, per fixture, with the fixture directory folded into
-    # the cycle seed. Three expectations where there used to be one: every
-    # Class C fixture names its references `in-voice` and `generic`, so
-    # seeding on the identities alone started all three at the same offset
-    # and put the draft under test in the same slot in each of them on the
-    # same trial. Two of the three still coincide here — three fixtures
-    # drawing from six permutations collide about half the time, and a hash
-    # tuned until they did not would be a hash fitted to today's three
-    # directory names — but the guaranteed correlation is gone, and a change
-    # to the seed derivation now has to move three pinned values.
+    # the cycle seed. Every Class C fixture names its references `in-voice`
+    # and `generic`, so seeding on the identities alone started all three at
+    # the same offset and put the draft under test in the same slot in each
+    # of them on the same trial. Round 2 folded the fixture directory in and
+    # left two of the three still sharing a cycle, which the tests could not
+    # see: this one asked only for "more than one distinct order" and its
+    # sibling compared raw sha256 digests rather than the offsets modulo
+    # n!, which is all the shuffle actually uses. Both are exact now, and
+    # `_cycle_offset`'s seed string carries a perturbation chosen so the
+    # three land in different buckets — see the note there before adding a
+    # fourth fixture.
     TRIAL_ZERO_ORDERS = {
-        "recruiter-reply": ["reference:in-voice", "agent", "reference:generic"],
-        "proposal-bio": ["reference:in-voice", "agent", "reference:generic"],
-        "self-appraisal-opening": ["agent", "reference:generic",
+        "recruiter-reply": ["reference:generic", "reference:in-voice", "agent"],
+        "proposal-bio": ["agent", "reference:in-voice", "reference:generic"],
+        "self-appraisal-opening": ["reference:generic", "agent",
                                    "reference:in-voice"],
     }
 
@@ -4891,14 +4893,22 @@ class TestIssue81(unittest.TestCase):
                     self.UNWRAPPED_CANDIDATE, references, 0, name)]
                 seen[name] = order
                 self.assertEqual(order, self.TRIAL_ZERO_ORDERS[name])
-        # And they are no longer one order shared by every fixture.
-        self.assertGreater(len({tuple(o) for o in seen.values()}), 1, seen)
+        # And no two fixtures walk the cycle in step. "More than one
+        # distinct order" was satisfied by two of three sharing one, which
+        # is exactly the correlated position bias the per-fixture scope was
+        # added to remove.
+        self.assertEqual(len({tuple(o) for o in seen.values()}),
+                         len(self.FIXTURES), seen)
 
     def test_the_cycle_offset_moves_with_the_fixture_directory(self):
+        # Compared MODULO n!, because that is all `_nth_permutation` uses:
+        # two scopes whose raw sha256 digests differ can still start the
+        # cycle at the same permutation, and comparing the digests said
+        # "different" about a pair that shuffles identically.
         identities = ["agent", "reference:in-voice", "reference:generic"]
-        offsets = {scope: judge._cycle_offset(identities, scope)
-                   for scope in ("", "recruiter-reply", "proposal-bio",
-                                 "self-appraisal-opening")}
+        cycle = math.factorial(len(identities))
+        offsets = {scope: judge._cycle_offset(identities, scope) % cycle
+                   for scope in ("",) + self.FIXTURES}
         self.assertEqual(len(set(offsets.values())), len(offsets), offsets)
 
     def test_the_recommended_trial_count_is_a_whole_number_of_cycles(self):

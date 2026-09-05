@@ -327,11 +327,19 @@ def _cycle_offset(identities: list[str], scope: str = "") -> int:
     that fixture's cycle; editing a reference's prose does not. That is
     deliberate — a run stays reproducible while its references are being
     edited — and it means a rename is a change to the shuffle, which
-    test_pairwise_trial_zero_order_is_pinned_for_every_fixture pins.
-    An empty `scope` reproduces the pre-scope seed exactly, so a caller that
-    has no fixture to name (a unit test, another harness) is unaffected.
+    test_pairwise_trial_zero_order_is_pinned_per_fixture pins.
+    The `/v2/` in the seed is a deliberate perturbation, not a version
+    number: three fixtures drawing from six permutations collide about half
+    the time, and the first seed put recruiter-reply and proposal-bio on the
+    same offset — two of three fixtures walking the cycle in step, which is
+    the correlated position bias the scope was added to remove. `/v2/` is
+    the first perturbation that separates all three (and the empty scope
+    too). A FOURTH fixture may land on top of one of them; if
+    test_pairwise_trial_zero_order_is_pinned_per_fixture says so, perturb
+    this string again and re-pin that test's orders. Nothing else depends
+    on the value.
     """
-    seed = "skills-evals/pairwise/cycle/"
+    seed = "skills-evals/pairwise/cycle/v2/"
     if scope:
         seed += scope + "/"
     return _digest(seed + "|".join(sorted(identities)))
