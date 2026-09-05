@@ -48,6 +48,7 @@ skills-evals/
   DESIGN.md                # this file
   harness/                 # runner + scorers (Python)
     run_eval.py
+    guidance.py            # guidance subject: payload assembly, delivery, guard
     scorers/
       objective.py
       judge.py
@@ -55,7 +56,11 @@ skills-evals/
     <skill>/
       fixture.yaml         # prompt, seed ref, objective checks, judge rubric
       seed/                # input workspace the agent starts from
+    guidance/<section id>/ # subject: guidance — a section, not a skill
+      fixture.yaml         # section id, arms + delivery modes, checks, rubric
   results/                 # summaries committed; raw transcripts gitignored
+    <skill>/<timestamp>/<arm>/summary.json
+    guidance/<id>/<timestamp>/<arm>/summary.json
 ```
 
 ## How it pulls skills

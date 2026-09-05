@@ -38,9 +38,12 @@ section: security
 # the guard leg.
 model: claude-haiku-4-5
 
-timeout_s: 300
+# Both legs of every arm are a single tool-free question, so the budget is
+# small on purpose: five arms x (guard probe + agent call) has to fit inside
+# eval.yml's 45-minute job timeout with room to spare.
+timeout_s: 120
 guard:
-  timeout_s: 300
+  timeout_s: 120
 
 # The canary prompt: no task, just "is it in your context".
 prompt: >

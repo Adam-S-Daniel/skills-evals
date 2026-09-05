@@ -677,6 +677,13 @@ def _validate_arm_entry(name: str, entry: dict) -> dict:
             "under results/, so they must be a single path segment")
     if not isinstance(entry, dict) or "mode" not in entry:
         raise guidance.GuidanceError(f"arm {name!r} must be a mapping with a `mode:`")
+    unknown = sorted(set(entry) - {"mode", "objective_checks"})
+    if unknown:
+        # A typo'd `objective_check:` would drop the arm's whole check list
+        # and still report green, which is worse than failing at load time.
+        raise guidance.GuidanceError(
+            f"arm {name!r} has unknown key(s) {unknown} — an arm takes `mode:` "
+            "and an optional `objective_checks:`")
     mode = entry["mode"]
     if mode not in guidance.MODES:
         raise guidance.GuidanceError(
@@ -878,7 +885,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
 
 
 def _render_guidance_report(section: str, prompt: str, timestamp: str,
-                            delivery: str, token_bytes: dict,
+                            delivery: str, arm_bytes: dict,
                             arm_summaries: list[dict]) -> str:
     """The guidance report. Its header names the MODE PAIR, because "with vs
     without" is meaningless here without it — `section` vs `none` and `full`
@@ -921,7 +928,7 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         err = s.get("error")
         err_str = (" ".join(f"{err['type']}: {err['detail']}".split())
                    .replace("|", "\\|")[:200] if err else "")
-        lines.append(f"| {s['arm']} | {s['mode']} | {token_bytes.get(s['arm'], '-')} | "
+        lines.append(f"| {s['arm']} | {s['mode']} | {arm_bytes.get(s['arm'], '-')} | "
                      f"{guard_str} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{err_str} |")
     return "\n".join(lines) + "\n"
@@ -989,13 +996,13 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
 
     report_dir = args.results_dir / key / timestamp
     report_dir.mkdir(parents=True, exist_ok=True)
-    token_bytes = {}
+    arm_bytes = {}
     for arm in arm_summaries:
         summary_path = report_dir / arm["arm"] / "summary.json"
         with open(summary_path, encoding="utf-8") as f:
-            token_bytes[arm["arm"]] = json.load(f)["bytes"]
+            arm_bytes[arm["arm"]] = json.load(f)["bytes"]
     report = _render_guidance_report(section, fixture["prompt"], timestamp,
-                                     args.delivery, token_bytes, arm_summaries)
+                                     args.delivery, arm_bytes, arm_summaries)
     with open(report_dir / "report.md", "w", encoding="utf-8") as f:
         f.write(report)
 

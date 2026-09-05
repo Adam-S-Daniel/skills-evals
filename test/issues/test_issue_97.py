@@ -1193,3 +1193,23 @@ class TestIssue97(unittest.TestCase):
                       False)
         self.assertRegex(guidance_checkout["uses"],
                          r"^[A-Za-z0-9._/-]+@[0-9a-f]{40}$")
+
+    def test_an_arm_with_an_unknown_key_is_rejected_at_load_time(self):
+        with self.assertRaises(guidance.GuidanceError) as ctx:
+            run_eval.guidance_arms(
+                {"arms": {"with_guidance": {"mode": "section",
+                                            "objective_check": []}}}, "both")
+        self.assertIn("objective_check", str(ctx.exception))
+
+    def test_the_delivery_canary_fits_inside_the_workflow_job_timeout(self):
+        fixture = self._delivery_fixture()
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        job_budget_s = doc["jobs"]["eval"]["timeout-minutes"] * 60
+        per_arm = fixture["timeout_s"] + fixture["guard"]["timeout_s"]
+        worst_case = per_arm * len(fixture["arms"])
+        self.assertLess(
+            worst_case, job_budget_s * 0.75,
+            f"five arms x (agent {fixture['timeout_s']}s + guard "
+            f"{fixture['guard']['timeout_s']}s) = {worst_case}s does not leave "
+            f"room inside eval.yml's {job_budget_s}s job timeout for setup, "
+            "the CLI install and the badge commit")
