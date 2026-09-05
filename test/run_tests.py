@@ -4389,6 +4389,26 @@ class TestIssue81(unittest.TestCase):
             "the pre-pass no longer costs this fixture anything, so the "
             f"opt-in this test guards has stopped mattering: {stripped_detail}")
 
+        # And through `run_checks`, which is where the opt-in is actually
+        # decided. Calling `transcript_matches` with and without a seed
+        # only shows what the pre-pass would cost; it cannot show that this
+        # fixture is spared it. Making the pre-pass global there
+        # (`if True:` in place of `if check.get("strip_seed")`) left the
+        # whole suite green until this ran — and it fails on the second
+        # transcript, the one whose only mention of the script is inside
+        # the seed line it quotes.
+        seed_dir = wsl_dir / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp) / "ws"
+            shutil.copytree(seed_dir, ws)
+            for label, text in (("fenced handoff", transcript),
+                                ("quoting the seed README", quoting_the_readme)):
+                by_id = {r["id"]: r for r in objective.run_checks(
+                    fixture, str(ws), str(seed_dir), transcript=text)}
+                result = by_id["handoff-names-elevation-and-the-line"]
+                with self.subTest(transcript=label):
+                    self.assertTrue(result["passed"], result["detail"])
+
     def test_pairwise_rejects_a_draft_carrying_the_nonce(self):
         # The other half of the fence guard, which nothing covered: a draft
         # that carries this call's nonce could forge a fence of its own.
