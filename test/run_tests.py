@@ -3141,8 +3141,9 @@ class TestIssue85(unittest.TestCase):
             (ws / ".github" / "workflows" / "deploy.yml").unlink()
             shutil.rmtree(ws / ".github" / "actions" / "gate")
             by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
-                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
 
     def test_platform_refs_on_tag_min_refs_catches_deploy_stubbed_to_a_run_step(self):
         # The gate composite's platform ref survives, but deploy.yml's
@@ -3158,8 +3159,9 @@ class TestIssue85(unittest.TestCase):
                 "    steps:\n      - run: echo hi\n",
                 encoding="utf-8")
             by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
-                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
 
     def test_platform_refs_on_tag_min_refs_catches_gate_ref_swapped_local(self):
         # deploy.yml's reusable-workflow call survives, but the gate
@@ -3174,8 +3176,9 @@ class TestIssue85(unittest.TestCase):
                 "uses: Adam-S-Daniel/cms-platform/.github/actions/recursion-gate@v0.1.104",
                 "uses: ./.github/actions/local-recursion-gate")
             by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
-                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
 
     def test_platform_refs_on_tag_min_refs_catches_deploy_deleted_alone(self):
         seed = GHA_SHA_PINNING_DIR / "seed"
@@ -3184,8 +3187,9 @@ class TestIssue85(unittest.TestCase):
             self._audited(ws)
             (ws / ".github" / "workflows" / "deploy.yml").unlink()
             by_id = self._checks(ws, seed)
-        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"],
-                         by_id["cms-platform-refs-stay-on-tag"]["detail"])
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("expected at least", detail)
 
     def test_platform_refs_on_tag_min_refs_edited_but_correct_deploy_still_passes(self):
         # The guardrail: min_refs counts platform uses: refs, it does not
@@ -3222,8 +3226,89 @@ class TestIssue85(unittest.TestCase):
             str(ws), ["one.yml"], platform_prefix="Adam-S-Daniel/cms-platform/",
             tag="v1", min_refs=2)
         self.assertFalse(passed)
-        self.assertIn("1", detail)
-        self.assertIn("2", detail)
+        self.assertIn("only 1 platform uses: ref(s) found", detail)
+        self.assertIn("expected at least 2", detail)
+
+    # -- min_refs counts distinct locations, not node visits (round 5, N1) --
+    # `_mapping_value_nodes` appends a matched value_node at EVERY key-match
+    # site, regardless of whether that node was already visited elsewhere in
+    # the tree — an anchored `uses:` value referenced again via a YAML alias
+    # (`*x`) at a second, decoy job is therefore counted TWICE even though it
+    # is one physical ref. Before this was fixed, ONE real cms-platform ref,
+    # doubled by an alias, could satisfy min_refs=2 on its own — so deleting
+    # the gate composite's entire directory (dropping the real ref count to
+    # 1) still scored a full pass. `bad`'s own de-duplication (the aliased
+    # platform_ref: tests above) never touched `ref_count`, which counted
+    # raw node visits until now.
+
+    def test_platform_refs_on_tag_min_refs_does_not_inflate_on_an_aliased_uses_ref(self):
+        """Isolates the primitive: an anchored `uses:` value aliased at a
+        second job is ONE location, not two — `min_refs=2` must still fail
+        against it alone, naming the true count of 1.
+        """
+        ws = self._synthetic_ws({
+            "aliased-uses.yml": (
+                "jobs:\n"
+                "  a:\n"
+                "    uses: &pr Adam-S-Daniel/cms-platform/"
+                ".github/workflows/x.yml@v1\n"
+                "  b:\n"
+                "    uses: *pr\n")})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["aliased-uses.yml"],
+            platform_prefix="Adam-S-Daniel/cms-platform/", tag="v1", min_refs=2)
+        self.assertFalse(passed, detail)
+        self.assertIn("only 1 platform uses: ref(s) found", detail)
+
+    def test_platform_refs_on_tag_min_refs_two_genuinely_distinct_refs_still_pass(self):
+        # Regression guard for the fix above: two DIFFERENT `uses:` lines
+        # (not an alias of one another) are two distinct locations and must
+        # still satisfy min_refs=2 — the fix must not over-correct into
+        # counting every file as at most one ref.
+        ws = self._synthetic_ws({
+            "two-distinct.yml": (
+                "jobs:\n"
+                "  a:\n"
+                "    uses: Adam-S-Daniel/cms-platform/"
+                ".github/workflows/x.yml@v1\n"
+                "  b:\n"
+                "    uses: Adam-S-Daniel/cms-platform/"
+                ".github/workflows/y.yml@v1\n")})
+        passed, detail = objective.platform_refs_on_tag(
+            str(ws), ["two-distinct.yml"],
+            platform_prefix="Adam-S-Daniel/cms-platform/", tag="v1", min_refs=2)
+        self.assertTrue(passed, detail)
+
+    def test_platform_refs_on_tag_min_refs_gate_deleted_survives_only_via_an_aliased_ref(self):
+        """At fixture scale: the gate composite's directory is deleted
+        entirely (the carve-out's second required location is gone), but
+        deploy.yml's own reusable-workflow ref is anchored and re-referenced
+        via a YAML alias at a second, decoy job — ONE physical platform ref,
+        syntactically matched twice. Before the fix this alone satisfied
+        min_refs=2 and the deleted gate/ went unnoticed; the real ref count
+        here is 1.
+        """
+        seed = GHA_SHA_PINNING_DIR / "seed"
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._audited(ws)
+            shutil.rmtree(ws / ".github" / "actions" / "gate")
+            deploy = ws / ".github" / "workflows" / "deploy.yml"
+            deploy.write_text(
+                "name: Deploy\n\non:\n  push:\n    branches: [main]\n\n"
+                "jobs:\n"
+                "  e2e:\n"
+                "    uses: &platform_ref Adam-S-Daniel/cms-platform/"
+                ".github/workflows/e2e-tests.yml@v0.1.104\n"
+                "    with:\n      platform_ref: v0.1.104\n"
+                "    secrets: inherit\n"
+                "  e2e-shadow:\n"
+                "    uses: *platform_ref\n",
+                encoding="utf-8")
+            by_id = self._checks(ws, seed)
+        detail = by_id["cms-platform-refs-stay-on-tag"]["detail"]
+        self.assertFalse(by_id["cms-platform-refs-stay-on-tag"]["passed"], detail)
+        self.assertIn("only 1 platform uses: ref(s) found", detail)
 
     # -- the platform_ref leg needs a scalar guard (review round 4, S1) ------
 
