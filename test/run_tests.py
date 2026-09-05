@@ -5304,6 +5304,15 @@ class TestIssue81(unittest.TestCase):
         # drags the median down with it.
         blocks.append(["x" * 70, "y" * 70, "z" * 20])
         self.assertEqual(judge._wrap_width(blocks), 70)
+        # And short paragraphs cannot outvote it however many there are.
+        # Three two-line stanzas beside one wrapped paragraph — a
+        # certifications line, an address block, a sign-off — pool to a
+        # median of 45, which is a plausible-looking column and so does not
+        # trip the fallback, and every one of those deliberate 45-column
+        # lines would then be read as wrapped and joined.
+        crowded = [["x" * 70, "y" * 70, "z" * 20]] + [
+            ["a" * 45, "b" * 10] for _ in range(3)]
+        self.assertEqual(judge._wrap_width(crowded), 70)
 
     def test_a_pooled_sample_below_a_plausible_column_falls_back(self):
         # A paragraph of deliberate one-line sentences IS three lines long,
