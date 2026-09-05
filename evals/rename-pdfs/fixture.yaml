@@ -127,6 +127,14 @@ objective_checks:
   # (its digest is replaced by one the seed never had). A pure rename
   # (content preserved, path changed) still passes, which is what a correct
   # run of this task IS.
+  #
+  # Tradeoff: `inbox/*.pdf` only matches names ending in `.pdf`, so a rename
+  # that lands the disambiguator AFTER the extension (`...9002.pdf (2)`
+  # rather than `...9002 (2).pdf`) reports that file's content as "missing"
+  # even though the bytes are still in inbox/, just under an unmatched
+  # name. Widening to `inbox/*` would catch that but would also start
+  # matching pdf-rename-log-*.csv and any other non-PDF the agent leaves
+  # behind — left as `*.pdf` deliberately.
   - id: inbox-content-preserved
     description: Every PDF's bytes survive somewhere in inbox/, by content digest
     type: files_unchanged
