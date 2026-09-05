@@ -778,11 +778,17 @@ def _permission_satisfies(actual: str | None, required: str) -> bool:
 # "something failed") — negating a check for the OTHER outcome is exactly
 # as common a way to write "gate on this outcome" as naming it directly,
 # and both must be recognized for `_gates_on_outcome` to tell a real
-# multi-job wiring from its inversion.
+# multi-job wiring from its inversion. `.result != '<outcome>'` (issue #86
+# review round 4, N2) is a separate alternative, not folded into the `!`
+# prefix above: it negates the EQUALITY, not the whole gate, so its polarity
+# flips on its own — `!= 'success'` gates on failure (fires on failure,
+# cancelled AND skipped, stricter than `== 'failure'`), `!= 'failure'` gates
+# on success.
 _OUTCOME_GATE_RE = re.compile(
     r"(?P<neg>!\s*)?"
     r"(?:contains\([^)]*?,\s*'(?P<contains_outcome>failure|success)'\)"
     r"|\.result\s*==\s*'(?P<eq_outcome>failure|success)'"
+    r"|\.result\s*!=\s*'(?P<ne_outcome>failure|success)'"
     r"|\b(?P<bare_outcome>failure|success)\(\))")
 
 
@@ -799,9 +805,20 @@ def _gates_on_outcome(step_if: str, outcome: str) -> bool:
     call gets which condition swaps which outcome each one's `if:` actually
     reads as gating on, even though both still mention `needs.` and one of
     the two outcome words.
+
+    Also recognizes `<x>.result != '<outcome>'` (issue #86 review round 4,
+    N2) as gating on the OTHER outcome from the one named — `!= 'success'`
+    reads as "gate on failure", `!= 'failure'` reads as "gate on success" —
+    independent of the leading `!\\s*` prefix handled above, since here the
+    negation is already inside the `!=` operator itself.
     """
     other = "success" if outcome == "failure" else "failure"
     for m in _OUTCOME_GATE_RE.finditer(step_if):
+        ne_named = m.group("ne_outcome")
+        if ne_named is not None:
+            if ne_named == other:
+                return True
+            continue
         named = m.group("contains_outcome") or m.group("eq_outcome") or m.group("bare_outcome")
         negated = bool(m.group("neg"))
         if named == outcome and not negated:

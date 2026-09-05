@@ -192,6 +192,8 @@ objective_checks:
       is prescribed, so naming one here would silently favor whichever arm
       happens to guess it. `if_gates_on_outcome: failure` asserts the gate
       actually reads as "something failed" (`.result == 'failure'`,
+      `.result != 'success'` — the stricter spelling that also catches
+      cancelled/skipped, issue #86 review round 4, N2 —
       `contains(needs.*.result, 'failure')`, or a negated check for
       `'success'`) — not merely that it mentions `needs.` and the word
       `failure` at all, which a fully INVERTED wiring (this call gated on

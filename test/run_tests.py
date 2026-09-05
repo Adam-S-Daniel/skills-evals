@@ -3586,6 +3586,75 @@ jobs:
         by_id = self._check_fixture(ws)
         self.assertTrue(by_id["e2e-post-step"]["passed"], by_id["e2e-post-step"]["detail"])
 
+    # ---- N2: `.result != '<outcome>'` spelling -----------------------
+
+    def test_visual_regression_post_step_accepts_result_not_equal_success(self):
+        # Review round 4, N2: `_gates_on_outcome` only recognised
+        # `needs.<job>.result == '<outcome>'`; the stricter
+        # `needs.chromium.result != 'success'` (fires on failure, cancelled
+        # AND skipped) used to fail visual-regression-post-step at 11/12
+        # even though it correctly gates on failure.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        target = "if: ${{ contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}"
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "if: ${{ needs.chromium.result != 'success' && github.event_name == 'pull_request' }}"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertTrue(by_id["visual-regression-post-step"]["passed"],
+                        by_id["visual-regression-post-step"]["detail"])
+
+    def test_visual_regression_resolve_step_accepts_result_not_equal_failure(self):
+        # Review round 4, N2, opposite polarity: `!= 'failure'` gates on
+        # success.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        target = "if: ${{ !contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}"
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "if: ${{ needs.chromium.result != 'failure' && github.event_name == 'pull_request' }}"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertTrue(by_id["visual-regression-resolve-step"]["passed"],
+                        by_id["visual-regression-resolve-step"]["detail"])
+
+    def test_visual_regression_resolve_step_rejects_result_not_equal_success(self):
+        # `!= 'success'` gates on FAILURE, not success — on the resolve
+        # step (which requires if_gates_on_outcome: success) this is the
+        # wrong polarity and must still fail.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        target = "if: ${{ !contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}"
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "if: ${{ needs.chromium.result != 'success' && github.event_name == 'pull_request' }}"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["visual-regression-resolve-step"]["passed"])
+
+    def test_visual_regression_post_step_rejects_result_not_equal_failure(self):
+        # `!= 'failure'` gates on SUCCESS, not failure — on the post step
+        # (which requires if_gates_on_outcome: failure) this is the wrong
+        # polarity and must still fail.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "visual-regression.yml"
+        text = path.read_text(encoding="utf-8")
+        target = "if: ${{ contains(needs.*.result, 'failure') && github.event_name == 'pull_request' }}"
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "if: ${{ needs.chromium.result != 'failure' && github.event_name == 'pull_request' }}"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["visual-regression-post-step"]["passed"])
+
     def test_cms_platform_checkout_pinned_to_branch_fails(self):
         # The carve-out is "stays on its release tag", not "may float".
         ws = self._correct_workspace()
