@@ -1,0 +1,12 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  e2e:
+    uses: Adam-S-Daniel/cms-platform/.github/workflows/e2e-tests.yml@v0.1.104
+    with:
+      platform_ref: v0.1.104
+    secrets: inherit
