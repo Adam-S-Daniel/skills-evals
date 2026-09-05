@@ -5590,34 +5590,75 @@ class TestIssue67Review5(unittest.TestCase):
         self.assertIn("claude-sonnet-4-6", self._arm_ids(result))
         self.assertIn("100.0%", self._reason(result, "claude-sonnet-4-6"))
 
-    def test_previous_arm_alias_usage_counts_via_previous_arms_folded(self):
-        """A previous arm published under a DATED id, since retired from
-        the Models API, whose real usage the census records under its
-        UNDATED alias: `previous_arms_folded` — the missing sibling of
-        `api_ids_folded` — is what keeps those turns in the denominator.
-        Without it, the same 5000 turns silently drop out, shrinking the
-        denominator from 5103 to 103 and inflating `claude-sonnet-5`'s own
-        100 turns from a real ~1.96% to a false ~97.09%.
+    def test_previous_arm_alias_usage_counts_via_widened_alias_map(self):
+        """B1 (#129 review round 6): a previous arm published under a
+        DATED id that has since left the Models API, whose real usage the
+        census records under its UNDATED alias, must still count in the
+        denominator. `aliases = alias_map(api_ids + list(counts))` never
+        saw the dated id at all — it is neither an api id nor a census
+        key, only its undated alias is (and only that alias is in
+        `counts`) — so `alias_map` had no dated/undated PAIR to fold at
+        all, and `previous_arms_folded` (built by running `previous_arms`
+        through that same, blind `aliases` map) stayed identical to
+        `previous_arms`, never matching the undated candidate. Measured
+        through `compute_roster` on a946c9b: `claude-sonnet-5` reads
+        "carries 97.1% of rankable census usage" off a denominator of 103
+        instead of the real 5103. (The previous round's test built its own
+        alias map with `previous_arms` already added to the ids list,
+        which is exactly this fix — so it exercised the fixed formula
+        without ever calling the buggy `compute_roster` code path, and
+        passed on the buggy commit too.)
         """
-        rungs = roster.tier_rungs(self._policy())
-        counts_raw = {
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+        counts = {
             "claude-sonnet-4-9": {self.W[0]: 5000},  # previous arm's usage, undated alias
             "claude-sonnet-5": {self.W[0]: 100},
             "claude-haiku-4-5": {self.W[0]: 3},
         }
-        cleaned = roster._clean_counts(counts_raw, lambda _m: None)
-        api_ids = {"claude-sonnet-5", "claude-haiku-4-5"}  # the dated arm has left the API
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-9-20260101",
+                              "reason": "was an arm"}]}
+        result = self._compute(models=models, census=census, previous=previous)
+
+        for arm in result["arms"]:
+            self.assertNotIn("carries 97", arm["reason"], arm)
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("newest", reason)
+        self.assertNotIn("carries", reason)
+
+        # Reproduces `compute_roster`'s OWN widened alias-map formula (not
+        # a hand-picked ids list) only to pin the exact measured share and
+        # totals the reason text above implies.
+        rungs = roster.tier_rungs(self._policy())
+        api_ids = {m["id"] for m in models["models"]}
+        cleaned = roster._clean_counts(counts, lambda _m: None)
         previous_arms = {"claude-sonnet-4-9-20260101"}
-        aliases = roster.alias_map(list(api_ids) + list(previous_arms) + list(cleaned))
+        catalogue_seen = set(api_ids)
+        aliases = roster.alias_map(
+            list(api_ids) + list(cleaned) + list(previous_arms) + list(catalogue_seen))
+        raw_total, ranked_total = roster._in_window_totals(
+            cleaned, set(self.W[:1]), rungs, aliases=aliases,
+            api_ids=api_ids, previous_arms=previous_arms,
+            catalogue_seen=catalogue_seen)
+        self.assertEqual(raw_total, 5103)
+        self.assertEqual(ranked_total, 5103)
         share = roster.usage_share(
             cleaned, "claude-sonnet-5", self.W[:1], rungs, aliases,
-            api_ids=api_ids, previous_arms=previous_arms)
-        self.assertAlmostEqual(share, 100 * 100 / 5103, places=2)
+            api_ids=api_ids, previous_arms=previous_arms,
+            catalogue_seen=catalogue_seen)
+        self.assertGreater(share, 1.9)
         self.assertLess(share, 2.0)
-        # Mutation check (manual): removing the `previous_arms_folded`
-        # clause from `_is_attributable` drops the 5000-turn candidate,
-        # changing the computed share to 100*100/103 ≈ 97.09 — turning the
-        # `assertAlmostEqual` above red.
+        # Mutation check (manual): reverting `compute_roster`'s `aliases`
+        # line to `alias_map(api_ids + list(counts))` (dropping
+        # `previous_arms`/`catalogue_seen` from the ids fed to
+        # `alias_map`) turns every assertion above red again — the
+        # denominator collapses back to 103 and `claude-sonnet-5` reads
+        # "carries 97.09%" instead of the newest-in-tier reason.
 
     def test_catalogue_seen_round_trips_through_the_published_roster(self):
         """`catalogue_seen` is the union of api ids seen this run and

@@ -751,25 +751,12 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     unranked_ids = {u["id"] for u in unranked}
 
     counts = _clean_counts((census_doc or {}).get("counts"), warn)
-    # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
-    # an alias the catalogue actually offers — an alias that exists solely as
-    # an old census key is not a model anyone can run. USAGE folds over both,
-    # so a seat keeps the usage recorded under either spelling of itself.
-    # This is a SEPARATE mechanism from _is_attributable's catalogue_seen
-    # check: that one credits a since-retired real id's own usage even when
-    # neither of ITS spellings ever held (or holds) a seat at all.
-    seat_aliases = alias_map(api_ids)
-    aliases = alias_map(api_ids + list(counts))
-    snapshots = {m["id"]: seat_aliases[m["id"]]
-                 for m in ranked if m["id"] in seat_aliases}
 
-    available = [m for m in ranked if m["id"] not in snapshots]
-    available.sort(key=lambda m: _rank(m, rungs))
-
-    # Computed before _in_window_totals: the census verdict's own "is there
-    # usage this policy can rank" check must agree with the same catalogue/
-    # previous-arm attribution `usage_share` uses below, which needs
-    # previous_arms too — see _is_attributable.
+    # Computed before the alias maps below: USAGE attribution (B1, #129
+    # review round 6) needs both a previous roster's arm ids and its
+    # catalogue history to fold a previous arm published under a DATED id
+    # that has since left the API, whose usage the census records under
+    # the UNDATED alias — see the `aliases` comment just below.
     previous_arms = _clean_previous_arms(previous, warn)
 
     # The union of every id the Models API has EVER listed across runs: this
@@ -777,6 +764,31 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # Read back next run as `previous`'s own `catalogue_seen` — see
     # `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history means.
     catalogue_seen = sorted(set(api_ids) | set(_clean_catalogue_seen(previous, warn)))
+
+    # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
+    # an alias the catalogue actually offers — an alias that exists solely as
+    # an old census key is not a model anyone can run, so `seat_aliases`
+    # stays catalogue-only. USAGE is widened past that: `aliases` folds over
+    # api ids, census keys, previous arms AND catalogue_seen, because a
+    # previous arm published under a dated id that has since left the API,
+    # whose usage the census records under the undated alias, is in NEITHER
+    # `api_ids` NOR `counts` — only its undated alias is (in `counts`).
+    # `alias_map` needs BOTH spellings present in the ids it is given to
+    # create the fold at all; leaving previous_arms/catalogue_seen out of
+    # that call meant it never saw the dated id, so `previous_arms_folded`
+    # downstream stayed identical to `previous_arms` and never matched the
+    # undated candidate — measured: 5000 real turns dropped from the
+    # denominator, inflating an unrelated model's share from ~1.96% to a
+    # false ~97.1%. This is a SEPARATE mechanism from _is_attributable's
+    # catalogue_seen check: that one credits a since-retired real id's own
+    # usage even when neither of ITS spellings ever held (or holds) a seat.
+    seat_aliases = alias_map(api_ids)
+    aliases = alias_map(api_ids + list(counts) + previous_arms + catalogue_seen)
+    snapshots = {m["id"]: seat_aliases[m["id"]]
+                 for m in ranked if m["id"] in seat_aliases}
+
+    available = [m for m in ranked if m["id"] not in snapshots]
+    available.sort(key=lambda m: _rank(m, rungs))
 
     enter_weeks = window_weeks(now, policy["arm_enter_window_weeks"])
     exit_weeks = window_weeks(now, policy["arm_exit_window_weeks"])
