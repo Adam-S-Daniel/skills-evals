@@ -1140,6 +1140,13 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
     exists — so an index row or a comment naming a slug nothing wrote is
     invisible to both.
 
+    No scanned file existing at all (`patterns` matched nothing) is a
+    vacuous PASS, `(True, ... "no file matched")` — the same convention
+    `file_matches`'s docstring states explicitly for its own must_match
+    asymmetry. Whether that's the right call for a given fixture (e.g.
+    "the ADR was never written") is what the other content checks decide;
+    this one only ever speaks to link targets it actually found.
+
     A `link_pattern` that fails to compile, or that compiles but has no
     capture group, is a fixture config mistake, not a crash: each returns
     `(False, ...)` naming the specific problem, before any file is scanned.
@@ -1155,21 +1162,26 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
     if regex.groups < 1:
         return (False, "link_targets_exist link_pattern has no capture group "
                 "to name the linked path")
+    workspace_abs = os.path.abspath(workspace)
     base_dir = os.path.join(workspace, base)
-    missing, checked = [], []
+    matched = set()
     for pattern in patterns:
-        for path in sorted(glob.glob(os.path.join(workspace, pattern))):
-            if not os.path.isfile(path):
-                continue
-            rel = os.path.relpath(path, workspace).replace(os.sep, "/")
-            checked.append(rel)
-            with open(path, encoding="utf-8", errors="replace") as f:
-                for line in f:
-                    for m in regex.finditer(line):
-                        if not os.path.isfile(os.path.join(base_dir, m.group(1))):
-                            missing.append(f"{rel}: {m.group(1)}")
+        matched.update(p for p in glob.glob(os.path.join(workspace, pattern))
+                       if os.path.isfile(p))
+    missing, checked = set(), []
+    for path in sorted(matched):
+        rel = os.path.relpath(path, workspace).replace(os.sep, "/")
+        checked.append(rel)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                for m in regex.finditer(line):
+                    target_abs = os.path.abspath(os.path.join(base_dir, m.group(1)))
+                    if os.path.commonpath([workspace_abs, target_abs]) != workspace_abs:
+                        missing.add(f"{rel}: {m.group(1)} (escapes the workspace)")
+                    elif not os.path.isfile(target_abs):
+                        missing.add(f"{rel}: {m.group(1)}")
     if missing:
-        return (False, "dangling link target(s): " + "; ".join(missing))
+        return (False, "dangling link target(s): " + "; ".join(sorted(missing)))
     return (True, f"all link targets exist ({', '.join(checked) or 'no file matched'})")
 
 

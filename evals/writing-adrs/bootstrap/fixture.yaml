@@ -101,6 +101,9 @@ objective_checks:
       slug no file matches (the ADR file itself keeps its correct name) is
       invisible to index-gained-a-row-for-0001's must_match, which only
       checks the row's SHAPE — a real eval run was blind to this dodge.
+      (N1, round 3: if docs/decisions/README.md doesn't exist at all, this
+      check passes vacuously — readme-bootstrapped-in-skill-shape above is
+      what decides whether the README was even written.)
     type: link_targets_exist
     paths: ["docs/decisions/README.md"]
     link_pattern: '\[[0-9]{4}\]\(([0-9]{4}-[a-z0-9-]+\.md)\)'
@@ -112,6 +115,9 @@ objective_checks:
       exists. Round 2 review item S3: retry-sh-links-the-adr's must_match
       only checks that the path STRING appears, not that a file with that
       name was written — the twin dodge to the index-row one above.
+      (N1, round 3: if scripts/retry.sh doesn't exist at all, this check
+      passes vacuously — retry-sh-links-the-adr above is what decides
+      whether the header comment was even written.)
     type: link_targets_exist
     paths: ["scripts/retry.sh"]
     link_pattern: '(docs/decisions/[0-9]{4}-[a-z0-9-]+\.md)'

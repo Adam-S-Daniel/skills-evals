@@ -858,6 +858,115 @@ class FileCountCheckTests(unittest.TestCase):
         self.assertIn("bool", detail.lower())
 
 
+class LinkTargetsExistCheckTests(unittest.TestCase):
+    """link_targets_exist: every relative path a link line names must
+    resolve to a real file under `base` — the check that closes the gap
+    file_matches/files_unchanged both leave (see TestIssue80 for the
+    fixture-level coverage of this same check, including S1's multi-link
+    dodge and S2's malformed link_pattern guards).
+    """
+
+    LINK_RE = r'\[[0-9]{4}\]\(([0-9]{4}-[a-z0-9-]+\.md)\)'
+
+    def _ws(self, files: dict[str, str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, content in files.items():
+            path = ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        return ws
+
+    def test_no_link_pattern_fails(self):
+        ws = self._ws({"README.md": "no links here\n"})
+        passed, detail = objective.link_targets_exist(str(ws), ["README.md"], base=".")
+        self.assertFalse(passed)
+        self.assertIn("no link_pattern", detail)
+
+    def test_no_base_fails(self):
+        ws = self._ws({"README.md": "no links here\n"})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=self.LINK_RE)
+        self.assertFalse(passed)
+        self.assertIn("no base directory", detail)
+
+    # --- S2: a malformed link_pattern is a config error, not a crash ---
+
+    def test_pattern_that_does_not_compile_fails(self):
+        ws = self._ws({"README.md": "x\n"})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=r"(unterminated", base=".")
+        self.assertFalse(passed)
+        self.assertIn("does not compile", detail)
+
+    def test_pattern_with_no_capture_group_fails(self):
+        ws = self._ws({"README.md": "x\n"})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=r"[0-9]{4}-[a-z0-9-]+\.md", base=".")
+        self.assertFalse(passed)
+        self.assertIn("capture group", detail)
+
+    # --- N1: no scanned file is a vacuous pass, not a failure ---
+
+    def test_no_file_matched_passes_vacuously(self):
+        ws = self._ws({})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=self.LINK_RE, base=".")
+        self.assertTrue(passed, detail)
+        self.assertIn("no file matched", detail)
+
+    # --- S1: every link on a line is checked, not just the first ---
+
+    def test_several_links_on_one_line_are_all_checked(self):
+        ws = self._ws({
+            "0001-a.md": "x\n",
+            "README.md": "[0001](0001-a.md) and [0002](0002-ghost.md)\n",
+        })
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=self.LINK_RE, base=".")
+        self.assertFalse(passed)
+        self.assertIn("0002-ghost.md", detail)
+
+    # --- N2: a file matched by two patterns is scanned once, not twice ---
+
+    def test_file_matched_by_two_patterns_is_reported_once(self):
+        ws = self._ws({"README.md": "[0001](0001-ghost.md)\n"})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md", "REA*.md"], link_pattern=self.LINK_RE, base=".")
+        self.assertFalse(passed)
+        self.assertEqual(detail.count("0001-ghost.md"), 1, detail)
+
+    # --- N3: a captured path escaping the workspace is named, not silently
+    # resolved against the real filesystem ---
+
+    def test_captured_dotdot_path_escaping_the_workspace_fails_with_named_detail(self):
+        ws = self._ws({"docs/README.md": "[0001](../../outside.md)\n"})
+        outside = ws.parent / "outside.md"
+        outside.write_text("x\n", encoding="utf-8")
+        self.addCleanup(outside.unlink, missing_ok=True)
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["docs/README.md"], link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)', base="docs")
+        self.assertFalse(passed, detail)
+        self.assertIn("escapes", detail.lower())
+
+    def test_absolute_base_does_not_escape_via_a_real_sibling_file(self):
+        ws = self._ws({"README.md": "[0001](sibling.md)\n"})
+        sibling = ws.parent / "sibling.md"
+        sibling.write_text("x\n", encoding="utf-8")
+        self.addCleanup(sibling.unlink, missing_ok=True)
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)',
+            base=str(ws.parent))
+        self.assertFalse(passed, detail)
+        self.assertIn("escapes", detail.lower())
+
+    # --- N4: registered in the CHECKS map, same as file_count ---
+
+    def test_link_targets_exist_is_registered_in_checks_map(self):
+        self.assertIn("link_targets_exist", objective.CHECKS)
+        self.assertIs(objective.CHECKS["link_targets_exist"], objective.link_targets_exist)
+
+
 class FakePowershellTests(unittest.TestCase):
     """The windows-elevation-from-wsl seed's stand-in powershell.exe.
 
