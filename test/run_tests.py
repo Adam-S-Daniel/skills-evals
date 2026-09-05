@@ -5549,7 +5549,7 @@ class TestIssue67Review5(unittest.TestCase):
             self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
             self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
         ]}
-        legacy_id = "claude-3-opus-202" + "40229"  # kept out of one literal
+        legacy_id = "claude-3-opus-20240229"
         previous = {"arms": [], "catalogue_seen": [legacy_id]}
         counts = {legacy_id: {w: 112 for w in self.W[:4]},
                   "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
@@ -5588,7 +5588,7 @@ class TestIssue67Review5(unittest.TestCase):
             self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
             self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
         ]}
-        legacy_id = "claude-3-opus-202" + "40229"
+        legacy_id = "claude-3-opus-20240229"
         previous = {"arms": [], "catalogue_seen": []}
         counts = {legacy_id: {w: 112 for w in self.W[:4]},
                   "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
