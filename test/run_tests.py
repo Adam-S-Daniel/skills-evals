@@ -1720,7 +1720,7 @@ class CiDispatchTests(unittest.TestCase):
     # Both events carry this list and the workflow's own header requires them
     # kept in step; spelling it out here is what makes "in step" checkable.
     SALIENT = [".github/workflows/ci.yml", ".github/workflows/eval.yml",
-               "evals/**", "harness/**", "scripts/**", "test/**"]
+               "evals/**", "harness/**", "scripts/**", "test/**", "README.md"]
 
     def _triggers(self) -> dict:
         # A real parser, never a line scan: a bare `on:` key is the YAML 1.1

@@ -8,9 +8,12 @@ name: CI
 # evals/ (the fixture YAML and seed trees the eval and canary dirs load), and
 # eval.yml — which BadgeWorkflowOrderingTests parses to assert the badge is
 # built after the eval-results checkout. Plus this file itself, so a change to
-# the filter is always exercised by the filter. README/DESIGN/AGENTS/CLAUDE and
-# badges/ are deliberately absent: the suite never opens them, so a docs-only
-# pull request has nothing to prove here and should not pay for a runner. One
+# the filter is always exercised by the filter. README.md is included too:
+# TestIssue80::test_readme_lists_the_writing_adrs_eval_directory reads it, so
+# a README-only change that drops the writing-adrs/ line needs this workflow
+# to run. DESIGN/AGENTS/CLAUDE and badges/ stay deliberately absent: the
+# suite never opens them, so a docs-only pull request touching only those has
+# nothing to prove here and should not pay for a runner. One
 # path this filter structurally cannot name: the suite also reads agentskills'
 # own scripts/skills_registries.yml from the side-by-side checkout below, for
 # TestIssue63::test_registries_agree_with_agentskills_own_file — a file in a
@@ -35,6 +38,7 @@ on:
       - harness/**
       - scripts/**
       - test/**
+      - README.md
   push:
     branches: [main]
     paths:
@@ -44,6 +48,7 @@ on:
       - harness/**
       - scripts/**
       - test/**
+      - README.md
   # Bare — no inputs, and deliberately no `paths:`, which GitHub ignores on a
   # dispatch anyway. That is the point rather than an omission: the filters
   # above are what make a docs-only pull request cheap, and they are therefore
