@@ -84,8 +84,22 @@ jobs:
           path: agentskills
           persist-credentials: false
 
+      # Also side-by-side, and for the same reason: the guidance-subject tests
+      # (#97) drive the REAL fleet-memory.sh hook and the REAL section
+      # manifest out of this checkout. Without it they skip with a printed
+      # reason and CI never exercises the delivery path at all.
+      - name: Check out _agent-guidance (side-by-side)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: _agent-guidance
+          persist-credentials: false
+
       - name: Install dependencies
-        run: pip install pyyaml
+        # markdown-it-py is what harness/guidance.py parses a guidance
+        # section's extent with, and the hermetic suite imports it. Pinned
+        # exact, same convention as eval.yml.
+        run: pip install pyyaml markdown-it-py==4.2.0
       - name: Run tests
         working-directory: skills-evals
         run: python3 test/run_tests.py

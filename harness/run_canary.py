@@ -55,12 +55,21 @@ def claude_version() -> str:
 
 
 def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
-           model: str | None, timeout: int) -> dict:
+           model: str | None, timeout: int,
+           setting_sources: str = "project", env: dict | None = None) -> dict:
     """Invoke the CLI once against a seeded workspace.
 
     Mirrors run_eval.run_agent's error-dict pattern: callers must check
     `"error" in result` rather than relying on exceptions. Success dicts carry
     "reply" (the agent's final text, possibly empty).
+
+    `setting_sources` and `env` exist for the guidance subject's per-arm
+    delivery guard (#97), which reuses this probe against an arm's own config
+    dir: guidance is delivered into USER memory, so its guard has to be
+    invoked with `user,project` and with that arm's scrubbed environment. The
+    defaults are exactly the canary's historical behaviour — `project`, and
+    the harness's own environment inherited — so the guidance-bridge canary is
+    byte-identical across this change.
     """
     # Unlike run_eval, no --permission-mode bypassPermissions: the probe must
     # not use tools at all (read tools are explicitly disallowed), so the
@@ -68,13 +77,14 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     # and bypassPermissions is refused outright when running as root.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
           "--output-format", "json",
-          "--setting-sources", "project", "--disallowedTools", disallowed_tools]
+          "--setting-sources", setting_sources,
+          "--disallowedTools", disallowed_tools]
     if model:
         cmd += ["--model", model]
 
     try:
         result = subprocess.run(cmd, cwd=workspace, capture_output=True,
-                                text=True, timeout=timeout)
+                                text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return {"error": "timeout", "detail": f"agent timed out after {timeout}s"}
 
