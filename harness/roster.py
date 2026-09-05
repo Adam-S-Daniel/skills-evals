@@ -962,6 +962,13 @@ def _as_date(moment: datetime) -> str:
     such plants sorted as the newest history there is and evicted the
     real one. A date this harness writes and cannot read back is one
     that silently stops ageing.
+
+    RAISES `OverflowError` for a moment whose UTC conversion falls outside
+    `datetime`'s own range — a year-1 timestamp with a POSITIVE offset is
+    the reachable case, since `parse_ts` keeps the offset (S1, #129 review
+    round 9). Every caller that passes a moment derived from untrusted
+    input catches it and skips the entry; `now` is this process's own
+    clock and cannot reach it.
     """
     return moment.astimezone(timezone.utc).date().isoformat()
 
@@ -1003,7 +1010,10 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
     `_clean_previous_arms`, and for the same reason: this is read off a
     public branch (`eval-results`), which the module docstring already
     calls untrusted, and every id from it ends up published again in
-    this run's own `catalogue_seen` output.
+    this run's own `catalogue_seen` output. So is an entry whose
+    `last_seen` PARSES but cannot then be converted to a UTC date (S1,
+    #129 review round 9) — counted separately, because which of the two
+    happened is the useful half of the message, and skipped the same way.
     """
     if previous is None:
         return []
@@ -1017,6 +1027,7 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
     by_id: dict[str, str] = {}
     migrated = 0
     skipped = 0
+    unconvertible = 0
     for entry in entries:
         if isinstance(entry, str) and entry and PREVIOUS_ARM_ID_RE.match(entry):
             by_id[entry] = today
@@ -1036,7 +1047,25 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
             # around a date reached roster/latest.json on the public
             # branch as literal control characters. Same fix
             # `source.census_at` already had.
-            by_id[entry["id"]] = today if parsed > now else _as_date(parsed)
+            #
+            # The conversion itself can FAIL on a value `parse_ts`
+            # accepted (S1, #129 review round 9): `parse_ts` keeps
+            # whatever offset the entry carried, and converting a year-1
+            # timestamp with a POSITIVE offset to UTC lands before
+            # `datetime.min`, so `_as_date` raises `OverflowError` —
+            # measured through `main()` as rc 1, a ten-line traceback
+            # carrying the runner's absolute paths, and NO roster
+            # published, on a single planted entry. Round 7's N4 guard
+            # wraps the JSON load and cannot reach this. An entry whose
+            # date this module cannot convert asserts nothing, so it gets
+            # the treatment every other malformed entry gets: counted,
+            # skipped, and never quoted back.
+            try:
+                rendered = today if parsed > now else _as_date(parsed)
+            except (OverflowError, ValueError, OSError):
+                unconvertible += 1
+                continue
+            by_id[entry["id"]] = rendered
             continue
         skipped += 1
     if migrated:
@@ -1046,6 +1075,10 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
         warn(f"previous roster: skipped {skipped} `catalogue_seen` entry/entries "
              f"that are not a well-formed {{id, last_seen}} object or a "
              f"model-id-shaped string")
+    if unconvertible:
+        warn(f"previous roster: skipped {unconvertible} `catalogue_seen` "
+             f"entry/entries whose `last_seen` cannot be converted to a UTC "
+             f"date")
     return [{"id": model_id, "last_seen": last_seen}
            for model_id, last_seen in by_id.items()]
 
@@ -1451,9 +1484,24 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # `strftime("...Z")` on an offset-aware timestamp stamps a `Z` on the
     # LOCAL wall clock — a `+05:00` census published five hours early and
     # looking perfectly canonical, which is worse than looking wrong.
-    census_at_published = (
-        census_at_parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        if census_at_parsed else None)
+    #
+    # Guarded the same way `_clean_catalogue_seen`'s sibling conversion is
+    # (S1, #129 review round 9), even though it is not reachable today:
+    # `.astimezone(timezone.utc)` raises `OverflowError` on a year-1
+    # timestamp with a positive offset, and a census that old is STALE, so
+    # `census_code` is never one of `CENSUS_PUBLISHED_CODES` and
+    # `census_at_parsed` stays None. That reasoning is about the policy's
+    # numbers, not about this expression, and provenance is not worth a
+    # traceback: on a conversion this module cannot do, record no
+    # provenance and say so in a count-free line.
+    try:
+        census_at_published = (
+            census_at_parsed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+            if census_at_parsed else None)
+    except (OverflowError, ValueError, OSError):
+        census_at_published = None
+        warn("census `generated_at` cannot be converted to a UTC timestamp; "
+             "recording no census provenance")
 
     newest_by_rung: dict[int, str] = {}
     for model in available:  # sorted weakest-first, oldest-first within a rung

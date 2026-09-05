@@ -11850,6 +11850,80 @@ class TestIssue67Review9(unittest.TestCase):
         # the census) makes EVERY entry relevant, with the same
         # consequence — also red.
 
+    # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
+    # not raised ----------------------------------------------------------
+    #
+    # Introduced by round 8's A2/F2 fix. `_as_date` converts to UTC before
+    # rendering — `parse_ts` keeps whatever offset the entry carried — and
+    # converting a year-1 timestamp with a POSITIVE offset lands before
+    # `datetime.min`, which raises `OverflowError`. Measured through
+    # `main()`: rc 1, a ten-line traceback carrying the runner's absolute
+    # paths, and NO roster published, where the module docstring promises
+    # "a one-line named message, never a traceback" about every untrusted
+    # input. Round 7's N4 guard wraps the JSON load and cannot reach this.
+    # eval.yml turns the non-zero rc into a `::warning::` and the eval runs
+    # on the fixture pins — so one planted entry disables the feature until
+    # `eval-results` is edited by hand.
+
+    S1_PLANT = "claude-opus-4-1"
+    S1_CRASHING = ("0001-01-01T00:00:00+05:00", "0001-01-01T00:00:00+00:01",
+                   "0001-01-01T00:00:00+14:00")
+    S1_SURVIVING = ("0001-01-01", "0001-01-01T00:00:00-05:00",
+                    "0001-01-01T00:00:01+00:00", "9999-12-31")
+
+    def test_an_unconvertible_last_seen_is_named_not_traced(self):
+        """Through `main()` with files on disk: each of the three stamps
+        that used to raise must leave rc 0, a published roster, no
+        traceback, and exactly one count-only warning that quotes no
+        value."""
+        for stamp in self.S1_CRASHING:
+            previous = {"arms": [], "catalogue_seen": [
+                {"id": self.S1_PLANT, "last_seen": stamp}]}
+            with self.subTest(last_seen=stamp):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, out, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 0, out + err)
+                self.assertIsNotNone(published, "no roster was published")
+                self.assertNotIn(self.S1_PLANT, self._seen_ids(published))
+                self.assertNotIn("Traceback", err)
+                warnings = [line for line in err.splitlines()
+                            if line.startswith("roster: ")]
+                self.assertEqual(len(warnings), 1, err)
+                self.assertNotIn(stamp, err, "the warning names no value")
+                self.assertNotIn("0001", err)
+                self.assertIn("1 `catalogue_seen` entry/entries", warnings[0])
+
+    def test_the_neighbouring_year_one_stamps_are_unchanged(self):
+        """The stamps either side of the crash — naive, a NEGATIVE offset
+        (which lands after `datetime.min`), one second past midnight, and
+        the year-9999 end (clamped by `parsed > now`) — never raised and
+        must still behave exactly as they did: the year-1 ones age out of
+        the 180-day window, the year-9999 one is clamped to today."""
+        for stamp in self.S1_SURVIVING:
+            previous = {"arms": [], "catalogue_seen": [
+                {"id": self.S1_PLANT, "last_seen": stamp}]}
+            with self.subTest(last_seen=stamp):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, out, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 0, out + err)
+                self.assertNotIn("Traceback", err)
+                if stamp.startswith("9999"):
+                    entry = next(e for e in published["catalogue_seen"]
+                                 if e["id"] == self.S1_PLANT)
+                    self.assertEqual(entry["last_seen"], self._days_ago(0))
+                else:
+                    self.assertNotIn(self.S1_PLANT,
+                                     self._seen_ids(published),
+                                     "two thousand years is past the window")
+        # Mutation check (manual): removing the
+        # `except (OverflowError, ValueError, OSError)` around the
+        # conversion in `_clean_catalogue_seen` turns
+        # `test_an_unconvertible_last_seen_is_named_not_traced` red — the
+        # OverflowError escapes `main()` and the test errors out — while
+        # leaving this one green, which is the pair's whole point.
+
 
 if __name__ == "__main__":
     unittest.main()
