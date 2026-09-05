@@ -14,6 +14,8 @@ This module is discovered and run by test/run_tests.py (see
 
 from __future__ import annotations
 
+import ast
+import hashlib
 import json
 import os
 import re
@@ -49,6 +51,60 @@ import make_badge  # noqa: E402
 # below (the only ones that shell out to the whole suite) skip inside it
 # instead of forking the suite again, forever.
 CHILD_ENV = "SKILLS_EVALS_SUITE_CHILD"
+
+# The file test/run_tests.py fingerprints around the WHOLE run: the fleet
+# hook's `$HOME/.claude/CLAUDE.md`, or whatever `$SKILLS_EVALS_USER_MEMORY`
+# names instead. The override exists for exactly one reason — so the guard
+# itself can be driven red without anyone writing the operator's real memory
+# file — and `test_the_run_wide_user_memory_guard_names_its_override` pins
+# that this spelling is the one run_tests.py reads.
+MEMORY_ENV = "SKILLS_EVALS_USER_MEMORY"
+
+_MEMORY_BEFORE: str | None = None
+
+
+def _watched_user_memory() -> Path:
+    override = os.environ.get(MEMORY_ENV)
+    if override:
+        return Path(override)
+    return Path(os.path.expanduser("~")) / ".claude" / "CLAUDE.md"
+
+
+def _memory_fingerprint(path: Path) -> str:
+    """`absent`, or the md5 of the bytes. The CONTENT is never reported: this
+    file is the operator's own memory, and a failure names the path and the
+    two digests, nothing else."""
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return "absent"
+    except OSError as exc:
+        return f"unreadable: {type(exc).__name__}"
+
+
+def setUpModule() -> None:
+    """Second net under test/run_tests.py's run-wide guard.
+
+    The run-wide one is the real guarantee — it spans build_suite() and the
+    runner, so a write from ANY module is caught. This pair narrows the blast
+    radius to a module when the suite is run some other way (`python3
+    test/issues/test_issue_97.py`, a `-k` selection, an IDE), which is how the
+    56 KB `~/.claude/CLAUDE.md` that a revert-the-guard mutation destroyed
+    would have been noticed at the module boundary rather than never.
+    """
+    global _MEMORY_BEFORE
+    _MEMORY_BEFORE = _memory_fingerprint(_watched_user_memory())
+
+
+def tearDownModule() -> None:
+    path = _watched_user_memory()
+    after = _memory_fingerprint(path)
+    if after != _MEMORY_BEFORE:
+        raise AssertionError(
+            f"{path} changed while this module ran ({_MEMORY_BEFORE} -> "
+            f"{after}) — no test in this file may write the fleet's user "
+            "memory; every arm gets a scratch config dir")
+
 
 # A guidance checkout the payload tests build from scratch: base.md with a
 # fenced `## ` that is NOT a heading, a `###` child that belongs to its
@@ -159,8 +215,9 @@ class TestIssue97(unittest.TestCase):
         "        self.fail('discovery-probe: planted by TestIssue97')\n"
     )
 
-    def _run_suite(self) -> subprocess.CompletedProcess:
-        env = dict(os.environ, **{CHILD_ENV: "1"})
+    def _run_suite(self, env_extra: dict | None = None
+                   ) -> subprocess.CompletedProcess:
+        env = dict(os.environ, **{CHILD_ENV: "1"}, **(env_extra or {}))
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
@@ -799,6 +856,9 @@ class TestIssue97(unittest.TestCase):
             self.assertEqual(argv[argv.index("--setting-sources") + 1], "project")
 
     def test_a_whole_run_never_touches_the_real_user_memory(self):
+        # The narrow half: one guidance run, snapshotted around its own call.
+        # The guarantee the issue asks for is the RUN-WIDE one below, taken in
+        # test/run_tests.py's main() around every test in the suite.
         real = Path(os.path.expanduser("~")) / ".claude" / "CLAUDE.md"
         before = real.read_bytes() if real.is_file() else None
         tmp = Path(tempfile.mkdtemp(prefix="guidance-realhome-"))
@@ -814,6 +874,93 @@ class TestIssue97(unittest.TestCase):
                          f"{real} changed across a guidance run — every arm "
                          "gets a scratch config dir precisely so this file is "
                          "never delivered to")
+
+    # ------------------------------------------------------------------
+    # S2 — the user-memory snapshot spans the WHOLE run, not one test
+    #
+    # The assertion above takes its before/after around its OWN _run_main
+    # call, so it stayed green while a different test in this same module
+    # destroyed a 56 KB `~/.claude/CLAUDE.md` (the round-1 reviewer's
+    # revert-the-guard mutation, which is a mutation the next reviewer will
+    # run too). The snapshot that actually discharges the issue's "never
+    # write to the real ~/.claude/CLAUDE.md; the test asserts it" is taken in
+    # test/run_tests.py's main(), around build_suite() AND the runner, so a
+    # write from ANY test in the suite fails the run.
+    # ------------------------------------------------------------------
+
+    MEMORY_PROBE = ISSUES_DIR / "test_issue_zz_memory_probe.py"
+    MEMORY_PROBE_SOURCE = (
+        "import os\n"
+        "import unittest\n\n\n"
+        "class MemoryProbe(unittest.TestCase):\n"
+        "    def test_writes_the_file_the_runner_watches(self):\n"
+        "        # Planted by TestIssue97 to drive the run-wide guard red.\n"
+        "        # $SKILLS_EVALS_USER_MEMORY redirects the watched path to a\n"
+        "        # temp file, so proving the guard fires costs nothing real.\n"
+        "        with open(os.environ['SKILLS_EVALS_USER_MEMORY'], 'w',\n"
+        "                  encoding='utf-8') as fh:\n"
+        "            fh.write('clobbered by the memory probe\\n')\n"
+    )
+
+    def test_the_run_wide_user_memory_guard_fails_a_run_that_writes_the_file(self):
+        self._skip_in_child()
+        tmp = Path(tempfile.mkdtemp(prefix="memory-guard-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        watched = tmp / "CLAUDE.md"
+        watched.write_text("stand-in user memory\n", encoding="utf-8")
+        self.assertFalse(self.MEMORY_PROBE.exists(),
+                         f"{self.MEMORY_PROBE} is left over from an earlier run")
+        self.MEMORY_PROBE.write_text(self.MEMORY_PROBE_SOURCE, encoding="utf-8")
+        self.addCleanup(lambda: self.MEMORY_PROBE.unlink(missing_ok=True))
+        proc = self._run_suite(env_extra={MEMORY_ENV: str(watched)})
+        output = proc.stdout + proc.stderr
+        self.assertTrue(
+            re.search(r"^OK", output, flags=re.MULTILINE),
+            "every test in the child run must PASS — the exit status under "
+            "test comes from the run-wide guard alone, not from a failing "
+            f"test\n{output[-3000:]}")
+        self.assertEqual(
+            proc.returncode, 1,
+            "a run that changed the watched user-memory file must exit 1 even "
+            f"though every test passed; got {proc.returncode}\n{output[-3000:]}")
+        self.assertIn(str(watched), output,
+                      "the failure must NAME the file that changed")
+        self.assertNotIn("clobbered by the memory probe", output,
+                         "the guard reports digests and the path, never the "
+                         "file's contents")
+
+    def test_an_ordinary_run_leaves_the_watched_file_alone(self):
+        # The other side of the pin: with the watched path redirected and NO
+        # probe planted, the same child run exits 0. Without this, a guard
+        # that failed every run would satisfy the test above.
+        self._skip_in_child()
+        tmp = Path(tempfile.mkdtemp(prefix="memory-guard-clean-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        watched = tmp / "CLAUDE.md"
+        watched.write_text("stand-in user memory\n", encoding="utf-8")
+        before = watched.read_bytes()
+        self.assertFalse(self.MEMORY_PROBE.exists(),
+                         f"{self.MEMORY_PROBE} is left over from an earlier run")
+        proc = self._run_suite(env_extra={MEMORY_ENV: str(watched)})
+        self.assertEqual(proc.returncode, 0,
+                         (proc.stdout + proc.stderr)[-3000:])
+        self.assertEqual(watched.read_bytes(), before)
+
+    def test_the_run_wide_user_memory_guard_names_its_override(self):
+        # The child run above sets $SKILLS_EVALS_USER_MEMORY by literal name.
+        # Pin that run_tests.py reads that same spelling, so renaming the knob
+        # on one side turns this red instead of quietly making the proof
+        # above test nothing.
+        source = (TEST_DIR / "run_tests.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        assigned = [n.value.value for n in ast.walk(tree)
+                    if isinstance(n, ast.Assign)
+                    and isinstance(n.value, ast.Constant)
+                    for t in n.targets
+                    if isinstance(t, ast.Name) and t.id == "USER_MEMORY_ENV"]
+        self.assertEqual(assigned, [MEMORY_ENV],
+                         "test/run_tests.py must define USER_MEMORY_ENV as "
+                         f"{MEMORY_ENV!r}")
 
     def test_unknown_section_id_through_main_exits_2_naming_the_manifest(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-badid-"))

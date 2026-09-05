@@ -339,8 +339,11 @@ def _refuse_real_config_dir(dest_dir: Path, home: Path) -> None:
     """Never, under any code path, let an arm write the developer's own
     ~/.claude/CLAUDE.md. The hook itself defaults to `$HOME/.claude` when
     CLAUDE_CONFIG_DIR is unset, so a dropped variable would silently target
-    the real file; this is the belt to that braces, and test/run_tests.py
-    asserts the real file is byte-identical across a run.
+    the real file; this is the belt to that braces. test/run_tests.py's
+    main() is the other one: it fingerprints the real file around the WHOLE
+    suite (build_suite() and the runner both) and exits 1 naming it if a run
+    changed it, so a reviewer's revert-this-guard mutation fails loudly
+    instead of destroying user memory.
     """
     real_home = Path(os.path.expanduser("~")).resolve()
     for path, what in ((dest_dir, "config dir"), (home, "HOME")):

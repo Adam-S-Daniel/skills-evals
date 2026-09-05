@@ -7483,6 +7483,49 @@ def build_suite() -> unittest.TestSuite:
     return suite
 
 
+# ----------------------------------------------------------------------
+# The run-wide user-memory guard (issue #97, S2)
+#
+# harness/guidance.py refuses to deliver an arm's payload into the operator's
+# own config dir, and this is the assertion that the refusal held — taken
+# around the WHOLE run rather than around one test's own call. The narrow
+# shape is what failed: a per-test before/after in test/issues/test_issue_97.py
+# stayed green while a DIFFERENT test in the same module destroyed a 56 KB
+# ~/.claude/CLAUDE.md, because the destruction happened outside its own
+# snapshot. A change here is a LOUD failure with exit 1, never a warning.
+# ----------------------------------------------------------------------
+
+USER_MEMORY_ENV = "SKILLS_EVALS_USER_MEMORY"
+
+
+def user_memory_path() -> Path:
+    """The file this runner fingerprints across the run.
+
+    `$SKILLS_EVALS_USER_MEMORY` redirects it, and exists for one reason: so
+    this guard can be proven to FAIL without anyone writing the real file.
+    test/issues/test_issue_97.py plants a throwaway module that writes the
+    redirected path and asserts this runner then exits 1.
+    """
+    override = os.environ.get(USER_MEMORY_ENV)
+    if override:
+        return Path(override)
+    return Path(os.path.expanduser("~")) / ".claude" / "CLAUDE.md"
+
+
+def user_memory_fingerprint(path: Path) -> str:
+    """`absent`, or the md5 of the file's bytes.
+
+    A digest, never the content: this is the operator's own memory file and
+    this runner's output is read in CI logs.
+    """
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return "absent"
+    except OSError as exc:
+        return f"unreadable: {type(exc).__name__}"
+
+
 def main() -> int:
     # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) still goes
     # through unittest.main, which addresses only this module's own classes —
@@ -7492,8 +7535,19 @@ def main() -> int:
     if len(sys.argv) > 1:
         unittest.main(module=sys.modules[__name__], argv=sys.argv)
         return 0
+    memory = user_memory_path()
+    before = user_memory_fingerprint(memory)
     result = unittest.TextTestRunner(verbosity=1).run(build_suite())
-    return 0 if result.wasSuccessful() else 1
+    status = 0 if result.wasSuccessful() else 1
+    after = user_memory_fingerprint(memory)
+    if after != before:
+        print(f"\nFAILED: this suite CHANGED {memory} "
+              f"({before} -> {after}). No test may write the fleet's user "
+              "memory: every arm gets a scratch config dir, and "
+              "harness/guidance.py refuses any dest_dir or HOME that resolves "
+              "to the real one.")
+        status = 1
+    return status
 
 
 if __name__ == "__main__":
