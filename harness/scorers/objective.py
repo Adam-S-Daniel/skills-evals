@@ -1190,7 +1190,7 @@ def link_targets_exist(workspace: str, patterns: list[str], link_pattern: str | 
                     elif not os.path.isfile(target_real):
                         missing.add(f"{rel}: {m.group(1)}")
     if missing:
-        return (False, "dangling link target(s): " + "; ".join(sorted(missing)))
+        return (False, "dangling link target(s): " + _capped_join(sorted(missing)))
     return (True, f"all link targets exist ({', '.join(checked) or 'no file matched'})")
 
 

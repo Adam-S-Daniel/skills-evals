@@ -1026,6 +1026,20 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
             link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)', base="docs/decisions")
         self.assertTrue(passed, detail)
 
+    # --- Round 4, N-c: a huge dangling-link listing is capped, same as
+    # dir_listing_matches's own _capped_join usage ---
+
+    def test_many_dangling_links_are_capped_with_a_count(self):
+        links = " ".join(f"[{i:04d}]({i:04d}-missing.md)" for i in range(60))
+        ws = self._ws({"README.md": links + "\n"})
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["README.md"], link_pattern=self.LINK_RE, base=".")
+        self.assertFalse(passed, detail)
+        self.assertIn("and 20 more", detail)
+        # Capped at 40 shown; the 60th (index 0059) is among the elided tail.
+        self.assertIn("0000-missing.md", detail)
+        self.assertNotIn("0059-missing.md", detail)
+
     # --- N4: registered in the CHECKS map, same as file_count ---
 
     def test_link_targets_exist_is_registered_in_checks_map(self):
