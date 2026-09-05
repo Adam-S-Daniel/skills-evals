@@ -2999,6 +2999,104 @@ class TestIssue86(unittest.TestCase):
             with_equals={"mode": "post"}, log_file_matches_tee=True)
         self.assertFalse(passed)
 
+    # ---- workflow_step_uses: marker form and post/resolve pairing (issue #86
+    # review round 3, N8) ----------------------------------------------------
+
+    def test_marker_not_html_comment_rejects_pre_wrapped_marker(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n"
+             "          marker: \"<!-- e2e-failure -->\"\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_not_html_comment=True)
+        self.assertFalse(passed)
+
+    def test_marker_not_html_comment_accepts_a_bare_marker(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          marker: e2e-failure\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_not_html_comment=True)
+        self.assertTrue(passed, detail)
+
+    def test_with_forbids_job_status_catches_it_in_an_unrelated_key(self):
+        # The skill's "don't repeat" pattern is documented for `mode`, but the
+        # same silent-empty-string expansion applies to ANY `with:` value —
+        # an extra invented key holding `${{ job.status }}` must fail too,
+        # not only the specific key a `with_equals` constraint happens to test.
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          marker: e2e-failure\n"
+             "          status: ${{ job.status }}\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, with_forbids_job_status=True)
+        self.assertFalse(passed)
+
+    def test_with_forbids_job_status_passes_when_absent(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          marker: e2e-failure\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, with_forbids_job_status=True)
+        self.assertTrue(passed, detail)
+
+    def test_marker_pairs_with_mode_rejects_a_mismatched_resolve(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          marker: e2e-failure\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: resolve\n          marker: e2e-resolve\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, _ = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_pairs_with_mode="resolve")
+        self.assertFalse(passed)
+
+    def test_marker_pairs_with_mode_accepts_a_matching_resolve(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          marker: e2e-failure\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: resolve\n          marker: e2e-failure\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_pairs_with_mode="resolve")
+        self.assertTrue(passed, detail)
+
+    def test_marker_pairs_with_mode_passes_vacuously_with_no_counterpart(self):
+        wf = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+             "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+             "        with:\n          mode: post\n          marker: e2e-failure\n")
+        ws = self._ws({".github/workflows/w.yml": wf})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_pairs_with_mode="resolve")
+        self.assertTrue(passed, detail)
+
+    def test_marker_pairs_with_mode_scoped_to_same_file_and_job(self):
+        # A same-named "resolve" step in a DIFFERENT workflow file must not
+        # be treated as this step's counterpart.
+        wf_a = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+               "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+               "        with:\n          mode: post\n          marker: e2e-failure\n")
+        wf_b = ("on:\n  pull_request:\njobs:\n  e2e:\n    runs-on: ubuntu-latest\n    steps:\n"
+               "      - uses: ./.cms-platform/.github/actions/post-failure-comment\n"
+               "        with:\n          mode: resolve\n          marker: unrelated\n")
+        ws = self._ws({".github/workflows/a.yml": wf_a, ".github/workflows/b.yml": wf_b})
+        passed, detail = objective.workflow_step_uses(
+            str(ws), self.PATTERNS, uses_suffix="/post-failure-comment",
+            with_equals={"mode": "post"}, marker_pairs_with_mode="resolve")
+        self.assertTrue(passed, detail)
+
     # ---- workflow_step_uses: uses_suffix must be a true suffix (S3) --------
 
     def test_uses_suffix_does_not_match_unrelated_action(self):
@@ -3559,6 +3657,63 @@ jobs:
             encoding="utf-8")
         by_id = self._check_fixture(ws)
         self.assertFalse(by_id["e2e-post-step"]["passed"])
+
+    def test_marker_pre_wrapped_in_html_comment_fails(self):
+        # Review round 3, N8: the composite already wraps `marker` in its own
+        # `<!-- -->` to find a prior post — a caller that pre-wraps it too
+        # breaks that lookup.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        target = ("          mode: post\n          log-file: /tmp/e2e.log\n"
+                  "          marker: e2e-failure-summary\n")
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "          mode: post\n          log-file: /tmp/e2e.log\n"
+            "          marker: \"<!-- e2e-failure-summary -->\"\n"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["e2e-post-step"]["passed"])
+
+    def test_job_status_leaking_into_an_extra_with_key_fails(self):
+        # Review round 3, N8: `${{ job.status }}` silently expands to empty
+        # inside the composite's context (SKILL.md's first "don't repeat"
+        # pattern) — this must be caught for ANY with: value, including an
+        # extra invented key, not only whichever key with_equals happens to
+        # test.
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        target = ("          marker: e2e-failure-summary\n          title: E2E tests\n"
+                  "\n      - name: Resolve")
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target,
+            "          marker: e2e-failure-summary\n"
+            "          status: ${{ job.status }}\n          title: E2E tests\n"
+            "\n      - name: Resolve"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["e2e-post-step"]["passed"])
+
+    def test_post_and_resolve_markers_mismatched_in_one_workflow_fails(self):
+        # Review round 3, N8: a post/resolve pair sharing one workflow must
+        # use the SAME marker — different markers leave the resolve unable
+        # to find the post's comment. (Distinct from
+        # test_duplicate_marker_across_workflows_fails, which guards the
+        # opposite direction: the same marker used by two DIFFERENT files.)
+        ws = self._correct_workspace()
+        path = ws / ".github" / "workflows" / "e2e-tests.yml"
+        text = path.read_text(encoding="utf-8")
+        target = "mode: resolve\n          marker: e2e-failure-summary"
+        self.assertIn(target, text)
+        path.write_text(text.replace(
+            target, "mode: resolve\n          marker: e2e-resolve-mismatch"),
+            encoding="utf-8")
+        by_id = self._check_fixture(ws)
+        self.assertFalse(by_id["e2e-post-step"]["passed"])
+        self.assertFalse(by_id["e2e-resolve-step"]["passed"])
 
     def test_editing_vendored_contract_fails(self):
         # Review round 1, S5: nothing objectively protected the vendored

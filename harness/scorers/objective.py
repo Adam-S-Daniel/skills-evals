@@ -815,6 +815,15 @@ def _gates_on_outcome(step_if: str, outcome: str) -> bool:
 # `... 2>&1 | tee /tmp/<log>.log`. Matches `tee` and, loosely, `tee -a`.
 _TEE_TARGET_RE = re.compile(r"\btee\s+(?:-a\s+)?(\S+)")
 
+# A `marker:` value that already carries HTML-comment syntax — the composite
+# wraps `marker` in its own `<!-- -->` to find a prior post, so a caller that
+# pre-wraps it too breaks that lookup (issue #86 review round 3, N8).
+_HTML_COMMENT_TOKEN_RE = re.compile(r"<!--|-->")
+
+# The skill's documented "don't repeat" pattern, applied to any `with:` value
+# rather than only whichever key a given check happens to test.
+_JOB_STATUS_RE = re.compile(r"\bjob\.status\b")
+
 
 def _job_tee_targets(job_body: dict, before_index: int | None = None) -> list[str]:
     """Every path a `tee` invocation in this job's `run:` steps wrote to, in
@@ -905,6 +914,9 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                        with_tag_ref: str | None = None,
                        log_file_matches_download: bool = False,
                        log_file_matches_tee: bool = False,
+                       marker_not_html_comment: bool = False,
+                       with_forbids_job_status: bool = False,
+                       marker_pairs_with_mode: str | None = None,
                        unique_with_key: str | None = None,
                        min_matches: int = 1) -> tuple[bool, str]:
     """Structural assertions over parsed workflow YAML: does at least
@@ -959,6 +971,28 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     `... 2>&1 | tee /tmp/<log>.log` in the same job that calls the
     composite, `log-file: /tmp/whatever-else.log` is any-non-empty-string
     correct today but points at a file that was never written.
+
+    `marker_not_html_comment` rejects a qualifying step whose `with.marker`
+    value itself contains `<!--` or `-->`. The composite already wraps
+    `marker` in an HTML comment to find its own prior post (see the vendored
+    action's own `marker` input description); a caller pre-wrapping it too
+    breaks that lookup, it isn't merely redundant.
+
+    `with_forbids_job_status` rejects a qualifying step if ANY `with:` value
+    — not only whichever key a `with_equals`/`with_present` constraint
+    happens to test — contains the literal `job.status`. The skill's
+    documented "don't repeat" pattern (`${{ job.status }}` silently expands
+    to empty inside the composite's context) applies to the whole `with:`
+    block, not just one key.
+
+    `marker_pairs_with_mode` (a mode name, e.g. `"resolve"`) requires a
+    qualifying step's `marker` to equal the `marker` of every OTHER
+    uses_suffix-matching step in the SAME file and job whose own
+    `with.mode` equals this value — the documented convention pairs a
+    `post` and a `resolve` call under one shared marker, and handing each
+    one a *different* marker leaves the resolve unable to find the post's
+    comment. Passes vacuously when no such counterpart step exists (e.g.
+    checking a lone `post` step with no matching `resolve` yet).
 
     `unique_with_key` switches to a second mode instead of the match/count
     check above: collect every `uses_suffix`-matching step's `with[key]`
@@ -1049,6 +1083,24 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             tee_targets = _job_tee_targets(job_body, before_index=step_index)
             if not isinstance(log_file, str) or log_file not in tee_targets:
                 continue
+        if marker_not_html_comment:
+            marker_value = with_block.get("marker")
+            if isinstance(marker_value, str) and _HTML_COMMENT_TOKEN_RE.search(marker_value):
+                continue
+        if with_forbids_job_status and any(
+            isinstance(v, str) and _JOB_STATUS_RE.search(v) for v in with_block.values()
+        ):
+            continue
+        if marker_pairs_with_mode is not None:
+            counterparts = []
+            for r2, _d2, j2, _jb2, s2, _si2 in matches:
+                if r2 != rel or j2 != job_id or s2 is step:
+                    continue
+                w2 = s2.get("with") if isinstance(s2.get("with"), dict) else {}
+                if w2.get("mode") == marker_pairs_with_mode:
+                    counterparts.append(w2.get("marker"))
+            if counterparts and any(cm != with_block.get("marker") for cm in counterparts):
+                continue
         qualifying.append((rel, job_id))
 
     if len(qualifying) >= min_matches:
@@ -1060,7 +1112,9 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             f"job_needs_nonempty={job_needs_nonempty!r}, if_contains={if_contains!r}, "
             f"if_gates_on_outcome={if_gates_on_outcome!r}, "
             f"with_present={with_present!r}, with_equals={with_equals!r}, "
-            f"with_tag_ref={with_tag_ref!r}) — found {len(qualifying)} of "
+            f"with_tag_ref={with_tag_ref!r}, marker_not_html_comment={marker_not_html_comment!r}, "
+            f"with_forbids_job_status={with_forbids_job_status!r}, "
+            f"marker_pairs_with_mode={marker_pairs_with_mode!r}) — found {len(qualifying)} of "
             f"{len(matches)} step(s) with a matching `uses:`")
 
 
@@ -1193,6 +1247,7 @@ _WORKFLOW_STEP_USES_KEYS = {
     "uses_suffix", "job", "job_if_equals", "job_needs_nonempty",
     "job_permissions_include", "if_contains", "if_gates_on_outcome", "with_present",
     "with_equals", "with_tag_ref", "log_file_matches_download", "log_file_matches_tee",
+    "marker_not_html_comment", "with_forbids_job_status", "marker_pairs_with_mode",
     "unique_with_key", "min_matches",
 }
 

@@ -96,7 +96,14 @@ objective_checks:
       idiom), not merely any non-empty string. Also asserts the job is in
       scope for `pull-requests: write` (workflow- or job-level) — the
       skill's own "most subtle and most common" pitfall, and objectively
-      decidable.
+      decidable. `marker_not_html_comment` rejects a marker the caller
+      already wrapped in `<!-- -->` (the composite wraps it itself to find
+      its own prior post); `with_forbids_job_status` rejects `${{
+      job.status }}` leaking into ANY `with:` value, not only `mode`; and
+      `marker_pairs_with_mode: resolve` requires this step's marker to
+      match the resolve step's, since a post/resolve pair under different
+      markers leaves the resolve unable to find the post's comment (issue
+      #86 review round 3, N8).
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml"]
     uses_suffix: "/post-failure-comment"
@@ -108,9 +115,16 @@ objective_checks:
     job_permissions_include:
       pull-requests: write
     log_file_matches_tee: true
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: resolve
 
   - id: e2e-resolve-step
-    description: e2e-tests.yml's `e2e` job resolves the comment on success.
+    description: >
+      e2e-tests.yml's `e2e` job resolves the comment on success. Shares the
+      marker-form and pairing guards with e2e-post-step (issue #86 review
+      round 3, N8): `marker_pairs_with_mode: post` requires this step's
+      marker to match the post step's own.
     type: workflow_step_uses
     paths: [".github/workflows/e2e-tests.yml"]
     uses_suffix: "/post-failure-comment"
@@ -119,6 +133,9 @@ objective_checks:
     with_present: ["marker", "title"]
     with_equals:
       mode: resolve
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: post
 
   - id: visual-regression-report-job-shape
     description: >
@@ -162,6 +179,11 @@ objective_checks:
       `'success'`) — not merely that it mentions `needs.` and the word
       `failure` at all, which a fully INVERTED wiring (this call gated on
       success instead) could still do (issue #86 review round 3, N6).
+      Shares the marker-form and pairing guards with e2e-post-step (issue
+      #86 review round 3, N8): `marker_not_html_comment` rejects a marker
+      already wrapped in `<!-- -->`, `with_forbids_job_status` rejects `${{
+      job.status }}` in any `with:` value, and `marker_pairs_with_mode:
+      resolve` requires this step's marker to match the resolve step's.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
@@ -174,13 +196,18 @@ objective_checks:
     job_permissions_include:
       pull-requests: write
     log_file_matches_download: true
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: resolve
 
   - id: visual-regression-resolve-step
     description: >
       The downstream job resolves the comment when neither upstream job
       failed. `if_gates_on_outcome: success` is the same inverted-wiring
       guard as the post check above, for the opposite polarity (issue #86
-      review round 3, N6).
+      review round 3, N6). Also shares the marker-form and pairing guards
+      with the post check (N8): `marker_pairs_with_mode: post` requires
+      this step's marker to match the post step's own.
     type: workflow_step_uses
     paths: [".github/workflows/visual-regression.yml"]
     uses_suffix: "/post-failure-comment"
@@ -190,6 +217,9 @@ objective_checks:
     with_present: ["marker", "title"]
     with_equals:
       mode: resolve
+    marker_not_html_comment: true
+    with_forbids_job_status: true
+    marker_pairs_with_mode: post
 
   - id: post-failure-comment-reference-valid
     description: >
