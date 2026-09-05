@@ -592,6 +592,21 @@ WORKSPACE_PREFIX = "workspace-"
 SEED_COMMIT_IDENTITY = ("ci@example.com", "ci")
 SEED_COMMIT_MESSAGE = "initial commit"
 
+# Where `materialize_workspace` records the workspace's own absolute path,
+# and where a stand-in binary in `<workspace>/bin/` reads it from.
+#
+# Under `.git/`, deliberately, and it is the whole of the mechanism:
+#   * `git status` never shows it and no scorer's glob reaches into `.git/`,
+#     so it changes no check's verdict on any fixture;
+#   * `cp -a` of the WHOLE workspace carries it — and it still names the
+#     ORIGINAL, so a copy of the workspace records where the original does;
+#   * a bare copy, or a hard link, of the binary alone never has it, so a
+#     copy in some other `bin/` has nothing to read and refuses.
+# The rule it replaces deduced the location from a directory NAME — a copy
+# of the binary in any `.../bin/` recorded into that directory's parent,
+# which put the record somewhere no check looks.
+WORKSPACE_ANCHOR = ".git/workspace-root"
+
 
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     """Run git in `cwd` with a fixed local identity (don't rely on global config)."""
@@ -616,6 +631,12 @@ def materialize_workspace(seed: Path) -> Path:
     _git("init", "-q", cwd=workspace)
     _git("add", "-A", cwd=workspace)
     _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
+    # After the baseline commit, so the anchor is never part of it. A
+    # stand-in in `<workspace>/bin/` reads this to find where its invocation
+    # log goes; without it, it refuses to serve or record anything at all.
+    anchor = workspace / WORKSPACE_ANCHOR
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text(f"{workspace}\n", encoding="utf-8")
     return workspace
 
 

@@ -25,6 +25,25 @@ so a replayed session can be audited from the log alone — and so no argv can
 forge a second record by carrying a newline. A log that cannot be written is
 swallowed, so no failure downstream costs the log its record.
 
+WHERE that log goes is settled once, at start-up, by ONE rule: two
+directories up from this file's own real path is `<root>`, and the single
+line in `<root>/.git/workspace-root` names the directory the log sits in.
+Nothing settable is read — no variable, no cwd — so no single command can
+move a record out of the tree a reader looks at. With no anchor to read,
+this refuses outright: one line on stderr, exit 1, nothing served and
+nothing recorded. That is the case for a copy of this file on its own
+(wherever it is put, and whatever the directory is called), for a workspace
+moved after it was built, and for the source piped into an interpreter.
+
+What remains movable is the anchor itself, and the log itself: both are
+ordinary files in the workspace, and editing them is the same class of
+thing as editing any other evidence there. The interpreter is under the
+same ceiling — a planted `sitecustomize.py` on `PYTHONPATH` can stub
+`os.path.realpath` before any of this runs. Nothing THIS FILE reads is
+settable; what runs it is another matter. Whoever builds a workspace by
+hand and wants this to run in it writes that anchor by hand: one line, the
+workspace's own absolute path.
+
 The key is recorded for EVERY class, not only for the reads a file backed:
 it is the identity of the normalized argv (see `payload_key`), not a claim
 that a file was served. An `unknown` read logs the key that resolved to
@@ -385,41 +404,60 @@ def write_endpoint(positionals: list[str], flags: dict[str, list]) -> str:
     return template.format(repo=repo, arg=arg)
 
 
-def resolve_log_dir() -> str:
+# The one line the workspace writes about itself, and the only thing this
+# file consults to decide where its record goes. Written under `.git/`, so
+# `git status` never shows it, a copy of the WHOLE workspace carries it, and
+# a copy of this file on its own does not.
+ANCHOR = os.path.join(".git", "workspace-root")
+
+
+def resolve_log_dir() -> str | None:
     """Where `.gh-invocations.log` goes, settled once, at start-up.
 
-    Deduced from THIS FILE's own location: run as `<root>/bin/gh`, it
-    records into `<root>`, whatever the cwd is and whatever the environment
-    says. Nothing settable is consulted, because everything settable can be
-    pointed somewhere else for a single command — `$WORKSPACE` and the cwd
-    plainly, and `$GH_REPLAY_DIR` too, which was thought immune on the
-    grounds that moving it moves the recorded responses with it. It does,
-    for a read. A write is refused before any response is looked up, so it
-    had nothing to lose: `GH_REPLAY_DIR=/elsewhere gh pr close 7` moved that
-    one record out of the tree a reader looks at while every earlier read
-    stayed in it — and a record that can be moved for one command is not a
-    record.
+    ONE rule: two directories up from this file's real path is the root it
+    belongs to, and that root's `ANCHOR` names the directory the record goes
+    in. Run as `<root>/bin/gh`, the root is `<root>`.
 
-    A copy that is NOT in a `bin/` has no checkout to deduce, so it falls
-    back to where the recorded responses sit. Those may live in a
-    dot-directory (`.gh/replay`) so the checkout still reads as an ordinary
-    one; the log belongs beside the checkout, not inside it. With no
-    responses named either, the cwd is the last resort.
+    No environment variable and no cwd is consulted, because everything a
+    shell can set can be pointed elsewhere for a single command, and a
+    record that can be moved for one command is not a record. The rule this
+    replaces deduced the root from a directory NAME — whether the parent was
+    called `bin` — so a copy of this file in any other `.../bin/` recorded
+    into THAT directory's parent, and a copy at `<root>/.gh/bin/gh` recorded
+    into `<root>/.gh`, both of them out of sight of anything reading
+    `<root>`. A name is not a credential; the anchor is written by whoever
+    built the workspace, and a copy of this file alone has no way to forge
+    one that points anywhere useful.
+
+    Returns None when there is no anchor to read — no `__file__` at all (the
+    source piped into an interpreter), no anchor beside the deduced root, an
+    unreadable or empty one, or one naming a directory that is no longer
+    there (a workspace moved after it was built). The caller then refuses:
+    nothing served, nothing recorded, exit 1.
+
+    What this does NOT bound, and does not claim to: editing the anchor, or
+    editing the log. Both are ordinary files in the workspace, and an
+    interpreter's own knobs sit under the same ceiling — `PYTHONPATH` plus a
+    planted `sitecustomize.py` can stub `os.path.realpath` before this runs.
+    Nothing THIS FILE reads is settable; the interpreter running it is
+    another matter, and so is the tree it reads from.
     """
-    here = os.path.dirname(os.path.realpath(__file__))
-    if os.path.basename(here) == "bin":
-        return os.path.dirname(here)
-    payloads = os.environ.get("GH_REPLAY_DIR")
-    if payloads:
-        parent = os.path.dirname(os.path.abspath(payloads))
-        if os.path.basename(parent).startswith("."):
-            parent = os.path.dirname(parent)
-        return parent
-    return os.getcwd()
+    here = globals().get("__file__")
+    if not here:
+        return None
+    root = os.path.dirname(os.path.dirname(os.path.realpath(here)))
+    try:
+        with open(os.path.join(root, ANCHOR), encoding="utf-8") as handle:
+            recorded = handle.read().strip()
+    except (OSError, UnicodeDecodeError):
+        return None
+    if not recorded or not os.path.isdir(recorded):
+        return None
+    return recorded
 
 
 # Read once, before anything else runs, so nothing later in this process can
-# move it either.
+# move it either. None means "refuse" — see `main`.
 LOG_DIR = resolve_log_dir()
 
 
@@ -548,7 +586,23 @@ GH_USAGE = (
 )
 
 
+def no_repository() -> int:
+    """The one line, and nothing else, when there is no root to record into.
+
+    Deliberately says nothing about what was looked for or where: it reads
+    as `gh` failing to work out which repository it is in, which is what a
+    reader must see. Nothing is served and nothing is recorded — there is
+    nowhere to record it, and answering anyway would leave the caller a
+    response with no trace that it was ever asked for.
+    """
+    sys.stderr.write(
+        "gh: failed to determine the current repository: not a git repository\n")
+    return 1
+
+
 def main(argv: list[str]) -> int:
+    if LOG_DIR is None:
+        return no_repository()
     payload_dir = os.environ.get("GH_REPLAY_DIR")
     positionals, flags = parse_argv(argv)
 
