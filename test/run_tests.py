@@ -2758,11 +2758,18 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         for pattern in check.get("must_match", []) + check.get("must_not_match", []):
             self.assertTrue(pattern.startswith("^--- invocation "), pattern)
 
-    def test_pr_as_remedy_must_be_anchored_to_pr_a(self):
-        """Any remedy word anywhere used to satisfy the #412 check.
+    def test_pr_as_remedy_is_the_judges_call_not_the_scripts(self):
+        """Round 3 retired the remedy clause; this records what replaced it.
 
-        A transcript that names #412 and its stale base but only ever
-        recommends closing something ELSE has not answered for #412.
+        It used to assert the opposite: a reply naming #412 and its stale
+        base but recommending only that something ELSE be closed failed the
+        check, because a third pattern demanded `rebase` or `close` within
+        300 characters of the number. That pattern decided ATTRIBUTION by
+        proximity — and round 3 measured a reply that gives #412's cause and
+        remedy to #418, then dismisses #412, scoring 7/7 on it. Every reply
+        below now passes the objective column, which certifies mentions
+        only; judge dimension (2) scores which PR the clause was about. See
+        TestIssue84Round4.
         """
         filler = ("It is worth saying that none of the workflow files needed a "
                   "change here, and the platform pin is the one the loop asked "
@@ -2770,22 +2777,16 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
                   "operator cancelling stuck runs rather than concurrency "
                   "evicting them. The Docker credential warning at the top of "
                   "the job log is the usual benign one. ")
-        wrong = ("#412 is BLOCKED and its checks ran against base 0f3c8ad.\n"
-                 + filler * 2 + "\nClose #999, the orphan branch nobody owns.\n")
-        by_id = self._score(transcript=wrong)
-        self.assertFalse(by_id["pr-a-stale-base-named"]["passed"],
-                         by_id["pr-a-stale-base-named"]["detail"])
-        # Re-opening is not one of the prescribed remedies either.
+        elsewhere = ("#412 is BLOCKED and its checks ran against base 0f3c8ad.\n"
+                     + filler * 2 + "\nClose #999, the orphan branch nobody owns.\n")
         reopened = "#412: its checks ran against 0f3c8ad; re-open it.\n"
-        self.assertFalse(self._score(transcript=reopened)
-                         ["pr-a-stale-base-named"]["passed"])
-        # …and the remedy stated next to #412 still passes, either order.
-        for right in ("#412 ran against 0f3c8ad; rebase it onto current main.\n",
-                      "Rebase #412 onto current main — its checks ran against "
-                      "the superseded base 0f3c8ad.\n"):
-            with self.subTest(said=right.strip()):
-                self.assertTrue(self._score(transcript=right)
-                                ["pr-a-stale-base-named"]["passed"], right)
+        anchored = ("#412 ran against 0f3c8ad; rebase it onto current main.\n",
+                    "Rebase #412 onto current main — its checks ran against "
+                    "the superseded base 0f3c8ad.\n")
+        for reply in (elsewhere, reopened, *anchored):
+            with self.subTest(said=reply.strip()[:60]):
+                self.assertTrue(self._score(transcript=reply)
+                                ["pr-a-stale-base-named"]["passed"], reply)
 
     def test_the_judge_weights_reach_the_dimensions_the_rubric_names(self):
         """A weight keyed to a name the judge never returns is no weight.
@@ -5035,6 +5036,134 @@ class TestIssue84Round3(Issue84Fixture, unittest.TestCase):
                 continue
             with self.subTest(eval_dir=path.name):
                 self.assertIn(path.name + "/", readme)
+
+
+class TestIssue84Round4(Issue84Fixture, unittest.TestCase):
+    """Round 4 on issue #84: the residual list from review round 3.
+
+    The blocker is a design decision, not a repair: `pr-a-stale-base-named`
+    used to decide ATTRIBUTION — is this cause, and this remedy, #412's? —
+    with a proximity regex over prose, and round 3 measured a reply that
+    hands #412's cause and remedy to #418 scoring 7/7. English attribution
+    is no more decidable by regex than English negation was, so the
+    objective column now certifies MENTIONS and the judge scores whether
+    they were made about the right pull request.
+    """
+
+    # Round 3's measured counter-example, reproduced whole. It gives #412's
+    # cause (the superseded base) and #412's remedy (a rebase) to #418, then
+    # dismisses #412 as having nothing to do — and scored 7/7 through
+    # `objective.run_checks` on the proximity patterns, because the `412`
+    # spelling merely sat within 300 characters of a `rebase`.
+    WRONG_ATTRIBUTION = (
+        "**Root cause.** The loop's canary PR #418 is BLOCKED with every "
+        "check-run on its head sha green: the branch ruleset requires the "
+        "status context `content-schema / parity`, and nothing in this "
+        "repository publishes a check by that name, so auto-merge can never "
+        "fire and every run waits out its budget.\n"
+        "\n"
+        "- **#418** — drop that context from the ruleset. Its own e2e ran "
+        "against base 0f3c8ad, an older main than the current 9e41b7c, so "
+        "rebase #418 as well.\n"
+        "- **#412** — nothing to do; it is waiting on the same missing "
+        "context.\n"
+        "- **#421** — an editor's own entry, opened while the failing run "
+        "was still waiting. Leave it alone.\n"
+    )
+
+    # ------------------------------------------------------ the blocker (B1)
+
+    def test_the_objective_column_certifies_mentions_not_attribution(self):
+        """The wrong reply passes both reply checks, and the rubric says so.
+
+        Round 3 measured this reply at 7/7. The two checks that read the
+        reply now claim only what a script can decide — a `412` spelling and
+        the superseded base appear; a `418` spelling and the required
+        context appear — so this reply still passes them, deliberately, and
+        the `decisions` dimension is where it loses its marks.
+        """
+        by_id = self._score(self._triage_reads, transcript=self.WRONG_ATTRIBUTION)
+        for check_id in ("pr-a-stale-base-named",
+                         "pr-b-missing-required-context-named"):
+            with self.subTest(check=check_id):
+                self.assertTrue(by_id[check_id]["passed"], by_id[check_id]["detail"])
+        rubric = run_eval.load_fixture(self.STUCK_DIR)["judge_rubric"].lower()
+        self.assertIn("cap this dimension at 4 if #412's stale-base cause or its "
+                      "rebase/close remedy is attributed to another pull request, "
+                      "or if #412 is dismissed", rubric)
+
+    def test_the_canonical_correct_reply_still_passes_every_check(self):
+        by_id = self._score(self._triage_reads, transcript=self.CORRECT)
+        for check_id, result in by_id.items():
+            with self.subTest(check=check_id):
+                self.assertTrue(result["passed"], f"{check_id}: {result['detail']}")
+
+    def test_a_reply_that_never_names_the_superseded_base_fails_pr_a(self):
+        """What the check still decides: the load-bearing fact is present."""
+        reply = ("#412 is BLOCKED on a red e2e lane; rebase it onto current "
+                 "main and the lane goes green.\n")
+        by_id = self._score(self._triage_reads, transcript=reply)
+        self.assertFalse(by_id["pr-a-stale-base-named"]["passed"],
+                         by_id["pr-a-stale-base-named"]["detail"])
+
+    def test_a_reply_that_never_names_the_required_context_fails_pr_b(self):
+        reply = ("#418 is BLOCKED with every check green — a required status "
+                 "context has no publisher, so auto-merge never fires.\n")
+        by_id = self._score(self._triage_reads, transcript=reply)
+        self.assertFalse(
+            by_id["pr-b-missing-required-context-named"]["passed"],
+            by_id["pr-b-missing-required-context-named"]["detail"])
+
+    # The verbs a remedy pattern would have to know, and the numbers a
+    # pattern would have to pair one with. Kept separate from the patterns
+    # they are matched against so the structural test below says what it
+    # forbids rather than restating one pattern's text.
+    REMEDY_VERBS = r"rebas|clos|merg|nudge|rerun|reopen|delet|dismiss|wait"
+    PR_NUMBERS = r"\b4(?:12|18|21)\b"
+
+    def test_no_objective_check_decides_attribution_by_regex(self):
+        """Sibling of `test_no_objective_check_decides_code_shape_by_regex`.
+
+        A pattern over the reply that names a pull request AND a remedy verb
+        is deciding, by proximity, which pull request an English clause is
+        about. Rounds 1 and 2 measured that shape failing correct answers on
+        #421; round 3 measured it passing a wrong one on #412. Nothing over
+        the reply may pair the two again.
+        """
+        import re
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        for check in fixture["objective_checks"]:
+            if check["type"] != "transcript_matches":
+                continue
+            patterns = (check.get("must_match", []) + check.get("must_not_match", []))
+            for pattern in patterns:
+                with self.subTest(check=check["id"], pattern=pattern):
+                    if not re.search(self.PR_NUMBERS, pattern):
+                        continue
+                    self.assertIsNone(
+                        re.search(self.REMEDY_VERBS, pattern),
+                        "a reply pattern that names a pull request and a remedy "
+                        "verb decides attribution by proximity")
+
+    # ------------------------------------- the remedy vocabulary (S2)
+
+    # Remedies for a stale base that the removed verb clause did not know.
+    # Each was measured FAILING an otherwise-correct reply through the real
+    # scorer: the check demanded `rebase` or `close` and said so nowhere.
+    OTHER_REMEDIES = (
+        "update its branch from current main (`gh pr update-branch`)",
+        "merge current main into it",
+        "refresh the base and re-run the lane",
+    )
+
+    def test_a_correct_remedy_in_other_words_still_passes_pr_a(self):
+        for remedy in self.OTHER_REMEDIES:
+            with self.subTest(remedy=remedy):
+                reply = (f"#412's checks ran against base 0f3c8ad, which current "
+                         f"main 9e41b7c has superseded — {remedy}.\n")
+                by_id = self._score(self._triage_reads, transcript=reply)
+                self.assertTrue(by_id["pr-a-stale-base-named"]["passed"],
+                                by_id["pr-a-stale-base-named"]["detail"])
 
 if __name__ == "__main__":
     unittest.main()

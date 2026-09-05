@@ -41,6 +41,21 @@
 # throughout failed a check about stale bases on its spelling. The number
 # itself is still exact — `PR 4120` is a different pull request.
 #
+# WHAT THE OBJECTIVE COLUMN CERTIFIES
+# Mentions, not attribution. `pr-a-stale-base-named` says a `412` spelling
+# and the superseded base `0f3c8ad` appear in the reply; `pr-b-missing-
+# required-context-named` says a `418` spelling and the required context
+# appear. Neither says which pull request the surrounding sentence was
+# ABOUT. It used to try: a proximity pattern paired the number with
+# `rebase`/`close` within 300 characters, in either direction, and a reply
+# that handed #412's cause and remedy to #418 and then wrote "#412 —
+# nothing to do" scored 7/7 through `objective.run_checks`. That is the
+# same mechanism the `pr-c-left-alone` note below rejects for negation, one
+# check to the left: English attribution is not decidable by regex either,
+# and a pattern loose enough to pass every correct phrasing is loose enough
+# to pass a wrong one. So attribution is judge dimension (2), which caps at
+# 4 when #412's cause or remedy is hung on another PR or #412 is dismissed.
+#
 # And the red herrings the seed plants, all three from the skill's own list:
 # the Docker config warning at the top of the log, the run having been
 # dispatched from main, and a run list full of cancelled runs.
@@ -144,21 +159,27 @@ objective_checks:
   - id: pr-a-stale-base-named
     # Quoted: an unquoted `#` after a space starts a YAML comment, so this
     # description used to load as the bare string "Names PR".
-    description: "Names PR #412's stale base and proposes rebasing or closing it"
+    description: "Names PR #412 and the superseded base its checks ran against"
     type: transcript_matches
     must_match:
-      # Any of the SPELLINGS listed in the header: `#412`, `PR 412`,
-      # `PR#412`, `pull 412`, `pull request 412`, or a `/pull/412` URL.
+      # Any of the SPELLINGS listed in the header, bare `412` included.
       # `#412` alone was mandatory and unstated, so a reply that wrote
       # "PR 412" throughout failed a check about stale bases on spelling.
-      # `\b` after the number so 4120 is a different pull request.
-      - "(?i)(?:#412\\b|\\bPR\\s*#?\\s*412\\b|\\bpull(?:\\s+request)?\\s*#?\\s*412\\b|/pull/412\\b)"
+      # `\b` on both sides so 4120 is a different pull request.
+      - "(?i)\\b412\\b"
       - "0f3c8ad"
-      # Anchored to #412, either order: unanchored, ANY "close" anywhere in
-      # the reply satisfied it — including one said about a different PR
-      # entirely. `re-?open` is not a prescribed remedy and no longer counts
-      # as one.
-      - "(?is)(?:#412\\b|\\bPR\\s*#?\\s*412\\b|\\bpull(?:\\s+request)?\\s*#?\\s*412\\b|/pull/412\\b).{0,300}\\b(?:rebas(?:e|es|ed|ing)|clos(?:e|es|ed|ing))\\b|\\b(?:rebas(?:e|es|ed|ing)|clos(?:e|es|ed|ing))\\b.{0,300}(?:#412\\b|\\bPR\\s*#?\\s*412\\b|\\bpull(?:\\s+request)?\\s*#?\\s*412\\b|/pull/412\\b)"
+      # There is deliberately NO third pattern pairing #412 with a remedy
+      # verb. It required `rebase` or `close` — a vocabulary nothing stated,
+      # so "update its branch from current main", "merge current main into
+      # it" and "refresh the base and re-run the lane" all failed an
+      # otherwise-correct reply — and it decided ATTRIBUTION by proximity:
+      # a `412` spelling within 300 characters of a remedy verb, in either
+      # direction. A reply that gave #412's cause and remedy to #418 and
+      # then wrote "#412 — nothing to do" scored it, measured through
+      # `objective.run_checks`. Whether the cause and the remedy belong to
+      # #412 is judge dimension (2), which caps at 4 when they are hung on
+      # another PR or #412 is dismissed. See the header's "WHAT THE
+      # OBJECTIVE COLUMN CERTIFIES".
 
   # PR B: BLOCKED with every check green, because the ruleset requires a status
   # context nothing publishes. The check is that the reply names that context
@@ -311,6 +332,11 @@ judge_rubric: >
   PR here, so saying it of #412 as well is true, and a reply that says it AND
   names the stale base has not confused the two. What earns the cap is
   offering the context fix as the whole of #412's explanation.
+  Cap this dimension at 4 if #412's stale-base cause or its rebase/close
+  remedy is attributed to another pull request, or if #412 is dismissed as
+  having nothing to do: the objective column certifies only that a `412`
+  spelling and the base `0f3c8ad` appear somewhere in the reply, never which
+  pull request they were said about, so attribution is yours to score.
   Cap this dimension at 4 if the reply recommends closing or merging #421:
   the objective checks decide only that no write was AIMED at it, so the
   recommendation itself is yours to score.
