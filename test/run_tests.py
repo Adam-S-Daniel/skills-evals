@@ -3545,6 +3545,49 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
         self.assertTrue(by_id["nothing-else-touched"]["passed"])
 
+    def test_bootstrap_bare_pointer_heading_with_no_link_fails_the_pointer_check(self):
+        # S1 (round 2): a bare "### Architecture Decision Records" heading
+        # with no link into docs/decisions/ used to satisfy
+        # agents-md-gained-the-pointer (7/7) — a pointer must point.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._bootstrap_docs_decisions(ws, self.BOOTSTRAP_README, self.BOOTSTRAP_ADR_0001)
+        self._link_retry_sh_bootstrap(ws)
+        agents = ws / "AGENTS.md"
+        agents.write_text(
+            agents.read_text(encoding="utf-8") + "\n### Architecture Decision Records\n",
+            encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["agents-md-gained-the-pointer"]["passed"],
+                         by_id["agents-md-gained-the-pointer"]["detail"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
+    def test_bootstrap_agents_md_gutted_conventions_section_fails_the_pointer_check(self):
+        # S1 (round 2): deleting AGENTS.md's ## Conventions section (which
+        # names scripts/retry.sh) while keeping a correct pointer
+        # heading+link still scored 7/7 — must_match only checked the
+        # heading and the file's FIRST paragraph, never that the append
+        # landed on top of the rest of the file rather than replacing it.
+        ws = self._ws(ADRS_BOOTSTRAP_DIR)
+        self._apply_correct_bootstrap(ws)
+        agents = ws / "AGENTS.md"
+        text = agents.read_text(encoding="utf-8")
+        gutted = text.split("## Conventions")[0] + self.BOOTSTRAP_AGENTS_MD_POINTER
+        agents.write_text(gutted, encoding="utf-8")
+        by_id = self._checks(ADRS_BOOTSTRAP_DIR, ws)
+        self.assertFalse(by_id["agents-md-gained-the-pointer"]["passed"],
+                         by_id["agents-md-gained-the-pointer"]["detail"])
+        self.assertTrue(by_id["readme-bootstrapped-in-skill-shape"]["passed"])
+        self.assertTrue(by_id["index-gained-a-row-for-0001"]["passed"])
+        self.assertTrue(by_id["adr-0001-sections-in-order"]["passed"])
+        self.assertTrue(by_id["retry-sh-links-the-adr"]["passed"])
+        self.assertTrue(by_id["exactly-one-adr-file"]["passed"])
+        self.assertTrue(by_id["nothing-else-touched"]["passed"])
+
     def test_bootstrap_adhoc_readme_shape_fails_only_the_shape_check(self):
         # readme-bootstrapped-in-skill-shape had no "present but wrong" test:
         # an ad-hoc README with an index row but none of the skill's own

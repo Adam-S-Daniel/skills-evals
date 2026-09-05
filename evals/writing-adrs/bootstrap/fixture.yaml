@@ -110,13 +110,19 @@ objective_checks:
     description: >
       Bootstrap step 4: AGENTS.md gained a pointer paragraph under a new
       "### Architecture Decision Records" heading, appended to the file's
-      existing content (checked via must_match on an original paragraph)
-      rather than replacing it.
+      existing content (checked via must_match on the original first
+      paragraph AND the original Conventions bullet, so a gutted rewrite
+      that drops the rest of the file still fails this) rather than
+      replacing it — and the pointer must actually point: a bare heading
+      with no link to docs/decisions was a round-2 finding that used to
+      score 7/7.
     type: file_matches
     paths: ["AGENTS.md"]
     must_match:
       - '(?im)^### Architecture Decision Records\s*$'
       - 'Order Sync polls the upstream fulfillment service and mirrors order status'
+      - 'docs/decisions'
+      - 'Keep `scripts/retry\.sh` as the one retry helper for transient upstream'
 
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
