@@ -7310,10 +7310,21 @@ class TestIssue67Review7(unittest.TestCase):
         # "carries 100.0% of rankable census usage ..." — red.
 
     def test_the_policy_describes_the_cap_the_code_implements(self):
+        """Updated for F1 (round 8): the cap orders by census relevance
+        FIRST, then by `last_seen`, then by id — the previous roster
+        writes the last two, so neither can be the thing that decides."""
         text = self.POLICY.read_text(encoding="utf-8")
         self.assertNotIn("oldest-by-id-sorted-out", text,
                          "the cap evicts by `last_seen`, not by id order")
-        self.assertIn("oldest by `last_seen`", text)
+        prose = " ".join(" ".join(line.lstrip("#").strip()
+                                  for line in text.splitlines()).split())
+        # `assertTrue` over `assertNotIn`: a failure here would otherwise
+        # dump the whole policy file into the log.
+        self.assertTrue("dropped are the oldest by `last_seen` first" not in prose,
+                        "age alone is not the order the code implements")
+        self.assertIn("census names come first, then the newest by "
+                      "`last_seen`, then the id order as a tie-break", prose)
+        self.assertIn("eviction here is PERMANENT", prose)
 
     # --- S3: the previous-arms cap must not omit a REAL retirement -------
     #
@@ -8054,9 +8065,9 @@ class TestIssue67Review8(unittest.TestCase):
                 tmp, self._two_model_catalogue(), previous=previous)
         self.assertEqual(rc, 0)
         seen = self._seen_ids(published)
-        self.assertIn(self.A2_REAL, seen,
-                      "a real id seen yesterday must outlive 500 entries "
-                      "dated in the year 1")
+        self.assertTrue(self.A2_REAL in seen,
+                        "a real id seen yesterday must outlive 500 entries "
+                        "dated in the year 1")
         self.assertEqual(sorted(seen - {self.A2_REAL}),
                          sorted(m["id"] for m
                                 in self._two_model_catalogue()["models"]),
@@ -8093,6 +8104,107 @@ class TestIssue67Review8(unittest.TestCase):
         # Mutation check (manual): reverting to `strftime("%Y-%m-%d")`
         # publishes `1-01-01` for the year-1 entry, which `parse_ts`
         # returns None for — red.
+
+    # --- F1: the `catalogue_seen` cap's ORDER is decided by data the
+    # previous roster does not control ------------------------------------
+    #
+    # THE INVARIANT: an entry the census names outlives any number of
+    # entries the census does not name, whatever their dates or ids.
+    # Round 7's S2 made the cap evict the oldest `last_seen` first — but
+    # the planter CONTROLS `last_seen`: a future value clamps to today,
+    # and every bare string migrates stamped today. So 498 entries dated
+    # today, or 500 bare strings, still evicted the one genuinely
+    # since-retired id, still took its 8000 turns out of the denominator,
+    # and still published "carries 100.0%" for a model whose true share is
+    # 800 of 8800 — 9.09%. The plants below sort AFTER the real id, so
+    # nothing but the date is doing the eviction.
+
+    F1_PLANTS = [f"zplant-{i:03d}" for i in range(500)]
+    F1_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _f1_census(cls):
+        """The real since-retired model carries 8000 of the window's 8800
+        rankable turns; the live model carries 800 — 9.09%, under the 10%
+        entry bar, so it rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.F1_REAL: {cls.W[0]: 8000},
+            "claude-sonnet-5": {cls.W[0]: 800}})
+
+    def _assert_the_real_history_survived(self, published):
+        # `assertTrue` over `assertIn`: a failure here would otherwise
+        # dump 500 plant ids into the log.
+        self.assertTrue(self.F1_REAL in self._seen_ids(published),
+                        "the entry the census names outlives entries the "
+                        "census does not name, whatever their dates")
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("newest", reason)
+        for arm in published["arms"]:
+            self.assertNotIn("100.0%", arm["reason"], arm)
+        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+
+    def test_five_hundred_plants_dated_today_do_not_evict_named_history(self):
+        """Through `main()` with files on disk: 500 entries dated TODAY —
+        the date a future-dated plant clamps to — against one the census
+        names, seen 100 days ago."""
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)}
+                     for i in self.F1_PLANTS] +
+                    [{"id": self.F1_REAL, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._f1_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self._assert_the_real_history_survived(published)
+        # Mutation check (manual): dropping the relevance sort (leaving the
+        # age-only order round 7 shipped) evicts `claude-sonnet-4-9`, takes
+        # its 8000 turns out of the denominator, and publishes
+        # "carries 100.0% of rankable census usage" for a model whose true
+        # share is 9.09% — red.
+
+    def test_five_hundred_bare_string_plants_do_not_evict_named_history(self):
+        """The same, through the bare-string migration: every bare entry is
+        stamped TODAY on read, because seeing it is the only evidence there
+        is — so on a migration run pure age order decides nothing at all."""
+        previous = {"arms": [], "catalogue_seen":
+                    list(self.F1_PLANTS) +
+                    [{"id": self.F1_REAL, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._f1_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self._assert_the_real_history_survived(published)
+        # Mutation check (manual): as above — red.
+
+    def test_the_cap_keeps_every_live_id_even_against_named_plants(self):
+        """`catalogue_seen` stays a superset of the live catalogue. The
+        plants here are dated today AND named by the census, so neither
+        half of the new order would spare the real catalogue on its own —
+        only the live/historical split does."""
+        plants = [f"zplant-{i:03d}" for i in range(600)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants]}
+        census = TestIssue67._census_doc(counts={
+            i: {"2020-W01": 1} for i in plants})
+        warnings = []
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+            warnings = [line for line in err.splitlines()
+                        if line.startswith("roster: ")]
+        self.assertEqual(rc, 0)
+        api_ids = {m["id"] for m in self._two_model_catalogue()["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(published),
+                             "the cap must never evict this run's own live ids")
+        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+        self.assertTrue([w for w in warnings if "cap" in w], warnings)
+        for warning in warnings:
+            self.assertNotIn("zplant-599", warning,
+                             "the cap warning names counts only")
 
 if __name__ == "__main__":
     unittest.main()

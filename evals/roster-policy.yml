@@ -135,19 +135,34 @@ min_ranked_share: 0.01
 # one-time plant cannot persist indefinitely. This run's own live ids are
 # never aged out by this (they get `last_seen` = today every run) — only
 # accumulated history can. See also the length cap in roster.py's
-# `CATALOGUE_SEEN_CAP` (currently 500 entries). Past it, the entries
-# dropped are the oldest by `last_seen` first, tie-broken by id — NOT the
-# alphabetically-last ids, which is what the code used to do and this
-# comment used to describe: a previous-arm id may begin with a digit, so
-# 500 low-sorting planted ids could evict a real since-retired model from
-# history by nothing but its spelling, take its turns out of the usage
-# denominator, and publish a false 100.0% share for an unrelated model
-# (S2, #129 review round 7). This run's own live ids are exempt from the
-# cap entirely. The previous roster's `arms` list is capped at the same
-# 500, by roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round 6),
-# keeping the ids this run can actually say something about — one the
-# Models API still lists, or one the census names — ahead of filler, so
-# the cap cannot silently omit a real retirement from the roster's
-# `retired_since_last` report (S3, round 7). Neither list has any other
-# bound on how large a public branch could otherwise grow it.
+# `CATALOGUE_SEEN_CAP` (currently 500 entries). Past it, who survives is
+# decided by data the previous roster does not control: entries the
+# census names come first, then the newest by `last_seen`, then the id
+# order as a tie-break. This run's own live ids are exempt from the cap
+# entirely.
+#
+# The order matters because eviction here is PERMANENT — the next run
+# reads this run's own output back — and because everything the previous
+# roster asserts about itself is something a planter can write. Ordering
+# by the id alone let 500 low-sorting planted ids evict a real
+# since-retired model by nothing but its spelling (S2, #129 review round
+# 7); ordering by `last_seen` alone let 498 entries dated today, or 500
+# bare strings (which migrate stamped today, since seeing one is the
+# only evidence there is), do exactly the same (F1, round 8). Either way
+# the evicted model's turns left the usage denominator and an unrelated
+# model was published as carrying 100.0% of census usage where it really
+# carried 9.09%. Whether the census names an id is not something the
+# previous roster gets a say in, which is why it comes first; among ids
+# the census does not name, the order is only a tie-break, and those
+# entries move no share.
+#
+# The previous roster's `arms` list is capped at the same 500, by
+# roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round 6), keeping the
+# ids this run can actually say something about — one the Models API
+# still lists, or one the census names — ahead of filler. That cap
+# governs what is carried forward for attribution; the roster's
+# `retired_since_last` report is computed BEFORE it, so a departed arm
+# is reported whether or not the census names it (F3, round 8). Neither
+# list has any other bound on how large a public branch could otherwise
+# grow it.
 catalogue_seen_max_age_days: 180

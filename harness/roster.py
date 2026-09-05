@@ -748,6 +748,32 @@ def _clean_counts(counts, warn) -> dict:
     return cleaned
 
 
+def _census_relevance(count_keys):
+    """A predicate: does the census name this id, under EITHER spelling?
+
+    The one question both caps below order by, so they answer it the same
+    way and one mutation cannot quietly change only one of them. Three
+    routes, and each has its own regression floor (A3, #129 review round
+    8): the census names the id outright; the census names a DATED
+    spelling of it (`named_bases`); or the id is itself a dated spelling
+    of something the census names.
+    """
+    named = set(count_keys)
+    named_bases = set()
+    for key in named:
+        match = SNAPSHOT_SUFFIX.match(key)
+        if match:
+            named_bases.add(match.group("base"))
+
+    def names(model_id: str) -> bool:
+        if model_id in named or model_id in named_bases:
+            return True
+        match = SNAPSHOT_SUFFIX.match(model_id)
+        return bool(match) and match.group("base") in named
+
+    return names
+
+
 #: N3 (#129 review round 6): the same cap `CATALOGUE_SEEN_CAP` applies to
 #: `catalogue_seen`, sized the same way — see that constant's own comment.
 PREVIOUS_ARMS_CAP = 500
@@ -815,18 +841,10 @@ def _clean_previous_arms(previous, warn, api_ids=(), count_keys=()) -> list[str]
     if len(ids) > PREVIOUS_ARMS_CAP:
         dropped = len(ids) - PREVIOUS_ARMS_CAP
         live = set(api_ids)
-        named = set(count_keys)
-        named_bases = set()
-        for key in named:
-            match = SNAPSHOT_SUFFIX.match(key)
-            if match:
-                named_bases.add(match.group("base"))
+        names = _census_relevance(count_keys)
 
         def _relevant(model_id: str) -> bool:
-            if model_id in live or model_id in named or model_id in named_bases:
-                return True
-            match = SNAPSHOT_SUFFIX.match(model_id)
-            return bool(match) and match.group("base") in named
+            return model_id in live or names(model_id)
 
         # `not _relevant(...)` first: False sorts before True, so relevant
         # ids head the list and the id order only breaks ties inside each
@@ -941,7 +959,7 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
 
 
 def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
-                          policy: dict, warn) -> list[dict]:
+                           policy: dict, warn, count_keys=()) -> list[dict]:
     """This run's `catalogue_seen` history: refresh, evict, cap.
 
     Every id THIS run's Models API actually listed gets its `last_seen`
@@ -966,7 +984,11 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     The cap NEVER evicts one of this run's own live `api_ids` — only
     accumulated history beyond them — so `catalogue_seen` stays a
     superset of `api_ids`, the property `usage_share`'s docstring and
-    `compute_roster`'s callers rely on.
+    `compute_roster`'s callers rely on. Past that, `count_keys` (this
+    run's census keys, the same argument `_clean_previous_arms` takes)
+    decides who survives, ahead of any date — see the invariant written
+    over the sort below, and note that eviction there is PERMANENT for
+    the same reason ageing out is not a repair.
     """
     today = _as_date(now)
     by_id = {e["id"]: e["last_seen"] for e in previous_entries}
@@ -986,27 +1008,47 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
              f"the {policy['catalogue_seen_max_age_days']}-day window")
     api_id_set = set(api_ids)
     live = sorted(i for i in survivors if i in api_id_set)
-    # The cap evicts the OLDEST accumulated history first, by `last_seen`,
-    # tie-broken by id — not the alphabetically-last id (S2, #129 review
-    # round 7). `PREVIOUS_ARM_ID_RE` accepts a leading digit, so 500
-    # low-sorting valid-shaped ids used to push a real since-retired model
-    # out of history by nothing but its spelling; its turns then left the
-    # usage denominator and an unrelated model was published as carrying
-    # 100.0% of census usage where it really carried 9.09%. Age is the only
-    # property this field is about, and it is the one the cap sorts on.
-    # Two stable sorts rather than one composite key: id ascending first,
-    # then `last_seen` descending, which leaves ids in ascending order
-    # within one date. An unparseable `last_seen` sorts as the OLDEST
-    # moment there is, never as `now` (A2, #129 review round 8): a value
-    # this module cannot read asserts nothing, and must not outrank an
-    # entry that carries a real date. The branch is a FLOOR rather than a
-    # live one — `_clean_catalogue_seen` re-renders every date through
-    # `_as_date` before this runs, so everything reaching here parses —
-    # which is exactly why it must not read as today: that is the
-    # assumption `strftime`'s unpadded year quietly falsified.
+    # THE INVARIANT the cap's order has to satisfy (F1, #129 review round
+    # 8): who survives is decided by data the previous roster does not
+    # control — the live catalogue and the census — never by a field the
+    # previous roster asserts about itself. An entry the census names
+    # outlives any number of entries the census does not name, whatever
+    # their dates or ids. Within entries the census does not name, order
+    # is only a tie-break and a planter may win it, because those entries
+    # move no share.
+    #
+    # Age alone does not satisfy it, and neither does spelling. Round 6
+    # sorted by id, and `PREVIOUS_ARM_ID_RE` accepts a leading digit, so
+    # 500 low-sorting ids evicted a real since-retired model by nothing
+    # but its spelling. Round 7 sorted by `last_seen` — but the planter
+    # writes `last_seen` too: a future date clamps to today and every bare
+    # string migrates stamped today, so 498 entries dated today, or 500
+    # bare strings, still evicted it. Either way its turns left the usage
+    # denominator and an unrelated model was published as carrying 100.0%
+    # of census usage where it really carried 9.09%.
+    #
+    # EVICTION IS PERMANENT. The next run's `previous.json` is this run's
+    # output, so an id dropped here is gone from the history for good —
+    # the same "ageing out is not a repair" property N6 wrote down for a
+    # retirement (see this function's docstring). That is why the order
+    # may not be something the input can dictate.
+    #
+    # Three stable sorts rather than one composite key, least significant
+    # first: id ascending, then `last_seen` descending (leaving ids
+    # ascending within one date), then census relevance (False sorts
+    # first, so named entries head the list). An unparseable `last_seen`
+    # sorts as the OLDEST moment there is, never as `now` (A2, round 8):
+    # a value this module cannot read asserts nothing, and must not
+    # outrank an entry that carries a real date. That branch is a FLOOR
+    # rather than a live one — `_clean_catalogue_seen` re-renders every
+    # date through `_as_date` before this runs, so everything reaching
+    # here parses — which is exactly why it must not read as today: that
+    # is the assumption `strftime`'s unpadded year quietly falsified.
+    names = _census_relevance(count_keys)
     historical = sorted(i for i in survivors if i not in api_id_set)
     historical.sort(key=lambda i: parse_ts(survivors[i]) or _LAST_SEEN_FLOOR,
                     reverse=True)
+    historical.sort(key=lambda i: not names(i))
     room = max(0, CATALOGUE_SEEN_CAP - len(live))
     kept = live + historical[:room]
     dropped = len(survivors) - len(kept)
@@ -1186,7 +1228,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # shape; `catalogue_seen` stays a plain set of ids for every downstream
     # membership check (`_is_attributable`, `_fold_set`'s callers, etc.).
     catalogue_seen_entries = _update_catalogue_seen(
-        api_ids, _clean_catalogue_seen(previous, warn, now), now, policy, warn)
+        api_ids, _clean_catalogue_seen(previous, warn, now), now, policy, warn,
+        count_keys=counts.keys())
     catalogue_seen = {e["id"] for e in catalogue_seen_entries}
 
     # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
