@@ -997,13 +997,34 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
         self.assertIn("resolves outside the workspace", detail)
         self.assertEqual(detail.count("resolves outside the workspace"), 1, detail)
 
-    def test_symlinked_workspace_component_still_resolves_via_realpath(self):
-        # dir_listing_matches resolves with os.path.realpath so a symlinked
-        # path component inside the workspace is contained correctly; this
-        # check used os.path.abspath, which does not resolve symlinks at
-        # all, so a base reached only through a symlinked component could be
-        # (mis)judged relative to the link's un-resolved, textual path
-        # instead of where it actually points on disk.
+    def test_symlink_escaping_the_workspace_is_reported_as_an_escape(self):
+        # F1: this check resolves with os.path.realpath, not os.path.abspath,
+        # so a workspace-internal symlink whose TARGET lies outside the
+        # workspace is judged by where it actually points, not by its
+        # unresolved, textual path. Reverting to abspath makes this pass
+        # wrongly: abspath never follows "link", so the textual path stays
+        # inside the workspace and only os.path.isfile is left to check
+        # existence — which follows the symlink at the OS level and finds
+        # the file anyway, reporting "all link targets exist" instead of
+        # the escape.
+        ws = self._ws({"docs/decisions/README.md": "[0001](link/0001-secret.md)\n"})
+        outside = ws.parent / "outside"
+        outside.mkdir()
+        self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
+        (outside / "0001-secret.md").write_text("secret\n", encoding="utf-8")
+        (ws / "docs" / "decisions" / "link").symlink_to(outside)
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["docs/decisions/README.md"],
+            link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)', base="docs/decisions")
+        self.assertFalse(passed, detail)
+        self.assertIn("escapes the workspace", detail)
+
+    def test_symlinked_workspace_component_resolves_the_alias_without_escaping(self):
+        # The benign twin of the test above: a symlinked path component
+        # whose target stays entirely INSIDE the workspace. Containment
+        # holds under either os.path.realpath or os.path.abspath here, so
+        # this does not by itself pin realpath as load-bearing — that is
+        # what the escaping-symlink test above is for.
         ws = self._ws({
             "real/docs/README.md": "[0001](0001-a.md)\n",
             "real/docs/0001-a.md": "x\n",
