@@ -1061,6 +1061,22 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
         self.assertIn("0000-missing.md", detail)
         self.assertNotIn("0059-missing.md", detail)
 
+    # --- N1: the success path went through a plain join, uncapped, so a
+    # workspace with many scanned (but link-clean) files produced a huge
+    # detail string — only the failure path was capped ---
+
+    def test_success_detail_is_capped_for_many_scanned_files(self):
+        files = {f"{i:04d}-doc.md": "no links here\n" for i in range(60)}
+        ws = self._ws(files)
+        passed, detail = objective.link_targets_exist(
+            str(ws), ["*.md"], link_pattern=self.LINK_RE, base=".")
+        self.assertTrue(passed, detail)
+        self.assertIn("and 20 more", detail)
+        # Capped at 40 shown; the 60th (index 0059) is among the elided tail.
+        self.assertIn("0000-doc.md", detail)
+        self.assertNotIn("0059-doc.md", detail)
+        self.assertLess(len(detail), 1000, detail)
+
     # --- N4: registered in the CHECKS map, same as file_count ---
 
     def test_link_targets_exist_is_registered_in_checks_map(self):
