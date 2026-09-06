@@ -4190,22 +4190,44 @@ class CiDispatchTests(unittest.TestCase):
                          "(observed on 82596ff, 03:38:30 and 03:39:14)")
 
     @staticmethod
-    def _root_markdown_reads(source: str) -> set[str]:
+    def _is_repo_root_expr(node) -> bool:
+        """True for the bare name `REPO_ROOT` or the attribute `TEST_DIR.parent`
+        — the realistic sibling spelling, since `REPO_ROOT = TEST_DIR.parent`
+        (see the module-level assignments near the top of this file)."""
+        return ((isinstance(node, ast.Name) and node.id == "REPO_ROOT")
+                or (isinstance(node, ast.Attribute) and node.attr == "parent"
+                    and isinstance(node.value, ast.Name) and node.value.id == "TEST_DIR"))
+
+    @classmethod
+    def _root_markdown_reads(cls, source: str) -> set[str]:
         """AST walk (never a regex over the file) for every root-level
-        Markdown file THIS test module itself reads: `REPO_ROOT / "<name>.md"`
-        (a BinOp division whose immediate left operand is the bare name
-        `REPO_ROOT` and whose right operand is a string constant ending in
-        `.md`), plus the equivalent-spelling forms `REPO_ROOT.joinpath("<name>.md")`
-        and `os.path.join(REPO_ROOT, "<name>.md")` (Call nodes). Nested joins
+        Markdown file THIS test module itself reads via one of two spellings
+        of the repo root — the bare name `REPO_ROOT` or the attribute
+        `TEST_DIR.parent` (see `_is_repo_root_expr`): `REPO_ROOT / "<name>.md"`
+        or `TEST_DIR.parent / "<name>.md"` (a BinOp division whose immediate
+        left operand is one of those two spellings and whose right operand is
+        a string constant ending in `.md`), plus the equivalent-spelling forms
+        `REPO_ROOT.joinpath("<name>.md")` and `os.path.join(REPO_ROOT, "<name>.md")`
+        (Call nodes — these two are NOT extended to the `TEST_DIR.parent` spelling,
+        since neither form appears anywhere in this file today). Nested joins
         (`REPO_ROOT / "evals" / "x.md"`) are deliberately NOT matched — those
         already live under a directory glob in SALIENT, this only closes the
-        gap for a bare root file joined directly onto REPO_ROOT.
+        gap for a bare root file joined directly onto one of the two root
+        spellings above.
+
+        Still a silent gap, not a deliberate exclusion — an unmatched spelling
+        should eventually join the walk above rather than stay in this list:
+        `Path(REPO_ROOT, "X.md")`, `os.path.join(str(REPO_ROOT), "X.md")`,
+        `REPO_ROOT / name` where `name` is a variable, an f-string,
+        `REPO_ROOT.glob("*.md")`, a rebound alias for `REPO_ROOT` or
+        `TEST_DIR`, and any `TEST_DIR.parent` reference other than the direct
+        `TEST_DIR.parent / "<name>.md"` BinOp this walk now recognizes.
         """
         tree = ast.parse(source)
         found: set[str] = set()
         for node in ast.walk(tree):
             if (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div)
-                    and isinstance(node.left, ast.Name) and node.left.id == "REPO_ROOT"
+                    and cls._is_repo_root_expr(node.left)
                     and isinstance(node.right, ast.Constant)
                     and isinstance(node.right.value, str)
                     and node.right.value.endswith(".md")):
@@ -4250,6 +4272,16 @@ class CiDispatchTests(unittest.TestCase):
                 self.assertIn(name, triggers[event]["paths"],
                               f"{name} is read by this suite but is missing from "
                               f"ci.yml's {event} paths: filter")
+
+    def test_root_markdown_reads_recognizes_test_dir_parent_spelling(self):
+        # N3: `TEST_DIR.parent / "<name>.md"` is the realistic sibling spelling
+        # of `REPO_ROOT / "<name>.md"`, since `REPO_ROOT = TEST_DIR.parent` —
+        # and it used to escape this AST walk entirely, so a root Markdown
+        # file read only that way would silently miss SALIENT and ci.yml's
+        # paths: filter with nothing here to catch it.
+        source = 'x = TEST_DIR.parent / "THIRD_ROOT_FILE.md"\n'
+        found = self._root_markdown_reads(source)
+        self.assertIn("THIRD_ROOT_FILE.md", found)
 
     def test_checks_out_agentskills_side_by_side_for_the_agreement_test(self):
         # TestIssue63::test_registries_agree_with_agentskills_own_file skips
