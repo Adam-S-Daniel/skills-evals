@@ -486,12 +486,12 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     migration, for `catalogue_seen`'s own shape change (a bare id string
     to `{id, last_seen}`) — see `_clean_catalogue_seen`.
 
-    THE HISTORY SET IS FOLDED, and was not until B1\' (#129 review round
+    THE HISTORY SET IS FOLDED, and was not until B1' (#129 review round
     10). `api_ids` and `previous_arms` were both matched through the alias
     map and `catalogue_seen` was matched RAW, so a since-retired model the
     harness observed under a DATED id credited nothing to the undated
     alias the census records its usage under — the same one-directional
-    reading of the alias relation B1\' fixes in the caps. It is also what
+    reading of the alias relation B1' fixes in the caps. It is also what
     makes the caps' tier-2 slot mean what it says: an entry that folds
     onto a census key keeps that key attributable, whichever of the two
     lists the entry is in. This grants a planter nothing new — an id
@@ -922,7 +922,7 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     The one question both caps order by, so they answer it the same way
     and one mutation cannot quietly change only one of them.
 
-    THE INVARIANT (B1\', #129 review round 10): every census key with
+    THE INVARIANT (B1', #129 review round 10): every census key with
     in-window turns that any entry folds onto keeps at least one entry
     that folds onto it, and an entry that neither the live catalogue nor
     the census names, under any spelling, never outranks one that either
@@ -939,11 +939,11 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     — previous arm `<alias>-YYYYMMDD`, census key `<alias>` — was relevant
     to nothing: measured through `main()`, 500 filler arms evicted it,
     its 8,000 turns left the usage denominator, and a live model was
-    published "carries 100.0%" for a true 33.3%. Over round 8\'s own
+    published "carries 100.0%" for a true 33.3%. Over round 8's own
     3,000-scenario generator with the caps forced, 6 scenarios differed
     and 11 published shares came out HIGHER than they should, 0 lower.
 
-    Restoring the deleted spelling route re-opens round 9\'s blocker, so
+    Restoring the deleted spelling route re-opens round 9's blocker, so
     that is not the fix. What tells the real arm from the 500 plants is
     not how either is spelled but WHAT THE CENSUS STILL NEEDS: the key
     `<alias>` is attributable only through an entry that folds onto it,
@@ -952,7 +952,7 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     previous roster does not write, and nothing else. See `_Relevance.rank`
     for the tiers and `_Relevance.fold` for the fold relation.
 
-    WHY EACH INPUT IS SAFE. `api_ids` is the Models API\'s answer this run.
+    WHY EACH INPUT IS SAFE. `api_ids` is the Models API's answer this run.
     `count_turns` is the census, in-window: a planter cannot add a census
     key, so it cannot add a tier-1 membership, and it cannot add a tier-2
     SLOT either — the slot count is one per census key. The production
@@ -969,9 +969,9 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     than fall back to an order the input writes.
 
     ROUTE (c1) OF ROUND 9 IS SUBSUMED, not dropped: a bare arm `X` beside a
-    dated census key `X-YYYYMMDD` is in that key\'s fold group, and absent
+    dated census key `X-YYYYMMDD` is in that key's fold group, and absent
     a tier-1 entry it takes the slot — `X` sorts before `X-00000000`, so a
-    planter racing it loses. Round 9\'s route (c2) (the production map
+    planter racing it loses. Round 9's route (c2) (the production map
     landing the entry on a census key) is GONE: it was provably implied by
     the other three — 0 fires in 6,000,000 evaluations — and F-2 (#129
     review round 10) is the rule that a clause with no mutation of its own
@@ -1046,7 +1046,7 @@ def _clean_previous_arms(previous, warn,
     dropped id.
 
     Past the cap, RELEVANCE decides who survives, not spelling (S3, #129
-    review round 7; B1, round 9; B1\', round 10). An id this run can
+    review round 7; B1, round 9; B1', round 10). An id this run can
     actually say something about — see `_relevance`, whose whole answer is
     the live catalogue and the census read through the fold relation — is
     kept ahead of filler, and only then does the id order break ties. THE
@@ -1646,7 +1646,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
     # Both caps below order by ONE object, built from the live catalogue
     # and this run's in-window census turns and from nothing else — never
-    # from `previous.json` (B1, #129 review round 9; B1\', round 10).
+    # from `previous.json` (B1, #129 review round 9; B1', round 10).
     # Computed here rather than inside either cap because it needs
     # `live_order`, this run's own capability order, for the fold
     # relation; see `_relevance` for the invariant it exists to hold.

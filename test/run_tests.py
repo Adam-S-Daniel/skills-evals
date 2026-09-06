@@ -15536,9 +15536,9 @@ class TestIssue67Review9(unittest.TestCase):
         """(models_doc, census_doc, previous, protected, owner) for one
         random run.
 
-        REWRITTEN for B1\' (#129 review round 10). The generator now
+        REWRITTEN for B1' (#129 review round 10). The generator now
         populates `previous["arms"]` as well as `catalogue_seen` — round
-        9\'s version left `arms` empty in every scenario, so the arms cap
+        9's version left `arms` empty in every scenario, so the arms cap
         was never exercised by it at all — and it generates dated
         spellings of census keys as REAL entries, in history and in arms,
         not only as plants. That last shape is the blocker: a departed arm
@@ -15557,17 +15557,17 @@ class TestIssue67Review9(unittest.TestCase):
         bare-live        the bare alias is in the catalogue and holds the
                          seat; its own census turns are its own.
         dated-only-live  the catalogue publishes only DATED snapshots
-                         (roster-policy.yml\'s documented shape); the
+                         (roster-policy.yml's documented shape); the
                          newest live one claims the bare alias, an OLDER
                          dated key carries census turns, and the bare
-                         alias — in `catalogue_seen` because run 1\'s
+                         alias — in `catalogue_seen` because run 1's
                          catalogue listed it — is the only thing that
                          folds the one onto the other.
         retired          no live model; the census names the bare alias
                          and the bare alias is itself an entry.
         dated-retired    no live model; the census names the bare alias
                          and the ENTRY is a dated spelling of it. THE
-                         BLOCKER\'S SHAPE: nothing about the entry is a
+                         BLOCKER'S SHAPE: nothing about the entry is a
                          census key or a live id, and the only thing that
                          keeps the key attributable is that the entry
                          folds onto it.
@@ -15580,7 +15580,7 @@ class TestIssue67Review9(unittest.TestCase):
             snaps = [f"{base}-2026{month:02d}01" for month in (1, 4, 6)]
             # Family 0 is always live, so every scenario has a catalogue
             # this policy can seat something out of; family 1 is always
-            # the blocker\'s shape, so every scenario carries at least one
+            # the blocker's shape, so every scenario carries at least one
             # entry that is relevant through the fold relation ALONE.
             shape = ("bare-live" if index == 0
                      else "dated-retired" if index == 1
@@ -15663,7 +15663,7 @@ class TestIssue67Review9(unittest.TestCase):
         folds onto keeps at least one entry that folds onto it — is
         asserted through its only observable consequence, and the only one
         that matters: every published share equals the turns that model
-        really carries, computed from the generator\'s own `owner` map. A
+        really carries, computed from the generator's own `owner` map. A
         fold group that loses its last entry takes its census key out of
         the denominator, and every other share goes UP.
 
@@ -15726,10 +15726,10 @@ class TestIssue67Review9(unittest.TestCase):
                          "the caps did not fire in every scenario: the "
                          "property has no teeth on these seeds")
         # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
-        # (`tier2 = {}`) leaves the dated-retired families\' entries in
+        # (`tier2 = {}`) leaves the dated-retired families' entries in
         # tier 3, the `0plant-NNNN` plants outrank them, their census keys
         # stop being attributable and every other share comes out too
-        # high — red on the share assertion. Restoring round 8\'s
+        # high — red on the share assertion. Restoring round 8's
         # `SNAPSHOT_SUFFIX` route makes the dated plants relevant too, so
         # they tie with the named entries and the id order evicts them —
         # red on the half-two assertion.
@@ -15886,7 +15886,7 @@ class TestIssue67Review9(unittest.TestCase):
         unrankable and the roster falls back to newest-per-tier and says
         so; uncapped, they are attributable and the fallback never happens.
 
-        THE RESIDUAL COST OF B1\' (#129 review round 10), stated here
+        THE RESIDUAL COST OF B1' (#129 review round 10), stated here
         because this is where it is measured: the invariant holds SUBJECT
         TO THE CAP. Tier 1 plus tier 2 can exceed 500 — this scenario is
         the smallest case where it does — and then something the census
@@ -16007,7 +16007,7 @@ class TestIssue67Review10(unittest.TestCase):
     """Round 10 fixes for #67 (PR #129 review round 10), one test per fix.
 
     A SIBLING of TestIssue67 and TestIssue67Review9, reusing their canned
-    documents rather than subclassing — run_tests.py\'s
+    documents rather than subclassing — run_tests.py's
     class-per-review-round convention. Every model id below is TEST FIXTURE
     data; the policy code under test carries none
     (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
@@ -16032,7 +16032,7 @@ class TestIssue67Review10(unittest.TestCase):
     _days_ago = TestIssue67Review9._days_ago
     _run_main = TestIssue67Review9._run_main
 
-    # --- B1\': attribution reads the FOLD SET, not the entry that produced
+    # --- B1': attribution reads the FOLD SET, not the entry that produced
     # it ------------------------------------------------------------------
     #
     # THE INVARIANT: every census key with in-window turns that any entry
@@ -16049,7 +16049,7 @@ class TestIssue67Review10(unittest.TestCase):
     # Its turns left the usage denominator and the live model beside it
     # was published "carries 100.0%" for a true 33.3%.
     #
-    # Restoring round 8\'s spelling route would re-open round 9\'s blocker,
+    # Restoring round 8's spelling route would re-open round 9's blocker,
     # so the fix is neither direction of the old predicate: what tells the
     # real arm from 500 plants is not how either is SPELLED but what the
     # census still NEEDS. The census key `<alias>` is attributable only
@@ -16062,7 +16062,7 @@ class TestIssue67Review10(unittest.TestCase):
 
     @classmethod
     def _b1p_census(cls):
-        """The departed arm\'s usage is recorded under its UNDATED alias:
+        """The departed arm's usage is recorded under its UNDATED alias:
         8000 turns on `claude-haiku-4`, 4000 on the live model — a true
         33.3% for the live one."""
         return TestIssue67._census_doc(counts={
@@ -16097,7 +16097,7 @@ class TestIssue67Review10(unittest.TestCase):
         through its undated alias. The arm is no census key and no live
         catalogue id, so no tier-1 route reaches it; what keeps it is that
         the census key `claude-haiku-4` has no other entry folding onto it,
-        so the arm takes that key\'s one tier-2 slot."""
+        so the arm takes that key's one tier-2 slot."""
         self._assert_the_true_share(
             self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
         # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
@@ -16114,26 +16114,26 @@ class TestIssue67Review10(unittest.TestCase):
             self._b1p_run([f"zfiller-{i:04d}" for i in range(500)]))
 
     def test_a_plant_in_the_fold_group_keeps_the_key_attributable(self):
-        """Row D, the tier-2 slot\'s own cost, measured: 500 plants spelled
-        `claude-haiku-4-000000NN` are all in the census key\'s fold group
+        """Row D, the tier-2 slot's own cost, measured: 500 plants spelled
+        `claude-haiku-4-000000NN` are all in the census key's fold group
         and the smallest of them WINS the slot, so the real arm is capped
         out after all. Nothing moves: the plant folds onto the same census
         key, so the key stays attributable through it and the published
         share is still the true one. That is the point of bounding the
         slot count by the census rather than by the entries — a planter
-        can take the slot, but cannot take the key\'s attributability."""
+        can take the slot, but cannot take the key's attributability."""
         self._assert_the_true_share(
             self._b1p_run([f"{self.B1P_BASE}-{i:08d}" for i in range(500)]))
 
     def test_under_the_cap_nothing_is_evicted_at_all(self):
         """Row E: 498 fillers plus the arm is 499 entries against a
         500-entry cap, so the cap never fires and the order is not
-        consulted. The row exists to show the defect was the CAP\'s, not
-        the attribution machinery\'s."""
+        consulted. The row exists to show the defect was the CAP's, not
+        the attribution machinery's."""
         self._assert_the_true_share(
             self._b1p_run([f"0filler-{i:04d}" for i in range(498)]))
 
-    # The two scenarios round 10\'s reviewer found by re-running round 8\'s
+    # The two scenarios round 10's reviewer found by re-running round 8's
     # own 3,000-scenario generator with both caps forced (500 filler arms
     # and 500 filler history entries per scenario). Six scenarios differed
     # from the pre-round-9 head; 11 published shares came out HIGHER than
@@ -16184,9 +16184,9 @@ class TestIssue67Review10(unittest.TestCase):
         """MUTATION: ordering a tier by `last_seen` first. 501 entries the
         census names, so every one of them is tier 1 and only the order
         within the tier decides who the cap drops. The entry carrying
-        almost all of the window\'s turns is dated OLDEST, so a
+        almost all of the window's turns is dated OLDEST, so a
         `last_seen`-first order drops exactly it — and with it 900,000 of
-        the window\'s 901,500 turns, leaving the census unrankable and the
+        the window's 901,500 turns, leaving the census unrankable and the
         roster on its newest-per-tier fallback."""
         small = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
         big = "claude-sonnet-4-9"
@@ -16224,7 +16224,7 @@ class TestIssue67Review10(unittest.TestCase):
     # was `last_seen` and the id — both written by whoever writes
     # `previous.json`. Measured through `main()` twice over: 500
     # `0plant-NNNN` entries dated today evicted the 8,000-turn
-    # `claude-sonnet-4-9` in run 1, and run 2 — reading run 1\'s own
+    # `claude-sonnet-4-9` in run 1, and run 2 — reading run 1's own
     # published roster back, with a perfectly healthy census — published
     # `claude-sonnet-5 carries 100.0%` for a true 9.09%. Eviction is
     # PERMANENT, so that is not a transient wrong answer.
@@ -16235,7 +16235,7 @@ class TestIssue67Review10(unittest.TestCase):
 
     @classmethod
     def _a_healthy_census(cls):
-        """8000 of the window\'s 8800 rankable turns are the victim\'s — a
+        """8000 of the window's 8800 rankable turns are the victim's — a
         true 9.09% for the live model, under the 10% entry bar, so it
         rides in on newest-in-tier and says so."""
         return TestIssue67._census_doc(counts={
@@ -16267,7 +16267,7 @@ class TestIssue67Review10(unittest.TestCase):
         )
 
     def _a_two_runs(self, census):
-        """Run 1 with `census`, run 2 from run 1\'s own roster with a
+        """Run 1 with `census`, run 2 from run 1's own roster with a
         healthy one — how `catalogue_seen` actually round-trips."""
         with tempfile.TemporaryDirectory() as tmp:
             first = Path(tmp) / "run1"
@@ -16390,7 +16390,7 @@ class TestIssue67Review10(unittest.TestCase):
     def test_just_under_the_ceiling_publishes_with_one_count_only_warning(self):
         """The other side of the same line, and the measurement the
         ceiling is picked from: both lists carried whole, one count-only
-        warning, and a published roster well inside GitHub\'s own limits."""
+        warning, and a published roster well inside GitHub's own limits."""
         size = roster.UNCAPPED_CARRY_CEILING - 2
         previous = {"arms": [{"id": f"0arm-{i:06d}", "reason": "filler"}
                              for i in range(size)],
@@ -16446,7 +16446,7 @@ class TestIssue67Review10(unittest.TestCase):
         """Comment markers stripped, every run of whitespace collapsed,
         lowercased — so a sentence wrapped one way in a YAML comment,
         another way in an indented Python comment and a third way in a
-        docstring is the same string. Lowercased because the cap\'s own
+        docstring is the same string. Lowercased because the cap's own
         comment shouts it."""
         return " ".join(" ".join(line.strip().lstrip("#").strip()
                                  for line in text.splitlines()).split()).lower()
@@ -16492,7 +16492,7 @@ class TestIssue67Review10(unittest.TestCase):
     # that turns the suite red --------------------------------------------
     #
     # A REPEAT of the family round 7 (S3), round 8 (A3) and round 9 (S2)
-    # each caught: a defence with no regression floor. Round 9\'s `_relevance`
+    # each caught: a defence with no regression floor. Round 9's `_relevance`
     # carried a route (c2) that was provably implied by the other three (0
     # fires in 6,000,000 evaluations) while its docstring, roster-policy.yml
     # and a test comment all called it load-bearing; it is deleted. The rule
@@ -16518,8 +16518,8 @@ class TestIssue67Review10(unittest.TestCase):
         """MUTATION: `max(by_group[group])` for the slot, or a slot for
         EVERY member of the group rather than one. Three dated spellings of
         one census key, none of them a census key itself, against 500
-        plants that sort ahead of all three: the SMALLEST takes the key\'s
-        one slot and the other two share the plants\' fate. That is the
+        plants that sort ahead of all three: the SMALLEST takes the key's
+        one slot and the other two share the plants' fate. That is the
         documented cost of bounding the slot count by the census — and it
         is what keeps a planter who mints a thousand spellings of one key
         from taking a thousand cap slots with them."""
@@ -16563,11 +16563,11 @@ class TestIssue67Review10(unittest.TestCase):
         so one strip leaves `claude-opus-5-20250101` — a live dated
         snapshot of `claude-opus-5`, which the seat map folds onward onto
         the bare alias the census actually names. One strip stops a hop
-        short and the entry joins no census key\'s group at all.
+        short and the entry joins no census key's group at all.
 
         The shape is one only a planter or a corrupted branch produces —
         `PREVIOUS_ARM_ID_RE` accepts it — and what it pins is the same
-        property `_usage_alias_map`\'s own three-hop floor pins: the
+        property `_usage_alias_map`'s own three-hop floor pins: the
         relation is followed to its END, not one hop."""
         models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
             self._model("claude-opus-5", "2026-02-01T00:00:00Z"),
@@ -16586,7 +16586,7 @@ class TestIssue67Review10(unittest.TestCase):
         alias map. `api_ids` and `previous_arms` were both folded and the
         history set was not, so a since-retired model this harness observed
         under a DATED id credited nothing to the undated alias the census
-        records its usage under — 8000 of the window\'s 8800 turns off the
+        records its usage under — 8000 of the window's 8800 turns off the
         denominator, and `claude-sonnet-5` published at 100.0% for a true
         9.09%. No plants are needed: one entry and one census key reach it.
 
