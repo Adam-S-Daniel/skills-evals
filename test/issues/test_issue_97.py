@@ -3234,6 +3234,88 @@ class TestIssue97(unittest.TestCase):
                 self.assertIn("arms:", out)
                 self.assertNotIn("Traceback", out)
 
+
+    # ------------------------------------------------------------------
+    # A-N2 — an arm name is a NEW directory under the run directory
+    #
+    # `_ARM_NAME_RE` accepted the two names that are not. Measured through
+    # main() on a6d165d, one arm per run: an arm named `..` exited 0 and
+    # wrote `summary.json` and `transcripts/raw.json` one level ABOVE the
+    # timestamped run directory — into the per-key directory that
+    # accumulates run history on the public eval-results branch — and `.`
+    # wrote into the run directory itself. Round 2 tested `../esc` and
+    # `a/b`; the two canonical traversal names were the ones the traversal
+    # check let through.
+    # ------------------------------------------------------------------
+
+    def test_the_two_traversal_arm_names_are_refused(self):
+        root = self._checkout()
+        for name in (".", ".."):
+            with self.subTest(arm=name):
+                tmp = Path(tempfile.mkdtemp(prefix="arm-dots-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                results = tmp / "results"
+                eval_dir = self._guidance_fixture(
+                    tmp, arms={name: {"mode": "none"}})
+                rc, out = self._run_main(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", results, "--no-judge"])
+                self.assertEqual(rc, 2, out)
+                self.assertIn("invalid arm name", out, out)
+                self.assertIn(repr(name), out, out)
+                self.assertNotIn("Traceback", out, out)
+                self.assertFalse(
+                    results.exists(),
+                    f"an arm named {name!r} must write nothing at all — on "
+                    "a6d165d it wrote summary.json and transcripts/raw.json "
+                    "outside its own run directory")
+
+    def test_ordinary_and_committed_arm_names_are_accepted(self):
+        # The other side, including every arm name the committed guidance
+        # fixtures declare — read from the fixtures rather than retyped, so
+        # this cannot drift from what CI really dispatches.
+        committed = set()
+        for path in sorted((REPO_ROOT / "evals").glob("**/fixture.yaml")):
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(doc, dict) and doc.get("subject") == "guidance":
+                committed |= set(doc.get("arms") or {})
+        self.assertTrue(committed, "no committed guidance fixture declares "
+                        "arms — this assertion must not pass vacuously")
+        modes = {"none": "none", "stub": "stub", "section": "section",
+                 "full": "full", "full_minus_section": "full-minus-section"}
+
+        def mode_for(name: str) -> str:
+            if name.startswith("without") or name == "none":
+                return "none"
+            for suffix, mode in modes.items():
+                if name.endswith(suffix):
+                    return mode
+            return "section"
+
+        for name in sorted(committed | {"normal", "none",
+                                        "with_guidance_section", "..."}):
+            with self.subTest(arm=name):
+                entry = run_eval._validate_arm_entry(
+                    name, {"mode": mode_for(name)})
+                self.assertEqual(entry["mode"], mode_for(name))
+
+    def test_the_arm_name_rule_is_the_new_directory_property(self):
+        # Stated as the property the refusal exists for, not as a blocklist:
+        # joined to a run directory and normalised the way the filesystem
+        # will, an accepted name is a direct child of it, still called what
+        # it was called.
+        run_dir = Path(tempfile.mkdtemp(prefix="arm-property-"))
+        self.addCleanup(shutil.rmtree, run_dir, ignore_errors=True)
+        for name in (".", "..", "...", "a", "a-b", "_x", ".hidden", "A9"):
+            joined = Path(os.path.normpath(run_dir / name))
+            child = joined.parent == run_dir and joined.name == name
+            with self.subTest(arm=name, is_new_child=child):
+                self.assertEqual(
+                    run_eval._names_a_new_directory(name), child,
+                    f"{name!r}: the validator and the filesystem disagree "
+                    "about whether this names a new directory under the run "
+                    "directory")
+
     def test_an_arm_with_an_unknown_key_is_rejected_at_load_time(self):
         with self.assertRaises(guidance.GuidanceError) as ctx:
             run_eval.guidance_arms(

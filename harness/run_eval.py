@@ -957,6 +957,30 @@ DEFAULT_GUIDANCE_ARMS = {"with_guidance": {"mode": "section"},
 
 _ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
+# The anchor `_names_a_new_directory` measures against. Any absolute path that
+# is not the filesystem root works; it never exists and is never written.
+_ARM_NAME_ANCHOR = Path("/arm-name-check")
+
+
+def _names_a_new_directory(name: str) -> bool:
+    """Does `name` name a NEW directory directly under a run directory?
+
+    A2-N2. The character class above accepts `.` and `..`, which are the two
+    names that do NOT. Measured through main(), one arm per run: an arm named
+    `..` wrote `summary.json` and `transcripts/raw.json` one level ABOVE the
+    timestamped run directory — into the per-key directory that accumulates
+    run history on the public `eval-results` branch — and `.` wrote into the
+    run directory itself, on top of whatever was there.
+
+    Stated as the property rather than as a blocklist of the two names that
+    break it today: join the name to an anchor, normalise it the way the
+    filesystem will, and require the result to be a direct child of the
+    anchor still called what it was called. `...` and `.hidden` pass — they
+    really are new directories — and only `.` and `..` do not.
+    """
+    joined = Path(os.path.normpath(_ARM_NAME_ANCHOR / name))
+    return joined.parent == _ARM_NAME_ANCHOR and joined.name == name
+
 # The placeholder a guidance fixture writes where the run's magic token goes.
 # The token is fresh per run, so a fixture cannot name it; `transcript_matches`
 # patterns (and any other check string) get it substituted in at score time.
@@ -966,10 +990,14 @@ DECOY_PLACEHOLDER = "$DECOY_TOKEN"
 
 
 def _validate_arm_entry(name: str, entry: dict) -> dict:
-    if not isinstance(name, str) or not _ARM_NAME_RE.fullmatch(name):
+    if (not isinstance(name, str) or not _ARM_NAME_RE.fullmatch(name)
+            or not _names_a_new_directory(name)):
         raise guidance.GuidanceError(
             f"invalid arm name {name!r}: arm names become directory names "
-            "under results/, so they must be a single path segment")
+            "under results/, so they must be a single path segment that "
+            "names a NEW directory — `.` and `..` are neither, and an arm "
+            "named `..` writes its summary one level above the run "
+            "directory, into the history the public results branch carries")
     if not isinstance(entry, dict) or "mode" not in entry:
         raise guidance.GuidanceError(f"arm {name!r} must be a mapping with a `mode:`")
     unknown = sorted(set(entry) - {"mode", "objective_checks"})
