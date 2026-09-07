@@ -384,8 +384,8 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
 
     Exactly three routes, checked below, and this IS the whole set (#129
     review round 6 deleted two more that used to sit beside them, and
-    round 11 a redundant spelling of the third — see the end of this
-    docstring):
+    round 11 and its continuation the redundant bare spelling of two of
+    the three — see the end of this docstring):
 
     `folded in api_ids_folded` (`api_ids` run through the SAME alias map
     as `folded`) covers two shapes at once. An ordinary bare catalogue id
@@ -488,22 +488,25 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     and it only ever fires for ids the map relates, which is bounded by
     the live catalogue and the census.
 
-    THE BARE `candidate in catalogue_seen_folded` IS GONE (N-3, #129
-    review round 11), on the rule F-2 states: over 6,000 corpus runs it
-    fired 71,395 times and never once alone. It cannot: every element of
-    a folded set is a VALUE of the alias map, and invariant (i) of
-    `_usage_alias_map` makes every value a fixed point, so a candidate
-    that is in the set folds onto itself and `folded in
-    catalogue_seen_folded` fires for it too. `candidate in
-    previous_arms_folded` beside it is redundant by that identical proof,
-    and measured green under deletion, but it is left standing this round
-    rather than deleted on the same breath as its sibling — see the PR
-    body.
+    BOTH BARE `candidate in ...` CHECKS ARE GONE — `catalogue_seen_folded`
+    in N-3 (#129 review round 11), and `previous_arms_folded` beside it in
+    that round's continuation — on the rule F-2 states. THE INVARIANT THAT
+    MAKES EACH REDUNDANT is `_usage_alias_map`'s own invariant (i): every
+    VALUE of the alias map is a fixed point of it. Both sets here are
+    folded sets, so every element of either IS such a value; a candidate
+    that is in one therefore folds onto itself, and the `folded in ...`
+    sibling fires for exactly the same candidates. That is a proof rather
+    than a sampling result, and the measurements agree with it — the
+    `catalogue_seen` check fired 71,395 times over 6,000 corpus runs and
+    never once alone, and the `previous_arms` one 32,035 times over the
+    whole test suite, also never once alone. Deleting either leaves the
+    suite green, which is what F-2 says to do about a clause with no
+    mutation that can turn it red.
     """
     if api_ids is None:
         return True
     return (folded in (api_ids_folded or ())
-           or candidate in previous_arms_folded or folded in previous_arms_folded
+           or folded in previous_arms_folded
            or folded in catalogue_seen_folded)
 
 
