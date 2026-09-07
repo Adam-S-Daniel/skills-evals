@@ -747,6 +747,13 @@ def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
     treatment arm whose probe reported both the treatment token and the
     control's decoy exited 0 with every check passing.
 
+    "Fatal to the PAIR" is exact, and narrower than it reads: the comparison
+    is dead and the run exits 2 as INCONCLUSIVE, but the CLEAN partner's own
+    `summary.json` is still written and still carries its `objective_checks`.
+    That is a record of what that one arm did, not a score for the pair —
+    nothing reads it as a result, and in CI the failed step skips the badge
+    and commit steps that would publish one.
+
     Returns a guard block: `ok` False means the arm is INCONCLUSIVE — no
     score is written for it and the run exits 2. A probe that could not run
     at all (no credential, CLI missing) is also `ok` False: a guard that
