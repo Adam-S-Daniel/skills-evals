@@ -2089,7 +2089,15 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     retired: list[dict] = []
     if previous is not None:
         added = [a for a in arms if a["id"] not in previous_arms]
-        for model_id in previous_arms:
+        # SORTED, not the previous roster's own insertion order (N-1, #129
+        # review round 11). `retired_since_last` was the one part of the
+        # published roster an untrusted input ordered: six shuffles of
+        # `previous["arms"]` produced seven distinct `roster/latest.json`
+        # digests differing in nothing but this list's order, and
+        # `render_summary` prints retirements in it — so whoever writes
+        # `eval-results` decided whether the one real retirement led the
+        # step summary or sat on line 501 of it.
+        for model_id in sorted(previous_arms):
             if model_id in arm_ids:
                 continue
             if model_id not in api_ids:

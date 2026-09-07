@@ -17314,6 +17314,55 @@ class TestIssue67Review11(unittest.TestCase):
         run1, run2, err = self._silent_two_runs(census)
         self._assert_the_victim_survived_both_runs(run1, run2, err)
 
+    # --- N-1: the published roster is a function of the INPUTS, not of
+    # the order an untrusted input arrived in ------------------------------
+
+    def test_the_published_roster_is_identical_across_shuffles(self):
+        """`retired_since_last` was published in the previous roster's own
+        insertion order — the one part of the roster whoever writes
+        `eval-results` decided. Six shuffles of `previous["arms"]` gave
+        seven distinct `roster/latest.json` digests, differing in nothing
+        but that list's order, and `render_summary` prints retirements in
+        it: a planter chose whether the one real retirement led the step
+        summary or sat on line 501 of it.
+
+        RED on 1fa9d3a. `generated_at` is the only field that legitimately
+        moves between runs, so it is dropped before comparing."""
+        arms = ([f"0arm-{i:04d}" for i in range(500)]
+                + [self.SILENT_VICTIM, "claude-haiku-4-5"])
+        census = TestIssue67._census_doc(counts={
+            self.SILENT_VICTIM: {self.W[0]: 8000},
+            self.SILENT_LIVE: {self.W[0]: 800}})
+        rng = random.Random(671101)
+        digests = set()
+        for _ in range(6):
+            shuffled = list(arms)
+            rng.shuffle(shuffled)
+            previous = {"arms": [{"id": i, "reason": "was an arm"}
+                                 for i in shuffled],
+                        "catalogue_seen": []}
+            with tempfile.TemporaryDirectory() as tmp:
+                rc, published, _, err = self._run_main(
+                    tmp, self._two_model_catalogue(), census=census,
+                    previous=previous)
+            self.assertEqual(rc, 0, err)
+            published.pop("generated_at")
+            digests.add(hashlib.sha256(
+                json.dumps(published, sort_keys=False).encode()).hexdigest())
+        self.assertEqual(len(digests), 1,
+                         "six shuffles of one untrusted list published "
+                         f"{len(digests)} distinct rosters")
+        # And the retirement the run actually has to report is in there,
+        # wherever the input put it.
+        with tempfile.TemporaryDirectory() as tmp:
+            _, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous={"arms": [{"id": i, "reason": "was an arm"}
+                                   for i in arms], "catalogue_seen": []})
+        retired = [e["id"] for e in published["retired_since_last"]]
+        self.assertEqual(retired, sorted(retired))
+        self.assertIn(self.SILENT_VICTIM, retired)
+
 
 if __name__ == "__main__":
     unittest.main()
