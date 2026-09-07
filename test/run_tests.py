@@ -15847,18 +15847,20 @@ class TestIssue67Review9(unittest.TestCase):
                            "no scenario put a covered census key and its "
                            "load-bearing bare alias in `catalogue_seen` "
                            "together")
-        # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
-        # (`tier2 = {}`) leaves the dated-retired families' entries in
-        # tier 3, the `0plant-NNNN` plants outrank them, their census keys
-        # stop being attributable and every other share comes out too
-        # high — red on the share assertion. Restoring round 8's
-        # `SNAPSHOT_SUFFIX` route makes the dated plants relevant too, so
-        # they tie with the named entries and the id order evicts them —
-        # red on the half-two assertion. Emptying `_links`
-        # (`self._links = {}` after the loop that builds it), or dropping
-        # `or i in self._links` from `tier1`, strands every
-        # `dated-key-and-bridge` family's census key one hop short of its
-        # live snapshot — red on the share assertion.
+        # Mutation check (manual), RE-MEASURED on the final head of round
+        # 11 rather than carried forward: THREE mutations that used to be
+        # red here are now GREEN, and all three for the same reason —
+        # `tier2 = {}`, restoring round 8's `SNAPSHOT_SUFFIX` spelling
+        # route, and either `_links` mutation. The census-silent fix of
+        # this round carries every entry the live catalogue and the census
+        # say nothing about, so an entry that falls out of tier 1 or tier
+        # 2 is no longer evicted at all and no census key loses its last
+        # hop. That subsumption is this round's headline finding and the
+        # PR body carries it in full; a note claiming otherwise is exactly
+        # the drift F-1 exists to stop, so it is corrected here rather
+        # than left standing. What IS still red over this generator:
+        # dropping `_base`'s `-DDDDDDDD` strip, and filling either cap
+        # from the tier-3 residue by id order.
 
 
     # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
@@ -16229,10 +16231,14 @@ class TestIssue67Review10(unittest.TestCase):
         so the arm takes that key's one tier-2 slot."""
         self._assert_the_true_share(
             self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
-        # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
-        # (`tier2 = {}`) leaves the arm in tier 3 with 500 fillers that
-        # sort ahead of it, its 8000 turns stop being attributable and the
-        # reason reads "carries 100.0%" — red.
+        # Mutation check (manual), RE-MEASURED on round 11's final head:
+        # `tier2 = {}` is now GREEN here. The arm still falls to tier 3
+        # with 500 fillers ahead of it, but tier 3 is no longer evicted —
+        # round 11's census-silent fix carries it — so the share does not
+        # move. `tier2 = {}` is still red over the suite, at
+        # `test_the_arms_cap_decides_the_attributable_denominator`, which
+        # is the one regime where the caps still evict: the census naming
+        # more entries than the cap has room for.
 
     def test_high_sorting_fillers_do_not_evict_it_either(self):
         """Row B: the same 500 fillers spelled to sort AFTER the real arm.
@@ -16435,12 +16441,17 @@ class TestIssue67Review10(unittest.TestCase):
                     for value in ("0plant-499", self.A_VICTIM, "0pad-099"):
                         self.assertNotIn(value, w,
                                          "the warning names counts only")
-        # Mutation check (manual): dropping the `census_is_silent` branch
-        # from either cap puts the 500 plants back ahead of the victim on
-        # the id order, run 1 evicts it, and run 2 publishes "carries
-        # 100.0%" — red on all four rows. (Ordering a tier by `last_seen`
-        # first cannot be measured HERE: with no census to name anything,
-        # the order is never reached at all. That mutation is red under
+        # Mutation check (manual), RESTATED for round 11: the
+        # `census_is_silent` branch this note named no longer exists —
+        # it was a test on the whole census FILE, and one in-window turn
+        # under any key at all re-armed the eviction
+        # (`TestIssue67Review11::test_one_in_window_turn_does_not_re_arm
+        # _the_eviction` is that measurement). The mutation that is red on
+        # all four rows now is filling either cap from the tier-3 residue
+        # by id order — the pre-round-11 `sorted(ids, key=order)[:CAP]`.
+        # (Ordering a tier by `last_seen` first still cannot be measured
+        # HERE: with no census to name anything, the order is never
+        # reached at all. That mutation is red under
         # `test_a_tier_is_ordered_by_census_turns_not_by_last_seen`, which
         # is the same defence measured where it can fire.)
 
