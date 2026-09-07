@@ -19041,6 +19041,97 @@ class TestIssue67Review11(unittest.TestCase):
                     arms=[self.SNAPSHOT],
                     seen=self.HISTORY_BRIDGE + self.PLANTS[:count]))
 
+    # --- D-7: two clauses that were RIGHT and had no floor ---------------
+    #
+    # Round 11's continuation re-ran the whole mutation table over the
+    # reduced mechanism and found three GREEN rows. One was a genuinely
+    # dead type check and was deleted. The other two are these: code that
+    # DOES decide a published roster, with no test that noticed. A green
+    # row is not by itself evidence that a clause is dead — it is evidence
+    # that nothing measures it, and telling those apart takes a scenario,
+    # not an argument.
+
+    _LIVE_ARMS = [f"claude-sonnet-5-{i:06d}" for i in range(502)]
+
+    def test_the_arms_cap_ranks_and_bounds_live_previous_arms(self):
+        """MUTATION: dropping tier-1 route (b) (the live catalogue id) from
+        `_Relevance.rank`.
+
+        502 models the Models API lists this run, every one of them also an
+        arm of the previous roster, and NO census. Route (b) makes all 502
+        tier 1, so the arms cap ranks them — with no census there are no
+        turns to rank by, so the id order decides — and bounds them at 500.
+        Two are evicted from `carried_arms`, which is what the hold-over
+        check reads, so one fewer model is held over and the previous arm
+        that lost its hold-over is reported retired.
+
+        Without route (b) all 502 are residue instead, all 502 are carried,
+        all 502 are held over and NOTHING is retired: 502 arms, and this
+        row goes red on both counts. Measured at 500 and 501 as well, where
+        the two agree exactly — 502 is the smallest input that separates
+        them, which is why it is the input.
+
+        WHAT THIS ROW DOES NOT SAY IS THAT THE OUTCOME IS RIGHT. It is a
+        floor under a clause the table showed nothing was measuring, and
+        the outcome it pins deserves the round-12 look the PR body asks
+        for: `_update_catalogue_seen` exempts this run's own live ids from
+        its cap entirely, `_clean_previous_arms` does not, and the visible
+        consequence is that a model the Models API still lists can be
+        reported retired because an untrusted `arms` list was long. What
+        route (b) buys in exchange is measured and small: it is the reason
+        a previous roster carrying more than `UNCAPPED_CARRY_CEILING` live
+        arms publishes at all rather than refusing, since a live id that is
+        tier 1 is not part of the residue the ceiling bounds."""
+        previous = {"arms": [{"id": i, "reason": "was an arm"}
+                             for i in self._LIVE_ARMS],
+                    "catalogue_seen": []}
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in self._LIVE_ARMS]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(tmp, models, previous=previous)
+        self.assertEqual(rc, 0, err)
+        self.assertEqual(len(published["arms"]), 501,
+                         "the cap bounds tier 1 at 500 carried arms, and "
+                         "one more model is seated on newest-per-tier")
+        self.assertEqual(len(published["retired_since_last"]), 1,
+                         "the previous arm the cap evicted from "
+                         "`carried_arms` loses its hold-over; without "
+                         "route (b) every one of the 502 is residue, is "
+                         "carried, and nothing is retired at all")
+
+    def test_the_arms_ceiling_bounds_the_residue_not_the_carried_list(self):
+        """MUTATION: `if len(carried) > UNCAPPED_CARRY_CEILING` in
+        `_clean_previous_arms`, which is what that check said before N-2
+        (#129 review round 11) moved it onto the residue.
+
+        The `catalogue_seen` side of N-2 had a floor from the day it landed
+        (`test_a_catalogue_past_the_ceiling_still_publishes`); the `arms`
+        side had none, and the mutation table of round 11's continuation is
+        what found that. 500 entries the census names outright plus 9,999
+        it names nothing about: the residue is 9,999, inside the ceiling,
+        while `carried` is 10,499 and past it. Bounding the carried list
+        refuses to publish over a length the census itself accounts for —
+        the same failing-closed for a reason that has nothing to do with an
+        untrusted input that N-2 removed on the other side."""
+        named = [f"claude-sonnet-5-n{i:04d}" for i in range(500)]
+        residue = [f"0resid-{i:05d}" for i in range(9999)]
+        previous = {"arms": [{"id": i, "reason": "was an arm"}
+                             for i in named + residue],
+                    "catalogue_seen": []}
+        census = TestIssue67._census_doc(counts={i: {self.W[0]: 5}
+                                                for i in named})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        self.assertIsNotNone(published, "a residue inside the ceiling "
+                                        "publishes; only the residue is bounded")
+        self.assertEqual(len(published["retired_since_last"]), 10499,
+                         "every previous arm is reported retired — "
+                         "`reported` is the uncapped list")
+
     # RETIRED: `test_a_covered_group_spends_no_tier_two_slot`.
     #
     # It was the `covered` guard's own floor, and `covered` is gone with

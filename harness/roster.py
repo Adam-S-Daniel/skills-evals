@@ -837,16 +837,27 @@ class _Relevance:
     """
 
     def __init__(self, api_ids, count_turns):
-        self._live = {i for i in api_ids if isinstance(i, str)}
-        # No filter (N-3, #129 review round 11): `count_turns` is already
+        # No filter on EITHER argument, and both deletions are the same
+        # rule (N-3, #129 review round 11, and its continuation): a check
+        # with no mutation that can turn the suite red is deleted rather
+        # than kept as belt-and-braces.
+        #
+        # `api_ids` is already a list of well-formed id STRINGS.
+        # `compute_roster` is the only caller of `_relevance`, it passes
+        # `[m["id"] for m in _clean_models(...)]`, and `_clean_models`
+        # keeps an entry only when its `id` is a non-empty `str` that also
+        # matches `PREVIOUS_ARM_ID_RE`. The `isinstance(i, str)` that used
+        # to sit here could not drop anything, and dropping it left all
+        # 937 tests green.
+        self._live = set(api_ids)
+        # `count_turns` is already
         # {str: positive int} by the time it gets here. `_clean_counts`
         # rejects a non-string key and a non-int or negative cell, and
         # `compute_roster` — the only caller of `_relevance` — keeps only
         # the keys whose in-window total is above zero, which is the whole
         # of round 10's "a census key with zero in-window turns names
-        # nothing". Neither of the checks that used to sit here dropped a
-        # key in any run, so neither had a mutation that could turn the
-        # suite red; F-2 is the rule that such a check goes.
+        # nothing". Neither of the two checks that used to sit over
+        # `count_turns` dropped a key in any run either.
         self._turns = dict(count_turns)
 
     def rank(self, ids) -> dict[str, tuple]:
