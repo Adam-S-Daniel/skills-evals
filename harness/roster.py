@@ -892,6 +892,28 @@ class _Relevance:
         # write, so a plant is in here only if its id IS the missing
         # spelling — in which case keeping it is exactly right. Round 9's
         # `<census key>-00000000` plants gain nothing at all.
+        #
+        # AND IT IS SUBSUMED, ON THIS SAME HEAD, BY THE TIER-3 RESIDUE
+        # RULE the census-silent fix landed beside it — which is a
+        # finding, not a footnote, and the PR body carries it in full.
+        # Both caps now carry every entry the live catalogue and the
+        # census say nothing about, so an id that is NOT one of them can
+        # no longer be evicted at all; and an id that IS one of them is
+        # tier 1 without needing this map. A bridge is either a census
+        # key (then `counts` supplies the hop to `_usage_alias_map`
+        # directly and nothing here is needed) or it is not (then it is
+        # residue and carried). Measured: every one of the four mutations
+        # of this block leaves all 854 tests green.
+        #
+        # It is left standing because DESIGN DECISION 5 of this round's
+        # brief prescribes it and a worker does not delete a mandated fix
+        # on the strength of its own reading. What it costs while it
+        # stands is small and one-directional: promoting a hop into tier
+        # 1 EXPOSES it to the cap, so in the one regime where the caps
+        # still evict — the census naming more entries than the cap has
+        # room for — a hop is safer as residue than as a tier-1 entry
+        # whose weight happens to rank below 500 others. Round 12 has two
+        # clean resolutions and the PR body states both.
         self._links: dict[str, int] = {}
         for key, turns in self._turns.items():
             cur, seen = key, {key}
