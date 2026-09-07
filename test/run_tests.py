@@ -12045,6 +12045,37 @@ class TestTheRunnerItself(unittest.TestCase):
         self.assertEqual(missing, set(),
                          self._uncovered_message(missing, DISCOVERY_DIR))
 
+    def test_every_python_file_in_the_discovery_dir_is_a_test_module(self):
+        # A-N4. `build_suite()` calls `loader.discover(...,
+        # top_level_dir=test/issues)`, and unittest puts that directory on
+        # `sys.path` for the REST OF THE PROCESS. A `.py` there that does not
+        # match DISCOVERY_PATTERN is never loaded as a test and is never
+        # noticed — and it shadows a same-named stdlib module for the whole
+        # suite. Measured: with `test/issues/colorsys.py` present,
+        # `colorsys.__file__` resolves under test/issues/ after discovery.
+        # `json` escaped only because run_tests.py imports it before
+        # discovery runs, which is luck rather than a rule.
+        #
+        # It is also what keeps the suite-forking pin above honest: that pin
+        # can only parse `run_tests.py` and `test_issue_*.py`, so a forking
+        # helper in a module it cannot see would be invisible to it. This
+        # assertion is why no such module can be here.
+        present = sorted(p.name for p in DISCOVERY_DIR.glob("*.py"))
+        self.assertTrue(
+            present,
+            f"no *.py at all under {DISCOVERY_DIR} — this assertion must not "
+            "be able to pass vacuously")
+        stray = [name for name in present
+                 if not fnmatch.fnmatchcase(name, DISCOVERY_PATTERN)]
+        self.assertEqual(
+            stray, [],
+            f"{stray} live under {DISCOVERY_DIR} but do not match "
+            f"{DISCOVERY_PATTERN}, so build_suite() never loads them as "
+            "tests — while putting their directory on sys.path, where each "
+            "of them shadows any stdlib or site-packages module of the same "
+            "name for the whole run. A helper shared between issue modules "
+            "belongs somewhere that is not the discovery dir.")
+
     def test_a_discovered_module_that_defines_no_tests_is_named_in_the_failure(self):
         # N6. A planted `test/issues/test_issue_zz_empty.py` containing only
         # `VALUE = 1` failed the whole suite with a message about discovery,
