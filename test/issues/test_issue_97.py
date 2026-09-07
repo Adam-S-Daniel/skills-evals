@@ -1853,18 +1853,45 @@ class TestIssue97(unittest.TestCase):
                     "exchange would have run before anything failed")
                 self.assertIsNone(proc.key)
 
-    def test_a_rejected_shape_is_not_echoed_back_into_the_log(self):
-        # The log of this workflow is public. A value refused on SHAPE is
-        # arbitrary dispatch input, so the message names the RULE, not the
-        # input. (A value that passes the shape gate is [A-Za-z0-9/_.-] only
-        # and is safe to name, which the "names no committed fixture" branch
-        # does.)
-        marker = "$(uniquely-identifiable-payload)"
-        proc = self._run_validation({"inputs": {"fixture": marker}})
-        self.assertEqual(proc.returncode, 1)
-        output = proc.stdout + proc.stderr
-        self.assertIn("characters outside", output)
-        self.assertNotIn("uniquely-identifiable-payload", output)
+    # The marker every rejection row below carries. It appears nowhere in the
+    # committed tree, so finding it in the step's output means the step put it
+    # there — and the only place it could have come from is the dispatch
+    # input.
+    ECHO_MARKER = "uniquely-identifiable-payload"
+
+    def test_neither_rejection_branch_echoes_the_dispatched_value(self):
+        # The log of this workflow is public, and the comment block above the
+        # gate says so in as many words: the message names the RULE, not the
+        # input. The SHAPE branch obeyed that. The "names no committed
+        # fixture" branch fifteen lines later did not — it appended
+        # `: $fixture`, so any charset-clean dispatch value, up to the 100 KB
+        # a dispatch input can carry, was copied verbatim into a public log
+        # by a workflow whose own header promises the opposite. Charset-clean
+        # is not the same as safe to republish, and the dispatched value is
+        # already on the run's own inputs for anyone who can read the log.
+        #
+        # BOTH branches are driven here, through the real `run:` block.
+        for branch, value, rule in (
+            # refused on shape, before any matching
+            ("shape", f"$({self.ECHO_MARKER})", "characters outside"),
+            # charset-clean, so it reaches the committed-set match and is
+            # refused there
+            ("no such fixture", f"evals/{self.ECHO_MARKER}",
+             "names no committed fixture"),
+        ):
+            with self.subTest(branch=branch):
+                proc = self._run_validation({"inputs": {"fixture": value}})
+                output = proc.stdout + proc.stderr
+                self.assertEqual(proc.returncode, 1, output)
+                self.assertIn(rule, output,
+                              f"the {branch} branch must refuse by a NAMED "
+                              f"rule\n{output}")
+                self.assertNotIn(
+                    self.ECHO_MARKER, output,
+                    f"the {branch} branch echoed the dispatched value back "
+                    f"into a public log\n{output}")
+                self.assertIsNone(proc.selected)
+                self.assertIsNone(proc.key)
 
     def test_the_fixture_match_survives_a_committed_list_far_larger_than_a_pipe(self):
         # `printf '%s\n' "$committed" | grep -Fxq -- "$fixture"` is the

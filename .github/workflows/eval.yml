@@ -276,8 +276,14 @@ jobs:
           # finally failed on "no such fixture.yaml". Nothing was injectable
           # (every use is quoted) and no uncommitted fixture could run, but
           # the ordering guarantee this header makes twice was false for that
-          # value. The rejected value is NOT echoed back: this log is public,
-          # so the message names the rule, not the input.
+          # value. NEITHER rejection branch echoes the value back: this log
+          # is public, so both messages name the rule, not the input. (The
+          # "names no committed fixture" branch below used to append
+          # `: $fixture` — charset-clean, but still up to 100 KB of dispatch
+          # input copied into a public log, and contradicting this very
+          # sentence. The dispatched value is already on the run's own inputs
+          # for anyone who can read the log at all, so naming it here buys
+          # nothing.)
           case "$fixture" in
             *[!A-Za-z0-9/_.-]*)
               echo "eval.yml: dispatch input 'fixture' has characters outside [A-Za-z0-9/_.-]"
@@ -291,7 +297,7 @@ jobs:
           # Safe at today's ~250 bytes; measured to reject valid fixtures from
           # ~66 KB of committed list upward.
           if ! grep -Fxq -- "$fixture" <<<"$committed"; then
-            echo "eval.yml: dispatch input 'fixture' names no committed fixture: $fixture"
+            echo "eval.yml: dispatch input 'fixture' names no committed fixture"
             echo "Committed fixtures:"
             sed 's/^/  /' <<<"$committed"
             exit 1
