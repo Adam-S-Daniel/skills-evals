@@ -10002,6 +10002,80 @@ class TestTheRunnerItself(unittest.TestCase):
         self.assertEqual(selected, 1, sorted(t.id() for t in flatten_suite(suite)))
         self.assertGreater(total, selected)
 
+    def test_a_targeted_run_is_covered_by_the_user_memory_guard_too(self):
+        # N7. The run-wide S2 snapshot was taken BELOW the targeted-run
+        # branch, so `python3 test/run_tests.py TestFoo.test_bar` executed
+        # with the guard off — and a targeted run is exactly how a reviewer
+        # re-runs the single test they are mutating, which is the run that
+        # destroyed a 56 KB ~/.claude/CLAUDE.md in round 1.
+        #
+        # A targeted run addresses this module's own classes and nothing else,
+        # so the probe is a class injected into this module for the duration
+        # of the test rather than a planted file. It writes ONLY the throwaway
+        # path $SKILLS_EVALS_USER_MEMORY names.
+        scratch = Path(tempfile.mkdtemp(prefix="targeted-memory-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        watched = scratch / "CLAUDE.md"
+        watched.write_text("stand-in user memory\n", encoding="utf-8")
+
+        class _MemoryGuardProbe(unittest.TestCase):
+            def test_writes_the_file_the_runner_watches(self):
+                Path(os.environ[USER_MEMORY_ENV]).write_text(
+                    "clobbered by the targeted-run probe\n", encoding="utf-8")
+
+        module = sys.modules[__name__]
+        setattr(module, "_MemoryGuardProbe", _MemoryGuardProbe)
+        self.addCleanup(delattr, module, "_MemoryGuardProbe")
+
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {USER_MEMORY_ENV: str(watched)}), \
+                contextlib.redirect_stdout(buf), \
+                contextlib.redirect_stderr(buf):
+            status = main(["_MemoryGuardProbe."
+                           "test_writes_the_file_the_runner_watches"])
+        out = buf.getvalue()
+        self.assertIn("NARROWED RUN: targeting", out,
+                      f"this must really take the targeted-run path\n{out}")
+        self.assertRegex(out, r"(?m)^OK",
+                         "the probe itself must PASS — the exit status under "
+                         f"test comes from the memory guard alone\n{out}")
+        self.assertEqual(
+            status, 1,
+            "a targeted run that changed the watched user-memory file must "
+            f"exit 1 even though its test passed\n{out}")
+        self.assertIn("FAILED: this suite CHANGED", out, out)
+        self.assertIn(str(watched), out,
+                      f"the failure must NAME the file that changed\n{out}")
+        self.assertNotIn("clobbered by the targeted-run probe", out,
+                         "the guard reports digests and the path, never the "
+                         "file's contents")
+
+    def test_a_targeted_run_that_touches_nothing_still_exits_0(self):
+        # The other side of N7: with the watched path redirected and a probe
+        # that writes nothing, the same targeted run exits 0. Without this, a
+        # guard that failed every targeted run would satisfy the test above.
+        scratch = Path(tempfile.mkdtemp(prefix="targeted-memory-clean-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        watched = scratch / "CLAUDE.md"
+        watched.write_text("stand-in user memory\n", encoding="utf-8")
+        before = watched.read_bytes()
+
+        class _MemoryQuietProbe(unittest.TestCase):
+            def test_touches_nothing(self):
+                pass
+
+        module = sys.modules[__name__]
+        setattr(module, "_MemoryQuietProbe", _MemoryQuietProbe)
+        self.addCleanup(delattr, module, "_MemoryQuietProbe")
+
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {USER_MEMORY_ENV: str(watched)}), \
+                contextlib.redirect_stdout(buf), \
+                contextlib.redirect_stderr(buf):
+            status = main(["_MemoryQuietProbe.test_touches_nothing"])
+        self.assertEqual(status, 0, buf.getvalue())
+        self.assertEqual(watched.read_bytes(), before)
+
     def test_a_dash_k_that_selects_nothing_is_exit_2_and_names_the_pattern(self):
         # `-k NoSuchThingAtAll` printed the NARROWED RUN line, ran 0 tests and
         # exited 0: an OK from a run that measured nothing, which is how a
@@ -10101,7 +10175,8 @@ def memory_guard(memory: Path, before: str, status: int) -> int:
     """`status`, unless the watched user-memory file changed during the run.
 
     A function and not four inline lines because EVERY exit path has to pass
-    through it — the ordinary run and a `-k` that selects nothing alike. A
+    through it — the ordinary run, a `-k` that selects nothing, and a
+    TARGETED run, which used to return above the snapshot entirely. A
     change here is a LOUD failure with exit 1, never a warning, and it
     OVERRIDES a passing status: a run whose tests all passed and which
     destroyed the operator's memory file did not pass.
@@ -10125,6 +10200,14 @@ def main(argv: list[str] | None = None) -> int:
     on every path.)
     """
     opts = parse_argv(list(sys.argv[1:] if argv is None else argv))
+    # The snapshot comes BEFORE the targeted-run branch, not after it. It used
+    # to sit below, so `python3 test/run_tests.py TestFoo.test_bar` returned
+    # without ever taking one — and a targeted run is precisely how a reviewer
+    # re-runs the single test they are mutating, which is the run that
+    # destroyed a 56 KB ~/.claude/CLAUDE.md in round 1. Every exit path below
+    # goes through memory_guard().
+    memory = user_memory_path()
+    before = user_memory_fingerprint(memory)
     if opts.targets:
         # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) goes
         # through unittest.main, which addresses only this module's own
@@ -10135,9 +10218,8 @@ def main(argv: list[str] | None = None) -> int:
               f"{DISCOVERY_PATTERN} modules are NOT in this run.")
         program = unittest.main(module=sys.modules[__name__],
                                 argv=[sys.argv[0]] + opts.targets, exit=False)
-        return 0 if program.result.wasSuccessful() else 1
-    memory = user_memory_path()
-    before = user_memory_fingerprint(memory)
+        return memory_guard(memory, before,
+                            0 if program.result.wasSuccessful() else 1)
     suite, selected, total = select_tests(opts)
     if opts.patterns and selected == 0:
         # `-k NoSuchThingAtAll` used to print the NARROWED RUN line, run zero
