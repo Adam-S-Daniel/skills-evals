@@ -12141,8 +12141,12 @@ class TestTheRunnerItself(unittest.TestCase):
                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
         for name in self.CHILD_RC_PINS:
             with self.subTest(pin=name):
-                self.assertIn(
-                    name, defined,
+                # assertTrue, not assertIn — for the same reason the line
+                # above says: assertIn's default message would print all 174
+                # function names in test_issue_97.py before the sentence that
+                # explains the failure.
+                self.assertTrue(
+                    name in defined,
                     f"main()'s comment names {name} as one of the only two "
                     "assertions that can see this runner's exit code, and it "
                     "no longer exists")
