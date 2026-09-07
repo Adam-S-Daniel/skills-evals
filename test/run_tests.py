@@ -4424,24 +4424,70 @@ class TestIssue63Review(unittest.TestCase):
                 entry = run_eval.registry_for_url(registries, variant)
                 self.assertEqual(entry["layout"], "plugins/*/skills/*/SKILL.md")
 
-    def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
-        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        # `**`, not `*`: fixtures nest now (evals/guidance/_delivery), and a
-        # single-level glob would quietly stop covering them.
-        fixture_dirs = sorted((REPO_ROOT / "evals").glob("**/fixture.yaml"))
+    @staticmethod
+    def _fixture_dirs(evals_root: Path) -> list[Path]:
+        """Every fixture.yaml under `evals_root`, at any depth.
+
+        `**`, not `*`: fixtures nest now (evals/guidance/_delivery), and a
+        single-level glob would quietly stop covering them. ONE spelling,
+        shared by the committed tree and the scratch tree below, so a
+        mutation of it is visible in the scratch half.
+        """
+        return sorted(evals_root.glob("**/fixture.yaml"))
+
+    def _check_skill_fixtures(self, evals_root: Path, registries: dict) -> int:
+        """Assert every fixture under `evals_root` that names a skill resolves
+        its registry; return how many were checked."""
         checked = 0
-        for fixture_path in fixture_dirs:
+        for fixture_path in self._fixture_dirs(evals_root):
             fixture = run_eval.load_fixture(fixture_path.parent)
             if "skill" not in fixture:
                 continue
             checked += 1
-            with self.subTest(fixture=fixture_path.parent.name):
+            with self.subTest(fixture=str(fixture_path.parent)):
                 self.assertIn("registry", fixture,
                              f"{fixture_path} names a skill but no registry:")
                 entry = run_eval.registry_for_url(registries, fixture["registry"])
                 self.assertIsNotNone(entry)
+        return checked
+
+    def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
+        """The committed half. It cannot falsify the `**`.
+
+        On the committed tree the only NESTED fixture is
+        evals/guidance/_delivery, which carries no `skill:` and is filtered
+        out — so `*` and `**` score identically here and the single-level
+        mutation is 0 red. The scratch half below is what makes the spelling
+        falsifiable: it plants a nested SKILL fixture in its own mkdtemp copy.
+        """
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        checked = self._check_skill_fixtures(REPO_ROOT / "evals", registries)
         self.assertGreater(checked, 0, "no committed fixture carries a skill: "
                            "field — this test would pass vacuously")
+
+    def test_the_fixture_sweep_reaches_a_nested_skill_fixture(self):
+        # N2 (code). Plants what the committed tree does not have: a skill
+        # fixture one directory deeper than the top level. With the glob
+        # spelled `*` the nested one is never seen, and this goes red.
+        scratch = Path(tempfile.mkdtemp(prefix="nested-fixture-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        evals_root = scratch / "evals"
+        planted = {"top": evals_root / "top",
+                   "nested": evals_root / "family" / "nested"}
+        for path in planted.values():
+            path.mkdir(parents=True)
+            (path / "fixture.yaml").write_text(yaml.safe_dump(
+                {"skill": "a-skill", "prompt": "do the thing",
+                 "registry": "https://github.com/Adam-S-Daniel/agentskills"},
+                sort_keys=False), encoding="utf-8")
+        found = self._fixture_dirs(evals_root)
+        self.assertIn(planted["nested"] / "fixture.yaml", found,
+                      "the sweep must reach a fixture nested below the top "
+                      f"level of evals/; found {[str(p) for p in found]}")
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        self.assertEqual(
+            self._check_skill_fixtures(evals_root, registries), 2,
+            "both the top-level and the nested skill fixture must be checked")
 
     def test_fixture_with_skill_but_no_registry_field_is_a_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
