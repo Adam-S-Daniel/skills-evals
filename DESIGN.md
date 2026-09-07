@@ -468,8 +468,12 @@ own scratch user memory (it reports its decoy) and was not delivered the
 treatment payload (it does not report the treatment token). What it does NOT
 settle is an ambient memory read *in addition* to the scratch one — that is
 prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR` isolation, not by the
-guard, because a probe asked for the magic words with two in context may
-report either, and only a real dispatch settles it. The decoy is what makes
+guard, for **two** reasons and not one. A probe asked for the magic words
+with two in context may report either; and — the reason that covers the
+commoner case — a contaminating source carrying no token of its own is
+invisible to a token guard at all. The real `base.md` carries no token, and a
+stale `~/.claude/CLAUDE.md` carries one no current run minted; both score
+clean, measured. Only a real dispatch settles it. The decoy is what makes
 that context carry two, so the guard prompt asks for **every** magic word
 rather than "the magic word": a one-word answer from a contaminated control —
 its decoy reported, the treatment token left unmentioned — is the case the

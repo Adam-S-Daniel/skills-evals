@@ -485,23 +485,51 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(env["HOME"], str(paths["home"]))
         self.assertEqual(env["CLAUDE_CONFIG_DIR"], str(paths["config"]))
 
-    # The clause N3 added to the residual paragraph. Pinned by its operative
-    # words so a rewrite that drops the second reason is caught: the stated
-    # reason covered only the two-token case, and the case that actually
-    # scores clean most often — a contaminating source with no token of its
-    # own, the real base.md included — has nothing to do with ambiguity.
-    RESIDUAL_CLAUSE = ("a contaminating source that carries no token of its "
-                       "own is invisible to a token guard at all")
+    # BOTH reasons the guard cannot settle an ambient read, pinned by their
+    # operative words in ALL THREE places the residual paragraph is written
+    # out. The first reason alone is the one the round-2 remedy left standing
+    # in DESIGN, and README gave none: the two-token case is the NARROWER of
+    # the two, and the case that actually scores clean most often — a
+    # contaminating source with no token of its own, the real base.md
+    # included — has nothing to do with ambiguity. Each document says it in
+    # its own words; these are the words all three must share.
+    RESIDUAL_REASONS = (
+        ("may report either",
+         "a probe whose context carries two magic words may report either"),
+        ("no token of its own",
+         "a contaminating source carrying no token of its own is invisible "
+         "to a token guard at all"),
+    )
 
-    def test_the_residual_paragraph_names_both_reasons_the_guard_cannot_settle(self):
-        doc = " ".join((guidance.__doc__ or "").split())
-        self.assertIn("THE RESIDUAL the guard does NOT settle", doc,
-                      "harness/guidance.py must still carry the residual "
-                      "paragraph — this assertion must not pass vacuously")
-        self.assertIn(self.RESIDUAL_CLAUSE, doc,
-                      "the residual paragraph must say that a contaminating "
-                      "source carrying no token of its own is invisible to a "
-                      "token guard, not only that two tokens are ambiguous")
+    RESIDUAL_DOCS = ("harness/guidance.py", "README.md", "DESIGN.md")
+
+    def _residual_texts(self) -> dict:
+        return {
+            "harness/guidance.py": guidance.__doc__ or "",
+            "README.md": (REPO_ROOT / "README.md").read_text(encoding="utf-8"),
+            "DESIGN.md": (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8"),
+        }
+
+    def test_all_three_residual_paragraphs_name_both_reasons_the_guard_cannot_settle(self):
+        texts = self._residual_texts()
+        self.assertIn(
+            "THE RESIDUAL the guard does NOT settle",
+            " ".join(texts["harness/guidance.py"].split()),
+            "harness/guidance.py must still carry the residual paragraph — "
+            "this assertion must not pass vacuously")
+        for label in self.RESIDUAL_DOCS:
+            folded = " ".join(texts[label].split())
+            for phrase, reason in self.RESIDUAL_REASONS:
+                with self.subTest(doc=label, reason=reason):
+                    # assertTrue, not assertIn: assertIn's default message
+                    # would dump the whole document ahead of the sentence
+                    # that explains the failure.
+                    self.assertTrue(
+                        phrase in folded,
+                        f"{label} does not carry {phrase!r}. The residual "
+                        f"paragraph must give BOTH reasons the guard cannot "
+                        f"settle an ambient read, and this is the missing "
+                        f"one: {reason}.")
 
     # The S-A clause, in the three places the residual paragraph is written
     # out. Pinned by its operative words in all three, because a reader who
