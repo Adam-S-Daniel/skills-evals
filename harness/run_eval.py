@@ -63,6 +63,45 @@ TIMEOUT_KNOBS = (
     ("timeout_s", ("judge",)),   # the judge call
 )
 
+# Every fixture key the harness reads as a MAPPING. The knob parents above
+# are derived rather than repeated, so a new nested knob cannot arrive without
+# its parent being type-checked; `env:` is the one that is not a timeout
+# parent and has the identical defect — `(env_spec or {}).items()` on a
+# present non-mapping is an AttributeError traceback and rc 1, outside the
+# rc-2 configuration contract, exactly as `(fixture.get("guard") or
+# {}).get(...)` was.
+MAPPING_FIXTURE_KEYS = tuple(dict.fromkeys(
+    [parent for _key, parents in TIMEOUT_KNOBS for parent in parents] + ["env"]))
+
+
+def _require_mapping(fixture: dict, key: str, fixture_path: Path) -> None:
+    """A PRESENT `key:` is a mapping, or an explicit null. Anything else is a
+    named configuration error at fixture load.
+
+    An explicit null is fine and means "absent": `(fixture.get("guard") or
+    {})` and `(env_spec or {})` both fall back on it, and every committed
+    fixture that omits the key is untouched by this. A truthy non-mapping is
+    not fine — YAML will hand over a list, a string or a number just as
+    happily, and each of them reaches `.get()`/`.items()` on the wrong type
+    and dies with an AttributeError traceback instead of naming the rule.
+    """
+    if key not in fixture or fixture[key] is None or isinstance(fixture[key], dict):
+        return
+    raise guidance.GuidanceError(
+        f"{fixture_path}: `{key}:` must be a mapping (or absent), got "
+        f"{fixture[key]!r}. The harness reads it with `.get()`/`.items()`, so "
+        "a list, a string or a number here is not a configuration it can run "
+        "— it used to reach the wrong type and die with an AttributeError "
+        "traceback instead of naming the rule.")
+
+
+def validate_mapping_keys(fixture: dict, fixture_path: Path) -> None:
+    """Every mapping-typed fixture key, checked ONCE at load — before any
+    subject branch, any path is derived and any CLI is invoked."""
+    for key in MAPPING_FIXTURE_KEYS:
+        _require_mapping(fixture, key, fixture_path)
+
+
 # The CEILING every knob above is checked against, and the predicate that
 # applies it, both live in harness/guidance.py — beside the GuidanceError they
 # raise, and where EVERY source of a timeout can reach them. Round 2 put them
@@ -91,10 +130,18 @@ def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
     for key, parents in TIMEOUT_KNOBS:
         node = fixture
         for parent in parents:
-            node = node.get(parent) if isinstance(node, dict) else None
+            # NOT `node = {}` on a non-mapping. Normalising the bad container
+            # away let `guard: [1]` through validation and on into
+            # `(fixture.get("guard") or {}).get("timeout_s", 300)`, which is
+            # an AttributeError traceback and rc 1 — the same defect this
+            # predicate closes for the leaf, one level up. Checked here as
+            # well as in `validate_mapping_keys` so this function is sound for
+            # a direct caller, not only for the one order main() calls them in.
             if not isinstance(node, dict):
-                node = {}
+                node = None
                 break
+            _require_mapping(node, parent, fixture_path)
+            node = node.get(parent)
         if not isinstance(node, dict) or key not in node:
             continue
         guidance.check_timeout(node[key], ".".join(parents + (key,)),
@@ -1442,6 +1489,7 @@ def main() -> int:
 
     fixture = load_fixture(args.eval_dir)
     try:
+        validate_mapping_keys(fixture, args.eval_dir / "fixture.yaml")
         validate_timeouts(fixture, args.eval_dir / "fixture.yaml")
     except guidance.GuidanceError as exc:
         print(f"fixture configuration error: {exc}")

@@ -1560,6 +1560,126 @@ class TestIssue97(unittest.TestCase):
                 self.assertIn("timeout_s", out, f"{label}: {out}")
                 self.assertNotIn("Traceback", out, f"{label}: {out}")
 
+
+    # ------------------------------------------------------------------
+    # A-N1 — a present mapping-typed fixture key IS a mapping
+    #
+    # `validate_timeouts` walked to a knob's parent and, when the parent was
+    # not a dict, set `node = {}` and broke — it NORMALISED the bad container
+    # away rather than rejecting it. `guard: [1]` and `guard: 'x'` therefore
+    # passed validation and reached `(fixture.get("guard") or
+    # {}).get("timeout_s", 300)`: rc 1 and an `AttributeError` traceback,
+    # outside the rc-2 named-message contract. `judge: [1]` degraded silently
+    # inside the judge's `except Exception` instead.
+    #
+    # The same defect lives one key over on `env:`, which is not a timeout
+    # parent at all: `(env_spec or {}).items()` on a present non-mapping is
+    # the identical traceback (measured: rc 1, `'list' object has no
+    # attribute 'items'`). MAPPING_FIXTURE_KEYS covers every knob parent —
+    # derived from TIMEOUT_KNOBS, so a new nested knob brings its parent with
+    # it — plus `env`.
+    # ------------------------------------------------------------------
+
+    NON_MAPPINGS = ([1], "x", 7)
+
+    def test_a_non_mapping_fixture_key_is_a_named_configuration_error(self):
+        root = self._checkout()
+        for key in run_eval.MAPPING_FIXTURE_KEYS:
+            for value in self.NON_MAPPINGS:
+                with self.subTest(key=key, value=value):
+                    tmp = Path(tempfile.mkdtemp(prefix="fixture-mapping-"))
+                    self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                    argv_log = tmp / "argv.jsonl"
+                    results = tmp / "results"
+                    # The argv log reaches the CLI through the fixture's own
+                    # `env:` block — the allowlist strips it from the ambient
+                    # environment — so the `env:` rows, whose env block IS
+                    # the hostile value, prove "nothing ran" by the results
+                    # directory never being created instead.
+                    overrides = {"env": {"FAKE_CLAUDE_MODE": "guidance_probe",
+                                         "FAKE_CLAUDE_ARGV_LOG": str(argv_log)}}
+                    overrides[key] = value
+                    eval_dir = self._guidance_fixture(tmp, **overrides)
+                    rc, out = self._run_main_subprocess(
+                        [eval_dir, "--arm", "both", "--guidance", root,
+                         "--results-dir", results, "--no-judge"])
+                    label = f"{key}: {value!r}"
+                    if key != "env":
+                        self.assertFalse(
+                            argv_log.exists(),
+                            f"{label}: the CLI was invoked before the "
+                            "fixture's shape was checked")
+                    self.assertFalse(
+                        results.exists(),
+                        f"{label}: a refused fixture must write nothing")
+                    self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                    self.assertIn("must be a mapping", out, f"{label}: {out}")
+                    self.assertIn(f"`{key}:`", out, f"{label}: the rejection "
+                                  f"must name the key\n{out}")
+                    self.assertNotIn("Traceback", out, f"{label}: {out}")
+
+    def test_an_explicit_null_or_absent_mapping_key_still_runs_the_arm(self):
+        # The other side, and the reason the check accepts null: every
+        # `(fixture.get(k) or {})` read already treats null as absent, and
+        # every committed fixture that omits the key must be untouched.
+        # `env:` is exercised at the validator level in the test below
+        # instead — dropping this fixture's `env:` block would take the fake
+        # CLI's mode with it, so the arm could not be probed and the run
+        # would be INCONCLUSIVE for a reason that has nothing to do with the
+        # check under test.
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        for label, overrides in (("guard: null", {"guard": None}),
+                                 ("judge: null", {"judge": None}),
+                                 ("absent", {})):
+            with self.subTest(label=label):
+                tmp = Path(tempfile.mkdtemp(prefix="fixture-mapping-ok-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                eval_dir = self._guidance_fixture(tmp, **overrides)
+                rc, out = self._run_main(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", tmp / "results", "--no-judge"])
+                self.assertEqual(rc, 0, f"{label}: {out}")
+
+    def test_validate_timeouts_itself_refuses_a_non_mapping_parent(self):
+        # The unit-level row, and the one the brief's mutation targets:
+        # restoring `node = {}` in the parent walk leaves the rows above
+        # green (validate_mapping_keys in main() catches them) and turns this
+        # one red. validate_timeouts has to be sound for a direct caller too.
+        path = Path("fixture.yaml")
+        for _key, parents in run_eval.TIMEOUT_KNOBS:
+            for parent in parents:
+                for value in self.NON_MAPPINGS:
+                    with self.subTest(parent=parent, value=value):
+                        with self.assertRaises(guidance.GuidanceError) as ctx:
+                            run_eval.validate_timeouts({parent: value}, path)
+                        self.assertIn("must be a mapping", str(ctx.exception))
+                        self.assertIn(parent, str(ctx.exception))
+        # And accepts what it must — every mapping key, null and absent.
+        run_eval.validate_timeouts({"guard": None, "judge": None}, path)
+        run_eval.validate_timeouts({"guard": {"timeout_s": 10}}, path)
+        for key in run_eval.MAPPING_FIXTURE_KEYS:
+            with self.subTest(accepts=key):
+                run_eval.validate_mapping_keys({key: None}, path)
+                run_eval.validate_mapping_keys({}, path)
+                run_eval.validate_mapping_keys({key: {"a": 1}}, path)
+                with self.assertRaises(guidance.GuidanceError):
+                    run_eval.validate_mapping_keys({key: [1]}, path)
+
+    def test_every_timeout_knob_parent_is_a_checked_mapping_key(self):
+        # Derivation, not repetition: a new nested knob cannot arrive with an
+        # unchecked parent.
+        parents = {parent for _key, ps in run_eval.TIMEOUT_KNOBS for parent in ps}
+        self.assertTrue(parents, "TIMEOUT_KNOBS has no nested knob — this "
+                        "assertion must not pass vacuously")
+        self.assertTrue(parents <= set(run_eval.MAPPING_FIXTURE_KEYS),
+                        f"{sorted(parents - set(run_eval.MAPPING_FIXTURE_KEYS))} "
+                        "are timeout-knob parents that nothing type-checks")
+        self.assertIn("env", run_eval.MAPPING_FIXTURE_KEYS,
+                      "`env:` is read with `.items()` and has the identical "
+                      "defect; it is not a timeout parent, so it is listed "
+                      "explicitly")
+
     def test_a_valid_timeout_still_runs_the_arm(self):
         # The other side: a well-formed knob is untouched by the check. Uses
         # the ordinary probe CLI, not the hanging one.
