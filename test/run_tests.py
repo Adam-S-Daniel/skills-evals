@@ -17363,6 +17363,57 @@ class TestIssue67Review11(unittest.TestCase):
         self.assertEqual(retired, sorted(retired))
         self.assertIn(self.SILENT_VICTIM, retired)
 
+    # --- N-2: the ceiling bounds the RESIDUE, not the carried list -------
+
+    def test_a_catalogue_past_the_ceiling_still_publishes(self):
+        """The cap never evicts a live id, and round 11's ceiling must not
+        do by the back door what the cap is forbidden to do: bounding the
+        CARRIED list made a catalogue larger than the ceiling refuse to
+        publish outright, for a reason that has nothing to do with an
+        untrusted input. Measured on 1fa9d3a: 10,003 live ids, rc 4 and no
+        roster. The ceiling bounds the tier-3 residue instead.
+
+        The catalogue here is 10,000 bare ids plus three dated snapshots
+        of the first three, which the seat map collapses — so the roster
+        seats 10,000 models and records 10,003 in `catalogue_seen`, which
+        stays a superset of `api_ids` as `usage_share` requires."""
+        ids = [f"claude-sonnet-{i}-1" for i in range(10_000)]
+        ids += [f"claude-sonnet-{i}-1-20260101" for i in range(3)]
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in ids]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, models, previous={"arms": [], "catalogue_seen": []})
+        self.assertEqual(rc, 0, err[:400])
+        self.assertEqual(len(published["catalogue_seen"]), 10_003)
+        self.assertLessEqual(set(ids), self._seen_ids(published),
+                             "`catalogue_seen` stays a superset of `api_ids`")
+
+    def test_the_ceiling_still_refuses_a_residue_past_it(self):
+        """The other side of the same line, and the one the ceiling exists
+        for: a previous roster whose entries the census says nothing about
+        is refused past 10,000, by name and with a count, rather than
+        trimmed by an order the planter chose."""
+        for label, previous in (
+                ("catalogue_seen", {"arms": [], "catalogue_seen": [
+                    {"id": f"0plant-{i:06d}", "last_seen": self._days_ago(1)}
+                    for i in range(roster.UNCAPPED_CARRY_CEILING + 1)]}),
+                ("arms", {"arms": [{"id": f"0arm-{i:06d}", "reason": "filler"}
+                                   for i in
+                                   range(roster.UNCAPPED_CARRY_CEILING + 1)],
+                          "catalogue_seen": []})):
+            with self.subTest(list=label):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, _, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 4, err)
+                self.assertIsNone(published)
+                self.assertIn("refusing to publish", err)
+                self.assertIn(str(roster.UNCAPPED_CARRY_CEILING), err)
+                self.assertNotIn("0plant-000500", err)
+                self.assertNotIn("0arm-000500", err)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -135,7 +135,11 @@ min_ranked_share: 0.01
 # one-time plant cannot persist indefinitely. This run's own live ids are
 # never aged out by this (they get `last_seen` = today every run) — only
 # accumulated history can. See also the length cap in roster.py's
-# `CATALOGUE_SEEN_CAP` (currently 500 entries). Past it, who survives is
+# `CATALOGUE_SEEN_CAP` (currently 500 entries), which is not a bound on
+# the published FILE: this run's own live ids are exempt from it
+# entirely, so a 10,000-model catalogue publishes 10,000 entries —
+# correct, by the rule that a live id is never evicted — and the
+# tier-3 residue below is exempt too. Past it, who survives is
 # decided by data the previous roster does not write, in three tiers:
 # entries the census names outright (an in-window census key), the live
 # catalogue lists, or the usage alias map needs as a HOP from an
@@ -198,6 +202,18 @@ min_ranked_share: 0.01
 # exceed 500 if the census names more than that, and then the lowest-turn
 # entries go — raising the cap moves that number, it does not remove the
 # case.
+#
+# WHAT THAT COSTS WITH NO PLANTER INVOLVED AT ALL, since the number
+# without a curve reads like a corner case: the loss is proportional to
+# how far past the cap the census itself runs. Measured through
+# `main()` on a census naming N ids that are all in `catalogue_seen`,
+# 3 turns each but for one carrying 8,800 (so the lowest-turn entries
+# are the ones the cap takes) and two live models: at N = 602, 104
+# entries are dropped and 312 of 10,603 turns leave the denominator,
+# 2.94%; at N = 1,202, 704 are dropped and 2,112 of 12,403 leave it,
+# 17.03%. Both numbers are unchanged by round 11's residue rule,
+# because every entry here is one the census names and the cap orders
+# them exactly as before.
 #
 # A census key with ZERO in-window turns names nothing: a census padded
 # with keys whose usage all falls outside the window is not evidence of

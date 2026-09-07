@@ -1250,13 +1250,16 @@ def _clean_previous_arms(previous, warn,
             warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
                  f"the {PREVIOUS_ARMS_CAP}-entry cap")
         carried = named + residue
-        if len(carried) > UNCAPPED_CARRY_CEILING:
+        # The ceiling bounds the RESIDUE, which is the part no cap will
+        # order — not the carried list, which is the residue plus at most
+        # `PREVIOUS_ARMS_CAP` entries the census itself bounded (N-2, #129
+        # review round 11).
+        if len(residue) > UNCAPPED_CARRY_CEILING:
             raise RosterRefusal(
                 f"refusing to publish: the census names nothing about "
                 f"{len(residue)} of the previous roster's `arms` entries, so "
-                f"they cannot be ordered by anything the input does not write, "
-                f"and carrying them holds {len(carried)} entries — past the "
-                f"{UNCAPPED_CARRY_CEILING}-entry ceiling")
+                f"they cannot be ordered by anything the input does not write "
+                f"— past the {UNCAPPED_CARRY_CEILING}-entry ceiling")
     return ids, carried
 
 
@@ -1548,12 +1551,17 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     residue = [i for i in historical if order[i][0] == 3]
     room = max(0, CATALOGUE_SEEN_CAP - len(live))
     kept = live + named[:room] + residue
-    if len(kept) > UNCAPPED_CARRY_CEILING:
+    # The ceiling bounds the RESIDUE — the part no cap will order — and
+    # not `kept`, which also holds this run's own live ids (N-2, #129
+    # review round 11). Bounding `kept` would make a catalogue larger than
+    # the ceiling refuse to publish, which is the never-evict-a-live-id
+    # rule failing closed for a reason that has nothing to do with an
+    # untrusted input.
+    if len(residue) > UNCAPPED_CARRY_CEILING:
         raise RosterRefusal(
             f"refusing to publish: the census names nothing about "
             f"{len(residue)} of `catalogue_seen`'s entries, so they cannot be "
-            f"ordered by anything the input does not write, and carrying them "
-            f"holds {len(kept)} entries — past the "
+            f"ordered by anything the input does not write — past the "
             f"{UNCAPPED_CARRY_CEILING}-entry ceiling")
     dropped = len(survivors) - len(kept)
     if dropped:
