@@ -10070,6 +10070,42 @@ class TestTheRunnerItself(unittest.TestCase):
         self.assertEqual(selected, 1, sorted(t.id() for t in flatten_suite(suite)))
         self.assertGreater(total, selected)
 
+    # The tests main()'s comment beside `status = ...` defers to: the only
+    # assertions that can see this runner's own exit code, because they read
+    # it from a CHILD process. Named here so the comment cannot outlive them.
+    CHILD_RC_PINS = (
+        "test_planted_issue_module_is_discovered_and_fails_the_runner",
+        "test_removing_the_planted_module_puts_the_runner_back_to_zero",
+    )
+    CHILD_RC_SENTENCE = "The only\n    # teeth are the two child-rc pins"
+
+    def test_the_runner_says_what_can_and_cannot_police_its_own_exit_code(self):
+        # N5 (code). `status = 0 if result.wasSuccessful() else 1` is the one
+        # line in this file that no assertion in this file can check, and the
+        # next reader has no way to know that. The comment says so and names
+        # what does check it; this test keeps the comment honest by requiring
+        # both named pins to still exist.
+        runner_source = (TEST_DIR / "run_tests.py").read_text(encoding="utf-8")
+        # assertTrue, not assertIn: assertIn's default message would dump
+        # this whole 10k-line file into the failure.
+        self.assertTrue(
+            self.CHILD_RC_SENTENCE in runner_source,
+            "main() must say, beside `status = 0 if result.wasSuccessful() "
+            "else 1`, that nothing inside this runner can police its own exit "
+            "code, and name the child-rc pins that can")
+        defined = {node.name for node in
+                   ast.walk(ast.parse(
+                       (DISCOVERY_DIR / "test_issue_97.py").read_text(
+                           encoding="utf-8")))
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for name in self.CHILD_RC_PINS:
+            with self.subTest(pin=name):
+                self.assertIn(
+                    name, defined,
+                    f"main()'s comment names {name} as one of the only two "
+                    "assertions that can see this runner's exit code, and it "
+                    "no longer exists")
+
     def test_every_suite_forking_test_in_this_file_stands_down_in_a_child(self):
         # S-B. A test that spawns `python3 test/run_tests.py` must be bounded
         # by something OTHER than the contract it is testing. The `-k` pin
@@ -10362,6 +10398,17 @@ def main(argv: list[str] | None = None) -> int:
     result = unittest.TextTestRunner(verbosity=verbosity,
                                      failfast=opts.failfast).run(suite)
     status = 0 if result.wasSuccessful() else 1
+    # Nothing INSIDE this runner can police this line. A test asserting that
+    # a failing suite exits 1 would have to fail the suite to say so, and a
+    # runner mutated to a constant 0 would print OK and be believed. The only
+    # teeth are the two child-rc pins in test/issues/test_issue_97.py, which
+    # spawn `python3 test/run_tests.py` and read the CHILD's exit code:
+    # test_planted_issue_module_is_discovered_and_fails_the_runner (a planted
+    # failing module must give rc 1) and
+    # test_removing_the_planted_module_puts_the_runner_back_to_zero (rc 0
+    # with nothing planted). Both stand down inside a child, so each runs
+    # once per suite. memory_guard's override below is pinned the same way,
+    # by a child run with $SKILLS_EVALS_USER_MEMORY redirected.
     return memory_guard(memory, before, status)
 
 
