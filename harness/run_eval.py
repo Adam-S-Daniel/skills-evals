@@ -63,6 +63,20 @@ TIMEOUT_KNOBS = (
     ("timeout_s", ("judge",)),   # the judge call
 )
 
+# The CEILING every knob above is checked against: `.github/workflows/eval.yml`
+# gives the `eval` job `timeout-minutes: 45`, and a knob larger than the job's
+# own budget cannot do anything except outlive it — the job is killed with no
+# summary and no artifact, which is the exact failure the rejection message
+# below describes for a null, and the failure a reader steered by that message
+# reaches for a very large number to avoid. Above ~2.147e6 it is worse still:
+# the value reaches `selector.poll` as milliseconds and raises a bare
+# `OverflowError: timeout is too large` — rc 1, empty stdout, no named message
+# (measured through the real CLI entry point with `guard.timeout_s: 2200000`).
+# `test_the_timeout_ceiling_is_the_workflow_job_budget` parses that workflow
+# and asserts this constant equals its `timeout-minutes` x 60, so the two
+# cannot drift.
+MAX_TIMEOUT_S = 45 * 60
+
 
 def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
     """Coerce-and-check every timeout knob ONCE, at fixture load, before any
@@ -82,17 +96,23 @@ def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
         value = node[key]
         where = ".".join(parents + (key,))
         # `bool` is an `int` in Python; `timeout_s: true` is not a duration.
+        # Bounded on BOTH sides in the one predicate. An upper bound that
+        # lived in a second check somewhere else is a bound a later edit can
+        # drop without the lower one noticing.
         ok = (not isinstance(value, bool) and isinstance(value, (int, float))
               and value == value and value not in (float("inf"),
                                                    float("-inf"))
-              and value > 0)
+              and 0 < value <= MAX_TIMEOUT_S)
         if not ok:
             raise guidance.GuidanceError(
                 f"{fixture_path}: `{where}` must be a positive number of "
-                f"seconds, got {value!r}. An explicit YAML null here means "
-                "\"no timeout\" — a run that hangs until the job is killed, "
-                "with no summary and no artifact. Omit the key to take the "
-                "default instead.")
+                f"seconds no greater than {MAX_TIMEOUT_S} (eval.yml gives the "
+                f"eval job that many), got {value!r}. An explicit YAML null "
+                "here means \"no timeout\" — a run that hangs until the job "
+                "is killed, with no summary and no artifact; a value above "
+                "the ceiling is the same failure with extra steps, and a "
+                "very large one crashes the run outright instead of naming a "
+                "rule. Omit the key to take the default instead.")
 
 
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"

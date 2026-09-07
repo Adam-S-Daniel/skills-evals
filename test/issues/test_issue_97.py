@@ -790,6 +790,40 @@ class TestIssue97(unittest.TestCase):
             rc = run_eval.main()
         return rc, buf.getvalue()
 
+    # A hostile timeout knob is the one class of fixture bug that can HANG
+    # the runner rather than fail it: with `validate_timeouts` mutated away
+    # the value reaches `subprocess.run(timeout=...)` unchecked, and a
+    # fake-claude guard probe stayed alive 498 s under `timeout=None`.
+    # `_run_main` calls `run_eval.main()` IN-PROCESS, so nothing bounds it at
+    # all — a reviewer running that mutation gets a hung suite, not a red
+    # test. Every timeout row therefore goes through the real CLI entry point
+    # in a child with an OUTER bound around it. 30s is ~30x what a rejection
+    # at fixture load costs (measured: the whole battery in 2.1s) and is what
+    # a reviewer's mutation run pays per hanging row.
+    OUTER_BOUND_S = 30
+
+    def _run_main_subprocess(self, argv_tail,
+                             timeout: int = OUTER_BOUND_S) -> tuple[int, str]:
+        """`python3 harness/run_eval.py ...` in a child, outer-bounded.
+
+        No token patching: the rows that use this fail at fixture load, before
+        a token is minted or a CLI is invoked, so there is nothing to pin.
+        """
+        cmd = [sys.executable, str(HARNESS_DIR / "run_eval.py"),
+               *[str(a) for a in argv_tail]]
+        env = dict(os.environ, CLAUDE_BIN=str(FAKE_CLAUDE))
+        try:
+            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
+                                  capture_output=True, text=True,
+                                  timeout=timeout)
+        except subprocess.TimeoutExpired:
+            self.fail(
+                f"run_eval.py did not return inside {timeout}s for "
+                f"{' '.join(cmd[2:])} — a timeout knob reached "
+                "subprocess.run() unchecked, which is the hang "
+                "validate_timeouts exists to prevent")
+        return proc.returncode, proc.stdout + proc.stderr
+
     @staticmethod
     def _only_run_dir(results_dir: Path, key: str) -> Path:
         runs = sorted(p for p in (results_dir / key).iterdir() if p.is_dir())
@@ -1326,6 +1360,108 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(rc, 2, out)
         self.assertIn("positive number", out)
         self.assertNotIn("Traceback", out)
+
+    # ------------------------------------------------------------------
+    # S1 — a timeout knob is bounded ABOVE as well as below
+    #
+    # `validate_timeouts` bounded each knob below and not above, so any value
+    # in `job budget < t <= 2.147e6` was accepted and simply outlived
+    # eval.yml's job budget — the job killed with no summary and no artifact,
+    # which is the exact failure the rejection message describes for a null
+    # and the one a reader steered by that message reaches for a very large
+    # number to avoid. Above ~2.147e6 the value reaches `selector.poll` as
+    # milliseconds: measured through the real CLI entry point with
+    # `guard.timeout_s: 2200000`, rc 1, empty stdout, a bare
+    # `OverflowError: timeout is too large`.
+    # ------------------------------------------------------------------
+
+    # Every knob TIMEOUT_KNOBS names, in the dotted spelling the rejection
+    # message uses.
+    CEILING_KNOBS = ("timeout_s", "setup_timeout_s", "guard.timeout_s",
+                     "judge.timeout_s")
+    # 2200000 is the round-2 measurement; 1e9 is the same class an order of
+    # magnitude up; one second over the budget is the boundary row.
+    ABOVE_THE_CEILING = (2200000, 10 ** 9, 2701)
+
+    @staticmethod
+    def _knob_override(knob: str, value) -> dict:
+        if "." in knob:
+            parent, leaf = knob.split(".", 1)
+            return {parent: {leaf: value}}
+        return {knob: value}
+
+    def _job_budget_s(self) -> int:
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["timeout-minutes"] * 60
+
+    def test_the_timeout_ceiling_is_the_workflow_job_budget(self):
+        # Two-sided anchoring, so the constant and the workflow cannot drift:
+        # a ceiling ABOVE the job budget accepts knobs that still cannot
+        # finish, and one BELOW it refuses fixtures the job has room for. The
+        # budget is parsed with yaml.safe_load, never matched out of the text.
+        budget = self._job_budget_s()
+        self.assertIsInstance(budget, int)
+        self.assertGreater(budget, 0,
+                           "eval.yml's eval job must carry a timeout-minutes "
+                           "— this assertion must not pass vacuously")
+        self.assertEqual(
+            run_eval.MAX_TIMEOUT_S, budget,
+            "harness/run_eval.py's MAX_TIMEOUT_S must equal eval.yml's "
+            "`timeout-minutes` x 60 for the eval job: it is the ceiling every "
+            "timeout knob is checked against, and a knob larger than the job "
+            "budget can only outlive it")
+
+    def test_a_timeout_above_the_job_budget_is_a_named_configuration_error(self):
+        root = self._checkout()
+        ceiling = run_eval.MAX_TIMEOUT_S
+        for knob in self.CEILING_KNOBS:
+            for value in self.ABOVE_THE_CEILING:
+                with self.subTest(knob=knob, value=value):
+                    tmp = Path(tempfile.mkdtemp(prefix="guidance-ceiling-"))
+                    self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                    argv_log = tmp / "argv.jsonl"
+                    over = self._knob_override(knob, value)
+                    eval_dir = self._guidance_fixture(
+                        tmp, env=dict(self.HANG,
+                                      FAKE_CLAUDE_ARGV_LOG=str(argv_log)),
+                        **over)
+                    rc, out = self._run_main_subprocess(
+                        [eval_dir, "--arm", "both", "--guidance", root,
+                         "--results-dir", tmp / "results", "--no-judge"])
+                    label = f"{knob}={value}"
+                    self.assertFalse(
+                        argv_log.exists(),
+                        f"{label}: the CLI was invoked before the knob was "
+                        "checked — validation happens at fixture load, before "
+                        "any subject branch or subprocess")
+                    self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                    self.assertIn("positive number", out, f"{label}: {out}")
+                    self.assertIn(knob, out, f"{label}: {out}")
+                    self.assertIn(
+                        str(ceiling), out,
+                        f"{label}: the rejection must NAME the ceiling, so an "
+                        f"operator knows what to write instead\n{out}")
+                    self.assertNotIn("Traceback", out, f"{label}: {out}")
+                    self.assertNotIn("OverflowError", out, f"{label}: {out}")
+
+    def test_a_timeout_at_or_below_the_job_budget_still_runs_the_arm(self):
+        # The other side, and why the bound is `<=` rather than `<`: a fixture
+        # may legitimately spend the whole job budget on one knob. Driven with
+        # the ordinary probe CLI, which returns at once, so an accepted knob
+        # costs nothing to prove.
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        for knob in self.CEILING_KNOBS:
+            for value in (600, run_eval.MAX_TIMEOUT_S):
+                with self.subTest(knob=knob, value=value):
+                    tmp = Path(tempfile.mkdtemp(prefix="guidance-ceiling-ok-"))
+                    self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                    eval_dir = self._guidance_fixture(
+                        tmp, **self._knob_override(knob, value))
+                    rc, out = self._run_main(
+                        [eval_dir, "--arm", "both", "--guidance", root,
+                         "--results-dir", tmp / "results", "--no-judge"])
+                    self.assertEqual(rc, 0, f"{knob}={value}: {out}")
 
     def test_unknown_section_id_through_main_exits_2_naming_the_manifest(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-badid-"))
