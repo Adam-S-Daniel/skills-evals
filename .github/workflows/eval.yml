@@ -265,6 +265,27 @@ jobs:
           export LC_ALL=C
           fixture=""
           if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+            # NUL FIRST, on the event file itself, before any command
+            # substitution. `jq -r` emits a NUL faithfully and bash's `$( )`
+            # then DROPS it ("warning: command substitution: ignored null
+            # byte in input"), so every check below would be judging a string
+            # the dispatcher did not send, and the step's own `fixture:` log
+            # line would name something else again. Measured: a value whose
+            # JSON spelling is the NUL escape followed by
+            # evals/workflow-path-audit was accepted AS that fixture, rc 0.
+            # It fails safe — no uncommitted fixture can be reached this way,
+            # because whatever survives the substitution still has to match a
+            # committed path — but the gate never sees the byte it would
+            # refuse, and this workflow's header promises that it does.
+            # `jq -e` exits non-zero for a non-string (a number, a list) too,
+            # which simply falls through to the shape gate that already
+            # refuses those. No value is echoed, same as every other
+            # rejection here.
+            if jq -e '(.inputs.fixture // "") | test("\u0000")' \
+                 "$GITHUB_EVENT_PATH" >/dev/null 2>&1; then
+              echo "eval.yml: dispatch input 'fixture' contains a NUL byte"
+              exit 1
+            fi
             fixture="$(jq -r '.inputs.fixture // empty' "$GITHUB_EVENT_PATH")"
           fi
           # The scheduled run carries no inputs at all; it gets the default.

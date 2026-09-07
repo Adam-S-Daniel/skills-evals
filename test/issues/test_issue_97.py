@@ -2095,6 +2095,59 @@ class TestIssue97(unittest.TestCase):
                 self.assertIsNone(proc.selected)
                 self.assertIsNone(proc.key)
 
+    # A real NUL, written as an escape so this source file carries none.
+    NUL = chr(0)
+
+    def test_a_nul_byte_in_the_dispatch_value_is_refused_before_substitution(self):
+        # N3 (code). `jq -r` emits a NUL faithfully; bash's `$( )` then DROPS
+        # it, with only a warning on stderr — so every check in the step is
+        # judging a string the dispatcher did not send, and the step's own
+        # `fixture:` log line names something else again. Measured on
+        # c5ea933, through this same `run:` block: a value whose JSON spelling
+        # is the NUL escape followed by evals/workflow-path-audit was ACCEPTED
+        # as that fixture, rc 0, with $RUNNER_TEMP/eval-fixture written and
+        # only "warning: command substitution: ignored null byte in input" to
+        # show for it.
+        #
+        # It failed SAFE — whatever survives the substitution still has to
+        # match a committed path — but the gate never saw the byte it would
+        # refuse, which is not what this workflow's header says it does.
+        for label, value in (
+            ("leading", self.NUL + "evals/workflow-path-audit"),
+            ("trailing", "evals/workflow-path-audit" + self.NUL),
+            # Collapses to a COMMITTED name once the NUL is dropped — the
+            # shape that was accepted.
+            ("embedded, collapsing to a committed name",
+             "evals/workflow" + self.NUL + "-path-audit"),
+            # Collapses to nothing committed: refused before, refused now, but
+            # by the NUL rule rather than by accident.
+            ("embedded, collapsing to nothing committed",
+             "evals/no" + self.NUL + "pe"),
+        ):
+            with self.subTest(value=label):
+                proc = self._run_validation({"inputs": {"fixture": value}})
+                output = proc.stdout + proc.stderr
+                self.assertEqual(proc.returncode, 1,
+                                 f"{label}: a NUL anywhere in the dispatch "
+                                 f"value must fail the step\n{output}")
+                self.assertIn("NUL byte", output,
+                              f"{label}: refused by a NAMED rule\n{output}")
+                self.assertIsNone(
+                    proc.selected,
+                    f"{label}: reached $RUNNER_TEMP/eval-fixture, so the "
+                    "token exchange would have run")
+                self.assertIsNone(proc.key)
+                self.assertNotIn(
+                    self.ECHO_MARKER.split("-")[0], output,
+                    "and the value is not echoed back into a public log")
+                self.assertNotIn("evals/workflow", output, output)
+        # The accepted rows are unchanged: the gate runs before the
+        # substitution and a value with no NUL never reaches it.
+        proc = self._run_validation(
+            {"inputs": {"fixture": "evals/workflow-path-audit"}})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(proc.selected, "evals/workflow-path-audit")
+
     def test_the_fixture_match_survives_a_committed_list_far_larger_than_a_pipe(self):
         # `printf '%s\n' "$committed" | grep -Fxq -- "$fixture"` is the
         # fleet's forbidden pipe-into-early-exit shape: grep exits the moment
