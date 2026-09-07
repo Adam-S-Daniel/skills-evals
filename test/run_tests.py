@@ -11,8 +11,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
 import fnmatch
 import hashlib
+import io
 import itertools
 import json
 import os
@@ -9935,6 +9937,34 @@ class TestTheRunnerItself(unittest.TestCase):
         self.assertEqual(selected, 1, sorted(t.id() for t in flatten_suite(suite)))
         self.assertGreater(total, selected)
 
+    def test_a_dash_k_that_selects_nothing_is_exit_2_and_names_the_pattern(self):
+        # `-k NoSuchThingAtAll` printed the NARROWED RUN line, ran 0 tests and
+        # exited 0: an OK from a run that measured nothing, which is how a
+        # renamed or mistyped test drops out of a CI lane unnoticed. Exit 2 on
+        # zero is this repo's convention already (check-guidance-coverage.js's
+        # own header; the guidance subject's objective-only branch, N-f).
+        #
+        # Driven through main() itself, which runs NO test on this path — so
+        # calling it from inside the suite cannot recurse or fork.
+        pattern = "NoSuchThingAtAll-Kx7"
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            status = main(["-k", pattern])
+        out = buf.getvalue()
+        self.assertEqual(status, 2, out)
+        self.assertIn(pattern, out,
+                      f"the message must NAME the pattern that matched "
+                      f"nothing\n{out}")
+        self.assertNotRegex(out, r"^OK", out)
+        # The other side: a pattern that DOES select still narrows, and is not
+        # turned into an error by the check above.
+        opts = parse_argv(["-k", "TestIssue97"])
+        _, selected, total = select_tests(opts)
+        self.assertGreater(selected, 0,
+                           "`-k TestIssue97` must select something — this "
+                           "assertion must not pass vacuously")
+        self.assertLess(selected, total)
+
     def test_dash_k_on_the_command_line_still_reaches_the_discovered_subtree(self):
         # End to end through the real entry point, and cheap: one test.
         # `-k` used to reach unittest.main, which cannot address a discovered
@@ -10002,6 +10032,26 @@ def user_memory_fingerprint(path: Path) -> str:
         return f"unreadable: {type(exc).__name__}"
 
 
+def memory_guard(memory: Path, before: str, status: int) -> int:
+    """`status`, unless the watched user-memory file changed during the run.
+
+    A function and not four inline lines because EVERY exit path has to pass
+    through it — the ordinary run and a `-k` that selects nothing alike. A
+    change here is a LOUD failure with exit 1, never a warning, and it
+    OVERRIDES a passing status: a run whose tests all passed and which
+    destroyed the operator's memory file did not pass.
+    """
+    after = user_memory_fingerprint(memory)
+    if after == before:
+        return status
+    print(f"\nFAILED: this suite CHANGED {memory} "
+          f"({before} -> {after}). No test may write the fleet's user "
+          "memory: every arm gets a scratch config dir, and "
+          "harness/guidance.py refuses any dest_dir or HOME that resolves "
+          "to the real one.")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit status, always from the runner result and the memory guard.
 
@@ -10024,6 +10074,19 @@ def main(argv: list[str] | None = None) -> int:
     memory = user_memory_path()
     before = user_memory_fingerprint(memory)
     suite, selected, total = select_tests(opts)
+    if opts.patterns and selected == 0:
+        # `-k NoSuchThingAtAll` used to print the NARROWED RUN line, run zero
+        # tests and exit 0 — an OK from a run that measured nothing, which is
+        # exactly how a renamed or mistyped test disappears from a CI lane
+        # without anyone noticing. Exit 2 on zero is this repo's convention
+        # already: _agent-guidance's check-guidance-coverage.js states it in
+        # its own header, and the guidance subject's objective-only branch
+        # (N-f) adopted it for the same reason.
+        print(f"FAILED: -k {', '.join(repr(p) for p in opts.patterns)} "
+              f"selected 0 of {total} tests. A pattern that matches nothing "
+              "is a typo, not a clean run: an empty measurement is not a "
+              "passing one.")
+        return memory_guard(memory, before, 2)
     if selected != total:
         print(f"NARROWED RUN: -k selected {selected} of {total} tests — an OK "
               "from this run is not a full-suite pass.")
@@ -10031,15 +10094,7 @@ def main(argv: list[str] | None = None) -> int:
     result = unittest.TextTestRunner(verbosity=verbosity,
                                      failfast=opts.failfast).run(suite)
     status = 0 if result.wasSuccessful() else 1
-    after = user_memory_fingerprint(memory)
-    if after != before:
-        print(f"\nFAILED: this suite CHANGED {memory} "
-              f"({before} -> {after}). No test may write the fleet's user "
-              "memory: every arm gets a scratch config dir, and "
-              "harness/guidance.py refuses any dest_dir or HOME that resolves "
-              "to the real one.")
-        status = 1
-    return status
+    return memory_guard(memory, before, status)
 
 
 if __name__ == "__main__":
