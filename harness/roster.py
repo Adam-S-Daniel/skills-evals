@@ -258,19 +258,6 @@ def alias_map(ids) -> dict[str, str]:
     return mapping
 
 
-def _base(model_id: str) -> str:
-    """`model_id` with one trailing `-DDDDDDDD` stripped, if it has one.
-
-    The spelling half of `_Relevance.fold`. On its own it says NOTHING
-    about relevance — eight digits are not a date, and round 8 learned
-    that the hard way — which is why nothing calls it except `fold`, where
-    the production alias map (built from documents a planter does not
-    write) decides what the stripped id actually names.
-    """
-    match = SNAPSHOT_SUFFIX.match(model_id)
-    return match.group("base") if match else model_id
-
-
 def _usage_alias_map(api_ids, other_ids, seat_aliases: dict,
                      live_order) -> dict[str, str]:
     """{id: the id whose numerator its census turns belong to}, for USAGE.
@@ -493,9 +480,9 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     harness observed under a DATED id credited nothing to the undated
     alias the census records its usage under — the same one-directional
     reading of the alias relation B1' fixes in the caps. It is also what
-    makes the caps' tier-2 slot mean what it says: an entry that folds
-    onto a census key keeps that key attributable, whichever of the two
-    lists the entry is in. This grants a planter nothing new — an id
+    makes the caps' invariant mean the same thing in both lists: an entry
+    that folds onto a census key keeps that key attributable, whichever of
+    the two lists the entry is in. This grants a planter nothing new — an id
     planted in `catalogue_seen` already attributes ITSELF, so planting
     `X-00000000` now attributes exactly what planting `X` always did —
     and it only ever fires for ids the map relates, which is bounded by
@@ -846,7 +833,7 @@ class _Relevance:
     filtered to the keys whose total is above zero — see `_relevance`.
     """
 
-    def __init__(self, api_ids, count_turns, seat_aliases, live_order):
+    def __init__(self, api_ids, count_turns):
         self._live = {i for i in api_ids if isinstance(i, str)}
         # No filter (N-3, #129 review round 11): `count_turns` is already
         # {str: positive int} by the time it gets here. `_clean_counts`
@@ -858,165 +845,62 @@ class _Relevance:
         # key in any run, so neither had a mutation that could turn the
         # suite red; F-2 is the rule that such a check goes.
         self._turns = dict(count_turns)
-        # Built from the LIVE CATALOGUE and the in-window census keys and
-        # from nothing else — the same two documents `_relevance` says
-        # relevance is decided by, and neither of them written by whoever
-        # writes `previous.json`.
-        self._production = _usage_alias_map(
-            api_ids, sorted(self._turns), seat_aliases, list(live_order))
-        self._group_turns: dict[str, int] = {}
-        for key, turns in self._turns.items():
-            group = self.fold(key)
-            self._group_turns[group] = self._group_turns.get(group, 0) + turns
-        # THE LINKS OF THE ALIAS CHAIN (B, #129 review round 11), and the
-        # reason a fold GROUP is not the whole answer. `fold` strips the
-        # suffix unconditionally and then asks the production map, so a
-        # dated census key is in its live snapshot's group whether or not
-        # the bare alias between them exists anywhere. The map attribution
-        # actually uses does NOT: `_usage_alias_map` folds `X-DDDDDDDD`
-        # onto `X` only when `X` is itself one of the ids handed in — and
-        # the ids handed in are the two lists these caps trim. So when the
-        # census key IS a tier-1 entry, the fold group is `covered`, tier 2
-        # spends no slot, and the bare alias `X` — the ONLY hop from that
-        # key to the live snapshot's numerator — drops to tier 3 behind
-        # every filler, is evicted, and the chain breaks: measured through
-        # `main()`, 500 fillers took a live model's true 57.1% off the
-        # roster entirely, and a three-hop chain published a false
-        # `carries 100.0%` for a true 5.66%.
-        #
-        # Every id the chain needs as a HOP is therefore tier 1 in its own
-        # right — a route, not a slot, because the census needs all of
-        # them at once and there is nothing to ration. It grants a planter
-        # nothing: this reads the CENSUS KEY's spelling and never an
-        # entry's, one id per suffix level of keys the planter does not
-        # write, so a plant is in here only if its id IS the missing
-        # spelling — in which case keeping it is exactly right. Round 9's
-        # `<census key>-00000000` plants gain nothing at all.
-        #
-        # AND IT IS SUBSUMED, ON THIS SAME HEAD, BY THE TIER-3 RESIDUE
-        # RULE the census-silent fix landed beside it — which is a
-        # finding, not a footnote, and the PR body carries it in full.
-        # Both caps now carry every entry the live catalogue and the
-        # census say nothing about, so an id that is NOT one of them can
-        # no longer be evicted at all; and an id that IS one of them is
-        # tier 1 without needing this map. A bridge is either a census
-        # key (then `counts` supplies the hop to `_usage_alias_map`
-        # directly and nothing here is needed) or it is not (then it is
-        # residue and carried). Measured: every one of the four mutations
-        # of this block leaves all 854 tests green.
-        #
-        # It is left standing because DESIGN DECISION 5 of this round's
-        # brief prescribes it and a worker does not delete a mandated fix
-        # on the strength of its own reading. What it costs while it
-        # stands is small and one-directional: promoting a hop into tier
-        # 1 EXPOSES it to the cap, so in the one regime where the caps
-        # still evict — the census naming more entries than the cap has
-        # room for — a hop is safer as residue than as a tier-1 entry
-        # whose weight happens to rank below 500 others. Round 12 has two
-        # clean resolutions and the PR body states both.
-        self._links: dict[str, int] = {}
-        for key, turns in self._turns.items():
-            cur, seen = key, {key}
-            while True:
-                match = SNAPSHOT_SUFFIX.match(cur)
-                if not match:
-                    break
-                cur = match.group("base")
-                if cur in seen:
-                    break
-                seen.add(cur)
-                self._links[cur] = max(self._links.get(cur, 0), turns)
-
-    def fold(self, model_id: str) -> str:
-        """The production alias map applied to `_base(model_id)`.
-
-        Two ids are in the SAME FOLD GROUP when their folds are equal.
-        `_base` is the only place a spelling is read, and it is read only
-        to ask the alias map a question: the map's domain is the live
-        catalogue, the in-window census keys and the bare aliases live
-        dated snapshots claim, so a spelling that names nothing in those
-        documents folds onto itself and joins no group but its own.
-
-        THIS IS NOT THE RELATION ATTRIBUTION READS, and the difference is
-        the whole of B (#129 review round 11). Here the suffix strip is
-        UNCONDITIONAL — `X-DDDDDDDD` is in `X`'s group whether or not `X`
-        exists anywhere. In `alias_map`, which is what `_usage_alias_map`
-        and therefore every numerator is built out of, the hop
-        `X-DDDDDDDD -> X` exists ONLY when `X` is itself one of the ids
-        handed in — and the ids handed in are the two lists the caps trim.
-        So the two relations are described in these docstrings as one and
-        are not one: a group can be `covered` here while the map has no
-        route at all, because the id that would have been the route was
-        capped out. Measured through `main()`: `fold` put an older dated
-        census key and the live snapshot of the same base in one group
-        while the alias map still sent that key to itself, and 57.1% of
-        the window landed in no numerator at all.
-
-        `_links` is what reconciles them: every id the map needs as a hop
-        from an in-window census key to its numerator is tier 1, so the
-        caps cannot take it, and the two relations agree about every
-        census key they agreed about before either cap fired. That
-        agreement is a test floor, not an assertion here —
-        TestIssue67Review11 checks it on every row and over the 1,200
-        generated scenarios — because computing it needs the uncapped
-        lists, which this module deliberately does not keep.
-        """
-        base = _base(model_id)
-        return self._production.get(base, base)
 
     def rank(self, ids) -> dict[str, tuple]:
         """{id: sort key} for the list being capped, ascending — smallest
-        survives. `(tier, -turns, id)`:
+        survives. `(tier, -turns, id)`, over TWO tiers:
 
-        TIER 1  the id is an in-window census key, a live catalogue id,
-                or a LINK the alias chain needs to carry an in-window
-                census key's turns to its numerator (`_links` — see
-                `__init__`). A route, not a rationed slot: the chain
-                needs every one of its hops at once.
-        TIER 2  one slot per census key: for a census key K with in-window
-                turns that NO tier-1 entry of `ids` folds onto, the
-                smallest id of `ids` that folds onto K. A planter can win
-                that slot with `K-00000000` — and then K stays attributable
-                through the plant, so no published share moves. What a
-                planter cannot do is take K's attributability away, because
-                the slot COUNT is bounded by the census, which the planter
-                does not write.
-        TIER 3  everything else, after every tier-1 and tier-2 entry.
+        TIER 1  the id is an in-window census key, or a live catalogue id.
+                Those are the two documents whoever writes `previous.json`
+                does not write, and either of them names the entry
+                outright. Ordered by the entry's own in-window census
+                turns descending, then by the id ascending — the id term
+                is what makes the order TOTAL, and it is the only thing
+                that does.
+        TIER 3  THE RESIDUE: everything else, which is every entry neither
+                document names under any spelling. It is not ordered at
+                all, and neither cap evicts from it — the only things left
+                to order it by are `last_seen` and the id, both written by
+                whoever writes `previous.json`. `UNCAPPED_CARRY_CEILING`
+                is the one bound on it.
 
-        Within a tier: census in-window turns descending — for tier 1 the
-        entry's own, or the largest turn count of a census key that needs
-        it as a link; its fold group's for tier 2; zero for tier 3 — then
-        id ascending. `last_seen` is consulted nowhere: the previous roster
-        writes it (a future date clamps to today and every bare string
-        migrates stamped today), and the id order is already total over a
-        deduped list, so a rung after it could never fire anyway.
+        THERE IS NO TIER 2, AND THE GAP IN THE NUMBERING IS DELIBERATE
+        (#129 review round 11). Rounds 8-10 built one — a single rationed
+        slot for each census key no tier-1 entry already reached — and
+        round 11 added a tier-1 route for every link of the alias chain
+        (DESIGN DECISION 5). The residue rule above subsumes both, and the
+        argument is a proof rather than a measurement: an id NEITHER
+        document names can no longer be evicted at all, an id either of
+        them names is tier 1 without help, and a bridge between them is
+        one or the other — a census key (whose turns put it in tier 1 and
+        whose spelling is already in `_usage_alias_map`'s domain) or
+        residue (carried). Ten mutations of that machinery left the whole
+        suite green, and F-2 (#129 review round 10) is the rule that a
+        clause with no red mutation is deleted rather than kept as
+        belt-and-braces.
+
+        THE NUMBERS STAY 1 AND 3 rather than renumbering to 1 and 2:
+        "tier 2" names the deleted rationed slot in four rounds of review
+        notes, in `evals/roster-policy.yml` and in this file, and reusing
+        the number for its opposite — the tier nothing can evict — would
+        silently falsify every one of them. `evals/roster-policy.yml`
+        records what tier 2 and the chain links were, and why they went.
+
+        `last_seen` is consulted nowhere: the previous roster writes it (a
+        future date clamps to today and every bare string migrates stamped
+        today), and the id order is already total over a deduped list, so
+        a rung after it could never fire anyway.
         """
-        ids = list(ids)
-        tier1 = {i for i in ids
-                 if i in self._turns or i in self._live or i in self._links}
-        covered = {self.fold(i) for i in tier1}
-        by_group: dict[str, list[str]] = {}
-        for model_id in ids:
-            by_group.setdefault(self.fold(model_id), []).append(model_id)
-        tier2: dict[str, int] = {}
-        for group, turns in self._group_turns.items():
-            if group in covered or group not in by_group:
-                continue
-            tier2[min(by_group[group])] = turns
         keys: dict[str, tuple] = {}
         for model_id in ids:
-            if model_id in tier1:
-                keys[model_id] = (1, -max(self._turns.get(model_id, 0),
-                                          self._links.get(model_id, 0)),
-                                  model_id)
-            elif model_id in tier2:
-                keys[model_id] = (2, -tier2[model_id], model_id)
+            if model_id in self._turns or model_id in self._live:
+                keys[model_id] = (1, -self._turns.get(model_id, 0), model_id)
             else:
                 keys[model_id] = (3, 0, model_id)
         return keys
 
 
-def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
+def _relevance(api_ids, count_turns) -> _Relevance:
     """How the two caps below rank an entry: do the LIVE CATALOGUE or the
     CENSUS name it, and how loudly?
 
@@ -1029,6 +913,15 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     from such a key to the numerator that collects its turns survives the
     caps, and an entry that neither the live catalogue nor the census
     needs, under any spelling, never outranks one that either does.
+
+    WHAT CARRIES ALL THREE CLAUSES IS THE RESIDUE RULE, and not a ladder
+    of routes (#129 review round 11). An entry neither document names is
+    never evicted, so it can neither cost a census key its last entry nor
+    cost the usage alias map a hop; and it is tier 3, behind everything
+    either document does name. Rounds 8 through 11 reached for a rationed
+    per-key slot and then for an explicit route over the alias chain
+    instead, and both are gone — see `_Relevance.rank` for what replaced
+    them and `evals/roster-policy.yml` for the record of what they were.
 
     ATTRIBUTION READS THE FOLD SET, NOT THE ENTRY THAT PRODUCED IT. That
     is the whole of decision 4, and it is what round 9 got wrong in the
@@ -1046,23 +939,16 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     and 11 published shares came out HIGHER than they should, 0 lower.
 
     Restoring the deleted spelling route re-opens round 9's blocker, so
-    that is not the fix. What tells the real arm from the 500 plants is
-    not how either is spelled but WHAT THE CENSUS STILL NEEDS: the key
-    `<alias>` is attributable only through an entry that folds onto it,
-    and the census — which the planter does not write — says how many such
-    slots exist. So relevance is decided in three tiers, from data the
-    previous roster does not write, and nothing else. See `_Relevance.rank`
-    for the tiers and `_Relevance.fold` for the fold relation.
+    that was never the fix either. What tells the real arm from the 500
+    plants is not how either is spelled but WHAT THE TWO DOCUMENTS SAY:
+    the census names the real arm's key and names nothing about the
+    plants, so the plants are residue and are carried rather than ranked
+    ahead of it — and a planter cannot add a census key.
 
     WHY EACH INPUT IS SAFE. `api_ids` is the Models API's answer this run.
     `count_turns` is the census, in-window: a planter cannot add a census
-    key, so it cannot add a tier-1 membership, and it cannot add a tier-2
-    SLOT either — the slot count is one per census key. The links are read
-    off the census KEYS' own spellings, one id per suffix level, so they
-    are bounded by the census too. The production alias map ranges over
-    the live catalogue, the in-window census keys and the bare aliases
-    live dated snapshots claim, all bounded by those same two documents.
-    Nothing here reads `previous.json`.
+    key, so it cannot add a tier-1 membership, and there is no rationed
+    slot left for it to compete for. Nothing here reads `previous.json`.
 
     A CENSUS KEY WITH ZERO IN-WINDOW TURNS NAMES NOTHING (A, #129 review
     round 10), which is why the caller passes turn TOTALS rather than
@@ -1082,37 +968,17 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     of an 8,000-turn arm in run 1, and run 2 — reading run 1's own output
     back with a healthy census — published a permanent false 100.0%. The
     question is now asked per entry rather than per file: the caps rank
-    and bound tier 1 and tier 2, and carry tier 3 whole. See
+    and bound tier 1, and carry the tier-3 residue whole. See
     `UNCAPPED_CARRY_CEILING` for the one bound that is left.
-
-    ROUTE (c1) OF ROUND 9 IS A TIER-1 ROUTE, not a tier-2 slot (B, #129
-    review round 11). Round 10 claimed tier 2 subsumed it — a bare arm `X`
-    beside a dated census key `X-YYYYMMDD` is in that key's fold group and,
-    "absent a tier-1 entry", takes the slot — and that reading is false in
-    exactly the case that matters: when `X-YYYYMMDD` is ITSELF one of the
-    entries, it is tier 1, the group is `covered`, no slot is spent, and
-    `X` — the only hop the usage alias map has from that key to the live
-    snapshot — falls to tier 3 behind every filler. Measured through
-    `main()` over the dated-snapshot-only catalogue roster-policy.yml
-    itself documents: 500 fillers, and a live model carrying a true 57.1%
-    was published with no usage seat at all; a three-hop chain published a
-    false `carries 100.0%` for a true 5.66%. So a link of the chain is
-    tier 1 in its own right — see `_Relevance.__init__`'s `_links`, and
-    `_Relevance.fold` for why the fold relation and the alias map are not
-    the same relation. Round 9's route (c2) (the production map landing
-    the entry on a census key) is GONE: it was provably implied by the
-    other three — 0 fires in 6,000,000 evaluations — and F-2 (#129 review
-    round 10) is the rule that a clause with no mutation of its own is
-    deleted rather than kept as belt-and-braces.
 
     Round 6 keyed the cap on the id, round 7 on `last_seen`, round 8 on a
     predicate over the id, round 9 on the two documents but only in one
     direction, round 10 on what the census needs but only one entry per
-    key. This keys it on everything those two documents still need: the
-    keys themselves, the live catalogue, every hop between them, and one
-    slot for a group nothing else reaches.
+    key, and round 11 on that plus every hop of the alias chain. This
+    keys it on the two documents alone, and carries everything they do not
+    name rather than inventing an order for it.
     """
-    return _Relevance(api_ids, count_turns, seat_aliases, live_order)
+    return _Relevance(api_ids, count_turns)
 
 
 #: N3 (#129 review round 6): the same cap `CATALOGUE_SEEN_CAP` applies to
@@ -1277,10 +1143,10 @@ def _clean_previous_arms(previous, warn,
     if len(ids) > PREVIOUS_ARMS_CAP:
         # THE CAP BOUNDS ONLY WHAT THE TWO DOCUMENTS NAME (round 11's
         # census-silent generalisation of A, #129 review round 10). Tier 1
-        # and tier 2 are decided by the live catalogue and the census; the
-        # tier-3 RESIDUE is the entries neither names under any spelling,
-        # and there is nothing left to order those by but `last_seen` and
-        # the id — both written by whoever writes `previous.json`. So the
+        # is decided by the live catalogue and the census; the tier-3
+        # RESIDUE is the entries neither names under any spelling, and
+        # there is nothing left to order those by but `last_seen` and the
+        # id — both written by whoever writes `previous.json`. So the
         # residue is carried whole rather than filled or evicted by id
         # order, and `UNCAPPED_CARRY_CEILING` is the one bound left.
         order = relevant.rank(ids)
@@ -1493,10 +1359,9 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     collects its turns survives the caps, and an entry that neither the
     live catalogue nor the census needs, under any spelling, never
     outranks one that either does. What the cap bounds is
-    tier 1 and tier 2; the tier-3 residue — entries neither document
-    names, which nothing but the previous roster itself can order — is
-    carried whole, and `UNCAPPED_CARRY_CEILING` is the one bound left on
-    it.
+    tier 1; the tier-3 residue — entries neither document names, which
+    nothing but the previous roster itself can order — is carried whole,
+    and `UNCAPPED_CARRY_CEILING` is the one bound left on it.
     """
     today = _as_date(now)
     by_id = {e["id"]: e["last_seen"] for e in previous_entries}
@@ -1528,7 +1393,7 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     # live catalogue and the census — never by anything the previous
     # roster asserts about itself, and never by how an entry is spelled.
     # Entries neither document needs are not ordered at all: they are the
-    # TIER-3 RESIDUE, and the cap neither fills its slots from them nor
+    # TIER-3 RESIDUE, and the cap neither fills its room from them nor
     # evicts them, because the only things left to order them by —
     # `last_seen` and the id — are both written by whoever writes
     # `previous.json`. `UNCAPPED_CARRY_CEILING` is what bounds them.
@@ -1577,9 +1442,11 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     #
     # ONE composite key, not a stack of stable sorts: `_Relevance.rank`
     # answers the whole question at once — tier, then the census's own
-    # in-window turns descending, then the id — because the tiers are not
-    # independent of one another (tier 2 is decided by which entries are
-    # tier 1) and no sequence of single-column sorts can express that.
+    # in-window turns descending, then the id. Round 11 needed that
+    # because the tiers were not independent of one another (the deleted
+    # tier 2 was decided by which entries were tier 1), and it is kept
+    # because the cap reads one key for both the partition and the order,
+    # so a stack of sorts could disagree with the partition it sorts.
     # `last_seen` is gone from the order entirely: the previous roster
     # writes it, it never decided anything the id did not already decide,
     # and a rung after a total order cannot fire.
@@ -1826,7 +1693,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # Computed here rather than inside either cap because it needs
     # `live_order`, this run's own capability order, for the fold
     # relation; see `_relevance` for the invariant it exists to hold.
-    relevant = _relevance(api_ids, count_turns, seat_aliases, live_order)
+    relevant = _relevance(api_ids, count_turns)
 
     # Computed before the wide alias map below: USAGE attribution (B1,
     # #129 review round 6) needs both a previous roster's arm ids and its

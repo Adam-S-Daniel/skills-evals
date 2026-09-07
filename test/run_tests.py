@@ -17624,9 +17624,15 @@ class TestIssue67Review9(unittest.TestCase):
                 arm_ids = {e["id"] for e in previous["arms"]}
                 seen_ids = {e["id"] for e in previous["catalogue_seen"]}
                 for key in counts:
-                    bridge = roster._base(key)
-                    if bridge == key:
+                    # `roster._base` went with `_Relevance.fold` (round
+                    # 11's continuation). This is the generator checking
+                    # the shape of ids IT wrote, which is a lexical
+                    # question, so the strip is done here rather than
+                    # kept in the module for a test to borrow.
+                    match = roster.SNAPSHOT_SUFFIX.match(key)
+                    if not match:
                         continue
+                    bridge = match.group("base")
                     if key in arm_ids and bridge in arm_ids:
                         bridged_arms += 1
                     if key in seen_ids and bridge in seen_ids:
@@ -17800,31 +17806,45 @@ class TestIssue67Review9(unittest.TestCase):
 
     def test_the_arms_cap_decides_the_attributable_denominator(self):
         """MUTATION: `return ids, carried` -> `return ids, ids` in
-        `_clean_previous_arms`. 500 departed ranked arms the census names
-        outright — TIER 1, three turns each — and one more that is a dated
-        spelling of a census key nothing else folds onto, so it holds that
-        key's single TIER 2 slot and sorts after all 500 of them. The key
-        holds 900,000 of the window's 901,500 raw turns. Capped at 500,
-        the tier-2 entry is the one that goes, those turns are not
-        attributable to anything, the census reads as almost entirely
-        unrankable and the roster falls back to newest-per-tier and says
-        so; uncapped, they are attributable and the fallback never happens.
+        `_clean_previous_arms`. 501 departed ranked arms that the census
+        names outright, so every one of them is TIER 1: 500 at three turns
+        each, and `claude-sonnet-4-9-20250101` at ONE, which sorts last of
+        the 501 on the turns term. That last entry is also the only hop
+        the usage alias map has from the census key `claude-sonnet-4-9`,
+        which holds 900,000 of the window's 901,501 raw turns. Capped at
+        500 it is the one that goes, those turns are attributable to
+        nothing, the census reads as almost entirely unrankable and the
+        roster falls back to newest-per-tier and says so; uncapped, they
+        are attributable and the fallback never happens.
 
         THE RESIDUAL COST OF B1' (#129 review round 10), stated here
         because this is where it is measured: the invariant holds SUBJECT
-        TO THE CAP. Tier 1 plus tier 2 can exceed 500 — this scenario is
-        the smallest case where it does — and then something the census
-        names is dropped after all, lowest turns last. Filling tier 1 that
-        way costs a planter 500 entries that are themselves in-window
-        census keys, and planting a census key does not remove its own
+        TO THE CAP. Tier 1 can exceed 500 — this scenario is the smallest
+        case where it does — and then something the census names is
+        dropped after all, lowest turns last. Filling tier 1 that way
+        costs a planter 500 entries that are themselves in-window census
+        keys, and planting a census key does not remove its own
         attributability; what it can displace is another key's dated
         stand-in. Raising the cap moves the number, it does not remove the
-        case."""
+        case.
+
+        THE COST GOT SMALLER in round 11's continuation, which is why this
+        row was re-pointed rather than left standing. It used to reach the
+        same failure with the bridge NOT a census key: it was then the
+        single TIER 2 slot of the group it folds onto, tier 1 plus tier 2
+        came to 501, and the cap dropped it. With tier 2 deleted and the
+        tier-3 residue carried whole, that entry is residue, is carried
+        unconditionally, and the 900,000 turns stay attributable — the
+        published roster is strictly better on the old input, and the row
+        as written no longer measured the cap at all. What is left of the
+        cost needs all 501 entries to be in-window census keys in their
+        own right, which is what this now sets up."""
         previous = {"arms": [{"id": i, "reason": "was an arm"}
                              for i in self.S2B_ARMS] +
                             [{"id": self.S2B_DATED, "reason": "was an arm"}]}
         counts = {i: {self.W[0]: 3} for i in self.S2B_ARMS}
         counts[self.S2B_BIG] = {self.W[0]: 900_000}
+        counts[self.S2B_DATED] = {self.W[0]: 1}
         census = TestIssue67._census_doc(counts=counts)
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, _ = self._run_main(
@@ -17832,16 +17852,17 @@ class TestIssue67Review9(unittest.TestCase):
                 previous=previous)
         self.assertEqual(rc, 0)
         reason = self._reason(published, "claude-sonnet-5")
-        self.assertIn("only 1500 of 901500 raw turns", reason,
+        self.assertIn("only 1500 of 901501 raw turns", reason,
                       "the capped-out arm's 900,000 turns are not "
                       "attributable to anything")
         self.assertIn("under the 1% relative floor", reason)
         self.assertIn("fell back to newest per tier", reason)
-        # Mutation check (manual): with the cap removed the tier-2 arm is
-        # carried, the 900,000 turns it folds onto are attributable, the
-        # census reads as usable and the reason is a bare "newest model in
-        # the sonnet tier, ... days old" with no census-quality sentence
-        # at all — red on all three assertions.
+        # Mutation check (run, on the head that deleted tier 2): with the
+        # cap removed the lowest-turn tier-1 arm is carried, the 900,000
+        # turns it bridges are attributable, the census reads as usable
+        # and the reason is a bare "newest model in the sonnet tier, ...
+        # days old" with no census-quality sentence at all — red on all
+        # three assertions.
 
     # --- N3: no published reason carries scientific notation -------------
     #
@@ -18700,7 +18721,7 @@ class TestIssue67Review11(unittest.TestCase):
 
     @staticmethod
     def _fold_context(models_doc, census_doc, policy, previous, now):
-        """(count_turns, relevant, aliases, catalogue_seen_entries) —
+        """(count_turns, aliases, catalogue_seen_entries) —
         `compute_roster`'s own derivation, rebuilt.
 
         A MIRROR, which is a thing that has to be kept honest: every
@@ -18726,8 +18747,7 @@ class TestIssue67Review11(unittest.TestCase):
             in_window = sum(n for week, n in by_week.items() if week in window)
             if in_window > 0:
                 count_turns[key] = in_window
-        relevant = roster._relevance(api_ids, count_turns, seat_aliases,
-                                     live_order)
+        relevant = roster._relevance(api_ids, count_turns)
         carried = roster._clean_previous_arms(
             previous, lambda _m: None, relevant=relevant)[1]
         seen_entries = roster._update_catalogue_seen(
@@ -18736,22 +18756,40 @@ class TestIssue67Review11(unittest.TestCase):
         aliases = roster._usage_alias_map(
             api_ids, list(counts) + carried + [e["id"] for e in seen_entries],
             seat_aliases, live_order)
-        return count_turns, relevant, aliases, seen_entries
+        return count_turns, aliases, seen_entries
 
     @classmethod
-    def _agreeing_keys(cls, models_doc, census_doc, policy, previous, now):
-        turns, relevant, aliases, seen_entries = cls._fold_context(
+    def _key_targets(cls, models_doc, census_doc, policy, previous, now):
+        turns, aliases, seen_entries = cls._fold_context(
             models_doc, census_doc, policy, previous, now)
-        return ({k for k in turns if aliases.get(k, k) == relevant.fold(k)},
-                seen_entries)
+        return {k: aliases.get(k, k) for k in turns}, seen_entries
 
     @classmethod
     def assert_fold_and_alias_map_agree(cls, models_doc, census_doc, policy,
                                         previous, now, published_seen, case):
-        """Called from the row tests and from round 9's property test.
-        `case` is the `TestCase` doing the asserting, so one implementation
-        serves both."""
-        after, seen_entries = cls._agreeing_keys(
+        """THE CAPS DO NOT MOVE A CENSUS KEY'S NUMERATOR. For every
+        in-window census key, the usage alias map sends it to the same id
+        after the caps have fired as it did before — "before" measured, not
+        reasoned about, by running the same derivation again with both caps
+        and the ceiling patched past reach.
+
+        Round 11 stated this over `_Relevance.fold` and the alias map,
+        because there were then TWO fold relations and the whole of that
+        round's blocker was that they disagreed: `fold` stripped a dated
+        suffix unconditionally, while `alias_map` creates the hop
+        `X-DDDDDDDD -> X` only when `X` is one of the ids handed in — and
+        the ids handed in are the two lists the caps trim. Deleting
+        `_Relevance.fold` (round 11's continuation) leaves ONE relation, so
+        the floor is stated over it directly: the map itself, before versus
+        after. That is the property the two-relation version was a proxy
+        for, and it is strictly the stronger statement — it is red whenever
+        a cap changes where a key's turns land, not only when a cap breaks
+        an agreement the two relations happened to have.
+
+        Called from the row tests and from round 9's property test. `case`
+        is the `TestCase` doing the asserting, so one implementation serves
+        both."""
+        after, seen_entries = cls._key_targets(
             models_doc, census_doc, policy, previous, now)
         case.assertEqual(seen_entries, published_seen,
                          "the mirror of compute_roster's derivation has "
@@ -18760,11 +18798,12 @@ class TestIssue67Review11(unittest.TestCase):
         with mock.patch.object(roster, "PREVIOUS_ARMS_CAP", big), \
              mock.patch.object(roster, "CATALOGUE_SEEN_CAP", big), \
              mock.patch.object(roster, "UNCAPPED_CARRY_CEILING", big):
-            before, _ = cls._agreeing_keys(models_doc, census_doc, policy,
-                                           previous, now)
-        case.assertEqual(sorted(before - after), [],
-                         "a cap took an in-window census key's own fold "
-                         "target away from the map attribution reads")
+            before, _ = cls._key_targets(models_doc, census_doc, policy,
+                                         previous, now)
+        case.assertEqual(
+            sorted(k for k in before if before[k] != after.get(k, k)), [],
+            "a cap moved an in-window census key's usage-alias-map target "
+            "away from the numerator it reached before the cap fired")
 
     def _seat(self, published, model_id):
         """The published sentence about `model_id`: its arm reason, its
@@ -18942,38 +18981,30 @@ class TestIssue67Review11(unittest.TestCase):
                     arms=[self.SNAPSHOT],
                     seen=self.HISTORY_BRIDGE + self.PLANTS[:count]))
 
-    # The `covered` guard's own floor, which the retired round-10 test
-    # used to carry by asserting the wrong outcome.
-
-    def test_a_covered_group_spends_no_tier_two_slot(self):
-        """MUTATION: `covered = set()` in `_Relevance.rank`.
-
-        The catalogue lists the bare alias AND a dated snapshot of it, so
-        the census key `claude-sonnet-5-20260601` folds onto the bare
-        alias directly — no bridge is needed, and the key is itself a
-        history entry and so tier 1. `claude-sonnet-5-20260101` is in the
-        same fold group, sorts before the key, and the chain does not
-        need it: with the guard it is an ordinary tier-3 entry and goes
-        with the plants; without it, it takes a slot the census never
-        asked for and the cap carries one fewer entry a later run might
-        have needed."""
-        api = ["claude-sonnet-5", self.SNAPSHOT, "claude-haiku-4-5"]
-        fillers = [f"claude-opus-3-{i:03d}" for i in range(496)]
-        published = self._row(
-            api, dict({k: 1 for k in fillers},
-                      **{self.KEY: 8000, "claude-haiku-4-5": 800}),
-            seen=[self.KEY, "claude-sonnet-5-20260101"] + fillers
-                 + self.PLANTS)
-        seen = self._seen_ids(published)
-        self.assertIn(self.KEY, seen, "an in-window census key is tier 1")
-        self.assertIn("claude-sonnet-5-20260101", seen,
-                      "carried as tier-3 residue — it spends no slot, so "
-                      "it costs no entry the census names its place")
-        self.assertEqual(len([k for k in fillers if k in seen]), 496,
-                         "every entry the census names outright is kept")
-        # The census key's 8000 turns reach `claude-sonnet-5` through the
-        # alias map either way: 8000 of 8000 + 800 + 496 rankable turns.
-        self._assert_carries(published, "claude-sonnet-5", "86.1")
+    # RETIRED: `test_a_covered_group_spends_no_tier_two_slot`.
+    #
+    # It was the `covered` guard's own floor, and `covered` is gone with
+    # the tier it guarded. The mutation it named — `covered = set()` in
+    # `_Relevance.rank` — has nothing left to change: round 11's
+    # continuation deleted tier 2, `covered`, `by_group` and `_links`
+    # outright, because the tier-3 residue rule landed beside them and
+    # subsumes all of it. An id neither the live catalogue nor the census
+    # names can no longer be evicted at all; an id either of them names is
+    # tier 1 without help; and a bridge between them is one or the other.
+    # Ten mutations of that machinery left the whole suite green, which is
+    # F-2's own rule for deleting it rather than keeping it as
+    # belt-and-braces.
+    #
+    # It is retired rather than re-pointed because its scenario now has no
+    # question in it. It asserted that a fold-group member the chain does
+    # not need spends no slot and so costs no census-named entry its
+    # place: with no slots left to spend, that is true of every entry the
+    # census does not name, unconditionally, and
+    # `test_a_census_that_names_only_the_victim_carries_the_plants_too`
+    # and TestIssue67Review11's census-silent rows are where it is
+    # measured. What its scenario DID uniquely pin — that a census key
+    # whose group needs no bridge still reaches its numerator past the cap
+    # — is TestIssue67Review11's rows 1-4 and their B-4 floor.
 
     # --- `census_is_silent` was a FILE-level test; one in-window turn
     # re-armed the whole eviction -----------------------------------------
