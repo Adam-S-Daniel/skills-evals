@@ -1491,7 +1491,10 @@ class TestIssue97(unittest.TestCase):
 
     # Long enough that a run which reaches the CLI at all does not finish
     # inside this test's own patience — so a regression shows up as the outer
-    # timeout firing, never as a passing test.
+    # timeout firing, never as a passing test. That outer timeout is
+    # `_run_main_subprocess`'s: every row below runs in a child, because
+    # in-process there is no outer timeout at all and the mutation these rows
+    # exist to catch hangs the suite instead of failing it.
     HANG = {"FAKE_CLAUDE_MODE": "timeout", "FAKE_CLAUDE_SLEEP": "600"}
 
     def _timeout_fixture(self, tmp: Path, **overrides) -> Path:
@@ -1515,7 +1518,13 @@ class TestIssue97(unittest.TestCase):
                 tmp = Path(tempfile.mkdtemp(prefix="guidance-timeout-"))
                 self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
                 eval_dir = self._timeout_fixture(tmp, **overrides)
-                rc, out = self._run_main(
+                # In a CHILD with an outer bound, never `_run_main`: with
+                # `validate_timeouts` mutated away these values reach
+                # `subprocess.run(timeout=...)` and the run does not come
+                # back — measured, a fake-claude guard probe alive 498 s
+                # under `timeout=None`. In-process that hangs the whole
+                # suite, which is not a result a reviewer can read.
+                rc, out = self._run_main_subprocess(
                     [eval_dir, "--arm", "both", "--guidance", root,
                      "--results-dir", tmp / "results", "--no-judge"])
                 self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
@@ -1547,8 +1556,9 @@ class TestIssue97(unittest.TestCase):
         (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(
             {"skill": "a-skill", "prompt": "do the thing", "timeout_s": None},
             sort_keys=False), encoding="utf-8")
-        rc, out = self._run_main([eval_dir, "--arm", "without_skill",
-                                  "--results-dir", tmp / "results", "--no-judge"])
+        rc, out = self._run_main_subprocess(
+            [eval_dir, "--arm", "without_skill",
+             "--results-dir", tmp / "results", "--no-judge"])
         self.assertEqual(rc, 2, out)
         self.assertIn("positive number", out)
         self.assertNotIn("Traceback", out)
