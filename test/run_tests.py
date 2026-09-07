@@ -15687,20 +15687,23 @@ class TestIssue67Review9(unittest.TestCase):
     _PROP_SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
 
     def test_both_halves_of_the_invariant_hold_over_random_plant_sets(self):
-        """3 seeds x 400 scenarios through `compute_roster`, asserting BOTH
-        halves of the invariant the caps exist to keep.
+        """3 seeds x 400 scenarios through `compute_roster`, asserting
+        every clause of the invariant the caps exist to keep.
 
-        HALF ONE — every census key with in-window turns that any entry
-        folds onto keeps at least one entry that folds onto it — is
-        asserted through its only observable consequence, and the only one
-        that matters: every published share equals the turns that model
-        really carries, computed from the generator's own `owner` map. A
-        fold group that loses its last entry takes its census key out of
-        the denominator, and every other share goes UP.
+        CLAUSES ONE AND TWO — every census key with in-window turns that
+        any entry folds onto keeps at least one entry that folds onto it,
+        and every id the usage alias map needs as a hop from such a key to
+        the numerator that collects its turns survives the caps — are
+        asserted through their only observable consequence, and the only
+        one that matters: every published share equals the turns that
+        model really carries, computed from the generator's own `owner`
+        map. A fold group that loses its last entry, or a chain that loses
+        a middle hop, takes its census key out of some numerator, and
+        every other share moves.
 
-        HALF TWO — an entry that neither the live catalogue nor the census
-        names, under any spelling, never outranks one that either names —
-        is asserted directly: every entry the census names outright
+        CLAUSE THREE — an entry that neither the live catalogue nor the
+        census needs, under any spelling, never outranks one that either
+        does — is asserted directly: every entry the census names outright
         survives the cap, against 500 plants per list that sort ahead of
         it on both of the orders a planter can write.
 
@@ -16098,9 +16101,12 @@ class TestIssue67Review10(unittest.TestCase):
     # it ------------------------------------------------------------------
     #
     # THE INVARIANT: every census key with in-window turns that any entry
-    # folds onto keeps at least one entry that folds onto it, and an entry
-    # that neither the live catalogue nor the census names, under any
-    # spelling, never outranks one that either names.
+    # folds onto keeps at least one entry that folds onto it, every id the
+    # usage alias map needs as a hop from such a key to the numerator that
+    # collects its turns survives the caps, and an entry that neither the
+    # live catalogue nor the census needs, under any spelling, never
+    # outranks one that either does. (The middle clause is round 11's; the
+    # rows below predate it and are unchanged by it.)
     #
     # Round 9 keyed the caps on the live catalogue and the census at last,
     # but read the relation in ONE direction only: census key -> base,
@@ -16497,9 +16503,11 @@ class TestIssue67Review10(unittest.TestCase):
     #: different).
     INVARIANT = (
         "every census key with in-window turns that any entry folds onto "
-        "keeps at least one entry that folds onto it, and an entry that "
-        "neither the live catalogue nor the census names, under any "
-        "spelling, never outranks one that either names")
+        "keeps at least one entry that folds onto it, every id the usage "
+        "alias map needs as a hop from such a key to the numerator that "
+        "collects its turns survives the caps, and an entry that neither "
+        "the live catalogue nor the census needs, under any spelling, "
+        "never outranks one that either does")
 
     ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
 

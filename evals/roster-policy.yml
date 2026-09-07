@@ -145,9 +145,11 @@ min_ranked_share: 0.01
 # own live ids are exempt from the cap entirely.
 #
 # THE INVARIANT: every census key with in-window turns that any entry
-# folds onto keeps at least one entry that folds onto it, and an entry
-# that neither the live catalogue nor the census names, under any
-# spelling, never outranks one that either names.
+# folds onto keeps at least one entry that folds onto it, every id the
+# usage alias map needs as a hop from such a key to the numerator that
+# collects its turns survives the caps, and an entry that neither the
+# live catalogue nor the census needs, under any spelling, never
+# outranks one that either does.
 #
 # The order matters because eviction here is PERMANENT — the next run
 # reads this run's own output back — and because everything the previous
