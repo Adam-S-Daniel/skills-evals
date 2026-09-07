@@ -4965,35 +4965,69 @@ class TestIssue63Review(unittest.TestCase):
         """
         return sorted(evals_root.glob("**/fixture.yaml"))
 
-    def _check_skill_fixtures(self, evals_root: Path, registries: dict) -> int:
+    def _check_skill_fixtures(self, evals_root: Path, registries: dict) -> list:
         """Assert every fixture under `evals_root` that names a skill resolves
-        its registry; return how many were checked."""
-        checked = 0
+        its registry; return the fixture DIRECTORIES that were checked.
+
+        The set, not a count: a count can only say "more than none", which is
+        what let the committed half below stay green under the `**` -> `*`
+        mutation the scratch half was added to catch.
+        """
+        checked = []
         for fixture_path in self._fixture_dirs(evals_root):
             fixture = run_eval.load_fixture(fixture_path.parent)
             if "skill" not in fixture:
                 continue
-            checked += 1
+            checked.append(fixture_path.parent)
             with self.subTest(fixture=str(fixture_path.parent)):
                 self.assertIn("registry", fixture,
                              f"{fixture_path} names a skill but no registry:")
                 entry = run_eval.registry_for_url(registries, fixture["registry"])
                 self.assertIsNotNone(entry)
-        return checked
+        return sorted(checked)
+
+    @staticmethod
+    def _skill_fixture_dirs_by_hand(evals_root: Path) -> list:
+        """Every fixture directory under `evals_root` carrying a `skill:`,
+        found with `os.walk` and `yaml.safe_load` — deliberately NOT through
+        `_fixture_dirs` or `run_eval.load_fixture`, because it is the answer
+        those two are being checked against."""
+        found = []
+        for dirpath, _dirnames, filenames in os.walk(evals_root):
+            if "fixture.yaml" not in filenames:
+                continue
+            path = Path(dirpath) / "fixture.yaml"
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(doc, dict) and "skill" in doc:
+                found.append(Path(dirpath))
+        return sorted(found)
 
     def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
-        """The committed half. It cannot falsify the `**`.
+        """The committed half, and it CAN falsify the `**` now.
 
-        On the committed tree the only NESTED fixture is
-        evals/guidance/_delivery, which carries no `skill:` and is filtered
-        out — so `*` and `**` score identically here and the single-level
-        mutation is 0 red. The scratch half below is what makes the spelling
-        falsifiable: it plants a nested SKILL fixture in its own mkdtemp copy.
+        It used to assert `checked > 0` over a tree whose only nested fixture
+        was `evals/guidance/_delivery`, which carries no `skill:` — so `*` and
+        `**` scored identically and the single-level mutation was 0 red. The
+        merge of main brought two nested SKILL fixtures
+        (`evals/writing-adrs/bootstrap` and `.../existing-convention`), and
+        the docstring saying otherwise had gone false. Rather than pin a count
+        the next fixture PR would have to bump, the assertion is now
+        set-equality against an INDEPENDENT `os.walk` of the same tree: it
+        follows the committed fixtures wherever they go, and goes red the
+        moment the helper's own sweep stops reaching one of them.
         """
         registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        checked = self._check_skill_fixtures(REPO_ROOT / "evals", registries)
-        self.assertGreater(checked, 0, "no committed fixture carries a skill: "
-                           "field — this test would pass vacuously")
+        evals_root = REPO_ROOT / "evals"
+        checked = self._check_skill_fixtures(evals_root, registries)
+        expected = self._skill_fixture_dirs_by_hand(evals_root)
+        self.assertTrue(expected, "no committed fixture carries a skill: "
+                        "field — this test would pass vacuously")
+        self.assertEqual(
+            checked, expected,
+            "the fixture sweep must reach EVERY committed fixture that names "
+            "a skill, at whatever depth it lives. A directory missing from "
+            "the left-hand list is one the sweep's glob no longer reaches — "
+            "`**`, not `*`.")
 
     def test_the_fixture_sweep_reaches_a_nested_skill_fixture(self):
         # N2 (code). Plants what the committed tree does not have: a skill
@@ -5016,7 +5050,8 @@ class TestIssue63Review(unittest.TestCase):
                       f"level of evals/; found {[str(p) for p in found]}")
         registries = run_eval.resolve_registries(None, None, REPO_ROOT)
         self.assertEqual(
-            self._check_skill_fixtures(evals_root, registries), 2,
+            self._check_skill_fixtures(evals_root, registries),
+            sorted(planted.values()),
             "both the top-level and the nested skill fixture must be checked")
 
     def test_fixture_with_skill_but_no_registry_field_is_a_clear_error(self):
