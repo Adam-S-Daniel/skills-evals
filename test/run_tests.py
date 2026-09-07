@@ -16745,16 +16745,21 @@ class TestIssue67Review8(unittest.TestCase):
                          "the older snapshot has no turns of its own")
 
     def test_a_departed_arm_named_by_a_dated_census_key_survives_the_cap(self):
-        """MUTATION: dropping route (c1) (`named_bases = set()`) from
-        `_relevance`. A departed arm whose census key is a DATED spelling
-        of it is relevant only through that set; capped out, its 8000
-        turns leave the usage denominator and the live model is published
+        """A departed arm whose census key is a DATED spelling of it. Its
+        8000 turns are in the usage denominator only while it is carried;
+        capped out, they leave, and the live model beside it is published
         as carrying 100.0% of census usage where it really carries 9.09%.
 
-        The set is CENSUS-derived — a planter cannot add a census key, so
-        it cannot add a member — which is why B1 (#129 review round 9)
-        kept this direction of the fold and deleted the other one; see
-        `_relevance`."""
+        MUTATIONS (run, re-measured for round 11's continuation — the
+        `named_bases = set()` route this row used to name was round 9's
+        and is long gone). This is the densest row in the file: it is RED
+        under dropping the residue from EITHER cap, under filling either
+        cap from the residue by id order, under dropping EITHER tier-1
+        route, and under restoring round 8's `SNAPSHOT_SUFFIX` spelling
+        route. It is dense because the arm is relevant through nothing but
+        being unnamed — it is residue — while the live model beside it is
+        tier 1, so every clause that decides which of the two the cap
+        keeps shows up in the published sentence."""
         previous = {"arms": [{"id": i, "reason": "filler"}
                              for i in self.ARM_FILLERS] +
                             [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
@@ -16782,9 +16787,10 @@ class TestIssue67Review8(unittest.TestCase):
     #
     # B1' (#129 review round 10) removes the cost instead. Nothing about
     # the arm's SPELLING makes it relevant now either — what does is that
-    # the census key `<census key>` needs an entry that folds onto it and
-    # has none other, so the arm takes that key's one tier-2 slot (see
-    # `_Relevance.rank`). The canary's own scenario is now
+    # neither the live catalogue nor the census names it, so it is tier-3
+    # residue and no cap evicts it (round 10 reached the same outcome
+    # through a rationed tier-2 slot, deleted in round 11's continuation;
+    # see `_Relevance.rank`). The canary's own scenario is now
     # TestIssue67Review10::test_a_dated_arm_whose_census_key_is_undated
     # _survives_five_hundred_fillers, asserting the opposite outcome, and
     # the spelling route it guarded against is still red under
@@ -17362,16 +17368,21 @@ class TestIssue67Review9(unittest.TestCase):
                       "5000 of the window's 5300 rankable turns are this "
                       "model's, two hops away")
         self.assertIn("94.3%", self._reason(published, self.C_LIVE))
-        # Mutation check (run, F-2 of #129 review round 10): the route
-        # this comment used to name — round 9's (c2), the production map
-        # landing the ENTRY on a census key — was provably implied by the
-        # others (0 fires in 6,000,000 evaluations; dropping it alone left
-        # the whole suite green) and is gone. What is red here is dropping
-        # TIER 2 (`tier2 = {}` in `_Relevance.rank`): the bare alias is no
-        # census key and no live id, so tier 2 is the only thing that
-        # keeps it, the plants evict it, the older dated census key stops
-        # folding, its 5000 turns leave every numerator and the live
-        # snapshot is not seated at all.
+        # Mutation check (run), RE-MEASURED for round 11's continuation.
+        # Two routes this note has named are now gone: round 9's (c2) (the
+        # production map landing the ENTRY on a census key), deleted in
+        # round 10 as provably implied by the others, and TIER 2, deleted
+        # in this continuation because the tier-3 residue rule subsumes it.
+        # What is red here now is DROPPING THE RESIDUE from the history cap
+        # (`kept = live + named[:room]`): the bare alias is no census key
+        # and no live id, so the residue carry is the only thing that keeps
+        # it, the older dated census key stops folding, its 5000 turns
+        # leave every numerator and the live snapshot is not seated at all.
+        # NOT red here, and measured rather than assumed: evicting the
+        # residue by ID ORDER instead, because round 8 spelled these plants
+        # `zplant-NNN` so the bare alias sorts ahead of all 500 of them —
+        # which is exactly why an id-order floor has to be a row whose
+        # plants sort FIRST, and TestIssue67Review10's row A is that row.
 
     # The property behind all of the above, over random catalogues,
     # censuses and plant sets. `_plant_scenario` decides which entries are
@@ -17425,15 +17436,17 @@ class TestIssue67Review9(unittest.TestCase):
         dated-key-and-  the catalogue publishes ONE dated snapshot; a
         bridge          DIFFERENT dated snapshot of the same base is an
                          in-window census key AND an entry, so it is
-                         tier 1 and its own fold group is `covered`; and
-                         the bare alias between the two — the only hop
+                         tier 1 in its own right; and the bare alias
+                         between the two — the only hop
                          `_usage_alias_map` has from that key to the live
                          snapshot's numerator — is an entry in the SAME
                          list. ROUND 11'S BLOCKER (B, #129 review round
-                         11): decision 4 spends no slot on a covered
-                         group, so the bare alias fell to tier 3 behind
-                         500 plants and the chain broke. `_links` is
-                         what keeps it.
+                         11): the tier-2 slot of the day was not spent on
+                         a group a tier-1 entry already reached, so the
+                         bare alias fell to tier 3 behind 500 plants and
+                         was evicted. What keeps it now is that tier 3 is
+                         CARRIED — the bare alias is an entry neither
+                         document names, and no cap evicts one of those.
         """
         words = roster.tier_words(cls._policy())
         models, counts, owner = [], {}, {}
@@ -17446,8 +17459,9 @@ class TestIssue67Review9(unittest.TestCase):
             # round 10's blocker, so every scenario carries at least one
             # entry that is relevant through the fold relation ALONE; and
             # family 2 is always round 11's, so every scenario also
-            # carries a chain whose middle hop nothing but `_links`
-            # reaches. The remaining one or two families are free.
+            # carries a chain whose middle hop is reached by nothing but
+            # the residue carry. The remaining one or two families are
+            # free.
             shape = ("bare-live" if index == 0
                      else "dated-retired" if index == 1
                      else "dated-key-and-bridge" if index == 2
@@ -17623,9 +17637,10 @@ class TestIssue67Review9(unittest.TestCase):
                         > roster.CATALOGUE_SEEN_CAP
                         and len(previous["arms"]) > roster.PREVIOUS_ARMS_CAP):
                     evicting += 1
-                # A chain whose census key is ITSELF an entry (so its own
-                # fold group is covered) and whose middle hop is an entry
-                # in the same list — nothing but `_links` keeps that hop.
+                # A chain whose census key is ITSELF an entry — so no
+                # rationed slot was ever spent on its group — and whose
+                # middle hop is an entry in the same list, kept by nothing
+                # but the residue carry.
                 arm_ids = {e["id"] for e in previous["arms"]}
                 seen_ids = {e["id"] for e in previous["catalogue_seen"]}
                 for key in counts:
@@ -17648,26 +17663,30 @@ class TestIssue67Review9(unittest.TestCase):
                          "the caps did not fire in every scenario: the "
                          "property has no teeth on these seeds")
         self.assertGreater(bridged_arms, 0,
-                           "no scenario put a covered census key and its "
+                           "no scenario put a dated census key and its "
                            "load-bearing bare alias in `arms` together")
         self.assertGreater(bridged_history, 0,
-                           "no scenario put a covered census key and its "
+                           "no scenario put a dated census key and its "
                            "load-bearing bare alias in `catalogue_seen` "
                            "together")
-        # Mutation check (manual), RE-MEASURED on the final head of round
-        # 11 rather than carried forward: THREE mutations that used to be
-        # red here are now GREEN, and all three for the same reason —
-        # `tier2 = {}`, restoring round 8's `SNAPSHOT_SUFFIX` spelling
-        # route, and either `_links` mutation. The census-silent fix of
-        # this round carries every entry the live catalogue and the census
-        # say nothing about, so an entry that falls out of tier 1 or tier
-        # 2 is no longer evicted at all and no census key loses its last
-        # hop. That subsumption is this round's headline finding and the
-        # PR body carries it in full; a note claiming otherwise is exactly
-        # the drift F-1 exists to stop, so it is corrected here rather
-        # than left standing. What IS still red over this generator:
-        # dropping `_base`'s `-DDDDDDDD` strip, and filling either cap
-        # from the tier-3 residue by id order.
+        # Mutation check (RUN, not reasoned about), re-measured for round
+        # 11's continuation against this generator alone. The mechanisms
+        # earlier notes here named — `tier2 = {}`, either `_links`
+        # mutation, `_base`'s `-DDDDDDDD` strip — no longer exist: all of
+        # them were deleted once the tier-3 residue rule was shown to
+        # subsume them, and a note naming a mutation of deleted code is
+        # exactly the drift F-1 exists to stop.
+        #
+        # STILL RED over this generator, each measured on its own:
+        #   * dropping the residue from the arms cap (`carried = named`);
+        #   * dropping it from the history cap (`kept = live+named[:room]`);
+        #   * filling either cap from the residue by id order.
+        # GREEN over this generator, and red elsewhere in the suite rather
+        # than nowhere: dropping either tier-1 route, and restoring round
+        # 8's `SNAPSHOT_SUFFIX` spelling route — this generator draws every
+        # plant from ids that are neither a live id nor a census key, so
+        # they are residue whatever `rank` says about the tiers, and the
+        # rows that separate the tiers are TestIssue67Review10's.
 
 
     # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
@@ -18005,9 +18024,10 @@ class TestIssue67Review10(unittest.TestCase):
     # Restoring round 8's spelling route would re-open round 9's blocker,
     # so the fix is neither direction of the old predicate: what tells the
     # real arm from 500 plants is not how either is SPELLED but what the
-    # census still NEEDS. The census key `<alias>` is attributable only
-    # through an entry that folds onto it, and the census — which a
-    # planter does not write — fixes how many such slots there are.
+    # two documents a planter does not write actually NAME. The census
+    # key `<alias>` is attributable only through an entry that folds onto
+    # it, and an entry neither document names is carried rather than
+    # ranked, so the plants cannot take the real arm's place.
 
     B1P_BASE = "claude-haiku-4"
     B1P_DATED = "claude-haiku-4-20250101"
@@ -18049,18 +18069,21 @@ class TestIssue67Review10(unittest.TestCase):
         BEFORE the real one, against a departed arm the census names only
         through its undated alias. The arm is no census key and no live
         catalogue id, so no tier-1 route reaches it; what keeps it is that
-        the census key `claude-haiku-4` has no other entry folding onto it,
-        so the arm takes that key's one tier-2 slot."""
+        neither document names it, which makes it tier-3 residue, and no
+        cap evicts from the residue."""
         self._assert_the_true_share(
             self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
-        # Mutation check (manual), RE-MEASURED on round 11's final head:
-        # `tier2 = {}` is now GREEN here. The arm still falls to tier 3
-        # with 500 fillers ahead of it, but tier 3 is no longer evicted —
-        # round 11's census-silent fix carries it — so the share does not
-        # move. `tier2 = {}` is still red over the suite, at
-        # `test_the_arms_cap_decides_the_attributable_denominator`, which
-        # is the one regime where the caps still evict: the census naming
-        # more entries than the cap has room for.
+        # Mutation check (RUN), re-measured for round 11's continuation.
+        # This row is the file's ID-ORDER floor, and the only one that can
+        # be: its plants sort BEFORE the real arm, so it is RED under
+        # `carried = (named + sorted(residue))[:PREVIOUS_ARMS_CAP]` —
+        # filling the arms cap from the residue by id order, which is
+        # round 6's defect verbatim — and RED under dropping the residue
+        # outright. It is GREEN under either tier-1 route and under
+        # restoring round 8's spelling route, because every entry in it is
+        # residue either way. The tier-2 slot this row used to name was
+        # deleted in that continuation; the residue carry does its work
+        # and does it without a cap slot to ration.
 
     def test_high_sorting_fillers_do_not_evict_it_either(self):
         """Row B: the same 500 fillers spelled to sort AFTER the real arm.
@@ -18071,14 +18094,20 @@ class TestIssue67Review10(unittest.TestCase):
             self._b1p_run([f"zfiller-{i:04d}" for i in range(500)]))
 
     def test_a_plant_in_the_fold_group_keeps_the_key_attributable(self):
-        """Row D, the tier-2 slot's own cost, measured: 500 plants spelled
-        `claude-haiku-4-000000NN` are all in the census key's fold group
-        and the smallest of them WINS the slot, so the real arm is capped
-        out after all. Nothing moves: the plant folds onto the same census
-        key, so the key stays attributable through it and the published
-        share is still the true one. That is the point of bounding the
-        slot count by the census rather than by the entries — a planter
-        can take the slot, but cannot take the key's attributability."""
+        """Row D: 500 plants spelled `claude-haiku-4-000000NN`, all in the
+        census key's fold group and all sorting BEFORE the real arm.
+        Nothing moves — the published share is still the true one.
+
+        WHY it does not move changed in round 11's continuation, and the
+        row is kept because the attack is the same either way. Round 10
+        let the smallest plant win the census key's one tier-2 slot, so
+        the real arm WAS capped out and the key stayed attributable
+        through the plant instead. There is no slot now: the plants and
+        the arm are all entries neither document names, so all 501 are
+        residue and all 501 are carried. The row is RED under dropping the
+        residue from either cap, which is the property it now measures —
+        that a planter cannot cost the key its attributability, whether or
+        not the planter also takes the real arm's place."""
         self._assert_the_true_share(
             self._b1p_run([f"{self.B1P_BASE}-{i:08d}" for i in range(500)]))
 
@@ -18503,30 +18532,29 @@ class TestIssue67Review10(unittest.TestCase):
         self.assertEqual(rc, 0)
         return published
 
-    #: 497 census keys that fill tier 1 to exactly the 498 slots two live
-    #: catalogue ids leave, so ONE tier-2 slot is all that fits and a
-    #: second one costs a named entry its place. One turn each, so the
-    #: shares below stay readable off the counts.
+    #: 497 census keys, which with two live catalogue ids fill tier 1 to
+    #: 499 of the cap's 500 — one short, so anything else the cap has to
+    #: RANK costs a census-named entry its place, and anything it carries
+    #: as residue costs nothing. One turn each, so the shares below stay
+    #: readable off the counts.
     _F2_FILLER_KEYS = [f"claude-opus-3-{i:03d}" for i in range(497)]
 
-    def test_a_census_key_gets_exactly_one_slot_however_many_fold_onto_it(self):
-        """MUTATION: a slot for EVERY member of the fold group rather than
-        one. Three dated spellings of one census key, none of them a census
-        key itself, and 497 entries the census names outright — so tier 1
-        plus ONE tier-2 slot is exactly the room the cap has. A slot per
-        member overflows it by two, and the cap drops two of the three.
+    def test_the_cap_ranks_only_what_the_census_names_and_carries_the_rest(self):
+        """Renamed in round 11's continuation from
+        `test_a_census_key_gets_exactly_one_slot_however_many_fold_onto_it`,
+        because the slot it was named for no longer exists. The scenario is
+        unchanged and it is the tightest one in the file: 497 entries the
+        census names outright, plus two live catalogue ids, fill tier 1 to
+        499 of the cap's 500. Three dated spellings of one census key —
+        none of them a census key itself — and 500 plants make up the rest.
 
-        WHAT THIS ROW ASSERTS changed in round 11: the two spellings that
-        do not take the slot used to be evicted with the plants, and the
-        row asserted their absence. They are now tier-3 residue and
-        carried, because an entry neither document names has nothing left
-        to order it by but what the previous roster writes. So the cost of
-        an unbounded slot count is no longer "the extra spellings die" but
-        "they crowd out entries the census DOES name", which is what this
-        measures. `min(by_group[group])` rather than `max` is a
-        determinism choice and no longer decides who survives: both are
-        deterministic, either would be correct, and what stays
-        load-bearing is that the group gets ONE slot."""
+        WHAT IT MEASURES is the whole of the round-11 rule at its own
+        boundary. Every one of the 503 unnamed entries is residue, so all
+        of them are carried and NONE of them costs a census-named entry
+        its place; ranking any of them would overflow the cap by three and
+        drop entries the census does name. Red under dropping the residue
+        from either cap and under filling either cap from the residue by
+        id order; red, too, if the residue stops being a tier of its own."""
         published = self._f2_run(
             self._two_model_catalogue(),
             dict({k: 1 for k in self._F2_FILLER_KEYS},
@@ -18539,8 +18567,9 @@ class TestIssue67Review10(unittest.TestCase):
                          "claude-sonnet-4-9-20250102",
                          "claude-sonnet-4-9-20250103"):
             self.assertIn(spelling, seen,
-                          "one slot is spent and the rest are carried as "
-                          "residue; a slot each would cost two of them")
+                          "an entry the census does not name is residue "
+                          "and is carried; ranking it would cost an entry "
+                          "the census DOES name its place")
         self.assertEqual(len([k for k in self._F2_FILLER_KEYS if k in seen]),
                          497, "every entry the census names outright is kept")
         # 800 of 8000 + 800 + 497 rankable turns.
@@ -18567,36 +18596,31 @@ class TestIssue67Review10(unittest.TestCase):
     # and — with a newer model in the tier to deny it the newest-in-tier
     # fallback — a model carrying 57.1% was RETIRED at 0.0%.
     #
-    # B (#129 review round 11) makes every link of that chain tier 1 in
-    # its own right (`_Relevance.__init__`'s `_links`), so the bare alias
-    # survives and the assertion above is false by design. The `covered`
-    # guard itself is unchanged and still has its own floor:
-    # TestIssue67Review11::test_a_covered_group_spends_no_tier_two_slot.
-    # The scenario is now TestIssue67Review11's rows 1-4.
+    # B (#129 review round 11) made every link of that chain tier 1 in
+    # its own right, so the bare alias survives and the assertion above is
+    # false by design. That round's continuation then deleted BOTH the
+    # `covered` guard and the explicit chain route, because the tier-3
+    # residue rule subsumes them: the bare alias is an entry neither
+    # document names, so no cap evicts it and nothing has to notice that
+    # it is a link. The scenario is TestIssue67Review11's rows 1-4.
 
-    def test_the_fold_follows_the_alias_map_not_one_suffix_strip(self):
-        """MUTATION: `fold` returning `_base(model_id)` without the
-        production alias map. The entry carries TWO `-DDDDDDDD` suffixes,
-        so one strip leaves `claude-opus-5-20250101` — a live dated
-        snapshot of `claude-opus-5`, which the seat map folds onward onto
-        the bare alias the census actually names. One strip stops a hop
-        short and the entry joins no census key's group at all.
-
-        The shape is one only a planter or a corrupted branch produces —
-        `PREVIOUS_ARM_ID_RE` accepts it — and what it pins is the same
-        property `_usage_alias_map`'s own three-hop floor pins: the
-        relation is followed to its END, not one hop."""
-        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
-            self._model("claude-opus-5", "2026-02-01T00:00:00Z"),
-            self._model("claude-opus-5-20250101", "2025-01-01T00:00:00Z"),
-            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z")]}
-        published = self._f2_run(
-            models, {"claude-opus-5": 8000, "claude-sonnet-5": 800},
-            ["claude-opus-5-20250101-20260601"] + self._F2_PLANTS)
-        self.assertIn("claude-opus-5-20250101-20260601",
-                      self._seen_ids(published),
-                      "the entry folds onto `claude-opus-5` through the "
-                      "alias map and takes that key's slot")
+    # RETIRED: `test_the_fold_follows_the_alias_map_not_one_suffix_strip`.
+    #
+    # It pinned `_Relevance.fold` — "the production alias map applied to
+    # `_base(model_id)`" — against the mutation of returning `_base` alone,
+    # using an entry with TWO `-DDDDDDDD` suffixes so that one strip
+    # stopped a hop short of the census key. Round 11's continuation
+    # deleted `fold` and `_base` with it: `rank` was their only caller, and
+    # once the tier-3 residue is carried whole, an entry that joins no
+    # census key's group is simply carried rather than evicted, so which
+    # group it would have joined decides nothing.
+    #
+    # The property it stood for — that the alias relation is followed to
+    # its END and not one hop — is unaffected and keeps both its floors,
+    # neither of which went through `fold`:
+    # TestIssue67Review9::test_a_three_hop_census_key_still_reaches_the
+    # _live_snapshot over `_usage_alias_map` itself, and
+    # TestIssue67Review11's rows 3 and 3A through `main()`.
 
     def test_a_dated_history_entry_credits_its_undated_census_key(self):
         """MUTATION: matching `catalogue_seen` RAW instead of through the
@@ -18607,8 +18631,8 @@ class TestIssue67Review10(unittest.TestCase):
         denominator, and `claude-sonnet-5` published at 100.0% for a true
         9.09%. No plants are needed: one entry and one census key reach it.
 
-        It is also what makes the tier-2 slot mean the same thing in both
-        lists. An entry that folds onto a census key keeps that key
+        It is also what makes the caps' invariant mean the same thing in
+        both lists. An entry that folds onto a census key keeps that key
         attributable — which was true of `arms` and, until this, false of
         `catalogue_seen`."""
         published = self._f2_run(
@@ -18649,19 +18673,30 @@ class TestIssue67Review11(unittest.TestCase):
     _days_ago = TestIssue67Review9._days_ago
     _run_main = TestIssue67Review9._run_main
 
-    # --- B: a link of the alias chain is TIER 1, not a tier-2 slot -------
+    # --- B: a link of the alias chain must survive the caps -------------
     #
-    # Decision 4 (round 10) spends no tier-2 slot on a fold group a tier-1
-    # entry already "covers", and `_Relevance.fold` decides "covers" with
-    # an UNCONDITIONAL suffix strip. The map attribution actually uses,
+    # THE DEFECT, as round 11 found it. Decision 4 (round 10) spent no
+    # rationed tier-2 slot on a fold group a tier-1 entry already
+    # "covered", and `_Relevance.fold` decided "covers" with an
+    # UNCONDITIONAL suffix strip. The map attribution actually uses,
     # `_usage_alias_map` over `alias_map`, creates the hop `X-DDDDDDDD ->
     # X` only when `X` is itself one of the ids handed in — and the ids
     # handed in are exactly the two lists the caps trim. So when a DATED
-    # census key is itself a tier-1 entry, its group is covered, no slot
-    # is spent, and the bare alias `X` — the only hop from that key to the
-    # live snapshot's numerator — falls to tier 3 behind every filler and
-    # is evicted. The chain breaks, and round 10's claim that "route (c1)
-    # is subsumed by tier 2" is false in exactly that case.
+    # census key was itself a tier-1 entry, its group read as covered, no
+    # slot was spent, and the bare alias `X` — the only hop from that key
+    # to the live snapshot's numerator — fell to tier 3 behind every
+    # filler and was evicted. The chain broke, and round 10's claim that
+    # "route (c1) is subsumed by tier 2" was false in exactly that case.
+    #
+    # THE FIX, as it now stands. Round 11 answered this by making every
+    # link of the chain tier 1 in its own right; its continuation deleted
+    # that route, and tier 2 and the `covered` guard with it, because the
+    # tier-3 residue rule landed in the same round and subsumes all of it.
+    # The bare alias is an entry NEITHER the live catalogue nor the census
+    # names, so it is residue, so no cap can evict it — and nothing has to
+    # recognise that it is a link for that to hold. The rows are unchanged
+    # and were red on `1fa9d3a` before either fix; they measure the
+    # published outcome, not the mechanism that reaches it.
     #
     # The rows below are the reproduction, each through `main()` with
     # files on disk. Rows 1A, 2A, 2B, 3A, 4A and both retirement rows are
@@ -18707,25 +18742,32 @@ class TestIssue67Review11(unittest.TestCase):
                 tmp, models_doc, census=self._census(counts),
                 previous=previous, policy=policy)
         self.assertEqual(rc, 0, err)
-        # B-4 on EVERY row, not as a test of its own: the agreement is a
-        # property of each run, and a row that publishes the right share
-        # while the two relations have drifted is a row that got the right
+        # B-4 on EVERY row, not as a test of its own: it is a property of
+        # each run, and a row that publishes the right share while a cap
+        # has moved a census key's numerator is a row that got the right
         # answer for a reason the next change can take away.
         self.assert_fold_and_alias_map_agree(
             models_doc, census_doc, policy or self._policy(), previous,
             self.NOW, published["catalogue_seen"], self)
         return published
 
-    # --- B-4: `fold` and `alias_map` are two relations, not one ---------
+    # --- B-4: the caps must not move a census key's numerator -----------
     #
-    # `_Relevance.fold` strips the suffix UNCONDITIONALLY and then asks the
-    # production map; `alias_map` strips it only when the bare base is one
-    # of the ids handed in. The docstrings described them as one relation,
-    # and the caps are what pull them apart: on 1fa9d3a's failing run
-    # `fold("claude-sonnet-5-20260601")` was `claude-sonnet-5-20261231`
-    # while the alias map still sent that key to itself. The floor below
-    # is the agreement itself — for every in-window census key the two
-    # agreed about BEFORE either cap fired, they still agree after.
+    # THE DEFECT, as round 11 found it. There were then TWO fold relations
+    # and the docstrings described them as one. `_Relevance.fold` stripped
+    # a dated suffix UNCONDITIONALLY and then asked the production map;
+    # `alias_map` — which is what attribution reads — strips it only when
+    # the bare base is one of the ids handed in, and the ids handed in are
+    # the two lists the caps trim. The caps are what pulled them apart: on
+    # 1fa9d3a's failing run `fold("claude-sonnet-5-20260601")` was
+    # `claude-sonnet-5-20261231` while the alias map still sent that key
+    # to itself, and 57.1% of the window landed in no numerator at all.
+    #
+    # `_Relevance.fold` is gone (round 11's continuation), so there is one
+    # relation and the floor is stated over it directly: for every
+    # in-window census key, the usage alias map sends it to the same id
+    # after the caps as before. See `assert_fold_and_alias_map_agree`,
+    # which carries what that restatement was measured to be worth.
 
     @staticmethod
     def _fold_context(models_doc, census_doc, policy, previous, now):
@@ -18855,8 +18897,8 @@ class TestIssue67Review11(unittest.TestCase):
 
     def test_row_1a_five_hundred_filler_arms_do_not_break_the_chain(self):
         """RED on 1fa9d3a: `claude-sonnet-5-20260601` is an in-window
-        census key and so tier 1, which makes its group covered, so the
-        bare alias between it and the live snapshot spends no tier-2 slot,
+        census key and so tier 1, which used to make its group covered so
+        that the bare alias between it and the live snapshot spent no slot,
         drops to tier 3 behind 500 `0filler-NNNN` arms and is evicted. The
         share does not move to another model — it disappears, and the live
         snapshot is published on the newest-in-tier fallback instead."""
@@ -18952,8 +18994,9 @@ class TestIssue67Review11(unittest.TestCase):
 
     def test_row_4a_five_hundred_plants_do_not_break_the_two_hop_chain(self):
         """RED on 1fa9d3a, where the census key is itself the history
-        entry — so its group is covered, the bare alias spends no slot and
-        goes — and nothing is seated on usage at all."""
+        entry — so the rationed slot of the day was not spent on its group,
+        the bare alias went with the plants — and nothing is seated on
+        usage at all."""
         self._assert_the_three_hop_chain(
             self._row(self.THREE_HOP_API, self.TWO_HOP_COUNTS,
                       seen=self.TWO_HOP_SEEN + self.PLANTS))
