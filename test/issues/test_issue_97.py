@@ -3323,25 +3323,103 @@ class TestIssue97(unittest.TestCase):
                                             "objective_check": []}}}, "both")
         self.assertIn("objective_check", str(ctx.exception))
 
-    # N-c. The default budgets a fixture inherits when it omits the knobs:
-    # `args.timeout or fixture.get("timeout_s", 600)` on the agent leg, and
-    # `(fixture.get("guard") or {}).get("timeout_s", 300)` on the guard leg.
-    # A five-arm fixture that inherits both needs 5 x 900 s = 75 min and does
-    # NOT fit in eval.yml's 45.
+    # N-c / A-N3. The default budgets a fixture inherits when it omits the
+    # knobs: `args.timeout or fixture.get("timeout_s", 600)` on the agent leg,
+    # `(fixture.get("guard") or {}).get("timeout_s", 300)` on the guard leg,
+    # `judge_cfg.get("timeout_s", 120)` on the judge, and `deliver`'s own
+    # `timeout: int = 120` on the hook. A five-arm fixture that inherits all
+    # of them needs 5 x 1140 s = 95 min and does NOT fit in eval.yml's 45.
     DEFAULT_AGENT_BUDGET_S = 600
     DEFAULT_GUARD_BUDGET_S = 300
+    DEFAULT_JUDGE_BUDGET_S = 120
+    # `deliver(..., timeout: int = 120)` in harness/guidance.py, and
+    # `_run_guidance_arm` passes no override — a fixed per-arm cost, spent
+    # running the real hook. Measured in round 3: a hook that sleeps gives
+    # rc 2 at 120.2 s.
+    DELIVER_BUDGET_S = 120
 
     @classmethod
     def _guidance_fixture_budget(cls, fixture: dict) -> tuple[int, int]:
         """(per-arm seconds, arm count) for a guidance fixture, defaults and
         all — a fixture that omits the knobs is the expensive case, not a free
-        one."""
+        one.
+
+        EVERY per-arm cost `_run_guidance_arm` can spend, because a budget
+        that counts some of them is the defect this exists to prevent, one
+        level down. It used to count two of four: a planted five-arm fixture
+        with `judge.timeout_s: 2700` passed at 1 200 s against a real worst
+        case of 14 700 s under a 2 700 s job.
+
+        `setup_timeout_s` is NOT among them and is not a gap: `run_setup` is
+        called from `_run_arm` and the objective-only branch only, never from
+        the guidance path, so a guidance fixture's `setup_timeout_s` is
+        validated and then inert.
+
+        The judge is counted only when the fixture declares a `judge_rubric:`
+        — the key `_run_guidance_arm` actually branches on (`if not
+        args.no_judge and fixture.get("judge_rubric")`). eval.yml passes no
+        `--no-judge`, so a declared rubric IS spent; it passes no `--timeout`
+        either, so the agent leg is the fixture's own knob.
+        """
         agent = fixture.get("timeout_s", cls.DEFAULT_AGENT_BUDGET_S)
         guard = (fixture.get("guard") or {}).get(
             "timeout_s", cls.DEFAULT_GUARD_BUDGET_S)
+        judge = ((fixture.get("judge") or {}).get(
+            "timeout_s", cls.DEFAULT_JUDGE_BUDGET_S)
+            if fixture.get("judge_rubric") else 0)
         arms = fixture.get("arms")
         count = len(arms) if isinstance(arms, dict) and arms else 2
-        return agent + guard, count
+        return agent + guard + judge + cls.DELIVER_BUDGET_S, count
+
+    def test_the_guidance_budget_counts_every_per_arm_cost(self):
+        # A-N3. The budget counted two of the four costs `_run_guidance_arm`
+        # can spend, and `judge.timeout_s` is the one with room to hide in: a
+        # planted five-arm fixture with `judge: {timeout_s: 2700}` passed the
+        # fit test at 1 200 s against a real worst case of 14 700 s under a
+        # 2 700 s job. Asserted as arithmetic here so the addition is pinned
+        # even while no committed fixture declares a rubric.
+        base = {"timeout_s": 10, "guard": {"timeout_s": 20},
+                "judge": {"timeout_s": 30}, "setup_timeout_s": 999,
+                "arms": {"a": {}, "b": {}, "c": {}}}
+        deliver = self.DELIVER_BUDGET_S
+
+        per_arm, arms = self._guidance_fixture_budget(base)
+        self.assertEqual(arms, 3)
+        self.assertEqual(
+            per_arm, deliver + 10 + 20,
+            "without a `judge_rubric:` the judge is never called — "
+            "`_run_guidance_arm` branches on that key — so it costs nothing")
+
+        with_rubric = dict(base, judge_rubric="score it")
+        per_arm, _ = self._guidance_fixture_budget(with_rubric)
+        self.assertEqual(
+            per_arm, deliver + 10 + 20 + 30,
+            "a declared `judge_rubric:` IS spent: eval.yml passes no "
+            "`--no-judge`, so every arm pays `judge.timeout_s` as well")
+
+        # The defaults, all four of them, for a fixture that omits every knob.
+        per_arm, arms = self._guidance_fixture_budget(
+            {"judge_rubric": "score it"})
+        self.assertEqual(arms, 2, "a fixture with no `arms:` runs the default "
+                         "treatment/control pair")
+        self.assertEqual(per_arm, deliver + self.DEFAULT_AGENT_BUDGET_S
+                         + self.DEFAULT_GUARD_BUDGET_S
+                         + self.DEFAULT_JUDGE_BUDGET_S)
+
+        # `setup_timeout_s` is inert on this path and must NOT be counted:
+        # `run_setup` is called from `_run_arm` and the objective-only branch
+        # only. Parsed rather than asserted from memory.
+        guidance_arm = next(
+            node for node in ast.walk(ast.parse(
+                (HARNESS_DIR / "run_eval.py").read_text(encoding="utf-8")))
+            if isinstance(node, ast.FunctionDef)
+            and node.name == "_run_guidance_arm")
+        self.assertNotIn(
+            "run_setup",
+            {n.func.id for n in ast.walk(guidance_arm)
+             if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)},
+            "_run_guidance_arm now calls run_setup, so `setup_timeout_s` is a "
+            "real per-arm cost and the budget must count it")
 
     def test_every_guidance_fixture_fits_inside_the_workflow_job_timeout(self):
         # Generalised from the delivery canary alone: any guidance fixture
@@ -3362,12 +3440,15 @@ class TestIssue97(unittest.TestCase):
                 self.assertLess(
                     worst_case, job_budget_s * 0.75,
                     f"{path.parent.relative_to(REPO_ROOT)}: {arms} arms x "
-                    f"(agent + guard = {per_arm}s) = {worst_case}s does not "
-                    f"leave room inside eval.yml's {job_budget_s}s job timeout "
-                    "for setup, the CLI install and the badge commit. A "
-                    "fixture that omits `timeout_s:`/`guard.timeout_s:` "
-                    f"inherits {self.DEFAULT_AGENT_BUDGET_S} + "
-                    f"{self.DEFAULT_GUARD_BUDGET_S}s per arm.")
+                    f"(deliver + agent + guard + judge = {per_arm}s) = "
+                    f"{worst_case}s does not leave room inside eval.yml's "
+                    f"{job_budget_s}s job timeout for the CLI install and the "
+                    "badge commit. A fixture that omits the knobs inherits "
+                    f"{self.DELIVER_BUDGET_S} + {self.DEFAULT_AGENT_BUDGET_S} "
+                    f"+ {self.DEFAULT_GUARD_BUDGET_S} + "
+                    f"{self.DEFAULT_JUDGE_BUDGET_S}s per arm; a declared "
+                    "`judge_rubric:` is spent because eval.yml passes no "
+                    "`--no-judge`.")
         self.assertGreater(checked, 0,
                            "no committed guidance fixture — this test would "
                            "pass vacuously")
