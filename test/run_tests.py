@@ -15737,6 +15737,14 @@ class TestIssue67Review9(unittest.TestCase):
                     policy=self._zero_bar_policy(), previous=previous,
                     now=self.NOW, warn=lambda _m: None)
                 survivors = self._seen_ids(result)
+                # B-4 (#129 review round 11): the fold relation and the
+                # usage alias map are two DIFFERENT relations, and the
+                # caps are what pull them apart. Every in-window census
+                # key the two agreed about before either cap fired still
+                # agrees after.
+                TestIssue67Review11.assert_fold_and_alias_map_agree(
+                    models, census, self._zero_bar_policy(), previous,
+                    self.NOW, result["catalogue_seen"], self)
                 with self.subTest(seed=seed, scenario=index):
                     # Half two.
                     self.assertEqual(sorted(protected - survivors), [],
@@ -16757,15 +16765,103 @@ class TestIssue67Review11(unittest.TestCase):
             counts={key: {cls.W[0]: n} for key, n in counts.items()})
 
     def _row(self, api, counts, arms=(), seen=(), policy=None):
+        models_doc = self._catalogue(api)
+        census_doc = self._census(counts)
         previous = {"arms": [{"id": i, "reason": "was an arm"} for i in arms],
                     "catalogue_seen": [{"id": i, "last_seen": self._days_ago(3)}
                                        for i in seen]}
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, err = self._run_main(
-                tmp, self._catalogue(api), census=self._census(counts),
+                tmp, models_doc, census=self._census(counts),
                 previous=previous, policy=policy)
         self.assertEqual(rc, 0, err)
+        # B-4 on EVERY row, not as a test of its own: the agreement is a
+        # property of each run, and a row that publishes the right share
+        # while the two relations have drifted is a row that got the right
+        # answer for a reason the next change can take away.
+        self.assert_fold_and_alias_map_agree(
+            models_doc, census_doc, policy or self._policy(), previous,
+            self.NOW, published["catalogue_seen"], self)
         return published
+
+    # --- B-4: `fold` and `alias_map` are two relations, not one ---------
+    #
+    # `_Relevance.fold` strips the suffix UNCONDITIONALLY and then asks the
+    # production map; `alias_map` strips it only when the bare base is one
+    # of the ids handed in. The docstrings described them as one relation,
+    # and the caps are what pull them apart: on 1fa9d3a's failing run
+    # `fold("claude-sonnet-5-20260601")` was `claude-sonnet-5-20261231`
+    # while the alias map still sent that key to itself. The floor below
+    # is the agreement itself — for every in-window census key the two
+    # agreed about BEFORE either cap fired, they still agree after.
+
+    @staticmethod
+    def _fold_context(models_doc, census_doc, policy, previous, now):
+        """(count_turns, relevant, aliases, catalogue_seen_entries) —
+        `compute_roster`'s own derivation, rebuilt.
+
+        A MIRROR, which is a thing that has to be kept honest: every
+        caller asserts the `catalogue_seen` this returns equals the one
+        the run actually published, so a drift between this and the
+        function it mirrors turns the rows red rather than quietly
+        reporting about a run that never happened."""
+        rungs = roster.tier_rungs(policy)
+        entries = roster._clean_models(models_doc, lambda _m: None)
+        api_ids = [m["id"] for m in entries]
+        ranked = [m for m in entries
+                  if roster.rung_of(m["id"], rungs) is not None]
+        seat_aliases = roster.alias_map(api_ids)
+        available = [m for m in ranked if m["id"] not in seat_aliases]
+        available.sort(key=lambda m: roster._rank(m, rungs))
+        live_order = [m["id"] for m in available]
+        counts = roster._clean_counts((census_doc or {}).get("counts"),
+                                      lambda _m: None)
+        window = (set(roster.window_weeks(now, policy["arm_enter_window_weeks"]))
+                  | set(roster.window_weeks(now, policy["arm_exit_window_weeks"])))
+        count_turns = {}
+        for key, by_week in counts.items():
+            in_window = sum(n for week, n in by_week.items() if week in window)
+            if in_window > 0:
+                count_turns[key] = in_window
+        relevant = roster._relevance(api_ids, count_turns, seat_aliases,
+                                     live_order)
+        carried = roster._clean_previous_arms(
+            previous, lambda _m: None, relevant=relevant)[1]
+        seen_entries = roster._update_catalogue_seen(
+            api_ids, roster._clean_catalogue_seen(previous, lambda _m: None, now),
+            now, policy, lambda _m: None, relevant=relevant)
+        aliases = roster._usage_alias_map(
+            api_ids, list(counts) + carried + [e["id"] for e in seen_entries],
+            seat_aliases, live_order)
+        return count_turns, relevant, aliases, seen_entries
+
+    @classmethod
+    def _agreeing_keys(cls, models_doc, census_doc, policy, previous, now):
+        turns, relevant, aliases, seen_entries = cls._fold_context(
+            models_doc, census_doc, policy, previous, now)
+        return ({k for k in turns if aliases.get(k, k) == relevant.fold(k)},
+                seen_entries)
+
+    @classmethod
+    def assert_fold_and_alias_map_agree(cls, models_doc, census_doc, policy,
+                                        previous, now, published_seen, case):
+        """Called from the row tests and from round 9's property test.
+        `case` is the `TestCase` doing the asserting, so one implementation
+        serves both."""
+        after, seen_entries = cls._agreeing_keys(
+            models_doc, census_doc, policy, previous, now)
+        case.assertEqual(seen_entries, published_seen,
+                         "the mirror of compute_roster's derivation has "
+                         "drifted from compute_roster itself")
+        big = 10 ** 9
+        with mock.patch.object(roster, "PREVIOUS_ARMS_CAP", big), \
+             mock.patch.object(roster, "CATALOGUE_SEEN_CAP", big), \
+             mock.patch.object(roster, "UNCAPPED_CARRY_CEILING", big):
+            before, _ = cls._agreeing_keys(models_doc, census_doc, policy,
+                                           previous, now)
+        case.assertEqual(sorted(before - after), [],
+                         "a cap took an in-window census key's own fold "
+                         "target away from the map attribution reads")
 
     def _seat(self, published, model_id):
         """The published sentence about `model_id`: its arm reason, its

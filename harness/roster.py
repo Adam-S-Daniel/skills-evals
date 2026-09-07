@@ -903,6 +903,30 @@ class _Relevance:
         catalogue, the in-window census keys and the bare aliases live
         dated snapshots claim, so a spelling that names nothing in those
         documents folds onto itself and joins no group but its own.
+
+        THIS IS NOT THE RELATION ATTRIBUTION READS, and the difference is
+        the whole of B (#129 review round 11). Here the suffix strip is
+        UNCONDITIONAL — `X-DDDDDDDD` is in `X`'s group whether or not `X`
+        exists anywhere. In `alias_map`, which is what `_usage_alias_map`
+        and therefore every numerator is built out of, the hop
+        `X-DDDDDDDD -> X` exists ONLY when `X` is itself one of the ids
+        handed in — and the ids handed in are the two lists the caps trim.
+        So the two relations are described in these docstrings as one and
+        are not one: a group can be `covered` here while the map has no
+        route at all, because the id that would have been the route was
+        capped out. Measured through `main()`: `fold` put an older dated
+        census key and the live snapshot of the same base in one group
+        while the alias map still sent that key to itself, and 57.1% of
+        the window landed in no numerator at all.
+
+        `_links` is what reconciles them: every id the map needs as a hop
+        from an in-window census key to its numerator is tier 1, so the
+        caps cannot take it, and the two relations agree about every
+        census key they agreed about before either cap fired. That
+        agreement is a test floor, not an assertion here —
+        TestIssue67Review11 checks it on every row and over the 1,200
+        generated scenarios — because computing it needs the uncapped
+        lists, which this module deliberately does not keep.
         """
         base = _base(model_id)
         return self._production.get(base, base)
