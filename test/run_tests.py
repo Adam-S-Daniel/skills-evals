@@ -1008,8 +1008,7 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
         # the file anyway, reporting "all link targets exist" instead of
         # the escape.
         ws = self._ws({"docs/decisions/README.md": "[0001](link/0001-secret.md)\n"})
-        outside = ws.parent / "outside"
-        outside.mkdir()
+        outside = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, outside, ignore_errors=True)
         (outside / "0001-secret.md").write_text("secret\n", encoding="utf-8")
         (ws / "docs" / "decisions" / "link").symlink_to(outside)
