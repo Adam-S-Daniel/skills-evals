@@ -9893,6 +9893,28 @@ class TestTheRunnerItself(unittest.TestCase):
 
     maxDiff = None
 
+    # Set for the CHILD of any test here that spawns the whole suite, so the
+    # child's own suite-forking tests stand down. test/issues/test_issue_97.py
+    # reads the same name for the same reason.
+    SUITE_CHILD_ENV = "SKILLS_EVALS_SUITE_CHILD"
+
+    def _skip_in_child(self) -> None:
+        """Stand down when this run IS the child.
+
+        A test that forks the suite must be bounded by something OTHER than
+        the contract it is testing. `-k` narrowing was the only thing bounding
+        the recursion below, and `-k` narrowing is exactly what it asserts:
+        measured with main()'s argv routing reverted, the child ignored `-k`,
+        ran the whole suite, reached this test and forked again — 3 processes
+        at 30 s, 8 at 150 s, each holding a 900 s timeout, and the tree had to
+        be killed by hand.
+        """
+        if os.environ.get(self.SUITE_CHILD_ENV):
+            reason = ("child suite run — a pin that forks the suite does not "
+                      "re-fork it from inside itself")
+            print(reason)
+            self.skipTest(reason)
+
     @staticmethod
     def _modules(suite: unittest.TestSuite) -> set[str]:
         return {t.id().split(".")[0] for t in flatten_suite(suite)}
@@ -10002,6 +10024,46 @@ class TestTheRunnerItself(unittest.TestCase):
         self.assertEqual(selected, 1, sorted(t.id() for t in flatten_suite(suite)))
         self.assertGreater(total, selected)
 
+    def test_every_suite_forking_test_in_this_file_stands_down_in_a_child(self):
+        # S-B. A test that spawns `python3 test/run_tests.py` must be bounded
+        # by something OTHER than the contract it is testing. The `-k` pin
+        # below was bounded only by `-k` narrowing working — so with that
+        # broken it forked without limit, three deep in 30 s.
+        #
+        # The file is PARSED (ast, never a regex over source): a function that
+        # both names run_tests.py and calls subprocess.run spawns the suite,
+        # and must call self._skip_in_child(). This test names run_tests.py
+        # itself but does not spawn anything, so it is not one of them.
+        tree = ast.parse((TEST_DIR / "run_tests.py").read_text(encoding="utf-8"))
+        forking = []
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            names_the_runner = any(
+                isinstance(n, ast.Constant) and n.value == "run_tests.py"
+                for n in ast.walk(node))
+            spawns = any(
+                isinstance(n, ast.Attribute) and n.attr == "run"
+                and isinstance(n.value, ast.Name) and n.value.id == "subprocess"
+                for n in ast.walk(node))
+            if names_the_runner and spawns:
+                forking.append(node)
+        self.assertTrue(
+            forking,
+            "no function in test/run_tests.py spawns the suite — this "
+            "assertion must not be able to pass vacuously")
+        for node in forking:
+            with self.subTest(function=node.name):
+                guarded = any(
+                    isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr == "_skip_in_child"
+                    for n in ast.walk(node))
+                self.assertTrue(
+                    guarded,
+                    f"{node.name} (line {node.lineno}) spawns the whole suite "
+                    "but never calls self._skip_in_child(), so nothing bounds "
+                    "it when it IS the child: it forks again, and again")
+
     def test_a_targeted_run_is_covered_by_the_user_memory_guard_too(self):
         # N7. The run-wide S2 snapshot was taken BELOW the targeted-run
         # branch, so `python3 test/run_tests.py TestFoo.test_bar` executed
@@ -10086,6 +10148,17 @@ class TestTheRunnerItself(unittest.TestCase):
         # Driven through main() itself, which runs NO test on this path — so
         # calling it from inside the suite cannot recurse or fork.
         pattern = "NoSuchThingAtAll-Kx7"
+        # Establish that the sentinel really selects nothing BEFORE calling
+        # main() with it. Same hazard as S-B one class down: main() on a
+        # pattern that selects tests would run the whole suite IN-PROCESS
+        # from inside the suite, so with `-k` narrowing broken this test
+        # would recurse instead of failing. Asserting the selection first
+        # makes that case a plain red.
+        _, preselected, _ = select_tests(parse_argv(["-k", pattern]))
+        self.assertEqual(preselected, 0,
+                         "the sentinel pattern must select nothing, or the "
+                         "main() call below would run the whole suite from "
+                         "inside itself")
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             status = main(["-k", pattern])
@@ -10108,13 +10181,15 @@ class TestTheRunnerItself(unittest.TestCase):
         # End to end through the real entry point, and cheap: one test.
         # `-k` used to reach unittest.main, which cannot address a discovered
         # module at all, so this named nothing and the run was a false green.
+        self._skip_in_child()
         target = "test_this_module_is_reachable_through_the_discovery_pattern"
         proc = subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py"), "-v", "-k", target],
             cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
-            # test/issues/test_issue_97.py reads this and skips the two pins
-            # that shell out to the whole suite, so a child can never fork.
-            env=dict(os.environ, SKILLS_EVALS_SUITE_CHILD="1"))
+            # test/issues/test_issue_97.py reads this and skips the pins that
+            # shell out to the whole suite, and so does _skip_in_child above,
+            # so a child can never fork.
+            env=dict(os.environ, **{self.SUITE_CHILD_ENV: "1"}))
         output = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, output[-3000:])
         self.assertIn("test_issue_97", output,
