@@ -47,6 +47,9 @@ evals/
   disarm-inherited-reach/  # A/B eval, Class A: disarm a clone's inherited reach into production
     fixture.yaml           # prompt, setup: hook, git-state objective checks, rubric
     seed/                  # setup.sh builds a bare prod repo, a clone and a worktree
+  writing-adrs/            # A/B eval, Class A (format half): two fixtures
+    bootstrap/             # no docs/decisions/ yet — bootstrap the folder
+    existing-convention/   # docs/decisions/ already has a house format
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
