@@ -190,7 +190,11 @@ The guard therefore claims exactly this: a treatment arm was delivered its
 payload and reads it; a control arm reads its own scratch user memory and was
 not delivered the treatment payload. An ambient memory read *in addition* to
 the scratch one is prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR`
-isolation rather than by the guard, and is settled only by a real dispatch. An
+isolation rather than by the guard, and is settled only by a real dispatch.
+The decoy is what makes a contaminated control's context carry *two* magic
+words, which is why the guard prompt asks for **every** one of them rather
+than "the magic word": a one-word answer — the decoy reported, the treatment
+token left unmentioned — is the case the plural prompt exists for. An
 arm that does not report the token it was delivered, an arm that reports a
 token it was *not* delivered (a control arm reporting the treatment token, or
 a treatment arm reporting the control's decoy), or a probe that could not run

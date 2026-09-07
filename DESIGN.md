@@ -467,8 +467,12 @@ own scratch user memory (it reports its decoy) and was not delivered the
 treatment payload (it does not report the treatment token). What it does NOT
 settle is an ambient memory read *in addition* to the scratch one — that is
 prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR` isolation, not by the
-guard, because a probe asked for "the magic word" with two in context may
-report either, and only a real dispatch settles it.
+guard, because a probe asked for the magic words with two in context may
+report either, and only a real dispatch settles it. The decoy is what makes
+that context carry two, so the guard prompt asks for **every** magic word
+rather than "the magic word": a one-word answer from a contaminated control —
+its decoy reported, the treatment token left unmentioned — is the case the
+plural prompt exists for.
 
 An arm that does not report the token IT was delivered, an arm that reports a
 token it was *not* delivered (a control arm reporting the treatment token, or

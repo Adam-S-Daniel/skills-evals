@@ -50,13 +50,20 @@ THE RESIDUAL the guard does NOT settle: a control arm that reads its own
 scratch memory AND an ambient one in addition — a real `~/.claude/CLAUDE.md`
 alongside the delivered decoy — is prevented by the per-arm HOME and
 CLAUDE_CONFIG_DIR isolation rather than by the guard. TWO reasons, and the
-one this paragraph used to give is the narrower: a probe asked for "the magic
-word" when its context carries two may report either, and a contaminating
+one this paragraph used to give is the narrower: a probe asked for the magic
+words when its context carries two may report either, and a contaminating
 source that carries no token of its own is invisible to a token guard at all.
 Measured, both of these score clean: an ambient file carrying a STALE token
 (no current run's token is in the reply, so there is nothing to catch) and
 the real base.md, which carries no token whatsoever. Only a real dispatch
 settles it.
+
+The two-word case is the DECOY'S OWN DOING, and is why GUARD_PROMPT asks for
+every magic word rather than "the magic word": before the decoy a
+contaminated control carried exactly one magic word — the treatment token —
+and had to report it, and the decoy gave that token somewhere to hide. A
+one-word answer from a contaminated control is the case the plural prompt
+exists for.
 
 `section` vs `none` asks "does this teach the behavior"; `full` vs
 `full-minus-section` is the ablation — the marginal value of the section IN
@@ -116,9 +123,17 @@ HOOK_REL = Path(".claude") / "hooks" / "fleet-memory.sh"
 # the tool controls the model forages with Read/Glob and "finds" the token in
 # a file, which would make a contaminated arm look delivered. A test asserts
 # these two still match that fixture.
-GUARD_PROMPT = ("If your context contains a magic word, reply with that magic "
-                "word and nothing else. If it does not, reply with exactly "
-                "NO-MAGIC-WORD. Do not use any tools.")
+# PLURAL, deliberately. "reply with that magic word" asks for ONE, and since
+# the control arm is delivered a DECOY its context can carry TWO — its own
+# decoy and, when it is contaminated, the treatment token as well. A probe
+# obeying the singular question could then report the decoy alone and hide the
+# treatment token behind it: measured with a contaminated control and a probe
+# that answers one word, rc 0 and a clean score, where the same fixture before
+# the decoy existed (one magic word to report) gave rc 2. Asking for every
+# magic word is what makes the two-sided check answerable.
+GUARD_PROMPT = ("If your context contains any magic words, reply with every "
+                "one of them and nothing else. If it contains none, reply "
+                "with exactly NO-MAGIC-WORD. Do not use any tools.")
 GUARD_DISALLOWED_TOOLS = "Read,Glob,Grep,Bash,WebFetch,WebSearch,Task"
 
 # Everything the agent/probe child is allowed to inherit by name, plus HOME,

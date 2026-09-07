@@ -9,9 +9,9 @@
 name: guidance-bridge-canary
 
 prompt: >
-  If your context contains a magic word, reply with that magic word and
-  nothing else. If it does not, reply with exactly NO-MAGIC-WORD. Do not use
-  any tools.
+  If your context contains any magic words, reply with every one of them and
+  nothing else. If it contains none, reply with exactly NO-MAGIC-WORD. Do not
+  use any tools.
 
 # Without this control the model forages with Read/Glob and produces false
 # positives — it would find the magic word in AGENTS.md even when the import

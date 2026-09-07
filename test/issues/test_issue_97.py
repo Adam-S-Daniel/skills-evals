@@ -503,6 +503,28 @@ class TestIssue97(unittest.TestCase):
                       "source carrying no token of its own is invisible to a "
                       "token guard, not only that two tokens are ambiguous")
 
+    # The S-A clause, in the three places the residual paragraph is written
+    # out. Pinned by its operative words in all three, because a reader who
+    # meets the plural prompt and not the reason for it will "simplify" it
+    # back to the singular.
+    PLURAL_RATIONALE = "the plural prompt exists for"
+
+    def test_all_three_residual_paragraphs_say_why_the_prompt_is_plural(self):
+        for label, text in (
+                ("harness/guidance.py", guidance.__doc__ or ""),
+                ("README.md",
+                 (REPO_ROOT / "README.md").read_text(encoding="utf-8")),
+                ("DESIGN.md",
+                 (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8"))):
+            with self.subTest(doc=label):
+                folded = " ".join(text.split())
+                self.assertIn(
+                    self.PLURAL_RATIONALE, folded,
+                    f"{label} must say that the decoy is what makes a "
+                    "contaminated control's context carry two magic words, "
+                    "and that a one-word answer from such a control is the "
+                    "case the plural guard prompt exists for")
+
     def test_the_extent_docstring_says_the_unit_differs_from_the_js(self):
         # N-b. The arithmetic matches check-guidance-coverage.js; the UNIT
         # does not (characters here, Buffer.byteLength there). Pin the clause
@@ -1117,6 +1139,93 @@ class TestIssue97(unittest.TestCase):
         self.assertTrue(treatment["guard"]["ok"])
         self.assertNotIn(self.DECOY, treatment["guard"]["reply"],
                          "and the decoy was never in its context")
+
+    # ------------------------------------------------------------------
+    # S-A — the guard prompt asks for EVERY magic word, and the fake CLI
+    # obeys the prompt rather than a behaviour the prompt never requests
+    # ------------------------------------------------------------------
+
+    def test_the_guard_prompt_asks_for_every_magic_word(self):
+        # The prompt used to ask for "that magic word" — ONE — which was
+        # right while a contaminated control's context carried exactly one
+        # (the treatment token) and had to report it. The DECOY made it two,
+        # and gave the treatment token somewhere to hide.
+        folded = " ".join(guidance.GUARD_PROMPT.split())
+        marker = self._fake_claude_plural_marker()
+        self.assertIn(
+            marker, folded,
+            "GUARD_PROMPT must ask for EVERY magic word: with a decoy in "
+            "context a contaminated control carries two, and a probe obeying "
+            "a singular question can report the decoy alone")
+        self.assertIn("NO-MAGIC-WORD", folded,
+                      "and must keep the sentinel the guard and the bridge "
+                      "canary both read")
+
+    @staticmethod
+    def _fake_claude_plural_marker() -> str:
+        """test/fake-claude's PLURAL_MARKER, read with `ast`.
+
+        The fake keys its answer arity off this constant. Read back rather
+        than restated so the prompt and the fake cannot drift apart and leave
+        the suite measuring an arity the production prompt never asks for.
+        """
+        tree = ast.parse(FAKE_CLAUDE.read_text(encoding="utf-8"))
+        values = [node.value.value for node in ast.walk(tree)
+                  if isinstance(node, ast.Assign)
+                  and isinstance(node.value, ast.Constant)
+                  for target in node.targets
+                  if isinstance(target, ast.Name)
+                  and target.id == "PLURAL_MARKER"]
+        assert len(values) == 1, f"expected one PLURAL_MARKER, got {values}"
+        return values[0]
+
+    def test_a_contaminated_control_is_caught_by_a_prompt_obeying_probe(self):
+        # S-A, end to end. `guidance_probe_literal` answers the question it
+        # was ASKED: every magic word when the prompt asks for every one of
+        # them, otherwise the first it finds. Under the singular prompt on
+        # c5ea933 it reported the decoy alone and this run scored 0 — a
+        # contaminated control, clean. Under the plural prompt it reports
+        # both, and the forbidden-token side has something to catch.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-literal-contam-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        ambient = tmp / "ambient-CLAUDE.md"
+        ambient.write_text(f"The magic word is {self.TOKEN}.\n", encoding="utf-8")
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "guidance_probe_literal",
+                      "FAKE_CLAUDE_AMBIENT_MEMORY": str(ambient)})
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "without_guidance",
+                                  "--guidance", root, "--results-dir", results,
+                                  "--no-judge"])
+        self.assertEqual(
+            rc, 2, "a contaminated control must never score clean, whatever "
+                   f"arity its probe answers with (stdout: {out!r})")
+        self.assertIn("INCONCLUSIVE", out)
+        summary = self._summary(results, "guidance/alpha", "without_guidance")
+        self.assertEqual(summary["error"]["type"], "guard_contaminated")
+        self.assertTrue(summary["guard"]["contaminated"])
+        self.assertIsNone(summary["objective_checks"])
+
+    def test_a_clean_control_still_scores_under_a_prompt_obeying_probe(self):
+        # The other side: with nothing contaminating it, the same probe
+        # reports its own decoy and the arm is fine. Without this, a fake that
+        # condemned every arm would satisfy the test above.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-literal-clean-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "guidance_probe_literal"})
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "without_guidance",
+                                  "--guidance", root, "--results-dir", results,
+                                  "--no-judge"])
+        self.assertEqual(rc, 0, out)
+        summary = self._summary(results, "guidance/alpha", "without_guidance")
+        self.assertTrue(summary["guard"]["observed"])
+        self.assertFalse(summary["guard"]["contaminated"])
 
     def test_a_control_arm_whose_probe_is_blind_is_inconclusive_too(self):
         # THE POINT OF THE DECOY. Before it, `mode: none` delivered nothing,
