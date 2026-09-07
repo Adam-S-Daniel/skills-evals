@@ -15529,7 +15529,8 @@ class TestIssue67Review9(unittest.TestCase):
     # the code under test, and draws every plant from ids that are neither
     # a live id nor a census key.
 
-    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired", "dated-retired")
+    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired", "dated-retired",
+                     "dated-key-and-bridge")
 
     @classmethod
     def _plant_scenario(cls, rng):
@@ -15566,24 +15567,40 @@ class TestIssue67Review9(unittest.TestCase):
         retired          no live model; the census names the bare alias
                          and the bare alias is itself an entry.
         dated-retired    no live model; the census names the bare alias
-                         and the ENTRY is a dated spelling of it. THE
-                         BLOCKER'S SHAPE: nothing about the entry is a
+                         and the ENTRY is a dated spelling of it. ROUND
+                         10'S BLOCKER: nothing about the entry is a
                          census key or a live id, and the only thing that
                          keeps the key attributable is that the entry
                          folds onto it.
+        dated-key-and-  the catalogue publishes ONE dated snapshot; a
+        bridge          DIFFERENT dated snapshot of the same base is an
+                         in-window census key AND an entry, so it is
+                         tier 1 and its own fold group is `covered`; and
+                         the bare alias between the two — the only hop
+                         `_usage_alias_map` has from that key to the live
+                         snapshot's numerator — is an entry in the SAME
+                         list. ROUND 11'S BLOCKER (B, #129 review round
+                         11): decision 4 spends no slot on a covered
+                         group, so the bare alias fell to tier 3 behind
+                         500 plants and the chain broke. `_links` is
+                         what keeps it.
         """
         words = roster.tier_words(cls._policy())
         models, counts, owner = [], {}, {}
         protected, arms, history = set(), set(), set()
-        for index in range(rng.randint(3, 4)):
+        for index in range(rng.randint(4, 5)):
             base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
             snaps = [f"{base}-2026{month:02d}01" for month in (1, 4, 6)]
             # Family 0 is always live, so every scenario has a catalogue
             # this policy can seat something out of; family 1 is always
-            # the blocker's shape, so every scenario carries at least one
-            # entry that is relevant through the fold relation ALONE.
+            # round 10's blocker, so every scenario carries at least one
+            # entry that is relevant through the fold relation ALONE; and
+            # family 2 is always round 11's, so every scenario also
+            # carries a chain whose middle hop nothing but `_links`
+            # reaches. The remaining one or two families are free.
             shape = ("bare-live" if index == 0
                      else "dated-retired" if index == 1
+                     else "dated-key-and-bridge" if index == 2
                      else rng.choice(cls._PLANT_SHAPES))
             into = arms if rng.random() < 0.5 else history
             if shape == "bare-live":
@@ -15606,10 +15623,24 @@ class TestIssue67Review9(unittest.TestCase):
                 owner[base] = base
                 into.add(base)
                 protected.add(base)
-            else:
+            elif shape == "dated-retired":
                 counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
                 owner[base] = base
                 into.add(f"{base}-20250101")
+            else:
+                live = snaps[0]
+                models.append(cls._model(live, "2026-01-01T00:00:00Z"))
+                counts[snaps[2]] = {cls.W[0]: rng.randrange(1, 40) * 100}
+                owner[snaps[2]] = live
+                # The census key is an entry, so it is tier 1 and covers
+                # its own group; the bare alias is the chain's middle hop
+                # and is in the same list. `alias_map` only creates
+                # `snaps[2] -> base` when `base` is one of the ids handed
+                # in, so evicting `base` strands the key one hop short of
+                # the live snapshot that holds the seat.
+                into.add(snaps[2])
+                into.add(base)
+                protected.add(snaps[2])
         live_ids = {m["id"] for m in models}
         real = arms | history | live_ids | set(counts)
         keys = sorted(counts)
@@ -15674,9 +15705,16 @@ class TestIssue67Review9(unittest.TestCase):
         it on both of the orders a planter can write.
 
         The named set is two orders of magnitude under the cap in every
-        scenario, so nothing but relevance can decide who is evicted."""
+        scenario, so nothing but relevance can decide who is evicted.
+
+        The `dated-key-and-bridge` family (B, #129 review round 11) is
+        counted separately in BOTH lists, because the two caps reach it
+        by different code and a family that only ever landed in one of
+        them would leave the other unexercised."""
         checked = 0
         evicting = 0
+        bridged_arms = 0
+        bridged_history = 0
         for seed in (671001, 671002, 671003):
             rng = random.Random(seed)
             for index in range(400):
@@ -15720,11 +15758,31 @@ class TestIssue67Review9(unittest.TestCase):
                         > roster.CATALOGUE_SEEN_CAP
                         and len(previous["arms"]) > roster.PREVIOUS_ARMS_CAP):
                     evicting += 1
+                # A chain whose census key is ITSELF an entry (so its own
+                # fold group is covered) and whose middle hop is an entry
+                # in the same list — nothing but `_links` keeps that hop.
+                arm_ids = {e["id"] for e in previous["arms"]}
+                seen_ids = {e["id"] for e in previous["catalogue_seen"]}
+                for key in counts:
+                    bridge = roster._base(key)
+                    if bridge == key:
+                        continue
+                    if key in arm_ids and bridge in arm_ids:
+                        bridged_arms += 1
+                    if key in seen_ids and bridge in seen_ids:
+                        bridged_history += 1
                 checked += 1
         self.assertEqual(checked, 1200)
         self.assertEqual(evicting, 1200,
                          "the caps did not fire in every scenario: the "
                          "property has no teeth on these seeds")
+        self.assertGreater(bridged_arms, 0,
+                           "no scenario put a covered census key and its "
+                           "load-bearing bare alias in `arms` together")
+        self.assertGreater(bridged_history, 0,
+                           "no scenario put a covered census key and its "
+                           "load-bearing bare alias in `catalogue_seen` "
+                           "together")
         # Mutation check (manual): dropping tier 2 from `_Relevance.rank`
         # (`tier2 = {}`) leaves the dated-retired families' entries in
         # tier 3, the `0plant-NNNN` plants outrank them, their census keys
@@ -15732,7 +15790,11 @@ class TestIssue67Review9(unittest.TestCase):
         # high — red on the share assertion. Restoring round 8's
         # `SNAPSHOT_SUFFIX` route makes the dated plants relevant too, so
         # they tie with the named entries and the id order evicts them —
-        # red on the half-two assertion.
+        # red on the half-two assertion. Emptying `_links`
+        # (`self._links = {}` after the loop that builds it), or dropping
+        # `or i in self._links` from `tier1`, strands every
+        # `dated-key-and-bridge` family's census key one hop short of its
+        # live snapshot — red on the share assertion.
 
 
     # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
