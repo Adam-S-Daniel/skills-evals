@@ -4214,11 +4214,18 @@ class CiDispatchTests(unittest.TestCase):
         a string constant ending in `.md`), plus the equivalent-spelling forms
         `REPO_ROOT.joinpath("<name>.md")` and `os.path.join(REPO_ROOT, "<name>.md")`
         (Call nodes — these two are NOT extended to the `TEST_DIR.parent` spelling,
-        since neither form appears anywhere in this file today). Nested joins
-        (`REPO_ROOT / "evals" / "x.md"`) are deliberately NOT matched — those
-        already live under a directory glob in SALIENT, this only closes the
-        gap for a bare root file joined directly onto one of the two root
-        spellings above.
+        since neither form appears anywhere in this file today). A nested join
+        is handled differently by each of the three forms: the `/` (BinOp)
+        spelling — `REPO_ROOT / "evals" / "x.md"` — is deliberately NOT
+        matched, since its outer BinOp's left operand is itself a BinOp, not
+        one of the two recognized root spellings; those already live under a
+        directory glob in SALIENT, and this only closes the gap for a bare
+        root file joined directly onto one of the two root spellings above.
+        `REPO_ROOT.joinpath("evals", "x.md")` and
+        `os.path.join(REPO_ROOT, "evals", "x.md")`, by contrast, ARE matched
+        — and wrongly: both collect every `.md`-ending argument regardless of
+        what precedes it, so a nested call yields a LOUD false positive (a
+        non-root file demanded in SALIENT) rather than a silent gap.
 
         Still a silent gap, not a deliberate exclusion — an unmatched spelling
         should eventually join the walk above rather than stay in this list:
@@ -4291,6 +4298,19 @@ class CiDispatchTests(unittest.TestCase):
         source = 'x = TEST_DIR.parent / "THIRD_ROOT_FILE.md"\n'
         found = self._root_markdown_reads(source)
         self.assertIn("THIRD_ROOT_FILE.md", found)
+
+    def test_root_markdown_reads_nested_call_joins_are_a_loud_false_positive(self):
+        # N-b: unlike the `/` (BinOp) spelling, where a nested join like
+        # `REPO_ROOT / "evals" / "x.md"` is deliberately NOT matched, the
+        # two Call-node spellings DO match a nested join — and wrongly,
+        # since every `.md`-ending argument is collected regardless of what
+        # precedes it. That is a LOUD false positive (a non-root file
+        # wrongly demanded in SALIENT), not a silent gap — pinned here so
+        # the docstring's account of it can't drift again.
+        source = ('x = REPO_ROOT.joinpath("evals", "O.md")\n'
+                   'y = os.path.join(REPO_ROOT, "evals", "P.md")\n')
+        found = self._root_markdown_reads(source)
+        self.assertEqual(found, {"O.md", "P.md"})
 
     def test_checks_out_agentskills_side_by_side_for_the_agreement_test(self):
         # TestIssue63::test_registries_agree_with_agentskills_own_file skips
