@@ -47,6 +47,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import guidance  # noqa: E402 — the harness-wide timeout ceiling and predicate
 from propagation import account_store, arms  # noqa: E402
 
 EXIT_OK, EXIT_FAILED, EXIT_FAULT = 0, 1, 2
@@ -205,10 +206,25 @@ def main(argv=None) -> int:
                         help="ISO-8601 instant the freshness gate treats as now; "
                              "tests pass it so they never depend on the clock")
     parser.add_argument("--timeout", type=int, default=120,
-                        help="per-CLI-invocation timeout in seconds")
+                        help="per-CLI-invocation timeout in seconds; "
+                             "1..2700, the harness-wide ceiling "
+                             "harness/guidance.py holds every timeout to")
     parser.add_argument("--json", type=Path, default=None,
                         help="also write the machine-readable run record here")
     args = parser.parse_args(argv)
+
+    # The SAME predicate and the SAME ceiling every other timeout in this
+    # harness is held to — `args.timeout` becomes `ctx.timeout` and reaches
+    # `arms._probe`'s and `arm_plugin_marketplace`'s
+    # `subprocess.run(timeout=...)` with nothing between, where argparse's
+    # `type=int` bounds neither end and a very large value raises a bare
+    # `OverflowError` instead of naming a rule.
+    try:
+        guidance.check_timeout(args.timeout, "--timeout",
+                               guidance.CLI_TIMEOUT_REMEDY)
+    except guidance.GuidanceError as exc:
+        print(f"configuration error: {exc}")
+        return EXIT_FAULT
 
     fixture = load_fixture(args.eval_dir)
     now = (account_store.parse_iso8601(args.now) if args.now

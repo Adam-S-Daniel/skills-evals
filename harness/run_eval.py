@@ -63,19 +63,22 @@ TIMEOUT_KNOBS = (
     ("timeout_s", ("judge",)),   # the judge call
 )
 
-# The CEILING every knob above is checked against: `.github/workflows/eval.yml`
-# gives the `eval` job `timeout-minutes: 45`, and a knob larger than the job's
-# own budget cannot do anything except outlive it — the job is killed with no
-# summary and no artifact, which is the exact failure the rejection message
-# below describes for a null, and the failure a reader steered by that message
-# reaches for a very large number to avoid. Above ~2.147e6 it is worse still:
-# the value reaches `selector.poll` as milliseconds and raises a bare
-# `OverflowError: timeout is too large` — rc 1, empty stdout, no named message
-# (measured through the real CLI entry point with `guard.timeout_s: 2200000`).
-# `test_the_timeout_ceiling_is_the_workflow_job_budget` parses that workflow
-# and asserts this constant equals its `timeout-minutes` x 60, so the two
-# cannot drift.
-MAX_TIMEOUT_S = 45 * 60
+# The CEILING every knob above is checked against, and the predicate that
+# applies it, both live in harness/guidance.py — beside the GuidanceError they
+# raise, and where EVERY source of a timeout can reach them. Round 2 put them
+# here, in the fixture loader, and `--timeout` on the command line overrode the
+# checked value afterwards with an unchecked one: `--timeout 2200000` was still
+# rc 1 and a bare `OverflowError`. `main()` now runs the same predicate on the
+# flag (see the `--timeout` check there), run_canary.py and run_propagation.py
+# run it on theirs, and
+# `test_every_harness_subprocess_timeout_names_its_validated_source` inventories
+# every `subprocess` timeout under harness/ so a new sink cannot arrive with no
+# validated source behind it.
+#
+# Re-exported under this module's own name because it is part of run_eval's
+# published surface: `test_the_timeout_ceiling_is_the_workflow_job_budget`
+# anchors it to eval.yml's `eval` job.
+MAX_TIMEOUT_S = guidance.MAX_TIMEOUT_S
 
 
 def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
@@ -83,6 +86,7 @@ def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
     subject branch or subprocess. Absent is fine — the caller's default
     applies, and a fixture with a valid or absent knob is untouched by this,
     so every committed fixture scores byte-identically.
+
     """
     for key, parents in TIMEOUT_KNOBS:
         node = fixture
@@ -93,26 +97,9 @@ def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
                 break
         if not isinstance(node, dict) or key not in node:
             continue
-        value = node[key]
-        where = ".".join(parents + (key,))
-        # `bool` is an `int` in Python; `timeout_s: true` is not a duration.
-        # Bounded on BOTH sides in the one predicate. An upper bound that
-        # lived in a second check somewhere else is a bound a later edit can
-        # drop without the lower one noticing.
-        ok = (not isinstance(value, bool) and isinstance(value, (int, float))
-              and value == value and value not in (float("inf"),
-                                                   float("-inf"))
-              and 0 < value <= MAX_TIMEOUT_S)
-        if not ok:
-            raise guidance.GuidanceError(
-                f"{fixture_path}: `{where}` must be a positive number of "
-                f"seconds no greater than {MAX_TIMEOUT_S} (eval.yml gives the "
-                f"eval job that many), got {value!r}. An explicit YAML null "
-                "here means \"no timeout\" — a run that hangs until the job "
-                "is killed, with no summary and no artifact; a value above "
-                "the ceiling is the same failure with extra steps, and a "
-                "very large one crashes the run outright instead of naming a "
-                "rule. Omit the key to take the default instead.")
+        guidance.check_timeout(node[key], ".".join(parents + (key,)),
+                               guidance.FIXTURE_TIMEOUT_REMEDY,
+                               prefix=f"{fixture_path}: ")
 
 
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"
@@ -1420,10 +1407,38 @@ def main() -> int:
                         help="override the fixture's model for the agent")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
-                        help="override the fixture's agent timeout (seconds)")
+                        help="override the fixture's agent timeout (seconds); "
+                             f"1..{guidance.MAX_TIMEOUT_S}, the same ceiling "
+                             "the fixture's own `timeout_s:` is held to")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root directory for run outputs (summaries + reports)")
     args = parser.parse_args()
+
+    # S1-a. The FLAG is checked before anything else — before the fixture is
+    # loaded, before either subject branch, before any CLI call — because it
+    # is the OTHER source of the value that reaches
+    # `subprocess.run(timeout=...)`, and it OVERRIDES the fixture knob
+    # `validate_timeouts` has just bounded (`args.timeout or
+    # fixture.get("timeout_s", 600)`, twice below). Round 2 bounded the knob
+    # and left the override unchecked, so the defect the ceiling was added to
+    # close came straight back through the flag beside it: measured on
+    # a6d165d, `--timeout 2200000` was rc 1 and a bare `OverflowError`,
+    # `--timeout 2701` was accepted above the job budget, and `--timeout 3000`
+    # against a scored leg that never returns did not come back at all.
+    # argparse's `type=int` bounds nothing: it rejects `abc` and accepts every
+    # integer there is, negative and absurd alike.
+    #
+    # `is not None` and not a truthiness test: `--timeout 0` is falsy, so
+    # `args.timeout or ...` would silently fall back to the fixture's value
+    # rather than honour a nonsense flag — a zero must be REFUSED by name, not
+    # quietly ignored.
+    if args.timeout is not None:
+        try:
+            guidance.check_timeout(args.timeout, "--timeout",
+                                   guidance.CLI_TIMEOUT_REMEDY)
+        except guidance.GuidanceError as exc:
+            print(f"configuration error: {exc}")
+            return 2
 
     fixture = load_fixture(args.eval_dir)
     try:

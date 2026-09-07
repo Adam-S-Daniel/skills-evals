@@ -158,6 +158,76 @@ class GuidanceError(ValueError):
 
 
 # ---------------------------------------------------------------------------
+# timeouts — ONE ceiling and ONE predicate, for EVERY source
+#
+# `subprocess.run(timeout=None)` waits forever, and the only backstop in CI is
+# the 45-minute job kill, with no summary and no artifact written. A string
+# yields a TypeError traceback and rc 1, outside the "configuration problem"
+# contract (rc 2, a named message, no traceback). Above ~2.147e6 the value
+# reaches `selector.poll` as milliseconds and raises a bare `OverflowError:
+# timeout is too large` — rc 1, empty stdout, no named message.
+#
+# The ceiling lives HERE, beside the error type it raises, rather than in any
+# one entry point, because the value has more than one source and a bound that
+# only guards the source you were looking at is not a bound. Round 2 added the
+# ceiling to `run_eval.validate_timeouts`, which sees the FIXTURE dict alone —
+# and `run_eval.py --timeout 2200000` walked straight past it into the same
+# `OverflowError` the ceiling was added to close (measured, round 3). Every
+# entry point under harness/ that accepts a timeout from an operator now calls
+# `check_timeout` with the same predicate and the same message:
+# run_eval.py's `--timeout` and its four fixture knobs, run_canary.py's
+# `--timeout`, run_propagation.py's `--timeout`.
+# `test_every_harness_subprocess_timeout_names_its_validated_source` is the
+# inventory that keeps a NEW sink from arriving with no source named.
+#
+# 45 minutes is `.github/workflows/eval.yml`'s `eval` job budget: a knob larger
+# than the job's own budget cannot do anything except outlive it.
+# `test_the_timeout_ceiling_is_the_workflow_job_budget` parses that workflow
+# and asserts this constant equals its `timeout-minutes` x 60, so the two
+# cannot drift.
+MAX_TIMEOUT_S = 45 * 60
+
+
+def timeout_is_sane(value) -> bool:
+    """The single predicate. A timeout is a real, finite, positive number of
+    seconds no greater than the ceiling.
+
+    `bool` is an `int` in Python; `timeout_s: true` is not a duration.
+    Bounded on BOTH sides in the one predicate: an upper bound that lived in a
+    second check somewhere else is a bound a later edit can drop without the
+    lower one noticing.
+    """
+    return (not isinstance(value, bool) and isinstance(value, (int, float))
+            and value == value and value not in (float("inf"), float("-inf"))
+            and 0 < value <= MAX_TIMEOUT_S)
+
+
+def check_timeout(value, where: str, remedy: str, prefix: str = "") -> None:
+    """`value` is a sane timeout, or a named GuidanceError saying why not.
+
+    `where` names the knob or flag in the spelling the operator typed it;
+    `remedy` is the one sentence that tells them what to write instead, which
+    differs between a fixture knob (omit the key) and a flag (omit the flag).
+    """
+    if timeout_is_sane(value):
+        return
+    raise GuidanceError(
+        f"{prefix}`{where}` must be a positive number of seconds no greater "
+        f"than {MAX_TIMEOUT_S} (eval.yml gives the eval job that many), got "
+        f"{value!r}. An explicit null here means \"no timeout\" — a run that "
+        "hangs until the job is killed, with no summary and no artifact; a "
+        "value above the ceiling is the same failure with extra steps, and a "
+        f"very large one crashes the run outright instead of naming a rule. "
+        f"{remedy}")
+
+
+# The two remedies, so the wording cannot drift between the sources.
+FIXTURE_TIMEOUT_REMEDY = "Omit the key to take the default instead."
+CLI_TIMEOUT_REMEDY = ("Omit the flag to take the fixture's own `timeout_s:` "
+                      "(or the default) instead.")
+
+
+# ---------------------------------------------------------------------------
 # checkout + manifest
 
 

@@ -223,10 +223,34 @@ def main() -> int:
                         help="also run the bridge-subagent leg (Task-launched subagent)")
     parser.add_argument("--model", default=None, help="override the model for all legs")
     parser.add_argument("--timeout", type=int, default=600,
-                        help="per-leg CLI timeout in seconds (default 600)")
+                        help="per-leg CLI timeout in seconds (default 600); "
+                             "1..2700, the harness-wide ceiling "
+                             "harness/guidance.py holds every timeout to")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root directory for run outputs (summary + report)")
     args = parser.parse_args()
+
+    # The SAME predicate and the SAME ceiling every other timeout in this
+    # harness is held to. `args.timeout` reaches `run_leg`'s
+    # `subprocess.run(timeout=...)` at :86 with nothing between: argparse's
+    # `type=int` accepts every integer there is, and 2 200 000 of them raise a
+    # bare `OverflowError: timeout is too large` instead of naming a rule.
+    # This is the flag beside the one round 3 caught in run_eval.py; a bound
+    # that only guards the entry point you were looking at is not a bound.
+    #
+    # Imported HERE and not at module scope: harness/guidance.py imports THIS
+    # module (`run_canary.run_leg` is the probe its guard reuses), so a
+    # module-scope import would close the cycle. By the time main() runs both
+    # modules are fully loaded, and `sys.path` already carries harness/ —
+    # either because guidance put it there, or because this file is
+    # `__main__` and its own directory is `sys.path[0]`.
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see above
+    try:
+        guidance.check_timeout(args.timeout, "--timeout",
+                               guidance.CLI_TIMEOUT_REMEDY)
+    except guidance.GuidanceError as exc:
+        print(f"configuration error: {exc}")
+        return 2
 
     fixture = load_fixture(args.eval_dir)
     version = claude_version()

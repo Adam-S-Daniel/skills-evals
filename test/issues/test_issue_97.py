@@ -1665,6 +1665,401 @@ class TestIssue97(unittest.TestCase):
                          "--results-dir", tmp / "results", "--no-judge"])
                     self.assertEqual(rc, 0, f"{knob}={value}: {out}")
 
+
+    # ------------------------------------------------------------------
+    # S1-a — the ceiling is a HARNESS ceiling, not a fixture ceiling
+    #
+    # Round 2 put the bound in `validate_timeouts`, which sees the FIXTURE
+    # dict and nothing else, and `--timeout` on the command line overrides
+    # the value it just bounded (`args.timeout or fixture.get("timeout_s",
+    # 600)`, at both call sites). So the defect S1 closed came straight back
+    # through the flag beside it — measured on a6d165d through the real CLI
+    # entry point: `--timeout 2200000` rc 1 and a bare `OverflowError`,
+    # `--timeout 2701` rc 0 above the job budget, `--timeout 3000` against a
+    # scored leg that never returns did not come back at all.
+    #
+    # The INVARIANT these three tests and the inventory below state together:
+    # no value that reaches a subprocess timeout anywhere under harness/ may
+    # be non-numeric, boolean, non-positive, non-finite or above
+    # MAX_TIMEOUT_S, whatever its source — a fixture knob, a `--timeout`
+    # flag on any of the three entry points that has one, an arm dict, or a
+    # default.
+    # ------------------------------------------------------------------
+
+    def test_a_cli_timeout_override_is_held_to_the_same_ceiling(self):
+        root = self._checkout()
+        ceiling = run_eval.MAX_TIMEOUT_S
+        # 2200000 is the OverflowError class; 1e9 the same an order up; 2701
+        # one second over the job budget (rc 0 on a6d165d); 0 the value
+        # `args.timeout or ...` silently swallowed as "no override"; -1 the
+        # one a6d165d refused, but as a runner-level error rather than a
+        # named configuration error.
+        for value in (2200000, 10 ** 9, 2701, 0, -1):
+            with self.subTest(value=value):
+                tmp = Path(tempfile.mkdtemp(prefix="cli-timeout-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                argv_log = tmp / "argv.jsonl"
+                # The ORDINARY probe CLI, not the hanging one: these rows
+                # must be refused before a CLI is invoked at all, so the run
+                # that proves it has to be one that would otherwise SUCCEED.
+                # On a6d165d each row got as far as the CLI and showed its
+                # own defect there — 2200000 and 1e9 rc 1 with a bare
+                # OverflowError, 2701 rc 0 above the job budget, 0 silently
+                # swallowed by `args.timeout or ...` and rc 0, -1 rc 2 but as
+                # `Runner-level error in arm(s)` rather than a named
+                # configuration error — and the argv log existed every time.
+                eval_dir = self._guidance_fixture(
+                    tmp, env={"FAKE_CLAUDE_MODE": "guidance_probe",
+                              "FAKE_CLAUDE_ARGV_LOG": str(argv_log)})
+                rc, out = self._run_main_subprocess(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", tmp / "results", "--no-judge",
+                     "--timeout", value])
+                label = f"--timeout {value}"
+                self.assertFalse(
+                    argv_log.exists(),
+                    f"{label}: the CLI was invoked before the flag was "
+                    "checked — the override is validated before any subject "
+                    "branch and before any CLI call")
+                self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                self.assertIn("--timeout", out, f"{label}: the rejection must "
+                              f"name the flag the operator typed\n{out}")
+                self.assertIn("positive number", out, f"{label}: {out}")
+                self.assertIn(
+                    str(ceiling), out,
+                    f"{label}: the rejection must NAME the ceiling, so an "
+                    f"operator knows what to write instead\n{out}")
+                self.assertNotIn("Traceback", out, f"{label}: {out}")
+                self.assertNotIn("OverflowError", out, f"{label}: {out}")
+                self.assertNotIn(
+                    "Runner-level error", out,
+                    f"{label}: a bad flag is a CONFIGURATION error named at "
+                    f"parse time, not an arm that failed\n{out}")
+
+    def test_a_cli_timeout_override_inside_the_ceiling_still_runs_the_arm(self):
+        # The other side: a valid override is honoured exactly as before, so
+        # the new predicate cannot be a blanket refusal that happens to make
+        # the rows above pass.
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        for value in (600, run_eval.MAX_TIMEOUT_S):
+            with self.subTest(value=value):
+                tmp = Path(tempfile.mkdtemp(prefix="cli-timeout-ok-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                eval_dir = self._guidance_fixture(tmp)
+                rc, out = self._run_main(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", tmp / "results", "--no-judge",
+                     "--timeout", value])
+                self.assertEqual(rc, 0, f"--timeout {value}: {out}")
+
+    def test_a_cli_timeout_over_the_budget_does_not_reach_a_hanging_leg(self):
+        # The row with teeth. 3000 is between the job budget and the
+        # OverflowError threshold, so a6d165d ACCEPTED it and handed it to
+        # `subprocess.run(timeout=3000)` with a scored leg that never
+        # returns: no rejection, no return, bounded in CI only by the
+        # 45-minute job kill. Red on a6d165d as the child's own outer bound
+        # firing, which `_run_main_subprocess` turns into a named failure.
+        root = self._checkout()
+        tmp = Path(tempfile.mkdtemp(prefix="cli-timeout-hang-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        eval_dir = self._guidance_fixture(tmp, env=dict(self.HANG))
+        rc, out = self._run_main_subprocess(
+            [eval_dir, "--arm", "both", "--guidance", root,
+             "--results-dir", tmp / "results", "--no-judge",
+             "--timeout", 3000])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("--timeout", out, out)
+        self.assertIn(str(run_eval.MAX_TIMEOUT_S), out, out)
+        self.assertNotIn("Traceback", out, out)
+
+    # ------------------------------------------------------------------
+    # S1-a (b) — the INVENTORY. Every subprocess timeout under harness/ names
+    # the validated source that bounds it.
+    #
+    # The two fixes above are line fixes; this is the invariant over the
+    # surface. Twice now a bound has been added exactly where a review
+    # pointed and the same defect has walked in through the door beside it —
+    # the ceiling into the fixture knobs while `--timeout` overrode them
+    # unchecked. So the sinks are ENUMERATED, by AST, and every one of them
+    # has to say which validated source it is fed from. A new
+    # `subprocess.run(..., timeout=x)` anywhere under harness/ fails this
+    # test with its file and line until it is listed and justified.
+    # ------------------------------------------------------------------
+
+    # The call spellings that spawn a child, and the two Popen methods that
+    # also carry a real subprocess timeout.
+    SPAWN_NAMES = ("run", "Popen", "call", "check_call", "check_output")
+    WAIT_NAMES = ("wait", "communicate")
+
+    # The inventory. Key: (path relative to the repo root, enclosing
+    # function, the call as spelled, the `timeout=` argument as source text).
+    # Value: (how many identical call sites, the validated sources).
+    #
+    # A source is one of:
+    #   ("literal",)          the argument IS a numeric literal; the test
+    #                         checks it is positive and <= MAX_TIMEOUT_S
+    #   ("knob", "<dotted>")  a fixture knob TIMEOUT_KNOBS names, bounded by
+    #                         validate_timeouts at fixture load
+    #   ("flag", "<module>")  that module's `--timeout`, bounded by
+    #                         guidance.check_timeout on `args.timeout` in its
+    #                         own main() — the test parses the module and
+    #                         requires that call to be there
+    #   ("default", "<n>")    a keyword default in the callee's own
+    #                         signature, no caller overriding it
+    # Every source listed for a site must verify, so dropping any one of the
+    # three predicates turns this test red and names the site.
+    HARNESS_TIMEOUT_SINKS = {
+        ("harness/guidance.py", "deliver", "subprocess.run", "timeout"):
+            (1, (("default", "120"),)),
+        ("harness/propagation/account_store.py", "git_tracked",
+         "subprocess.run", "60"): (1, (("literal",),)),
+        ("harness/propagation/arms.py", "_run_hook", "subprocess.run",
+         "timeout"): (1, (("flag", "harness/run_propagation.py"),)),
+        ("harness/propagation/arms.py", "arm_plugin_marketplace",
+         "subprocess.run", "ctx.timeout"):
+            (1, (("flag", "harness/run_propagation.py"),)),
+        ("harness/propagation/init_probe.py", "probe", "<popen>.wait", "10"):
+            (1, (("literal",),)),
+        ("harness/run_account_audit.py", "registry_ref", "subprocess.run",
+         "30"): (1, (("literal",),)),
+        ("harness/run_canary.py", "claude_version", "subprocess.run", "30"):
+            (1, (("literal",),)),
+        # Two callers, two sources: run_canary's own `--timeout`, and
+        # guidance.run_guard, which is handed the `guard.timeout_s` knob.
+        ("harness/run_canary.py", "run_leg", "subprocess.run", "timeout"):
+            (1, (("flag", "harness/run_canary.py"),
+                 ("knob", "guard.timeout_s"))),
+        ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
+            (1, (("knob", "setup_timeout_s"),)),
+        # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
+        # is the whole of S1-a: round 2 validated the second and not the first.
+        ("harness/run_eval.py", "run_agent", "subprocess.run", "timeout"):
+            (1, (("flag", "harness/run_eval.py"), ("knob", "timeout_s"))),
+        ("harness/run_eval.py", "_nested_repo_diff", "subprocess.run", "10"):
+            (1, (("literal",),)),
+        ("harness/scorers/judge.py", "score", "subprocess.run", "timeout"):
+            (1, (("knob", "judge.timeout_s"),)),
+        ("harness/scorers/objective.py", "git_ref_unchanged", "subprocess.run",
+         "10"): (1, (("literal",),)),
+        ("harness/scorers/objective.py", "git_remote_url_is", "subprocess.run",
+         "10"): (1, (("literal",),)),
+        ("harness/scorers/objective.py", "reaper_ran_in_standalone_repo",
+         "subprocess.run", "10"): (2, (("literal",),)),
+        ("harness/scorers/objective.py", "git_worktree_list_matches",
+         "subprocess.run", "10"): (1, (("literal",),)),
+    }
+
+    @classmethod
+    def _timeout_sinks(cls, path: Path) -> list[tuple[tuple, int]]:
+        """Every subprocess-spawning call in `path` carrying `timeout=`, as
+        ((relpath, function, spelling, argument source), lineno).
+
+        Parsed, never matched out of the text, and deliberately generous
+        about the SPELLING: `subprocess.run`, `sp.run` under
+        `import subprocess as sp`, and a bare name bound by
+        `from subprocess import run as r` all count, because a bound that
+        only recognises the spelling in front of it is not a bound.
+        """
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        rel = path.relative_to(REPO_ROOT).as_posix()
+        module_aliases = {"subprocess"}
+        bare = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "subprocess":
+                        module_aliases.add(alias.asname or alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module == "subprocess":
+                for alias in node.names:
+                    if alias.name in cls.SPAWN_NAMES:
+                        bare[alias.asname or alias.name] = alias.name
+        parents = {}
+        for node in ast.walk(tree):
+            for child in ast.iter_child_nodes(node):
+                parents[child] = node
+
+        def enclosing(node) -> str:
+            cur = parents.get(node)
+            while cur is not None:
+                if isinstance(cur, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    return cur.name
+                cur = parents.get(cur)
+            return "<module>"
+
+        found = []
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func, spelling = node.func, None
+            if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                    and func.value.id in module_aliases
+                    and func.attr in cls.SPAWN_NAMES):
+                spelling = f"subprocess.{func.attr}"
+            elif isinstance(func, ast.Name) and func.id in bare:
+                spelling = f"subprocess.{bare[func.id]}"
+            elif isinstance(func, ast.Attribute) and func.attr in cls.WAIT_NAMES:
+                spelling = f"<popen>.{func.attr}"
+            if spelling is None:
+                continue
+            kw = [k for k in node.keywords if k.arg == "timeout"]
+            if not kw:
+                continue
+            found.append(((rel, enclosing(node), spelling,
+                           ast.unparse(kw[0].value)), node.lineno))
+        return found
+
+    @staticmethod
+    def _main_checks_the_flag(module_rel: str) -> bool:
+        """That module's own `main()` runs `check_timeout` on `args.timeout`.
+
+        Parsed from the module's source, so the mutation the brief asks for —
+        drop the predicate — makes every site that names this flag red, with
+        the site's own file and line in the message.
+        """
+        tree = ast.parse((REPO_ROOT / module_rel).read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and node.name == "main"):
+                continue
+            for call in ast.walk(node):
+                if not isinstance(call, ast.Call):
+                    continue
+                func = call.func
+                name = (func.attr if isinstance(func, ast.Attribute)
+                        else getattr(func, "id", None))
+                if name != "check_timeout":
+                    continue
+                if call.args and ast.unparse(call.args[0]) == "args.timeout":
+                    return True
+        return False
+
+    @staticmethod
+    def _main_validates_the_fixture() -> bool:
+        """run_eval.main() runs `validate_timeouts` on the loaded fixture."""
+        tree = ast.parse((REPO_ROOT / "harness" / "run_eval.py").read_text(
+            encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.FunctionDef) and node.name == "main"):
+                continue
+            for call in ast.walk(node):
+                if (isinstance(call, ast.Call)
+                        and getattr(call.func, "id", None) == "validate_timeouts"
+                        and call.args
+                        and ast.unparse(call.args[0]) == "fixture"):
+                    return True
+        return False
+
+    def test_every_harness_subprocess_timeout_names_its_validated_source(self):
+        inventory = {}
+        for path in sorted((REPO_ROOT / "harness").rglob("*.py")):
+            for key, lineno in self._timeout_sinks(path):
+                inventory.setdefault(key, []).append(lineno)
+        self.assertTrue(
+            inventory,
+            "no subprocess timeout found anywhere under harness/ — this "
+            "inventory must not be able to pass vacuously; the walk or the "
+            "spellings it recognises have broken")
+
+        unlisted = sorted(
+            f"{key[0]}:{lineno} in {key[1]}() — {key[2]}(timeout={key[3]})"
+            for key, lines in inventory.items()
+            if key not in self.HARNESS_TIMEOUT_SINKS for lineno in lines)
+        self.assertEqual(
+            unlisted, [],
+            "these subprocess timeouts under harness/ are in no inventory "
+            "row, so nothing says which validated source bounds them. Add a "
+            "row to HARNESS_TIMEOUT_SINKS naming that source — a fixture knob "
+            "via validate_timeouts, a `--timeout` flag via "
+            "guidance.check_timeout, a literal constant, or a callee default "
+            f"— and say why it is bounded:\n  " + "\n  ".join(unlisted))
+        gone = sorted(k for k in self.HARNESS_TIMEOUT_SINKS if k not in inventory)
+        self.assertEqual(gone, [], "inventory rows that no longer name a real "
+                                   "call site — delete them")
+
+        ceiling = run_eval.MAX_TIMEOUT_S
+        for key, (count, sources) in sorted(self.HARNESS_TIMEOUT_SINKS.items()):
+            rel, function, spelling, argument = key
+            where = f"{rel} {function}() {spelling}(timeout={argument})"
+            with self.subTest(sink=where):
+                self.assertEqual(
+                    len(inventory[key]), count,
+                    f"{where}: the inventory says {count} such call site(s), "
+                    f"the tree has {len(inventory[key])} (lines "
+                    f"{inventory[key]}). A new one needs its own "
+                    "justification, not a bumped count.")
+                self.assertTrue(sources, f"{where}: no source named")
+                for source in sources:
+                    kind = source[0]
+                    if kind == "literal":
+                        value = ast.literal_eval(argument)
+                        self.assertIsInstance(value, (int, float), where)
+                        self.assertGreater(value, 0, where)
+                        self.assertLessEqual(
+                            value, ceiling,
+                            f"{where}: a literal timeout must itself be "
+                            f"within the harness ceiling of {ceiling}s")
+                    elif kind == "default":
+                        self.assertLessEqual(
+                            float(source[1]), ceiling,
+                            f"{where}: the callee's own default must be "
+                            "within the ceiling")
+                    elif kind == "knob":
+                        knob = source[1]
+                        parents = tuple(knob.split(".")[:-1])
+                        leaf = knob.split(".")[-1]
+                        self.assertIn(
+                            (leaf, parents), run_eval.TIMEOUT_KNOBS,
+                            f"{where}: names the fixture knob {knob!r}, which "
+                            "TIMEOUT_KNOBS does not carry — so "
+                            "validate_timeouts never bounds it")
+                        self.assertTrue(
+                            self._main_validates_the_fixture(),
+                            f"{where}: is bounded by the fixture knob {knob!r} "
+                            "only while run_eval.main() still calls "
+                            "validate_timeouts(fixture, ...); it does not")
+                    elif kind == "flag":
+                        module_rel = source[1]
+                        self.assertTrue(
+                            self._main_checks_the_flag(module_rel),
+                            f"{where}: is fed by {module_rel}'s `--timeout`, "
+                            "and that module's main() no longer runs "
+                            "guidance.check_timeout on `args.timeout` — the "
+                            "flag reaches subprocess.run unbounded, which is "
+                            "the S1-a defect returning")
+                    else:  # pragma: no cover — a typo in the table
+                        self.fail(f"{where}: unknown source kind {kind!r}")
+
+    def test_every_harness_timeout_flag_is_bounded_by_the_one_predicate(self):
+        # The flags themselves, enumerated rather than assumed: any argparse
+        # `--timeout` anywhere under harness/ must be run through
+        # guidance.check_timeout in its own main(). Three today —
+        # run_eval.py, run_canary.py, run_propagation.py — and round 3 found
+        # the first of them unbounded after round 2 had bounded the knobs
+        # beside it.
+        flagged = []
+        for path in sorted((REPO_ROOT / "harness").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for node in ast.walk(tree):
+                if not (isinstance(node, ast.Call)
+                        and isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "add_argument"):
+                    continue
+                if any(isinstance(a, ast.Constant) and a.value == "--timeout"
+                       for a in node.args):
+                    flagged.append(path.relative_to(REPO_ROOT).as_posix())
+        self.assertTrue(flagged, "no `--timeout` flag found under harness/ — "
+                                 "this assertion must not pass vacuously")
+        for module_rel in sorted(set(flagged)):
+            with self.subTest(module=module_rel):
+                self.assertTrue(
+                    self._main_checks_the_flag(module_rel),
+                    f"{module_rel} declares a `--timeout` flag whose value "
+                    "reaches a subprocess timeout, but its main() never runs "
+                    "guidance.check_timeout on `args.timeout`: argparse's "
+                    "`type=int` bounds neither end, and a very large value "
+                    "raises a bare OverflowError instead of naming a rule")
+
     def test_unknown_section_id_through_main_exits_2_naming_the_manifest(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-badid-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
