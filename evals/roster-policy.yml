@@ -140,22 +140,22 @@ min_ranked_share: 0.01
 # entirely, so a 10,000-model catalogue publishes 10,000 entries —
 # correct, by the rule that a live id is never evicted — and the
 # tier-3 residue below is exempt too. Past it, who survives is
-# decided by data the previous roster does not write, in three tiers:
-# entries the census names outright (an in-window census key), the live
-# catalogue lists, or the usage alias map needs as a HOP from an
-# in-window census key to the model whose numerator collects its turns;
-# then ONE entry per census key that no tier-1 entry folds onto, so that
-# key keeps something it can be attributed through; then everything else.
-# Within a tier the census's own in-window turn count decides,
-# descending, and the id order breaks the tie. This run's own live ids
-# are exempt from the cap entirely.
+# decided by data the previous roster does not write, in TWO tiers —
+# numbered 1 and 3, for the reason the record of the deleted tier 2
+# below gives. TIER 1 is every entry the census names outright (an
+# in-window census key) or the live catalogue lists. TIER 3 is
+# everything else: the RESIDUE. Within tier 1 the census's own in-window
+# turn count decides, descending, and the id order breaks the tie; tier
+# 3 is not ordered at all. This run's own live ids are exempt from the
+# cap entirely.
 #
-# WHAT THE CAP BOUNDS IS TIERS 1 AND 2. The third tier — entries neither
-# the live catalogue nor the census names, under any spelling — is
-# carried whole: the cap neither fills its slots from it nor evicts from
-# it, because the only things left to order those entries by are
-# `last_seen` and the id, both written by whoever writes the file. What
-# bounds THAT is roster.py's `UNCAPPED_CARRY_CEILING`, and past it the
+# WHAT THE CAP BOUNDS IS TIER 1 ONLY. The tier-3 residue — entries
+# neither the live catalogue nor the census names, under any spelling —
+# is carried whole and is NEVER evicted by any order the previous roster
+# writes: the cap neither fills its room from it nor evicts from it,
+# because the only things left to order those entries by are `last_seen`
+# and the id, both written by whoever writes the file. The ONE bound left
+# on the residue is roster.py's `UNCAPPED_CARRY_CEILING`, and past it the
 # run refuses to publish (exit code 4) rather than keep 500 entries a
 # planter chose. So `catalogue_seen` can be published longer than 500
 # entries; the 500 is a bound on what the census can order, not on the
@@ -200,21 +200,54 @@ min_ranked_share: 0.01
 # out the model is no longer a previous arm, so the exit bar no longer
 # applies to it and real usage never re-seats it.
 #
-# So relevance is decided by what the census still NEEDS, not by how
-# anything is spelled: a census key is attributable only through an entry
-# that FOLDS onto it, and the census — which a planter does not write —
-# fixes how many such slots exist, one per key. `fold` is the production
-# alias map (built from the live catalogue and the in-window census keys
-# alone) applied to the id with one trailing `-DDDDDDDD` stripped. A
-# planter who knows a census key can win that key's one slot with
-# `<key>-00000000`; the plant folds onto the same key, so the key stays
-# attributable and no published share moves. What a planter cannot do is
-# take the slot away. See roster.py's `_relevance`. Among ids the census
-# does not need, the order is only a tie-break, and those entries move no
-# share. The invariant holds SUBJECT TO THE CAP: tier 1 plus tier 2 can
-# exceed 500 if the census names more than that, and then the lowest-turn
-# entries go — raising the cap moves that number, it does not remove the
-# case.
+# So relevance is decided by what the two documents a planter does not
+# write actually NAME, and not by how anything is spelled. A census key
+# names itself; the live catalogue names its own ids; an entry neither
+# names is residue and is carried rather than ranked. A planter who knows
+# a census key therefore gains nothing by spelling a plant after it —
+# `<key>-00000000` was already going to be carried as residue, and the
+# key itself was already tier 1 — and what a planter cannot do at all is
+# take a real entry's place, because the only entries the cap can evict
+# are ones the census or the catalogue names, and a planter writes
+# neither document. See roster.py's `_relevance`. Among residue entries
+# there is no order at all, and those entries move no share. The
+# invariant holds SUBJECT TO THE CAP: tier 1 alone can exceed 500 if the
+# census names more entries than that, and then the lowest-turn ones go
+# — raising the cap moves that number, it does not remove the case.
+#
+# TWO MECHANISMS WERE TRIED HERE AND ARE GONE. They are recorded because
+# the reasoning that reached for them is the reasoning a later round will
+# reach for again, and because a mechanism deleted without a record comes
+# back. The first was a rationed TIER 2 (rounds 8 to 10): ONE slot per
+# census key that no tier-1 entry folded onto, so the key kept some entry
+# it could be attributed through, with the slot COUNT bounded by the
+# census rather than by the file — a planter could win a key's slot with
+# `<key>-00000000`, which left the key attributable through the plant and
+# moved no share, but could not take the slot away. The second was
+# DESIGN DECISION 5 of review round 11: every id the usage alias map
+# needs as a HOP from an in-window census key to the model whose
+# numerator collects its turns was made tier 1 in its own right, because
+# a dated census key that is itself an entry covered its own fold group,
+# spent no slot, and left the bare alias between it and the live snapshot
+# — the only hop the map had — in the third tier behind every filler,
+# where 500 of them evicted it.
+#
+# BOTH ARE SUBSUMED by the residue rule above, and the argument is a
+# proof rather than a measurement. An id NEITHER document names can no
+# longer be evicted at all, so a hop that is not a census key is carried
+# whatever else happens; and a hop that IS a census key reaches the
+# numerator through `counts`, which already puts that spelling in the
+# usage alias map's domain, and is tier 1 besides. Ten mutations of that
+# machinery left the whole test suite green — and this repository's rule
+# is that a clause with no mutation able to turn the suite red is deleted
+# rather than kept as belt-and-braces. Keeping the hop route also had a
+# cost, one-directional: promoting a hop into tier 1 EXPOSES it to the
+# cap, where as residue it could not be evicted at all.
+#
+# THE TIER NUMBERS STAY 1 AND 3 rather than being closed up. "Tier 2"
+# names the deleted slot in four rounds of review notes, in roster.py and
+# in this file, and reusing the number for the tier nothing can evict
+# would silently falsify every one of them.
 #
 # WHAT THAT COSTS WITH NO PLANTER INVOLVED AT ALL, since the number
 # without a curve reads like a corner case: the loss is proportional to

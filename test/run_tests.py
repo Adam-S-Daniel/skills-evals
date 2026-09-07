@@ -15732,10 +15732,11 @@ class TestIssue67Review7(unittest.TestCase):
         # "carries 100.0% of rankable census usage ..." — red.
 
     def test_the_policy_describes_the_cap_the_code_implements(self):
-        """Updated for B1\' (#129 review round 10): the cap orders by
-        relevance in three tiers, then by the census's own in-window turn
-        count descending, then by the id. `last_seen` is out of the order
-        entirely, because the previous roster is what writes it."""
+        """Updated for B1\' (#129 review round 10) and again for round
+        11's continuation: the cap orders by relevance — tier 1, then the
+        census's own in-window turn count descending, then the id — and
+        carries the tier-3 residue unordered. `last_seen` is out of the
+        order entirely, because the previous roster is what writes it."""
         text = self.POLICY.read_text(encoding="utf-8")
         self.assertNotIn("oldest-by-id-sorted-out", text,
                          "the cap evicts by `last_seen`, not by id order")
@@ -15748,7 +15749,11 @@ class TestIssue67Review7(unittest.TestCase):
         self.assertTrue("then the newest by `last_seen`" not in prose,
                         "`last_seen` is out of the cap's order entirely "
                         "(B1', #129 review round 10)")
-        self.assertIn("Within a tier the census's own in-window turn count "
+        # "Within a tier" until round 11's continuation left one ordered
+        # tier and one that is not ordered at all; the floor is unchanged
+        # — the policy must describe the order as turns-then-id, and not
+        # as `last_seen` or the id alone.
+        self.assertIn("Within tier 1 the census's own in-window turn count "
                       "decides, descending, and the id order breaks the tie",
                       prose)
         self.assertIn("eviction here is PERMANENT", prose)
@@ -18460,11 +18465,14 @@ class TestIssue67Review10(unittest.TestCase):
         self.assertIn("neither cap evicts", policy)
         self.assertIn("uncapped_carry_ceiling", policy)
         self.assertIn("refuses to publish with a named error", policy)
-        # ROUND 11: and that the cap bounds tiers 1 and 2 only, so the
+        # ROUND 11: and that the cap bounds tier 1 only, so the
         # published length is bounded by the ceiling rather than by the
         # 500. A reader who takes the 500 for a bound on the file will
-        # read a 503-entry `catalogue_seen` as a bug.
-        self.assertIn("what the cap bounds is tiers 1 and 2", policy)
+        # read a 503-entry `catalogue_seen` as a bug. It said "tiers 1 and
+        # 2" until round 11's continuation deleted tier 2; the assertion
+        # moves with the mechanism, and it is still the same floor —
+        # the policy has to name what the 500 does and does not bound.
+        self.assertIn("what the cap bounds is tier 1 only", policy)
         self.assertIn("the 500 is a bound on what the census can order, "
                       "not on the file", policy)
         self.assertIn("refuses to publish (exit code 4)", policy)

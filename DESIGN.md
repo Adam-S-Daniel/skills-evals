@@ -466,6 +466,32 @@ Five properties are load-bearing and should survive any rework:
    that run's date, since seeing the bare string is the only evidence
    there is.
 
+   **What the length cap actually bounds.** Both caps — `catalogue_seen`'s
+   and the matching one on the previous roster's `arms` — order entries by
+   the two documents whoever writes `previous.json` does not write: the
+   live catalogue and the census. Tier 1 is every entry one of them names
+   outright, ordered by that entry's own in-window census turns descending
+   with the id breaking the tie, and only tier 1 is bounded by the 500.
+   Everything else is the tier-3 RESIDUE, and it is carried whole and
+   never evicted by any order at all — the only things left to order it by
+   are `last_seen` and the id, both written by whoever writes the file, so
+   evicting on either is how five review rounds in a row let 500 planted
+   entries displace a real one. The single bound on the residue is
+   `UNCAPPED_CARRY_CEILING` (10,000), past which the run refuses to publish
+   with a named error and a nonzero exit rather than keep the 500 entries
+   an untrusted input chose. So a published list can exceed 500, and a
+   10,000-model catalogue publishes 10,000 entries. The cap's cost with no
+   planter involved is proportional to how far past it the census itself
+   runs: measured, a census naming 602 ids drops 104 of them and 2.94% of
+   the window's turns, and one naming 1,202 drops 704 and 17.03%.
+
+   Two richer mechanisms were tried in this position and deleted — a
+   rationed per-census-key slot, and an explicit tier-1 route for every
+   hop of the alias chain — because the residue rule subsumes both: an id
+   neither document names can no longer be evicted at all, and one either
+   names is tier 1 already. `evals/roster-policy.yml` carries that record
+   in full, including why the tier numbers stay 1 and 3.
+
    **Ageing out is not a repair.** It ends a plant's future effect, but
    it does not undo a retirement the plant already caused: a model whose
    measured share the fabricated usage pushed under the exit bar is
