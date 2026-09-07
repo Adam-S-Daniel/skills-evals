@@ -486,6 +486,18 @@ The harness also refuses outright to point a delivery at the real `~/.claude`,
 and the hermetic suite asserts a whole run leaves the real file
 byte-identical.
 
+Guidance content is **executed** by the arm — that is what the subject
+measures, and `eval.yml`'s header states it as the trust boundary a guidance
+dispatch accepts — but the harness **reads** that content only from inside the
+`_agent-guidance` checkout it was pointed at: every manifest `file:` is
+resolved with its symlinks followed and refused if it lands outside the
+checkout root. The two are different boundaries and the second is not implied
+by the first: a manifest row naming `../OUTSIDE_SECRET.md` was read,
+delivered, and written verbatim into
+`results/guidance/<key>/<ts>/<arm>/transcripts/raw.json`, which `main` pushes
+to the public `eval-results` branch — so a row could publish any file the
+runner can read.
+
 ## Out of scope
 
 - `GHA-bench` as the harness (#18 caveat) — this is a dedicated harness.

@@ -2060,6 +2060,165 @@ class TestIssue97(unittest.TestCase):
                     "`type=int` bounds neither end, and a very large value "
                     "raises a bare OverflowError instead of naming a rule")
 
+
+    # ------------------------------------------------------------------
+    # F-1 — the harness reads guidance content only from INSIDE the checkout
+    #
+    # The manifest's `file:` is the one path harness/guidance.py builds out
+    # of manifest DATA rather than a module constant, and nothing bounded it.
+    # Measured on a6d165d: a row `file: ../OUTSIDE_SECRET.md` naming an
+    # existing file outside the checkout was resolved, read, delivered to the
+    # arm, and its content landed in
+    # `results/guidance/<key>/<ts>/<arm>/transcripts/raw.json` at rc 0 — and
+    # on main that directory is pushed to the PUBLIC `eval-results` branch.
+    # The trust boundary eval.yml states is that guidance content is EXECUTED
+    # by the arm; reading and publishing a file from outside the checkout is
+    # a different thing and is not implied by it.
+    # ------------------------------------------------------------------
+
+    OUTSIDE_MARKER = "F1-OUTSIDE-CANARY-PAYLOAD"
+
+    def _outside_file(self, tmp: Path) -> Path:
+        """A readable file one level ABOVE the guidance checkout, carrying a
+        marker nothing in the tree has. Its own mkdtemp, like every path
+        these tests create.
+
+        It carries a `## Alpha` heading on purpose: the fixture's section is
+        `alpha`, so on a6d165d this file was a perfectly good section source
+        — read, delivered and scored — rather than failing on a missing
+        heading. The red these tests produce there is the real one.
+        """
+        outside = tmp / "OUTSIDE_SECRET.md"
+        outside.write_text(
+            f"# not guidance\n\n## Alpha\n\n{self.OUTSIDE_MARKER}\n",
+            encoding="utf-8")
+        return outside
+
+    @staticmethod
+    def _retarget_first_row(root: Path, value: str) -> None:
+        manifest = root / "agents-md" / "eval-coverage.yml"
+        rows = yaml.safe_load(manifest.read_text(encoding="utf-8"))
+        rows[0]["file"] = value
+        manifest.write_text(yaml.safe_dump(rows, sort_keys=False),
+                            encoding="utf-8")
+
+    def _assert_marker_absent(self, results: Path) -> None:
+        for path in results.rglob("*"):
+            if not path.is_file():
+                continue
+            body = path.read_bytes()
+            self.assertNotIn(
+                self.OUTSIDE_MARKER.encode(), body,
+                f"{path} carries content read from outside the guidance "
+                "checkout — this directory is pushed to the public "
+                "eval-results branch")
+
+    def test_a_manifest_file_outside_the_checkout_is_refused_by_name(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-escape-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        outside = self._outside_file(tmp)
+        root = make_guidance_checkout(tmp / "checkout")
+        self._retarget_first_row(root, f"../{outside.name}")
+        self.assertTrue(outside.is_file(), "the escape target must exist, or "
+                        "the refusal could be a missing-file error instead")
+
+        results = tmp / "results"
+        # `canary_loader` echoes the whole delivered memory into the
+        # transcript, which is the shape round 3 used to show the outside
+        # content reaching results/.../transcripts/raw.json at rc 0. It reads
+        # the WORKSPACE's CLAUDE.md, so the run uses `--delivery project` —
+        # the documented fallback delivery, through the same hook.
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "canary_loader"})
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--delivery", "project",
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("OUTSIDE the checkout", out, out)
+        self.assertIn(str(root.resolve()), out, "the refusal must name the "
+                      f"checkout it was pointed at\n{out}")
+        self.assertNotIn("Traceback", out, out)
+        self.assertNotIn(self.OUTSIDE_MARKER, out,
+                         "the refusal must not echo the content it refused")
+        if results.exists():
+            self._assert_marker_absent(results)
+
+    def test_a_manifest_file_symlinked_out_of_the_checkout_is_refused(self):
+        # The same read with one more step in it: an ordinary in-tree row,
+        # whose file IS a symlink pointing out of the checkout. Refused only
+        # because both sides are resolved before the comparison.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-symlink-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        outside = self._outside_file(tmp)
+        root = make_guidance_checkout(tmp / "checkout")
+        link = root / "agents-md" / "sections" / "escape.md"
+        link.symlink_to(outside)
+        self.assertTrue(link.is_file(), "the symlink must resolve to a real "
+                        "file, or this proves nothing")
+        self._retarget_first_row(root, "agents-md/sections/escape.md")
+
+        results = tmp / "results"
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "canary_loader"})
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--delivery", "project",
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("OUTSIDE the checkout", out, out)
+        self.assertNotIn("Traceback", out, out)
+        self.assertNotIn(self.OUTSIDE_MARKER, out, out)
+        if results.exists():
+            self._assert_marker_absent(results)
+
+    def test_an_ordinary_in_tree_manifest_row_is_untouched(self):
+        # The other side: containment refuses nothing a real checkout does.
+        # The committed manifest's own rows are covered by
+        # test_the_real_manifest_rows_all_resolve_inside_the_checkout below.
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-intree-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        eval_dir = self._guidance_fixture(tmp)
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--results-dir", tmp / "results",
+                                  "--no-judge"])
+        self.assertEqual(rc, 0, out)
+
+    def test_the_real_manifest_rows_all_resolve_inside_the_checkout(self):
+        if not (REAL_GUIDANCE_DIR / "agents-md" / "eval-coverage.yml").is_file():
+            self.skipTest(f"no _agent-guidance checkout at {REAL_GUIDANCE_DIR}")
+        rows = guidance.load_manifest(REAL_GUIDANCE_DIR)
+        self.assertTrue(rows, "the real manifest must be non-empty")
+        for row in rows:
+            with self.subTest(section=row["id"]):
+                resolved = guidance.inside_checkout(REAL_GUIDANCE_DIR,
+                                                    row["file"])
+                self.assertTrue(resolved.is_file(), resolved)
+
+    def test_the_containment_boundary_is_written_down_in_both_places(self):
+        # The clause the reader meets before they meet the code. Pinned by
+        # its operative words in both, because "the arm executes it anyway"
+        # is the obvious objection and the answer — a read boundary is not
+        # the execution boundary — has to survive the next rewrite.
+        for label, text in (
+                ("harness/guidance.py", guidance.__doc__ or ""),
+                ("DESIGN.md",
+                 (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8"))):
+            with self.subTest(doc=label):
+                folded = " ".join(text.split())
+                for phrase in ("only from inside", "trust boundary",
+                               "eval-results"):
+                    # assertTrue, not assertIn: assertIn's default message
+                    # would dump the whole docstring (or DESIGN.md) into the
+                    # failure ahead of the sentence that explains it.
+                    self.assertTrue(
+                        phrase in folded,
+                        f"{label} does not carry {phrase!r}. It must say that "
+                        "guidance content is executed "
+                        "by the arm (the header's trust boundary) and that "
+                        "the harness reads it only from inside the checkout, "
+                        "whose sink is the public eval-results branch")
+
     def test_unknown_section_id_through_main_exits_2_naming_the_manifest(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-badid-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)

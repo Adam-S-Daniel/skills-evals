@@ -19,6 +19,16 @@ the same shape harness/propagation/arms.py uses), and a magic-token probe per
 arm whose disagreement with the arm's expectation makes the run INCONCLUSIVE —
 never PASS, never FAIL.
 
+WHERE THE CONTENT COMES FROM, and why that is a boundary. Guidance content is
+EXECUTED by the arm — that is the subject, and eval.yml's header states it as
+the trust boundary a guidance dispatch accepts — but the harness reads that
+content only from inside the `_agent-guidance` checkout it was pointed at:
+every manifest `file:` is resolved with its symlinks followed and refused if
+it lands outside (`inside_checkout` below). Before that, a row
+`file: ../OUTSIDE_SECRET.md` was read, delivered, and written into
+`results/.../transcripts/raw.json`, which main pushes to the public
+`eval-results` branch — so a row could publish any file the runner can read.
+
 THE FIVE MODES (`mode:` on an arm):
 
   none                — no GUIDANCE delivered; the control. It is not
@@ -285,6 +295,18 @@ def load_manifest(guidance_dir: Path) -> list[dict]:
         if missing:
             raise GuidanceError(
                 f"{path} row {i} is missing required field(s): {', '.join(missing)}")
+        # Checked HERE, at load, and not only at the read: the manifest is
+        # loaded once in `_run_guidance` before any arm exists, so a hostile
+        # row is refused before ANY arm is delivered anything — including the
+        # control's decoy, which an arm-ordering change would otherwise let
+        # through ahead of the treatment arm's first read. `_read` runs the
+        # same check as the funnel every guidance file read passes through.
+        # `file:` is the ONLY path this module builds out of manifest data:
+        # base.md, stub.md, the manifest itself and the hook are module
+        # constants, and the fixture's `section:` is an id that `_run_guidance`
+        # already refuses to let carry a `/`, `.` or `..` before it becomes a
+        # results/ path segment.
+        inside_checkout(guidance_dir, row["file"])
     return doc
 
 
@@ -391,8 +413,45 @@ def _extent_of(text: str, heading: str, where: str) -> dict:
     return spans[0]
 
 
+def inside_checkout(guidance_dir: Path, rel) -> Path:
+    """`guidance_dir / rel`, resolved, and PROVEN to be inside the checkout.
+
+    F-1. The manifest's `file:` is the one path in this module built from
+    manifest DATA rather than from a module constant, and nothing bounded it:
+    a row `file: ../OUTSIDE_SECRET.md` was resolved, read, delivered to the
+    arm and written verbatim into
+    `results/guidance/<key>/<ts>/<arm>/transcripts/raw.json`, which on `main`
+    is pushed to the PUBLIC `eval-results` branch. So a manifest row could
+    publish any file the runner can read. An absolute `file:` is the same
+    hole spelled shorter — `Path("/x") / "/etc/passwd"` is `/etc/passwd`.
+
+    SYMLINKS ARE FOLLOWED before the comparison (`.resolve()` on both sides),
+    because a link inside `agents-md/` pointing out of the tree is the same
+    read with one more step in it. Both sides are resolved, so a checkout
+    that itself lives under a symlinked path still compares equal.
+
+    This is a READ boundary, and it is not the same as the trust boundary
+    eval.yml states: guidance content is EXECUTED by the arm on purpose, and
+    that is the documented risk of the subject. What is not on purpose is the
+    harness reading and publishing a file from outside the checkout it was
+    pointed at.
+    """
+    root = Path(guidance_dir).resolve()
+    path = (root / rel).resolve()
+    if not path.is_relative_to(root):
+        raise GuidanceError(
+            f"the guidance path {str(rel)!r} resolves to {path}, which is "
+            f"OUTSIDE the checkout at {root}. The harness reads guidance "
+            "content only from inside the checkout it was given: a manifest "
+            "row's `file:` (or a symlink it follows) that escapes it would "
+            "publish whatever it names into results/, which is pushed to a "
+            "public branch. Fix the row in agents-md/eval-coverage.yml, or "
+            "point --guidance at the checkout that really holds the file.")
+    return path
+
+
 def _read(guidance_dir: Path, rel) -> str:
-    path = guidance_dir / rel
+    path = inside_checkout(guidance_dir, rel)
     try:
         return path.read_text(encoding="utf-8")
     except OSError as exc:
