@@ -396,8 +396,9 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     of an empty catalogue.
 
     Exactly three routes, checked below, and this IS the whole set (#129
-    review round 6 deleted two more that used to sit beside them — see
-    the end of this docstring):
+    review round 6 deleted two more that used to sit beside them, and
+    round 11 a redundant spelling of the third — see the end of this
+    docstring):
 
     `folded in api_ids_folded` (`api_ids` run through the SAME alias map
     as `folded`) covers two shapes at once. An ordinary bare catalogue id
@@ -499,12 +500,23 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     `X-00000000` now attributes exactly what planting `X` always did —
     and it only ever fires for ids the map relates, which is bounded by
     the live catalogue and the census.
+
+    THE BARE `candidate in catalogue_seen_folded` IS GONE (N-3, #129
+    review round 11), on the rule F-2 states: over 6,000 corpus runs it
+    fired 71,395 times and never once alone. It cannot: every element of
+    a folded set is a VALUE of the alias map, and invariant (i) of
+    `_usage_alias_map` makes every value a fixed point, so a candidate
+    that is in the set folds onto itself and `folded in
+    catalogue_seen_folded` fires for it too. `candidate in
+    previous_arms_folded` beside it is redundant by that identical proof,
+    and measured green under deletion, but it is left standing this round
+    rather than deleted on the same breath as its sibling — see the PR
+    body.
     """
     if api_ids is None:
         return True
     return (folded in (api_ids_folded or ())
            or candidate in previous_arms_folded or folded in previous_arms_folded
-           or candidate in catalogue_seen_folded
            or folded in catalogue_seen_folded)
 
 
@@ -836,8 +848,16 @@ class _Relevance:
 
     def __init__(self, api_ids, count_turns, seat_aliases, live_order):
         self._live = {i for i in api_ids if isinstance(i, str)}
-        self._turns = {k: n for k, n in dict(count_turns).items()
-                       if isinstance(k, str) and n > 0}
+        # No filter (N-3, #129 review round 11): `count_turns` is already
+        # {str: positive int} by the time it gets here. `_clean_counts`
+        # rejects a non-string key and a non-int or negative cell, and
+        # `compute_roster` — the only caller of `_relevance` — keeps only
+        # the keys whose in-window total is above zero, which is the whole
+        # of round 10's "a census key with zero in-window turns names
+        # nothing". Neither of the checks that used to sit here dropped a
+        # key in any run, so neither had a mutation that could turn the
+        # suite red; F-2 is the rule that such a check goes.
+        self._turns = dict(count_turns)
         # Built from the LIVE CATALOGUE and the in-window census keys and
         # from nothing else — the same two documents `_relevance` says
         # relevance is decided by, and neither of them written by whoever
