@@ -46,9 +46,14 @@ the real base.md, both of which scored clean.
 THE RESIDUAL the guard does NOT settle: a control arm that reads its own
 scratch memory AND an ambient one in addition — a real `~/.claude/CLAUDE.md`
 alongside the delivered decoy — is prevented by the per-arm HOME and
-CLAUDE_CONFIG_DIR isolation rather than by the guard, because a probe asked
-for "the magic word" when its context carries two may report either; only a
-real dispatch settles it.
+CLAUDE_CONFIG_DIR isolation rather than by the guard. TWO reasons, and the
+one this paragraph used to give is the narrower: a probe asked for "the magic
+word" when its context carries two may report either, and a contaminating
+source that carries no token of its own is invisible to a token guard at all.
+Measured, both of these score clean: an ambient file carrying a STALE token
+(no current run's token is in the reply, so there is nothing to catch) and
+the real base.md, which carries no token whatsoever. Only a real dispatch
+settles it.
 
 `section` vs `none` asks "does this teach the behavior"; `full` vs
 `full-minus-section` is the ablation — the marginal value of the section IN

@@ -485,6 +485,24 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(env["HOME"], str(paths["home"]))
         self.assertEqual(env["CLAUDE_CONFIG_DIR"], str(paths["config"]))
 
+    # The clause N3 added to the residual paragraph. Pinned by its operative
+    # words so a rewrite that drops the second reason is caught: the stated
+    # reason covered only the two-token case, and the case that actually
+    # scores clean most often — a contaminating source with no token of its
+    # own, the real base.md included — has nothing to do with ambiguity.
+    RESIDUAL_CLAUSE = ("a contaminating source that carries no token of its "
+                       "own is invisible to a token guard at all")
+
+    def test_the_residual_paragraph_names_both_reasons_the_guard_cannot_settle(self):
+        doc = " ".join((guidance.__doc__ or "").split())
+        self.assertIn("THE RESIDUAL the guard does NOT settle", doc,
+                      "harness/guidance.py must still carry the residual "
+                      "paragraph — this assertion must not pass vacuously")
+        self.assertIn(self.RESIDUAL_CLAUSE, doc,
+                      "the residual paragraph must say that a contaminating "
+                      "source carrying no token of its own is invisible to a "
+                      "token guard, not only that two tokens are ambiguous")
+
     def test_the_extent_docstring_says_the_unit_differs_from_the_js(self):
         # N-b. The arithmetic matches check-guidance-coverage.js; the UNIT
         # does not (characters here, Buffer.byteLength there). Pin the clause
