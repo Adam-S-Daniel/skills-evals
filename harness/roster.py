@@ -1533,10 +1533,19 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     # the 500 plants back in front on the id order, a fifth time. Either
     # way the evicted model's turns left the usage denominator and an
     # unrelated model was published as carrying 100.0% of census usage
-    # where it really carried 9.09%, or 33.3% — and the mirror image is
-    # just as reachable: with a newer model in its tier to deny it the
-    # newest-in-tier fallback, a model carrying 57.1% of the window was
-    # published RETIRED at 0.0%.
+    # where it really carried 9.09%, or 33.3%. AND THE MIRROR IMAGE IS
+    # JUST AS REACHABLE, which four rounds of writing this comment as an
+    # inflation story missed: the evicted model's own share is only
+    # rescued by the newest-in-tier fallback when it happens to BE the
+    # newest in its tier. Put a newer model beside it and there is no
+    # fallback, so a previous arm carrying 57.1% of the window is
+    # measured against the exit bar at the 0.0% the broken chain leaves
+    # it and published `RETIRED: below the 2% exit bar for the last 8
+    # weeks (0.0% of rankable census usage)` — measured through `main()`
+    # from 498 filler arms, or 496 planted history entries. That is not
+    # a transient wrong number: by the time the plant ages out the model
+    # is no longer a previous arm, so the exit bar no longer applies and
+    # real usage never re-seats it.
     #
     # EVICTION IS PERMANENT. The next run's `previous.json` is this run's
     # output, so an id dropped here is gone from the history for good —

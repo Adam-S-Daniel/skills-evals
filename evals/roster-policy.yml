@@ -187,6 +187,19 @@ min_ranked_share: 0.01
 # denominator and an unrelated model was published as carrying 100.0% of
 # census usage where it really carried 9.09%, or 33.3%.
 #
+# AND THE MIRROR IMAGE IS JUST AS REACHABLE, which four rounds of writing
+# this paragraph as an inflation story missed. A model whose share the
+# eviction takes away is only published on the newest-in-tier fallback
+# because it happens to BE the newest in its tier; put a newer model
+# beside it and there is no fallback left, so a previous arm carrying
+# 57.1% of the window is measured against the exit bar at the 0.0% the
+# broken chain leaves it and published `RETIRED: below the 2% exit bar
+# for the last 8 weeks (0.0% of rankable census usage)`. Measured through
+# `main()` from 498 filler arms, or 496 planted history entries. A
+# retirement is not a transient wrong number: by the time the plant ages
+# out the model is no longer a previous arm, so the exit bar no longer
+# applies to it and real usage never re-seats it.
+#
 # So relevance is decided by what the census still NEEDS, not by how
 # anything is spelled: a census key is attributable only through an entry
 # that FOLDS onto it, and the census — which a planter does not write —
