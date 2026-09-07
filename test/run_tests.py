@@ -18794,6 +18794,15 @@ class TestIssue67Review11(unittest.TestCase):
         a cap changes where a key's turns land, not only when a cap breaks
         an agreement the two relations happened to have.
 
+        MEASURED, rather than argued: this class run against `1fa9d3a`'s
+        `harness/roster.py` (the head this round's blocker was found on)
+        fails HERE on nine rows — 1A, 2A, 2B, 3A, 4A, both subtests of
+        each retirement row — plus round 9's property test, each naming
+        the census key whose target the cap moved. The two-relation form
+        was red on eight of those nine. It fails here BEFORE the row's own
+        share assertion runs, so the floor, not the published sentence, is
+        what catches the regression first.
+
         Called from the row tests and from round 9's property test. `case`
         is the `TestCase` doing the asserting, so one implementation serves
         both."""
