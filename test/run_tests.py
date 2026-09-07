@@ -4225,8 +4225,12 @@ class CiDispatchTests(unittest.TestCase):
         `Path(REPO_ROOT, "X.md")`, `os.path.join(str(REPO_ROOT), "X.md")`,
         `REPO_ROOT / name` where `name` is a variable, an f-string,
         `REPO_ROOT.glob("*.md")`, a rebound alias for `REPO_ROOT` or
-        `TEST_DIR`, and any `TEST_DIR.parent` reference other than the direct
-        `TEST_DIR.parent / "<name>.md"` BinOp this walk now recognizes.
+        `TEST_DIR`, any `TEST_DIR.parent` reference other than the direct
+        `TEST_DIR.parent / "<name>.md"` BinOp this walk now recognizes,
+        `Path(__file__).resolve().parents[1] / "X.md"` (a third spelling of
+        the repo root `_is_repo_root_expr` does not recognize), and
+        `str(REPO_ROOT) + "/X.md"` (string concatenation, not the `/` BinOp
+        this walk matches).
         """
         tree = ast.parse(source)
         found: set[str] = set()
