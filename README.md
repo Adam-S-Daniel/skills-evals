@@ -191,9 +191,10 @@ payload and reads it; a control arm reads its own scratch user memory and was
 not delivered the treatment payload. An ambient memory read *in addition* to
 the scratch one is prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR`
 isolation rather than by the guard, and is settled only by a real dispatch. An
-arm that does not report the token it was delivered, a control arm that
-reports the treatment token, or a probe that could not run at all, makes the
-arm **INCONCLUSIVE** — the summary carries
+arm that does not report the token it was delivered, an arm that reports a
+token it was *not* delivered (a control arm reporting the treatment token, or
+a treatment arm reporting the control's decoy), or a probe that could not run
+at all, makes the arm **INCONCLUSIVE** — the summary carries
 `guard: {expected, observed, contaminated}`, no score is written for that arm,
 and the run exits `2`. Never PASS, never FAIL.
 

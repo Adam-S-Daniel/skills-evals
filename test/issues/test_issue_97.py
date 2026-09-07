@@ -1053,6 +1053,71 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(summary["error"]["type"], "guard_contaminated")
         self.assertIsNone(summary["objective_checks"])
 
+    def test_a_treatment_arm_that_reports_the_controls_decoy_is_contaminated(self):
+        # N4. The forbidden-token side was one-directional: only a `none` arm
+        # was given a token it must NOT report, so the OTHER direction —
+        # a treatment arm that also reads the CONTROL's scratch user memory —
+        # scored clean. It is the same per-arm isolation failure seen from
+        # the other side, and just as fatal to the pair: the two arms are
+        # then not measuring two different contexts. Measured on c5ea933 with
+        # this exact fixture: rc 0, every check passing.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-contam-treatment-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        # An ambient file carrying the CONTROL's decoy, loaded by the fake CLI
+        # regardless of the arm's config dir — the leak, pointed the other way.
+        ambient = tmp / "ambient-CLAUDE.md"
+        ambient.write_text(f"The magic word is {self.DECOY}.\n", encoding="utf-8")
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "guidance_probe",
+                      "FAKE_CLAUDE_AMBIENT_MEMORY": str(ambient)})
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(
+            rc, 2, "a treatment arm whose probe reported the control's decoy "
+                   f"must be INCONCLUSIVE, never scored (stdout: {out!r})")
+        self.assertIn("INCONCLUSIVE", out)
+        treatment = self._summary(results, "guidance/alpha", "with_guidance")
+        self.assertTrue(treatment["guard"]["observed"],
+                        "it did read its own payload — that is not the "
+                        "problem")
+        self.assertTrue(treatment["guard"]["contaminated"],
+                        "and it also read the control's decoy, which nothing "
+                        "delivered to it")
+        self.assertFalse(treatment["guard"]["ok"])
+        self.assertEqual(treatment["error"]["type"], "guard_contaminated")
+        self.assertIsNone(treatment["objective_checks"],
+                          "no score may be written for an arm whose "
+                          "isolation provably did not hold")
+        # The control in the SAME run is untouched: it reports its own decoy
+        # (twice, from its scratch memory and from the ambient file) and
+        # nothing it was not delivered.
+        control = self._summary(results, "guidance/alpha", "without_guidance")
+        self.assertTrue(control["guard"]["observed"])
+        self.assertFalse(control["guard"]["contaminated"])
+
+    def test_an_uncontaminated_treatment_arm_reports_only_its_own_token(self):
+        # The other side of N4, so a guard that called every arm contaminated
+        # would not satisfy the test above.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-clean-treatment-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = self._checkout()
+        self._skip_without_real_hook(root)
+        eval_dir = self._guidance_fixture(tmp)
+        results = tmp / "results"
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 0, out)
+        treatment = self._summary(results, "guidance/alpha", "with_guidance")
+        self.assertFalse(treatment["guard"]["contaminated"],
+                         "a treatment arm that reads only its own payload is "
+                         "not contaminated by the decoy check")
+        self.assertTrue(treatment["guard"]["ok"])
+        self.assertNotIn(self.DECOY, treatment["guard"]["reply"],
+                         "and the decoy was never in its context")
+
     def test_a_control_arm_whose_probe_is_blind_is_inconclusive_too(self):
         # THE POINT OF THE DECOY. Before it, `mode: none` delivered nothing,
         # so the control's probe could only ever answer "no magic word" — the

@@ -32,12 +32,15 @@ THE FIVE MODES (`mode:` on an arm):
                         section's own file when it lives under `sections/`.
   full-minus-section  — that corpus with the section's extent removed.
 
-WHAT THE PER-ARM GUARD PROVES, exactly. For a TREATMENT arm: this arm was
-delivered its payload and reads it — its probe reports the run's magic token,
-which no earlier run could have left behind. For the CONTROL arm: it reads its
-OWN scratch user memory (its probe reports the DECOY token delivered to it,
-and only to it) and it was NOT delivered the treatment payload (its probe does
-not report the treatment token). Without the decoy the control's guard was
+WHAT THE PER-ARM GUARD PROVES, exactly. Every arm's guard is TWO-SIDED: it
+reports the token it was delivered, and it reports no token it was not. For a
+TREATMENT arm: this arm was delivered its payload and reads it — its probe
+reports the run's magic token, which no earlier run could have left behind —
+and it did NOT read the control's scratch user memory (its probe does not
+report the decoy). For the CONTROL arm: it reads its OWN scratch user memory
+(its probe reports the DECOY token delivered to it, and only to it) and it was
+NOT delivered the treatment payload (its probe does not report the treatment
+token). Without the decoy the control's guard was
 vacuous: `mode: none` delivered nothing, so the probe could only ever answer
 "no magic word" — which is exactly what it answers when the arm IS
 contaminated, measured with an ambient file carrying a stale token and with
@@ -357,7 +360,10 @@ def new_decoy_token() -> str:
     The control is delivered this, and only this, through the same hook — so
     its probe reporting the decoy proves the arm reads ITS OWN scratch user
     memory, and its probe reporting the TREATMENT token proves it was
-    contaminated. A `none` arm's guard is two-sided for that reason.
+    contaminated. EVERY arm's guard is two-sided for that reason, not only the
+    control's: the decoy is also the forbidden token a TREATMENT arm must not
+    report, which is how a treatment arm reading the control's scratch memory
+    is caught rather than scored.
 
     Deliberately NOT `new_token()` under another name: a test that pins one to
     a fixed value must not collapse the other into it, or the control arm
@@ -574,7 +580,7 @@ def guard_expectation(mode: str) -> bool:
 
 def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
               setting_sources: str, model: str | None, timeout: int,
-              forbidden_token: str | None = None,
+              forbidden_tokens: tuple[str, ...] = (),
               prompt: str = GUARD_PROMPT,
               disallowed_tools: str = GUARD_DISALLOWED_TOOLS) -> dict:
     """One tool-free probe against this arm's config dir and workspace.
@@ -584,9 +590,18 @@ def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
     Two cheap calls per run (one per arm of a pair) on the preflight model.
 
     `token` is the token THIS arm was delivered — the run's magic token for a
-    treatment arm, its own decoy for the control. `forbidden_token` is the
-    other side of the control's two-sided check: the treatment token, which a
-    control arm's probe must NOT report. A treatment arm passes none.
+    treatment arm, its own decoy for the control. `forbidden_tokens` is every
+    OTHER token the run minted: the treatment token for a control arm, and
+    the control's decoy for a treatment arm.
+
+    BOTH directions, because contamination has two. The loud one is a control
+    arm reached by the guidance. The quiet one is a treatment arm that reads
+    the CONTROL's scratch user memory — the same per-arm isolation failure
+    seen from the other side, and just as fatal to the pair, because the two
+    arms are then not measuring two different contexts. Only the control was
+    given a forbidden token, so the quiet one scored clean: measured, a
+    treatment arm whose probe reported both the treatment token and the
+    control's decoy exited 0 with every check passing.
 
     Returns a guard block: `ok` False means the arm is INCONCLUSIVE — no
     score is written for it and the run exits 2. A probe that could not run
@@ -603,7 +618,7 @@ def run_guard(*, workspace: Path, token: str, expected: bool, env: dict,
                 "reply": ""}
     reply = result["reply"]
     observed = token in reply
-    contaminated = bool(forbidden_token) and forbidden_token in reply
+    contaminated = any(other in reply for other in forbidden_tokens if other)
     return {"expected": expected, "observed": observed,
             "contaminated": contaminated, "ok": observed == expected
             and not contaminated,

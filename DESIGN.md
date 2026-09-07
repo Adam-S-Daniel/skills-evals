@@ -470,8 +470,10 @@ prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR` isolation, not by the
 guard, because a probe asked for "the magic word" with two in context may
 report either, and only a real dispatch settles it.
 
-An arm that does not report the token IT was delivered, a control arm that
-reports the treatment token, or a probe that could not run at all, is
+An arm that does not report the token IT was delivered, an arm that reports a
+token it was *not* delivered (a control arm reporting the treatment token, or
+a treatment arm reporting the control's decoy — the same isolation failure
+seen from the other side), or a probe that could not run at all, is
 **INCONCLUSIVE**: the summary carries
 `guard: {expected, observed, contaminated}`, no score is written for that arm,
 and the run exits `2`. Never PASS, never FAIL. Two cheap calls per pair.

@@ -1045,11 +1045,13 @@ def _guard_error(guard: dict) -> dict:
                           f"{guard['error']['detail']}"}
     if guard.get("contaminated"):
         return {"type": "guard_contaminated",
-                "detail": "the delivery guard's probe reported the TREATMENT "
-                          "token in a control arm — this arm was delivered the "
-                          "guidance by some channel the harness does not "
-                          "control, so every without-arm number in this run is "
-                          "suspect; no score is written for it"}
+                "detail": "the delivery guard's probe reported a token this "
+                          "arm was NOT delivered — a control arm reporting the "
+                          "TREATMENT token, or a treatment arm reporting the "
+                          "control's DECOY. Either way this arm read memory "
+                          "the harness never delivered to it, so the per-arm "
+                          "isolation did not hold and every number in this run "
+                          "is suspect; no score is written for it"}
     expectation = "the magic word" if guard["expected"] else "no magic word"
     observed = "saw it" if guard["observed"] else "did not see it"
     return {"type": "guard_miss",
@@ -1081,8 +1083,15 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         # can ask a question with a wrong answer — "does this arm read its own
         # scratch user memory?" — instead of the vacuous "no magic word?", the
         # one answer a `none` arm gave whether it was clean or contaminated.
-        decoy = guidance.new_decoy_token() if arm["mode"] == "none" else None
+        decoy = ctx["decoys"].get(arm["name"])
         arm_token = decoy if decoy is not None else ctx["token"]
+        # Every token this run minted that was NOT delivered to this arm.
+        # Symmetric by construction: the treatment token for a control arm,
+        # the control's decoy for a treatment arm, and any other control's
+        # decoy for a control arm. Reporting one of these means the arm read
+        # memory nobody delivered to it.
+        forbidden = tuple(other for other in (ctx["token"], *ctx["decoys"].values())
+                          if other != arm_token)
         payload = guidance.assemble(ctx["guidance_dir"], ctx["row"], arm["mode"],
                                     token=arm_token)
         info = guidance.deliver(
@@ -1126,9 +1135,9 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         guard = guidance.run_guard(
             workspace=workspace, token=arm_token,
             expected=guidance.guard_expectation(arm["mode"]), env=env,
-            # The control's other side: it must NOT report the treatment
-            # token. A treatment arm has nothing forbidden.
-            forbidden_token=ctx["token"] if decoy is not None else None,
+            # The other side, for EVERY arm: it must not report a token it
+            # was not delivered.
+            forbidden_tokens=forbidden,
             setting_sources=setting_sources, model=preflight_model,
             timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
 
@@ -1315,7 +1324,14 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
            # One fresh token per RUN, shared by every arm: the control arm
            # looks for the SAME token the treatment arm was given, which is
            # what turns "the control saw it" into proof of contamination.
-           "token": guidance.new_token()}
+           "token": guidance.new_token(),
+           # Every `none` arm's decoy, minted HERE rather than inside the arm
+           # that gets it. A TREATMENT arm's guard needs them too — a
+           # treatment probe reporting a control's decoy is the same per-arm
+           # isolation failure seen from the other side — and an arm cannot
+           # be handed a token that does not exist until its own turn comes.
+           "decoys": {arm["name"]: guidance.new_decoy_token()
+                      for arm in arms if arm["mode"] == "none"}}
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     try:
