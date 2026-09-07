@@ -943,10 +943,16 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
     # resolved against the real filesystem ---
 
     def test_captured_dotdot_path_escaping_the_workspace_fails_with_named_detail(self):
-        ws = self._ws({"docs/README.md": "[0001](../../outside.md)\n"})
-        outside = ws.parent / "outside.md"
+        ws = self._ws({"docs/README.md": ""})
+        outside_dir = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, outside_dir, ignore_errors=True)
+        outside = outside_dir / "outside.md"
         outside.write_text("x\n", encoding="utf-8")
-        self.addCleanup(outside.unlink, missing_ok=True)
+        # The captured `..`-laden path is computed relative to `base_dir`
+        # (ws/docs), not hardcoded, so this doesn't depend on `outside`
+        # sharing a fixed name in the shared system temp root.
+        rel_link = os.path.relpath(outside, start=ws / "docs")
+        (ws / "docs" / "README.md").write_text(f"[0001]({rel_link})\n", encoding="utf-8")
         passed, detail = objective.link_targets_exist(
             str(ws), ["docs/README.md"], link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)', base="docs")
         self.assertFalse(passed, detail)
@@ -965,12 +971,12 @@ class LinkTargetsExistCheckTests(unittest.TestCase):
         # about) proves the new refusal fires before any of that resolution
         # even happens.
         ws = self._ws({"README.md": "[0001](sibling.md)\n"})
-        sibling = ws.parent / "sibling.md"
-        sibling.write_text("x\n", encoding="utf-8")
-        self.addCleanup(sibling.unlink, missing_ok=True)
+        elsewhere = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, elsewhere, ignore_errors=True)
+        (elsewhere / "sibling.md").write_text("x\n", encoding="utf-8")
         passed, detail = objective.link_targets_exist(
             str(ws), ["README.md"], link_pattern=r'\[[0-9]{4}\]\(([^)]+)\)',
-            base=str(ws.parent))
+            base=str(elsewhere))
         self.assertFalse(passed, detail)
         self.assertIn("must be a workspace-relative path, not absolute", detail)
 
