@@ -9785,7 +9785,7 @@ DISCOVERY_DIR = TEST_DIR / "issues"
 DISCOVERY_PATTERN = "test_issue_*.py"
 
 
-def build_suite() -> unittest.TestSuite:
+def build_suite(discovery_dir: Path | None = None) -> unittest.TestSuite:
     """This module's own classes plus every discovered test/issues/ module.
 
     `top_level_dir` is the discovery dir itself, so a discovered module is
@@ -9793,14 +9793,20 @@ def build_suite() -> unittest.TestSuite:
     needs no `__init__.py`. A module that fails to IMPORT is not silently
     skipped: unittest turns it into a synthetic failing test, which is exactly
     the loud behaviour a broken new file should get.
+
+    `discovery_dir` defaults to DISCOVERY_DIR and is a parameter for one
+    reason: so the coverage assertion below can be driven against a SCRATCH
+    tree with a module planted in it, and prove its own failure message
+    without planting anything in the repo.
     """
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromModule(sys.modules[__name__]))
-    if DISCOVERY_DIR.is_dir():
+    discovery_dir = DISCOVERY_DIR if discovery_dir is None else discovery_dir
+    if discovery_dir.is_dir():
         suite.addTests(loader.discover(
-            str(DISCOVERY_DIR), pattern=DISCOVERY_PATTERN,
-            top_level_dir=str(DISCOVERY_DIR)))
+            str(discovery_dir), pattern=DISCOVERY_PATTERN,
+            top_level_dir=str(discovery_dir)))
     return suite
 
 
@@ -9891,19 +9897,78 @@ class TestTheRunnerItself(unittest.TestCase):
     def _modules(suite: unittest.TestSuite) -> set[str]:
         return {t.id().split(".")[0] for t in flatten_suite(suite)}
 
+    @staticmethod
+    def _uncovered(discovery_dir: Path) -> tuple[set[str], set[str]]:
+        """`(every module matching the pattern, those contributing no test)`."""
+        expected = {p.stem for p in discovery_dir.glob(DISCOVERY_PATTERN)}
+        return expected, expected - TestTheRunnerItself._modules(
+            build_suite(discovery_dir))
+
+    @staticmethod
+    def _uncovered_message(missing: set[str], discovery_dir: Path) -> str:
+        """Name the offending modules and say what is wrong with them.
+
+        The old message said only "build_suite() must carry at least one test
+        from EVERY module ... missing: [...]", which reads as a discovery
+        fault. The commoner cause is not discovery at all: a module that IS
+        discovered and simply defines no test case — a file that sets
+        module-level names only, or whose class does not subclass
+        unittest.TestCase — is worth zero tests and says nothing about it.
+        """
+        return (
+            "these modules match "
+            f"{DISCOVERY_PATTERN} under {discovery_dir} but contribute NO "
+            f"test to build_suite(): {sorted(missing)}. Each of them defines "
+            "no test — a module with only module-level names, or a class that "
+            "does not subclass unittest.TestCase, is discovered and worth "
+            "nothing. Give each named module at least one TestCase, or delete "
+            "it. (A module that fails to IMPORT is a different failure: "
+            "unittest reports that one as a synthetic failing test of its "
+            "own.)")
+
     def test_build_suite_covers_every_discoverable_issue_module(self):
-        expected = {p.stem for p in DISCOVERY_DIR.glob(DISCOVERY_PATTERN)}
+        expected, missing = self._uncovered(DISCOVERY_DIR)
         self.assertTrue(
             expected,
             f"no {DISCOVERY_PATTERN} under {DISCOVERY_DIR} — this assertion "
             "must not be able to pass vacuously")
         self.assertIn("test_issue_97", expected)
-        missing = expected - self._modules(build_suite())
-        self.assertEqual(
-            missing, set(),
-            "build_suite() must carry at least one test from EVERY "
-            f"{DISCOVERY_PATTERN} module under {DISCOVERY_DIR}; missing: "
-            f"{sorted(missing)}")
+        self.assertEqual(missing, set(),
+                         self._uncovered_message(missing, DISCOVERY_DIR))
+
+    def test_a_discovered_module_that_defines_no_tests_is_named_in_the_failure(self):
+        # N6. A planted `test/issues/test_issue_zz_empty.py` containing only
+        # `VALUE = 1` failed the whole suite with a message about discovery,
+        # which sends the reader looking at build_suite() rather than at their
+        # own new file. The failure stays — an issue module with no tests IS a
+        # mistake — but it now names the module and says what is wrong with it.
+        #
+        # Driven against a SCRATCH discovery dir, so nothing is planted in the
+        # repo and a concurrent run of this suite cannot see it.
+        scratch = Path(tempfile.mkdtemp(prefix="discovery-empty-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        planted = "test_issue_zz_empty"
+        (scratch / f"{planted}.py").write_text("VALUE = 1\n", encoding="utf-8")
+        # `loader.discover` puts the top-level dir on sys.path and imports the
+        # module by name; put both back afterwards so the scratch copy cannot
+        # shadow anything later in the run.
+        saved_path = list(sys.path)
+        self.addCleanup(lambda: sys.path.__setitem__(slice(None), saved_path))
+        self.addCleanup(sys.modules.pop, planted, None)
+
+        expected, missing = self._uncovered(scratch)
+        self.assertEqual(expected, {planted},
+                         "the scratch tree must hold exactly the planted "
+                         "module")
+        self.assertEqual(missing, {planted},
+                         "a module that defines no test contributes nothing "
+                         "to build_suite()")
+        message = self._uncovered_message(missing, scratch)
+        self.assertIn(planted, message,
+                      f"the failure must NAME the offending module\n{message}")
+        self.assertIn("defines no test", message,
+                      "and say that it defines no test, rather than blaming "
+                      f"discovery\n{message}")
 
     def test_build_suite_also_carries_this_files_own_classes(self):
         # The other half: discovery must not have replaced the local classes.
