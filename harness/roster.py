@@ -848,6 +848,42 @@ class _Relevance:
         for key, turns in self._turns.items():
             group = self.fold(key)
             self._group_turns[group] = self._group_turns.get(group, 0) + turns
+        # THE LINKS OF THE ALIAS CHAIN (B, #129 review round 11), and the
+        # reason a fold GROUP is not the whole answer. `fold` strips the
+        # suffix unconditionally and then asks the production map, so a
+        # dated census key is in its live snapshot's group whether or not
+        # the bare alias between them exists anywhere. The map attribution
+        # actually uses does NOT: `_usage_alias_map` folds `X-DDDDDDDD`
+        # onto `X` only when `X` is itself one of the ids handed in — and
+        # the ids handed in are the two lists these caps trim. So when the
+        # census key IS a tier-1 entry, the fold group is `covered`, tier 2
+        # spends no slot, and the bare alias `X` — the ONLY hop from that
+        # key to the live snapshot's numerator — drops to tier 3 behind
+        # every filler, is evicted, and the chain breaks: measured through
+        # `main()`, 500 fillers took a live model's true 57.1% off the
+        # roster entirely, and a three-hop chain published a false
+        # `carries 100.0%` for a true 5.66%.
+        #
+        # Every id the chain needs as a HOP is therefore tier 1 in its own
+        # right — a route, not a slot, because the census needs all of
+        # them at once and there is nothing to ration. It grants a planter
+        # nothing: this reads the CENSUS KEY's spelling and never an
+        # entry's, one id per suffix level of keys the planter does not
+        # write, so a plant is in here only if its id IS the missing
+        # spelling — in which case keeping it is exactly right. Round 9's
+        # `<census key>-00000000` plants gain nothing at all.
+        self._links: dict[str, int] = {}
+        for key, turns in self._turns.items():
+            cur, seen = key, {key}
+            while True:
+                match = SNAPSHOT_SUFFIX.match(cur)
+                if not match:
+                    break
+                cur = match.group("base")
+                if cur in seen:
+                    break
+                seen.add(cur)
+                self._links[cur] = max(self._links.get(cur, 0), turns)
 
     @property
     def census_is_silent(self) -> bool:
@@ -875,7 +911,11 @@ class _Relevance:
         """{id: sort key} for the list being capped, ascending — smallest
         survives. `(tier, -turns, id)`:
 
-        TIER 1  the id is an in-window census key, or a live catalogue id.
+        TIER 1  the id is an in-window census key, a live catalogue id,
+                or a LINK the alias chain needs to carry an in-window
+                census key's turns to its numerator (`_links` — see
+                `__init__`). A route, not a rationed slot: the chain
+                needs every one of its hops at once.
         TIER 2  one slot per census key: for a census key K with in-window
                 turns that NO tier-1 entry of `ids` folds onto, the
                 smallest id of `ids` that folds onto K. A planter can win
@@ -886,15 +926,17 @@ class _Relevance:
                 does not write.
         TIER 3  everything else, after every tier-1 and tier-2 entry.
 
-        Within a tier: census in-window turns descending — the entry's own
-        for tier 1, its fold group's for tier 2, zero for tier 3 — then id
-        ascending. `last_seen` is consulted nowhere: the previous roster
+        Within a tier: census in-window turns descending — for tier 1 the
+        entry's own, or the largest turn count of a census key that needs
+        it as a link; its fold group's for tier 2; zero for tier 3 — then
+        id ascending. `last_seen` is consulted nowhere: the previous roster
         writes it (a future date clamps to today and every bare string
         migrates stamped today), and the id order is already total over a
         deduped list, so a rung after it could never fire anyway.
         """
         ids = list(ids)
-        tier1 = {i for i in ids if i in self._turns or i in self._live}
+        tier1 = {i for i in ids
+                 if i in self._turns or i in self._live or i in self._links}
         covered = {self.fold(i) for i in tier1}
         by_group: dict[str, list[str]] = {}
         for model_id in ids:
@@ -907,7 +949,9 @@ class _Relevance:
         keys: dict[str, tuple] = {}
         for model_id in ids:
             if model_id in tier1:
-                keys[model_id] = (1, -self._turns.get(model_id, 0), model_id)
+                keys[model_id] = (1, -max(self._turns.get(model_id, 0),
+                                          self._links.get(model_id, 0)),
+                                  model_id)
             elif model_id in tier2:
                 keys[model_id] = (2, -tier2[model_id], model_id)
             else:
@@ -955,10 +999,12 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     WHY EACH INPUT IS SAFE. `api_ids` is the Models API's answer this run.
     `count_turns` is the census, in-window: a planter cannot add a census
     key, so it cannot add a tier-1 membership, and it cannot add a tier-2
-    SLOT either — the slot count is one per census key. The production
-    alias map ranges over the live catalogue, the in-window census keys
-    and the bare aliases live dated snapshots claim, all bounded by those
-    same two documents. Nothing here reads `previous.json`.
+    SLOT either — the slot count is one per census key. The links are read
+    off the census KEYS' own spellings, one id per suffix level, so they
+    are bounded by the census too. The production alias map ranges over
+    the live catalogue, the in-window census keys and the bare aliases
+    live dated snapshots claim, all bounded by those same two documents.
+    Nothing here reads `previous.json`.
 
     A CENSUS KEY WITH ZERO IN-WINDOW TURNS NAMES NOTHING (A, #129 review
     round 10), which is why the caller passes turn TOTALS rather than
@@ -968,18 +1014,32 @@ def _relevance(api_ids, count_turns, seat_aliases, live_order) -> _Relevance:
     nothing, `census_is_silent` is true, and the caps stop evicting rather
     than fall back to an order the input writes.
 
-    ROUTE (c1) OF ROUND 9 IS SUBSUMED, not dropped: a bare arm `X` beside a
-    dated census key `X-YYYYMMDD` is in that key's fold group, and absent
-    a tier-1 entry it takes the slot — `X` sorts before `X-00000000`, so a
-    planter racing it loses. Round 9's route (c2) (the production map
-    landing the entry on a census key) is GONE: it was provably implied by
-    the other three — 0 fires in 6,000,000 evaluations — and F-2 (#129
-    review round 10) is the rule that a clause with no mutation of its own
-    is deleted rather than kept as belt-and-braces.
+    ROUTE (c1) OF ROUND 9 IS A TIER-1 ROUTE, not a tier-2 slot (B, #129
+    review round 11). Round 10 claimed tier 2 subsumed it — a bare arm `X`
+    beside a dated census key `X-YYYYMMDD` is in that key's fold group and,
+    "absent a tier-1 entry", takes the slot — and that reading is false in
+    exactly the case that matters: when `X-YYYYMMDD` is ITSELF one of the
+    entries, it is tier 1, the group is `covered`, no slot is spent, and
+    `X` — the only hop the usage alias map has from that key to the live
+    snapshot — falls to tier 3 behind every filler. Measured through
+    `main()` over the dated-snapshot-only catalogue roster-policy.yml
+    itself documents: 500 fillers, and a live model carrying a true 57.1%
+    was published with no usage seat at all; a three-hop chain published a
+    false `carries 100.0%` for a true 5.66%. So a link of the chain is
+    tier 1 in its own right — see `_Relevance.__init__`'s `_links`, and
+    `_Relevance.fold` for why the fold relation and the alias map are not
+    the same relation. Round 9's route (c2) (the production map landing
+    the entry on a census key) is GONE: it was provably implied by the
+    other three — 0 fires in 6,000,000 evaluations — and F-2 (#129 review
+    round 10) is the rule that a clause with no mutation of its own is
+    deleted rather than kept as belt-and-braces.
 
     Round 6 keyed the cap on the id, round 7 on `last_seen`, round 8 on a
     predicate over the id, round 9 on the two documents but only in one
-    direction. This keys it on what those two documents still need.
+    direction, round 10 on what the census needs but only one entry per
+    key. This keys it on everything those two documents still need: the
+    keys themselves, the live catalogue, every hop between them, and one
+    slot for a group nothing else reaches.
     """
     return _Relevance(api_ids, count_turns, seat_aliases, live_order)
 

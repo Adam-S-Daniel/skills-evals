@@ -16537,25 +16537,32 @@ class TestIssue67Review10(unittest.TestCase):
         self.assertIn("carries 9.1%",
                       self._reason(published, "claude-sonnet-5"))
 
-    def test_a_census_key_a_tier_one_entry_already_reaches_spends_no_slot(self):
-        """MUTATION: `covered = set()` — granting a slot even where a
-        tier-1 entry of the same list already folds onto the key. The
-        census key here is itself DATED and is itself the history entry, so
-        it is tier 1 and the key needs nothing; the bare alias beside it is
-        an ordinary tier-3 entry and goes with the plants. Without the
-        guard the bare alias takes a slot the census never asked for, and
-        the cap carries one fewer entry that a later run might have
-        needed."""
-        published = self._f2_run(
-            self._two_model_catalogue(),
-            {"claude-sonnet-4-9-20250101": 8000, "claude-sonnet-5": 800},
-            ["claude-sonnet-4-9-20250101", "claude-sonnet-4-9"]
-            + self._F2_PLANTS)
-        seen = self._seen_ids(published)
-        self.assertIn("claude-sonnet-4-9-20250101", seen,
-                      "an in-window census key is tier 1")
-        self.assertNotIn("claude-sonnet-4-9", seen,
-                         "the key is already reachable, so no slot is spent")
+    # RETIRED: `test_a_census_key_a_tier_one_entry_already_reaches_spends
+    # _no_slot`.
+    #
+    # It pinned round 10's `covered` guard by asserting the WRONG
+    # outcome. The scenario is a dated census key that is itself the
+    # history entry, with the bare alias beside it: the guard reads the
+    # group as covered, spends no tier-2 slot, and the bare alias goes to
+    # tier 3 behind 500 plants and is evicted — which the test asserted as
+    # correct, on the reasoning that "the key is already reachable".
+    #
+    # It is not. The bare alias is the ONLY hop `_usage_alias_map` has
+    # from `<alias>-YYYYMMDD` to the live snapshot that holds the seat —
+    # `alias_map` creates that hop only when `<alias>` is one of the ids
+    # handed in, and the ids handed in are exactly what this cap trims. So
+    # evicting it is what breaks the chain: measured through `main()`, a
+    # live model carrying a true 57.1% published with no usage seat at
+    # all, a three-hop chain published `carries 100.0%` for a true 5.66%,
+    # and — with a newer model in the tier to deny it the newest-in-tier
+    # fallback — a model carrying 57.1% was RETIRED at 0.0%.
+    #
+    # B (#129 review round 11) makes every link of that chain tier 1 in
+    # its own right (`_Relevance.__init__`'s `_links`), so the bare alias
+    # survives and the assertion above is false by design. The `covered`
+    # guard itself is unchanged and still has its own floor:
+    # TestIssue67Review11::test_a_covered_group_spends_no_tier_two_slot.
+    # The scenario is now TestIssue67Review11's rows 1-4.
 
     def test_the_fold_follows_the_alias_map_not_one_suffix_strip(self):
         """MUTATION: `fold` returning `_base(model_id)` without the
@@ -16601,6 +16608,296 @@ class TestIssue67Review10(unittest.TestCase):
         reason = self._reason(published, "claude-sonnet-5")
         self.assertIn("carries 9.1%", reason, "800 of 8800 rankable turns")
         self.assertNotIn("100.0%", reason)
+
+
+class TestIssue67Review11(unittest.TestCase):
+    """Round 11 fixes for #67 (PR #129 review round 11), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review10, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST FIXTURE
+    data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every row is driven through `main()` with files on disk, the way
+    eval.yml invokes it. `main()` reads the wall clock, so `_run_main`
+    freezes it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _zero_bar_policy = TestIssue67Review9._zero_bar_policy
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- B: a link of the alias chain is TIER 1, not a tier-2 slot -------
+    #
+    # Decision 4 (round 10) spends no tier-2 slot on a fold group a tier-1
+    # entry already "covers", and `_Relevance.fold` decides "covers" with
+    # an UNCONDITIONAL suffix strip. The map attribution actually uses,
+    # `_usage_alias_map` over `alias_map`, creates the hop `X-DDDDDDDD ->
+    # X` only when `X` is itself one of the ids handed in — and the ids
+    # handed in are exactly the two lists the caps trim. So when a DATED
+    # census key is itself a tier-1 entry, its group is covered, no slot
+    # is spent, and the bare alias `X` — the only hop from that key to the
+    # live snapshot's numerator — falls to tier 3 behind every filler and
+    # is evicted. The chain breaks, and round 10's claim that "route (c1)
+    # is subsumed by tier 2" is false in exactly that case.
+    #
+    # The rows below are the reproduction, each through `main()` with
+    # files on disk. Rows 1A, 2A, 2B, 3A, 4A and both retirement rows are
+    # RED on 1fa9d3a; the control rows are green there and on both
+    # reference trees, which is what makes the A rows a differential
+    # rather than an assertion about nothing.
+
+    FILLERS = [f"0filler-{i:04d}" for i in range(500)]
+    PLANTS = [f"0plant-{i:04d}" for i in range(500)]
+
+    #: The catalogue shape roster-policy.yml documents and this repository
+    #: has never otherwise exercised end to end: the API publishes ONLY a
+    #: dated snapshot of the sonnet model, so the bare alias exists in no
+    #: document but the previous roster.
+    SNAPSHOT = "claude-sonnet-5-20261231"
+    BRIDGE = "claude-sonnet-5"
+    KEY = "claude-sonnet-5-20260601"
+    DATED_ONLY_API = ["claude-fable-4", "claude-haiku-5", SNAPSHOT]
+    #: 4153 of 7278 rankable turns is 57.1%, over the 10% entry bar.
+    DATED_ONLY_COUNTS = {"claude-haiku-5": 3125, KEY: 4153}
+
+    @classmethod
+    def _catalogue(cls, ids):
+        """One created_at for every id, so the capability order inside a
+        tier is decided by `_version_key` alone and the fixture says what
+        it means."""
+        return {"fetched_at": "2026-09-04T11:00:00Z",
+                "models": [cls._model(i, "2026-02-01T00:00:00Z") for i in ids]}
+
+    @classmethod
+    def _census(cls, counts):
+        return TestIssue67._census_doc(
+            counts={key: {cls.W[0]: n} for key, n in counts.items()})
+
+    def _row(self, api, counts, arms=(), seen=(), policy=None):
+        previous = {"arms": [{"id": i, "reason": "was an arm"} for i in arms],
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(3)}
+                                       for i in seen]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._catalogue(api), census=self._census(counts),
+                previous=previous, policy=policy)
+        self.assertEqual(rc, 0, err)
+        return published
+
+    def _seat(self, published, model_id):
+        """The published sentence about `model_id`: its arm reason, its
+        retirement reason, or the fact that it has no seat at all.
+
+        Returned as a SENTENCE so every assertion below can be `assertIn`
+        on that sentence rather than on the roster — a failure otherwise
+        dumps 500 filler ids into the log."""
+        for arm in published["arms"]:
+            if arm["id"] == model_id:
+                return arm["reason"]
+        for entry in published["retired_since_last"]:
+            if entry["id"] == model_id:
+                return "RETIRED: " + entry["reason"]
+        return "<no usage seat>"
+
+    def _assert_carries(self, published, model_id, share):
+        sentence = self._seat(published, model_id)
+        self.assertIn(f"carries {share}%", sentence)
+        self.assertNotIn("100.0%", sentence.replace(f"{share}%", ""))
+
+    # ROW 1 — the bridge is a previous ARM.
+
+    def test_row_1_control_the_bridge_carries_the_true_share(self):
+        """No fillers, so neither cap fires: the true 57.1%. Green on
+        1fa9d3a, 5712522 and 5d1f00a — this row is the differential's
+        other half, not a fix."""
+        self._assert_carries(
+            self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                      arms=["claude-mythos-4-20260101", self.BRIDGE, self.KEY]),
+            self.SNAPSHOT, "57.1")
+
+    def test_row_1a_five_hundred_filler_arms_do_not_break_the_chain(self):
+        """RED on 1fa9d3a: `claude-sonnet-5-20260601` is an in-window
+        census key and so tier 1, which makes its group covered, so the
+        bare alias between it and the live snapshot spends no tier-2 slot,
+        drops to tier 3 behind 500 `0filler-NNNN` arms and is evicted. The
+        share does not move to another model — it disappears, and the live
+        snapshot is published on the newest-in-tier fallback instead."""
+        self._assert_carries(
+            self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                      arms=["claude-mythos-4-20260101", self.BRIDGE, self.KEY]
+                           + self.FILLERS),
+            self.SNAPSHOT, "57.1")
+
+    def test_row_1b_the_same_input_below_the_cap_is_unchanged(self):
+        """497 fillers plus the three real arms is exactly the 500-entry
+        cap, so it never fires. The row exists to show the defect was the
+        CAP's — the attribution machinery reads the same documents either
+        way."""
+        self._assert_carries(
+            self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                      arms=["claude-mythos-4-20260101", self.BRIDGE, self.KEY]
+                           + self.FILLERS[:497]),
+            self.SNAPSHOT, "57.1")
+
+    # ROW 2 — the bridge is a `catalogue_seen` history entry, and the
+    # eviction is PERMANENT: the next run reads this run's own output.
+
+    HISTORY_BRIDGE = [BRIDGE, KEY]
+
+    def test_row_2_control_the_history_bridge_carries_the_true_share(self):
+        self._assert_carries(
+            self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                      seen=self.HISTORY_BRIDGE),
+            self.SNAPSHOT, "57.1")
+
+    def test_row_2a_five_hundred_planted_history_entries_do_not_evict_it(self):
+        """RED on 1fa9d3a, the same defect through the other cap."""
+        self._assert_carries(
+            self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                      seen=self.HISTORY_BRIDGE + self.PLANTS),
+            self.SNAPSHOT, "57.1")
+
+    def test_row_2b_run_two_from_run_ones_own_roster_is_still_right(self):
+        """The permanence row. Run 2 reads run 1's published
+        `catalogue_seen` back with the planter gone from the branch
+        entirely — which is how eviction actually compounds. On 1fa9d3a
+        the bridge is gone from run 1's output, so run 2 cannot recover
+        it and the share stays lost for good."""
+        run1 = self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                         seen=self.HISTORY_BRIDGE + self.PLANTS)
+        run2 = self._row(self.DATED_ONLY_API, self.DATED_ONLY_COUNTS,
+                         seen=[e["id"] for e in run1["catalogue_seen"]])
+        self._assert_carries(run2, self.SNAPSHOT, "57.1")
+
+    # ROWS 3 and 4 — the chains roster-policy.yml documents, whose every
+    # hop the caps have to keep at once. Row 3 is three hops (census key
+    # -> dated history entry -> bare alias -> live snapshot), row 4 two.
+
+    THREE_HOP_API = ["claude-haiku-4-20260601", "claude-haiku-5",
+                     "claude-sonnet-5"]
+    #: 5000 of 5300 rankable turns is 94.3% for the live haiku snapshot;
+    #: the remaining 300 is 5.66% for the live sonnet, under the 10%
+    #: entry bar, so it rides in on newest-in-tier and says so.
+    THREE_HOP_COUNTS = {"claude-haiku-4-20250101-20260101": 5000,
+                        "claude-sonnet-5": 300}
+    THREE_HOP_SEEN = ["claude-haiku-4", "claude-haiku-4-20250101"]
+
+    def _assert_the_three_hop_chain(self, published):
+        self._assert_carries(published, "claude-haiku-4-20260601", "94.3")
+        sonnet = self._seat(published, "claude-sonnet-5")
+        self.assertIn("newest model in the sonnet tier", sonnet)
+        self.assertNotIn("carries", sonnet)
+
+    def test_row_3_control_the_three_hop_chain_reaches_its_numerator(self):
+        self._assert_the_three_hop_chain(
+            self._row(self.THREE_HOP_API, self.THREE_HOP_COUNTS,
+                      arms=["claude-haiku-4"], seen=self.THREE_HOP_SEEN))
+
+    def test_row_3a_five_hundred_plants_in_both_lists_do_not_break_it(self):
+        """RED on 1fa9d3a, and the worst row of the set: the sonnet model
+        is published `carries 100.0%` where it really carries 5.66% —
+        94.3 points of error, which is round 10's own outcome
+        reintroduced. Both references publish the sonnet fallback here
+        but lose the haiku seat; the fix keeps both."""
+        self._assert_the_three_hop_chain(
+            self._row(self.THREE_HOP_API, self.THREE_HOP_COUNTS,
+                      arms=["claude-haiku-4"] + self.FILLERS,
+                      seen=self.THREE_HOP_SEEN + self.PLANTS))
+
+    TWO_HOP_COUNTS = {"claude-haiku-4-20250101": 5000, "claude-sonnet-5": 300}
+    TWO_HOP_SEEN = ["claude-haiku-4-20250101", "claude-haiku-4"]
+
+    def test_row_4_control_the_two_hop_chain_reaches_its_numerator(self):
+        self._assert_the_three_hop_chain(
+            self._row(self.THREE_HOP_API, self.TWO_HOP_COUNTS,
+                      seen=self.TWO_HOP_SEEN))
+
+    def test_row_4a_five_hundred_plants_do_not_break_the_two_hop_chain(self):
+        """RED on 1fa9d3a, where the census key is itself the history
+        entry — so its group is covered, the bare alias spends no slot and
+        goes — and nothing is seated on usage at all."""
+        self._assert_the_three_hop_chain(
+            self._row(self.THREE_HOP_API, self.TWO_HOP_COUNTS,
+                      seen=self.TWO_HOP_SEEN + self.PLANTS))
+
+    # THE RETIREMENT ROWS — the same break with a NEWER model in the
+    # victim's tier, so the newest-in-tier fallback cannot catch it. A
+    # previous arm that loses its share is measured against the exit bar
+    # instead, and published RETIRED at 0.0%.
+
+    RETIRE_API = [SNAPSHOT, "claude-sonnet-7", "claude-haiku-5"]
+
+    def _assert_not_retired(self, published):
+        sentence = self._seat(published, self.SNAPSHOT)
+        self.assertNotIn("RETIRED", sentence,
+                         "a model carrying 57.1% of the window is not "
+                         "below a 2% exit bar")
+        self.assertIn("carries 57.1%", sentence)
+
+    def test_the_arms_cap_does_not_retire_a_model_carrying_the_window(self):
+        """Three real arms plus N fillers: at 497 the list is exactly the
+        500-entry cap and nothing is evicted, at 498 the cap fires and
+        drops exactly the bridge. RED on 1fa9d3a from 498 fillers up,
+        where the published sentence is `below the 2% exit bar for the
+        last 8 weeks (0.0% of rankable census usage)` about a model
+        carrying 57.1% of it."""
+        for count in (0, 100, 497, 498, 500):
+            with self.subTest(fillers=count):
+                self._assert_not_retired(self._row(
+                    self.RETIRE_API, self.DATED_ONLY_COUNTS,
+                    arms=[self.SNAPSHOT, self.BRIDGE, self.KEY]
+                         + self.FILLERS[:count]))
+
+    def test_the_history_cap_does_not_retire_it_either(self):
+        """The same line through `catalogue_seen`: three live ids are
+        exempt from the 500-entry cap, so 497 slots are left for history
+        and the cap fires at 496 plants beside the two real entries. RED
+        on 1fa9d3a from 496 up."""
+        for count in (0, 495, 496, 500):
+            with self.subTest(plants=count):
+                self._assert_not_retired(self._row(
+                    self.RETIRE_API, self.DATED_ONLY_COUNTS,
+                    arms=[self.SNAPSHOT],
+                    seen=self.HISTORY_BRIDGE + self.PLANTS[:count]))
+
+    # The `covered` guard's own floor, which the retired round-10 test
+    # used to carry by asserting the wrong outcome.
+
+    def test_a_covered_group_spends_no_tier_two_slot(self):
+        """MUTATION: `covered = set()` in `_Relevance.rank`.
+
+        The catalogue lists the bare alias AND a dated snapshot of it, so
+        the census key `claude-sonnet-5-20260601` folds onto the bare
+        alias directly — no bridge is needed, and the key is itself a
+        history entry and so tier 1. `claude-sonnet-5-20260101` is in the
+        same fold group, sorts before the key, and the chain does not
+        need it: with the guard it is an ordinary tier-3 entry and goes
+        with the plants; without it, it takes a slot the census never
+        asked for and the cap carries one fewer entry a later run might
+        have needed."""
+        api = ["claude-sonnet-5", self.SNAPSHOT, "claude-haiku-4-5"]
+        published = self._row(
+            api, {self.KEY: 8000, "claude-haiku-4-5": 800},
+            seen=[self.KEY, "claude-sonnet-5-20260101"] + self.PLANTS)
+        seen = self._seen_ids(published)
+        self.assertIn(self.KEY, seen, "an in-window census key is tier 1")
+        self.assertNotIn("claude-sonnet-5-20260101", seen,
+                         "the key already reaches its numerator without "
+                         "this entry, so no slot is spent")
+        self._assert_carries(published, "claude-sonnet-5", "90.9")
 
 
 if __name__ == "__main__":
