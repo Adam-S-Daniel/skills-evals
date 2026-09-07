@@ -8591,19 +8591,22 @@ class TestIssue67Review6(unittest.TestCase):
         names only the count — not one dropped id, which would be a value
         from an untrusted branch reaching a log.
 
-        The canned census is here for A (#129 review round 10): a census
-        with no in-window usage at all names nothing, so there is no
-        trusted order to evict by and the cap deliberately stops evicting
-        (see `UNCAPPED_CARRY_CEILING`). The bound this test is about is the
-        one that applies when the census CAN order the entries; none of the
-        600 plants is named by that census, so the cap still has to fire on
-        them."""
-        previous = {"arms": [], "catalogue_seen": sorted(
-            f"claude-sonnet-{i}-9" for i in range(600))}
+        THE CENSUS NAMES ALL 600 ENTRIES (round 11's generalisation of A,
+        #129 review round 10). The cap bounds the entries the live
+        catalogue or the census names and carries the rest, because an
+        entry neither document names has nothing left to order it by but
+        `last_seen` and the id, both written by whoever writes
+        `previous.json`. So a test about the CAP has to use entries the
+        census names — one in-window turn each is enough, and leaves the
+        turn order a tie the id breaks."""
+        entries = sorted(f"claude-sonnet-{i}-9" for i in range(600))
+        previous = {"arms": [], "catalogue_seen": entries}
+        counts = dict(TestIssue67._census_doc()["counts"])
+        counts.update({i: {self.W[0]: 3} for i in entries})
         warnings = []
         result = roster.compute_roster(
             models_doc=TestIssue67._models_doc(),
-            census_doc=TestIssue67._census_doc(),
+            census_doc=TestIssue67._census_doc(counts=counts),
             policy=self._policy(), previous=previous, now=self.NOW,
             warn=warnings.append)
         self.assertLessEqual(len(result["catalogue_seen"]), 500)
@@ -8629,16 +8632,18 @@ class TestIssue67Review6(unittest.TestCase):
         while `retired_since_last` reports every arm the previous roster
         named — so 600 arms are 600 retirements and 100 dropped.
 
-        The canned census is here for A (round 10), for the same reason as
-        the sibling test above: with no in-window usage the census names
-        nothing, and a cap with no trusted order to evict by does not
-        evict."""
-        previous = {"arms": [{"id": f"claude-sonnet-{i}-9", "reason": "x"}
-                             for i in range(600)]}
+        The census names all 600 entries, for the same reason as the
+        sibling test above (round 11): the cap bounds what the two
+        documents name and carries what neither does, so a test about the
+        cap firing has to use entries the census names."""
+        entries = [f"claude-sonnet-{i}-9" for i in range(600)]
+        previous = {"arms": [{"id": i, "reason": "x"} for i in entries]}
+        counts = dict(TestIssue67._census_doc()["counts"])
+        counts.update({i: {self.W[0]: 3} for i in entries})
         warnings = []
         result = roster.compute_roster(
             models_doc=TestIssue67._models_doc(),
-            census_doc=TestIssue67._census_doc(),
+            census_doc=TestIssue67._census_doc(counts=counts),
             policy=self._policy(), previous=previous, now=self.NOW,
             warn=warnings.append)
         retired_ids = {r["id"] for r in result["retired_since_last"]}
@@ -13889,7 +13894,13 @@ class TestIssue67Review7(unittest.TestCase):
                                previous=self._capped_history_previous(),
                                warn=warnings.append)
         seen = self._seen_ids(result)
-        self.assertLessEqual(len(result["catalogue_seen"]), 500)
+        # ROUND 11: the plants are entries neither the catalogue nor the
+        # census names, so they are carried rather than evicted by an
+        # order the previous roster writes; the ceiling is what bounds
+        # the published length now, and the real entry surviving is the
+        # assertion this test was always about.
+        self.assertLessEqual(len(result["catalogue_seen"]),
+                             roster.UNCAPPED_CARRY_CEILING)
         self.assertIn(self.RETIRED_REAL, seen,
                       "the entry the census names must outlive 500 entries "
                       "it does not, whatever they sort like")
@@ -13992,18 +14003,25 @@ class TestIssue67Review7(unittest.TestCase):
         # so it is no longer carried forward, its turns leave the usage
         # denominator, and the "carries" assertion goes red.
 
-    def test_the_previous_arms_cap_still_bounds_an_all_filler_roster(self):
-        """The bound itself is unchanged when nothing is relevant: 600
-        filler arms still trim the carried-forward set to 500, with a
-        count-only warning naming the 100 dropped. F3 (round 8) is what
-        moved `retired_since_last` out from under that bound — every arm
-        the previous roster named is reported.
+    def test_an_all_filler_roster_is_carried_whole_with_one_count_only_line(self):
+        """WHAT BOUNDS AN ALL-FILLER ROSTER changed in round 11. This test
+        used to assert the opposite: 600 fillers trimmed to 500, with a
+        count-only warning naming the 100 dropped. But a filler is exactly
+        an entry neither the live catalogue nor the census names, and the
+        only thing left to order those by is `last_seen` and the id, both
+        written by whoever writes `previous.json` — which is how 500
+        `0plant-NNNN` entries evicted a real one on nothing but its
+        spelling, in run 1, permanently. Round 10 stopped that when the
+        census named NOTHING; round 11 stops it whenever the census names
+        nothing about THESE entries, since one stray in-window turn under
+        an unrelated key used to re-arm the whole eviction.
 
-        "Nothing is relevant" means nothing in THIS list; the census still
-        has to name something, or there is no trusted order to evict by
-        and the cap does not evict at all (A, #129 review round 10 —
-        TestIssue67Review10 carries that row). The census here names one
-        live model none of the 600 fillers relates to."""
+        So the list is carried whole, with one count-only line saying so,
+        and `UNCAPPED_CARRY_CEILING` is the bound —
+        TestIssue67Review10::test_past_the_ceiling_the_run_refuses_to
+        _publish is the other side of that line. F3 (round 8) is
+        untouched: every arm the previous roster named is still
+        reported."""
         previous = {"arms": [{"id": f"0arm-{i:03d}", "reason": "filler"}
                              for i in range(600)]}
         census = TestIssue67._census_doc(counts={
@@ -14013,11 +14031,21 @@ class TestIssue67Review7(unittest.TestCase):
                                census=census, previous=previous,
                                warn=warnings.append)
         self.assertEqual(len(result["retired_since_last"]), 600)
-        capped = [w for w in warnings if "cap" in w and "arms" in w]
-        self.assertTrue(capped, warnings)
-        self.assertIn("dropped 100", capped[0])
+        self.assertEqual([w for w in warnings if "dropped" in w and "arms" in w],
+                         [], "nothing the census cannot order may be evicted")
+        uncapped = [w for w in warnings if "uncapped" in w]
+        self.assertEqual(len(uncapped), 1, warnings)
+        # 600 carried arms plus the two live catalogue ids this run's own
+        # `catalogue_seen` records: the line counts what was carried, not
+        # what was planted.
+        self.assertIn("(602 entries)", uncapped[0])
         for w in warnings:
             self.assertNotIn("0arm-599", w)
+        # Mutation check (manual): filling the cap from the tier-3 residue
+        # by id order — the pre-round-11 `sorted(ids, key=order)[:CAP]` —
+        # drops 100 fillers, emits the "dropped" warning this asserts the
+        # absence of, and (with a real entry among them, as
+        # TestIssue67Review11's rows 2-7 have) evicts it permanently: red.
 
     # --- S1: four of round 6's own catalogue_seen defences had no
     # regression floor — each could be deleted with the whole suite still
@@ -14121,15 +14149,22 @@ class TestIssue67Review7(unittest.TestCase):
         catalogue. `catalogue_seen` must stay a superset of `api_ids`:
         `usage_share` and `_is_attributable` both rely on it.
 
-        The canned census is here for A (round 10): a census naming no
-        in-window usage names nothing, and the cap then does not evict at
-        all, so the exemption this test is about would never be reached."""
+        The census names all 600 plants (round 11's generalisation of A,
+        round 10): the cap bounds the entries the two documents name and
+        carries the rest, so plants the census does NOT name are carried
+        and the exemption this test is about is never reached. Named,
+        they are tier 1, they overflow the cap on their own, and the
+        exemption is the only thing standing between the live catalogue
+        and eviction."""
         models = TestIssue67._models_doc()
-        previous = {"arms": [], "catalogue_seen":
-                    [f"a0000-{i:03d}" for i in range(600)]}
+        plants = [f"a0000-{i:03d}" for i in range(600)]
+        previous = {"arms": [], "catalogue_seen": plants}
+        census = TestIssue67._census_doc(counts=dict(
+            TestIssue67._census_doc()["counts"],
+            **{i: {self.W[0]: 1} for i in plants}))
         warnings = []
         result = roster.compute_roster(
-            models_doc=models, census_doc=TestIssue67._census_doc(),
+            models_doc=models, census_doc=census,
             policy=self._policy(),
             previous=previous, now=self.NOW, warn=warnings.append)
         api_ids = {m["id"] for m in models["models"]}
@@ -14788,7 +14823,12 @@ class TestIssue67Review8(unittest.TestCase):
         self.assertIn("newest", reason)
         for arm in published["arms"]:
             self.assertNotIn("100.0%", arm["reason"], arm)
-        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+        # ROUND 11: the cap bounds only the entries the live catalogue or
+        # the census names; entries neither names are carried rather than
+        # evicted by an order the previous roster writes, so what bounds
+        # the published length is `UNCAPPED_CARRY_CEILING`, not the cap.
+        self.assertLessEqual(len(published["catalogue_seen"]),
+                             roster.UNCAPPED_CARRY_CEILING)
 
     def test_five_hundred_plants_dated_today_do_not_evict_named_history(self):
         """Through `main()` with files on disk: 500 entries dated TODAY —
@@ -14993,11 +15033,15 @@ class TestIssue67Review8(unittest.TestCase):
         backward = {"arms": [], "catalogue_seen":
                     [{"id": i, "last_seen": same_day}
                      for i in reversed(plants)]}
-        # A census that names something, or the cap does not evict at all
-        # and there is no tie left to break (A, #129 review round 10). It
-        # names none of the plants, so the slice is still a tie.
-        census = TestIssue67._census_doc(counts={
-            "claude-sonnet-5": {self.W[0]: 800}})
+        # The census names EVERY plant, with the same one turn each
+        # (round 11's generalisation of A, #129 review round 10): the cap
+        # bounds the entries the two documents name and carries the rest,
+        # so a tie the cap has to break has to be a tie inside tier 1.
+        # One turn apiece leaves the turn order flat and the id the only
+        # thing left to decide with.
+        census = TestIssue67._census_doc(counts=dict(
+            {i: {self.W[0]: 1} for i in plants},
+            **{"claude-sonnet-5": {self.W[0]: 800}}))
         published = []
         for previous in (forward, forward, backward):
             with tempfile.TemporaryDirectory() as tmp:
@@ -15319,7 +15363,12 @@ class TestIssue67Review9(unittest.TestCase):
         self.assertIn("carries 9.1%", reason,
                       "800 of 8800 rankable turns is 9.09%")
         self.assertNotIn("100.0%", reason)
-        self.assertLessEqual(len(published["catalogue_seen"]), 500)
+        # ROUND 11: the cap bounds only the entries the live catalogue or
+        # the census names; entries neither names are carried rather than
+        # evicted by an order the previous roster writes, so what bounds
+        # the published length is `UNCAPPED_CARRY_CEILING`, not the cap.
+        self.assertLessEqual(len(published["catalogue_seen"]),
+                             roster.UNCAPPED_CARRY_CEILING)
 
     def test_dated_spellings_of_a_census_key_do_not_evict_named_history(self):
         """Row A, through `main()` with files on disk: 500 plants spelled
@@ -15750,8 +15799,12 @@ class TestIssue67Review9(unittest.TestCase):
                     self.assertEqual(sorted(protected - survivors), [],
                                      "an entry the census names outright "
                                      "was evicted by plants")
+                    # ROUND 11: the cap bounds the entries the two
+                    # documents name; the rest are carried rather than
+                    # evicted by an order the previous roster writes, so
+                    # the ceiling is what bounds the published length.
                     self.assertLessEqual(len(survivors),
-                                         roster.CATALOGUE_SEEN_CAP)
+                                         roster.UNCAPPED_CARRY_CEILING)
                     # Half one, as the number it moves.
                     for arm in result["arms"]:
                         match = self._PROP_SHARE_RE.search(arm["reason"])
@@ -16391,22 +16444,36 @@ class TestIssue67Review10(unittest.TestCase):
         # `test_a_tier_is_ordered_by_census_turns_not_by_last_seen`, which
         # is the same defence measured where it can fire.)
 
-    def test_the_control_still_caps_when_the_census_names_the_victim(self):
-        """The control: a census that DOES name the victim leaves the cap
-        firing exactly as before — 501 historical entries against a
-        498-slot cap, the victim kept on tier 1 and three plants dropped
-        with a count-only warning. Without this row the four above would
-        be satisfied by never capping anything at all."""
+    def test_a_census_that_names_only_the_victim_carries_the_plants_too(self):
+        """WHAT THIS ROW ASSERTS changed in round 11. It used to be the
+        control showing the cap still firing — 501 historical entries
+        against a 498-slot cap, three plants dropped. But a census that
+        names the victim still says nothing about the 500 plants, and
+        `census_is_silent` was a FILE-level test: one in-window turn under
+        any key at all — an unrelated live id, a router alias, a single
+        malformed cell's neighbour — flipped it false and put the plants
+        back in front of the victim on the id order. Rows 2-7 above are
+        that measurement.
+
+        So the plants are carried here too, and the row that keeps the
+        four above from being satisfied by never capping anything is
+        `test_a_census_naming_more_keys_than_the_cap_keeps_the_biggest`
+        below, where the census names 601 entries and 103 of them go."""
         run1, run2, err = self._a_two_runs(self._a_healthy_census())
         self.assertIn(self.A_VICTIM, self._seen_ids(run1))
-        self.assertEqual(len(run1["catalogue_seen"]), 500)
+        self.assertEqual(len(run1["catalogue_seen"]), 503)
         self.assertIn("newest model in the sonnet tier",
                       self._reason(run2, self.A_LIVE))
         warnings = [line for line in err.splitlines()
                     if line.startswith("roster: ")]
-        self.assertEqual([w for w in warnings if "uncapped" in w], [])
-        self.assertTrue([w for w in warnings if "past the 500-entry cap" in w],
-                        warnings)
+        self.assertEqual([w for w in warnings if "past the 500-entry cap" in w],
+                         [], "nothing the census cannot order may be evicted")
+        uncapped = [w for w in warnings if "uncapped" in w]
+        self.assertEqual(len(uncapped), 1, warnings)
+        self.assertIn("(503 entries)", uncapped[0])
+        for w in warnings:
+            for value in ("0plant-499", self.A_VICTIM):
+                self.assertNotIn(value, w, "the warning names counts only")
 
     def test_a_census_naming_more_keys_than_the_cap_keeps_the_biggest(self):
         """MEASURED, because the tiers alone do not say what happens when
@@ -16565,6 +16632,14 @@ class TestIssue67Review10(unittest.TestCase):
         self.assertIn("neither cap evicts", policy)
         self.assertIn("uncapped_carry_ceiling", policy)
         self.assertIn("refuses to publish with a named error", policy)
+        # ROUND 11: and that the cap bounds tiers 1 and 2 only, so the
+        # published length is bounded by the ceiling rather than by the
+        # 500. A reader who takes the 500 for a bound on the file will
+        # read a 503-entry `catalogue_seen` as a bug.
+        self.assertIn("what the cap bounds is tiers 1 and 2", policy)
+        self.assertIn("the 500 is a bound on what the census can order, "
+                      "not on the file", policy)
+        self.assertIn("refuses to publish (exit code 4)", policy)
 
     # --- F-2: every clause of the relevance machinery has a NAMED mutation
     # that turns the suite red --------------------------------------------
@@ -16592,27 +16667,48 @@ class TestIssue67Review10(unittest.TestCase):
         self.assertEqual(rc, 0)
         return published
 
+    #: 497 census keys that fill tier 1 to exactly the 498 slots two live
+    #: catalogue ids leave, so ONE tier-2 slot is all that fits and a
+    #: second one costs a named entry its place. One turn each, so the
+    #: shares below stay readable off the counts.
+    _F2_FILLER_KEYS = [f"claude-opus-3-{i:03d}" for i in range(497)]
+
     def test_a_census_key_gets_exactly_one_slot_however_many_fold_onto_it(self):
-        """MUTATION: `max(by_group[group])` for the slot, or a slot for
-        EVERY member of the group rather than one. Three dated spellings of
-        one census key, none of them a census key itself, against 500
-        plants that sort ahead of all three: the SMALLEST takes the key's
-        one slot and the other two share the plants' fate. That is the
-        documented cost of bounding the slot count by the census — and it
-        is what keeps a planter who mints a thousand spellings of one key
-        from taking a thousand cap slots with them."""
+        """MUTATION: a slot for EVERY member of the fold group rather than
+        one. Three dated spellings of one census key, none of them a census
+        key itself, and 497 entries the census names outright — so tier 1
+        plus ONE tier-2 slot is exactly the room the cap has. A slot per
+        member overflows it by two, and the cap drops two of the three.
+
+        WHAT THIS ROW ASSERTS changed in round 11: the two spellings that
+        do not take the slot used to be evicted with the plants, and the
+        row asserted their absence. They are now tier-3 residue and
+        carried, because an entry neither document names has nothing left
+        to order it by but what the previous roster writes. So the cost of
+        an unbounded slot count is no longer "the extra spellings die" but
+        "they crowd out entries the census DOES name", which is what this
+        measures. `min(by_group[group])` rather than `max` is a
+        determinism choice and no longer decides who survives: both are
+        deterministic, either would be correct, and what stays
+        load-bearing is that the group gets ONE slot."""
         published = self._f2_run(
             self._two_model_catalogue(),
-            {"claude-sonnet-4-9": 8000, "claude-sonnet-5": 800},
+            dict({k: 1 for k in self._F2_FILLER_KEYS},
+                 **{"claude-sonnet-4-9": 8000, "claude-sonnet-5": 800}),
             ["claude-sonnet-4-9-20250101", "claude-sonnet-4-9-20250102",
-             "claude-sonnet-4-9-20250103"] + self._F2_PLANTS)
+             "claude-sonnet-4-9-20250103"]
+            + self._F2_FILLER_KEYS + self._F2_PLANTS)
         seen = self._seen_ids(published)
-        self.assertIn("claude-sonnet-4-9-20250101", seen,
-                      "the smallest id in the group takes the slot")
-        self.assertNotIn("claude-sonnet-4-9-20250102", seen)
-        self.assertNotIn("claude-sonnet-4-9-20250103", seen)
-        # The key is still attributable through the one that survived.
-        self.assertIn("carries 9.1%",
+        for spelling in ("claude-sonnet-4-9-20250101",
+                         "claude-sonnet-4-9-20250102",
+                         "claude-sonnet-4-9-20250103"):
+            self.assertIn(spelling, seen,
+                          "one slot is spent and the rest are carried as "
+                          "residue; a slot each would cost two of them")
+        self.assertEqual(len([k for k in self._F2_FILLER_KEYS if k in seen]),
+                         497, "every entry the census names outright is kept")
+        # 800 of 8000 + 800 + 497 rankable turns.
+        self.assertIn("carries 8.6%",
                       self._reason(published, "claude-sonnet-5"))
 
     # RETIRED: `test_a_census_key_a_tier_one_entry_already_reaches_spends
@@ -17055,15 +17151,168 @@ class TestIssue67Review11(unittest.TestCase):
         asked for and the cap carries one fewer entry a later run might
         have needed."""
         api = ["claude-sonnet-5", self.SNAPSHOT, "claude-haiku-4-5"]
+        fillers = [f"claude-opus-3-{i:03d}" for i in range(496)]
         published = self._row(
-            api, {self.KEY: 8000, "claude-haiku-4-5": 800},
-            seen=[self.KEY, "claude-sonnet-5-20260101"] + self.PLANTS)
+            api, dict({k: 1 for k in fillers},
+                      **{self.KEY: 8000, "claude-haiku-4-5": 800}),
+            seen=[self.KEY, "claude-sonnet-5-20260101"] + fillers
+                 + self.PLANTS)
         seen = self._seen_ids(published)
         self.assertIn(self.KEY, seen, "an in-window census key is tier 1")
-        self.assertNotIn("claude-sonnet-5-20260101", seen,
-                         "the key already reaches its numerator without "
-                         "this entry, so no slot is spent")
-        self._assert_carries(published, "claude-sonnet-5", "90.9")
+        self.assertIn("claude-sonnet-5-20260101", seen,
+                      "carried as tier-3 residue — it spends no slot, so "
+                      "it costs no entry the census names its place")
+        self.assertEqual(len([k for k in fillers if k in seen]), 496,
+                         "every entry the census names outright is kept")
+        # The census key's 8000 turns reach `claude-sonnet-5` through the
+        # alias map either way: 8000 of 8000 + 800 + 496 rankable turns.
+        self._assert_carries(published, "claude-sonnet-5", "86.1")
+
+    # --- `census_is_silent` was a FILE-level test; one in-window turn
+    # re-armed the whole eviction -----------------------------------------
+    #
+    # Round 10's A stopped both caps evicting when the census named
+    # NOTHING — `not self._turns`, a property of the whole file. One
+    # census key carrying one turn made it false, and then every entry the
+    # census does not name was tier 3 in plain id order, which is round
+    # 6's defect verbatim: `0plant-NNNN` sorts before every `claude-` id,
+    # the real entry goes, and eviction is PERMANENT because the next run
+    # reads this run's own output back.
+    #
+    # The key doing the re-arming need not be anything at all: an
+    # unrelated live id, a router alias nothing can rank or seat, a
+    # planted id, a 4,000-character junk string, or the one surviving
+    # neighbour of a malformed cell. And the planter can write the census
+    # as well as the roster — eval.yml materialises `census.json` and
+    # `previous.json` from the same `eval-results` branch.
+    #
+    # PRE-EXISTING on 5d1f00a and 5712522 as well as on 1fa9d3a. The fix
+    # is to generalise from "the census names nothing" to "the census
+    # names nothing about THESE entries", independent of how many keys it
+    # carries — a rule keyed on the census's SIZE is the same defect one
+    # step over, since a hostile census can carry any number of one-turn
+    # keys.
+
+    SILENT_VICTIM = "claude-sonnet-4-9"
+    SILENT_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _silent_healthy_census(cls):
+        """8000 of the window's 8800 rankable turns are the victim's — a
+        true 9.09% for the live model, under the 10% entry bar, so it
+        rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.SILENT_VICTIM: {cls.W[0]: 8000},
+            cls.SILENT_LIVE: {cls.W[0]: 800}})
+
+    def _silent_two_runs(self, census, previous=None):
+        """Run 1 with `census`, run 2 from run 1's own published roster
+        with a healthy one — how `catalogue_seen` actually round-trips,
+        and the only way a permanent eviction is visible."""
+        previous = previous or {
+            "arms": [],
+            "catalogue_seen":
+                [{"id": i, "last_seen": self._days_ago(0)} for i in self.PLANTS]
+                + [{"id": self.SILENT_VICTIM, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, err = self._run_main(
+                first, self._two_model_catalogue(), census=census,
+                previous=previous)
+            self.assertEqual(rc, 0, err)
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._two_model_catalogue(),
+                census=self._silent_healthy_census(), previous=run1)
+            self.assertEqual(rc, 0)
+        return run1, run2, err
+
+    def _assert_the_victim_survived_both_runs(self, run1, run2, err):
+        self.assertIn(self.SILENT_VICTIM, self._seen_ids(run1),
+                      "nothing the census says nothing about may be "
+                      "evicted by an order the previous roster writes")
+        reason = self._reason(run2, self.SILENT_LIVE)
+        self.assertIn("newest model in the sonnet tier", reason)
+        self.assertNotIn("100.0%", reason)
+        warnings = [line for line in err.splitlines()
+                    if line.startswith("roster: ")]
+        uncapped = [w for w in warnings if "uncapped" in w]
+        self.assertEqual(len(uncapped), 1, warnings)
+        for w in warnings:
+            for value in ("0plant-499", self.SILENT_VICTIM, "0pad-0099"):
+                self.assertNotIn(value, w, "the warning names counts only")
+
+    @classmethod
+    def _one_turn_censuses(cls):
+        """Eight censuses that say nothing about the victim, seven of them
+        carrying exactly enough in-window usage to make round 10's
+        file-level `census_is_silent` false. Rows 2 onward are RED on
+        1fa9d3a, 5712522 and 5d1f00a alike."""
+        padded = {f"0pad-{i:04d}": {"2020-W01": 1000} for i in range(600)}
+        padded[cls.SILENT_LIVE] = {cls.W[0]: 1}
+        return (
+            ("0 counts: {}", TestIssue67._census_doc(counts={})),
+            ("2 one live id, one turn",
+             TestIssue67._census_doc(counts={cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("3 a router alias, one turn",
+             TestIssue67._census_doc(counts={"some-router-alias": {cls.W[0]: 1}})),
+            ("4 600 out-of-window keys plus one in-window turn",
+             TestIssue67._census_doc(counts=padded)),
+            ("5 one turn under a planted id",
+             TestIssue67._census_doc(counts={cls.PLANTS[0]: {cls.W[0]: 1}})),
+            ("6 a 4000-character junk key, five turns",
+             TestIssue67._census_doc(counts={"z" * 4000: {cls.W[0]: 5},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7 the victim's only cell is negative",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: -5},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7b the victim's only cell is a float",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: 8000.5},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7c the victim's only cell is a boolean",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: True},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7d the victim's only cell is NaN",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: float("nan")},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+        )
+
+    def test_one_in_window_turn_does_not_re_arm_the_eviction(self):
+        """Rows 0 and 2-7d, each through `main()` twice. Row 0 is round
+        10's own silent census and is green everywhere; every other row
+        carries exactly one in-window turn somewhere the victim has
+        nothing to do with, and on 1fa9d3a run 1 evicts the victim and run
+        2 publishes `claude-sonnet-5 carries 100.0%` for a true 9.09%."""
+        for label, census in self._one_turn_censuses():
+            with self.subTest(census=label):
+                self._assert_the_victim_survived_both_runs(
+                    *self._silent_two_runs(census))
+        # Mutation check (manual): filling the cap from the tier-3 residue
+        # by id order — the pre-round-11 `sorted(ids, key=order)[:CAP]` —
+        # is red on every row but 0.
+
+    def test_a_census_that_names_the_victim_is_the_control(self):
+        """Row 1: a census that names the victim outright keeps it on tier
+        1, which is what it always did. Without this row the rows above
+        would be satisfied by a run that reads no census at all."""
+        run1, run2, err = self._silent_two_runs(self._silent_healthy_census())
+        self._assert_the_victim_survived_both_runs(run1, run2, err)
+
+    def test_five_hundred_one_turn_planted_keys_do_not_evict_it_either(self):
+        """Row 8, the hostile census taken to its end: the planter writes
+        BOTH files, so run 1's census names all 500 planted entries with
+        one turn each. Every plant is then tier 1 on its own census key —
+        which is exactly what the tiers are for, and costs the planter
+        nothing they did not already have — while the victim, which the
+        census does not name this window, is residue and carried. A rule
+        keyed on how MANY keys the census names would fail this row."""
+        census = TestIssue67._census_doc(counts=dict(
+            {i: {self.W[0]: 1} for i in self.PLANTS},
+            **{self.SILENT_LIVE: {self.W[0]: 1}}))
+        run1, run2, err = self._silent_two_runs(census)
+        self._assert_the_victim_survived_both_runs(run1, run2, err)
 
 
 if __name__ == "__main__":

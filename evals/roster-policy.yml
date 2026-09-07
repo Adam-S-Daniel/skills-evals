@@ -137,12 +137,25 @@ min_ranked_share: 0.01
 # accumulated history can. See also the length cap in roster.py's
 # `CATALOGUE_SEEN_CAP` (currently 500 entries). Past it, who survives is
 # decided by data the previous roster does not write, in three tiers:
-# entries the census names outright (an in-window census key) or the live
-# catalogue lists; then ONE entry per census key that no tier-1 entry
-# folds onto, so that key keeps something it can be attributed through;
-# then everything else. Within a tier the census's own in-window turn
-# count decides, descending, and the id order breaks the tie. This run's
-# own live ids are exempt from the cap entirely.
+# entries the census names outright (an in-window census key), the live
+# catalogue lists, or the usage alias map needs as a HOP from an
+# in-window census key to the model whose numerator collects its turns;
+# then ONE entry per census key that no tier-1 entry folds onto, so that
+# key keeps something it can be attributed through; then everything else.
+# Within a tier the census's own in-window turn count decides,
+# descending, and the id order breaks the tie. This run's own live ids
+# are exempt from the cap entirely.
+#
+# WHAT THE CAP BOUNDS IS TIERS 1 AND 2. The third tier — entries neither
+# the live catalogue nor the census names, under any spelling — is
+# carried whole: the cap neither fills its slots from it nor evicts from
+# it, because the only things left to order those entries by are
+# `last_seen` and the id, both written by whoever writes the file. What
+# bounds THAT is roster.py's `UNCAPPED_CARRY_CEILING`, and past it the
+# run refuses to publish (exit code 4) rather than keep 500 entries a
+# planter chose. So `catalogue_seen` can be published longer than 500
+# entries; the 500 is a bound on what the census can order, not on the
+# file.
 #
 # THE INVARIANT: every census key with in-window turns that any entry
 # folds onto keeps at least one entry that folds onto it, every id the
@@ -192,11 +205,25 @@ min_ranked_share: 0.01
 # those keys a relevance the census never had. When NO key has in-window
 # turns — the census absent, empty, the wrong type, or entirely
 # out-of-window — the census names nothing at all, and neither cap
-# evicts: what would be left to order by is `last_seen` and the id, both
-# of them written by whoever writes `previous.json`. Both lists are then
-# carried whole, with one count-only warning, up to roster.py's
+# evicts anything: every entry is tier-3 residue, and both lists are
+# carried whole with one count-only warning, up to roster.py's
 # `UNCAPPED_CARRY_CEILING`; past that the run refuses to publish with a
 # named error rather than keep 500 entries a planter chose.
+#
+# That is now just the extreme case of the rule above, and it has to be.
+# Asking whether the census names ANYTHING is a question about the whole
+# FILE, and one in-window turn under one key answered it — after which
+# every entry the census does not name was ordered by its id again, which
+# is the round-6 defect verbatim. The key doing that need be nothing at
+# all: an unrelated live id, a routing alias nothing can rank or seat, a
+# planted id, a 4,000-character junk string, or the surviving neighbour
+# of a malformed cell. Measured through two runs: 500 planted entries
+# evicted an 8,000-turn arm in run 1, and run 2 — reading run 1's own
+# output back, with a perfectly healthy census — published a permanent
+# false 100.0%. A rule keyed on how MANY keys the census names would be
+# the same defect one step over, since whoever writes the census can
+# write any number of one-turn keys; the question is asked per entry
+# instead.
 #
 # The previous roster's `arms` list is capped at the same 500, by
 # roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round 6), under the
