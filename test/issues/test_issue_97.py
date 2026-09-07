@@ -2072,6 +2072,31 @@ class TestIssue97(unittest.TestCase):
             self.assertIn(name, header,
                           "the header quotes the guidance arm's allowlist; "
                           f"{name} is in PASSTHROUGH but not in the header")
+        # PASSTHROUGH is only part of what `agent_env` sets, and the names it
+        # does NOT cover are the ones the sentence lost: it enumerated the
+        # three isolation variables and stopped, omitting WORKSPACE. Derived
+        # from the MEASURED environment rather than restated, so the next name
+        # added to `agent_env` cannot be omitted the same way.
+        self.assertIn("WORKSPACE", guidance_env,
+                      "agent_env must set WORKSPACE — this pin must not pass "
+                      "vacuously")
+        for name in sorted(guidance_env):
+            if name.startswith("ANTHROPIC_"):
+                continue  # the header names the family, not each member
+            with self.subTest(variable=name):
+                self.assertIn(
+                    name, header,
+                    f"{name} is in the guidance arm's environment (measured "
+                    "through guidance.agent_env) and the header does not "
+                    "name it")
+        # And the fixture's own `env:` overlay, which the sentence omitted
+        # altogether: a fixture can ADD names to that environment, so
+        # "an allowlist built from nothing" is not the whole story.
+        self.assertIn(
+            "`env:` block", header,
+            "the header must say the fixture's own `env:` block is applied "
+            "on top of the allowlist, minus the three isolation names it may "
+            "not set")
 
     def test_the_security_header_carries_the_agent_guidance_clause(self):
         header = self._eval_header()
