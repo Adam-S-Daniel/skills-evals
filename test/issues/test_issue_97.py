@@ -217,6 +217,27 @@ class TestIssue97(unittest.TestCase):
 
     def _run_suite(self, env_extra: dict | None = None
                    ) -> subprocess.CompletedProcess:
+        """The ONE function in this repository allowed to name the runner at a
+        spawn (test/run_tests.py::_spawn_suite is the other; the pin there
+        holds the membership exact), and it stands down itself.
+
+        S-B-a-2. Round 2 guarded the one test that forked; round 3 pinned two
+        file globs; round 4 measured three helper locations those globs never
+        saw — `test/r4forkhelper.py`, `harness/r4harnessfork.py` and a PACKAGE
+        at `test/issues/r4helpers/__init__.py` — each leaving both pins green
+        and each running the tree away. The guard belongs HERE, at the
+        spawner, because then a caller cannot fork the suite without passing
+        through it, whatever file the caller lives in and whatever it is
+        called. A new guarded forking test now needs no guard of its own.
+
+        The callers keep their own `self._skip_in_child()`: it is the same
+        answer one frame earlier, with a printed reason, and it costs nothing.
+        """
+        if os.environ.get(CHILD_ENV):
+            reason = ("child suite run — the one suite spawner does not "
+                      "re-fork the suite from inside itself")
+            print(reason)
+            raise unittest.SkipTest(reason)
         env = dict(os.environ, **{CHILD_ENV: "1"}, **(env_extra or {}))
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],

@@ -11784,8 +11784,21 @@ def select_tests(opts: argparse.Namespace
 # calls down.
 # ----------------------------------------------------------------------
 
-# The one file the runner IS, in the spelling that appears in a spawn.
+# The one file the runner IS, in the spelling that appears in a spawn, and
+# the module name an in-process caller would import it as. Derived from the
+# filename so that breaking the recogniser breaks BOTH and the vacuity floor
+# fires (measured: `SUITE_RUNNER_NAME = "run_testsX.py"` -> red).
 SUITE_RUNNER_NAME = "run_tests.py"
+SUITE_RUNNER_MODULE = SUITE_RUNNER_NAME[:-len(".py")]
+
+# The trees a discovered test can import from. `test/` is `sys.path[0]` for
+# every `python3 test/run_tests.py` run — it is the directory the runner
+# itself lives in — and `harness/` is on `sys.path` from the moment
+# run_tests.py inserts it. Round 4 measured a forking helper in each, plus one
+# in a PACKAGE inside the discovery dir, all three invisible to a pin whose
+# file set was two globs. So the scan is the directory TREES, walked, not a
+# pattern anyone has to keep up to date.
+SUITE_SCAN_DIRS = ("test", "harness")
 # Everything that starts a process. `subprocess.run` is the spelling the
 # committed tree uses; the other seven are the ones round 3 measured walking
 # straight past the old pin.
@@ -11803,9 +11816,14 @@ class _SuiteForkScan:
     (`TEST_DIR / RUNNER_NAME`) that made the old pin blind.
     """
 
-    def __init__(self, path: Path, guard_env: str):
+    def __init__(self, path: Path, guard_env: str, is_runner: bool = False):
         self.path = path
         self.guard_env = guard_env
+        # The runner's own module may call its own main(); every other file
+        # doing so is running the whole suite in this process, which round 4
+        # measured as 97 nested iterations that never returned and, through
+        # multiprocessing, 55 nested processes.
+        self.is_runner = is_runner
         self.tree = ast.parse(path.read_text(encoding="utf-8"))
         self._resolve_imports()
         self._resolve_bindings()
@@ -11816,16 +11834,28 @@ class _SuiteForkScan:
         are ordinary Python, and both were invisible to the old pin."""
         self.module_aliases = {"subprocess"}
         self.bare_spawners = set()
+        # `import run_tests [as rt]` and `from run_tests import main [as m]`:
+        # the in-process spellings. `run_tests.main()` and
+        # `multiprocessing.Process(target=run_tests.main)` never touch
+        # subprocess at all, so the spawn recogniser cannot see them.
+        self.runner_modules, self.runner_mains = set(), set()
         for node in ast.walk(self.tree):
             if isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name == "subprocess":
                         self.module_aliases.add(alias.asname or alias.name)
+                    if alias.name == SUITE_RUNNER_MODULE:
+                        self.runner_modules.add(alias.asname or alias.name)
             elif (isinstance(node, ast.ImportFrom)
                   and node.module == "subprocess"):
                 for alias in node.names:
                     if alias.name in SPAWN_ATTRS:
                         self.bare_spawners.add(alias.asname or alias.name)
+            elif (isinstance(node, ast.ImportFrom)
+                  and node.module == SUITE_RUNNER_MODULE):
+                for alias in node.names:
+                    if alias.name == "main":
+                        self.runner_mains.add(alias.asname or alias.name)
 
     def _resolve_bindings(self) -> None:
         """Names bound — at module OR class level — to something that mentions
@@ -11884,27 +11914,70 @@ class _SuiteForkScan:
         of the name would call the spawner itself guarded and pass over the
         very function whose callers need the guard.
         """
-        def mentions(sub) -> bool:
-            return (isinstance(sub, ast.Constant) and sub.value == self.guard_env
-                    ) or (isinstance(sub, ast.Name) and sub.id in self.guard_names
-                          ) or (isinstance(sub, ast.Attribute)
-                                and sub.attr in self.guard_names)
+        return any(self._reads_the_marker_node(sub) for sub in ast.walk(node))
 
-        for sub in ast.walk(node):
-            # os.environ.get(MARKER) / os.environ.get(MARKER, default)
-            if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
-                    and sub.func.attr in ("get", "getenv")
-                    and any(mentions(a) for arg in sub.args
-                            for a in ast.walk(arg))):
+    def _mentions_the_marker(self, sub) -> bool:
+        return (isinstance(sub, ast.Constant) and sub.value == self.guard_env
+                ) or (isinstance(sub, ast.Name) and sub.id in self.guard_names
+                      ) or (isinstance(sub, ast.Attribute)
+                            and sub.attr in self.guard_names)
+
+    def _reads_the_marker_node(self, sub) -> bool:
+        """One node, so a caller can ask WHERE the read is and not only
+        whether there is one."""
+        mentions = self._mentions_the_marker
+        # os.environ.get(MARKER) / os.environ.get(MARKER, default)
+        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
+                and sub.func.attr in ("get", "getenv")
+                and any(mentions(a) for arg in sub.args
+                        for a in ast.walk(arg))):
+            return True
+        # MARKER in os.environ / not in
+        if isinstance(sub, ast.Compare) and any(
+                isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
+            if any(mentions(n) for n in ast.walk(sub.left)):
                 return True
-            # MARKER in os.environ / not in
-            if isinstance(sub, ast.Compare) and any(
-                    isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
-                if any(mentions(n) for n in ast.walk(sub.left)):
-                    return True
-            # os.environ[MARKER]
-            if isinstance(sub, ast.Subscript) and any(
-                    mentions(n) for n in ast.walk(sub.slice)):
+        # os.environ[MARKER]
+        if isinstance(sub, ast.Subscript) and any(
+                mentions(n) for n in ast.walk(sub.slice)):
+            return True
+        return False
+
+    def _writes_the_marker(self, sub) -> bool:
+        """The marker set as a KEY in an environment a child will be given.
+
+        `dict(os.environ, **{MARKER: "1"})` and `env[MARKER] = "1"` are the two
+        shapes this tree uses. Nothing asserted this before: deleting the
+        `**{CHILD_ENV: "1"}` from `_run_suite` left every pin green while the
+        child no longer knew it was a child and the tree ran away.
+        """
+        if isinstance(sub, ast.Dict):
+            return any(key is not None and self._mentions_the_marker(key)
+                       for key in sub.keys)
+        if isinstance(sub, ast.Assign):
+            return any(isinstance(t, ast.Subscript)
+                       and any(self._mentions_the_marker(n)
+                               for n in ast.walk(t.slice))
+                       for t in sub.targets)
+        return False
+
+    def _names_the_runner_in_process(self, node) -> bool:
+        """`run_tests.main` named anywhere outside the runner's own module.
+
+        Not a spawn and not a subprocess — which is the point: measured in
+        round 4, `run_tests.main()` recursed 97 times in 40 CPU-seconds and
+        never returned, and `multiprocessing.Process(target=run_tests.main)`
+        reached 55 nested processes. A recogniser that only knows about
+        subprocess sees neither.
+        """
+        if self.is_runner:
+            return False
+        for sub in ast.walk(node):
+            if (isinstance(sub, ast.Attribute) and sub.attr == "main"
+                    and isinstance(sub.value, ast.Name)
+                    and sub.value.id in self.runner_modules):
+                return True
+            if isinstance(sub, ast.Name) and sub.id in self.runner_mains:
                 return True
         return False
 
@@ -11913,65 +11986,95 @@ class _SuiteForkScan:
                           if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
         self.lineno = {fn.name: fn.lineno for fn in self.functions}
         spawns_any, direct, callees, stands_down = {}, {}, {}, {}
+        # Statement INDEX, inside the function's own body, of the first read of
+        # the child marker and of the first spawn — so "stands down BEFORE it
+        # spawns" is decided from the parse rather than from where the lines
+        # happen to sit. And whether the function WRITES the marker into a
+        # child's environment, which nothing asserted before round 4: deleting
+        # that one expression from `_run_suite` left the pin green and ran the
+        # tree away.
+        first_marker_read, first_spawn, writes_marker = {}, {}, {}
+        # Callee names this function hands a runner-naming argument to. A
+        # helper that takes the path as a PARAMETER names nothing itself.
+        runner_arg_callees = {}
+        # {function: {callee: the statement index of its first call}} — so a
+        # spawner that stands down through a helper (`self._skip_in_child()`)
+        # can still be shown to do it BEFORE it spawns.
+        stmt_calls = {}
         for fn in self.functions:
             any_spawn = names_runner_at_spawn = False
-            called = set()
-            for node in ast.walk(fn):
-                if not isinstance(node, ast.Call):
-                    continue
-                if self._is_spawn(node):
+            called, arg_callees = set(), set()
+            calls_at = {}
+            read_at = spawn_at = None
+            wrote = False
+            for index, stmt in enumerate(fn.body):
+                for node in ast.walk(stmt):
+                    if self._writes_the_marker(node):
+                        wrote = True
+                    if self._reads_the_marker_node(node) and read_at is None:
+                        read_at = index
+                    if not isinstance(node, ast.Call):
+                        continue
+                    name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                            else getattr(node.func, "id", None))
+                    if name:
+                        called.add(name)
+                        calls_at.setdefault(name, index)
+                        if any(self._names_the_runner(a) for a in node.args):
+                            arg_callees.add(name)
+                    if self._names_the_runner_in_process(node):
+                        names_runner_at_spawn = True
+                        if spawn_at is None:
+                            spawn_at = index
+                    if not self._is_spawn(node):
+                        continue
                     any_spawn = True
+                    if spawn_at is None:
+                        spawn_at = index
                     if any(self._names_the_runner(a) for a in
                            [*node.args, *(k.value for k in node.keywords)]):
                         names_runner_at_spawn = True
-                name = (node.func.attr if isinstance(node.func, ast.Attribute)
-                        else getattr(node.func, "id", None))
-                if name:
-                    called.add(name)
             spawns_any[fn.name] = any_spawn
             direct[fn.name] = names_runner_at_spawn
             callees[fn.name] = called
+            runner_arg_callees[fn.name] = arg_callees
+            stmt_calls[fn.name] = calls_at
+            first_marker_read[fn.name] = read_at
+            first_spawn[fn.name] = spawn_at
+            writes_marker[fn.name] = wrote
             stands_down[fn.name] = (
                 "_skip_in_child" in called or self._reads_the_marker(fn))
+        # Second pass: a call to a same-module function that itself reads the
+        # marker counts as a read at that statement. `self._skip_in_child()`
+        # is that shape, and it is the spelling both files already use.
+        reads_directly = {fn.name: self._reads_the_marker(fn)
+                          for fn in self.functions}
+        for fn in self.functions:
+            candidates = [i for i in (first_marker_read[fn.name],) if i is not None]
+            candidates += [index for callee, index in stmt_calls[fn.name].items()
+                           if reads_directly.get(callee)]
+            first_marker_read[fn.name] = min(candidates) if candidates else None
+        self.first_marker_read = first_marker_read
+        self.first_spawn = first_spawn
+        self.writes_marker = writes_marker
+        self.runner_arg_callees = runner_arg_callees
         # A helper that takes the path as a PARAMETER names nothing itself;
         # its CALLER names the runner and does not spawn. Neither is caught by
         # the rule above, so the call that hands a runner-naming argument to a
-        # same-module spawner counts as a spawn of its own.
+        # SAME-MODULE spawner counts as naming the runner itself. The pin
+        # applies the same rule across the whole scanned tree, because `test/`
+        # is on sys.path and importing a helper from another file is free.
         for fn in self.functions:
-            for node in ast.walk(fn):
-                if not isinstance(node, ast.Call):
-                    continue
-                name = (node.func.attr if isinstance(node.func, ast.Attribute)
-                        else getattr(node.func, "id", None))
-                if (spawns_any.get(name)
-                        and any(self._names_the_runner(a) for a in node.args)):
-                    direct[fn.name] = True
+            if runner_arg_callees[fn.name] & {
+                    name for name, spawns in spawns_any.items() if spawns}:
+                direct[fn.name] = True
         self.spawns_any, self.callees = spawns_any, callees
+        self.direct = direct
+        # Retained for the message the pin prints: whether a flagged function
+        # already stands down (a caller of one of the two spawners does, one
+        # frame later), which decides whether the failure reads as "add a
+        # guard" or as "route this through the spawner".
         self.stands_down = stands_down
-        self.callers = {fn.name: {caller for caller, called in callees.items()
-                                  if fn.name in called and caller != fn.name}
-                        for fn in self.functions}
-        # Transitive closure over same-module callees: a test that calls a
-        # helper that forks IS a forking test, however many hops away.
-        forking = {name for name, is_direct in direct.items() if is_direct}
-        changed = True
-        while changed:
-            changed = False
-            for fn in self.functions:
-                if fn.name not in forking and callees[fn.name] & forking:
-                    forking.add(fn.name)
-                    changed = True
-        self.forking = forking
-
-    def guarded(self, name: str, _seen: frozenset = frozenset()) -> bool:
-        """`name` stands down, or a same-module helper it calls does."""
-        if name in _seen:
-            return False
-        if self.stands_down.get(name):
-            return True
-        seen = _seen | {name}
-        return any(self.guarded(c, seen) for c in self.callees.get(name, ())
-                   if c in self.callees)
 
 
 class TestTheRunnerItself(unittest.TestCase):
@@ -12001,6 +12104,27 @@ class TestTheRunnerItself(unittest.TestCase):
                       "re-fork it from inside itself")
             print(reason)
             self.skipTest(reason)
+
+    def _spawn_suite(self, *argv_tail) -> subprocess.CompletedProcess:
+        """The ONE place in this file that spawns `python3 test/run_tests.py`,
+        and it stands down itself when this run IS the child.
+
+        S-B-a-2. The guard used to be on the TESTS, and the pin that kept it
+        there was a list of files: round 4 measured three helper locations
+        (`test/`, `harness/`, and a PACKAGE inside the discovery dir) that
+        every file-set pin passed and that each ran the tree away. The fix is
+        not a fourth enumeration — it is that a caller cannot fork the suite
+        except through a spawner that has already checked, so a new forking
+        test needs no guard of its own and no table entry.
+        """
+        self._skip_in_child()
+        return subprocess.run(
+            [sys.executable, str(TEST_DIR / SUITE_RUNNER_NAME),
+             *[str(a) for a in argv_tail]],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
+            # test/issues/test_issue_97.py's own spawner reads this and stands
+            # down, and so does this method, so a child can never fork.
+            env=dict(os.environ, **{self.SUITE_CHILD_ENV: "1"}))
 
     @staticmethod
     def _modules(suite: unittest.TestSuite) -> set[str]:
@@ -12182,151 +12306,129 @@ class TestTheRunnerItself(unittest.TestCase):
                     "assertions that can see this runner's exit code, and it "
                     "no longer exists")
 
-    # Every function anywhere in the suite that can spawn `python3
-    # test/run_tests.py`, as (file, function). Five tests and the one helper
-    # they share; the test below asserts this is EXACTLY the set the parse
-    # finds, so a new one cannot arrive unnoticed and a recogniser that stops
-    # seeing an old one cannot pass silently.
-    KNOWN_SUITE_FORKERS = (
+    # The ONLY functions in this repository allowed to name the suite runner
+    # at a spawn, as (file, function). Each of them stands down itself when
+    # the run IS the child, so every caller — in any file, guarded or not —
+    # is bounded by construction. The test below asserts this membership is
+    # EXACT over an `ast` walk of every `*.py` under test/ and harness/, so a
+    # forking helper anywhere in either tree is red with its file and line.
+    SUITE_SPAWNERS = (
         ("test/issues/test_issue_97.py", "_run_suite"),
-        ("test/issues/test_issue_97.py",
-         "test_an_ordinary_run_leaves_the_watched_file_alone"),
-        ("test/issues/test_issue_97.py",
-         "test_planted_issue_module_is_discovered_and_fails_the_runner"),
-        ("test/issues/test_issue_97.py",
-         "test_removing_the_planted_module_puts_the_runner_back_to_zero"),
-        ("test/issues/test_issue_97.py",
-         "test_the_run_wide_user_memory_guard_fails_a_run_that_writes_the_file"),
-        ("test/run_tests.py",
-         "test_dash_k_on_the_command_line_still_reaches_the_discovered_subtree"),
+        ("test/run_tests.py", "_spawn_suite"),
     )
 
-    # What unittest can execute on its own, and therefore what must carry
-    # the stand-down. Everything else in the flagged set is a helper reached
-    # only from one of these.
+    # What unittest can execute on its own. Kept because the message a
+    # flagged function gets should say whether it is a test or a helper.
     RUNNABLE_PREFIXES = ("test", "setUp", "tearDown")
 
     @classmethod
     def _unittest_runs(cls, name: str) -> bool:
         return name.startswith(cls.RUNNABLE_PREFIXES)
 
-    def test_every_suite_forking_test_in_this_repo_stands_down_in_a_child(self):
-        """S-B-a. Every function that can spawn `python3 test/run_tests.py`
-        — in THIS file and in every test/issues/test_issue_*.py — stands down
-        when it IS the child.
+    @classmethod
+    def _scan_the_forkable_tree(cls) -> dict:
+        """`{relative path: _SuiteForkScan}` for every `*.py` under test/ and
+        harness/ that rglob finds — packages, subdirectories and `__init__.py`
+        included, `__pycache__` aside.
 
-        A test that forks the suite must be bounded by something OTHER than
-        the contract it is testing: `-k` narrowing was the only thing bounding
-        the recursion, and `-k` narrowing is what the pin below asserts.
-
-        THE COMMITTED SHAPE, pinned here so a reviewer does not have to
-        reconstruct it: the guard is on the TESTS. `_run_suite` in
-        test/issues/test_issue_97.py is the spawner and carries no guard of
-        its own — it SETS `SKILLS_EVALS_SUITE_CHILD` in the child's
-        environment, which is the opposite — and each of the four tests that
-        call it opens with `self._skip_in_child()`. The one forker in this
-        file guards itself the same way. Either shape is accepted (a helper
-        may perform the check before it spawns); the assertion is that
-        somewhere in a forking test's own call closure, the marker is READ.
+        A directory walk and not a file pattern: round 3's pin parsed one
+        file, round 4's parsed two globs, and each time the helper that ran
+        the tree away lived one directory over.
         """
         scans = {}
-        files = [TEST_DIR / "run_tests.py",
-                 *sorted(DISCOVERY_DIR.glob(DISCOVERY_PATTERN))]
-        for path in files:
-            scans[path.relative_to(REPO_ROOT).as_posix()] = _SuiteForkScan(
-                path, self.SUITE_CHILD_ENV)
-        # One more closure, ACROSS the parsed files: a test in one module
-        # calling a forking helper defined in another is the eighth spelling
-        # round 3 measured, and a per-file closure cannot see it. A helper in
-        # a module this walk does not parse still cannot be reached — which is
-        # exactly why test_every_python_file_in_the_discovery_dir_is_a_test_module
-        # refuses a non-test `.py` under test/issues/ at all.
-        changed = True
-        while changed:
-            changed = False
-            forking_names = {name for scan in scans.values()
-                             for name in scan.forking}
-            for scan in scans.values():
-                for fn in scan.functions:
-                    if (fn.name not in scan.forking
-                            and scan.callees[fn.name] & forking_names):
-                        scan.forking.add(fn.name)
-                        changed = True
-        forking = {(rel, name): scan.lineno[name]
-                   for rel, scan in scans.items() for name in sorted(scan.forking)}
+        for directory in SUITE_SCAN_DIRS:
+            for path in sorted((REPO_ROOT / directory).rglob("*.py")):
+                if "__pycache__" in path.parts:
+                    continue
+                rel = path.relative_to(REPO_ROOT).as_posix()
+                scans[rel] = _SuiteForkScan(
+                    path, cls.SUITE_CHILD_ENV,
+                    is_runner=(path == TEST_DIR / SUITE_RUNNER_NAME))
+        return scans
+
+    def test_every_suite_forking_test_in_this_repo_stands_down_in_a_child(self):
+        """S-B-a-2. Nothing in this repository can fork `test/run_tests.py`
+        without standing down when it IS the child.
+
+        The invariant is enforced at the SPAWNER, not at its callers: exactly
+        two functions may name the runner at a spawn, each reads
+        $SKILLS_EVALS_SUITE_CHILD before it spawns, and `_run_suite` writes
+        that marker into the child's environment. Everything else — a new
+        forking test, a helper in `test/`, a helper in `harness/`, a helper in
+        a package inside the discovery dir — is red here with its file and
+        line, and the remedy is always the same one sentence: call the
+        spawner.
+
+        Measured on f9115ce, each in its own throwaway copy and each with the
+        two round-3 pins GREEN: `test/r4forkhelper.py`, `harness/r4harnessfork.py`
+        and `test/issues/r4helpers/__init__.py` all ran the tree away (peak 3
+        processes at 45 s, climbing), and deleting the marker WRITE from
+        `_run_suite` did too.
+        """
+        scans = self._scan_the_forkable_tree()
+        self.assertIn("test/run_tests.py", scans)
+        self.assertIn("test/issues/test_issue_97.py", scans,
+                      "the discovered subtree must be scanned — the pin that "
+                      "missed it is one of the defects being fixed here")
+
+        # Which functions name the runner at a spawn. `direct` is the
+        # function's own body; the closure below is the one-hop case, in which
+        # a helper takes the path as a PARAMETER (so it names nothing) and its
+        # CALLER hands it over (so it does not spawn) — across files as well
+        # as inside one, because `test/` is on sys.path and an import is free.
+        spawner_names = {name for scan in scans.values()
+                         for name, spawns in scan.spawns_any.items() if spawns}
+        flagged = {}
+        for rel, scan in scans.items():
+            for fn in scan.functions:
+                if scan.direct[fn.name] or (
+                        scan.runner_arg_callees[fn.name] & spawner_names):
+                    flagged[(rel, fn.name)] = scan.lineno[fn.name]
 
         self.assertTrue(
-            files[1:], "no test/issues/ module was parsed — the pin that "
-            "missed this whole subtree is the defect being fixed here")
-        self.assertTrue(
-            forking, "no function anywhere spawns the suite — this assertion "
-            "must not be able to pass vacuously; the recogniser has broken")
+            flagged,
+            "no function anywhere spawns the suite — this assertion must not "
+            "be able to pass vacuously; the recogniser has broken")
 
-        # The guard belongs on whatever unittest can EXECUTE. A flagged
-        # helper — `_run_suite` is the one — needs none of its own: the
-        # closure above flags every function that calls it, so each runnable
-        # caller is on this list and is required to stand down. The second
-        # assertion is what makes that reasoning true rather than assumed:
-        # a flagged helper nothing flagged calls is reachable some other way.
-        for (rel, name), lineno in sorted(forking.items()):
-            if not self._unittest_runs(name):
-                with self.subTest(helper=f"{rel}::{name}"):
-                    flagged_callers = sorted(
-                        c for c in scans[rel].callers.get(name, ())
-                        if (rel, c) in forking)
-                    self.assertTrue(
-                        flagged_callers,
-                        f"{rel}:{lineno} {name}() spawns the suite and no "
-                        "flagged function in its own module calls it, so "
-                        "nothing above it is required to stand down. Give it "
-                        "the marker check itself.")
-                continue
-            with self.subTest(function=f"{rel}::{name}"):
-                self.assertTrue(
-                    scans[rel].guarded(name),
-                    f"{rel}:{lineno} {name}() can spawn the whole suite but "
-                    f"neither it nor any helper it calls reads "
-                    f"${self.SUITE_CHILD_ENV} (`self._skip_in_child()` is the "
-                    "spelling both files use), so nothing bounds it when it "
-                    "IS the child: it forks again, and again. Measured in "
-                    "round 3: 19 concurrent runner processes at 60 s and "
-                    "still climbing.")
-
-        # The exact membership, so a reviewer reads the positive form and a
-        # recogniser that quietly stops seeing one of today's spellings goes
-        # red rather than silent. A new suite-forking test is a deliberate,
-        # reviewed thing and belongs on this list; an ordinary new
-        # test/issues/ module adds nothing to it.
         self.assertEqual(
-            sorted(forking), sorted(self.KNOWN_SUITE_FORKERS),
-            "the set of functions that can spawn `python3 test/run_tests.py` "
-            "has changed. Every one of them must stand down inside a child, "
-            "and the list is here so adding one is a decision rather than an "
-            "accident. Add or remove the entry — and if a NEW entry is a "
-            "surprise, that function forks the whole suite and probably "
-            "should not.")
+            sorted(flagged), sorted(self.SUITE_SPAWNERS),
+            "the set of functions that name `python3 test/run_tests.py` at a "
+            "spawn has changed. Exactly the functions in SUITE_SPAWNERS may "
+            "do it, and each of them stands down inside a child — so a test "
+            "that forks the suite THROUGH one of them needs no guard of its "
+            "own and no entry anywhere. If your new function is in this list, "
+            "route its spawn through `_run_suite` (or this file's "
+            "`_spawn_suite`) instead: a second unguarded spawner is how the "
+            "suite forks itself forever, measured at 19 concurrent runner "
+            "processes and still climbing.\n  flagged: "
+            + "\n  ".join(f"{rel}:{lineno} {name}()"
+                          for (rel, name), lineno in sorted(flagged.items())))
 
-        # Every file known to hold a forker still holds one: the equality
-        # above would also be satisfied if BOTH the recogniser and this list
-        # were emptied together, and a per-file floor cannot be.
-        for rel in sorted({rel for rel, _ in self.KNOWN_SUITE_FORKERS}):
-            with self.subTest(file=rel):
-                self.assertTrue(
-                    [name for r, name in forking if r == rel],
-                    f"{rel} spawns the suite ({len(scans[rel].functions)} "
-                    "functions parsed) and the recogniser found nothing in "
-                    "it")
+        for rel, name in sorted(self.SUITE_SPAWNERS):
+            scan = scans[rel]
+            with self.subTest(spawner=f"{rel}::{name}"):
+                read_at = scan.first_marker_read[name]
+                spawn_at = scan.first_spawn[name]
+                self.assertIsNotNone(
+                    read_at,
+                    f"{rel}:{scan.lineno[name]} {name}() spawns the whole "
+                    f"suite and never reads ${self.SUITE_CHILD_ENV}. It is "
+                    "the only thing bounding every caller: without the check "
+                    "here the child forks again, and again.")
+                self.assertLess(
+                    read_at, spawn_at,
+                    f"{rel}:{scan.lineno[name]} {name}() reads "
+                    f"${self.SUITE_CHILD_ENV} only AFTER it has already "
+                    "spawned — the child is already running by then")
 
-        # The committed shape itself, stated rather than implied.
         issue97 = scans["test/issues/test_issue_97.py"]
-        self.assertIn("_run_suite", issue97.forking,
-                      "_run_suite is the function that spawns the runner")
-        self.assertFalse(
-            issue97.stands_down["_run_suite"],
-            "the committed tree guards the TESTS, not the helper: _run_suite "
-            "sets $" + self.SUITE_CHILD_ENV + " in the child's environment "
-            "and reads nothing. If that changes — the helper checking the "
-            "marker before it spawns — update this assertion and say so.")
+        self.assertTrue(
+            issue97.writes_marker["_run_suite"],
+            "_run_suite no longer writes $" + self.SUITE_CHILD_ENV + " into "
+            "the child's environment, so the child does not know it is one "
+            "and nothing makes it stand down. Measured: with that single "
+            "expression deleted every pin stayed green and the planted-module "
+            "probe reached 3 processes at 60 s and was still climbing.")
 
     def test_a_targeted_run_is_covered_by_the_user_memory_guard_too(self):
         # N7. The run-wide S2 snapshot was taken BELOW the targeted-run
@@ -12445,15 +12547,8 @@ class TestTheRunnerItself(unittest.TestCase):
         # End to end through the real entry point, and cheap: one test.
         # `-k` used to reach unittest.main, which cannot address a discovered
         # module at all, so this named nothing and the run was a false green.
-        self._skip_in_child()
         target = "test_this_module_is_reachable_through_the_discovery_pattern"
-        proc = subprocess.run(
-            [sys.executable, str(TEST_DIR / "run_tests.py"), "-v", "-k", target],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
-            # test/issues/test_issue_97.py reads this and skips the pins that
-            # shell out to the whole suite, and so does _skip_in_child above,
-            # so a child can never fork.
-            env=dict(os.environ, **{self.SUITE_CHILD_ENV: "1"}))
+        proc = self._spawn_suite("-v", "-k", target)
         output = proc.stdout + proc.stderr
         self.assertEqual(proc.returncode, 0, output[-3000:])
         self.assertIn("test_issue_97", output,
