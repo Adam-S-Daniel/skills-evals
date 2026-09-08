@@ -27,10 +27,12 @@ The rule is a rule now, not a list:
    precomposed character, so the acute in `cafe` + U+0301 becomes `café`
    and survives step 2 as an ordinary letter. Without it, dropping `Mn`
    would take the accent off every genuinely accented word.
-2. **Then every `Cf` and every `Mn` code point goes.** That is the whole
-   format-control and non-spacing-mark space, not a sample of it: whatever
-   a future Unicode release adds to either category is covered the day the
-   interpreter's tables carry it.
+2. **Then every `Cf` and every `Mn` code point goes** — of the ones still
+   standing alone. That is the whole format-control and non-spacing-mark
+   space, not a sample of it: whatever a future Unicode release adds to
+   either category is covered the day the interpreter's tables carry it.
+   A mark step 1 composed onto a letter is no longer standing alone; see
+   the residual below.
 3. **Plus the handful that render as nothing without being either**: the
    Hangul fillers (`Lo`), the Braille pattern blank (`So`) — none of which
    `\\s` matches — and a stray NUL (`Cc`), which is not a control anybody
@@ -41,6 +43,17 @@ Cyrillic `а` standing in for a Latin `a` — is a different letter, not an
 invisible one, and NFKC does not map confusables onto each other. See the
 `strip_seed` header in `evals/adam-writing-style/recruiter-reply/
 fixture.yaml` for where that lands.
+
+One more residual, in the "every `Mn` goes" claim above: step 1 COMPOSES a
+mark onto the preceding letter before step 2 gets a chance to drop it, and
+nine of Unicode's `Mn` code points compose onto a plain ASCII letter this
+way — `r` + U+0301 becomes `ŕ`, an ordinary `Ll` letter, not a mark
+standing alone. `fold` never sees a mark to drop; it sees an accented
+letter, the same shape `café` is and must stay. So `fold("lever" + "́"
++ "age")` is `"leveŕage"`, not `"leverage"`, and a `must_not_match` pattern
+anchored to the unaccented spelling misses it. `fold_marks_again` below is
+the second reading that catches this, for `must_not_match` only — see its
+own docstring for why `must_match` and provenance do not use it.
 """
 
 from __future__ import annotations
@@ -83,3 +96,36 @@ def fold(text: str) -> str:
         return ""
     return "".join(char for char in unicodedata.normalize("NFKC", text)
                    if not _drops(char))
+
+
+def fold_marks_again(text: str) -> str:
+    """A second reading of `fold`'s own output, for `must_not_match` only.
+
+    `fold` composes before it drops, so a combining mark NFKC composes onto
+    the letter in front of it — `r` + U+0301 becomes `ŕ`, an ordinary `Ll`
+    letter — survives the fold as an accented letter rather than being read
+    as a mark. Nine of Unicode's `Mn` code points compose onto a plain ASCII
+    letter this way, and `lever` + one of them + `age` folds to `leveŕage`,
+    not `leverage` — the same pattern `objective._TAG_READINGS` already uses
+    for a bare wrapper tag mid-word (two honest normalisations, so score
+    both and let `must_not_match` object to either).
+
+    NFD is the second reading: it decomposes `ŕ` back into `r` + U+0301,
+    and dropping `Cf`/`Mn` a second time removes the mark this exposes —
+    `fold_marks_again(fold("leveŕage"))` is `"leverage"`. Applied to
+    `fold`'s output, not to raw text, so this reading keeps NFKC's width and
+    ligature folding and only spends the mark a second time.
+
+    NOT the reading `must_match` or provenance use: NFD strips the accent
+    off a genuinely accented word too (`café` reads as `cafe` here), which
+    is exactly the letter `fold`'s NFKC-first step exists to protect. A
+    `must_not_match` pattern can afford that cost — a banned word stays
+    banned in one more of its honest readings — where a `must_match` check
+    would instead lose credit for text that legitimately carries the
+    accent, and provenance would start counting an accented word of the
+    agent's own as a coverage mismatch against an unaccented seed word.
+    """
+    if not text:
+        return ""
+    decomposed = unicodedata.normalize("NFD", text)
+    return "".join(char for char in decomposed if not _drops(char))

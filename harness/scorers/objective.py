@@ -1878,7 +1878,13 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
 
     Zero-width characters and soft hyphens are folded out first, on every
     check: they take up no width, so `lever\u00adage` and `deep\u200b dive`
-    read to the operator as the banned terms and are scored as them.
+    read to the operator as the banned terms and are scored as them. A
+    `must_not_match` pattern is also checked against a second, NFD-decomposed
+    reading of each candidate (`invisibles.fold_marks_again`), because a
+    combining mark NFKC composed onto a letter \u2014 `leve\u0155age` \u2014 is not a mark
+    by the time the ordinary fold sees it and would otherwise switch a ban
+    off. `must_match` and the seed pre-pass below do not use this reading:
+    it also strips a genuinely accented word's accent.
 
     `seed` arrives only when the fixture's check sets `strip_seed: true`,
     and it turns on the provenance pre-pass (`strip_seed_material`): the
@@ -1908,6 +1914,21 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
             reading = strip_seed_material(text, seed, gap)
             if reading not in readings:
                 readings.append(reading)
+    # A second reading per reading above, same reason as _TAG_READINGS: a
+    # combining mark NFKC composed onto the letter in front of it
+    # (`leveŕage`) is not a mark by the time `fold` sees it, so the ordinary
+    # reading above cannot drop it — nine of Unicode's `Mn` code points do
+    # this onto a plain ASCII letter. `invisibles.fold_marks_again` is the
+    # second reading: NFD-decompose and drop Cf/Mn again, which exposes and
+    # removes the mark. Appended rather than swapped in: `must_match` still
+    # needs the ordinary reading too (this one strips a genuine accent as
+    # well — see its own docstring), and `must_not_match` forbids a pattern
+    # in ALL readings, so adding a stricter one can only catch more, never
+    # fewer.
+    for reading in list(readings):
+        second = invisibles.fold_marks_again(reading)
+        if second not in readings:
+            readings.append(second)
     return _text_matches_any(readings, must_match or [], must_not_match or [],
                              "transcript")
 

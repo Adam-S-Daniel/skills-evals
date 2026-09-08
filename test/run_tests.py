@@ -7434,6 +7434,55 @@ class TestIssue81(unittest.TestCase):
         self._assert_all_pass("recruiter-reply", draft,
                               "a genuine reply with an accented word")
 
+    def test_a_composing_mark_still_recovers_under_the_second_reading(self):
+        # `_zero_width_code_points` excludes Mn because a mark STANDING
+        # ALONE always folds to nothing (test_the_fold_covers_every_
+        # invisible_category proves that). It says nothing about a mark
+        # NFKC composes onto the letter in front of it \u2014 that mark is not
+        # standing alone by the time `fold` sees it, so it survives as an
+        # ordinary accented letter, the same shape `caf\u00e9` is and must stay.
+        # Walk every `Mn` code point, not a sample: whichever ones compose
+        # onto a plain ASCII letter, `fold_marks_again` on `fold`'s own
+        # output must recover the unaccented word.
+        composing = []
+        for cp in range(sys.maxunicode + 1):
+            char = chr(cp)
+            if unicodedata.category(char) != "Mn":
+                continue
+            first = invisibles.fold("r" + char)
+            if first == "r":
+                continue  # this mark did not compose; already covered
+            composing.append(char)
+            with self.subTest(code_point=hex(cp)):
+                self.assertEqual(invisibles.fold_marks_again(first), "r")
+        # The scale, pinned: this many Mn marks compose onto a bare 'r'
+        # under NFKC today.
+        self.assertGreaterEqual(len(composing), 9)
+        # And the reading that matters for a genuinely accented word: NFD
+        # takes the accent back off, which is why must_match/provenance
+        # must not use this second reading.
+        self.assertEqual(invisibles.fold_marks_again(invisibles.fold("caf\u00e9")),
+                         "cafe")
+
+    def test_no_composing_mark_hides_a_banned_term(self):
+        # Through the real check, the mid-word case the standalone loop
+        # above cannot exercise: one composing mark inside `leverage`, in a
+        # draft that otherwise passes everything, and the avoid check is
+        # the only one that may move.
+        composing_marks = [chr(cp) for cp in range(sys.maxunicode + 1)
+                           if unicodedata.category(chr(cp)) == "Mn"
+                           and invisibles.fold("r" + chr(cp)) != "r"]
+        self.assertGreaterEqual(len(composing_marks), 9)
+        for char in composing_marks:
+            banned = self._REPLY_IN_ITS_OWN_WORDS.replace(
+                "Thanks,",
+                "I would rather not lever" + char + "age a move right "
+                "now.\n\nThanks,")
+            with self.subTest(code_point=hex(ord(char))):
+                self._assert_only_failure(
+                    self._score_reusing_workspace("recruiter-reply", banned),
+                    self.AVOID_CHECK_ID)
+
     # N2: `strip_seed` used to be read by truthiness, so a fixture that
     # said `strip_seed: "no"` turned the pre-pass ON — the opposite of what
     # it says, and silently.
