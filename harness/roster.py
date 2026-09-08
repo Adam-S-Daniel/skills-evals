@@ -370,10 +370,9 @@ def _usage_alias_map(api_ids, other_ids, seat_aliases: dict,
     return mapping
 
 
-def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
+def _is_attributable(folded: str, api_ids: set[str] | None,
                      api_ids_folded: set[str] | None,
-                     previous_arms: set[str], previous_arms_folded: set[str],
-                     catalogue_seen: set[str],
+                     previous_arms_folded: set[str],
                      catalogue_seen_folded: set[str]) -> bool:
     """Whether a census key names something this harness can actually
     credit. `api_ids=None` means "no catalogue context was given" — every
@@ -502,6 +501,18 @@ def _is_attributable(candidate: str, folded: str, api_ids: set[str] | None,
     whole test suite, also never once alone. Deleting either leaves the
     suite green, which is what F-2 says to do about a clause with no
     mutation that can turn it red.
+
+    THREE PARAMETERS WENT WITH THOSE CLAUSES (nit 2, #129 review round
+    12), a round later than they should have: `candidate`,
+    `previous_arms` and `catalogue_seen` — the raw, unfolded id and the
+    two unfolded sets — were the only things the deleted checks read, and
+    nothing in the body has read them since. F-2's rule is about a clause
+    with no red mutation; a PARAMETER with no reader is the same defect
+    one step smaller, and leaving it in place is what lets a deleted
+    check be written back without a signature change to notice it.
+    `test_two_dead_clauses_stay_deleted` asserts the signature as well as
+    the body now, so neither can come back quietly. `api_ids` stays: it
+    is read, as the `None` sentinel below.
     """
     if api_ids is None:
         return True
@@ -751,9 +762,8 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
         if rung_of(candidate, rungs) is None:
             continue
         folded = aliases.get(candidate, candidate)
-        if not _is_attributable(candidate, folded, api_ids_set, api_ids_folded,
-                                previous_arms_set, previous_arms_folded,
-                                catalogue_seen_set, catalogue_seen_folded):
+        if not _is_attributable(folded, api_ids_set, api_ids_folded,
+                                previous_arms_folded, catalogue_seen_folded):
             continue
         for week, n in (by_week or {}).items():
             if week in wanted:
@@ -1201,6 +1211,30 @@ PREVIOUS_ARMS_CAP = 500
 #: `roster/latest.json` and a 0.60 MB step summary, in 0.17s — inside the
 #: 1 MiB summary cap and two orders of magnitude inside the 100 MB file
 #: limit, which is the property the number is picked for.
+#:
+#: WHO CAN TRIGGER IT, AND THE COST BEING ACCEPTED (nit 3, #129 review
+#: round 12). The prose above frames this only as self-protection, and it
+#: is also a DENIAL OF THE ROSTER REFRESH that a planter reaches with
+#: 10,001 lines in `previous.json` and nothing else — no census, no
+#: catalogue, no cap involved. Measured with a real arm present at a true
+#: 30.0%, in `arms` and in `catalogue_seen` alike: 9,999 and 10,000
+#: residue entries publish `carries 30.0%` behind one count-only line,
+#: and 10,001 is rc 4 with nothing published and no id echoed. It does
+#: not clear itself either — refusing means `roster/latest.json` is not
+#: rewritten, so the planted file is still there on the next run and
+#: every run after it, until someone reverts the branch.
+#:
+#: IT IS STILL THE RIGHT TRADE, and what decides that is how each failure
+#: looks from outside. Refusing is LOUD and non-destructive: `eval.yml`
+#: turns rc 4 into `::warning::model roster NOT refreshed` and falls back
+#: to each fixture's pinned arms, so the evals keep running against the
+#: last known-good roster and a human is told why. The alternative — trim
+#: to some length and publish — is silent and permanent: a trim has no
+#: order available that the previous roster did not write, which is the
+#: whole of the residue rule, so it would publish a roster whose contents
+#: a planter chose and the next run would read that back as its own
+#: history. A denial of service that says so beats a wrong answer that
+#: does not.
 UNCAPPED_CARRY_CEILING = 10_000
 
 
@@ -1261,9 +1295,16 @@ def _clean_previous_arms(previous, warn,
     no mutation that can turn the suite red is deleted rather than kept as
     belt-and-braces.
 
-    WHAT THE CAP BOUNDS IS TIER 1 AND TIER 2 — the entries the live
-    catalogue or the census names — and the TIER-3 RESIDUE is carried
-    whole (A, round 10, generalised in round 11). For a residue entry
+    WHAT THE CAP BOUNDS IS TIER 1 ONLY — the entries the live catalogue
+    or the census names, this run's own live ids excepted — and the
+    TIER-3 RESIDUE is carried whole (A, round 10, generalised in round
+    11; the live-id exemption is round 12's should-fix 1). This sentence
+    said "TIER 1 AND TIER 2" until round 12's nit 1: tier 2 was deleted
+    in the round-11 continuation, `rank.__doc__` says THERE IS NO TIER 2
+    and the policy says WHAT THE CAP BOUNDS IS TIER 1 ONLY, and this was
+    the last present-tense survivor of it in this file. The F-1 test pins
+    the invariant sentence, not the prose around it, which is exactly why
+    it slipped. For a residue entry
     there is nothing left to decide by but `last_seen` and the id, both
     of them written by whoever writes `previous.json`. Round 10 stopped
     evicting only when the census named NOTHING, which was a test on the
@@ -1800,9 +1841,8 @@ def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
         ranked = rung_of(candidate, rungs) is not None
         if ranked:
             folded = aliases.get(candidate, candidate)
-            ranked = _is_attributable(candidate, folded, api_ids_set,
-                                      api_ids_folded, previous_arms_set,
-                                      previous_arms_folded, catalogue_seen_set,
+            ranked = _is_attributable(folded, api_ids_set, api_ids_folded,
+                                      previous_arms_folded,
                                       catalogue_seen_folded)
         for week, n in (by_week or {}).items():
             if week in weeks:

@@ -8904,12 +8904,26 @@ class TestIssue67Review6(unittest.TestCase):
         deleted clauses on purpose to explain why they're gone) must not
         contain the bare, unfolded `candidate in api_ids`/`candidate in
         previous_arms` checks — both provably subsumed by their `_folded`
-        siblings."""
+        siblings.
+
+        THE SIGNATURE IS PART OF THE FLOOR (nit 2, #129 review round 12).
+        The body check alone let the three parameters those clauses were
+        the only readers of — `candidate`, `previous_arms` and
+        `catalogue_seen` — sit unread through four rounds, which is what
+        makes writing a deleted check back a one-line change nothing
+        notices. `api_ids` stays, as the `None` sentinel."""
         import inspect
         src = inspect.getsource(roster._is_attributable)
         body = src.rsplit('"""', 1)[-1]
         self.assertNotIn("candidate in api_ids", body)
         self.assertNotIn("candidate in previous_arms or", body)
+        parameters = list(
+            inspect.signature(roster._is_attributable).parameters)
+        self.assertEqual(parameters,
+                         ["folded", "api_ids", "api_ids_folded",
+                          "previous_arms_folded", "catalogue_seen_folded"],
+                         "a parameter with no reader is a deleted clause "
+                         "with somewhere to come back to")
 
     # --- S1: the relative min_ranked_share floor must apply PER WINDOW,
     # not only over the 8-week union -----------------------------------
@@ -20203,6 +20217,65 @@ class TestIssue67Review12(unittest.TestCase):
                 self.assertIn("eval.yml", normalised,
                               f"{name} must name where both documents "
                               f"come from")
+
+    # --- the round-12 nits ---------------------------------------------
+
+    @staticmethod
+    def _prose(path):
+        """Comment markers stripped, whitespace collapsed, lowercased —
+        `TestIssue67Review10._normalised` with `#:` handled as well as
+        `#`. The invariant sentence lives in docstrings and plain `#`
+        comments, so that one never met a `#:` line; a constant's
+        Sphinx-style block does, and `lstrip("#")` leaves the colon
+        behind in the middle of a sentence."""
+        return " ".join(" ".join(line.strip().lstrip("#:").strip()
+                                 for line in path.read_text(
+                                     encoding="utf-8").splitlines()).split()
+                        ).lower()
+
+    def test_the_ceiling_is_documented_as_a_reachable_denial_of_service(self):
+        """NIT 3. `UNCAPPED_CARRY_CEILING`'s comment and the policy both
+        stated the refusal and framed it purely as self-protection.
+        Neither said that 10,001 lines in `previous.json` — nothing else,
+        no census and no catalogue — stop the roster refreshing, nor that
+        the refusal does not clear itself, since not publishing means the
+        planted file is still there next run.
+
+        It is an accepted cost rather than a defect, and an accepted cost
+        that is not written down is indistinguishable from one nobody
+        noticed. RED on `7ef5780`, where neither file says it.
+
+        The behaviour itself is pinned by
+        `TestIssue67Review11::test_past_the_ceiling_the_run_refuses_to
+        _publish`; this row is about whether a reader is told who can
+        reach it."""
+        source = self._prose(TestIssue67Review10.ROSTER_SRC)
+        policy = self._prose(TestIssue67Review10.POLICY)
+        for text, name in ((source, "harness/roster.py"),
+                           (policy, "evals/roster-policy.yml")):
+            with self.subTest(file=name):
+                self.assertIn("denial of the roster refresh", text)
+                self.assertIn("does not clear itself", text)
+                self.assertIn("model roster not refreshed", text,
+                              "say what the caller actually does with the "
+                              "refusal, or the cost is unreadable")
+
+    def test_no_present_tense_tier_two_survives_in_roster_py(self):
+        """NIT 1. `_clean_previous_arms.__doc__` still said "WHAT THE CAP
+        BOUNDS IS TIER 1 AND TIER 2" a round after tier 2 was deleted,
+        while `rank.__doc__` says THERE IS NO TIER 2 and the policy says
+        WHAT THE CAP BOUNDS IS TIER 1 ONLY. The F-1 test pins the
+        invariant SENTENCE, not the prose around it, which is exactly why
+        this slipped past the sweep that was tasked with re-pointing every
+        mention.
+
+        Every surviving mention of tier 2 in the file is a historical
+        record — "there is no tier 2", "the deleted tier 2", "was a
+        rationed tier 2" — so the assertion is on the one phrase that
+        claims it is still bounded. RED on `7ef5780`."""
+        source = self._prose(TestIssue67Review10.ROSTER_SRC)
+        self.assertNotIn("what the cap bounds is tier 1 and tier 2", source)
+        self.assertIn("what the cap bounds is tier 1 only", source)
 
 
 if __name__ == "__main__":

@@ -161,6 +161,18 @@ min_ranked_share: 0.01
 # entries; the 500 is a bound on what the census can order, not on the
 # file.
 #
+# THAT REFUSAL IS ALSO A DENIAL OF THE ROSTER REFRESH, reachable with
+# 10,001 lines in `previous.json` and nothing else, and it does not clear
+# itself: refusing means the harness does not rewrite
+# `roster/latest.json`, so the planted file is still there next run and
+# every run after it, until someone reverts the branch. It is accepted
+# deliberately, because eval.yml turns exit code 4 into
+# `::warning::model roster NOT refreshed` and falls back to each
+# fixture's pinned arms — loud, non-destructive, and a human is told why
+# — where the alternative is to trim by an order only the previous roster
+# writes and publish a roster a planter chose, silently and for good. See
+# roster.py's `UNCAPPED_CARRY_CEILING` for the measurements.
+#
 # THE INVARIANT: every census key with in-window turns that any entry
 # folds onto keeps at least one entry that folds onto it — unless the
 # census names more entries than a cap can rank, in which case the
