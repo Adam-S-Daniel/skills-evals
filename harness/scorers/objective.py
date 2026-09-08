@@ -1646,6 +1646,17 @@ def strip_seed_material(text: str, seed: str | None,
     pairwise judge — blind, reading the whole reply against the committed
     references — is the scorer that actually ranks a spliced paste against
     real writing, and it is not wired into `run_eval` until #97.
+
+    N4 (record-only): this docstring, and `_is_seed_material`'s, are not
+    PINNED the way `evals/adam-writing-style/recruiter-reply/fixture.yaml`'s
+    header and `README.md`'s "What it does not do" are — no test asserts a
+    given sentence stays here, so a future edit that guts a clause out of
+    either docstring leaves the suite green. Recorded rather than fixed
+    because the brief that added the two pinning tests
+    (`test_the_headers_state_the_rule_the_scorer_applies`,
+    `test_the_readme_states_the_same_limits`) scoped them to the fixture
+    header and the README, and this docstring is a third copy of the same
+    prose rather than a third place a reader is expected to look first.
     """
     paragraphs = _provenance_paragraphs(text, seed, tag_gap)
     out: list[str] = []
@@ -1773,6 +1784,18 @@ def _provenance_paragraphs(text: str, seed: str | None,
                     "coverage": _seed_coverage(key, index[2]),
                     "contiguous": _is_contiguous_seed_material(
                         key, index, floor, sentence_floor),
+                    # N-d (record-only, round-6): "seed" is floors-off on
+                    # purpose — the run-swallow rule below needs a sub-floor
+                    # sentence ("Hi Adam,", a bare name) to EXTEND a run so
+                    # it can be swallowed with the rest, which is the whole
+                    # point of the rule. "above" (the real floors) is what
+                    # actually LICENSES the drop, at line ~1811 below. So a
+                    # sub-floor sentence can be counted as the seed's for
+                    # run purposes without ever being above the floor
+                    # itself. No genuine draft in either battery is claimed
+                    # by this asymmetry — round 6 probed for one and could
+                    # not build it — but it is why "seed" and "above" are
+                    # two fields and not one.
                     "seed": _is_seed_material(key, index, 0, 0),
                     "above": _is_seed_material(key, index, floor,
                                                sentence_floor)})
@@ -3196,8 +3219,18 @@ _WORKFLOW_STEP_USES_KEYS = {
 # itself (never fixture-suppliable, so they're not listed here). A type
 # absent from this map — `yaml_parses`, `non_remote_refs_unchanged`,
 # `event_only_workflows_unfiltered`, `required_checks_early_skip`,
-# `no_event_interpolation_in_run` — takes NO constraint keys at all:
-# `workspace` + `paths` (+ the injected `seed`) fully determine what it checks.
+# `no_event_interpolation_in_run`, `pin_comment_absent` — takes NO
+# constraint keys at all: `workspace` + `paths` (+ the injected `seed`)
+# fully determine what it checks.
+#
+# adam-writing-style round-6 N-c (record-only, pre-existing on `main`): six
+# types with no entry here, `pin_comment_absent` included, is not a gap
+# `run_checks` leaves open — every type gets validated against
+# `_CHECK_ALLOWED_KEYS.get(type, set())` regardless, so a check of one of
+# these six that supplies ANY constraint key still raises rather than being
+# silently dropped. It only means the docstring's claim that validation
+# runs "for every type" reads, at a glance, like every type has an entry
+# here; six legitimately have none, by design, not by omission.
 _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
     "file_matches": {"must_match", "must_not_match"},
