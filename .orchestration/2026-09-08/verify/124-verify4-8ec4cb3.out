@@ -1,0 +1,42 @@
+yq: /tmp/claude-0/-home-user-skills-evals/04a3a432-66e9-523a-9242-1a9645f26cfa/scratchpad/bin/yq yq (https://github.com/mikefarah/yq/) version v4.53.3
+remote-head=8ec4cb30a5a5e7156467f961c92a742372f8f3ce origin/main=5f13def4288442a44f28473836819a29bd490944
+HEAD=8ec4cb30a5a5e7156467f961c92a742372f8f3ce
+fp-before=ed07834f2f1fdc3e64970a2f59c0bb03  -
+npm-ci-exit=0
+tests-exit=0
+  PASS: fleet-memory claim: a failed claim says so out loud too
+  PASS: fleet-memory claim: a failed claim leaves the receipt untouched
+  Results: 1716 passed, 0 failed
+check-agents-md-exit=0
+coverage-exit=0 28 gap · 1 skipped · 0 covered
+registry-exit=0
+github-diff vs 0d73ac4: []
+files changed 0d73ac4..8ec4cb30a5a5e7156467f961c92a742372f8f3ce:
+ .claude/hooks/fleet-memory.sh        | 153 ++++--
+ .claude/hooks/instructions-loaded.sh | 108 +++-
+ scripts/bootstrap-status.sh          |  99 +++-
+ scripts/drift-report.sh              |  19 +-
+ scripts/instructions-report.sh       |  49 +-
+ scripts/register-bootstrap-hook.sh   | 108 +++-
+ scripts/sync.sh                      | 182 +++++--
+ test/run-tests.sh                    | 951 ++++++++++++++++++++++++++++++++++-
+ 8 files changed, 1500 insertions(+), 169 deletions(-)
+commits:
+8ec4cb3 4205216+Adam-S-Daniel@users.noreply.github.com docs: the three clean() claims say C0 and DEL, which is what they strip
+34db5e1 4205216+Adam-S-Daniel@users.noreply.github.com docs(tests): the suite's comment on the AGENTS.md gate matches the code
+c007470 4205216+Adam-S-Daniel@users.noreply.github.com fix(instructions-report): the non-object guard sits above the .get that raised first
+f9a284f 4205216+Adam-S-Daniel@users.noreply.github.com fix(register-bootstrap-hook): put the timeout range in the pattern, not in octal
+8f5836d 4205216+Adam-S-Daniel@users.noreply.github.com fix(bootstrap seam): the needle must identify our hook, not merely be non-empty
+c3ee0c7 4205216+Adam-S-Daniel@users.noreply.github.com fix(instructions-loaded): a corrupt payload is not a version disagreement
+f1c8171 4205216+Adam-S-Daniel@users.noreply.github.com fix(instructions-report): never hang on the log, and a bad path is not "never ran"
+5460b98 4205216+Adam-S-Daniel@users.noreply.github.com fix(instructions-loaded): an unusable state file of any shape leaves a mark
+45dc8b6 4205216+Adam-S-Daniel@users.noreply.github.com test(instructions-loaded): restore the regression floor under the basename gate
+e27ac62 4205216+Adam-S-Daniel@users.noreply.github.com fix(sync): a git failure in one repo fails one repo, not the fleet run
+83b30cd 4205216+Adam-S-Daniel@users.noreply.github.com fix(sync): one consumer's settings.json shape fails one repo, never the run
+47a2503 4205216+Adam-S-Daniel@users.noreply.github.com fix(fleet-memory): claim the receipt before reading it, and never clear it silently
+df01967 4205216+Adam-S-Daniel@users.noreply.github.com fix(sync): a symlinked settings.json withholds the write, not the repo
+fp-after=46393b7c3801252eceafcef38f245d59  -
+authors: 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com;
+5f13def (main) IS ancestor
+merge-tree: clean
+Tue Sep  8 03:12:10 UTC 2026
