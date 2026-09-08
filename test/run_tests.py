@@ -28615,20 +28615,77 @@ class TestIssue67Review12(unittest.TestCase):
     # be deleted), so an added entry CAN move a published share. What
     # round 12 bounds is what the move may DO: it may no longer retire a
     # live arm, which is the permanent, unrecoverable half.
-    # `test_the_one_cell_this_cannot_cover` states the one cell that stays
-    # open and why no rule can close it.
+    # `TestIssue67Review12::test_the_one_cell_this_cannot_cover` states
+    # the cell that stays open and why no rule can close it.
+    #
+    # ONE INSTANTIATION WAS NOT THE CLASS, and round 13 is where that was
+    # measured rather than argued. Every row below used to run against a
+    # single victim: a live model whose census key IS its own id. All
+    # three of round 12's remedies are keyed on RAW IDENTITY — is this id
+    # a live catalogue id, is this id an in-window census key — while the
+    # mechanism they guard, ATTRIBUTION, is keyed on the FOLD RELATION,
+    # and against a raw-id victim the two questions have the same answer.
+    # Give the victim the fold shape this repository's own
+    # `TestIssue67Review9::test_a_three_hop_census_key_still_reaches_the
+    # _live_snapshot` fixture builds and two of the ten rows go red on
+    # round 12's shipped code: a live arm carrying 94.3% of the window
+    # published `RETIRED ... (1.2%)`, rc 0, permanently, from one added
+    # `arms` line.
+    #
+    # SO THE SHAPE OF THE VICTIM IS PART OF THE ENUMERATION NOW. The
+    # table below runs every row under BOTH shapes with the same
+    # assertions. The four inputs were enumerated from the code; the two
+    # shapes are enumerated from how attribution can REACH a model at all
+    # — directly, or through a chain of folds — and there is no third,
+    # because `_usage_alias_map` is a function into at most one id per
+    # key and a chain of length zero is the raw-id case.
 
     _DEPARTED_REAL = "claude-opus-4-9"
     _FILLERS = [f"0filler-{i:04d}" for i in range(501)]
 
+    #: THE FOLD-REACHED VICTIM. One hop per input, exactly as
+    #: `TestIssue67Review9` builds it: census key -> `catalogue_seen`
+    #: entry -> previous arm -> live snapshot. The victim is
+    #: `_FOLD_LIVE`; it holds a seat of its own because the bare alias
+    #: `claude-sonnet-5` is NOT in the catalogue, so `seat_aliases` does
+    #: not collapse it.
+    _FOLD_LIVE = "claude-sonnet-5-20260601"
+    _FOLD_ARM = "claude-sonnet-5"
+    _FOLD_SEEN = "claude-sonnet-5-20250101"
+    _FOLD_KEY = "claude-sonnet-5-20250101-20260101"
+
+    _VICTIM_SHAPES = ("raw-id", "fold-reached")
+
     @classmethod
-    def _class_census(cls):
+    def _victim_shape(cls, shape):
+        """(victim id, the census key its turns arrive under, the chain's
+        `arms` hops, the chain's `catalogue_seen` hops, the catalogue).
+
+        RAW-ID is the shape every row ran under until round 13: the
+        victim's census key is its own id and no `previous.json` entry
+        stands between the two. FOLD-REACHED puts three hops in between,
+        one from each place a hop can come from."""
+        if shape == "raw-id":
+            return (cls._VICTIM, cls._VICTIM, (), (), cls._two_sonnets())
+        return (cls._FOLD_LIVE, cls._FOLD_KEY, (cls._FOLD_ARM,),
+                (cls._FOLD_SEEN,),
+                {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+                    cls._model(cls._FOLD_LIVE, "2026-02-01T00:00:00Z"),
+                    cls._model("claude-sonnet-7", "2026-03-01T00:00:00Z")]})
+
+    @classmethod
+    def _class_census(cls, victim_key=None):
         """VICTIM 500 turns, a real since-retired model 9,500, and a
         ranked key nothing can credit at 400,000. The victim's TRUE share
         is 500/10,000 = 5.0%: over the 2% exit bar, under the 10% entry
-        bar, so it is held over and the exit bar is what decides it."""
+        bar, so it is held over and the exit bar is what decides it.
+
+        `victim_key` is where the victim's 500 turns are recorded — its
+        own id in the raw-id shape, the head of the fold chain in the
+        other. The numbers are identical in both, which is what makes the
+        two instantiations comparable."""
         return TestIssue67._census_doc(counts={
-            cls._VICTIM: {cls.W[0]: 500},
+            (victim_key or cls._VICTIM): {cls.W[0]: 500},
             cls._DEPARTED_REAL: {cls.W[0]: 9_500},
             cls._GHOST: {cls.W[0]: 400_000}})
 
@@ -28640,44 +28697,59 @@ class TestIssue67Review12(unittest.TestCase):
                                          "last_seen": cls._days_ago(1)}
                                    for e in seen]}
 
-    def _class_run(self, previous):
+    def _class_run(self, previous, catalogue=None, victim_key=None):
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, err = self._run_main(
-                tmp, self._two_sonnets(), census=self._class_census(),
-                previous=previous)
+                tmp, catalogue or self._two_sonnets(),
+                census=self._class_census(victim_key), previous=previous)
         self.assertEqual(rc, 0, err)
         return published, err
 
     def test_every_previous_json_input_has_a_control_versus_hostile_floor(self):
-        """THE CLASS FLOOR. Ten rows, four inputs, both directions."""
-        V, D, G = self._VICTIM, self._DEPARTED_REAL, self._GHOST
+        """THE CLASS FLOOR. Eleven rows, four inputs, both directions,
+        under BOTH victim shapes."""
+        for shape in self._VICTIM_SHAPES:
+            with self.subTest(victim_shape=shape):
+                self._class_floor_table(shape)
+
+    def _class_floor_table(self, shape):
+        V, key, arm_hops, seen_hops, catalogue = self._victim_shape(shape)
+        D, G = self._DEPARTED_REAL, self._GHOST
+
+        def _prev(arms, seen):
+            """`self._prev` with the victim's own chain always in place:
+            the hops are what MAKES the victim fold-reached, so they are
+            part of the shape rather than part of any row. In the raw-id
+            shape both lists are empty and this is `self._prev`."""
+            return self._prev(list(arm_hops) + list(arms),
+                              list(seen_hops) + list(seen))
         # BASE A — the departed real model is vouched for by
         # `catalogue_seen` alone, so a `catalogue_seen` field value is
         # what decides its attribution.
-        base_a = self._prev([V], [D])
+        base_a = _prev([V], [D])
         # BASE B — vouched for by BOTH lists, so either one alone can be
         # removed and the other still attributes it.
-        base_b = self._prev([V, D], [D])
+        base_b = _prev([V, D], [D])
         # (label, control, hostile, expectation, the MUTATION that turns
         # this row red — every one of them applied and run, none quoted
         # from reasoning). `RED@7ef5780` marks a row that additionally
         # fails on the pre-fix tree itself.
         rows = [
             ("arms[].id ADD one entry naming a ranked key nothing credits",
-             base_a, self._prev([V, G], [D]), "seat",
+             base_a, _prev([V, G], [D]), "seat",
              "RED@7ef5780; also: `previous_only = 0` in compute_roster's "
              "hold-over branch, which is the anchored refusal deleted"),
             ("catalogue_seen[].id ADD the same entry",
-             base_a, self._prev([V], [D, G]), "seat",
+             base_a, _prev([V], [D, G]), "seat",
              "RED@7ef5780; also: the same deletion"),
             ("catalogue_seen[].last_seen back-dated past the window",
-             base_a, self._prev([V], [{"id": D,
+             base_a, _prev([V], [{"id": D,
                                        "last_seen": self._days_ago(400)}]),
              "reason",
              "RED@7ef5780; also: `relevant.tier(model_id) < 3` deleted "
              "from `_update_catalogue_seen`'s ageing loop"),
             ("catalogue_seen[].last_seen dated in the far future",
-             base_a, self._prev([V], [{"id": D,
+             base_a, _prev([V], [{"id": D,
                                        "last_seen": "9999-12-31T00:00:00Z"}]),
              "reason+value",
              "`rendered = _as_date(parsed)` in `_clean_catalogue_seen` — "
@@ -28693,18 +28765,18 @@ class TestIssue67Review12(unittest.TestCase):
             # unlike a deletion it is REPORTED. The seat is what has to
             # hold, and does.
             ("catalogue_seen[].last_seen unparseable",
-             base_a, self._prev([V], [{"id": D, "last_seen": "garbage"}]),
+             base_a, _prev([V], [{"id": D, "last_seen": "garbage"}]),
              "seat+value",
              "`by_id[entry['id']] = entry['last_seen']` on an unparseable "
              "date instead of skipping it — round 7's N1, which puts the "
              "raw value in the published roster"),
             ("arms[].id REMOVE the departed arm (catalogue_seen still has it)",
-             base_b, self._prev([V], [D]), "reason",
+             base_b, _prev([V], [D]), "reason",
              "`folded in catalogue_seen_folded` deleted from "
              "`_is_attributable` — the route that still attributes the "
              "departed model once its `arms` entry is gone"),
             ("catalogue_seen[].id REMOVE the entry (arms still has it)",
-             base_b, self._prev([V, D], []), "reason",
+             base_b, _prev([V, D], []), "reason",
              "`folded in previous_arms_folded` deleted from "
              "`_is_attributable` — the mirror route, and the ONLY row of "
              "this table that mutation turns red"),
@@ -28712,21 +28784,42 @@ class TestIssue67Review12(unittest.TestCase):
             # the ONE list whose cap the fillers crowd, so the cap is what
             # decides the row rather than the other list rescuing it.
             ("entry count: 501 filler `arms` entries",
-             self._prev([V, D], []),
-             self._prev([V, D] + self._FILLERS, []), "reason",
+             _prev([V, D], []),
+             _prev([V, D] + self._FILLERS, []), "reason",
              "`order = {i: (1, 0, i) for i in ids}` in "
              "`_clean_previous_arms` — round 6's plain id order, under "
              "which 499 `0filler-` entries evict the departed model"),
             ("entry count: 501 filler `catalogue_seen` entries",
-             base_a, self._prev([V], [D] + self._FILLERS), "reason",
+             base_a, _prev([V], [D] + self._FILLERS), "reason",
              "the same id order in `_update_catalogue_seen`"),
             ("entry count: 501 fillers in BOTH lists",
              base_b,
-             self._prev([V, D] + self._FILLERS, [D] + self._FILLERS),
+             _prev([V, D] + self._FILLERS, [D] + self._FILLERS),
              "reason",
              "both id-order mutations at once — either list alone still "
              "attributes the departed model, which is why this row needs "
              "both and is not a duplicate of the two above"),
+            # THE ELEVENTH ROW IS THE PARAMETRISATION'S OWN, and it is
+            # deliberately the IDENTITY in the raw-id shape: it removes
+            # every `previous.json` entry the VICTIM'S OWN attribution
+            # passes through. In the raw-id shape there are none — the
+            # victim's census key is its own id — so control and hostile
+            # are the same document, which is exactly the difference the
+            # two shapes exist to expose. In the fold-reached shape it
+            # deletes the chain's `catalogue_seen` hop and the victim's
+            # numerator falls to zero; the seat has to hold anyway.
+            ("catalogue_seen[].id REMOVE the victim's own chain hops",
+             _prev([V], [D]),
+             self._prev(list(arm_hops) + [V], [D]), "seat",
+             "BOTH round-13 refusals deleted at once — `held == 0.0` AND "
+             "`previous_only = 0` in compute_roster's hold-over branch. "
+             "MEASURED, not assumed: either one alone leaves this row "
+             "GREEN, because this input trips both independently (the "
+             "victim's numerator falls to zero AND 100% of what is left "
+             "of the denominator is previous-roster-only). It is the "
+             "one row of the table that needs two, and it is red only "
+             "in the fold-reached shape — in the raw-id shape it is the "
+             "identity, which is the finding"),
         ]
         hostile_values = ("9999", "garbage")
         for label, control, hostile, expectation, mutation in rows:
@@ -28734,8 +28827,8 @@ class TestIssue67Review12(unittest.TestCase):
                             f"row {label!r} records no mutation that turns "
                             f"it red")
             with self.subTest(row=label):
-                before, _ = self._class_run(control)
-                after, err = self._class_run(hostile)
+                before, _ = self._class_run(control, catalogue, key)
+                after, err = self._class_run(hostile, catalogue, key)
                 self.assertIn(V, self._arm_ids(before), "control row")
                 self.assertIn("still 5.0%", self._reason(before, V),
                               "the control must measure the victim at its "
@@ -28761,14 +28854,34 @@ class TestIssue67Review12(unittest.TestCase):
                     for value in hostile_values:
                         self.assertNotIn(value, published_text)
                         self.assertNotIn(value, err)
-        # RED-FIRST, per row, on `7ef5780` through `main()`: rows 1, 2 and
-        # 3 fail there — the two blockers. Rows 4-10 are green there,
-        # because rounds 6-11 closed the CAP-ORDER half of the same class
-        # and this table is the statement that the DENOMINATOR half is
-        # closed too. Every one of the ten carries the mutation that turns
-        # it red in its own tuple above, and every one of those mutations
-        # was applied to a throwaway copy and run rather than reasoned
-        # about.
+        # RED-FIRST, per row and per shape, through `main()`. On
+        # `7ef5780`, in the RAW-ID shape: rows 1, 2 and 3 fail — round
+        # 12's two blockers. Rows 4-10 are green there, because rounds
+        # 6-11 closed the CAP-ORDER half of the same class and this table
+        # is the statement that the DENOMINATOR half is closed too.
+        #
+        # On `87f2031` — round 12's shipped code, with the raw-id shape
+        # green on every row — the FOLD-REACHED shape fails rows 1, 2 and
+        # 11. Rows 1 and 2 are round 13's BLOCKER A: the anchored
+        # measurement reads 0.000% for a victim reached through a chain,
+        # because the anchored map cannot follow a hop that lives in
+        # `previous.json`, so round 12's `anchored_held >= exit bar`
+        # conjunct was FALSE and blocked its own veto — a live arm
+        # carrying 94.3% of its window published `RETIRED ... (1.2%)`.
+        # Row 11 is BLOCKER B. That is what "one instantiation was not
+        # the class" cost, measured.
+        #
+        # Every one of the eleven carries the mutation that turns it red
+        # in its own tuple above, and every one of those mutations was
+        # APPLIED AND RUN rather than reasoned about: ten distinct
+        # mutations (rows 1 and 2 share one), each patched into
+        # `harness/roster.py`, each run against this table, each restored
+        # and the file's checksum checked back to the unmutated one. Ten
+        # of ten went red; an eleventh run with no mutation at all was
+        # green, which is what makes the other ten mean anything. Row 11
+        # was the one surprise and its tuple records it: the mutation it
+        # was first written with left it green, because this input trips
+        # both round-13 refusals independently.
 
     def test_the_one_cell_this_cannot_cover(self):
         """The one hostile edit the table above does not close, stated and
