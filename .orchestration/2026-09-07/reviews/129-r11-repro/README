@@ -1,0 +1,22 @@
+Round-11 reproduction scripts (skills-evals PR #129).
+
+Standalone (take a tree path as argv[1]; drive harness/roster.py's real CLI):
+  lib.py            the driver
+  bridge.py         THE BLOCKER — arms cap; 498 filler arms retire a live arm at a false 0.0%
+  bridge_seen.py    THE BLOCKER — catalogue_seen cap; 496 planted history entries, same
+  b1p.py            B1' rows control/A/B/D/E
+  b1p_fuzz.py       the two round-10 fuzz scenarios
+  threehop.py       the shipped three-hop floor's scenario with the cap forced
+  det.py            PYTHONHASHSEED 0/1/42 determinism
+  ceiling.py        A's UNCAPPED_CARRY_CEILING and the count-only warning
+  k601.py           the 601-key census row
+
+Needing $SP/rev129j-atk2/lib.py (copy that directory out first, then run with
+ATK_TREE=<tree> from the copy):
+  bridge_probe.py   the mechanism probe (tier, fold, alias_map, invariant)
+  s2908.py          scenario 2908 from round 8's own generator, at 0..501 fillers
+  clause_live.py    instruments the two green clauses (needs scenarios.json)
+
+Example:
+  python3 bridge.py      /path/to/tree-at-1fa9d3a     # 498 -> retired 0.0%
+  python3 bridge.py      /path/to/tree-at-5712522     # 57.1% throughout
