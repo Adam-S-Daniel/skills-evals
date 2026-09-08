@@ -8171,6 +8171,29 @@ class SetupHookTests(unittest.TestCase):
             self.assertEqual((ws / "seen.txt").read_text(encoding="utf-8"),
                              f"{ws}:hello")
 
+    def test_the_setup_command_expands_against_the_allowlist_not_the_parent(self):
+        # Round 6, SHOULD-FIX 1: `run_setup` must expand `setup:` against
+        # `agent_env`'s ALLOWLISTED result (via `expand`), never against the
+        # harness's own `os.environ` (the old `os.path.expandvars` shape).
+        # Reverting to that shape leaves the rest of the suite green — it
+        # only breaks when the operator's shell happens to export
+        # WORKSPACE — so a hostile parent has to be built here rather than
+        # relied on to already be in the environment. A stale parent
+        # WORKSPACE must lose to the run's real one, and a variable with no
+        # allowlist entry (R6_PARENT_ONLY, standing in for the credential-
+        # shaped families the allowlist exists to drop) must not expand at
+        # all — it reaches bash as the literal text `$R6_PARENT_ONLY`.
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = Path(tmp)
+            fixture = {"setup": "printf '%s' '$WORKSPACE:$R6_PARENT_ONLY' > "
+                                "$WORKSPACE/out"}
+            with mock.patch.dict(os.environ,
+                                 {"WORKSPACE": "/decoy",
+                                  "R6_PARENT_ONLY": "sentinel"}):
+                self.assertIsNone(run_eval.run_setup(ws, fixture))
+            self.assertEqual((ws / "out").read_text(encoding="utf-8"),
+                             f"{ws}:$R6_PARENT_ONLY")
+
     def test_failing_setup_is_a_named_error_not_an_exception(self):
         with tempfile.TemporaryDirectory() as tmp:
             fixture = {"setup": "echo something went wrong >&2; exit 3"}
