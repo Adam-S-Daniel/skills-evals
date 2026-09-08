@@ -213,17 +213,37 @@ min_ranked_share: 0.01
 # out the model is no longer a previous arm, so the exit bar no longer
 # applies to it and real usage never re-seats it.
 #
-# So relevance is decided by what the two documents a planter does not
-# write actually NAME, and not by how anything is spelled. A census key
-# names itself; the live catalogue names its own ids; an entry neither
-# names is residue and is carried rather than ranked. A planter who knows
-# a census key therefore gains nothing by spelling a plant after it —
-# `<key>-00000000` was already going to be carried as residue, and the
-# key itself was already tier 1 — and what a planter cannot do at all is
-# take a real entry's place, because the only entries the cap can evict
-# are ones the census or the catalogue names, and a planter writes
-# neither document. See roster.py's `_relevance`. Among residue entries
-# there is no order at all, and those entries move no share.
+# So relevance is decided by what the two documents NAME, and not by how
+# anything is spelled. A census key names itself; the live catalogue
+# names its own ids; an entry neither names is residue and is carried
+# rather than ranked. A planter who knows a census key therefore gains
+# nothing by spelling a plant after it — `<key>-00000000` was already
+# going to be carried as residue, and the key itself was already tier 1.
+# See roster.py's `_relevance`. Among residue entries there is no order
+# at all, and those entries move no share.
+#
+# WHICH DOCUMENTS A PLANTER WRITES, corrected in round 12. This paragraph
+# used to end "a planter writes neither document", and roster.py's
+# `_relevance` said "a planter cannot add a census key" twice. THAT IS
+# FALSE, and `.github/workflows/eval.yml` lines 352-354 are where: they
+# take `previous.json`
+# from `origin/eval-results:roster/latest.json` AND `census.json` from
+# `origin/eval-results:usage/latest.json`, off the SAME branch, so one
+# write grants both. Only `models.json` — the Models API's own answer
+# this run — is out of reach.
+#
+# The property that does hold, and that every measurement in this file
+# demonstrates, is narrower: a planter who writes ONLY `previous.json`
+# cannot take a real entry's place, because the only entries a cap can
+# evict are ones the census or the catalogue names. A planter who also
+# forges the census can assert that any model has no usage, which no
+# ordering rule defends against — a forged census is a forged
+# measurement of the quantity being measured. The guards for that are
+# named where they live: the absolute and relative ranked/raw floors
+# below, `census_max_age_days` freshness, and roster.py's
+# `RETIREMENT_ANCHOR_TOLERANCE`, which refuses to act on a retirement
+# whose denominator the previous roster supplies. That is why the
+# denominator is BOUNDED rather than trusted.
 #
 # THE CAVEAT THAT USED TO LIVE HERE IS NOW INSIDE THE SENTENCE ITSELF
 # (round 12's should-fix 2). It read "the invariant holds SUBJECT TO THE

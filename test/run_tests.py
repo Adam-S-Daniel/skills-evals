@@ -20156,6 +20156,54 @@ class TestIssue67Review12(unittest.TestCase):
                          "the qualifier travels with the sentence, so it "
                          "appears in each of roster.py's four copies")
 
+    # --- the code half's should-fix: three passages asserted a safety
+    # property `eval.yml` contradicts ------------------------------------
+
+    def test_no_passage_claims_the_census_is_out_of_a_planters_reach(self):
+        """`_relevance.__doc__` said "a planter cannot add a census key"
+        twice and `evals/roster-policy.yml` said "a planter writes neither
+        document". `eval.yml` takes `previous.json` from
+        `origin/eval-results:roster/latest.json` and `census.json` from
+        `origin/eval-results:usage/latest.json` — the same branch, so one
+        write grants both.
+
+        It changed no published roster, and that is exactly why it was
+        worth fixing: these two passages are what the NEXT round reads to
+        decide whether a rule is needed, and both asserted a premise the
+        workflow falsifies. Round 12 found both of its blockers one module
+        over, in the machinery this prose had declared safe.
+
+        RED on `7ef5780`, where all three sentences are present.
+
+        The workflow half of the row is measured, not quoted: the two
+        `git show` lines are read out of `eval.yml` itself, so this goes
+        red if the workflow ever stops taking both files off the same
+        branch — at which point the prose should be revisited rather than
+        this test relaxed."""
+        workflow = (REPO_ROOT / ".github" / "workflows"
+                    / "eval.yml").read_text(encoding="utf-8")
+        for document in ("roster/latest.json", "usage/latest.json"):
+            self.assertIn(f"git show origin/eval-results:{document}",
+                          workflow,
+                          "the premise this test is about has changed")
+        policy = TestIssue67Review10.POLICY.read_text(encoding="utf-8")
+        source = TestIssue67Review10.ROSTER_SRC.read_text(encoding="utf-8")
+        for text, name in ((policy, "evals/roster-policy.yml"),
+                           (source, "harness/roster.py")):
+            normalised = TestIssue67Review10._normalised(text)
+            with self.subTest(file=name):
+                for claim in ("a planter cannot add a census key",
+                              "a planter writes neither document"):
+                    if claim in normalised:
+                        # Allowed only where the text is recording the
+                        # claim as FALSE, which is what round 12 replaced
+                        # it with.
+                        self.assertIn("that is false", normalised,
+                                      f"{name} still asserts {claim!r}")
+                self.assertIn("eval.yml", normalised,
+                              f"{name} must name where both documents "
+                              f"come from")
+
 
 if __name__ == "__main__":
     unittest.main()

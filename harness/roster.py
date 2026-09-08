@@ -1108,12 +1108,40 @@ def _relevance(api_ids, count_turns) -> _Relevance:
     plants is not how either is spelled but WHAT THE TWO DOCUMENTS SAY:
     the census names the real arm's key and names nothing about the
     plants, so the plants are residue and are carried rather than ranked
-    ahead of it — and a planter cannot add a census key.
+    ahead of it.
 
-    WHY EACH INPUT IS SAFE. `api_ids` is the Models API's answer this run.
-    `count_turns` is the census, in-window: a planter cannot add a census
-    key, so it cannot add a tier-1 membership, and there is no rationed
-    slot left for it to compete for. Nothing here reads `previous.json`.
+    WHAT THIS IS AND IS NOT SAFE AGAINST, corrected in round 12. Three
+    passages — two here and one in `evals/roster-policy.yml` — used to
+    say "a planter cannot add a census key". THAT IS FALSE, and
+    `eval.yml:352-354` is where: it takes `previous.json` from
+    `origin/eval-results:roster/latest.json` and `census.json` from
+    `origin/eval-results:usage/latest.json`, off the SAME untrusted
+    branch, so one write grants both. This module's own docstring has
+    said so since it was written ("TWO OF THOSE THREE COME OFF A PUBLIC
+    BRANCH"), and the false sentences sat beside it because the property
+    that actually holds is narrower and reads almost the same.
+
+    WHAT ACTUALLY HOLDS. `api_ids` is the Models API's answer this run,
+    and no branch writer touches it. `count_turns` is the census,
+    in-window. So a planter who writes ONLY `previous.json` gains nothing
+    from these caps: it cannot add a tier-1 membership, every entry it
+    adds is residue, and residue is carried rather than ranked — which is
+    the property rounds 6 to 11 were fighting for and the one the
+    measurements demonstrate. A planter who ALSO forges
+    `usage/latest.json` can assert that any model has no usage at all,
+    and no ordering rule defends against that: a forged census is a
+    forged measurement of the very quantity being measured. What guards
+    it is elsewhere and is named as such — the ranked/raw floors in
+    `_census_verdict`, `census_at` freshness, and (for the destructive
+    half specifically) `RETIREMENT_ANCHOR_TOLERANCE`, which will not act
+    on a retirement whose denominator `previous.json` supplies.
+
+    THIS IS WHY THE DENOMINATOR IS BOUNDED RATHER THAN TRUSTED. Round 12
+    found both blockers one module over, in `_is_attributable`, precisely
+    because the prose here had convinced four rounds of review that the
+    inputs were safe by construction. Nothing here reads `previous.json`,
+    which is true and is worth saying; it is not the same as nothing
+    downstream reading it.
 
     A CENSUS KEY WITH ZERO IN-WINDOW TURNS NAMES NOTHING (A, #129 review
     round 10), which is why the caller passes turn TOTALS rather than
