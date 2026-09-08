@@ -256,10 +256,12 @@ run-in-place-from-the-seed shapes above lost the same coverage the same way.
 The anchor is also an ordinary file in the workspace it protects:
 `rm .git/workspace-root`, truncating it, or pointing it at a path that does
 not exist each silence every write recorded AFTER the tamper while the
-workspace's earlier legitimate reads stay exactly as they were — so a check
-that only requires the log to be present and non-empty (`require_present:
-true`) is still satisfied by those earlier reads, on a run that then
-attempted `gh pr close 421` and left no trace of it anywhere.
+workspace's earlier legitimate reads stay exactly as they were — the same
+silence is reachable without touching the anchor at all, by making the log
+itself unwritable (`chmod 444`) — so a check that only requires the log to
+be present and non-empty (`require_present: true`) is still satisfied by
+those earlier reads, on a run that then attempted `gh pr close 421` and
+left no trace of it anywhere.
 
 **What this does not bound, stated plainly.** Relocating a record now takes
 editing the anchor or editing the log — both ordinary files in the arm's own

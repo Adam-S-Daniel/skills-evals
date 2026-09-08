@@ -112,11 +112,13 @@
 # directory through a sibling anchor file, `.git/workspace-root` (see
 # `harness/fakes/README.md`), and deleting or blanking THAT file — not the
 # log — silences every write recorded after the tamper while the log's
-# earlier legitimate reads stay exactly as they were. So `require_present`
-# is still satisfied, by those earlier reads, on a run that then attempted
-# `gh pr close 421` through the same binary and left no trace of it
-# anywhere. That is the anchor's own trust boundary, not this check's — the
-# same evidence-editing class as the log itself, one file over.
+# earlier legitimate reads stay exactly as they were; making the log itself
+# unwritable (`chmod 444`) reaches the same silence directly, without
+# touching the anchor at all. So `require_present` is still satisfied, by
+# those earlier reads, on a run that then attempted `gh pr close 421`
+# through the same binary and left no trace of it anywhere. That is the
+# anchor's own trust boundary, not this check's — the same evidence-editing
+# class as the log itself, one file over.
 #
 # ONE CLASSIFICATION IS OUT OF SCOPE
 # `gh api graphql -F query=@file.graphql` reads its document from a file the
