@@ -517,6 +517,113 @@ def _fold_set(ids: set[str], aliases: dict) -> set[str]:
     return {aliases.get(i, i) for i in ids}
 
 
+#: HOW FAR THE WIDE AND THE ANCHORED DENOMINATOR MAY DISAGREE before a
+#: RETIREMENT stops being acted on (BLOCKER 1, #129 review round 12).
+#:
+#: THE DEFECT. `_is_attributable` decides which census keys enter the
+#: denominator, and two of its three routes are membership tests against
+#: `previous.json` — the file the module docstring calls untrusted input
+#: off a public branch. A ranked census key the harness cannot otherwise
+#: credit (a routing or proxy alias carrying a family word, the shape
+#: `_is_attributable` and TestIssue67Review3 exist for) is excluded from
+#: the denominator; naming it ONCE in `arms`, or once in `catalogue_seen`,
+#: puts it back. Measured through `main()` on `7ef5780` with one extra
+#: `arms` entry and no cap in play: a live arm carrying 100.0% of the
+#: rankable window published `RETIRED: below the 2% exit bar for the last
+#: 8 weeks (1.2% of rankable census usage)`, rc 0, empty stderr — and
+#: permanently, since the next run reads this run's own roster, where the
+#: model is no longer an arm at all. Four live arms, four retirements,
+#: from one line.
+#:
+#: THE SHAPE OF THE FIX. Seating still reads the WIDE denominator — that
+#: is round 6's B1, and a seat is reversible next run. RETIREMENT is the
+#: permanent, destructive half, so it is measured a second time against an
+#: ANCHORED denominator: the same computation with `previous.json`'s
+#: contribution removed entirely, over `models.json` and the census alone.
+#: When the anchored measurement puts the arm at or above the exit bar
+#: while the wide one puts it below, the retirement is REFUSED and the arm
+#: is held over with a named reason — the same "refuse rather than act on
+#: an order the input writes" the residue ceiling already does.
+#:
+#: WHY THE TOLERANCE IS NOT ZERO, and what fixes the number. The two
+#: measurements can straddle the bar by a hair on an honest input, and
+#: refusing a retirement over that is noise rather than defence. A
+#: disagreement is acted on only when previous-roster-only attribution
+#: supplies more than this fraction of the exit window's ranked
+#: denominator.
+#:
+#: THE VALUE IS 0.01, and here is the measurement that fixes it, taken at
+#: THE SHIPPED CONFIGURATION — `evals/roster-policy.yml` as this branch
+#: ships it, `arm_exit_usage_pct: 2` over `arm_exit_window_weeks: 8`.
+#:
+#: THE MARGIN. If previous-roster-only attribution supplies a fraction `f`
+#: of the denominator then `anchored >= (1 - f) * wide`, so the anchored
+#: share is at most `wide_share / (1 - f)`. A retirement is acted on only
+#: while `f <= 0.01` and `wide_share < 2`, so the widest TRUE share a
+#: retirement can still be acted on at is `2 / 0.99` = 2.0202% — THE
+#: MARGIN IS 0.0202 PERCENTAGE POINTS above the shipped exit bar, and it
+#: is a supremum rather than a value that is reached. At 0.10 the same
+#: arithmetic gives 2.222% (0.222 points); at 0.50 it gives 4.0% — a model
+#: at twice the bar, retired.
+#:
+#: WHY NOT ZERO. At exactly 0 the clause is DEAD, not strict, and that is
+#: a proof rather than a sample: `anchored <= wide` always (see
+#: `compute_roster`'s `anchor_aliases`), so the anchored share is at or
+#: above the bar while the wide one is under it ONLY when the two
+#: denominators already differ. `previous_only > 0` is therefore implied
+#: by the condition it sits beside, nothing could turn that spelling red,
+#: and F-2's rule (#129 review round 10) is that such a clause is deleted
+#: rather than kept as belt-and-braces.
+#:
+#: MEASURED BOTH SIDES OF THE NUMBER, through `main()`, in
+#: TestIssue67Review12::test_the_anchor_tolerance_is_measured_on_both
+#: _sides: an arm at a true 2.0% of the live-catalogue denominator and
+#: 1.98% of the wide one is RETIRED when previous-roster-only attribution
+#: supplies 101 of 10,101 turns (f = 0.009999) and HELD OVER at 102 of
+#: 10,102 (f = 0.010097). One turn is the whole difference, which is what
+#: makes the row a measurement of this constant and not of anything else.
+RETIREMENT_ANCHOR_TOLERANCE = 0.01
+
+#: WHEN PREVIOUS-ROSTER-ONLY ATTRIBUTION IS LOUD ENOUGH TO SAY SO — the
+#: count-only line that makes the case above visible in the step summary
+#: even on the runs where it changes no decision (BLOCKER 1, #129 review
+#: round 12).
+#:
+#: A share this harness publishes is only as good as the denominator it
+#: was divided by, and a reader of the run has no way to tell how much of
+#: that denominator exists because `previous.json` said so. This is the
+#: fraction past which the run says it out loud.
+#:
+#: THE VALUE IS 0.10, and two measurements fix it, both taken at THE
+#: SHIPPED CONFIGURATION — `evals/roster-policy.yml` as this branch ships
+#: it, over this branch's own test corpus.
+#:
+#: (1) THE ARITHMETIC. At a previous-roster-only fraction `f` the largest
+#: distortion of any published share is `1 / (1 - f)`. At 0.10 that is
+#: 1.111x — the point at which a share can be out by more than a TENTH of
+#: itself, which is 0.22 points at the shipped 2% exit bar and 1.11 points
+#: at the 10% entry bar.
+#:
+#: (2) THE DISTRIBUTION, measured rather than assumed. Every
+#: `compute_roster` call in the suite was instrumented and the whole suite
+#: run: 1,503 calls across 170 distinct tests reach a census-derived
+#: denominator, and 107 of those 170 — 63% — stay under 0.10 and emit
+#: nothing. The 63 that do not are the plant, filler, departed-arm and
+#: since-retired-model fixtures: precisely the runs whose denominator the
+#: previous roster really does supply, which is what the line exists to
+#: say. A LOWER number does not separate them better, it only adds the
+#: ordinary runs; a higher one drops the honest since-retired-model cases,
+#: which are the ones a reader most needs told about because nothing else
+#: in the summary says the share rests on `previous.json` at all.
+#:
+#: The suite is adversarial-heavy by construction, so treat its
+#: distribution as an upper bound on how often this fires in production
+#: rather than as a model of it.
+#: TestIssue67Review12::test_the_notice_fires_on_the_attack_and_not_on
+#: _the_ordinary_run measures both sides.
+PREVIOUS_ONLY_DENOMINATOR_NOTICE = 0.10
+
+
 #: What `_format_share` says about a nonzero share too small for any of
 #: its fixed rungs to render as anything but zero (N3, #129 review round
 #: 9). Prose, deliberately: it cannot be read as a number equal to any
@@ -1398,12 +1505,16 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     Every id THIS run's Models API actually listed gets its `last_seen`
     refreshed to today — that is the only way an id's clock resets. Every
     other previously-seen id keeps its own `last_seen`, and is DROPPED
-    once that is older than `policy["catalogue_seen_max_age_days"]` — the
-    only way an id LEAVES this history, besides the cap below. A model id
-    planted directly in `catalogue_seen` on `eval-results` (an untrusted
-    branch, per the module docstring) that the Models API never actually
-    returns has no way to get its `last_seen` refreshed, so it ages out
-    on its own; reverting the plant on the branch is not even necessary.
+    once that is older than `policy["catalogue_seen_max_age_days"]` —
+    UNLESS this run's census still records in-window turns for it, which
+    is BLOCKER 2 of #129 review round 12 and is written out over the loop
+    itself. Those two together are the only way an id LEAVES this
+    history, besides the cap below. A model id planted directly in
+    `catalogue_seen` on `eval-results` (an untrusted branch, per the
+    module docstring) that the Models API never actually returns has no
+    way to get its `last_seen` refreshed, so it ages out on its own once
+    the census stops naming it; reverting the plant on the branch is not
+    even necessary.
 
     Ageing out ends a plant's future effect. It
     does not undo a retirement the plant already caused (N6, #129 review
@@ -1440,15 +1551,58 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     max_age = timedelta(days=policy["catalogue_seen_max_age_days"])
     survivors: dict[str, str] = {}
     aged_out = 0
+    held_by_census = 0
     for model_id, last_seen in by_id.items():
         seen_at = parse_ts(last_seen) or now
         if now - seen_at > max_age:
+            # AGEING MAY NOT DROP AN ENTRY THIS RUN'S CENSUS STILL NAMES
+            # (BLOCKER 2, #129 review round 12). `last_seen` is written by
+            # whoever writes `previous.json`, and dropping an entry drops
+            # its census turns out of the ATTRIBUTABLE DENOMINATOR — so
+            # one back-dated date on a real since-retired model published
+            # a live arm's true 5.0% as `carries 100.0%`, 95 points of
+            # error, with rc 0 and a warning byte-identical to the one a
+            # legitimate ageing event produces. Round 11's attack table
+            # measured `last_seen` and concluded "held — `last_seen` is
+            # out of the cap ORDER, as claimed"; correct about the cap,
+            # and ageing is not the cap.
+            #
+            # It grants a planter nothing, which is why this is the safe
+            # half of the fix: an entry the planter wants attributable
+            # they can already keep attributable by writing today's date
+            # (a future date clamps to today, and a bare string migrates
+            # stamped today). All this removes is the ability to KILL an
+            # entry the census still vouches for. Bounding the other
+            # direction — an entry the planter ADDS to the denominator —
+            # is what the anchored denominator does; see
+            # `RETIREMENT_ANCHOR_TOLERANCE`.
+            #
+            # `tier() < 3` rather than a second spelling of "the census
+            # names it": one question, asked in one place, so the caps and
+            # this cannot drift apart. A LIVE id never reaches this branch
+            # at all — the loop above stamps every one of them with today
+            # — so tier 1 here always means the census, which is what the
+            # warning says.
+            if relevant.tier(model_id) < 3:
+                held_by_census += 1
+                survivors[model_id] = last_seen
+                continue
             aged_out += 1
             continue
         survivors[model_id] = last_seen
     if aged_out:
         warn(f"catalogue_seen: dropped {aged_out} entry/entries older than "
              f"the {policy['catalogue_seen_max_age_days']}-day window")
+    if held_by_census:
+        # DISTINGUISHABLE FROM THE LINE ABOVE, deliberately (BLOCKER 2).
+        # The ageing warning cannot be a signal while a hostile ageing and
+        # an ordinary one print the same bytes; the hostile case now
+        # prints this line instead, and the ordinary one still prints only
+        # that one. Counts only, like every other warning about an
+        # untrusted input.
+        warn(f"catalogue_seen: kept {held_by_census} entry/entries past the "
+             f"{policy['catalogue_seen_max_age_days']}-day window that this "
+             f"run's census still records in-window turns for")
     api_id_set = set(api_ids)
     live = sorted(i for i in survivors if i in api_id_set)
     historical = [i for i in survivors if i not in api_id_set]
@@ -1814,10 +1968,49 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         api_ids, list(counts) + carried_arms + list(catalogue_seen),
         seat_aliases, live_order)
 
+    # THE ANCHORED ALIAS MAP: the same function over the same two other
+    # documents, with `previous.json`'s contribution removed entirely
+    # (BLOCKER 1, #129 review round 12). It is what this run would compute
+    # if there were no previous roster at all, and it is the second
+    # measurement `RETIREMENT_ANCHOR_TOLERANCE` compares the first
+    # against.
+    #
+    # IT IS A SUBSET OF THE WIDE ONE, and that is a proof rather than a
+    # measurement, which matters because the whole check is a comparison
+    # of two totals. `alias_map`'s `known` here is a subset of the wide
+    # map's, so every first hop this map makes the wide map makes too, to
+    # the same base (`SNAPSHOT_SUFFIX` is deterministic). Rules (1) and
+    # (3) of `_usage_alias_map` read `api_ids`, `seat_aliases` and
+    # `live_order` only, so they are identical in both maps — which also
+    # makes `api_ids_folded` identical in both, since a live id's fold is
+    # rule (1)'s and rule (1) is a fixed point of the composition.
+    # Composition can only extend a chain, and it cannot extend one past a
+    # live id for the same reason. So a census key attributable here is
+    # attributable there, with the same fold target, and
+    # `anchored_ranked_total <= ranked_total` always.
+    anchor_aliases = _usage_alias_map(api_ids, list(counts), seat_aliases,
+                                      live_order)
+
     raw_total, ranked_total = _in_window_totals(
         counts, window_union, rungs, aliases=aliases,
         api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
+    _, anchored_ranked_total = _in_window_totals(
+        counts, window_union, rungs, aliases=anchor_aliases,
+        api_ids=api_ids, previous_arms=(), catalogue_seen=())
+    # ONE count-only line whenever previous-roster-only attribution
+    # supplies a material share of the denominator every published share
+    # is divided by, whether or not it changes a decision this run — a
+    # reader of the step summary otherwise has no way to tell (BLOCKER 1,
+    # #129 review round 12). See `PREVIOUS_ONLY_DENOMINATOR_NOTICE` for
+    # what fixes the fraction.
+    if (ranked_total > 0 and ranked_total - anchored_ranked_total
+            >= PREVIOUS_ONLY_DENOMINATOR_NOTICE * ranked_total):
+        warn(f"{100 * (ranked_total - anchored_ranked_total) / ranked_total:.1f}% "
+             f"of the ranked census denominator over the last "
+             f"{len(window_union)} weeks is attributable only through the "
+             f"previous roster's own entries, not through this run's live "
+             f"catalogue")
     usable, stale_note, census_code = _census_verdict(
         census_doc, raw_total, ranked_total, policy, now,
         census_problem=census_problem)
@@ -1851,6 +2044,11 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         counts, set(exit_weeks), rungs, aliases=aliases,
         api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
+    # The exit window's own anchored total. RETIREMENT is measured over
+    # this window, so this is the one the tolerance is taken against.
+    _, anchored_exit_ranked_total = _in_window_totals(
+        counts, set(exit_weeks), rungs, aliases=anchor_aliases,
+        api_ids=api_ids, previous_arms=(), catalogue_seen=())
     enter_usable = (usable and enter_ranked_total >= policy["min_ranked_turns"]
                    and enter_ranked_total >= policy["min_ranked_share"] * enter_raw_total)
     exit_usable = (usable and exit_ranked_total >= policy["min_ranked_turns"]
@@ -1982,6 +2180,56 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                               f"of rankable census usage over the last "
                               f"{policy['arm_exit_window_weeks']} weeks (at or above "
                               f"the {policy['arm_exit_usage_pct']}% exit bar)")
+                else:
+                    # THE SECOND MEASUREMENT (BLOCKER 1, #129 review round
+                    # 12). The share above was divided by a denominator
+                    # `previous.json` helps decide; this one is divided by
+                    # what `models.json` and the census alone can account
+                    # for. A retirement is permanent — the next run reads
+                    # this run's roster, where the model is no longer an
+                    # arm, so the exit bar no longer applies to it and
+                    # real usage never re-seats it — so when the two
+                    # disagree about the verdict, the destructive reading
+                    # is not the one acted on.
+                    #
+                    # ASYMMETRIC ON PURPOSE. Seating still reads the WIDE
+                    # denominator: that is round 6's B1, where a departed
+                    # arm's real turns deflate a false 100% to the truth,
+                    # and a seat this gets wrong is corrected next run. It
+                    # is only the irreversible half that needs both
+                    # readings to agree.
+                    #
+                    # WHAT IT COSTS, stated rather than assumed: an arm
+                    # that carries at or above the exit bar of the work
+                    # done on models the API still lists, but under it
+                    # once a since-retired model's real usage is counted
+                    # too, is now held over instead of retired — for as
+                    # long as that stays true. It is not a permanent
+                    # block: the arm still retires once its own usage
+                    # falls away (both shares go to zero together), and
+                    # the since-retired model's turns leave the window on
+                    # their own. See `RETIREMENT_ANCHOR_TOLERANCE`.
+                    anchored_held = usage_share(
+                        counts, model_id, exit_weeks, rungs, anchor_aliases,
+                        api_ids=api_ids, previous_arms=(), catalogue_seen=())
+                    previous_only = (exit_ranked_total
+                                     - anchored_exit_ranked_total)
+                    if (anchored_held >= policy["arm_exit_usage_pct"]
+                            and previous_only > (RETIREMENT_ANCHOR_TOLERANCE
+                                                 * exit_ranked_total)):
+                        reason = (
+                            f"held over from the previous roster: "
+                            f"{_format_share(held, policy['arm_exit_usage_pct'], under=True)}% "
+                            f"of rankable census usage over the last "
+                            f"{policy['arm_exit_window_weeks']} weeks is under the "
+                            f"{policy['arm_exit_usage_pct']}% exit bar, but "
+                            f"{100 * previous_only / exit_ranked_total:.1f}% of that "
+                            f"denominator is attributable only through the previous "
+                            f"roster's own entries — against this run's live "
+                            f"catalogue alone it still carries "
+                            f"{_format_share(anchored_held, policy['arm_exit_usage_pct'])}% "
+                            f"(at or above the {policy['arm_exit_usage_pct']}% exit "
+                            f"bar), so the retirement is refused rather than acted on")
         if reason:
             arms.append({"id": model_id, "reason": reason})
         elif created is None:
@@ -2115,7 +2363,13 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 # measured against the exit bar and found below it. (A
                 # prior revision carried a dead `elif not usable:` branch
                 # here for exactly the case this comment rules out; it
-                # could never execute.) The `carried_arms` half of that is
+                # could never execute.) It has also been measured against
+                # the ANCHORED denominator and found below the bar there
+                # too, or the two denominators agreed within
+                # `RETIREMENT_ANCHOR_TOLERANCE` — the arms loop holds it
+                # over otherwise, which keeps it in `arm_ids` and out of
+                # this loop entirely (BLOCKER 1, #129 review round 12).
+                # The `carried_arms` half of that is
                 # what `_clean_previous_arms`'s LIVE-ID EXEMPTION buys: a
                 # previous arm the Models API still lists is never evicted
                 # by that cap, so it is always carried forward and cannot

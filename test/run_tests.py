@@ -9019,15 +9019,35 @@ class TestIssue67Review6(unittest.TestCase):
             [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
             warnings)
 
-    def test_catalogue_seen_entry_ages_out_and_stops_diluting_a_held_over_arm(self):
+    def test_catalogue_seen_entry_ages_out_once_the_census_stops_naming_it(self):
         """S3 (#129 review round 6): a valid-shaped id planted directly in
         `catalogue_seen` with a stale `last_seen` — never actually
-        returned by the Models API, so nothing ever refreshes it — must
-        drop out of `catalogue_seen` once it is older than
-        `catalogue_seen_max_age_days`. Before this fix, catalogue_seen had
-        no age at all: the plant stayed attributable forever, and its
-        fabricated usage diluted a real held-over arm's measured share
-        from 100% to a false 0.1%, retiring it on no real evidence.
+        returned by the Models API, so nothing ever refreshes it — drops
+        out of `catalogue_seen` on its own, so reverting the plant on the
+        branch is not necessary. Before S3, `catalogue_seen` had no age at
+        all: the plant stayed attributable forever, and its fabricated
+        usage diluted a real held-over arm's measured share from 100% to a
+        false 0.1%, retiring it on no real evidence.
+
+        ROUND 12 QUALIFIED THE PROPERTY, and this test says which half is
+        which. Ageing may no longer drop an entry THIS RUN'S CENSUS STILL
+        NAMES (BLOCKER 2): `last_seen` is written by whoever writes
+        `previous.json`, and one back-dated date on a real since-retired
+        model dropped its turns from the denominator and published a live
+        arm's true 5.0% as `carries 100.0%`. So the self-healing property
+        is now keyed on BOTH documents rather than on the date alone: a
+        plant ages out once neither the Models API nor the census names
+        it. Row 2 below is that property, unchanged in substance.
+
+        Row 1 is what the qualification costs and what pays for it. A
+        planter who forges the census AS WELL — a strictly stronger
+        primitive than the one S3 was written against, and one
+        `eval.yml:352-354` does grant, since both files come off the same
+        branch — keeps the plant alive. The arm is still not retired,
+        because round 12's ANCHORED denominator refuses a retirement whose
+        denominator the previous roster supplies: 99.9% of it here. That
+        is a stronger defence than ageing was, and it does not depend on a
+        date the planter writes.
         """
         stale = (self.NOW - timedelta(days=181)).strftime("%Y-%m-%d")
         previous = {
@@ -9041,33 +9061,35 @@ class TestIssue67Review6(unittest.TestCase):
                  "claude-opus-4-8": {w: 12 for w in self.W}}
         census = TestIssue67._census_doc(counts=counts)
         result = self._compute(census=census, previous=previous)
-        self.assertNotIn("claude-sonnet-9-9", self._seen_ids(result),
-                         "a plant never returned by the Models API, aged "
-                         "past the policy window, must not survive into "
-                         "this run's catalogue_seen")
-        # Once excluded, the plant's own huge (fabricated) volume still
-        # shows up in the RAW window total (attribution-blind), which now
-        # also trips S1's relative floor — a second, independent reason
-        # the real arm is held rather than retired on manufactured
-        # evidence, whichever text names it.
+        # ROW 1 — the census names the plant, so ageing does not drop it,
+        # and the ANCHORED denominator is what keeps the real arm.
+        self.assertIn("claude-sonnet-9-9", self._seen_ids(result))
         self.assertIn("claude-opus-4-8", self._arm_ids(result))
         reason = self._reason(result, "claude-opus-4-8")
-        self.assertIn("no evidence to retire it", reason)
-        # "0.1%" legitimately appears here now (N7, #129 review round 6):
-        # it's the RAW-vs-ranked ratio S1's relative floor reports (96 of
-        # 96000 raw turns are rankable), not the old per-model DILUTED
-        # share this test guards against — that specific phrasing is what
-        # must stay absent.
+        self.assertIn("the retirement is refused rather than acted on",
+                      reason)
         self.assertNotIn("still 0.1%", reason)
         self.assertNotIn("claude-opus-4-8",
                          {r["id"] for r in result["retired_since_last"]})
-        # Mutation check (manual): skipping the age-eviction step in
+        # ROW 2 — the census stops naming the plant, and it ages out on
+        # its own with nothing reverted. This is S3's property in the form
+        # round 12 leaves it in.
+        quiet = TestIssue67._census_doc(
+            counts={"claude-opus-4-8": {w: 12 for w in self.W}})
+        healed = self._compute(census=quiet, previous=previous)
+        self.assertNotIn("claude-sonnet-9-9", self._seen_ids(healed),
+                         "a plant never returned by the Models API and no "
+                         "longer named by the census, aged past the policy "
+                         "window, must not survive into this run's "
+                         "catalogue_seen")
+        self.assertIn("claude-opus-4-8", self._arm_ids(healed))
+        # Mutation check (run): skipping the age-eviction step in
         # `_update_catalogue_seen` (treat every previously-seen id as
-        # kept regardless of `last_seen`) keeps `claude-sonnet-9-9`
-        # attributable, diluting opus-4-8's exit-window share to a false
-        # 0.1% and RETIRING it (not merely leaving it unheld) — the
-        # `assertNotIn("claude-sonnet-9-9", ...)` above goes red directly,
-        # and opus-4-8 no longer appears in `arms` at all.
+        # kept regardless of `last_seen`) keeps `claude-sonnet-9-9` in
+        # row 2 as well — the row-2 `assertNotIn` goes red. Deleting the
+        # anchored refusal from `compute_roster`'s hold-over branch
+        # retires opus-4-8 in row 1 at a diluted 0.1% — the row-1
+        # assertions go red.
 
     def test_real_since_retired_model_stays_attributable_within_the_age_window(self):
         """The normal case S3 must not break: an id genuinely seen
@@ -17017,11 +17039,27 @@ class TestIssue67Review8(unittest.TestCase):
     F4_FILLERS = [f"claude-opus-9-{i}" for i in range(13)]
 
     @classmethod
+    def _f4_catalogue(cls):
+        """The default catalogue plus the thirteen fillers, so the huge
+        denominator below is one THIS RUN'S MODELS API accounts for.
+
+        It used to leave them out, and the fillers reached the denominator
+        through `catalogue_seen` alone. That is exactly the shape round
+        12's BLOCKER 1 defends against — a retirement whose denominator
+        the previous roster supplies — so with the anchored check in place
+        the retirement this row is about was refused and there was no
+        `retired_since_last` entry left to read a rendering off. The
+        rendering is the subject here, not the attribution, so the
+        fixture moves rather than the rule: same census, same
+        19,999,999-of-1,000,000,000 share, denominator now anchored."""
+        return TestIssue67._models_doc(
+            extra=[cls._model(i, "2026-01-01T00:00:00Z")
+                   for i in cls.F4_FILLERS])
+
+    @classmethod
     def _f4_census(cls):
         """19,999,999 of 1,000,000,000 exit-window turns — a share of
-        exactly 1.9999999%, just under the 2% exit bar. The bulk sits on
-        `catalogue_seen` history rather than in the catalogue, so the
-        denominator is large without the roster growing a dozen seats."""
+        exactly 1.9999999%, just under the 2% exit bar."""
         counts = {cls.F4_ARM: dict(
             [(w, 2_499_999) for w in cls.W[:7]] + [(cls.W[7], 2_500_006)])}
         for filler in cls.F4_FILLERS[:12]:
@@ -17038,7 +17076,7 @@ class TestIssue67Review8(unittest.TestCase):
                                        for i in self.F4_FILLERS]}
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, _ = self._run_main(
-                tmp, TestIssue67._models_doc(), census=self._f4_census(),
+                tmp, self._f4_catalogue(), census=self._f4_census(),
                 previous=previous)
         self.assertEqual(rc, 0)
         entry = next(r for r in published["retired_since_last"]
@@ -19525,6 +19563,281 @@ class TestIssue67Review12(unittest.TestCase):
         self.assertEqual(published["retired_since_last"], [],
                          "no model the Models API returned this run may be "
                          "reported retired for being one of many")
+
+    # --- BLOCKER 2: `last_seen` decides the DENOMINATOR, and the previous
+    # roster writes it ---------------------------------------------------
+    #
+    # `_update_catalogue_seen` refreshes every LIVE id's `last_seen` to
+    # today, so a live id is safe. A since-retired REAL model's date is
+    # whatever `previous.json` says, and once it is older than
+    # `catalogue_seen_max_age_days` the entry was dropped — taking its
+    # attributability, and so its census turns, out of the denominator
+    # every share is divided by. This one has no precondition on the
+    # census at all: it needs only what `catalogue_seen` exists to hold.
+
+    _VICTIM = "claude-sonnet-5"
+    _DEPARTED = "claude-opus-4-9"
+
+    @classmethod
+    def _two_sonnets(cls):
+        """A catalogue with a NEWER sonnet beside the victim, so the victim
+        is not newest in its tier and there is no newest-per-tier fallback
+        to rescue a share the denominator got wrong."""
+        return {"fetched_at": "2026-09-04T11:00:00Z",
+                "models": [cls._model(cls._VICTIM, "2026-02-01T00:00:00Z"),
+                           cls._model("claude-sonnet-7",
+                                      "2026-03-01T00:00:00Z")]}
+
+    def _ageing_row(self, last_seen, *, departed_in_census=True):
+        counts = {self._VICTIM: {self.W[0]: 500}}
+        if departed_in_census:
+            counts[self._DEPARTED] = {self.W[0]: 9500}
+        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._DEPARTED,
+                                        "last_seen": last_seen}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    def test_a_back_dated_last_seen_cannot_drop_a_named_model_from_the_denominator(self):
+        """CONTROL vs the same run with ONE hostile field value.
+
+        `claude-opus-4-9` is a genuine since-retired model this harness's
+        own history observed, carrying 9,500 in-window turns; the victim
+        carries 500. The victim's TRUE share is 500/10,000 = 5.0% — over
+        the 2% exit bar, under the 10% entry bar, so it is held over. The
+        ONLY difference between the two rows is the `last_seen` date the
+        previous roster wrote for the OTHER model.
+
+        RED on `7ef5780`: the back-dated row ages `claude-opus-4-9` out,
+        drops its 9,500 turns from the denominator and publishes the
+        victim's 5.0% as `carries 100.0% of rankable census usage` — 95
+        points of error, rc 0.
+
+        MUTATION: deleting the `relevant.tier(model_id) < 3` branch from
+        the ageing loop restores exactly that."""
+        control, _ = self._ageing_row(self._days_ago(1))
+        planted, err = self._ageing_row(self._days_ago(400))
+        self.assertEqual(self._reason(control, self._VICTIM),
+                         self._reason(planted, self._VICTIM),
+                         "one back-dated `last_seen` on another model "
+                         "moved this arm's published share")
+        self.assertIn("still 5.0%", self._reason(planted, self._VICTIM))
+        self.assertIn(self._DEPARTED, self._seen_ids(planted),
+                      "an entry this run's census still names may not be "
+                      "aged out on a date the previous roster wrote")
+
+    def test_the_ageing_warning_and_the_kept_warning_are_distinguishable(self):
+        """The other half of BLOCKER 2: the warning was byte-identical to
+        the one a legitimate ageing event produces, so it was not a signal
+        at all.
+
+        Two rows, one back-dated entry each. In the first the census still
+        names the entry, in the second it does not — and the two now print
+        different lines with different counts. Counts only: neither line
+        may echo an id.
+
+        RED on `7ef5780`, where both rows print `catalogue_seen: dropped 1
+        entry/entries older than the 180-day window` and nothing else."""
+        _, hostile = self._ageing_row(self._days_ago(400))
+        _, ordinary = self._ageing_row(self._days_ago(400),
+                                       departed_in_census=False)
+        self.assertIn("kept 1 entry/entries past the 180-day window",
+                      hostile)
+        self.assertNotIn("dropped", hostile)
+        self.assertIn("dropped 1 entry/entries older than the 180-day "
+                      "window", ordinary)
+        self.assertNotIn("kept", ordinary)
+        for line in (hostile, ordinary):
+            self.assertNotIn(self._DEPARTED, line,
+                             "a warning about an untrusted input names "
+                             "counts, never an id")
+
+    # --- BLOCKER 1: one entry naming an id the census already names
+    # enlarges the attributable denominator ------------------------------
+    #
+    # `_is_attributable`'s other two routes are membership tests against
+    # `previous.json`. A ranked census key the harness cannot otherwise
+    # credit — a routing or proxy alias carrying a family word, the shape
+    # TestIssue67Review3 exists for — is excluded from the denominator;
+    # naming it ONCE puts it back, and every real arm's share divides by
+    # it. `:7869` kept that alias OUT of `arms`, which is the whole
+    # attack; `:8837` exercised the route in its legitimate direction.
+    # Neither asked what an untrusted input can make the route DO.
+
+    _GHOST = "claude-opus-4-1-proxy-eu"
+
+    def _denominator_row(self, *, arms_extra=(), seen_extra=()):
+        """The victim is LIVE, a previous arm, and carries 100% of what
+        this run's live catalogue can account for. The ghost is a ranked
+        census key nothing can credit — no catalogue id, no fold of one —
+        carrying 80x the victim's turns."""
+        counts = {self._VICTIM: {w: 625 for w in self.W},
+                  self._GHOST: {w: 50_000 for w in self.W}}
+        previous = {"arms": ([{"id": self._VICTIM, "reason": "was an arm"}]
+                             + [{"id": i, "reason": "was an arm"}
+                                for i in arms_extra]),
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(1)}
+                                       for i in seen_extra]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    def test_one_arms_entry_cannot_retire_a_live_arm_by_widening_the_denominator(self):
+        """CONTROL vs the same run with ONE hostile `arms` entry.
+
+        RED on `7ef5780`: the planted row published `RETIRED: below the 2%
+        exit bar for the last 8 weeks (1.2% of rankable census usage)` for
+        a live arm carrying 100.0% of everything the live catalogue can
+        account for — rc 0, empty stderr, no warning of any kind. It is
+        PERMANENT: run 2 reads run 1's own roster, where the model is no
+        longer an arm, so the exit bar no longer applies and real usage
+        never re-seats it.
+
+        The arm KEEPS ITS SEAT here and NOTHING is retired. Its published
+        REASON does change — the wide denominator still decides seating,
+        because that is round 6's B1, where a departed arm's real turns
+        deflate a false 100% to the truth and the route may not be deleted
+        — so what the fix bounds is what the widening may DO, not that it
+        does nothing. The destructive half is closed; see
+        `TestIssue67Review12._ATTACK_TABLE` for the cell-by-cell statement
+        of which half each input keeps."""
+        control, _ = self._denominator_row()
+        planted, err = self._denominator_row(arms_extra=[self._GHOST])
+        self.assertIn(self._VICTIM, self._arm_ids(control))
+        self.assertIn(self._VICTIM, self._arm_ids(planted),
+                      "one `arms` entry naming a key nothing can credit "
+                      "retired a live arm carrying real in-window usage")
+        self.assertNotIn(self._VICTIM,
+                         {t["id"] for t in planted["retired_since_last"]},
+                         "the plant's own entry is reported retired — it "
+                         "was named in `arms` and the Models API does not "
+                         "return it — but the VICTIM must not be")
+        self.assertIn("the retirement is refused rather than acted on",
+                      self._reason(planted, self._VICTIM))
+        self.assertIn("against this run's live catalogue alone it still "
+                      "carries 100.0%", self._reason(planted, self._VICTIM))
+
+    def test_one_catalogue_seen_entry_cannot_retire_a_live_arm_either(self):
+        """The same row through the OTHER list. `7ef5780` publishes an
+        identical `RETIRED ... (1.2% ...)` for it — the reviewer measured
+        both placements and they are the same attack, so both get a
+        floor."""
+        control, _ = self._denominator_row()
+        planted, _ = self._denominator_row(seen_extra=[self._GHOST])
+        self.assertIn(self._VICTIM, self._arm_ids(control))
+        self.assertIn(self._VICTIM, self._arm_ids(planted))
+        self.assertEqual(planted["retired_since_last"], [],
+                         "nothing is retired at all on this placement — "
+                         "the plant is in `catalogue_seen`, which "
+                         "`retired_since_last` does not read")
+
+    def test_the_anchor_tolerance_is_measured_on_both_sides(self):
+        """What fixes `RETIREMENT_ANCHOR_TOLERANCE` at 0.01, through
+        `main()`, one turn either side of the number.
+
+        The victim carries 200 of the 10,000 turns this run's live
+        catalogue accounts for — a true 2.0%, exactly ON the shipped exit
+        bar. `g` more turns sit under a key only the previous roster
+        vouches for, which puts the wide share under the bar in both rows.
+
+        g = 101: previous-roster-only attribution is 101/10,101 =
+        0.009999 of the denominator, inside the tolerance, and the
+        retirement is ACTED ON. g = 102: 102/10,102 = 0.010097, outside
+        it, and the retirement is REFUSED. Nothing else differs between
+        the rows, so this measures the constant and not the mechanism
+        around it.
+
+        Both rows are red on `7ef5780` in the same direction — there is no
+        second measurement there, so both retire. MUTATION: setting the
+        tolerance to 0.0 holds the g = 101 row over as well (the clause
+        the tolerance sits in is dead at 0, which is why it is not 0);
+        setting it to 0.10 retires the g = 102 row."""
+        for g, expect_retired in ((101, True), (102, False)):
+            with self.subTest(previous_only_turns=g):
+                counts = {self._VICTIM: {self.W[0]: 200},
+                          "claude-haiku-4-5": {self.W[0]: 9_800},
+                          self._GHOST: {self.W[0]: g}}
+                previous = {"arms": [{"id": self._VICTIM,
+                                      "reason": "was an arm"},
+                                     {"id": self._GHOST,
+                                      "reason": "was an arm"}],
+                            "catalogue_seen": []}
+                models = TestIssue67._models_doc(
+                    drop={"claude-sonnet-4-6", "claude-opus-4-8",
+                          "claude-opus-5", "claude-fable-5-1"})
+                models["models"].append(
+                    self._model("claude-sonnet-7", "2026-03-01T00:00:00Z"))
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, _, err = self._run_main(
+                        tmp, models,
+                        census=TestIssue67._census_doc(counts=counts),
+                        previous=previous)
+                self.assertEqual(rc, 0, err)
+                retired = {t["id"] for t in published["retired_since_last"]}
+                self.assertEqual(self._VICTIM in retired, expect_retired,
+                                 f"g={g}: retired={sorted(retired)}, "
+                                 f"arms={self._arm_ids(published)}")
+
+    def test_the_notice_fires_on_the_attack_and_not_on_the_ordinary_run(self):
+        """What fixes `PREVIOUS_ONLY_DENOMINATOR_NOTICE` at 0.10: the line
+        has to be worth reading, which means firing on the runs whose
+        denominator the previous roster supplies and staying silent on the
+        ones it does not.
+
+        Row 1 is BLOCKER 1's own input — 98.8% of the denominator
+        attributable only through one planted `arms` entry. Row 2 is the
+        canned fixture every other test in this file uses, where every
+        census key is a live catalogue id and the fraction is 0.
+
+        RED on `7ef5780`, where neither row prints anything: there is no
+        second denominator there to compare against, which is the whole
+        finding. Counts and a percentage only — no id may appear."""
+        _, attack = self._denominator_row(arms_extra=[self._GHOST])
+        self.assertIn("98.8% of the ranked census denominator", attack)
+        self.assertIn("attributable only through the previous roster's own "
+                      "entries", attack)
+        self.assertNotIn(self._GHOST, attack,
+                         "a warning about an untrusted input names counts, "
+                         "never an id")
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, _, _, ordinary = self._run_main(
+                tmp, TestIssue67._models_doc(),
+                census=TestIssue67._census_doc(),
+                previous={"arms": [{"id": "claude-sonnet-5",
+                                    "reason": "was an arm"}],
+                          "catalogue_seen": []})
+        self.assertEqual(rc, 0, ordinary)
+        self.assertNotIn("attributable only through", ordinary,
+                         "the notice must stay silent on a run whose "
+                         "denominator the live catalogue accounts for")
+        # Row 3 — the LOWER side of the number, which row 2 cannot
+        # measure because its fraction is exactly 0. Here it is 500 of
+        # 10,000 = 5.0%: real previous-roster-only attribution, under the
+        # threshold, and still silent. Without this row the constant
+        # could be anything above 0 and nothing would notice.
+        counts = {self._VICTIM: {self.W[0]: 9_500},
+                  self._GHOST: {self.W[0]: 500}}
+        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
+                             {"id": self._GHOST, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, _, _, quiet = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, quiet)
+        self.assertNotIn("attributable only through", quiet,
+                         "5% of the denominator is under the threshold and "
+                         "must not print a line")
 
 
 if __name__ == "__main__":
