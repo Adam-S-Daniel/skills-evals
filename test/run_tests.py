@@ -7067,9 +7067,16 @@ class Issue84Fixture:
         env["FAKE_CLAUDE_MODE"] = "agent_and_judge"
         with tempfile.TemporaryDirectory() as results:
             return subprocess.run(
+                # `--model` pinned: select_models() (#67) fails closed with
+                # a runner-level error when a fixture pins no model and no
+                # roster is on disk, which every checkout of this test is.
+                # `--no-judge` already means no roster read is needed for
+                # the judge; the pin here is what this mini fixture is
+                # about — PATH, not model choice — actually reaching
+                # assert_stand_ins_on_path.
                 [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
-                 "--arm", "without_skill", "--no-judge", "--timeout", "30",
-                 "--results-dir", results],
+                 "--arm", "without_skill", "--no-judge", "--model", "claude-sonnet-4-6",
+                 "--timeout", "30", "--results-dir", results],
                 capture_output=True, text=True, env=env, cwd=str(REPO_ROOT))
 
     def _triage_reads(self, ws: Path) -> None:
