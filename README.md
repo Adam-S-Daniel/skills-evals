@@ -38,12 +38,21 @@ evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
     seed/                  # workspace the agent starts from (unfiltered workflows)
+  github-actions-sha-pinning/  # A/B eval, Class A: SHA-pinning + the cms-platform tag carve-out
+    fixture.yaml           # prompt, PINS.md-bound objective checks, judge rubric
+    seed/                  # a repo with third-party actions + a cms-platform ref pinned by tag
   post-failure-comment/    # A/B eval, Class A: wire CI failures into the platform's composite
     fixture.yaml           # prompt, structural workflow-step checks, judge rubric
     seed/                  # two Playwright workflows + a vendored cms-platform action contract
   windows-elevation-from-wsl/  # A/B eval, Class B: a fake powershell.exe on PATH
     fixture.yaml           # prompt, env (PATH), arms, log/transcript checks, rubric
     seed/                  # the WSL-side checkout, with bin/powershell.exe + pwsh.exe
+  writing-adrs/            # A/B eval, Class A (format half): two fixtures
+    bootstrap/             # no docs/decisions/ yet — bootstrap the folder
+    existing-convention/   # docs/decisions/ already has a house format
+  review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
+    fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
+    seed/                  # a release pipeline with the findings baked in
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
@@ -52,6 +61,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  disarm-inherited-reach/  # A/B eval: severing an inherited git remote before it can reach prod
+    fixture.yaml           # prompt, setup: builds prod.git/checkout/scratch-wt, git-state checks
+    seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces

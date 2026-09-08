@@ -493,6 +493,49 @@ def assert_stand_ins_on_path(workspace: Path, env: dict, env_spec: dict | None) 
             "on PATH: the arm would run the real tool instead")
 
 
+def run_setup(workspace: Path, fixture: dict) -> dict | None:
+    """Run the fixture's `setup:` command, if any, in the workspace before
+    anything else touches it — before the agent, and before objective-only
+    scoring of a freshly copied seed.
+
+    Some fixtures need to build state a checked-in seed can't hold cleanly
+    (nested git repositories, for instance: a bare repo and a clone of it
+    committed as literal files would embed one git checkout inside another,
+    which `git add -A` on the harness's own bookkeeping commit treats as a
+    submodule boundary rather than plain files). `setup:` names a shell
+    command, run with `cwd=workspace` and `$WORKSPACE` (plus any other
+    `$VAR`) expanded the same way `env:` values are (see `agent_env`) — one
+    pass, against the ALLOWLISTED environment, never `os.environ` directly
+    (see `expand`'s own docstring for why that distinction matters: a
+    `WORKSPACE` already set in the harness's own environment would otherwise
+    win over the one this run actually got), so a fixture can write `bash
+    $WORKSPACE/setup.sh` or a bare `bash setup.sh` interchangeably.
+
+    Returns `None` when the fixture has no `setup:` (every existing fixture)
+    or the command exits 0. Otherwise returns a `{"error": "setup_failed",
+    "detail": ...}` dict — the same error-dict convention `run_agent` uses —
+    so a failing setup script fails the arm/run with a named error and a
+    captured stderr/stdout tail, never a bare traceback out of a check that
+    assumed setup had already put its files in place.
+    """
+    setup_cmd = fixture.get("setup")
+    if not setup_cmd:
+        return None
+    env = agent_env(workspace, fixture.get("env"))
+    cmd = expand(str(setup_cmd), env)
+    timeout = fixture.get("setup_timeout_s", 60)
+    try:
+        result = subprocess.run(["bash", "-c", cmd], cwd=workspace,
+                                capture_output=True, text=True, timeout=timeout,
+                                env=env)
+    except subprocess.TimeoutExpired:
+        return {"error": "setup_failed", "detail": f"setup timed out after {timeout}s"}
+    if result.returncode != 0:
+        return {"error": "setup_failed",
+                "detail": result.stderr.strip() or result.stdout.strip()}
+    return None
+
+
 def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     """Run the agent under test (the Claude Code CLI, headless) on the workspace.
 
@@ -610,26 +653,66 @@ SEED_COMMIT_MESSAGE = "initial commit"
 WORKSPACE_ANCHOR = ".git/workspace-root"
 
 
+class SetupFailedError(RuntimeError):
+    """Raised by `materialize_workspace` when the fixture's `setup:` command
+    (see `run_setup`) fails. Carries the same `{"error": "setup_failed",
+    "detail": ...}` dict `run_setup` returns, plus the half-built workspace
+    it was raised over — `materialize_workspace` cannot simply swallow the
+    error (a fixture that needed setup and didn't get it must not silently
+    score a workspace that never had it), and the caller still owns cleanup
+    of the temp dir, since the exception fires before `materialize_workspace`
+    returns one.
+    """
+
+    def __init__(self, workspace: Path, detail: dict):
+        self.workspace = workspace
+        self.detail = detail
+        super().__init__(detail.get("detail", ""))
+
+
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
-    """Run git in `cwd` with a fixed local identity (don't rely on global config)."""
+    """Run git in `cwd` with a fixed local identity (don't rely on global
+    config, and don't name this repository or this harness — see
+    `SEED_COMMIT_IDENTITY`). `errors="replace"` — a workspace an agent has
+    been let loose in can carry non-UTF-8 bytes git itself doesn't treat as
+    binary (its own heuristic only looks for a NUL byte early in the
+    content), and a diff or log that embeds them raw must not crash the
+    whole run over it.
+    """
     email, name = SEED_COMMIT_IDENTITY
     return subprocess.run(
         ["git", "-c", f"user.email={email}",
          "-c", f"user.name={name}", *args],
-        cwd=cwd, check=True, capture_output=True, text=True,
+        cwd=cwd, check=True, capture_output=True, text=True, errors="replace",
     )
 
 
-def materialize_workspace(seed: Path) -> Path:
+def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
     """A fresh arm workspace: the seed copied in, under a baseline git commit.
 
     Extracted from `_run_arm` so a test can build the workspace the arm
     actually gets rather than a hand-rolled lookalike — what an agent can
     read in here is a property of THIS function, and a copy in a test would
     drift away from it silently.
+
+    `fixture` is optional and defaults to `None`: every existing caller that
+    only needs the plain committed-and-anchored workspace (no `setup:`) can
+    keep calling `materialize_workspace(seed)` unchanged. When a fixture IS
+    given and carries a `setup:` command, `run_setup` runs it BEFORE the
+    baseline commit — a setup script (e.g. disarm-inherited-reach's) builds
+    real git repositories in the workspace and deletes its own machinery as
+    its last step, and committing first would let that machinery survive
+    into the "seed" commit even though it no longer exists on disk (see
+    `run_setup`'s own docstring). A failing setup raises `SetupFailedError`
+    rather than returning it, since this function's only other return shape
+    is a ready-to-use `Path` with nothing to attach an error to.
     """
     workspace = Path(tempfile.mkdtemp(prefix=WORKSPACE_PREFIX))
     shutil.copytree(seed, workspace, dirs_exist_ok=True)
+    if fixture is not None:
+        setup_result = run_setup(workspace, fixture)
+        if setup_result is not None:
+            raise SetupFailedError(workspace, setup_result)
     _git("init", "-q", cwd=workspace)
     _git("add", "-A", cwd=workspace)
     _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
@@ -640,6 +723,132 @@ def materialize_workspace(seed: Path) -> Path:
     anchor.parent.mkdir(parents=True, exist_ok=True)
     anchor.write_text(f"{workspace}\n", encoding="utf-8")
     return workspace
+
+
+def _nested_repo_dirs(workspace: Path) -> list[Path]:
+    """Every directory anywhere under `workspace` (any depth, not just the
+    top level — a copy at `$WORKSPACE/scratch/throwaway` is just as
+    gitlink-collapsed as one directly under the workspace) that is itself a
+    git repository (standalone, or a linked worktree) — the workspace's own
+    bookkeeping repo (see `_run_arm`) collapses each to a single gitlink
+    line in `git diff`, hiding exactly what changed inside from the judge.
+    `.git` and `.claude` directories are pruned from the walk wherever they
+    appear (not just at the top), and a nested repo's own working tree is
+    not walked into any further once found — its last commit is what
+    `_nested_repo_diff` shows, not a search for repos nested inside it. A
+    bare repository (e.g. a fixture's `prod.git`) has no nested `.git`
+    marker of its own — the directory IS the git dir — so it is never
+    picked up here; its raw internals (objects, hooks/*.sample) are
+    excluded from the bookkeeping repo entirely instead (see
+    `evals/disarm-inherited-reach/seed/setup.sh`'s `.git/info/exclude`
+    entry) since they are not a working tree to show a patch for.
+
+    A directory that is ITSELF a bare repository (or any other git-dir
+    shape `objective._looks_like_a_git_dir` recognizes) is pruned from the
+    walk too, round 3 N4: its internals (`objects/`, `refs/`, `hooks/`) can
+    never legitimately contain a nested working tree's own `.git` marker,
+    so descending into them is pure waste — and, for a real object store,
+    a walk of thousands of loose-object subdirectories for nothing.
+    """
+    out = []
+    for root, dirs, _files in os.walk(workspace):
+        dirs[:] = [d for d in dirs if d not in (".git", ".claude")]
+        root_path = Path(root)
+        if root_path == workspace:
+            continue
+        if (root_path / ".git").exists():
+            out.append(root_path)
+            dirs[:] = []
+        elif objective._looks_like_a_git_dir(root):
+            dirs[:] = []
+    return sorted(out)
+
+
+def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
+    """The last-commit patch for each nested repo dir in `dirs`, labelled by
+    its path relative to `workspace` — what a script running inside a
+    gitlink-collapsed copy actually did, which the workspace's own `git
+    diff` cannot show (a gitlink is a single line: the commit SHA it now
+    points at, not a patch).
+    """
+    sections = []
+    for d in dirs:
+        rel = d.relative_to(workspace)
+        log = subprocess.run(
+            ["git", "-C", str(d), "log", "--stat", "-p", "-1", "--format=%H %s"],
+            capture_output=True, text=True, errors="replace", timeout=10)
+        if log.returncode != 0 or not log.stdout.strip():
+            sections.append(f"=== {rel} (no commits) ===")
+        else:
+            sections.append(f"=== {rel}: last commit ===\n{log.stdout}")
+    return "\n\n".join(sections)
+
+
+_DIFF_HEADER_RE = re.compile(r"^diff --git a/.* b/(.*)$")
+
+
+def _summarize_binary_blobs(workspace: Path, diff: str) -> str:
+    """Replace each changed file's diff body with a short `Binary file
+    <path> (<n> bytes)` summary when the file's actual on-disk bytes are
+    not valid UTF-8 (round 3 N6) — decided directly against the real file,
+    not trusted to git's own per-diff binary-vs-text decision.
+
+    `git diff` prints "Binary files ... differ" for most binary content,
+    but its own detection (a NUL byte within a sampled prefix) can miss a
+    genuinely binary file too small to reliably contain one by chance — a
+    git loose object is a zlib-compressed stream of a few dozen bytes for
+    a small commit, and it is exactly as likely to be free of 0x00 as any
+    other byte value. Left classified as "text", its raw non-UTF-8 bytes
+    get embedded straight into the diff; decoded with `errors="replace"`
+    (see `_git`, called with `text=True`), those become a wall of U+FFFD
+    replacement characters — unreadable, and mostly useless, judge input.
+    Deciding by UTF-8-decodability instead targets the actual failure mode
+    (the lossy text decode) rather than approximating git's own heuristic.
+    The scenario this closes: an agent leaves a bare clone in the
+    workspace (`git clone --bare checkout mirror`), and its loose objects
+    (a small repo has no packs at all) are added to the bookkeeping diff
+    as plain new files.
+    """
+    if "diff --git " not in diff:
+        return diff
+    chunks = re.split(r"(?m)^(?=diff --git )", diff)
+    out = []
+    for chunk in chunks:
+        header, _, _ = chunk.partition("\n")
+        m = _DIFF_HEADER_RE.match(header)
+        if not m:
+            out.append(chunk)
+            continue
+        path = m.group(1)
+        try:
+            data = (workspace / path).read_bytes()
+        except OSError:
+            out.append(chunk)
+            continue
+        try:
+            data.decode("utf-8")
+        except UnicodeDecodeError:
+            out.append(f"{header}\nBinary file {path} ({len(data)} bytes)\n")
+        else:
+            out.append(chunk)
+    return "".join(out)
+
+
+def _build_judge_diff(workspace: Path) -> str:
+    """The text handed to the judge as "what changed": the workspace's own
+    bookkeeping diff, plus — for any top-level directory that is itself a
+    git repository and therefore collapsed to a single gitlink line in that
+    diff — its own last commit, so the judge can see what actually happened
+    inside a scratch copy the agent made rather than just a gitlink SHA
+    changing.
+    """
+    _git("add", "-A", cwd=workspace)
+    diff = _git("diff", "--cached", "--", ".", ":!.claude", cwd=workspace).stdout
+    diff = _summarize_binary_blobs(workspace, diff)
+    nested = _nested_repo_diff(workspace, _nested_repo_dirs(workspace))
+    if nested:
+        diff = f"{diff}\n\n# Nested repository contents (collapsed to gitlinks above)\n{nested}"
+    return diff
 
 
 def _write_summary(results_dir: Path, skill: str, arm_name: str, timestamp: str,
@@ -706,7 +915,25 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up."""
-    workspace = materialize_workspace(seed)
+    # run_setup (inside materialize_workspace, before the bookkeeping commit)
+    # can fail — a fixture's `setup:` script (e.g. disarm-inherited-reach's)
+    # builds real git repositories in the workspace and then deletes its own
+    # machinery (setup.sh, any template dir) as its last step, and committing
+    # first would let that machinery survive into the "seed" commit even
+    # though it no longer exists on disk (see `materialize_workspace`'s and
+    # `run_setup`'s own docstrings). `materialize_workspace` raises rather
+    # than returning an error dict here, so the failure is caught outside its
+    # own try/finally and the half-built workspace it still made is cleaned
+    # up via the exception's own `workspace` attribute.
+    try:
+        workspace = materialize_workspace(seed, fixture)
+    except SetupFailedError as exc:
+        error = {"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+        shutil.rmtree(exc.workspace, ignore_errors=True)
+        return {"arm": arm_name, "error": error, "agent": None,
+                "objective_checks": None, "judge": None}
     try:
         assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
                                  fixture.get("env"))
@@ -783,8 +1010,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 fixture, str(workspace), str(seed), transcript=result.get("transcript"))
 
             if not args.no_judge:
-                _git("add", "-A", cwd=workspace)
-                diff = _git("diff", "--cached", "--", ".", ":!.claude", cwd=workspace).stdout
+                diff = _build_judge_diff(workspace)
                 judge_cfg = fixture.get("judge", {})
                 try:
                     judge_result = judge.score(
@@ -882,12 +1108,19 @@ def main() -> int:
 
     if args.arm == "objective-only":
         if args.workspace:
+            # An explicitly given workspace is scored as-is — the caller's
+            # own responsibility to have already run any `setup:` themselves
+            # (or to be scoring a hand-built workspace that never needed it).
             workspace = args.workspace
             results = objective.run_checks(fixture, str(workspace), str(seed))
         else:
             with tempfile.TemporaryDirectory() as tmp:
                 workspace = Path(tmp) / "ws"
                 shutil.copytree(seed, workspace)
+                setup_error = run_setup(workspace, fixture)
+                if setup_error is not None:
+                    print(f"setup failed: {setup_error['detail']}")
+                    return 2
                 results = objective.run_checks(fixture, str(workspace), str(seed))
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
