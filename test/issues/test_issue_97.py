@@ -1947,6 +1947,11 @@ class TestIssue97(unittest.TestCase):
     # A source is one of:
     #   ("literal",)          the argument IS a numeric literal; the test
     #                         checks it is positive and <= MAX_TIMEOUT_S
+    #   ("constant", "<mod attr>")  a module-level constant in the sink's own
+    #                         module; the test IMPORTS the module, reads the
+    #                         attribute and runs the one predicate on its
+    #                         value, so a constant edited above the ceiling
+    #                         is red here as well as at the sink
     #   ("knob", "<dotted>")  a fixture knob TIMEOUT_KNOBS names, bounded by
     #                         validate_timeouts at fixture load
     #   ("flag", "<module>")  that module's `--timeout`, bounded by
@@ -1961,18 +1966,19 @@ class TestIssue97(unittest.TestCase):
         ("harness/guidance.py", "deliver", "subprocess.run", "timeout"):
             (1, (("default", "120"),)),
         ("harness/propagation/account_store.py", "git_tracked",
-         "subprocess.run", "60"): (1, (("literal",),)),
+         "subprocess.run", "GIT_TIMEOUT_S"):
+            (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/propagation/arms.py", "_run_hook", "subprocess.run",
          "timeout"): (1, (("flag", "harness/run_propagation.py"),)),
         ("harness/propagation/arms.py", "arm_plugin_marketplace",
          "subprocess.run", "ctx.timeout"):
             (1, (("flag", "harness/run_propagation.py"),)),
-        ("harness/propagation/init_probe.py", "probe", "<popen>.wait", "10"):
-            (1, (("literal",),)),
+        ("harness/propagation/init_probe.py", "probe", "<popen>.wait",
+         "KILL_WAIT_TIMEOUT_S"): (1, (("constant", "KILL_WAIT_TIMEOUT_S"),)),
         ("harness/run_account_audit.py", "registry_ref", "subprocess.run",
-         "30"): (1, (("literal",),)),
-        ("harness/run_canary.py", "claude_version", "subprocess.run", "30"):
-            (1, (("literal",),)),
+         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
+        ("harness/run_canary.py", "claude_version", "subprocess.run",
+         "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         # Two callers, two sources: run_canary's own `--timeout`, and
         # guidance.run_guard, which is handed the `guard.timeout_s` knob.
         ("harness/run_canary.py", "run_leg", "subprocess.run", "timeout"):
@@ -1984,19 +1990,30 @@ class TestIssue97(unittest.TestCase):
         # is the whole of S1-a: round 2 validated the second and not the first.
         ("harness/run_eval.py", "run_agent", "subprocess.run", "timeout"):
             (1, (("flag", "harness/run_eval.py"), ("knob", "timeout_s"))),
-        ("harness/run_eval.py", "_nested_repo_diff", "subprocess.run", "10"):
-            (1, (("literal",),)),
+        ("harness/run_eval.py", "_nested_repo_diff", "subprocess.run",
+         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/scorers/judge.py", "score", "subprocess.run", "timeout"):
             (1, (("knob", "judge.timeout_s"),)),
         ("harness/scorers/objective.py", "git_ref_unchanged", "subprocess.run",
-         "10"): (1, (("literal",),)),
+         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/scorers/objective.py", "git_remote_url_is", "subprocess.run",
-         "10"): (1, (("literal",),)),
+         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/scorers/objective.py", "reaper_ran_in_standalone_repo",
-         "subprocess.run", "10"): (2, (("literal",),)),
+         "subprocess.run", "GIT_TIMEOUT_S"):
+            (2, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/scorers/objective.py", "git_worktree_list_matches",
-         "subprocess.run", "10"): (1, (("literal",),)),
+         "subprocess.run", "GIT_TIMEOUT_S"):
+            (1, (("constant", "GIT_TIMEOUT_S"),)),
     }
+
+    @staticmethod
+    def _harness_module(rel: str):
+        """Import `harness/<a>/<b>.py` as the module the harness itself
+        imports it as. Derived from the path, so a new sink module needs no
+        entry anywhere."""
+        import importlib
+        name = rel[len("harness/"):-len(".py")].replace("/", ".")
+        return importlib.import_module(name)
 
     @classmethod
     def _timeout_sinks(cls, path: Path) -> list[tuple[tuple, int]]:
@@ -2050,11 +2067,49 @@ class TestIssue97(unittest.TestCase):
                 spelling = f"<popen>.{func.attr}"
             if spelling is None:
                 continue
-            kw = [k for k in node.keywords if k.arg == "timeout"]
-            if not kw:
+            # A `**` splat and a POSITIONAL wait()/communicate() timeout are
+            # both real subprocess timeouts and both were invisible to a walk
+            # that filtered on `k.arg == "timeout"` — measured in round 4,
+            # each planted as a new harness module and each leaving this
+            # inventory green. A splat is recorded as `**<expr>`: nothing can
+            # read a timeout out of it, so it can never be justified and the
+            # row exists to say so.
+            arguments = []
+            for keyword in node.keywords:
+                if keyword.arg == "timeout":
+                    arguments.append(ast.unparse(keyword.value))
+                elif keyword.arg is None:
+                    arguments.append("**" + ast.unparse(keyword.value))
+            if spelling == "<popen>.wait" and node.args:
+                arguments.append(ast.unparse(node.args[0]))
+            if spelling == "<popen>.communicate" and len(node.args) >= 2:
+                arguments.append(ast.unparse(node.args[1]))
+            for argument in arguments:
+                found.append(((rel, enclosing(node), spelling, argument),
+                              node.lineno))
+        return found
+
+    @staticmethod
+    def _callers_passing_timeout(callee: str):
+        """Every call to `callee` anywhere under harness/ that passes an
+        explicit `timeout=`, as (relative path, line). Parsed, so the
+        `("default", N)` rows' claim about callers is measured rather than
+        asserted from memory."""
+        found = []
+        for path in sorted((REPO_ROOT / "harness").rglob("*.py")):
+            if "__pycache__" in path.parts:
                 continue
-            found.append(((rel, enclosing(node), spelling,
-                           ast.unparse(kw[0].value)), node.lineno))
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.Call):
+                    continue
+                name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                        else getattr(node.func, "id", None))
+                if name != callee:
+                    continue
+                if any(k.arg == "timeout" for k in node.keywords):
+                    found.append((rel, node.lineno))
         return found
 
     @staticmethod
@@ -2147,11 +2202,37 @@ class TestIssue97(unittest.TestCase):
                             value, ceiling,
                             f"{where}: a literal timeout must itself be "
                             f"within the harness ceiling of {ceiling}s")
+                    elif kind == "constant":
+                        module = self._harness_module(rel)
+                        value = getattr(module, source[1])
+                        self.assertTrue(
+                            guidance.timeout_is_sane(value),
+                            f"{where}: {rel}'s {source[1]} is {value!r}, "
+                            "which the one predicate refuses — a named "
+                            "constant is only a bound while its VALUE is one")
                     elif kind == "default":
                         self.assertLessEqual(
                             float(source[1]), ceiling,
                             f"{where}: the callee's own default must be "
                             "within the ceiling")
+                        # ...and no caller overrides it. The row CLAIMS "no
+                        # caller passes timeout=", and until this assertion
+                        # that claim was a comment: measured in round 4,
+                        # `guidance.deliver(..., timeout=fixture.get(
+                        # "deliver_timeout_s", 2200000))` left this test and
+                        # the flag pin green and reproduced the OverflowError.
+                        overriders = sorted(
+                            f"{caller_rel}:{lineno}"
+                            for caller_rel, lineno in
+                            self._callers_passing_timeout(function))
+                        self.assertEqual(
+                            overriders, [],
+                            f"{where}: the row says this sink is bounded by "
+                            f"its own default of {source[1]}s and that no "
+                            "caller overrides it, and these callers do: "
+                            f"{overriders}. Either bound the value they pass "
+                            "(and change the row's source), or stop passing "
+                            "it.")
                     elif kind == "knob":
                         knob = source[1]
                         parents = tuple(knob.split(".")[:-1])
@@ -2207,6 +2288,539 @@ class TestIssue97(unittest.TestCase):
                     "guidance.check_timeout on `args.timeout`: argparse's "
                     "`type=int` bounds neither end, and a very large value "
                     "raises a bare OverflowError instead of naming a rule")
+
+    # ------------------------------------------------------------------
+    # S1-a-2 — the ceiling is enforced at the SINK, not at a table of sources
+    #
+    # Round 2 put the ceiling on the fixture knobs and `--timeout` walked past
+    # it. Round 3 put the ceiling on `--timeout` and added an INVENTORY that
+    # names, per call site, which validated source feeds it — and the
+    # inventory checks that the source a row NAMES is validated, never that
+    # the named source is the one actually feeding the call. Measured on
+    # f9115ce: rebinding `run_agent`'s call site to an unvalidated fixture key
+    # (`args.timeout or fixture.get("agent_timeout_s", 600)`) changed no
+    # inventory key at all — the argument at the call site is still the local
+    # name `timeout` — and left the inventory, the flag pin and all 120
+    # TestIssue97 tests GREEN while a fixture with `agent_timeout_s: 2200000`
+    # reproduced `OverflowError: timeout is too large`, rc 1. Two more
+    # spellings the inventory cannot see at all: `opts = {"timeout": x};
+    # subprocess.run(cmd, **opts)` (a `**` splat is `keyword(arg=None)`) and a
+    # POSITIONAL timeout on `Popen.wait(...)`/`communicate(...)`.
+    #
+    # So the predicate now sits at the SINK: every function under harness/
+    # that hands a timeout to a subprocess API calls guidance.check_timeout on
+    # that value before it spawns, whatever the caller passed. The invariant
+    # — no non-numeric, boolean, non-positive, non-finite or above-ceiling
+    # value reaches a subprocess timeout anywhere under harness/, whatever its
+    # source — is then true by construction rather than by a table of beliefs
+    # about where values come from. The inventory above stays as
+    # belt-and-braces; it is no longer the rope.
+    # ------------------------------------------------------------------
+
+    # The spellings that hand a value to a subprocess timeout. `**` splats and
+    # the POSITIONAL argument of wait()/communicate() are here because the
+    # round-3 walk filtered on `k.arg == "timeout"` and was blind to both.
+    SINK_SPAWN_NAMES = ("run", "Popen", "call", "check_call", "check_output")
+    SINK_WAIT_NAMES = ("wait", "communicate")
+
+    class _SinkScan:
+        """One parsed module under harness/: every function that hands a value
+        to a subprocess timeout, and what it checks before it does.
+
+        Deliberately generous about the spelling, for the same reason the
+        fork scan is: a bound that only recognises the spelling in front of it
+        is not a bound. `import subprocess as sp`, `from subprocess import run
+        as r`, a name assigned `subprocess.run`, a `**` splat and a positional
+        `wait(10)` all count.
+        """
+
+        def __init__(self, path, rel, spawn_names, wait_names):
+            self.rel = rel
+            self.spawn_names, self.wait_names = spawn_names, wait_names
+            self.tree = ast.parse(path.read_text(encoding="utf-8"))
+            self.aliases = {"subprocess"}
+            self.bare = set()
+            for node in ast.walk(self.tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        if alias.name == "subprocess":
+                            self.aliases.add(alias.asname or alias.name)
+                elif (isinstance(node, ast.ImportFrom)
+                      and node.module == "subprocess"):
+                    for alias in node.names:
+                        if alias.name in spawn_names:
+                            self.bare.add(alias.asname or alias.name)
+                elif isinstance(node, ast.Assign):
+                    value = node.value
+                    if isinstance(value, ast.Name) and value.id in self.aliases:
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                self.aliases.add(target.id)
+                    if (isinstance(value, ast.Attribute)
+                            and isinstance(value.value, ast.Name)
+                            and value.value.id in self.aliases
+                            and value.attr in spawn_names):
+                        for target in node.targets:
+                            if isinstance(target, ast.Name):
+                                self.bare.add(target.id)
+
+        def spawn_kind(self, call):
+            func = call.func
+            if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                    and func.value.id in self.aliases
+                    and func.attr in self.spawn_names):
+                return f"subprocess.{func.attr}"
+            if isinstance(func, ast.Name) and func.id in self.bare:
+                return f"subprocess.{func.id}"
+            if isinstance(func, ast.Attribute) and func.attr in self.wait_names:
+                return f"<popen>.{func.attr}"
+            return None
+
+        def timeout_expressions(self, call, kind):
+            """Every expression this call hands to a subprocess timeout.
+
+            A `**` splat is included as `**<expr>`: it is a site whose timeout
+            cannot be read off the source at all, so it must never match a
+            checked expression and always turns the pin red until the caller
+            is rewritten to pass the value plainly.
+            """
+            found = []
+            for keyword in call.keywords:
+                if keyword.arg == "timeout":
+                    found.append(ast.unparse(keyword.value))
+                elif keyword.arg is None:
+                    found.append("**" + ast.unparse(keyword.value))
+            if kind == "<popen>.wait" and call.args:
+                found.append(ast.unparse(call.args[0]))
+            if kind == "<popen>.communicate" and len(call.args) >= 2:
+                found.append(ast.unparse(call.args[1]))
+            return found
+
+        def sinks(self):
+            """{function name: {...}} for every function with a timeout sink."""
+            out = {}
+            for fn in ast.walk(self.tree):
+                if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                first_check = first_spawn = None
+                handed, checked, sites = set(), set(), []
+                for index, stmt in enumerate(fn.body):
+                    for node in ast.walk(stmt):
+                        if not isinstance(node, ast.Call):
+                            continue
+                        name = (node.func.attr
+                                if isinstance(node.func, ast.Attribute)
+                                else getattr(node.func, "id", None))
+                        if name == "check_timeout":
+                            if first_check is None:
+                                first_check = index
+                            if node.args:
+                                checked.add(ast.unparse(node.args[0]))
+                        kind = self.spawn_kind(node)
+                        if kind is None:
+                            continue
+                        if first_spawn is None:
+                            first_spawn = index
+                        expressions = self.timeout_expressions(node, kind)
+                        if expressions:
+                            handed.update(expressions)
+                            sites.append((node.lineno, kind))
+                if handed:
+                    out[fn.name] = {
+                        "handed": handed, "checked": checked, "sites": sites,
+                        "first_check": first_check, "first_spawn": first_spawn,
+                        "lineno": fn.lineno}
+            return out
+
+    @classmethod
+    def _harness_timeout_sinks(cls) -> dict:
+        """Every (module, function) under harness/ that hands a value to a
+        subprocess timeout, found by walking the TREE — every `*.py` under
+        harness/ that rglob finds, `__pycache__` aside — rather than a list of
+        files somebody remembered to keep up to date."""
+        out = {}
+        for path in sorted((REPO_ROOT / "harness").rglob("*.py")):
+            if "__pycache__" in path.parts:
+                continue
+            rel = path.relative_to(REPO_ROOT).as_posix()
+            scan = cls._SinkScan(path, rel, cls.SINK_SPAWN_NAMES,
+                                 cls.SINK_WAIT_NAMES)
+            for name, info in scan.sinks().items():
+                out[(rel, name)] = info
+        return out
+
+    def test_every_subprocess_timeout_sink_checks_the_value_before_it_spawns(self):
+        """S1-a-2, the pin at the sink. Every function under harness/ that
+        hands a value to a subprocess timeout runs guidance.check_timeout on
+        THAT EXPRESSION, in a statement that precedes its first spawn.
+
+        Three claims, each mechanically decided from the parse:
+          * the sink list is not empty (the walk cannot pass vacuously);
+          * each sink calls the predicate before it spawns, in statement
+            order — so deleting the call from any one of them is red here;
+          * the expressions checked COVER the expressions handed over, so a
+            caller that rebinds the argument to something else is red too.
+            A `**` splat can never be covered, which is the point: a timeout
+            that cannot be read off the source must not reach a spawn.
+        """
+        sinks = self._harness_timeout_sinks()
+        self.assertTrue(
+            sinks,
+            "no subprocess timeout sink found anywhere under harness/ — this "
+            "pin must not be able to pass vacuously; the walk or the "
+            "spellings it recognises have broken")
+        for (rel, name), info in sorted(sinks.items()):
+            where = f"{rel}:{info['lineno']} {name}()"
+            with self.subTest(sink=where):
+                self.assertIsNotNone(
+                    info["first_check"],
+                    f"{where} hands {sorted(info['handed'])} to a subprocess "
+                    "timeout and never calls guidance.check_timeout. The "
+                    "ceiling is enforced HERE, at the function that hands the "
+                    "value to the OS, because a bound that only guards the "
+                    "sources someone thought of is not a bound: measured on "
+                    "f9115ce, rebinding one call site to an unvalidated "
+                    "fixture key left every source-side pin green and "
+                    "reproduced `OverflowError: timeout is too large`.")
+                self.assertLess(
+                    info["first_check"], info["first_spawn"],
+                    f"{where} calls guidance.check_timeout only AFTER it has "
+                    "already spawned — the check has to happen before the "
+                    "value reaches the OS, not after")
+                uncovered = sorted(info["handed"] - info["checked"])
+                self.assertEqual(
+                    uncovered, [],
+                    f"{where} hands {uncovered} to a subprocess timeout, and "
+                    f"checks {sorted(info['checked'])}. Every expression that "
+                    "reaches `timeout=` must be the expression the predicate "
+                    "was given — checking a DIFFERENT one is the round-3 "
+                    "defect in a new costume. (A `**splat` can never be "
+                    "covered: pass the timeout plainly instead.)")
+
+    # How each sink is driven directly, and where its timeout comes from.
+    # `param` = the named keyword argument; `const` = a module-level constant
+    # this test patches. The LIST is not here — it is the walk above — and the
+    # test refuses any sink the walk finds that has no driver, so a new sink
+    # cannot arrive with no direct-call coverage.
+    SINK_DRIVERS = {
+        ("harness/guidance.py", "deliver"): ("param", "timeout"),
+        ("harness/propagation/account_store.py", "git_tracked"):
+            ("const", "GIT_TIMEOUT_S"),
+        ("harness/propagation/arms.py", "_run_hook"): ("param", "timeout"),
+        ("harness/propagation/arms.py", "arm_plugin_marketplace"):
+            ("ctx", "timeout"),
+        ("harness/propagation/init_probe.py", "probe"):
+            ("const", "KILL_WAIT_TIMEOUT_S"),
+        ("harness/run_account_audit.py", "registry_ref"):
+            ("const", "GIT_TIMEOUT_S"),
+        ("harness/run_canary.py", "claude_version"):
+            ("const", "VERSION_TIMEOUT_S"),
+        ("harness/run_canary.py", "run_leg"): ("param", "timeout"),
+        ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
+        ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
+        ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),
+        ("harness/scorers/judge.py", "score"): ("param", "timeout"),
+        ("harness/scorers/objective.py", "git_ref_unchanged"):
+            ("const", "GIT_TIMEOUT_S"),
+        ("harness/scorers/objective.py", "git_remote_url_is"):
+            ("const", "GIT_TIMEOUT_S"),
+        ("harness/scorers/objective.py", "git_worktree_list_matches"):
+            ("const", "GIT_TIMEOUT_S"),
+        ("harness/scorers/objective.py", "reaper_ran_in_standalone_repo"):
+            ("const", "GIT_TIMEOUT_S"),
+    }
+
+    # Every shape the one predicate refuses, as a caller could hand it over.
+    BAD_SINK_TIMEOUTS = (2200000, True, 0, -1, float("nan"), float("inf"),
+                         "600", None)
+    GOOD_SINK_TIMEOUT = 600
+
+    def _drive_sink(self, key, value, spawn_counter):
+        """Call one sink function directly with `value` as its timeout.
+
+        The arguments are deliberately minimal: every sink checks its timeout
+        in a statement that precedes its first spawn (the pin above proves
+        that from the parse), so a refused value is refused before any of
+        them is looked at. `spawn_counter` replaces the sink module's own
+        `subprocess.run`/`Popen`, so "nothing was spawned" is measured rather
+        than assumed.
+        """
+        rel, name = key
+        module = self._harness_module(rel)
+        kind, knob = self.SINK_DRIVERS[key]
+        fn = getattr(module, name)
+        tmp = Path(tempfile.mkdtemp(prefix="sink-driver-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        with mock.patch.object(module.subprocess, "run", spawn_counter), \
+                mock.patch.object(module.subprocess, "Popen", spawn_counter):
+            if kind == "const":
+                with mock.patch.object(module, knob, value):
+                    return self._call_sink(rel, name, fn, tmp, None)
+            return self._call_sink(rel, name, fn, tmp, (kind, knob, value))
+
+    @staticmethod
+    def _call_sink(rel, name, fn, tmp, supplied):
+        """The one call per sink, with dummy arguments and the timeout (when
+        it is not a module constant) supplied the way that sink takes it."""
+        kwargs = {}
+        if supplied is not None:
+            kind, knob, value = supplied
+            if kind == "param":
+                kwargs[knob] = value
+            elif kind == "ctx":
+                import types
+                kwargs["ctx"] = types.SimpleNamespace(**{knob: value})
+            elif kind == "fixture":
+                kwargs["fixture"] = {knob: value, "setup": "true"}
+            elif kind == "arm":
+                kwargs["arm"] = {"name": "without_skill", knob: value}
+        if rel == "harness/guidance.py" and name == "deliver":
+            return fn(tmp, scratch=tmp, dest_dir=tmp / "cfg", home=tmp / "home",
+                      payload="x", **kwargs)
+        if name == "git_tracked":
+            return fn(tmp, Path("."))
+        if name == "_run_hook":
+            return fn(tmp / "hook.sh", scratch=None, env_extra={}, **kwargs)
+        if name == "arm_plugin_marketplace":
+            return fn(**kwargs)
+        if name == "probe":
+            return fn(cwd=tmp, home=tmp, tmpdir=tmp)
+        if name == "registry_ref":
+            return fn(tmp)
+        if name == "claude_version":
+            return fn()
+        if name == "run_leg":
+            return fn(tmp, "p", "", model=None, **kwargs)
+        if name == "run_setup":
+            return fn(tmp, kwargs["fixture"])
+        if name == "run_agent":
+            return fn(tmp, "p", kwargs["arm"])
+        if name == "_nested_repo_diff":
+            return fn(tmp, [])
+        if name == "score":
+            return fn("r", "t", "d", **kwargs)
+        if name == "git_ref_unchanged":
+            return fn(str(tmp), [], path=".", ref="HEAD", expected="x")
+        if name == "git_remote_url_is":
+            return fn(str(tmp), [], path=".", remote="origin", expected_path="x")
+        if name == "git_worktree_list_matches":
+            return fn(str(tmp), [], path=".", expected_names=[])
+        if name == "reaper_ran_in_standalone_repo":
+            return fn(str(tmp), [])
+        raise AssertionError(f"no direct-call driver body for {rel}::{name}")
+
+    def test_every_subprocess_timeout_sink_refuses_a_bad_value_before_it_spawns(self):
+        """S1-a-2, driven rather than parsed. Every sink the walk finds, called
+        directly with each shape the predicate refuses, raises the named error
+        and spawns nothing — and accepts an ordinary 600.
+
+        The sink LIST comes from the walk, not from SINK_DRIVERS: a new sink
+        with no driver is a failure here, so direct-call coverage cannot fall
+        behind the tree.
+        """
+        sinks = self._harness_timeout_sinks()
+        self.assertTrue(sinks, "no subprocess timeout sink under harness/ — "
+                               "this test must not pass vacuously")
+        undriven = sorted(f"{rel}::{name}" for rel, name in sinks
+                          if (rel, name) not in self.SINK_DRIVERS)
+        self.assertEqual(
+            undriven, [],
+            f"{undriven} hand a value to a subprocess timeout and have no "
+            "direct-call driver, so nothing proves the sink refuses a bad one "
+            "before it spawns. Add a SINK_DRIVERS entry and a call body.")
+        stale = sorted(f"{rel}::{name}" for rel, name in self.SINK_DRIVERS
+                       if (rel, name) not in sinks)
+        self.assertEqual(stale, [], f"{stale}: driver rows that name no sink "
+                                    "the walk finds — delete them")
+
+        spawned = []
+
+        def spawn_counter(*args, **kwargs):
+            spawned.append(args)
+            raise AssertionError("a refused timeout reached a spawn")
+
+        for key in sorted(sinks):
+            for value in self.BAD_SINK_TIMEOUTS:
+                with self.subTest(sink=f"{key[0]}::{key[1]}", value=value):
+                    spawned.clear()
+                    with self.assertRaises(guidance.GuidanceError) as caught:
+                        self._drive_sink(key, value, spawn_counter)
+                    message = str(caught.exception)
+                    self.assertIn(
+                        "positive number of seconds", message,
+                        f"the refusal must be the TIMEOUT predicate's, not "
+                        f"some other GuidanceError: {message}")
+                    self.assertIn(key[1], message,
+                                  f"the refusal must name the sink: {message}")
+                    self.assertIn(str(guidance.MAX_TIMEOUT_S), message,
+                                  f"the refusal must name the ceiling: {message}")
+                    self.assertEqual(
+                        spawned, [],
+                        f"{key}: {value!r} reached a spawn before the sink "
+                        "checked it")
+
+    def test_every_subprocess_timeout_sink_accepts_an_ordinary_value(self):
+        """The floor beside the test above: a sink whose predicate refused
+        everything would pass that one and break the harness. 600 goes
+        through every sink without a GuidanceError.
+
+        Anything else a dummy-argument call raises (the sink got past its
+        check and then found no workspace, no hook, no context — including a
+        GuidanceError about one of those) is not this test's business: the
+        ordering claim is the pin's, from the parse. Only a refusal by the
+        TIMEOUT predicate fails here, recognised by the one sentence
+        check_timeout writes and nothing else does.
+        """
+        for key in sorted(self._harness_timeout_sinks()):
+            with self.subTest(sink=f"{key[0]}::{key[1]}"):
+                try:
+                    self._drive_sink(key, self.GOOD_SINK_TIMEOUT, mock.MagicMock())
+                except Exception as exc:  # noqa: BLE001 — see the docstring
+                    self.assertNotIn(
+                        "positive number of seconds", str(exc),
+                        f"{key} refused an ordinary "
+                        f"{self.GOOD_SINK_TIMEOUT}s timeout: {exc}")
+
+    def test_a_sink_still_spawns_with_an_ordinary_timeout(self):
+        """Two real spawns, unmocked, so "refuses" above is never "refuses
+        everything": `run_setup` runs a shell command and `_nested_repo_diff`
+        runs git, both at their ordinary timeouts, both under this test's own
+        mkdtemp."""
+        tmp = Path(tempfile.mkdtemp(prefix="sink-positive-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        marker = tmp / "setup-ran"
+        error = run_eval.run_setup(
+            tmp, {"setup": f"touch {marker}", "setup_timeout_s": 600})
+        self.assertIsNone(error, "an ordinary setup must run")
+        self.assertTrue(marker.is_file(),
+                        "run_setup must still spawn at an accepted timeout")
+        subprocess.run(["git", "init", "-q", str(tmp)], check=True, timeout=30)
+        subprocess.run(["git", "-C", str(tmp), "commit", "-q", "--allow-empty",
+                        "-m", "seed"], check=True, timeout=30,
+                       env=dict(os.environ, GIT_AUTHOR_NAME="t",
+                                GIT_AUTHOR_EMAIL="t@example.com",
+                                GIT_COMMITTER_NAME="t",
+                                GIT_COMMITTER_EMAIL="t@example.com"))
+        diff = run_eval._nested_repo_diff(tmp, [tmp])
+        self.assertIn("last commit", diff,
+                      "_nested_repo_diff must still spawn git at its own "
+                      f"{run_eval.GIT_TIMEOUT_S}s bound")
+
+    def _harness_copy(self, replacements) -> Path:
+        """A throwaway copy of harness/ with exact-string edits applied.
+
+        This is the mutation-style half of S1-a-2: the rows below rebind a
+        call site to a source no inventory row names, in a copy, and drive the
+        REAL CLI against it. On f9115ce each of them is rc 1 and a bare
+        `OverflowError: timeout is too large`; the sink check makes them rc 2
+        and named without knowing anything about the new key.
+        """
+        tmp = Path(tempfile.mkdtemp(prefix="sink-mutation-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        shutil.copytree(HARNESS_DIR, tmp / "harness",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        for rel, old, new in replacements:
+            path = tmp / "harness" / rel
+            source = path.read_text(encoding="utf-8")
+            self.assertIn(old, source, f"{rel}: the mutation's anchor is gone")
+            path.write_text(source.replace(old, new), encoding="utf-8")
+        return tmp / "harness" / "run_eval.py"
+
+    def _run_copy(self, runner: Path, argv_tail) -> tuple[int, str]:
+        cmd = [sys.executable, str(runner), *[str(a) for a in argv_tail]]
+        env = dict(os.environ, CLAUDE_BIN=str(FAKE_CLAUDE))
+        try:
+            proc = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
+                                  capture_output=True, text=True,
+                                  timeout=self.OUTER_BOUND_S)
+        except subprocess.TimeoutExpired:
+            self.fail(f"{runner} did not return inside {self.OUTER_BOUND_S}s "
+                      "— an unbounded timeout reached subprocess.run()")
+        return proc.returncode, proc.stdout + proc.stderr
+
+    def _scratch_skill_fixture(self, tmp: Path, **overrides) -> Path:
+        """A minimal SKILL fixture with its own seed. `--arm without_skill`
+        makes `run_agent` the FIRST subprocess this run reaches, so "0 CLI
+        calls" is literal rather than "the guard leg ran first"."""
+        eval_dir = tmp / "eval"
+        (eval_dir / "seed").mkdir(parents=True, exist_ok=True)
+        (eval_dir / "seed" / "placeholder.txt").write_text("x\n",
+                                                           encoding="utf-8")
+        fixture = {"skill": "some-skill", "prompt": "do the thing"}
+        fixture.update(overrides)
+        (eval_dir / "fixture.yaml").write_text(
+            yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
+        return eval_dir
+
+    # Each row: a label, the edit, and the fixture key that now feeds the
+    # sink. Neither key exists in TIMEOUT_KNOBS, neither is a `--timeout`, and
+    # neither changes any inventory key — which is exactly why a source-side
+    # table cannot see them.
+    REBOUND_SINK_SOURCES = (
+        # A skill fixture, `--arm without_skill`: `run_agent` is the first
+        # subprocess the run reaches, so "nothing was invoked" is literal.
+        ("run_agent via an unvalidated agent_timeout_s", "skill",
+         ("run_eval.py",
+          '"timeout": args.timeout or fixture.get("timeout_s", 600),',
+          '"timeout": args.timeout or fixture.get("agent_timeout_s", 600),'),
+         "agent_timeout_s", "run_agent"),
+        # The code half's N1, the `("default", 120)` row: `deliver`'s one
+        # caller passes no `timeout=` at all, and the table said so in a
+        # comment. Delivery precedes the guard, so this row is also
+        # zero-CLI-calls.
+        ("deliver via an unvalidated deliver_timeout_s", "guidance",
+         ("run_eval.py",
+          'dest_dir=config if delivery == "user" else workspace)',
+          'dest_dir=config if delivery == "user" else workspace,\n'
+          '            timeout=fixture.get("deliver_timeout_s", 2200000))'),
+         "deliver_timeout_s", "deliver"),
+    )
+
+    def test_a_source_no_inventory_row_names_is_still_refused_at_the_sink(self):
+        """S1-a-2's proof that the check is at the SINK and not at the sources.
+
+        Both rows were measured GREEN on f9115ce through every source-side
+        pin — the inventory, the `--timeout` predicate and all 120 TestIssue97
+        tests — while the real CLI answered rc 1 with a bare `OverflowError:
+        timeout is too large`. Nothing here teaches the harness about
+        `agent_timeout_s` or `deliver_timeout_s`; the sink refuses them
+        because it checks what it was handed.
+        """
+        root = self._checkout()
+        for label, subject, edit, key, sink in self.REBOUND_SINK_SOURCES:
+            with self.subTest(row=label):
+                runner = self._harness_copy([edit])
+                tmp = Path(tempfile.mkdtemp(prefix="sink-rebound-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                argv_log = tmp / "argv.jsonl"
+                results = tmp / "results"
+                env_block = {"FAKE_CLAUDE_MODE": "guidance_probe",
+                             "FAKE_CLAUDE_ARGV_LOG": str(argv_log)}
+                if subject == "skill":
+                    eval_dir = self._scratch_skill_fixture(
+                        tmp, env=env_block, **{key: 2200000})
+                    argv_tail = [eval_dir, "--arm", "without_skill",
+                                 "--results-dir", results, "--no-judge"]
+                else:
+                    eval_dir = self._guidance_fixture(
+                        tmp, env=env_block, **{key: 2200000})
+                    argv_tail = [eval_dir, "--arm", "both", "--guidance", root,
+                                 "--results-dir", results, "--no-judge"]
+                rc, out = self._run_copy(runner, argv_tail)
+                self.assertEqual(rc, 2, f"{label}: expected the named rc-2 "
+                                        f"configuration error\n{out}")
+                self.assertIn("configuration error", out, f"{label}: {out}")
+                self.assertIn(sink, out, f"{label}: the message must name the "
+                                         f"sink it was refused at\n{out}")
+                self.assertIn(str(guidance.MAX_TIMEOUT_S), out,
+                              f"{label}: the message must name the ceiling\n{out}")
+                self.assertNotIn("OverflowError", out, f"{label}: {out}")
+                self.assertNotIn("Traceback", out, f"{label}: {out}")
+                self.assertNotIn("Runner-level error", out, f"{label}: {out}")
+                self.assertFalse(
+                    argv_log.exists(),
+                    f"{label}: the CLI was invoked before the sink checked "
+                    "the timeout it was handed")
 
 
     # ------------------------------------------------------------------

@@ -119,6 +119,11 @@ def validate_mapping_keys(fixture: dict, fixture_path: Path) -> None:
 # anchors it to eval.yml's `eval` job.
 MAX_TIMEOUT_S = guidance.MAX_TIMEOUT_S
 
+# The bound on this module's own local `git` calls. Named rather than inlined
+# so the sink check and the `timeout=` argument are provably the same value:
+# the pin compares the two expressions, not two beliefs about them.
+GIT_TIMEOUT_S = 10
+
 
 def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
     """Coerce-and-check every timeout knob ONCE, at fixture load, before any
@@ -482,11 +487,13 @@ def run_setup(workspace: Path, fixture: dict) -> dict | None:
     captured stderr/stdout tail, never a bare traceback out of a check that
     assumed setup had already put its files in place.
     """
+    timeout = fixture.get("setup_timeout_s", 60)
+    guidance.check_timeout(timeout, "run_eval.run_setup(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     setup_cmd = fixture.get("setup")
     if not setup_cmd:
         return None
     cmd = os.path.expandvars(str(setup_cmd)).replace("$WORKSPACE", str(workspace))
-    timeout = fixture.get("setup_timeout_s", 60)
     try:
         result = subprocess.run(["bash", "-c", cmd], cwd=workspace,
                                 capture_output=True, text=True, timeout=timeout,
@@ -515,6 +522,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     skill installation and process invocation failures are turned into error
     dicts here, nothing is raised.
     """
+    # S1-a-2. The predicate sits HERE, at the function that hands the value
+    # to the OS, and not only at the sources a table can name. Measured on
+    # f9115ce: rebinding this call site's `timeout` to an unvalidated fixture
+    # key (`fixture.get("agent_timeout_s", 600)`) left the source inventory,
+    # the flag pin and all 120 TestIssue97 tests green while a fixture
+    # reproduced `OverflowError: timeout is too large`, rc 1.
+    timeout = arm.get("timeout", 600)
+    guidance.check_timeout(timeout, "run_eval.run_agent(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     if arm["name"] == "with_skill":
         skill = arm["skill"]
         try:
@@ -565,7 +581,6 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
 
-    timeout = arm.get("timeout", 600)
     try:
         result = subprocess.run(cmd, cwd=workspace, capture_output=True,
                                 text=True, timeout=timeout,
@@ -658,12 +673,15 @@ def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
     diff` cannot show (a gitlink is a single line: the commit SHA it now
     points at, not a patch).
     """
+    guidance.check_timeout(GIT_TIMEOUT_S, "run_eval._nested_repo_diff(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     sections = []
     for d in dirs:
         rel = d.relative_to(workspace)
         log = subprocess.run(
             ["git", "-C", str(d), "log", "--stat", "-p", "-1", "--format=%H %s"],
-            capture_output=True, text=True, errors="replace", timeout=10)
+            capture_output=True, text=True, errors="replace",
+            timeout=GIT_TIMEOUT_S)
         if log.returncode != 0 or not log.stdout.strip():
             sections.append(f"=== {rel} (no commits) ===")
         else:
@@ -925,6 +943,12 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                         timeout=judge_cfg.get("timeout_s", 120),
                         weights=judge_cfg.get("weights"),
                     )
+                except guidance.GuidanceError:
+                    # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
+                    # error, not a judge result: recorded as `{"error": ...}`
+                    # it would score the arm and exit 0/1 with the rule never
+                    # named. Re-raised so main()'s rc-2 contract holds.
+                    raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
 
@@ -1264,6 +1288,12 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                         diff, model=judge_cfg.get("model"),
                         timeout=judge_cfg.get("timeout_s", 120),
                         weights=judge_cfg.get("weights"))
+                except guidance.GuidanceError:
+                    # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
+                    # error, not a judge result: recorded as `{"error": ...}`
+                    # it would score the arm and exit 0/1 with the rule never
+                    # named. Re-raised so main()'s rc-2 contract holds.
+                    raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
 
@@ -1530,7 +1560,14 @@ def main() -> int:
     # path exactly as it was.
     subject = fixture.get("subject", "skill")
     if subject == "guidance":
-        return _run_guidance(args, fixture)
+        try:
+            return _run_guidance(args, fixture)
+        except guidance.GuidanceError as exc:
+            # The sink checks (S1-a-2) raise from inside whichever function
+            # was about to spawn. Caught HERE so every one of them lands on
+            # the rc-2 configuration contract instead of a traceback.
+            print(f"configuration error: {exc}")
+            return 2
     if subject != "skill":
         print(f"{args.eval_dir / 'fixture.yaml'} has unknown subject "
               f"{subject!r} — expected 'skill' or 'guidance'")
@@ -1587,21 +1624,28 @@ def main() -> int:
             return 2
 
     if args.arm == "objective-only":
-        if args.workspace:
-            # An explicitly given workspace is scored as-is — the caller's
-            # own responsibility to have already run any `setup:` themselves
-            # (or to be scoring a hand-built workspace that never needed it).
-            workspace = args.workspace
-            results = objective.run_checks(fixture, str(workspace), str(seed))
-        else:
-            with tempfile.TemporaryDirectory() as tmp:
-                workspace = Path(tmp) / "ws"
-                shutil.copytree(seed, workspace)
-                setup_error = run_setup(workspace, fixture)
-                if setup_error is not None:
-                    print(f"setup failed: {setup_error['detail']}")
-                    return 2
+        try:
+            if args.workspace:
+                # An explicitly given workspace is scored as-is — the caller's
+                # own responsibility to have already run any `setup:`
+                # themselves (or to be scoring a hand-built workspace that
+                # never needed one).
+                workspace = args.workspace
                 results = objective.run_checks(fixture, str(workspace), str(seed))
+            else:
+                with tempfile.TemporaryDirectory() as tmp:
+                    workspace = Path(tmp) / "ws"
+                    shutil.copytree(seed, workspace)
+                    setup_error = run_setup(workspace, fixture)
+                    if setup_error is not None:
+                        print(f"setup failed: {setup_error['detail']}")
+                        return 2
+                    results = objective.run_checks(fixture, str(workspace),
+                                                   str(seed))
+        except guidance.GuidanceError as exc:
+            # run_setup's and the objective git checks' sink checks land here.
+            print(f"configuration error: {exc}")
+            return 2
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
                           "checks": results}, indent=2))
@@ -1609,8 +1653,16 @@ def main() -> int:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
-    arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
-                     for name in arm_names]
+    try:
+        arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
+                         for name in arm_names]
+    except guidance.GuidanceError as exc:
+        # Every subprocess sink `_run_arm` can reach — run_setup, run_agent,
+        # _nested_repo_diff, judge.score, the objective git checks — checks
+        # its timeout on entry and raises this. Named rc 2, never a
+        # traceback and never `Runner-level error in arm(s)`.
+        print(f"configuration error: {exc}")
+        return 2
 
     report = _render_report(fixture["skill"], fixture["prompt"], timestamp, arm_summaries)
     report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"

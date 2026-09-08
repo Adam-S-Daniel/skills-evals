@@ -235,6 +235,13 @@ def check_timeout(value, where: str, remedy: str, prefix: str = "") -> None:
 FIXTURE_TIMEOUT_REMEDY = "Omit the key to take the default instead."
 CLI_TIMEOUT_REMEDY = ("Omit the flag to take the fixture's own `timeout_s:` "
                       "(or the default) instead.")
+# The SINK's own remedy. A rejection here names a function that was ABOUT to
+# hand the value to the OS, so the fix is always at the caller rather than in
+# a fixture the operator may not even have written.
+SINK_TIMEOUT_REMEDY = (
+    "This is the subprocess sink itself: the value was checked on entry to "
+    "the function that spawns, whatever source it came from. Fix the caller "
+    "that passed it.")
 
 
 # ---------------------------------------------------------------------------
@@ -618,7 +625,16 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
     the delivery path measures the imitation.
 
     An empty payload (`mode: none`) runs nothing at all.
+
+    S1-a-2. The timeout is checked HERE, on entry, before anything is
+    spawned — not because of what the one caller passes today, but because
+    this is the function that hands the value to the OS. A table of beliefs
+    about where the value comes from is green the moment a caller rebinds it
+    to an unvalidated key (measured: `timeout=fixture.get("deliver_timeout_s",
+    2200000)` left every source-side pin green and reproduced
+    `OverflowError: timeout is too large`).
     """
+    check_timeout(timeout, "guidance.deliver(timeout=)", SINK_TIMEOUT_REMEDY)
     _refuse_real_config_dir(dest_dir, home)
     dest = dest_dir / "CLAUDE.md"
     if not payload:

@@ -40,12 +40,21 @@ def load_fixture(eval_dir: Path) -> dict:
         return yaml.safe_load(f)
 
 
+# The bound on the `--version` probe. Named rather than inlined so the sink
+# check and the `timeout=` argument are provably the same value.
+VERSION_TIMEOUT_S = 30
+
+
 def claude_version() -> str:
     """Record the CLI version under test; "unknown" if it can't be determined."""
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    guidance.check_timeout(VERSION_TIMEOUT_S,
+                           "run_canary.claude_version(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     try:
         result = subprocess.run(
             [os.environ.get("CLAUDE_BIN", "claude"), "--version"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=VERSION_TIMEOUT_S,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -71,6 +80,13 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     the harness's own environment inherited — so the guidance-bridge canary is
     byte-identical across this change.
     """
+    # S1-a-2. Checked at the SINK, before the spawn, whatever the caller
+    # passed: this leg is reached from run_canary's own `--timeout`, from
+    # guidance.run_guard with the `guard.timeout_s` knob, and from anywhere a
+    # later caller decides to reach it from.
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    guidance.check_timeout(timeout, "run_canary.run_leg(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     # Unlike run_eval, no --permission-mode bypassPermissions: the probe must
     # not use tools at all (read tools are explicitly disallowed), so the
     # default deny-without-a-prompter headless behavior is the safer choice —
@@ -253,9 +269,16 @@ def main() -> int:
         return 2
 
     fixture = load_fixture(args.eval_dir)
-    version = claude_version()
-    legs = _build_legs(fixture, args.eval_dir, args.subagent)
-    results = [_run_leg(leg, args.model, args.timeout) for leg in legs]
+    try:
+        version = claude_version()
+        legs = _build_legs(fixture, args.eval_dir, args.subagent)
+        results = [_run_leg(leg, args.model, args.timeout) for leg in legs]
+    except guidance.GuidanceError as exc:
+        # The sink checks in claude_version() and run_leg() raise from inside
+        # the function that was about to spawn, whatever fed them. Named rc 2,
+        # never a traceback.
+        print(f"configuration error: {exc}")
+        return 2
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_dir = args.results_dir / fixture["name"] / timestamp

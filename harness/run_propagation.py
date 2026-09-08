@@ -255,6 +255,12 @@ def main(argv=None) -> int:
                 results.append(arms.run_arm(name, ctx))
             if args.self_test:
                 self_test_ok, self_test_line = self_test(ctx)
+        except guidance.GuidanceError as exc:
+            # A subprocess sink under harness/propagation/ refused its timeout
+            # on entry (S1-a-2). That is a configuration error the operator
+            # must fix, not an inconclusive arm: named, rc 2, no traceback.
+            print(f"configuration error: {exc}")
+            return EXIT_FAULT
         except arms.ArmError as exc:
             print(f"{arms.INCONCLUSIVE} setup: {exc}")
             fault = True

@@ -14,6 +14,16 @@ import json
 import os
 import re
 import subprocess
+import sys
+from pathlib import Path
+
+# S1-a-2. The one timeout predicate lives in harness/guidance.py. It is
+# imported inside the sink below rather than at module scope (guidance.py
+# imports run_canary, and this package is imported from run_eval while
+# guidance is still initialising), so harness/ has to be reachable from here.
+_HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
+if _HARNESS_DIR not in sys.path:
+    sys.path.insert(0, _HARNESS_DIR)
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
@@ -99,6 +109,9 @@ def score(rubric: str, transcript: str, workspace_diff: str, *,
     empty) the historical behaviour is unchanged: the judge's `overall` if it
     is numeric, else the unweighted mean.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(timeout, "judge.score(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     judge_prompt = _build_prompt(rubric, transcript, workspace_diff)
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", judge_prompt,
           "--output-format", "json", "--permission-mode", "bypassPermissions"]
