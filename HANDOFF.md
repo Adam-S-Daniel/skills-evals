@@ -4,11 +4,14 @@
 systematic-evals effort (skills and fleet guidance, six epics across five
 repositories), where it stands, what is parked and why, and how to pick it up.
 It was written by the orchestrator session when Adam paused the programme on
-2026-09-08 (decision 9 below) and **last updated on 2026-09-08 after the
-parked-PR wave** (decision 10): Adam answered all three park comments with "1",
-#131 and #130 merged, and #129 is PARKED ON ADAM again after round 13. Everything here was read from
-GitHub or measured directly at the stated time; nothing is reconstructed from
-memory.
+2026-09-08 (decision 9 below) and **last updated on 2026-09-08 after #129's
+round 14** (decision 11): #131 and #130 merged in the parked-PR wave, #129 ran a
+fourteenth review round, was NOT CLEAN on both halves again, and is now answered
+— revert round 14's ITEM 2, then redesign the roster's denominator around a
+trusted history under
+[#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147). Everything here
+was read from GitHub or measured directly at the stated time; nothing is
+reconstructed from memory.
 
 - **Live operational state** (rewritten hourly while the programme ran, final
   at the pause): the status board,
@@ -158,7 +161,7 @@ PR, because each park comment offered its own numbered options:
 |---|---|---|
 | [#131](https://github.com/Adam-S-Daniel/skills-evals/pull/131) (#81) | make the objective check honest and merge; let the judge carry the defence | **MERGED** `d13166d`. Fix round 7 + round 8 code review (0 blocker, 1 should-fix, 4 nits) + a prose-only correction round. |
 | [#130](https://github.com/Adam-S-Daniel/skills-evals/pull/130) (#84) | one fix round, documentation and nits only | **MERGED** `700f48a`. Fix round 6 + round 6 code review (0 blocker, 2 should-fix, 3 nits) + a correction round adding one test. |
-| [#129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) (#67) | one more fix round scoped to the adversarial fix list; round 13 decides | **PARKED ON ADAM** at `d84c1c8`. Round 13 NOT CLEAN on both halves (adversarial 3 blocker / 3 should-fix / 3 nit, PARK; code 0 blocker / 3 should-fix / 3 nit, "the round's gate does not pass"). [The park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5589817444) carries four options. |
+| [#129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) (#67) | one more fix round scoped to the adversarial fix list; round 13 decides | Round 13 NOT CLEAN, parked on [that comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5589817444)'s four options. Answered "1" a second time; **round 14 ran and was NOT CLEAN too**, and decision 11 ends the fix-round approach. See below. |
 
 **Answering a park comment with option 1 carried that PR to a merge; it did not
 reopen epic #62 or #96.** Nothing else in either lane was dispatched, and the
@@ -167,74 +170,120 @@ pursued. #81 and #84 stay OPEN as "merged hermetic; real run stopped".
 
 #### #129's state, precisely (this is where a resuming session starts)
 
-Branch `claude/skills-evals-67` at **`d84c1c8`**, pushed, suite green (1307 tests
-exit 0, propagation 164), mergeable against `main`. **PARKED ON ADAM** — round 13
-was NOT CLEAN on both halves and option 1's fix round is spent. The four options
-are on [the park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5589817444).
+Branch `claude/skills-evals-67` at **`424eebf`**, pushed, **suite green — 1321
+tests exit 0, 2 skipped**, run by the orchestrator in the real worktree with
+`harness/roster.py`, `test/run_tests.py`, `evals/roster-policy.yml` and
+`DESIGN.md` md5'd before the run and re-checked `OK` after it, so the green
+measures the tree it claims to. Mergeable against `main`; `.github/` byte-
+unchanged since `7ef5780`, which carries round 13's one-way-door read forward
+without re-doing it.
+
+**It is NOT merged and should not be merged as it stands.** Decision 11:
+`git revert 0db198a` first, then the redesign under
+[#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147).
 
 **Nothing is blocked by not merging it.** `eval.yml` on `main` dispatches exactly
 one fixture, `evals/workflow-path-audit`, which pins both `model:` and
 `judge.model:`, and its `workflow_dispatch` carries no inputs — verified in round
-13. So a real dispatch does not fail closed today whether or not #129 lands.
+13 and again in round 14. So a real dispatch does not fail closed today whether
+or not #129 lands.
 
-**What fix round 12 closed.** Every row it was written to: round 12's own
-committed repros are green on head (blocker 1 in both placements, blocker 2,
-should-fix 1 at 500/501/502/600/5,000 live arms — 0 retired at every size).
-Nothing rounds 6 to 11 won regressed. The two merges of `main` touched no roster
-surface (`harness/roster.py` byte-identical from `4790845` to head). The
-one-way-door read is clean, including the roster step's `run:` block **executed**
-against six hostile inputs (an 18 MB / 450,000-arm roster refused without
-exporting `EVAL_ROSTER`, no id echoed, no token leaked).
+**Round 14** (fix worker opus; both review halves opus at high) ran on
+`87f2031` = `d84c1c8` + a merge of `origin/main`, and produced six commits
+`54daf66..424eebf`. Verdicts: adversarial `FOUND — 3 blocker, 3 should-fix,
+3 nit`, PARK; code `FOUND — 1 blocker, 3 should-fix, 3 nit`, PARK — every one of
+the code half's findings comment or docstring text, none a code or assertion
+change, and its own summary was that *"the mechanism half is done and
+independently verified ... I could not construct an input that retires a live
+arm."* The full evidence is the
+[round-14 park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5591678318).
 
-**Why it parked, in one sentence.** *All three of round 12's remedies are keyed
-on RAW IDENTITY, while the mechanism they guard — attribution — is keyed on the
-FOLD RELATION.* Every class-floor row's victim is a live model whose census key
-is its own id; give the victim the fold shape this repo's own
-`TestIssue67Review9` fixture builds and all three remedies are inert. Measured
-and independently reproduced by the orchestrator:
+**What round 14 genuinely closed, and it is not nothing.** BLOCKER A: the
+`anchored_held >= bar` conjunct is deleted and the veto is round 12's prescribed
+fraction-alone rule, so the park comment's own measurement — a true 94.3%
+published `RETIRED ... (1.2%)` from one added `arms` line — now reads as a
+refused retirement. ITEM 4 doubled the class floor for real, confirmed
+independently by both halves: head's tests against base `harness/roster.py` fail
+rows 1, 2 and 11 **and only under `victim_shape='fold-reached'`**. ITEM 5's
+figures reproduce byte-for-byte (`1590 / 1535 / 150 / 73 (49%) / 77 / 1`) and now
+ship as a re-runnable command, `python3 test/run_tests.py
+--measure-previous-only-distribution`, rather than a number in a comment. The
+`_usage_alias_map` split into `_usage_alias_hops` + `_compose_alias_chains` is
+behaviour-preserving over 20,000 randomised trials with invariants (i)/(ii)
+clean and (iii) clean over 5,417 trials. The dropped `relevant.is_live()`
+conjunct is genuinely dead: 4,000 fuzzed `compute_roster` calls reached that sink
+1,227 times with zero violations.
+
+**BLOCKER 1 is a REGRESSION round 14 introduced, and the round-14 brief caused
+it.** The brief stated ITEM 2's invariant as "no live catalogue id is ever
+retired on a numerator of zero" and missed that a *planted* `arms` entry for an
+unused live model IS a zero-numerator live arm. The worker implemented that at
+the sink with the cost stated; the cost statement is narrower than the cost.
+Reproduced by the orchestrator on both heads — four live models, an honest fully
+attributable census, one added `arms` line naming the one live model with no
+usage:
 
 ```
-control  held= 94.340%  anchored_held=  0.000%  previous_only=94.3%  veto_fires=False
-PLANTED  held=  1.234%  anchored_held=  0.000%  previous_only=99.9%  veto_fires=False
+                          base 87f2031                    head 424eebf
+one planted arms line     plant RETIRED same run          plant HELD OVER
+judge                     claude-haiku-4-5 is_arm=False   claude-opus-7 is_arm=TRUE
+runs 2-3, plant reverted  self-heals                      persists
 ```
 
-A model carrying 94.3% publishes as `RETIRED … (1.2%)`, rc 0, permanently, from
-one added `arms` line.
+`run_eval.select_models` refuses every unpinned fixture when `judge.is_arm` is
+true, and the arm set is republished as this run's own output — so one line on
+the untrusted branch permanently halts the harness for unpinned fixtures and
+reverting the line does not undo it. The rule is non-monotonic in the direction
+that matters: a model used *once* in 10,001 turns is retired, a model used *not
+at all* is immortal. **`0db198a` is the sole cause and reverting it is decision
+11's first step.**
 
-**The three blockers.** (A) the above; (B) one **deletion** from `catalogue_seen`
-retires an arm carrying 60.0% at `0.0%`, rc 0, **empty stderr**, permanent —
-seven different primitives on that one entry do it, and it falsifies
-`test_the_one_cell_this_cannot_cover`'s two load-bearing sentences; (C) round
-12's blocker 2 unchanged through the fold relation (true 5.0% → `carries
-100.0%`), with the distinguishability remedy printing a **byte-identical** line
-to a legitimate ageing event.
+**The obvious repair was tested and does not hold.** Narrowing the refusal to
+require ranked-but-unattributable in-window turns — positive evidence of a broken
+chain rather than absence of evidence — does separate BLOCKER B's victim from the
+plant, but the census lives on the same untrusted branch, so one extra planted
+census key carrying a family word restores the plant's immunity. It raises the
+attack from one line to two; it does not close it. Do not re-derive this.
 
-**Two corrections to what fix round 12 reported about itself, both settled by
-measurement.** The worker's **departure from the prescribed remedy is the
-defect**, not a justified improvement: with `anchored_held` at 0.000% the added
-conjunct is false while the prescribed fraction alone is true, so the conjunction
-blocks a veto the prescription would have fired. (The round-13 code half ruled
-the departure safe by inferring `anchored_held ≥ held` from `anchored ⊆ wide`;
-that inference is false, because the anchored map has a smaller **numerator**
-too.) And the worker's claim that round 12's should-fix-2 falsifier was
-**unreproducible is wrong** — both round-13 halves reproduced it independently:
-tier-1 membership is decided over the 8-week union while the published share is
-divided by the 4-week enter window, so filler turns placed outside the enter
-window tip a true 9.99% to `carries 100.0%` at 499 fillers. The worker was right
-only that round 12's *own committed script* prints 16.7%, so round 12's report
-quoted a number its shipped script does not produce.
+**BLOCKERS 2 and 3 are survivals, measured byte-identical on both heads.**
+(2) `is_needed_hop` asks whether a chain needs an id in *this* run's census, but
+eviction is permanent and a kept hop's `last_seen` is never refreshed — so one
+quiet window ages the bridge out for good and the next busy window retires a live
+arm carrying a true 23.9% at 0.1%, rc 0, empty stderr, permanently, with **no
+hostile input at all** (run 2's `previous.json` is run 1's own output).
+Reproduced at bridge ages 181/200/365/400 days; the 179-day control does not
+fire. (3) = round 13's BLOCKER C, untouched: `is_needed_hop` walks *forward* from
+census keys, so it covers an entry that is a **hop** and not one that is the fold
+**source** — the documented B1'/round-10 shape, a model observed under a DATED id
+whose census usage is recorded under the UNDATED alias. `tier()` misses it (raw
+identity), `is_needed_hop` misses it (wrong direction). One `last_seen` date, and
+9,500 real turns leave the denominator permanently: a hold-over becomes a seat at
+`carries 100.0%` on a true 5.0%. No planter needed — the date is what this
+harness itself wrote.
 
-**If option 1 is chosen**, the fix now has a shape: revert the veto to the
-prescribed fraction-alone rule (or make conjunct 1 `anchored_held >= bar OR the
-anchored map cannot follow this arm's own chain`); give the ageing loop the fold
-relation rather than `tier()`'s raw membership; refuse a retirement whose
-numerator fell to zero because a `previous.json` entry went away; and
-re-instantiate **every** class-floor row twice — once raw-id, once fold-reached.
-Plus the three should-fixes: the 1,503/170/107 distribution figure does not
-reproduce (measured 1,456–1,480 across the PR, never 1,503) and no test
-distinguishes the notice constant at 0.10 from 0.90; the clause-1 cost recorded
-as "ten points" is measured at 90; and the notice is computed over the union
-while seating is decided over the enter window.
+**Prose defects both halves found, and one the orchestrator found first.**
+`harness/roster.py:2629-2657` — the comment block *governing the branch round 14
+rewrote* — still describes the deleted conjunction, including *"It is not a
+permanent block: the arm still retires once its own usage falls away"*, which the
+`held == 0.0` branch twelve lines below makes false. The tree already records
+this exact failure once, as round 12's should-fix 1, in the same function. Also
+`:2917-2920`, `:844` (`_format_share`'s "no caller can reach" clause, falsified
+by round 14's own new call site) and `test/run_tests.py:28502`. And the
+anchor-tolerance veto is structurally blind to the **deletion** direction —
+removing entries shrinks `previous_only` toward zero — which nothing in the `#:`
+block says.
+
+**Why fourteen rounds have not closed this, in one sentence.** *Every surviving
+defect is the same defect: `previous.json` and the census both live on
+`eval-results`, which the design treats as untrusted, and the harness keeps no
+second copy of what it has observed — so "this id was never an arm" and "the
+record was tampered with" are the same input, as are "this model is unused" and
+"its chain is broken".* Each round has keyed a sharper local check on something
+an adversary can vary — raw identity, then an exact zero, then this run's census,
+then one direction of the fold. BLOCKER 1 is the sharpest evidence: the remedy
+for a silent destruction produced a permanent halt, because both readings of a
+zero are one untrusted line away. **A round 15 of the same shape is not
+recommended and was not authorised.**
 
 ### Stopped by decision 8 (2026-09-08 01:20 UTC): "Stop adding and completing evals for specific skills"
 
@@ -253,7 +302,11 @@ be built and tested hermetically but have nothing real to run against.
 ### Not started
 
 - Harness lane after #97: #139, #66, #64, #68, #99, #69, #121, #70, #124, #71,
-  #122, #65, #98 (in that order; #67 parked).
+  #122, #65, #98 (in that order). #67 is no longer a fix-round item: its PR
+  parks at `424eebf` and the work moves to
+  [#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147), the trusted-
+  history redesign, which is where BLOCKERS 1, 2 and 3, round 13's BLOCKER B and
+  the declared open cell all close together.
 - Gates: [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153) (after #64).
 - Explorer and site: #72, [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536), #123, [adamdaniel.ai#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538).
 - Docs: #73, #125.
@@ -286,6 +339,17 @@ be built and tested hermetically but have nothing real to run against.
     every relevant issue and PR on the way out. Outcome: #131 and #130 merged,
     #129 parked again on a NOT CLEAN round 13, spend about $140 (68% of the
     line).
+11. 2026-09-08, after round 13's park: "Finish #129 using no more than **4% of
+    the weekly tokens**" — read as option 1 (a fix round scoped to the fold
+    relation, then round 14 decides), since it is the only option that ends with
+    the PR landed and it fits the line. Round 14 ran and was NOT CLEAN on both
+    halves, with one blocker a REGRESSION the round introduced. Adam then took
+    the orchestrator's recommendation verbatim: **option 4 — redesign the
+    denominator around a trusted history
+    ([#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147)) — with
+    `git revert 0db198a` done FIRST so the branch carries no regression.** The
+    next session is to open with an ESTIMATE RANGE, in percentage points of the
+    weekly limit, and await approval before doing any work.
 
 ## 3. How the programme is run (the rules that emerged, condensed)
 
