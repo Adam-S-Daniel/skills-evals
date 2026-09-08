@@ -12169,36 +12169,60 @@ class TestTheRunnerItself(unittest.TestCase):
         self.assertEqual(missing, set(),
                          self._uncovered_message(missing, DISCOVERY_DIR))
 
-    def test_every_python_file_in_the_discovery_dir_is_a_test_module(self):
-        # A-N4. `build_suite()` calls `loader.discover(...,
+    def test_every_entry_in_the_discovery_dir_is_a_test_module(self):
+        # A-N4-2. `build_suite()` calls `loader.discover(...,
         # top_level_dir=test/issues)`, and unittest puts that directory on
-        # `sys.path` for the REST OF THE PROCESS. A `.py` there that does not
-        # match DISCOVERY_PATTERN is never loaded as a test and is never
-        # noticed — and it shadows a same-named stdlib module for the whole
-        # suite. Measured: with `test/issues/colorsys.py` present,
-        # `colorsys.__file__` resolves under test/issues/ after discovery.
-        # `json` escaped only because run_tests.py imports it before
-        # discovery runs, which is luck rather than a rule.
+        # `sys.path` for the REST OF THE PROCESS. Anything importable there
+        # that is not a discovered test is invisible to the suite and shadows
+        # a same-named stdlib module for the whole run.
         #
-        # It is also what keeps the suite-forking pin above honest: that pin
-        # can only parse `run_tests.py` and `test_issue_*.py`, so a forking
-        # helper in a module it cannot see would be invisible to it. This
-        # assertion is why no such module can be here.
-        present = sorted(p.name for p in DISCOVERY_DIR.glob("*.py"))
+        # Round 3 asserted over `glob("*.py")`, which is a narrower claim than
+        # the sink: `sys.path` does not import `.py` files, it imports
+        # ENTRIES. Measured on f9115ce, each green under that glob:
+        # `colorsys/__init__.py` (a package) shadowed stdlib `colorsys` for
+        # the whole suite; `colorsys.so` (an empty file) shadowed it too and
+        # the loader picked it (`ImportError: file too short`); and
+        # `sub/test_issue_x.py` was neither flagged nor discovered — a failing
+        # test module that silently never runs, with the total unchanged at
+        # 807.
+        #
+        # So the assertion is over `iterdir()`: every entry is a regular file
+        # matching DISCOVERY_PATTERN, or the `__pycache__` a run creates.
+        # `json` escaped the shadowing only because run_tests.py imports it
+        # before discovery runs, which is luck rather than a rule.
+        entries = sorted(DISCOVERY_DIR.iterdir(), key=lambda p: p.name)
         self.assertTrue(
-            present,
-            f"no *.py at all under {DISCOVERY_DIR} — this assertion must not "
+            entries,
+            f"nothing at all under {DISCOVERY_DIR} — this assertion must not "
             "be able to pass vacuously")
-        stray = [name for name in present
-                 if not fnmatch.fnmatchcase(name, DISCOVERY_PATTERN)]
+        stray, modules = [], []
+        for entry in entries:
+            if (entry.name == "__pycache__" and entry.is_dir()
+                    and not entry.is_symlink()):
+                continue
+            if entry.is_file() and fnmatch.fnmatchcase(entry.name,
+                                                       DISCOVERY_PATTERN):
+                modules.append(entry.name)
+                continue
+            stray.append(entry.name + ("/" if entry.is_dir() else ""))
+        self.assertTrue(
+            modules,
+            f"no {DISCOVERY_PATTERN} under {DISCOVERY_DIR} at all — the "
+            "vacuity floor for the check above")
         self.assertEqual(
             stray, [],
-            f"{stray} live under {DISCOVERY_DIR} but do not match "
-            f"{DISCOVERY_PATTERN}, so build_suite() never loads them as "
-            "tests — while putting their directory on sys.path, where each "
-            "of them shadows any stdlib or site-packages module of the same "
-            "name for the whole run. A helper shared between issue modules "
-            "belongs somewhere that is not the discovery dir.")
+            f"{stray} live under {DISCOVERY_DIR} and are not test modules "
+            f"matching {DISCOVERY_PATTERN}, so build_suite() never loads them "
+            "— while putting their directory on sys.path, where each of them "
+            "shadows any stdlib or site-packages module of the same name for "
+            "the whole run. A package directory and an extension module "
+            "shadow exactly as a `.py` does, and a SUBdirectory hides any "
+            "test module inside it from discovery entirely. Shared helpers "
+            "belong outside the discovery dir; wherever they go, "
+            "test_every_suite_forking_test_in_this_repo_stands_down_in_a_child "
+            "scans the whole of test/ and harness/ and will still see one "
+            "that forks the suite."
+            " (Only `__pycache__` is allowed here, because a run creates it.)")
 
     def test_a_discovered_module_that_defines_no_tests_is_named_in_the_failure(self):
         # N6. A planted `test/issues/test_issue_zz_empty.py` containing only
