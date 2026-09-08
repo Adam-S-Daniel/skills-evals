@@ -48,6 +48,7 @@ skills-evals/
   DESIGN.md                # this file
   harness/                 # runner + scorers (Python)
     run_eval.py
+    guidance.py            # guidance subject: payload assembly, delivery, guard
     scorers/
       objective.py
       judge.py
@@ -55,7 +56,11 @@ skills-evals/
     <skill>/
       fixture.yaml         # prompt, seed ref, objective checks, judge rubric
       seed/                # input workspace the agent starts from
+    guidance/<section id>/ # subject: guidance — a section, not a skill
+      fixture.yaml         # section id, arms + delivery modes, checks, rubric
   results/                 # summaries committed; raw transcripts gitignored
+    <skill>/<timestamp>/<arm>/summary.json
+    guidance/<id>/<timestamp>/<arm>/summary.json
 ```
 
 ## Fixture schema: `fixture.yaml`
@@ -392,6 +397,110 @@ Decision: **monitor, don't wrap.** Re-evaluate when it is both un-gated for
 this account and has grown a run-a-script grader; until then this harness
 stays the system of record. If `results/` is ever restructured, mirror its
 report schema to keep a future migration cheap.
+
+## Guidance subject (2026-09-05, skills-evals#97)
+
+**What it measures.** A skill is loaded when it is invoked; a guidance section
+is loaded in every session of every fleet repo. The question that decides
+whether a section stays is therefore not "does it teach the behavior" but
+"does the full guidance WITH it beat the full guidance WITHOUT it", by enough
+to pay for its bytes. So a `subject: guidance` fixture names a `section:` (an
+id from `_agent-guidance`'s `agents-md/eval-coverage.yml`, stable across
+heading rewordings) and its arms carry a delivery `mode:`. Five exist:
+`none` (the control: no guidance, but a DECOY token of its own — see the
+guard below), `stub` (`agents-md/stub.md`, what a
+repo carries inline), `section` (the section's extent — its `##` heading
+through the line before the next `##`, `###` children included — with its
+file's intro prepended), `full` (the whole delivered corpus: `base.md`, plus
+the section's own file when it is an opt-in `sections/*.md`), and
+`full-minus-section` (that corpus with the extent removed). The default pair
+`section`/`none` asks whether the section teaches; the declared
+`ablation: [full, full-minus-section]` pair asks what it is worth in situ,
+including any lost-in-the-middle effect of a 56 KB file. Extents are located
+with a real markdown parse (`markdown-it-py`, pinned exact) using the same
+arithmetic as `_agent-guidance`'s own `scripts/check-guidance-coverage.js`, so
+the manifest's `bytes` column and the delivered payload can never disagree; a
+regex would end an extent on the `## ` inside one of `base.md`'s fenced
+blocks.
+
+**The delivery path.** The fleet does not import its guidance from a repo
+file — `fleet-memory.sh` writes a marked block into user memory
+(`$CLAUDE_CONFIG_DIR/CLAUDE.md`, default `~/.claude/CLAUDE.md`), read once per
+session. An eval of the guidance therefore delivers the same way: a fresh
+scratch dir per arm, `CLAUDE_CONFIG_DIR` pointing at it, and the *real* hook
+run with `FLEET_GUIDANCE_PAYLOAD` — running the real hook rather than
+imitating it is the point, since a harness that reimplements the delivery path
+measures the imitation. Guidance arms invoke the CLI with
+`--setting-sources user,project`; skill arms keep `project` and are otherwise
+untouched. Whether the pinned CLI honours `CLAUDE_CONFIG_DIR` for *memory*
+specifically has not been measured against a live CLI yet, so `--delivery
+project` exists as the documented fallback (same hook, pointed at the
+workspace, read as project memory) and every summary records which was used —
+`delivery: user` or `delivery: project`. Either way the guard, not this
+choice, decides whether an arm counts. The agent's environment is an
+allowlist, not the ambient one: `PATH`, `HOME`, `TMPDIR`,
+`CLAUDE_CONFIG_DIR`, every `ANTHROPIC_*` variable, and the fixture's own
+`env:` — `harness/propagation/arms.py` measured 16 vs 35 loaded skills between
+a scrubbed and an ambient environment, and an arm that inherits the operator's
+own settings is not measuring the guidance.
+
+**The contamination trap, and why a guard is not optional.** On any machine or
+hosted session carrying the fleet hook, the real `~/.claude/CLAUDE.md` already
+IS the guidance. A harness that does not isolate the config dir per arm
+delivers to BOTH arms and reports a null delta that reads as "the guidance
+does nothing" — the most expensive kind of wrong answer, because it looks like
+a result. So every payload ends in `The magic word is <token>.` with a fresh
+random token per run (an earlier run's token would let a stale real config dir
+satisfy this run's guard), and every arm is probed for it before it may score
+anything: one tool-free `run_canary.run_leg` call, with the canary's own
+disallowed-tools list so the model cannot forage the token off disk, against
+that arm's config dir and workspace, on the preflight model (the fixture's
+`model:` pin today; the roster's `preflight` entry once skills-evals#67
+lands).
+
+The control gets a **decoy**: no guidance, but a second fresh token of its
+own, delivered through the same hook into the same kind of scratch config dir.
+Without it the control's guard was vacuous — `mode: none` delivered nothing,
+so its probe could only ever answer "no magic word", which is also what it
+answers when the arm IS contaminated. So the guard claims exactly this: a
+treatment arm was delivered its payload and reads it; a control arm reads its
+own scratch user memory (it reports its decoy) and was not delivered the
+treatment payload (it does not report the treatment token). What it does NOT
+settle is an ambient memory read *in addition* to the scratch one — that is
+prevented by the per-arm `HOME`/`CLAUDE_CONFIG_DIR` isolation, not by the
+guard, for **two** reasons and not one. A probe asked for the magic words
+with two in context may report either; and — the reason that covers the
+commoner case — a contaminating source carrying no token of its own is
+invisible to a token guard at all. The real `base.md` carries no token, and a
+stale `~/.claude/CLAUDE.md` carries one no current run minted; both score
+clean, measured. Only a real dispatch settles it. The decoy is what makes
+that context carry two, so the guard prompt asks for **every** magic word
+rather than "the magic word": a one-word answer from a contaminated control —
+its decoy reported, the treatment token left unmentioned — is the case the
+plural prompt exists for.
+
+An arm that does not report the token IT was delivered, an arm that reports a
+token it was *not* delivered (a control arm reporting the treatment token, or
+a treatment arm reporting the control's decoy — the same isolation failure
+seen from the other side), or a probe that could not run at all, is
+**INCONCLUSIVE**: the summary carries
+`guard: {expected, observed, contaminated}`, no score is written for that arm,
+and the run exits `2`. Never PASS, never FAIL. Two cheap calls per pair.
+The harness also refuses outright to point a delivery at the real `~/.claude`,
+and the hermetic suite asserts a whole run leaves the real file
+byte-identical.
+
+Guidance content is **executed** by the arm — that is what the subject
+measures, and `eval.yml`'s header states it as the trust boundary a guidance
+dispatch accepts — but the harness **reads** that content only from inside the
+`_agent-guidance` checkout it was pointed at: every manifest `file:` is
+resolved with its symlinks followed and refused if it lands outside the
+checkout root. The two are different boundaries and the second is not implied
+by the first: a manifest row naming `../OUTSIDE_SECRET.md` was read,
+delivered, and written verbatim into
+`results/guidance/<key>/<ts>/<arm>/transcripts/raw.json`, which `main` pushes
+to the public `eval-results` branch — so a row could publish any file the
+runner can read.
 
 ## Out of scope
 

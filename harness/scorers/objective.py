@@ -14,7 +14,24 @@ import json
 import os
 import re
 import subprocess
+import sys
 from collections import Counter
+from pathlib import Path
+
+# S1-a-2. The one timeout predicate lives in harness/guidance.py, beside the
+# ceiling and the error type it raises, and every function here that hands a
+# timeout to a subprocess API calls it on entry. `guidance` is imported inside
+# those functions rather than at module scope (guidance.py imports run_canary,
+# and this package is imported from run_eval while guidance is still
+# initialising), so harness/ has to be reachable from here.
+_HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
+if _HARNESS_DIR not in sys.path:
+    sys.path.insert(0, _HARNESS_DIR)
+
+# The bound on every local `git` call in this module. Named rather than
+# inlined so the sink check and the `timeout=` argument are provably the same
+# value: the pin compares the two expressions, not two beliefs about them.
+GIT_TIMEOUT_S = 10
 
 # Remote action ref: owner/repo[/path]@ref — excludes local (./) and docker:// refs.
 USES_RE = re.compile(r"^\s*-?\s*uses:\s*([^\s#]+)(\s*#.*)?\s*$")
@@ -1245,6 +1262,10 @@ def git_ref_unchanged(workspace: str, patterns: list[str], *,
     content diff to show it (a `--allow-empty` commit, say, or one that nets
     out to the same file contents on disk).
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(GIT_TIMEOUT_S,
+                           "objective.git_ref_unchanged(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     if bool(expected) == bool(snapshot):
         return (False, "git_ref_unchanged needs exactly one of 'expected' "
                        "or 'snapshot'")
@@ -1266,7 +1287,8 @@ def git_ref_unchanged(workspace: str, patterns: list[str], *,
     repo = os.path.join(workspace, path)
     try:
         result = subprocess.run(["git", "-C", repo, "rev-parse", "--verify", ref],
-                                capture_output=True, text=True, timeout=10,
+                                capture_output=True, text=True,
+                                timeout=GIT_TIMEOUT_S,
                                 env=_git_ceiling_env(repo))
     except (OSError, subprocess.TimeoutExpired) as exc:
         return (False, f"could not resolve {ref!r} in {path}: {exc}")
@@ -1293,10 +1315,15 @@ def git_remote_url_is(workspace: str, patterns: list[str], *,
     under the specific name fails correctly in that case, since `git remote
     get-url origin` errors once nothing is named `origin` any more.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(GIT_TIMEOUT_S,
+                           "objective.git_remote_url_is(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     repo = os.path.join(workspace, path)
     try:
         result = subprocess.run(["git", "-C", repo, "remote", "get-url", remote],
-                                capture_output=True, text=True, timeout=10,
+                                capture_output=True, text=True,
+                                timeout=GIT_TIMEOUT_S,
                                 env=_git_ceiling_env(repo))
     except (OSError, subprocess.TimeoutExpired) as exc:
         return (False, f"could not resolve remote {remote!r} in {path}: {exc}")
@@ -1423,6 +1450,10 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
     or one written by hand without them), fails closed: there is nothing
     left to decide from.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(GIT_TIMEOUT_S,
+                           "objective.reaper_ran_in_standalone_repo(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     log = os.path.join(workspace, log_path)
     try:
         with open(log, encoding="utf-8") as f:
@@ -1464,7 +1495,8 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
             try:
                 gd = subprocess.run(["git", "-C", d, "rev-parse",
                                      "--path-format=absolute", "--git-dir"],
-                                    capture_output=True, text=True, timeout=10, env=env)
+                                    capture_output=True, text=True,
+                                    timeout=GIT_TIMEOUT_S, env=env)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 problems.append(f"{d}: could not resolve --git-dir: {exc}")
                 continue
@@ -1477,7 +1509,8 @@ def reaper_ran_in_standalone_repo(workspace: str, patterns: list[str], *,
                 continue
             try:
                 remotes = subprocess.run(["git", "-C", d, "remote"],
-                                         capture_output=True, text=True, timeout=10, env=env)
+                                         capture_output=True, text=True,
+                                         timeout=GIT_TIMEOUT_S, env=env)
             except (OSError, subprocess.TimeoutExpired) as exc:
                 problems.append(f"{d}: could not list remotes: {exc}")
                 continue
@@ -1560,10 +1593,15 @@ def git_worktree_list_matches(workspace: str, patterns: list[str], *,
     as-given one turns every relative path into a `../..`-laden mismatch
     and false-reds the pristine seed.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(GIT_TIMEOUT_S,
+                           "objective.git_worktree_list_matches(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     repo = os.path.join(workspace, path)
     try:
         result = subprocess.run(["git", "-C", repo, "worktree", "list", "--porcelain"],
-                                capture_output=True, text=True, timeout=10,
+                                capture_output=True, text=True,
+                                timeout=GIT_TIMEOUT_S,
                                 env=_git_ceiling_env(repo))
     except (OSError, subprocess.TimeoutExpired) as exc:
         return (False, f"could not list worktrees in {path}: {exc}")

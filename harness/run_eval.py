@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Run a skill eval fixture.
+"""Run an eval fixture.
 
 Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
     python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...] [--no-judge]
+    python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
 
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
 pristine seed should FAIL the fixture's checks; a correctly reworked copy
@@ -11,6 +12,15 @@ should PASS. `--arm with_skill|without_skill|both` runs the agent under test
 (the Claude Code CLI, headless) on a fresh copy of the seed, scores it with
 the objective checks and the LLM judge, and writes a summary + report under
 `--results-dir` (default `results/`).
+
+TWO SUBJECTS. `subject: skill` (the default) copies one skill from a registry
+into `<workspace>/.claude/skills/` and runs with `--setting-sources project`.
+`subject: guidance` (#97) delivers a payload assembled from an
+`_agent-guidance` checkout into a FRESH per-arm config dir, through the real
+fleet-memory hook, and runs with `--setting-sources user,project` — with a
+magic-token guard per arm that makes a mis-delivered arm INCONCLUSIVE (exit 2)
+rather than a quiet number. See `_run_guidance` below, harness/guidance.py,
+and DESIGN.md "Guidance subject".
 """
 
 from __future__ import annotations
@@ -29,12 +39,143 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
+import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
 
 def load_fixture(eval_dir: Path) -> dict:
-    with open(eval_dir / "fixture.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """The fixture, or a named configuration error.
+
+    A-N1-2. A-N1 typed the mapping-valued KEYS; the container that holds them
+    was never typed at all. Measured on f9115ce: a fixture whose root is a
+    LIST was `AttributeError: 'list' object has no attribute 'get'` and rc 1,
+    and an EMPTY file (YAML `None`) was `TypeError: argument of type
+    'NoneType' is not iterable` raised inside A-N1's own `_require_mapping` —
+    both outside the rc-2 contract, and the second one inside the very
+    predicate added to keep shapes out of the harness.
+    """
+    path = eval_dir / "fixture.yaml"
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict):
+        raise guidance.GuidanceError(
+            f"{path} must be a YAML mapping of fixture keys, got "
+            f"{type(doc).__name__}"
+            + (" (the file is empty)" if doc is None else f": {doc!r}"))
+    return doc
+
+
+# Every timeout knob a fixture can set, as (key, path-to-its-mapping). Each is
+# read with `.get(key, <default>)`, which returns the VALUE whenever the key is
+# PRESENT — so an explicit YAML null (`guard:` / `  timeout_s:`) yielded None
+# and `subprocess.run(timeout=None)` waited forever: measured against a CLI
+# that never returns, the only backstop in CI is the 45-minute job kill, with
+# no summary and no artifact written. A string yielded a TypeError traceback
+# and rc 1, outside the "configuration problem" contract (rc 2, a named
+# message, no traceback).
+TIMEOUT_KNOBS = (
+    ("timeout_s", ()),           # the agent leg, both subjects
+    ("setup_timeout_s", ()),     # the fixture's `setup:` hook
+    ("timeout_s", ("guard",)),   # the guidance subject's per-arm delivery guard
+    ("timeout_s", ("judge",)),   # the judge call
+)
+
+# Every fixture key the harness reads as a MAPPING. The knob parents above
+# are derived rather than repeated, so a new nested knob cannot arrive without
+# its parent being type-checked; `env:` is the one that is not a timeout
+# parent and has the identical defect — `(env_spec or {}).items()` on a
+# present non-mapping is an AttributeError traceback and rc 1, outside the
+# rc-2 configuration contract, exactly as `(fixture.get("guard") or
+# {}).get(...)` was.
+MAPPING_FIXTURE_KEYS = tuple(dict.fromkeys(
+    [parent for _key, parents in TIMEOUT_KNOBS for parent in parents] + ["env"]))
+
+
+def _require_mapping(fixture: dict, key: str, fixture_path: Path) -> None:
+    """A PRESENT `key:` is a mapping, or an explicit null. Anything else is a
+    named configuration error at fixture load.
+
+    An explicit null is fine and means "absent": `(fixture.get("guard") or
+    {})` and `(env_spec or {})` both fall back on it, and every committed
+    fixture that omits the key is untouched by this. A truthy non-mapping is
+    not fine — YAML will hand over a list, a string or a number just as
+    happily, and each of them reaches `.get()`/`.items()` on the wrong type
+    and dies with an AttributeError traceback instead of naming the rule.
+    """
+    if not isinstance(fixture, dict):
+        raise guidance.GuidanceError(
+            f"{fixture_path}: expected a mapping of fixture keys, got "
+            f"{type(fixture).__name__} — `{key}:` cannot be looked up in it. "
+            "A-N1-2: this predicate used to assume its own argument's shape, "
+            "so an empty fixture file died with a TypeError inside it.")
+    if key not in fixture or fixture[key] is None or isinstance(fixture[key], dict):
+        return
+    raise guidance.GuidanceError(
+        f"{fixture_path}: `{key}:` must be a mapping (or absent), got "
+        f"{fixture[key]!r}. The harness reads it with `.get()`/`.items()`, so "
+        "a list, a string or a number here is not a configuration it can run "
+        "— it used to reach the wrong type and die with an AttributeError "
+        "traceback instead of naming the rule.")
+
+
+def validate_mapping_keys(fixture: dict, fixture_path: Path) -> None:
+    """Every mapping-typed fixture key, checked ONCE at load — before any
+    subject branch, any path is derived and any CLI is invoked."""
+    for key in MAPPING_FIXTURE_KEYS:
+        _require_mapping(fixture, key, fixture_path)
+    guidance.check_env_block(fixture.get("env"), f"{fixture_path}: `env:`")
+
+
+# The CEILING every knob above is checked against, and the predicate that
+# applies it, both live in harness/guidance.py — beside the GuidanceError they
+# raise, and where EVERY source of a timeout can reach them. Round 2 put them
+# here, in the fixture loader, and `--timeout` on the command line overrode the
+# checked value afterwards with an unchecked one: `--timeout 2200000` was still
+# rc 1 and a bare `OverflowError`. `main()` now runs the same predicate on the
+# flag (see the `--timeout` check there), run_canary.py and run_propagation.py
+# run it on theirs, and
+# `test_every_harness_subprocess_timeout_names_its_validated_source` inventories
+# every `subprocess` timeout under harness/ so a new sink cannot arrive with no
+# validated source behind it.
+#
+# Re-exported under this module's own name because it is part of run_eval's
+# published surface: `test_the_timeout_ceiling_is_the_workflow_job_budget`
+# anchors it to eval.yml's `eval` job.
+MAX_TIMEOUT_S = guidance.MAX_TIMEOUT_S
+
+# The bound on this module's own local `git` calls. Named rather than inlined
+# so the sink check and the `timeout=` argument are provably the same value:
+# the pin compares the two expressions, not two beliefs about them.
+GIT_TIMEOUT_S = 10
+
+
+def validate_timeouts(fixture: dict, fixture_path: Path) -> None:
+    """Coerce-and-check every timeout knob ONCE, at fixture load, before any
+    subject branch or subprocess. Absent is fine — the caller's default
+    applies, and a fixture with a valid or absent knob is untouched by this,
+    so every committed fixture scores byte-identically.
+
+    """
+    for key, parents in TIMEOUT_KNOBS:
+        node = fixture
+        for parent in parents:
+            # NOT `node = {}` on a non-mapping. Normalising the bad container
+            # away let `guard: [1]` through validation and on into
+            # `(fixture.get("guard") or {}).get("timeout_s", 300)`, which is
+            # an AttributeError traceback and rc 1 — the same defect this
+            # predicate closes for the leaf, one level up. Checked here as
+            # well as in `validate_mapping_keys` so this function is sound for
+            # a direct caller, not only for the one order main() calls them in.
+            if not isinstance(node, dict):
+                node = None
+                break
+            _require_mapping(node, parent, fixture_path)
+            node = node.get(parent)
+        if not isinstance(node, dict) or key not in node:
+            continue
+        guidance.check_timeout(node[key], ".".join(parents + (key,)),
+                               guidance.FIXTURE_TIMEOUT_REMEDY,
+                               prefix=f"{fixture_path}: ")
 
 
 REGISTRIES_YML = Path(__file__).parent / "registries.yml"
@@ -338,9 +479,15 @@ def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     That is what lets a seed put a fake binary on the agent's PATH
     (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B "fake `gh` on the seed
     workspace's PATH" move DESIGN.md prescribes, without the seed carrying an
-    absolute path. Values are strings; a non-string is stringified rather
-    than rejected, since YAML will happily hand over an int.
+    Values are strings; a non-string is stringified rather than rejected,
+    since YAML will happily hand over an int. What IS refused, here at the
+    function that builds the child's environment and by the same predicate
+    guidance.agent_env uses, is a name or value the OS itself will not take:
+    a name with an `=` in it reached `subprocess.run(env=...)` and came back
+    as `ValueError: illegal environment variable name` — rc 1 and a
+    traceback, after the arm had started.
     """
+    guidance.check_env_block(env_spec, "the fixture's `env:`")
     env = dict(os.environ)
     env["WORKSPACE"] = str(workspace)
     for key, value in (env_spec or {}).items():
@@ -370,11 +517,13 @@ def run_setup(workspace: Path, fixture: dict) -> dict | None:
     captured stderr/stdout tail, never a bare traceback out of a check that
     assumed setup had already put its files in place.
     """
+    timeout = fixture.get("setup_timeout_s", 60)
+    guidance.check_timeout(timeout, "run_eval.run_setup(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     setup_cmd = fixture.get("setup")
     if not setup_cmd:
         return None
     cmd = os.path.expandvars(str(setup_cmd)).replace("$WORKSPACE", str(workspace))
-    timeout = fixture.get("setup_timeout_s", 60)
     try:
         result = subprocess.run(["bash", "-c", cmd], cwd=workspace,
                                 capture_output=True, text=True, timeout=timeout,
@@ -403,6 +552,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     skill installation and process invocation failures are turned into error
     dicts here, nothing is raised.
     """
+    # S1-a-2. The predicate sits HERE, at the function that hands the value
+    # to the OS, and not only at the sources a table can name. Measured on
+    # f9115ce: rebinding this call site's `timeout` to an unvalidated fixture
+    # key (`fixture.get("agent_timeout_s", 600)`) left the source inventory,
+    # the flag pin and all 120 TestIssue97 tests green while a fixture
+    # reproduced `OverflowError: timeout is too large`, rc 1.
+    timeout = arm.get("timeout", 600)
+    guidance.check_timeout(timeout, "run_eval.run_agent(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     if arm["name"] == "with_skill":
         skill = arm["skill"]
         try:
@@ -440,17 +598,24 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             return {"error": "skill_install_failed",
                     "detail": f"{skill_dest} already exists in the seed: {exc}"}
 
+    # `setting_sources` and `env_override` are the guidance subject's two
+    # seams (#97): guidance is delivered into USER memory by the fleet hook,
+    # so a guidance arm is invoked with `user,project` and with the scrubbed
+    # allowlist environment its arm built. Both default to exactly what skill
+    # arms have always had — `project`, and this harness's own environment
+    # with the fixture's `env:` applied — so skill fixtures are byte-identical
+    # across this change.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
            "--output-format", "json", "--permission-mode", "bypassPermissions",
-           "--setting-sources", "project"]
+           "--setting-sources", arm.get("setting_sources", "project")]
     if arm.get("model"):
         cmd += ["--model", arm["model"]]
 
-    timeout = arm.get("timeout", 600)
     try:
         result = subprocess.run(cmd, cwd=workspace, capture_output=True,
                                 text=True, timeout=timeout,
-                                env=agent_env(workspace, arm.get("env")))
+                                env=arm.get("env_override")
+                                or agent_env(workspace, arm.get("env")))
     except subprocess.TimeoutExpired:
         return {"error": "timeout", "detail": f"agent timed out after {timeout}s"}
 
@@ -538,12 +703,15 @@ def _nested_repo_diff(workspace: Path, dirs: list[Path]) -> str:
     diff` cannot show (a gitlink is a single line: the commit SHA it now
     points at, not a patch).
     """
+    guidance.check_timeout(GIT_TIMEOUT_S, "run_eval._nested_repo_diff(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     sections = []
     for d in dirs:
         rel = d.relative_to(workspace)
         log = subprocess.run(
             ["git", "-C", str(d), "log", "--stat", "-p", "-1", "--format=%H %s"],
-            capture_output=True, text=True, errors="replace", timeout=10)
+            capture_output=True, text=True, errors="replace",
+            timeout=GIT_TIMEOUT_S)
         if log.returncode != 0 or not log.stdout.strip():
             sections.append(f"=== {rel} (no commits) ===")
         else:
@@ -618,21 +786,33 @@ def _build_judge_diff(workspace: Path) -> str:
     return diff
 
 
-def _write_summary(results_dir: Path, skill: str, arm_name: str, timestamp: str,
-                   error: dict | None, agent: dict | None,
+def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
+                   timestamp: str, error: dict | None, agent: dict | None,
                    objective_checks: list | None, judge_result: dict | None,
-                   raw: dict | None) -> None:
-    arm_dir = results_dir / skill / timestamp / arm_name
+                   raw: dict | None, key: str | None = None,
+                   extra: dict | None = None) -> None:
+    """One arm's summary.json (+ raw transcript).
+
+    `key` is the results-tree path for this subject — a skill's own name, or
+    `guidance/<section id>` — and defaults to `skill`, which is what every
+    skill arm has always written. `extra` carries the guidance subject's own
+    fields (subject/section/mode/bytes/delivery/guard).
+    """
+    arm_dir = results_dir / (key or skill) / timestamp / arm_name
     arm_dir.mkdir(parents=True, exist_ok=True)
-    summary = {
-        "skill": skill,
+    summary = {}
+    if skill is not None:
+        summary["skill"] = skill
+    summary.update({
         "arm": arm_name,
         "timestamp": timestamp,
         "error": error,
         "agent": agent,
         "objective_checks": objective_checks,
         "judge": judge_result,
-    }
+    })
+    if extra:
+        summary.update(extra)
     with open(arm_dir / "summary.json", "w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
     if raw is not None:
@@ -682,7 +862,8 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up."""
-    workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
+    workspace = Path(tempfile.mkdtemp(
+        prefix=f"{ARM_WORKSPACE_PREFIX}{arm_name}-"))
     try:
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
 
@@ -793,6 +974,12 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                         timeout=judge_cfg.get("timeout_s", 120),
                         weights=judge_cfg.get("weights"),
                     )
+                except guidance.GuidanceError:
+                    # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
+                    # error, not a judge result: recorded as `{"error": ...}`
+                    # it would score the arm and exit 0/1 with the rule never
+                    # named. Re-raised so main()'s rc-2 contract holds.
+                    raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
 
@@ -805,11 +992,592 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         shutil.rmtree(workspace, ignore_errors=True)
 
 
+# ---------------------------------------------------------------------------
+# The `guidance` subject (#97)
+#
+# A skill arm installs a skill and runs with `--setting-sources project`. A
+# guidance arm delivers a payload the way the fleet does — the real
+# fleet-memory.sh hook, into a FRESH scratch config dir — and runs with
+# `--setting-sources user,project`. Every arm then PROVES its delivery with a
+# magic-token probe before it is allowed to score anything: on a machine
+# carrying the fleet hook the real ~/.claude/CLAUDE.md already IS the
+# guidance, so an unisolated `without` arm reports a null delta that reads as
+# "the guidance does nothing".
+# ---------------------------------------------------------------------------
+
+SKILL_ARMS = ("objective-only", "with_skill", "without_skill", "both")
+
+DEFAULT_GUIDANCE_ARMS = {"with_guidance": {"mode": "section"},
+                         "without_guidance": {"mode": "none"}}
+
+_ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+# A-N2-2. An arm name becomes more paths than the arm directory, and the two
+# it also becomes were unmodelled. Measured on f9115ce, both rc 1 and both a
+# traceback:
+#   * an arm named `report.md` collided with the run's OWN report — the arm's
+#     summary.json and transcripts/raw.json were written first, then
+#     `_render_report` opened the arm DIRECTORY for writing:
+#     `IsADirectoryError: [Errno 21]`;
+#   * `a` * 255 (and 256, and 4096) was `OSError: [Errno 36] File name too
+#     long`, out of the per-arm workspace's mkdtemp rather than out of the
+#     arm directory, because that path carries a prefix as well as the name.
+#
+# The files a run writes INTO the run directory, beside the per-arm dirs, and
+# the ones it writes INSIDE an arm dir. Only the first class can collide with
+# an arm name; the second is why an arm called `summary.json` is harmless.
+# `test_the_arm_name_refusal_covers_every_file_the_run_writes` parses this
+# module and refuses any write-open whose filename is in neither tuple, so a
+# new run-directory file cannot arrive without being classified.
+REPORT_NAME = "report.md"
+RUN_DIR_FILES = (REPORT_NAME,)
+ARM_DIR_FILES = ("summary.json", "raw.json")
+
+# The prefix every per-arm workspace's mkdtemp carries, named once so the
+# length cap below and the call sites cannot drift apart.
+ARM_WORKSPACE_PREFIX = "skills-evals-"
+# mkdtemp appends 8 random characters to the prefix it is given, and the
+# longest single filesystem component is 255 bytes on every filesystem this
+# runs on. The workspace is the tightest consumer of an arm name, so it is
+# what the cap is derived from rather than a number someone picked.
+_NAME_MAX = 255
+_MKDTEMP_RANDOM_LEN = 8
+MAX_ARM_NAME_LEN = (_NAME_MAX - len(ARM_WORKSPACE_PREFIX) - 1
+                    - _MKDTEMP_RANDOM_LEN)
+
+# The anchor `_names_a_new_directory` measures against. Any absolute path that
+# is not the filesystem root works; it never exists and is never written.
+_ARM_NAME_ANCHOR = Path("/arm-name-check")
+
+
+def _names_a_new_directory(name: str) -> bool:
+    """Does `name` name a NEW directory directly under a run directory?
+
+    A2-N2. The character class above accepts `.` and `..`, which are the two
+    names that do NOT. Measured through main(), one arm per run: an arm named
+    `..` wrote `summary.json` and `transcripts/raw.json` one level ABOVE the
+    timestamped run directory — into the per-key directory that accumulates
+    run history on the public `eval-results` branch — and `.` wrote into the
+    run directory itself, on top of whatever was there.
+
+    Stated as the property rather than as a blocklist of the two names that
+    break it today: join the name to an anchor, normalise it the way the
+    filesystem will, and require the result to be a direct child of the
+    anchor still called what it was called. `...` and `.hidden` pass — they
+    really are new directories — and only `.` and `..` do not.
+    """
+    joined = Path(os.path.normpath(_ARM_NAME_ANCHOR / name))
+    return joined.parent == _ARM_NAME_ANCHOR and joined.name == name
+
+# The placeholder a guidance fixture writes where the run's magic token goes.
+# The token is fresh per run, so a fixture cannot name it; `transcript_matches`
+# patterns (and any other check string) get it substituted in at score time.
+TOKEN_PLACEHOLDER = "$MAGIC_TOKEN"
+# The CONTROL arm's own token, delivered to it and to nothing else.
+DECOY_PLACEHOLDER = "$DECOY_TOKEN"
+
+
+def _validate_arm_entry(name: str, entry: dict) -> dict:
+    if isinstance(name, str) and name in RUN_DIR_FILES:
+        raise guidance.GuidanceError(
+            f"invalid arm name {name!r}: the run writes "
+            f"{', '.join(RUN_DIR_FILES)} into the run directory itself, "
+            "beside the per-arm directories, so an arm of that name is a "
+            "directory where a file has to go — the arm's own summary.json "
+            "and transcripts/raw.json are written first and the report then "
+            "fails with IsADirectoryError, after the run has spent every arm")
+    if isinstance(name, str) and len(name) > MAX_ARM_NAME_LEN:
+        raise guidance.GuidanceError(
+            f"invalid arm name of {len(name)} characters: an arm name may be "
+            f"at most {MAX_ARM_NAME_LEN}. It becomes a directory name under "
+            "results/ AND the per-arm workspace "
+            f"`{ARM_WORKSPACE_PREFIX}<name>-XXXXXXXX`, which is the longer of "
+            f"the two; past {_NAME_MAX} bytes the filesystem refuses it with "
+            "`File name too long` part-way into the run instead of naming a "
+            "rule here")
+    if (not isinstance(name, str) or not _ARM_NAME_RE.fullmatch(name)
+            or not _names_a_new_directory(name)):
+        raise guidance.GuidanceError(
+            f"invalid arm name {name!r}: arm names become directory names "
+            "under results/, so they must be a single path segment that "
+            "names a NEW directory — `.` and `..` are neither, and an arm "
+            "named `..` writes its summary one level above the run "
+            "directory, into the history the public results branch carries")
+    if not isinstance(entry, dict) or "mode" not in entry:
+        raise guidance.GuidanceError(f"arm {name!r} must be a mapping with a `mode:`")
+    unknown = sorted(set(entry) - {"mode", "objective_checks"})
+    if unknown:
+        # A typo'd `objective_check:` would drop the arm's whole check list
+        # and still report green, which is worse than failing at load time.
+        raise guidance.GuidanceError(
+            f"arm {name!r} has unknown key(s) {unknown} — an arm takes `mode:` "
+            "and an optional `objective_checks:`")
+    mode = entry["mode"]
+    if mode not in guidance.MODES:
+        raise guidance.GuidanceError(
+            f"arm {name!r} has unknown mode {mode!r} — expected one of "
+            f"{', '.join(guidance.MODES)}")
+    # Name and expectation must agree. The guard derives its expectation from
+    # the MODE, so a `with_*` arm carrying `mode: none` would be a control arm
+    # wearing a treatment arm's name — the summary would read as a delivered
+    # arm that saw nothing, which is precisely the shape of a real failure.
+    if name.startswith("with_") and mode == "none":
+        raise guidance.GuidanceError(
+            f"arm {name!r} is named as a treatment arm but carries "
+            "`mode: none` — rename it or give it a mode that delivers")
+    if not name.startswith("with_") and mode != "none" and name.startswith("without_"):
+        raise guidance.GuidanceError(
+            f"arm {name!r} is named as a control arm but carries "
+            f"`mode: {mode}` — rename it or give it `mode: none`")
+    return {"name": name, "mode": mode,
+            "objective_checks": entry.get("objective_checks")}
+
+
+def guidance_arms(fixture: dict, arm_flag: str, ablation: bool = False) -> list[dict]:
+    """The arms to run, in declaration order.
+
+    Default pair `section` / `none` — "does this section teach the behavior".
+    `ablation: [full, full-minus-section]` is the second pair, `--ablation`,
+    which the matrix runner schedules monthly: the marginal value of the
+    section IN SITU inside a 56 KB always-on file, which is the question that
+    decides whether it keeps paying for its bytes.
+    """
+    if ablation:
+        modes = fixture.get("ablation")
+        if not isinstance(modes, list) or len(modes) != 2:
+            raise guidance.GuidanceError(
+                "--ablation needs the fixture to declare `ablation:` as a list "
+                "of exactly two modes (e.g. [full, full-minus-section])")
+        declared = {f"ablation_{str(m).replace('-', '_')}": {"mode": m} for m in modes}
+        if len(declared) != 2:
+            raise guidance.GuidanceError(
+                f"`ablation: {modes}` names the same mode twice")
+    else:
+        # ABSENT means "take the default pair". PRESENT means "these are my
+        # arms", and an empty, null or non-mapping value is a fixture error —
+        # `fixture.get("arms") or DEFAULT_GUIDANCE_ARMS` made the check below
+        # dead code, so `arms: {}`, `arms:` and `arms: []` all silently ran
+        # somebody else's `section`/`none` pair under this fixture's name.
+        declared = (DEFAULT_GUIDANCE_ARMS if "arms" not in fixture
+                    else fixture["arms"])
+        if not isinstance(declared, dict) or not declared:
+            raise guidance.GuidanceError(
+                "`arms:` must be a mapping of arm name -> {mode: ...}, and a "
+                f"non-empty one; got {declared!r}. Omit the key entirely to "
+                "take the default "
+                f"{'/'.join(a['mode'] for a in DEFAULT_GUIDANCE_ARMS.values())}"
+                " pair.")
+    arms = [_validate_arm_entry(name, entry) for name, entry in declared.items()]
+    if arm_flag in ("both", "all"):
+        return arms
+    for arm in arms:
+        if arm["name"] == arm_flag:
+            return [arm]
+    raise guidance.GuidanceError(
+        f"--arm {arm_flag!r} names no arm in this fixture (declared: "
+        f"{', '.join(a['name'] for a in arms)}; or `both` for all of them)")
+
+
+def substitute_token(value, token: str, decoy: str | None = None):
+    """Replace the fixture's `$MAGIC_TOKEN` placeholder with this run's token,
+    recursively, in a copy — the fixture dict itself is never mutated.
+
+    `$DECOY_TOKEN` is the control arm's own token, and is substituted only for
+    an arm that HAS one (`mode: none`). Left alone elsewhere it stays a
+    literal, and a check looking for it fails loudly rather than passing on a
+    placeholder nobody filled in.
+    """
+    if isinstance(value, str):
+        out = value.replace(TOKEN_PLACEHOLDER, token)
+        return out if decoy is None else out.replace(DECOY_PLACEHOLDER, decoy)
+    if isinstance(value, list):
+        return [substitute_token(item, token, decoy) for item in value]
+    if isinstance(value, dict):
+        return {key: substitute_token(item, token, decoy)
+                for key, item in value.items()}
+    return value
+
+
+def _guard_error(guard: dict) -> dict:
+    """The error block for an arm whose delivery could not be proved.
+
+    Two distinguishable shapes, both INCONCLUSIVE and both exit 2, neither
+    ever PASS or FAIL: `guard_error` (the probe could not run at all — no
+    credential, CLI missing; a guard that cannot run is never a skipped
+    guard) and `guard_miss` (it ran and disagreed with this arm's mode).
+    """
+    if guard["error"]:
+        return {"type": "guard_error",
+                "detail": f"delivery guard could not run: {guard['error']['type']}: "
+                          f"{guard['error']['detail']}"}
+    if guard.get("contaminated"):
+        return {"type": "guard_contaminated",
+                "detail": "the delivery guard's probe reported a token this "
+                          "arm was NOT delivered — a control arm reporting the "
+                          "TREATMENT token, or a treatment arm reporting the "
+                          "control's DECOY. Either way this arm read memory "
+                          "the harness never delivered to it, so the per-arm "
+                          "isolation did not hold and every number in this run "
+                          "is suspect; no score is written for it"}
+    expectation = "the magic word" if guard["expected"] else "no magic word"
+    observed = "saw it" if guard["observed"] else "did not see it"
+    return {"type": "guard_miss",
+            "detail": f"delivery guard expected {expectation}, the probe "
+                      f"{observed} — this arm did not read the token it was "
+                      "delivered (a treatment arm its payload's, a control arm "
+                      "its decoy), so it never read its own scratch user "
+                      "memory; no score is written for it"}
+
+
+def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
+                      args: argparse.Namespace, timestamp: str) -> dict:
+    """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
+    scratch = Path(tempfile.mkdtemp(
+        prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
+    try:
+        workspace, home = scratch / "ws", scratch / "home"
+        config, tmpdir = scratch / "config", scratch / "tmp"
+        for path in (workspace, home, config, tmpdir):
+            path.mkdir(parents=True)
+        if seed.is_dir():
+            shutil.copytree(seed, workspace, dirs_exist_ok=True)
+        _git("init", "-q", cwd=workspace)
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "--allow-empty", "-m", "seed", cwd=workspace)
+
+        delivery = ctx["delivery"]
+        # The token THIS arm is delivered. A treatment arm gets the run's
+        # magic token; the control gets a DECOY of its own, so that its guard
+        # can ask a question with a wrong answer — "does this arm read its own
+        # scratch user memory?" — instead of the vacuous "no magic word?", the
+        # one answer a `none` arm gave whether it was clean or contaminated.
+        decoy = ctx["decoys"].get(arm["name"])
+        arm_token = decoy if decoy is not None else ctx["token"]
+        # Every token this run minted that was NOT delivered to this arm.
+        # Symmetric by construction: the treatment token for a control arm,
+        # the control's decoy for a treatment arm, and any other control's
+        # decoy for a control arm. Reporting one of these means the arm read
+        # memory nobody delivered to it.
+        forbidden = tuple(other for other in (ctx["token"], *ctx["decoys"].values())
+                          if other != arm_token)
+        payload = guidance.assemble(ctx["guidance_dir"], ctx["row"], arm["mode"],
+                                    token=arm_token)
+        info = guidance.deliver(
+            ctx["guidance_dir"], scratch=scratch, home=home, payload=payload,
+            dest_dir=config if delivery == "user" else workspace)
+        env = guidance.agent_env(workspace=workspace, home=home, tmpdir=tmpdir,
+                                 config_dir=config, env_spec=fixture.get("env"))
+        # A delivery that provably did not happen is not a guard question.
+        # `installed` and the hook's returncode are offline and free; the
+        # guard costs a real model call and can only answer the AMBIGUOUS
+        # "the probe did not see the token" — which is what a sabotaged hook
+        # (prints `fleet-guidance: current`, writes nothing, exits 0) used to
+        # get reported as. Both facts land in the arm's `extra` either way.
+        extra = {"subject": "guidance", "section": ctx["section"],
+                 "mode": arm["mode"], "bytes": info["bytes"],
+                 "delivery": delivery, "hook_verdict": info["verdict"],
+                 "installed": info["installed"], "decoy": decoy,
+                 "hook_returncode": info["returncode"], "guard": None}
+        if info["returncode"] is not None and (
+                not info["installed"] or info["returncode"] != 0):
+            error = {"type": "delivery_failed",
+                     "detail": (
+                         f"the hook exited {info['returncode']} and the marked "
+                         f"block is {'present' if info['installed'] else 'ABSENT'} "
+                         f"in {info['dest']} — this arm was never delivered "
+                         "its payload, so nothing about it is measurable; no "
+                         "guard call was made and no score is written")}
+            _write_summary(args.results_dir, None, arm["name"], timestamp,
+                           error, None, None, None, None,
+                           key=ctx["key"], extra=extra)
+            return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                    "agent": None, "objective_checks": None, "judge": None,
+                    "guard": None, "inconclusive": True}
+
+        setting_sources = guidance.SETTING_SOURCES[delivery]
+        # The guard's preflight model: the fixture's own `model:` pin when it
+        # has one, else the CLI's default. When the model roster (#67) lands,
+        # its `preflight` entry — the cheapest model that can answer a
+        # tool-free probe — is what this line consults instead.
+        preflight_model = args.model or fixture.get("model")
+        guard = guidance.run_guard(
+            workspace=workspace, token=arm_token,
+            expected=guidance.guard_expectation(arm["mode"]), env=env,
+            # The other side, for EVERY arm: it must not report a token it
+            # was not delivered.
+            forbidden_tokens=forbidden,
+            setting_sources=setting_sources, model=preflight_model,
+            timeout=(fixture.get("guard") or {}).get("timeout_s", 300))
+
+        extra["guard"] = guard
+
+        if not guard["ok"]:
+            error = _guard_error(guard)
+            _write_summary(args.results_dir, None, arm["name"], timestamp,
+                           error, None, None, None, None,
+                           key=ctx["key"], extra=extra)
+            return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                    "agent": None, "objective_checks": None, "judge": None,
+                    "guard": guard, "inconclusive": True}
+
+        arm_config = {
+            "name": arm["name"],
+            "model": args.model or fixture.get("model"),
+            "timeout": args.timeout or fixture.get("timeout_s", 600),
+            "setting_sources": setting_sources,
+            "env_override": env,
+        }
+        result = run_agent(workspace, fixture["prompt"], arm_config)
+
+        error = None
+        agent_summary = None
+        objective_checks = None
+        judge_result = None
+        raw = result.get("raw")
+
+        if "error" in result:
+            error = {"type": result["error"], "detail": result.get("detail", "")}
+        else:
+            agent_summary = {
+                "cost_usd": result.get("cost_usd"),
+                "num_turns": result.get("num_turns"),
+                "duration_ms": result.get("duration_ms"),
+                "usage": result.get("usage"),
+            }
+            checks = arm["objective_checks"] or fixture.get("objective_checks", [])
+            scored = dict(fixture)
+            scored["objective_checks"] = substitute_token(
+                checks, ctx["token"], decoy)
+            objective_checks = objective.run_checks(
+                scored, str(workspace), str(seed), transcript=result.get("transcript"))
+
+            if not args.no_judge and fixture.get("judge_rubric"):
+                _git("add", "-A", cwd=workspace)
+                # `:!CLAUDE.md` only under the project-delivery fallback, where
+                # the hook wrote the payload INTO the workspace: without it the
+                # judge would be handed the whole delivered corpus as if the
+                # agent had written it, which under `mode: full` is 56 KB of
+                # diff that says nothing about the agent's work.
+                excludes = [":!.claude"]
+                if delivery == "project":
+                    excludes.append(":!CLAUDE.md")
+                diff = _git("diff", "--cached", "--", ".", *excludes,
+                            cwd=workspace).stdout
+                judge_cfg = fixture.get("judge", {})
+                try:
+                    judge_result = judge.score(
+                        fixture["judge_rubric"], result.get("transcript") or "",
+                        diff, model=judge_cfg.get("model"),
+                        timeout=judge_cfg.get("timeout_s", 120),
+                        weights=judge_cfg.get("weights"))
+                except guidance.GuidanceError:
+                    # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
+                    # error, not a judge result: recorded as `{"error": ...}`
+                    # it would score the arm and exit 0/1 with the rule never
+                    # named. Re-raised so main()'s rc-2 contract holds.
+                    raise
+                except Exception as exc:  # noqa: BLE001 — record, never crash the run
+                    judge_result = {"error": str(exc)}
+
+        _write_summary(args.results_dir, None, arm["name"], timestamp, error,
+                       agent_summary, objective_checks, judge_result, raw,
+                       key=ctx["key"], extra=extra)
+        return {"arm": arm["name"], "mode": arm["mode"], "error": error,
+                "agent": agent_summary, "objective_checks": objective_checks,
+                "judge": judge_result, "guard": guard, "inconclusive": False}
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+
+
+def _render_guidance_report(section: str, prompt: str, timestamp: str,
+                            delivery: str, arm_bytes: dict,
+                            arm_summaries: list[dict]) -> str:
+    """The guidance report. Its header names the MODE PAIR, because "with vs
+    without" is meaningless here without it — `section` vs `none` and `full`
+    vs `full-minus-section` are different questions about the same section.
+    """
+    modes = ", ".join(f"{s['arm']}={s['mode']}" for s in arm_summaries)
+    lines = [
+        f"# Eval report: guidance/{section}",
+        "",
+        f"- Modes: {modes}",
+        f"- Delivery: {delivery}",
+        f"- Prompt: {prompt.strip()}",
+        f"- Timestamp: {timestamp}",
+        "",
+        "| Arm | Mode | Bytes | Guard | Objective | Judge overall | Cost (USD) | Error |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for s in arm_summaries:
+        checks = s.get("objective_checks")
+        objective_str = (f"{sum(1 for c in checks if c['passed'])}/{len(checks)}"
+                         if checks else "-")
+        jd = s.get("judge") or {}
+        if "overall" in jd:
+            judge_str = f"{jd['overall']:.1f}"
+        elif "error" in jd:
+            judge_str = "error"
+        else:
+            judge_str = "-"
+        agent = s.get("agent") or {}
+        cost = agent.get("cost_usd")
+        cost_str = f"{cost:.4f}" if isinstance(cost, (int, float)) else "-"
+        guard = s.get("guard") or {}
+        if guard.get("ok"):
+            guard_str = "ok (saw it)" if guard.get("expected") else "ok (clean)"
+        elif guard.get("observed") is None:
+            guard_str = "INCONCLUSIVE (probe failed)"
+        else:
+            guard_str = (f"INCONCLUSIVE (expected {guard.get('expected')}, "
+                         f"observed {guard.get('observed')})")
+        err = s.get("error")
+        err_str = (" ".join(f"{err['type']}: {err['detail']}".split())
+                   .replace("|", "\\|")[:200] if err else "")
+        lines.append(f"| {s['arm']} | {s['mode']} | {arm_bytes.get(s['arm'], '-')} | "
+                     f"{guard_str} | {objective_str} | {judge_str} | {cost_str} | "
+                     f"{err_str} |")
+    return "\n".join(lines) + "\n"
+
+
+def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
+    """`subject: guidance` — the whole run, from section id to exit code."""
+    section = fixture.get("section")
+    if not isinstance(section, str) or not section:
+        print(f"{args.eval_dir / 'fixture.yaml'} has `subject: guidance` but no "
+              "(or a non-string) `section:` — the id of a row in "
+              "_agent-guidance's agents-md/eval-coverage.yml")
+        return 2
+    if "/" in section or section in (".", ".."):
+        print(f"invalid section id {section!r}: it becomes a results/ path segment")
+        return 2
+
+    key = f"guidance/{section}"
+    seed = args.eval_dir / "seed"
+
+    if args.arm == "objective-only":
+        # N-f. A guidance fixture's checks are PER ARM, so a top-level
+        # `objective_checks:` is usually absent — and `run_checks` over zero
+        # checks printed `{"checks": []}` and exited 0, which reads as "every
+        # check passed". Say so instead. This is the convention
+        # check-guidance-coverage.js states in its own header: an empty
+        # measurement is not a passing one.
+        if not fixture.get("objective_checks"):
+            print(f"{args.eval_dir / 'fixture.yaml'} declares no top-level "
+                  "`objective_checks:` — objective-only has nothing to score. "
+                  "A guidance fixture's checks are per arm; run it with "
+                  "`--arm both` (or a named arm) instead.")
+            return 2
+        with tempfile.TemporaryDirectory() as tmp:
+            workspace = Path(tmp) / "ws"
+            if seed.is_dir():
+                shutil.copytree(seed, workspace)
+            else:
+                workspace.mkdir(parents=True)
+            results = objective.run_checks(fixture, str(workspace), str(seed))
+        print(json.dumps({"subject": "guidance", "section": section,
+                          "arm": args.arm, "checks": results}, indent=2))
+        return 0 if all(r["passed"] for r in results) else 1
+
+    if not isinstance(fixture.get("prompt"), str) or not fixture["prompt"]:
+        print(f"{args.eval_dir / 'fixture.yaml'} is missing a string `prompt:`")
+        return 2
+
+    try:
+        arms = guidance_arms(fixture, args.arm, args.ablation)
+        guidance_dir = guidance.require_guidance_dir(guidance.resolve_guidance_dir(
+            args.guidance, os.environ.get("AGENT_GUIDANCE_DIR"),
+            Path(__file__).resolve().parent.parent))
+        row = guidance.find_row(guidance.load_manifest(guidance_dir), section,
+                                guidance_dir)
+    except guidance.GuidanceError as exc:
+        print(f"guidance configuration error: {exc}")
+        return 2
+
+    ctx = {"guidance_dir": guidance_dir, "row": row, "section": section,
+           "key": key, "delivery": args.delivery,
+           # One fresh token per RUN, shared by every arm: the control arm
+           # looks for the SAME token the treatment arm was given, which is
+           # what turns "the control saw it" into proof of contamination.
+           "token": guidance.new_token(),
+           # Every `none` arm's decoy, minted HERE rather than inside the arm
+           # that gets it. A TREATMENT arm's guard needs them too — a
+           # treatment probe reporting a control's decoy is the same per-arm
+           # isolation failure seen from the other side — and an arm cannot
+           # be handed a token that does not exist until its own turn comes.
+           "decoys": {arm["name"]: guidance.new_decoy_token()
+                      for arm in arms if arm["mode"] == "none"}}
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    try:
+        arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
+                         for arm in arms]
+    except guidance.GuidanceError as exc:
+        # A checkout missing the hook, a heading that has drifted from its
+        # manifest row, a payload that cannot be read: all configuration, all
+        # exit 2, none of them a traceback out of the middle of a run.
+        print(f"guidance configuration error: {exc}")
+        return 2
+
+    report_dir = args.results_dir / key / timestamp
+    report_dir.mkdir(parents=True, exist_ok=True)
+    arm_bytes = {}
+    for arm in arm_summaries:
+        summary_path = report_dir / arm["arm"] / "summary.json"
+        with open(summary_path, encoding="utf-8") as f:
+            arm_bytes[arm["arm"]] = json.load(f)["bytes"]
+    report = _render_guidance_report(section, fixture["prompt"], timestamp,
+                                     args.delivery, arm_bytes, arm_summaries)
+    with open(report_dir / REPORT_NAME, "w", encoding="utf-8") as f:
+        f.write(report)
+
+    inconclusive = [s for s in arm_summaries if s["inconclusive"]]
+    for arm_summary in inconclusive:
+        guard = arm_summary["guard"]
+        # A `delivery_failed` arm never reached the guard, so there is no
+        # expected/observed pair to report — only the delivery's own detail.
+        preamble = (f"guard expected {guard['expected']}, observed "
+                    f"{guard['observed']} — ") if guard else "delivery — "
+        print(f"INCONCLUSIVE {arm_summary['arm']} (mode "
+              f"{arm_summary['mode']}): {preamble}"
+              f"{arm_summary['error']['detail']}")
+    if inconclusive:
+        print("INCONCLUSIVE: at least one arm could not prove its delivery; "
+              "no score was written for it. This is never a PASS and never a "
+              "FAIL.")
+        return 2
+
+    errored_arms = [s["arm"] for s in arm_summaries if s["error"]]
+    if errored_arms:
+        print(f"Runner-level error in arm(s): {', '.join(errored_arms)}")
+        return 2
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("eval_dir", type=Path)
+    # Deliberately NOT an argparse `choices=` list any more: a guidance
+    # fixture declares its own arm names (the delivery canary declares five,
+    # one per mode), which argparse cannot know at parse time. Validated per
+    # subject below instead, with the same exit code (2) and a message that
+    # names the arms this fixture actually has.
     parser.add_argument("--arm", default="objective-only",
-                        choices=["objective-only", "with_skill", "without_skill", "both"])
+                        help="objective-only | with_skill | without_skill | both "
+                             "for a skill fixture; both, or any arm name the "
+                             "fixture declares, for a guidance fixture")
+    parser.add_argument("--guidance", default=None,
+                        help="path to an _agent-guidance checkout (guidance "
+                             "fixtures only); else $AGENT_GUIDANCE_DIR, else the "
+                             "sibling ../_agent-guidance")
+    parser.add_argument("--delivery", default="user", choices=list(guidance.DELIVERIES),
+                        help="how the guidance reaches the agent: `user` (the "
+                             "production path — the fleet hook writes "
+                             "$CLAUDE_CONFIG_DIR/CLAUDE.md, the CLI reads it as "
+                             "user memory) or `project` (the fallback for a CLI "
+                             "that does not honour CLAUDE_CONFIG_DIR for memory)")
+    parser.add_argument("--ablation", action="store_true",
+                        help="run the fixture's `ablation:` mode pair (full vs "
+                             "full-minus-section) instead of its arms")
     parser.add_argument("--workspace", type=Path, default=None,
                         help="objective-only: score this workspace instead of the pristine seed")
     parser.add_argument("--registry", action="append", default=None,
@@ -826,13 +1594,70 @@ def main() -> int:
                         help="override the fixture's model for the agent")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
-                        help="override the fixture's agent timeout (seconds)")
+                        help="override the fixture's agent timeout (seconds); "
+                             f"1..{guidance.MAX_TIMEOUT_S}, the same ceiling "
+                             "the fixture's own `timeout_s:` is held to")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root directory for run outputs (summaries + reports)")
     args = parser.parse_args()
 
-    fixture = load_fixture(args.eval_dir)
+    # S1-a. The FLAG is checked before anything else — before the fixture is
+    # loaded, before either subject branch, before any CLI call — because it
+    # is the OTHER source of the value that reaches
+    # `subprocess.run(timeout=...)`, and it OVERRIDES the fixture knob
+    # `validate_timeouts` has just bounded (`args.timeout or
+    # fixture.get("timeout_s", 600)`, twice below). Round 2 bounded the knob
+    # and left the override unchecked, so the defect the ceiling was added to
+    # close came straight back through the flag beside it: measured on
+    # a6d165d, `--timeout 2200000` was rc 1 and a bare `OverflowError`,
+    # `--timeout 2701` was accepted above the job budget, and `--timeout 3000`
+    # against a scored leg that never returns did not come back at all.
+    # argparse's `type=int` bounds nothing: it rejects `abc` and accepts every
+    # integer there is, negative and absurd alike.
+    #
+    # `is not None` and not a truthiness test: `--timeout 0` is falsy, so
+    # `args.timeout or ...` would silently fall back to the fixture's value
+    # rather than honour a nonsense flag — a zero must be REFUSED by name, not
+    # quietly ignored.
+    if args.timeout is not None:
+        try:
+            guidance.check_timeout(args.timeout, "--timeout",
+                                   guidance.CLI_TIMEOUT_REMEDY)
+        except guidance.GuidanceError as exc:
+            print(f"configuration error: {exc}")
+            return 2
+
+    try:
+        fixture = load_fixture(args.eval_dir)
+        validate_mapping_keys(fixture, args.eval_dir / "fixture.yaml")
+        validate_timeouts(fixture, args.eval_dir / "fixture.yaml")
+    except guidance.GuidanceError as exc:
+        print(f"fixture configuration error: {exc}")
+        return 2
     seed = args.eval_dir / "seed"
+
+    # Two subjects: a skill copied into the workspace (the original, and
+    # untouched by #97), and the fleet guidance delivered into user memory by
+    # the real fleet-memory.sh hook. Everything below this branch is the skill
+    # path exactly as it was.
+    subject = fixture.get("subject", "skill")
+    if subject == "guidance":
+        try:
+            return _run_guidance(args, fixture)
+        except guidance.GuidanceError as exc:
+            # The sink checks (S1-a-2) raise from inside whichever function
+            # was about to spawn. Caught HERE so every one of them lands on
+            # the rc-2 configuration contract instead of a traceback.
+            print(f"configuration error: {exc}")
+            return 2
+    if subject != "skill":
+        print(f"{args.eval_dir / 'fixture.yaml'} has unknown subject "
+              f"{subject!r} — expected 'skill' or 'guidance'")
+        return 2
+    if args.arm not in SKILL_ARMS:
+        print(f"--arm {args.arm!r} is not valid for a skill fixture "
+              f"(expected one of {', '.join(SKILL_ARMS)})")
+        return 2
 
     # Validated ONCE, here, before any path is derived from the fixture:
     # `_write_summary` and `report_path` below both build a filesystem path
@@ -881,21 +1706,28 @@ def main() -> int:
             return 2
 
     if args.arm == "objective-only":
-        if args.workspace:
-            # An explicitly given workspace is scored as-is — the caller's
-            # own responsibility to have already run any `setup:` themselves
-            # (or to be scoring a hand-built workspace that never needed it).
-            workspace = args.workspace
-            results = objective.run_checks(fixture, str(workspace), str(seed))
-        else:
-            with tempfile.TemporaryDirectory() as tmp:
-                workspace = Path(tmp) / "ws"
-                shutil.copytree(seed, workspace)
-                setup_error = run_setup(workspace, fixture)
-                if setup_error is not None:
-                    print(f"setup failed: {setup_error['detail']}")
-                    return 2
+        try:
+            if args.workspace:
+                # An explicitly given workspace is scored as-is — the caller's
+                # own responsibility to have already run any `setup:`
+                # themselves (or to be scoring a hand-built workspace that
+                # never needed one).
+                workspace = args.workspace
                 results = objective.run_checks(fixture, str(workspace), str(seed))
+            else:
+                with tempfile.TemporaryDirectory() as tmp:
+                    workspace = Path(tmp) / "ws"
+                    shutil.copytree(seed, workspace)
+                    setup_error = run_setup(workspace, fixture)
+                    if setup_error is not None:
+                        print(f"setup failed: {setup_error['detail']}")
+                        return 2
+                    results = objective.run_checks(fixture, str(workspace),
+                                                   str(seed))
+        except guidance.GuidanceError as exc:
+            # run_setup's and the objective git checks' sink checks land here.
+            print(f"configuration error: {exc}")
+            return 2
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,
                           "checks": results}, indent=2))
@@ -903,11 +1735,19 @@ def main() -> int:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
-    arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
-                     for name in arm_names]
+    try:
+        arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
+                         for name in arm_names]
+    except guidance.GuidanceError as exc:
+        # Every subprocess sink `_run_arm` can reach — run_setup, run_agent,
+        # _nested_repo_diff, judge.score, the objective git checks — checks
+        # its timeout on entry and raises this. Named rc 2, never a
+        # traceback and never `Runner-level error in arm(s)`.
+        print(f"configuration error: {exc}")
+        return 2
 
     report = _render_report(fixture["skill"], fixture["prompt"], timestamp, arm_summaries)
-    report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
+    report_path = args.results_dir / fixture["skill"] / timestamp / REPORT_NAME
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)

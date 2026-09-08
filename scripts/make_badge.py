@@ -38,22 +38,65 @@ NOT the wall clock) so a stale badge is self-evident: the newest run that
 contributed to the aggregate, or — when nothing was usable — the newest run
 directory found. Output is deterministic for the same inputs. Stdlib only.
 
+Also accepts a guidance eval by its results-tree name, `guidance/<section id>`
+(#97), whose arms are with_guidance/without_guidance rather than
+with_skill/without_skill and whose label reads "guidance eval: <id>".
+
 Usage:
     python3 scripts/make_badge.py workflow-path-audit
-    python3 scripts/make_badge.py <skill> [--results-dir results] [--out PATH]
-                                          [--window N]
+    python3 scripts/make_badge.py guidance/<section id>
+    python3 scripts/make_badge.py <name> [--results-dir results] [--out PATH]
+                                         [--window N]
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 # Runs are weekly-ish, so five is roughly a month of signal: long enough to
 # average out the run-to-run spread, short enough that a real regression shows
 # up within a couple of runs instead of being buried by history.
 DEFAULT_WINDOW = 5
+
+
+# The two subjects this badge can describe. A skill eval's arms are
+# with_skill/without_skill; a guidance eval (#97) names its subject
+# `guidance/<section id>` — the same shape as its results path — and its A/B
+# pair is with_guidance/without_guidance. A guidance fixture with some other
+# arm set (the five-mode delivery canary, say) simply has no A/B pair here and
+# reads as "no data", which is honest: a canary is not a comparison.
+GUIDANCE_PREFIX = "guidance/"
+_NAME_SEGMENT_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _validate_name(name: str) -> list[str]:
+    """`name` becomes a path under results/ and under badges/, so it is
+    checked before either is built: one or two safe segments, never absolute,
+    never containing `..`."""
+    parts = str(name).split("/")
+    if (not 1 <= len(parts) <= 2
+            or not all(_NAME_SEGMENT_RE.fullmatch(p) for p in parts)
+            or any(p in (".", "..") for p in parts)):
+        raise ValueError(
+            f"invalid eval name {name!r}: expected `<skill>` or "
+            "`guidance/<section id>` with no path metacharacters")
+    return parts
+
+
+def arm_names(name: str) -> tuple[str, str]:
+    """(treatment, control) arm directory names for this subject."""
+    if name.startswith(GUIDANCE_PREFIX):
+        return ("with_guidance", "without_guidance")
+    return ("with_skill", "without_skill")
+
+
+def badge_label(name: str) -> str:
+    if name.startswith(GUIDANCE_PREFIX):
+        return f"guidance eval: {name[len(GUIDANCE_PREFIX):]}"
+    return f"skill eval: {name}"
 
 
 def runs_newest_first(results_dir: Path, skill: str) -> list[Path]:
@@ -139,10 +182,11 @@ def usable_runs(results_dir: Path, skill: str,
     shrinks the sample rather than silently pulling in an older run. Newest
     first.
     """
+    treatment, control = arm_names(skill)
     out = []
     for run_dir in runs_newest_first(results_dir, skill)[:max(1, window)]:
-        with_stats = arm_stats(run_dir, "with_skill")
-        without_stats = arm_stats(run_dir, "without_skill")
+        with_stats = arm_stats(run_dir, treatment)
+        without_stats = arm_stats(run_dir, control)
         if with_stats is None or without_stats is None:
             continue
         out.append((run_dir, with_stats, without_stats))
@@ -177,7 +221,8 @@ def _fmt_mean(value: float) -> str:
 
 def build_badge(results_dir: Path, skill: str,
                 window: int = DEFAULT_WINDOW) -> dict:
-    label = f"skill eval: {skill}"
+    _validate_name(skill)
+    label = badge_label(skill)
     runs = runs_newest_first(results_dir, skill)
     if not runs:
         return {"schemaVersion": 1, "label": label,
@@ -216,7 +261,8 @@ def _positive_int(value: str) -> int:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("skill", help="skill name, e.g. workflow-path-audit")
+    parser.add_argument("skill", help="skill name (workflow-path-audit) or a "
+                                      "guidance section (guidance/<id>)")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root of committed run summaries (default: results)")
     parser.add_argument("--out", type=Path, default=None,

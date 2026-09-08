@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import argparse
 import ast
+import contextlib
+import fnmatch
 import hashlib
+import io
 import itertools
 import json
 import os
@@ -4100,8 +4103,18 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
         checkout_steps = [s for s in steps
                           if (s.get("uses") or "").startswith("actions/checkout@")]
-        registry_checkouts = [s for s in checkout_steps
-                              if (s.get("with") or {}).get("repository")]
+        # A checkout that names a repository is not necessarily a REGISTRY:
+        # since #97 the workflow also checks out _agent-guidance, which is the
+        # guidance subject's source and gets --guidance, never --registry. The
+        # one-flag-per-registry assertion below is therefore over the checkouts
+        # whose repo IS a registry in harness/registries.yml — a checked-out
+        # registry with no flag (and a flag with no checkout) still fails.
+        registry_repos = {name.rsplit("/", 1)[-1]
+                          for name in repo_by_name.values()}
+        registry_checkouts = [
+            s for s in checkout_steps
+            if (s.get("with") or {}).get("repository", "").rsplit("/", 1)[-1].lower()
+            in registry_repos]
         path_to_repo = {
             (s.get("with") or {}).get("path"):
                 (s.get("with") or {}).get("repository", "").rsplit("/", 1)[-1].lower()
@@ -4941,22 +4954,105 @@ class TestIssue63Review(unittest.TestCase):
                 entry = run_eval.registry_for_url(registries, variant)
                 self.assertEqual(entry["layout"], "plugins/*/skills/*/SKILL.md")
 
-    def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
-        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        fixture_dirs = sorted((REPO_ROOT / "evals").glob("*/fixture.yaml"))
-        checked = 0
-        for fixture_path in fixture_dirs:
+    @staticmethod
+    def _fixture_dirs(evals_root: Path) -> list[Path]:
+        """Every fixture.yaml under `evals_root`, at any depth.
+
+        `**`, not `*`: fixtures nest now (evals/guidance/_delivery), and a
+        single-level glob would quietly stop covering them. ONE spelling,
+        shared by the committed tree and the scratch tree below, so a
+        mutation of it is visible in the scratch half.
+        """
+        return sorted(evals_root.glob("**/fixture.yaml"))
+
+    def _check_skill_fixtures(self, evals_root: Path, registries: dict) -> list:
+        """Assert every fixture under `evals_root` that names a skill resolves
+        its registry; return the fixture DIRECTORIES that were checked.
+
+        The set, not a count: a count can only say "more than none", which is
+        what let the committed half below stay green under the `**` -> `*`
+        mutation the scratch half was added to catch.
+        """
+        checked = []
+        for fixture_path in self._fixture_dirs(evals_root):
             fixture = run_eval.load_fixture(fixture_path.parent)
             if "skill" not in fixture:
                 continue
-            checked += 1
-            with self.subTest(fixture=fixture_path.parent.name):
+            checked.append(fixture_path.parent)
+            with self.subTest(fixture=str(fixture_path.parent)):
                 self.assertIn("registry", fixture,
                              f"{fixture_path} names a skill but no registry:")
                 entry = run_eval.registry_for_url(registries, fixture["registry"])
                 self.assertIsNotNone(entry)
-        self.assertGreater(checked, 0, "no committed fixture carries a skill: "
-                           "field — this test would pass vacuously")
+        return sorted(checked)
+
+    @staticmethod
+    def _skill_fixture_dirs_by_hand(evals_root: Path) -> list:
+        """Every fixture directory under `evals_root` carrying a `skill:`,
+        found with `os.walk` and `yaml.safe_load` — deliberately NOT through
+        `_fixture_dirs` or `run_eval.load_fixture`, because it is the answer
+        those two are being checked against."""
+        found = []
+        for dirpath, _dirnames, filenames in os.walk(evals_root):
+            if "fixture.yaml" not in filenames:
+                continue
+            path = Path(dirpath) / "fixture.yaml"
+            doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+            if isinstance(doc, dict) and "skill" in doc:
+                found.append(Path(dirpath))
+        return sorted(found)
+
+    def test_every_committed_fixture_with_a_skill_resolves_its_registry(self):
+        """The committed half, and it CAN falsify the `**` now.
+
+        It used to assert `checked > 0` over a tree whose only nested fixture
+        was `evals/guidance/_delivery`, which carries no `skill:` — so `*` and
+        `**` scored identically and the single-level mutation was 0 red. The
+        merge of main brought two nested SKILL fixtures
+        (`evals/writing-adrs/bootstrap` and `.../existing-convention`), and
+        the docstring saying otherwise had gone false. Rather than pin a count
+        the next fixture PR would have to bump, the assertion is now
+        set-equality against an INDEPENDENT `os.walk` of the same tree: it
+        follows the committed fixtures wherever they go, and goes red the
+        moment the helper's own sweep stops reaching one of them.
+        """
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        evals_root = REPO_ROOT / "evals"
+        checked = self._check_skill_fixtures(evals_root, registries)
+        expected = self._skill_fixture_dirs_by_hand(evals_root)
+        self.assertTrue(expected, "no committed fixture carries a skill: "
+                        "field — this test would pass vacuously")
+        self.assertEqual(
+            checked, expected,
+            "the fixture sweep must reach EVERY committed fixture that names "
+            "a skill, at whatever depth it lives. A directory missing from "
+            "the left-hand list is one the sweep's glob no longer reaches — "
+            "`**`, not `*`.")
+
+    def test_the_fixture_sweep_reaches_a_nested_skill_fixture(self):
+        # N2 (code). Plants what the committed tree does not have: a skill
+        # fixture one directory deeper than the top level. With the glob
+        # spelled `*` the nested one is never seen, and this goes red.
+        scratch = Path(tempfile.mkdtemp(prefix="nested-fixture-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        evals_root = scratch / "evals"
+        planted = {"top": evals_root / "top",
+                   "nested": evals_root / "family" / "nested"}
+        for path in planted.values():
+            path.mkdir(parents=True)
+            (path / "fixture.yaml").write_text(yaml.safe_dump(
+                {"skill": "a-skill", "prompt": "do the thing",
+                 "registry": "https://github.com/Adam-S-Daniel/agentskills"},
+                sort_keys=False), encoding="utf-8")
+        found = self._fixture_dirs(evals_root)
+        self.assertIn(planted["nested"] / "fixture.yaml", found,
+                      "the sweep must reach a fixture nested below the top "
+                      f"level of evals/; found {[str(p) for p in found]}")
+        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+        self.assertEqual(
+            self._check_skill_fixtures(evals_root, registries),
+            sorted(planted.values()),
+            "both the top-level and the nested skill fixture must be checked")
 
     def test_fixture_with_skill_but_no_registry_field_is_a_clear_error(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -11550,5 +11646,1072 @@ class TestIssue82(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
 
 
+# ---------------------------------------------------------------------------
+# Per-issue test discovery (#97)
+#
+# Every fixture PR used to append its tests to the bottom of THIS file, so
+# every fixture PR conflicted with every other one at the same append points.
+# A test module dropped into test/issues/ as `test_issue_<n>.py` is now picked
+# up here instead, and a PR that adds one touches no shared file at all.
+# Classes already in this file stay exactly where they are — nothing was
+# moved — and the runner still prints ONE total for the whole suite, because
+# the discovered modules are loaded into the same TestSuite rather than run as
+# a second pass.
+
+DISCOVERY_DIR = TEST_DIR / "issues"
+DISCOVERY_PATTERN = "test_issue_*.py"
+
+
+def build_suite(discovery_dir: Path | None = None) -> unittest.TestSuite:
+    """This module's own classes plus every discovered test/issues/ module.
+
+    `top_level_dir` is the discovery dir itself, so a discovered module is
+    imported as a plain top-level module (`test_issue_97`) and the directory
+    needs no `__init__.py`. A module that fails to IMPORT is not silently
+    skipped: unittest turns it into a synthetic failing test, which is exactly
+    the loud behaviour a broken new file should get.
+
+    `discovery_dir` defaults to DISCOVERY_DIR and is a parameter for one
+    reason: so the coverage assertion below can be driven against a SCRATCH
+    tree with a module planted in it, and prove its own failure message
+    without planting anything in the repo.
+    """
+    loader = unittest.TestLoader()
+    suite = unittest.TestSuite()
+    suite.addTests(loader.loadTestsFromModule(sys.modules[__name__]))
+    discovery_dir = DISCOVERY_DIR if discovery_dir is None else discovery_dir
+    if discovery_dir.is_dir():
+        suite.addTests(loader.discover(
+            str(discovery_dir), pattern=DISCOVERY_PATTERN,
+            top_level_dir=str(discovery_dir)))
+    return suite
+
+
+def flatten_suite(suite: unittest.TestSuite):
+    """Every leaf TestCase in `suite`, however deeply nested."""
+    for item in suite:
+        if isinstance(item, unittest.TestSuite):
+            yield from flatten_suite(item)
+        else:
+            yield item
+
+
+def parse_argv(argv: list[str]) -> argparse.Namespace:
+    """This runner's own command line.
+
+    A FLAG changes how a run is reported (`-v`, `-q`, `--failfast`) or narrows
+    it explicitly (`-k`); either way the suite it draws from is `build_suite()`,
+    the whole thing. Only a bare NAME — `TestFoo.test_bar` — is a targeted run,
+    and that one goes through `unittest.main`, which can address this module's
+    own classes and nothing else.
+
+    Before this, `main()` routed ANY argument to `unittest.main`, so
+    `python3 test/run_tests.py -v` and `--failfast` silently ran 379 of 438
+    tests and printed OK: every discovered test/issues/ module was missing and
+    nothing said so.
+    """
+    parser = argparse.ArgumentParser(
+        prog="run_tests.py", add_help=True,
+        description="The whole skills-evals suite: this file's classes plus "
+                    "every discovered test/issues/test_issue_*.py.")
+    parser.add_argument("-v", "--verbose", action="store_true",
+                        help="name each test as it runs")
+    parser.add_argument("-q", "--quiet", action="store_true",
+                        help="totals only")
+    parser.add_argument("-f", "--failfast", action="store_true",
+                        help="stop at the first failure")
+    parser.add_argument("-k", dest="patterns", action="append", default=[],
+                        metavar="PATTERN",
+                        help="run only tests whose id matches PATTERN "
+                             "(substring, or fnmatch when it carries a *); "
+                             "repeatable, and the run says it was narrowed")
+    parser.add_argument("targets", nargs="*", metavar="TestClass.test_name",
+                        help="a targeted run through unittest.main, which "
+                             "addresses this file's own classes only")
+    return parser.parse_args(argv)
+
+
+def select_tests(opts: argparse.Namespace
+                 ) -> tuple[unittest.TestSuite, int, int]:
+    """`(suite, selected, total)` — build_suite(), narrowed by any `-k`.
+
+    Matching follows unittest's own `-k`: a pattern carrying `*` is an fnmatch
+    against the test id, anything else is a substring of it.
+    """
+    every = list(flatten_suite(build_suite()))
+    if not opts.patterns:
+        return unittest.TestSuite(every), len(every), len(every)
+
+    def matches(test) -> bool:
+        test_id = test.id()
+        return any(fnmatch.fnmatchcase(test_id, pattern) if "*" in pattern
+                   else pattern in test_id
+                   for pattern in opts.patterns)
+
+    kept = [t for t in every if matches(t)]
+    return unittest.TestSuite(kept), len(kept), len(every)
+
+
+# ----------------------------------------------------------------------
+# The discovery + argv contract, pinned from INSIDE this file (issue #97, S3)
+#
+# The two existing discovery pins live in test/issues/test_issue_97.py —
+# inside the very subtree that stops being discovered when the block above is
+# disabled. Deleting the `suite.addTests(loader.discover(...))` call therefore
+# left `Ran 379 tests ... OK`, exit 0: a 59-test drop that no assertion
+# anywhere could see, because the assertions went with the tests. This class
+# lives in run_tests.py itself and cannot vanish with them.
+# ----------------------------------------------------------------------
+
+
+# ----------------------------------------------------------------------
+# S-B-a — what counts as "this function can spawn the whole suite"
+#
+# The round-2 remedy for S-B put `_skip_in_child()` on the one test that
+# forked, and the pin that was supposed to keep it there recognised ONE
+# spelling (`ast.Constant == "run_tests.py"` together with an `ast.Attribute`
+# `subprocess.run`) in ONE file. Measured in round 3: it flagged 1 of 8
+# ordinary spellings; a probe using `subprocess.Popen` with a module-level
+# `RUNNER = TEST_DIR / "run_tests.py"` reached 19 concurrent runner processes
+# at 60 s with the pin green; and deleting `_skip_in_child()` from a forking
+# test in test/issues/ left it green too, because it never parsed that file.
+#
+# So the recogniser below is written against the SURFACE, not the line: every
+# subprocess API that can start a process, every way of naming the runner
+# (a literal, a module- or class-level constant bound to one, a path
+# expression), and the transitive closure over same-module helpers — because
+# the guard belongs on whatever unittest can run, and the spawn may be two
+# calls down.
+# ----------------------------------------------------------------------
+
+# The one file the runner IS, in the spelling that appears in a spawn, and
+# the module name an in-process caller would import it as. Derived from the
+# filename so that breaking the recogniser breaks BOTH and the vacuity floor
+# fires (measured: `SUITE_RUNNER_NAME = "run_testsX.py"` -> red).
+SUITE_RUNNER_NAME = "run_tests.py"
+SUITE_RUNNER_MODULE = SUITE_RUNNER_NAME[:-len(".py")]
+
+# The trees a discovered test can import from. `test/` is `sys.path[0]` for
+# every `python3 test/run_tests.py` run — it is the directory the runner
+# itself lives in — and `harness/` is on `sys.path` from the moment
+# run_tests.py inserts it. Round 4 measured a forking helper in each, plus one
+# in a PACKAGE inside the discovery dir, all three invisible to a pin whose
+# file set was two globs. So the scan is the directory TREES, walked, not a
+# pattern anyone has to keep up to date.
+SUITE_SCAN_DIRS = ("test", "harness")
+# Everything that starts a process. `subprocess.run` is the spelling the
+# committed tree uses; the other seven are the ones round 3 measured walking
+# straight past the old pin.
+SPAWN_ATTRS = ("run", "Popen", "call", "check_call", "check_output")
+OS_SPAWN_PREFIXES = ("spawn", "exec")
+OS_SPAWN_NAMES = ("system", "posix_spawn", "posix_spawnp")
+
+
+class _SuiteForkScan:
+    """One parsed test module: which of its functions can spawn the suite,
+    and which of those stand down when they ARE the child.
+
+    Parsed with `ast` and never matched out of the source text: a regex over
+    code cannot see a path built from a variable, which is exactly the shape
+    (`TEST_DIR / RUNNER_NAME`) that made the old pin blind.
+    """
+
+    def __init__(self, path: Path, guard_env: str, is_runner: bool = False):
+        self.path = path
+        self.guard_env = guard_env
+        # The runner's own module may call its own main(); every other file
+        # doing so is running the whole suite in this process, which round 4
+        # measured as 97 nested iterations that never returned and, through
+        # multiprocessing, 55 nested processes.
+        self.is_runner = is_runner
+        self.tree = ast.parse(path.read_text(encoding="utf-8"))
+        self._resolve_imports()
+        self._resolve_bindings()
+        self._walk_functions()
+
+    def _resolve_imports(self) -> None:
+        """`import subprocess as sp` and `from subprocess import run as r`
+        are ordinary Python, and both were invisible to the old pin."""
+        self.module_aliases = {"subprocess"}
+        self.bare_spawners = set()
+        # `import run_tests [as rt]` and `from run_tests import main [as m]`:
+        # the in-process spellings. `run_tests.main()` and
+        # `multiprocessing.Process(target=run_tests.main)` never touch
+        # subprocess at all, so the spawn recogniser cannot see them.
+        self.runner_modules, self.runner_mains = set(), set()
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "subprocess":
+                        self.module_aliases.add(alias.asname or alias.name)
+                    if alias.name == SUITE_RUNNER_MODULE:
+                        self.runner_modules.add(alias.asname or alias.name)
+            elif (isinstance(node, ast.ImportFrom)
+                  and node.module == "subprocess"):
+                for alias in node.names:
+                    if alias.name in SPAWN_ATTRS:
+                        self.bare_spawners.add(alias.asname or alias.name)
+            elif (isinstance(node, ast.ImportFrom)
+                  and node.module == SUITE_RUNNER_MODULE):
+                for alias in node.names:
+                    if alias.name == "main":
+                        self.runner_mains.add(alias.asname or alias.name)
+
+    def _resolve_bindings(self) -> None:
+        """Names bound — at module OR class level — to something that mentions
+        the runner, or to the child-marker environment variable's name.
+
+        `RUNNER = TEST_DIR / "run_tests.py"` and
+        `PLANTED = ISSUES_DIR / "x.py"` are the same shape; only the first
+        mentions the runner, and only its NAME appears at the spawn.
+        """
+        self.runner_names, self.guard_names = set(), set()
+        for node in ast.walk(self.tree):
+            if isinstance(node, ast.Assign):
+                targets, value = node.targets, node.value
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets, value = [node.target], node.value
+            else:
+                continue
+            source = ast.unparse(value)
+            for target in targets:
+                if not isinstance(target, ast.Name):
+                    continue
+                if SUITE_RUNNER_NAME in source:
+                    self.runner_names.add(target.id)
+                if self.guard_env in source:
+                    self.guard_names.add(target.id)
+
+    def _names_the_runner(self, node) -> bool:
+        for sub in ast.walk(node):
+            if (isinstance(sub, ast.Constant) and isinstance(sub.value, str)
+                    and SUITE_RUNNER_NAME in sub.value):
+                return True
+            if isinstance(sub, ast.Name) and sub.id in self.runner_names:
+                return True
+            if isinstance(sub, ast.Attribute) and sub.attr in self.runner_names:
+                return True
+        return False
+
+    def _is_spawn(self, call: ast.Call) -> bool:
+        func = call.func
+        if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+            if (func.value.id in self.module_aliases
+                    and func.attr in SPAWN_ATTRS):
+                return True
+            if func.value.id == "os" and (
+                    func.attr in OS_SPAWN_NAMES
+                    or func.attr.startswith(OS_SPAWN_PREFIXES)):
+                return True
+        return isinstance(func, ast.Name) and func.id in self.bare_spawners
+
+    def _reads_the_marker(self, node) -> bool:
+        """A READ of the child marker, never a write.
+
+        `_run_suite` SETS `SKILLS_EVALS_SUITE_CHILD` in the child's
+        environment — that is what makes the child a child, and it is the
+        opposite of standing down. A guard detector that counted any mention
+        of the name would call the spawner itself guarded and pass over the
+        very function whose callers need the guard.
+        """
+        return any(self._reads_the_marker_node(sub) for sub in ast.walk(node))
+
+    def _mentions_the_marker(self, sub) -> bool:
+        return (isinstance(sub, ast.Constant) and sub.value == self.guard_env
+                ) or (isinstance(sub, ast.Name) and sub.id in self.guard_names
+                      ) or (isinstance(sub, ast.Attribute)
+                            and sub.attr in self.guard_names)
+
+    def _reads_the_marker_node(self, sub) -> bool:
+        """One node, so a caller can ask WHERE the read is and not only
+        whether there is one."""
+        mentions = self._mentions_the_marker
+        # os.environ.get(MARKER) / os.environ.get(MARKER, default)
+        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
+                and sub.func.attr in ("get", "getenv")
+                and any(mentions(a) for arg in sub.args
+                        for a in ast.walk(arg))):
+            return True
+        # MARKER in os.environ / not in
+        if isinstance(sub, ast.Compare) and any(
+                isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
+            if any(mentions(n) for n in ast.walk(sub.left)):
+                return True
+        # os.environ[MARKER]
+        if isinstance(sub, ast.Subscript) and any(
+                mentions(n) for n in ast.walk(sub.slice)):
+            return True
+        return False
+
+    def _writes_the_marker(self, sub) -> bool:
+        """The marker set as a KEY in an environment a child will be given.
+
+        `dict(os.environ, **{MARKER: "1"})` and `env[MARKER] = "1"` are the two
+        shapes this tree uses. Nothing asserted this before: deleting the
+        `**{CHILD_ENV: "1"}` from `_run_suite` left every pin green while the
+        child no longer knew it was a child and the tree ran away.
+        """
+        if isinstance(sub, ast.Dict):
+            return any(key is not None and self._mentions_the_marker(key)
+                       for key in sub.keys)
+        if isinstance(sub, ast.Assign):
+            return any(isinstance(t, ast.Subscript)
+                       and any(self._mentions_the_marker(n)
+                               for n in ast.walk(t.slice))
+                       for t in sub.targets)
+        return False
+
+    def _names_the_runner_in_process(self, node) -> bool:
+        """`run_tests.main` named anywhere outside the runner's own module.
+
+        Not a spawn and not a subprocess — which is the point: measured in
+        round 4, `run_tests.main()` recursed 97 times in 40 CPU-seconds and
+        never returned, and `multiprocessing.Process(target=run_tests.main)`
+        reached 55 nested processes. A recogniser that only knows about
+        subprocess sees neither.
+        """
+        if self.is_runner:
+            return False
+        for sub in ast.walk(node):
+            if (isinstance(sub, ast.Attribute) and sub.attr == "main"
+                    and isinstance(sub.value, ast.Name)
+                    and sub.value.id in self.runner_modules):
+                return True
+            if isinstance(sub, ast.Name) and sub.id in self.runner_mains:
+                return True
+        return False
+
+    def _walk_functions(self) -> None:
+        self.functions = [n for n in ast.walk(self.tree)
+                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
+        self.lineno = {fn.name: fn.lineno for fn in self.functions}
+        spawns_any, direct, callees, stands_down = {}, {}, {}, {}
+        # Statement INDEX, inside the function's own body, of the first read of
+        # the child marker and of the first spawn — so "stands down BEFORE it
+        # spawns" is decided from the parse rather than from where the lines
+        # happen to sit. And whether the function WRITES the marker into a
+        # child's environment, which nothing asserted before round 4: deleting
+        # that one expression from `_run_suite` left the pin green and ran the
+        # tree away.
+        first_marker_read, first_spawn, writes_marker = {}, {}, {}
+        # Callee names this function hands a runner-naming argument to. A
+        # helper that takes the path as a PARAMETER names nothing itself.
+        runner_arg_callees = {}
+        # {function: {callee: the statement index of its first call}} — so a
+        # spawner that stands down through a helper (`self._skip_in_child()`)
+        # can still be shown to do it BEFORE it spawns.
+        stmt_calls = {}
+        for fn in self.functions:
+            any_spawn = names_runner_at_spawn = False
+            called, arg_callees = set(), set()
+            calls_at = {}
+            read_at = spawn_at = None
+            wrote = False
+            for index, stmt in enumerate(fn.body):
+                for node in ast.walk(stmt):
+                    if self._writes_the_marker(node):
+                        wrote = True
+                    if self._reads_the_marker_node(node) and read_at is None:
+                        read_at = index
+                    if not isinstance(node, ast.Call):
+                        continue
+                    name = (node.func.attr if isinstance(node.func, ast.Attribute)
+                            else getattr(node.func, "id", None))
+                    if name:
+                        called.add(name)
+                        calls_at.setdefault(name, index)
+                        if any(self._names_the_runner(a) for a in node.args):
+                            arg_callees.add(name)
+                    if self._names_the_runner_in_process(node):
+                        names_runner_at_spawn = True
+                        if spawn_at is None:
+                            spawn_at = index
+                    if not self._is_spawn(node):
+                        continue
+                    any_spawn = True
+                    if spawn_at is None:
+                        spawn_at = index
+                    if any(self._names_the_runner(a) for a in
+                           [*node.args, *(k.value for k in node.keywords)]):
+                        names_runner_at_spawn = True
+            spawns_any[fn.name] = any_spawn
+            direct[fn.name] = names_runner_at_spawn
+            callees[fn.name] = called
+            runner_arg_callees[fn.name] = arg_callees
+            stmt_calls[fn.name] = calls_at
+            first_marker_read[fn.name] = read_at
+            first_spawn[fn.name] = spawn_at
+            writes_marker[fn.name] = wrote
+            stands_down[fn.name] = (
+                "_skip_in_child" in called or self._reads_the_marker(fn))
+        # Second pass: a call to a same-module function that itself reads the
+        # marker counts as a read at that statement. `self._skip_in_child()`
+        # is that shape, and it is the spelling both files already use.
+        reads_directly = {fn.name: self._reads_the_marker(fn)
+                          for fn in self.functions}
+        for fn in self.functions:
+            candidates = [i for i in (first_marker_read[fn.name],) if i is not None]
+            candidates += [index for callee, index in stmt_calls[fn.name].items()
+                           if reads_directly.get(callee)]
+            first_marker_read[fn.name] = min(candidates) if candidates else None
+        self.first_marker_read = first_marker_read
+        self.first_spawn = first_spawn
+        self.writes_marker = writes_marker
+        self.runner_arg_callees = runner_arg_callees
+        # A helper that takes the path as a PARAMETER names nothing itself;
+        # its CALLER names the runner and does not spawn. Neither is caught by
+        # the rule above, so the call that hands a runner-naming argument to a
+        # SAME-MODULE spawner counts as naming the runner itself. The pin
+        # applies the same rule across the whole scanned tree, because `test/`
+        # is on sys.path and importing a helper from another file is free.
+        for fn in self.functions:
+            if runner_arg_callees[fn.name] & {
+                    name for name, spawns in spawns_any.items() if spawns}:
+                direct[fn.name] = True
+        self.spawns_any, self.callees = spawns_any, callees
+        self.direct = direct
+        # Retained for the message the pin prints: whether a flagged function
+        # already stands down (a caller of one of the two spawners does, one
+        # frame later), which decides whether the failure reads as "add a
+        # guard" or as "route this through the spawner".
+        self.stands_down = stands_down
+
+
+class TestTheRunnerItself(unittest.TestCase):
+    """`build_suite()` really covers the discovered subtree, and a flag on the
+    command line does not quietly narrow the run."""
+
+    maxDiff = None
+
+    # Set for the CHILD of any test here that spawns the whole suite, so the
+    # child's own suite-forking tests stand down. test/issues/test_issue_97.py
+    # reads the same name for the same reason.
+    SUITE_CHILD_ENV = "SKILLS_EVALS_SUITE_CHILD"
+
+    def _skip_in_child(self) -> None:
+        """Stand down when this run IS the child.
+
+        A test that forks the suite must be bounded by something OTHER than
+        the contract it is testing. `-k` narrowing was the only thing bounding
+        the recursion below, and `-k` narrowing is exactly what it asserts:
+        measured with main()'s argv routing reverted, the child ignored `-k`,
+        ran the whole suite, reached this test and forked again — 3 processes
+        at 30 s, 8 at 150 s, each holding a 900 s timeout, and the tree had to
+        be killed by hand.
+        """
+        if os.environ.get(self.SUITE_CHILD_ENV):
+            reason = ("child suite run — a pin that forks the suite does not "
+                      "re-fork it from inside itself")
+            print(reason)
+            self.skipTest(reason)
+
+    def _spawn_suite(self, *argv_tail) -> subprocess.CompletedProcess:
+        """The ONE place in this file that spawns `python3 test/run_tests.py`,
+        and it stands down itself when this run IS the child.
+
+        S-B-a-2. The guard used to be on the TESTS, and the pin that kept it
+        there was a list of files: round 4 measured three helper locations
+        (`test/`, `harness/`, and a PACKAGE inside the discovery dir) that
+        every file-set pin passed and that each ran the tree away. The fix is
+        not a fourth enumeration — it is that a caller cannot fork the suite
+        except through a spawner that has already checked, so a new forking
+        test needs no guard of its own and no table entry.
+        """
+        self._skip_in_child()
+        return subprocess.run(
+            [sys.executable, str(TEST_DIR / SUITE_RUNNER_NAME),
+             *[str(a) for a in argv_tail]],
+            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
+            # test/issues/test_issue_97.py's own spawner reads this and stands
+            # down, and so does this method, so a child can never fork.
+            env=dict(os.environ, **{self.SUITE_CHILD_ENV: "1"}))
+
+    @staticmethod
+    def _modules(suite: unittest.TestSuite) -> set[str]:
+        return {t.id().split(".")[0] for t in flatten_suite(suite)}
+
+    @staticmethod
+    def _uncovered(discovery_dir: Path) -> tuple[set[str], set[str]]:
+        """`(every module matching the pattern, those contributing no test)`."""
+        expected = {p.stem for p in discovery_dir.glob(DISCOVERY_PATTERN)}
+        return expected, expected - TestTheRunnerItself._modules(
+            build_suite(discovery_dir))
+
+    @staticmethod
+    def _uncovered_message(missing: set[str], discovery_dir: Path) -> str:
+        """Name the offending modules and say what is wrong with them.
+
+        The old message said only "build_suite() must carry at least one test
+        from EVERY module ... missing: [...]", which reads as a discovery
+        fault. The commoner cause is not discovery at all: a module that IS
+        discovered and simply defines no test case — a file that sets
+        module-level names only, or whose class does not subclass
+        unittest.TestCase — is worth zero tests and says nothing about it.
+        """
+        return (
+            "these modules match "
+            f"{DISCOVERY_PATTERN} under {discovery_dir} but contribute NO "
+            f"test to build_suite(): {sorted(missing)}. Each of them defines "
+            "no test — a module with only module-level names, or a class that "
+            "does not subclass unittest.TestCase, is discovered and worth "
+            "nothing. Give each named module at least one TestCase, or delete "
+            "it. (A module that fails to IMPORT is a different failure: "
+            "unittest reports that one as a synthetic failing test of its "
+            "own.)")
+
+    def test_build_suite_covers_every_discoverable_issue_module(self):
+        expected, missing = self._uncovered(DISCOVERY_DIR)
+        self.assertTrue(
+            expected,
+            f"no {DISCOVERY_PATTERN} under {DISCOVERY_DIR} — this assertion "
+            "must not be able to pass vacuously")
+        self.assertIn("test_issue_97", expected)
+        self.assertEqual(missing, set(),
+                         self._uncovered_message(missing, DISCOVERY_DIR))
+
+    def test_every_entry_in_the_discovery_dir_is_a_test_module(self):
+        # A-N4-2. `build_suite()` calls `loader.discover(...,
+        # top_level_dir=test/issues)`, and unittest puts that directory on
+        # `sys.path` for the REST OF THE PROCESS. Anything importable there
+        # that is not a discovered test is invisible to the suite and shadows
+        # a same-named stdlib module for the whole run.
+        #
+        # Round 3 asserted over `glob("*.py")`, which is a narrower claim than
+        # the sink: `sys.path` does not import `.py` files, it imports
+        # ENTRIES. Measured on f9115ce, each green under that glob:
+        # `colorsys/__init__.py` (a package) shadowed stdlib `colorsys` for
+        # the whole suite; `colorsys.so` (an empty file) shadowed it too and
+        # the loader picked it (`ImportError: file too short`); and
+        # `sub/test_issue_x.py` was neither flagged nor discovered — a failing
+        # test module that silently never runs, with the total unchanged at
+        # 807.
+        #
+        # So the assertion is over `iterdir()`: every entry is a regular file
+        # matching DISCOVERY_PATTERN, or the `__pycache__` a run creates.
+        # `json` escaped the shadowing only because run_tests.py imports it
+        # before discovery runs, which is luck rather than a rule.
+        entries = sorted(DISCOVERY_DIR.iterdir(), key=lambda p: p.name)
+        self.assertTrue(
+            entries,
+            f"nothing at all under {DISCOVERY_DIR} — this assertion must not "
+            "be able to pass vacuously")
+        stray, modules = [], []
+        for entry in entries:
+            if (entry.name == "__pycache__" and entry.is_dir()
+                    and not entry.is_symlink()):
+                continue
+            if entry.is_file() and fnmatch.fnmatchcase(entry.name,
+                                                       DISCOVERY_PATTERN):
+                modules.append(entry.name)
+                continue
+            stray.append(entry.name + ("/" if entry.is_dir() else ""))
+        self.assertTrue(
+            modules,
+            f"no {DISCOVERY_PATTERN} under {DISCOVERY_DIR} at all — the "
+            "vacuity floor for the check above")
+        self.assertEqual(
+            stray, [],
+            f"{stray} live under {DISCOVERY_DIR} and are not test modules "
+            f"matching {DISCOVERY_PATTERN}, so build_suite() never loads them "
+            "— while putting their directory on sys.path, where each of them "
+            "shadows any stdlib or site-packages module of the same name for "
+            "the whole run. A package directory and an extension module "
+            "shadow exactly as a `.py` does, and a SUBdirectory hides any "
+            "test module inside it from discovery entirely. Shared helpers "
+            "belong outside the discovery dir; wherever they go, "
+            "test_every_suite_forking_test_in_this_repo_stands_down_in_a_child "
+            "scans the whole of test/ and harness/ and will still see one "
+            "that forks the suite."
+            " (Only `__pycache__` is allowed here, because a run creates it.)")
+
+    def test_a_discovered_module_that_defines_no_tests_is_named_in_the_failure(self):
+        # N6. A planted `test/issues/test_issue_zz_empty.py` containing only
+        # `VALUE = 1` failed the whole suite with a message about discovery,
+        # which sends the reader looking at build_suite() rather than at their
+        # own new file. The failure stays — an issue module with no tests IS a
+        # mistake — but it now names the module and says what is wrong with it.
+        #
+        # Driven against a SCRATCH discovery dir, so nothing is planted in the
+        # repo and a concurrent run of this suite cannot see it.
+        scratch = Path(tempfile.mkdtemp(prefix="discovery-empty-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        planted = "test_issue_zz_empty"
+        (scratch / f"{planted}.py").write_text("VALUE = 1\n", encoding="utf-8")
+        # `loader.discover` puts the top-level dir on sys.path and imports the
+        # module by name; put both back afterwards so the scratch copy cannot
+        # shadow anything later in the run.
+        saved_path = list(sys.path)
+        self.addCleanup(lambda: sys.path.__setitem__(slice(None), saved_path))
+        self.addCleanup(sys.modules.pop, planted, None)
+
+        expected, missing = self._uncovered(scratch)
+        self.assertEqual(expected, {planted},
+                         "the scratch tree must hold exactly the planted "
+                         "module")
+        self.assertEqual(missing, {planted},
+                         "a module that defines no test contributes nothing "
+                         "to build_suite()")
+        message = self._uncovered_message(missing, scratch)
+        self.assertIn(planted, message,
+                      f"the failure must NAME the offending module\n{message}")
+        self.assertIn("defines no test", message,
+                      "and say that it defines no test, rather than blaming "
+                      f"discovery\n{message}")
+
+    def test_build_suite_also_carries_this_files_own_classes(self):
+        # The other half: discovery must not have replaced the local classes.
+        self.assertIn(__name__, self._modules(build_suite()))
+
+    def test_a_flag_selects_the_same_suite_as_no_arguments(self):
+        # `python3 test/run_tests.py -v` used to route to unittest.main, which
+        # addresses only THIS module's classes: it ran 379 of 438 and printed
+        # OK. A flag changes how the run is REPORTED, never what it contains.
+        plain = sorted(t.id() for t in flatten_suite(select_tests(parse_argv([]))[0]))
+        for flags in (["-v"], ["-q"], ["--failfast"], ["-v", "--failfast"]):
+            with self.subTest(flags=flags):
+                opts = parse_argv(flags)
+                self.assertEqual(opts.targets, [])
+                got = sorted(t.id()
+                             for t in flatten_suite(select_tests(opts)[0]))
+                self.assertEqual(got, plain)
+        self.assertTrue(parse_argv(["-v"]).verbose)
+        self.assertTrue(parse_argv(["-q"]).quiet)
+        self.assertTrue(parse_argv(["--failfast"]).failfast)
+
+    def test_a_bare_name_is_a_targeted_run_and_a_dash_is_not(self):
+        self.assertEqual(parse_argv(["TestFoo.test_bar"]).targets,
+                         ["TestFoo.test_bar"])
+        self.assertEqual(parse_argv(["-k", "guidance"]).targets, [])
+        self.assertEqual(parse_argv(["-k", "guidance"]).patterns, ["guidance"])
+
+    def test_dash_k_narrows_the_suite_and_says_by_how_much(self):
+        opts = parse_argv(["-k", "test_a_flag_selects_the_same_suite"])
+        suite, selected, total = select_tests(opts)
+        self.assertEqual(selected, 1, sorted(t.id() for t in flatten_suite(suite)))
+        self.assertGreater(total, selected)
+
+    # The tests main()'s comment beside `status = ...` defers to: the only
+    # assertions that can see this runner's own exit code, because they read
+    # it from a CHILD process. Named here so the comment cannot outlive them.
+    CHILD_RC_PINS = (
+        "test_planted_issue_module_is_discovered_and_fails_the_runner",
+        "test_removing_the_planted_module_puts_the_runner_back_to_zero",
+    )
+    CHILD_RC_SENTENCE = "The only\n    # teeth are the two child-rc pins"
+
+    def test_the_runner_says_what_can_and_cannot_police_its_own_exit_code(self):
+        # N5 (code). `status = 0 if result.wasSuccessful() else 1` is the one
+        # line in this file that no assertion in this file can check, and the
+        # next reader has no way to know that. The comment says so and names
+        # what does check it; this test keeps the comment honest by requiring
+        # both named pins to still exist.
+        runner_source = (TEST_DIR / "run_tests.py").read_text(encoding="utf-8")
+        # assertTrue, not assertIn: assertIn's default message would dump
+        # this whole 10k-line file into the failure.
+        self.assertTrue(
+            self.CHILD_RC_SENTENCE in runner_source,
+            "main() must say, beside `status = 0 if result.wasSuccessful() "
+            "else 1`, that nothing inside this runner can police its own exit "
+            "code, and name the child-rc pins that can")
+        defined = {node.name for node in
+                   ast.walk(ast.parse(
+                       (DISCOVERY_DIR / "test_issue_97.py").read_text(
+                           encoding="utf-8")))
+                   if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))}
+        for name in self.CHILD_RC_PINS:
+            with self.subTest(pin=name):
+                # assertTrue, not assertIn — for the same reason the line
+                # above says: assertIn's default message would print all 174
+                # function names in test_issue_97.py before the sentence that
+                # explains the failure.
+                self.assertTrue(
+                    name in defined,
+                    f"main()'s comment names {name} as one of the only two "
+                    "assertions that can see this runner's exit code, and it "
+                    "no longer exists")
+
+    # The ONLY functions in this repository allowed to name the suite runner
+    # at a spawn, as (file, function). Each of them stands down itself when
+    # the run IS the child, so every caller — in any file, guarded or not —
+    # is bounded by construction. The test below asserts this membership is
+    # EXACT over an `ast` walk of every `*.py` under test/ and harness/, so a
+    # forking helper anywhere in either tree is red with its file and line.
+    SUITE_SPAWNERS = (
+        ("test/issues/test_issue_97.py", "_run_suite"),
+        ("test/run_tests.py", "_spawn_suite"),
+    )
+
+    # What unittest can execute on its own. Kept because the message a
+    # flagged function gets should say whether it is a test or a helper.
+    RUNNABLE_PREFIXES = ("test", "setUp", "tearDown")
+
+    @classmethod
+    def _unittest_runs(cls, name: str) -> bool:
+        return name.startswith(cls.RUNNABLE_PREFIXES)
+
+    @classmethod
+    def _scan_the_forkable_tree(cls) -> dict:
+        """`{relative path: _SuiteForkScan}` for every `*.py` under test/ and
+        harness/ that rglob finds — packages, subdirectories and `__init__.py`
+        included, `__pycache__` aside.
+
+        A directory walk and not a file pattern: round 3's pin parsed one
+        file, round 4's parsed two globs, and each time the helper that ran
+        the tree away lived one directory over.
+        """
+        scans = {}
+        for directory in SUITE_SCAN_DIRS:
+            for path in sorted((REPO_ROOT / directory).rglob("*.py")):
+                if "__pycache__" in path.parts:
+                    continue
+                rel = path.relative_to(REPO_ROOT).as_posix()
+                scans[rel] = _SuiteForkScan(
+                    path, cls.SUITE_CHILD_ENV,
+                    is_runner=(path == TEST_DIR / SUITE_RUNNER_NAME))
+        return scans
+
+    def test_every_suite_forking_test_in_this_repo_stands_down_in_a_child(self):
+        """S-B-a-2. Nothing in this repository can fork `test/run_tests.py`
+        without standing down when it IS the child.
+
+        The invariant is enforced at the SPAWNER, not at its callers: exactly
+        two functions may name the runner at a spawn, each reads
+        $SKILLS_EVALS_SUITE_CHILD before it spawns, and `_run_suite` writes
+        that marker into the child's environment. Everything else — a new
+        forking test, a helper in `test/`, a helper in `harness/`, a helper in
+        a package inside the discovery dir — is red here with its file and
+        line, and the remedy is always the same one sentence: call the
+        spawner.
+
+        Measured on f9115ce, each in its own throwaway copy and each with the
+        two round-3 pins GREEN: `test/r4forkhelper.py`, `harness/r4harnessfork.py`
+        and `test/issues/r4helpers/__init__.py` all ran the tree away (peak 3
+        processes at 45 s, climbing), and deleting the marker WRITE from
+        `_run_suite` did too.
+        """
+        scans = self._scan_the_forkable_tree()
+        self.assertIn("test/run_tests.py", scans)
+        self.assertIn("test/issues/test_issue_97.py", scans,
+                      "the discovered subtree must be scanned — the pin that "
+                      "missed it is one of the defects being fixed here")
+
+        # Which functions name the runner at a spawn. `direct` is the
+        # function's own body; the closure below is the one-hop case, in which
+        # a helper takes the path as a PARAMETER (so it names nothing) and its
+        # CALLER hands it over (so it does not spawn) — across files as well
+        # as inside one, because `test/` is on sys.path and an import is free.
+        spawner_names = {name for scan in scans.values()
+                         for name, spawns in scan.spawns_any.items() if spawns}
+        flagged = {}
+        for rel, scan in scans.items():
+            for fn in scan.functions:
+                if scan.direct[fn.name] or (
+                        scan.runner_arg_callees[fn.name] & spawner_names):
+                    flagged[(rel, fn.name)] = scan.lineno[fn.name]
+
+        self.assertTrue(
+            flagged,
+            "no function anywhere spawns the suite — this assertion must not "
+            "be able to pass vacuously; the recogniser has broken")
+
+        self.assertEqual(
+            sorted(flagged), sorted(self.SUITE_SPAWNERS),
+            "the set of functions that name `python3 test/run_tests.py` at a "
+            "spawn has changed. Exactly the functions in SUITE_SPAWNERS may "
+            "do it, and each of them stands down inside a child — so a test "
+            "that forks the suite THROUGH one of them needs no guard of its "
+            "own and no entry anywhere. If your new function is in this list, "
+            "route its spawn through `_run_suite` (or this file's "
+            "`_spawn_suite`) instead: a second unguarded spawner is how the "
+            "suite forks itself forever, measured at 19 concurrent runner "
+            "processes and still climbing.\n  flagged: "
+            + "\n  ".join(f"{rel}:{lineno} {name}()"
+                          for (rel, name), lineno in sorted(flagged.items())))
+
+        for rel, name in sorted(self.SUITE_SPAWNERS):
+            scan = scans[rel]
+            with self.subTest(spawner=f"{rel}::{name}"):
+                read_at = scan.first_marker_read[name]
+                spawn_at = scan.first_spawn[name]
+                self.assertIsNotNone(
+                    read_at,
+                    f"{rel}:{scan.lineno[name]} {name}() spawns the whole "
+                    f"suite and never reads ${self.SUITE_CHILD_ENV}. It is "
+                    "the only thing bounding every caller: without the check "
+                    "here the child forks again, and again.")
+                self.assertLess(
+                    read_at, spawn_at,
+                    f"{rel}:{scan.lineno[name]} {name}() reads "
+                    f"${self.SUITE_CHILD_ENV} only AFTER it has already "
+                    "spawned — the child is already running by then")
+
+        issue97 = scans["test/issues/test_issue_97.py"]
+        self.assertTrue(
+            issue97.writes_marker["_run_suite"],
+            "_run_suite no longer writes $" + self.SUITE_CHILD_ENV + " into "
+            "the child's environment, so the child does not know it is one "
+            "and nothing makes it stand down. Measured: with that single "
+            "expression deleted every pin stayed green and the planted-module "
+            "probe reached 3 processes at 60 s and was still climbing.")
+
+    def test_a_targeted_run_is_covered_by_the_user_memory_guard_too(self):
+        # N7. The run-wide S2 snapshot was taken BELOW the targeted-run
+        # branch, so `python3 test/run_tests.py TestFoo.test_bar` executed
+        # with the guard off — and a targeted run is exactly how a reviewer
+        # re-runs the single test they are mutating, which is the run that
+        # destroyed a 56 KB ~/.claude/CLAUDE.md in round 1.
+        #
+        # A targeted run addresses this module's own classes and nothing else,
+        # so the probe is a class injected into this module for the duration
+        # of the test rather than a planted file. It writes ONLY the throwaway
+        # path $SKILLS_EVALS_USER_MEMORY names.
+        scratch = Path(tempfile.mkdtemp(prefix="targeted-memory-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        watched = scratch / "CLAUDE.md"
+        watched.write_text("stand-in user memory\n", encoding="utf-8")
+
+        class _MemoryGuardProbe(unittest.TestCase):
+            def test_writes_the_file_the_runner_watches(self):
+                Path(os.environ[USER_MEMORY_ENV]).write_text(
+                    "clobbered by the targeted-run probe\n", encoding="utf-8")
+
+        module = sys.modules[__name__]
+        setattr(module, "_MemoryGuardProbe", _MemoryGuardProbe)
+        self.addCleanup(delattr, module, "_MemoryGuardProbe")
+
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {USER_MEMORY_ENV: str(watched)}), \
+                contextlib.redirect_stdout(buf), \
+                contextlib.redirect_stderr(buf):
+            status = main(["_MemoryGuardProbe."
+                           "test_writes_the_file_the_runner_watches"])
+        out = buf.getvalue()
+        self.assertIn("NARROWED RUN: targeting", out,
+                      f"this must really take the targeted-run path\n{out}")
+        self.assertRegex(out, r"(?m)^OK",
+                         "the probe itself must PASS — the exit status under "
+                         f"test comes from the memory guard alone\n{out}")
+        self.assertEqual(
+            status, 1,
+            "a targeted run that changed the watched user-memory file must "
+            f"exit 1 even though its test passed\n{out}")
+        self.assertIn("FAILED: this suite CHANGED", out, out)
+        self.assertIn(str(watched), out,
+                      f"the failure must NAME the file that changed\n{out}")
+        self.assertNotIn("clobbered by the targeted-run probe", out,
+                         "the guard reports digests and the path, never the "
+                         "file's contents")
+
+    def test_a_targeted_run_that_touches_nothing_still_exits_0(self):
+        # The other side of N7: with the watched path redirected and a probe
+        # that writes nothing, the same targeted run exits 0. Without this, a
+        # guard that failed every targeted run would satisfy the test above.
+        scratch = Path(tempfile.mkdtemp(prefix="targeted-memory-clean-"))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        watched = scratch / "CLAUDE.md"
+        watched.write_text("stand-in user memory\n", encoding="utf-8")
+        before = watched.read_bytes()
+
+        class _MemoryQuietProbe(unittest.TestCase):
+            def test_touches_nothing(self):
+                pass
+
+        module = sys.modules[__name__]
+        setattr(module, "_MemoryQuietProbe", _MemoryQuietProbe)
+        self.addCleanup(delattr, module, "_MemoryQuietProbe")
+
+        buf = io.StringIO()
+        with mock.patch.dict(os.environ, {USER_MEMORY_ENV: str(watched)}), \
+                contextlib.redirect_stdout(buf), \
+                contextlib.redirect_stderr(buf):
+            status = main(["_MemoryQuietProbe.test_touches_nothing"])
+        self.assertEqual(status, 0, buf.getvalue())
+        self.assertEqual(watched.read_bytes(), before)
+
+    def test_a_dash_k_that_selects_nothing_is_exit_2_and_names_the_pattern(self):
+        # `-k NoSuchThingAtAll` printed the NARROWED RUN line, ran 0 tests and
+        # exited 0: an OK from a run that measured nothing, which is how a
+        # renamed or mistyped test drops out of a CI lane unnoticed. Exit 2 on
+        # zero is this repo's convention already (check-guidance-coverage.js's
+        # own header; the guidance subject's objective-only branch, N-f).
+        #
+        # Driven through main() itself, which runs NO test on this path — so
+        # calling it from inside the suite cannot recurse or fork.
+        pattern = "NoSuchThingAtAll-Kx7"
+        # Establish that the sentinel really selects nothing BEFORE calling
+        # main() with it. Same hazard as S-B one class down: main() on a
+        # pattern that selects tests would run the whole suite IN-PROCESS
+        # from inside the suite, so with `-k` narrowing broken this test
+        # would recurse instead of failing. Asserting the selection first
+        # makes that case a plain red.
+        _, preselected, _ = select_tests(parse_argv(["-k", pattern]))
+        self.assertEqual(preselected, 0,
+                         "the sentinel pattern must select nothing, or the "
+                         "main() call below would run the whole suite from "
+                         "inside itself")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            status = main(["-k", pattern])
+        out = buf.getvalue()
+        self.assertEqual(status, 2, out)
+        self.assertIn(pattern, out,
+                      f"the message must NAME the pattern that matched "
+                      f"nothing\n{out}")
+        self.assertNotRegex(out, r"^OK", out)
+        # The other side: a pattern that DOES select still narrows, and is not
+        # turned into an error by the check above.
+        opts = parse_argv(["-k", "TestIssue97"])
+        _, selected, total = select_tests(opts)
+        self.assertGreater(selected, 0,
+                           "`-k TestIssue97` must select something — this "
+                           "assertion must not pass vacuously")
+        self.assertLess(selected, total)
+
+    def test_dash_k_on_the_command_line_still_reaches_the_discovered_subtree(self):
+        # End to end through the real entry point, and cheap: one test.
+        # `-k` used to reach unittest.main, which cannot address a discovered
+        # module at all, so this named nothing and the run was a false green.
+        target = "test_this_module_is_reachable_through_the_discovery_pattern"
+        proc = self._spawn_suite("-v", "-k", target)
+        output = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, output[-3000:])
+        self.assertIn("test_issue_97", output,
+                      "a `-k` selection must be able to name a test from the "
+                      f"DISCOVERED subtree\n{output[-3000:]}")
+        self.assertIn(target, output, output[-3000:])
+        self.assertRegex(output, r"Ran 1 test\b", output[-3000:])
+        self.assertRegex(
+            output, r"(?i)narrow",
+            "a narrowed run must say so in one line, so an `OK` from it is "
+            f"never read as a full-suite pass\n{output[-3000:]}")
+
+
+# ----------------------------------------------------------------------
+# The run-wide user-memory guard (issue #97, S2)
+#
+# harness/guidance.py refuses to deliver an arm's payload into the operator's
+# own config dir, and this is the assertion that the refusal held — taken
+# around the WHOLE run rather than around one test's own call. The narrow
+# shape is what failed: a per-test before/after in test/issues/test_issue_97.py
+# stayed green while a DIFFERENT test in the same module destroyed a 56 KB
+# ~/.claude/CLAUDE.md, because the destruction happened outside its own
+# snapshot. A change here is a LOUD failure with exit 1, never a warning.
+# ----------------------------------------------------------------------
+
+USER_MEMORY_ENV = "SKILLS_EVALS_USER_MEMORY"
+
+
+def user_memory_path() -> Path:
+    """The file this runner fingerprints across the run.
+
+    `$SKILLS_EVALS_USER_MEMORY` redirects it, and exists for one reason: so
+    this guard can be proven to FAIL without anyone writing the real file.
+    test/issues/test_issue_97.py plants a throwaway module that writes the
+    redirected path and asserts this runner then exits 1.
+    """
+    override = os.environ.get(USER_MEMORY_ENV)
+    if override:
+        return Path(override)
+    return Path(os.path.expanduser("~")) / ".claude" / "CLAUDE.md"
+
+
+def user_memory_fingerprint(path: Path) -> str:
+    """`absent`, or the md5 of the file's bytes.
+
+    A digest, never the content: this is the operator's own memory file and
+    this runner's output is read in CI logs.
+    """
+    try:
+        return hashlib.md5(path.read_bytes()).hexdigest()
+    except FileNotFoundError:
+        return "absent"
+    except OSError as exc:
+        return f"unreadable: {type(exc).__name__}"
+
+
+def memory_guard(memory: Path, before: str, status: int) -> int:
+    """`status`, unless the watched user-memory file changed during the run.
+
+    A function and not four inline lines because EVERY exit path has to pass
+    through it — the ordinary run, a `-k` that selects nothing, and a
+    TARGETED run, which used to return above the snapshot entirely. A
+    change here is a LOUD failure with exit 1, never a warning, and it
+    OVERRIDES a passing status: a run whose tests all passed and which
+    destroyed the operator's memory file did not pass.
+    """
+    after = user_memory_fingerprint(memory)
+    if after == before:
+        return status
+    print(f"\nFAILED: this suite CHANGED {memory} "
+          f"({before} -> {after}). No test may write the fleet's user "
+          "memory: every arm gets a scratch config dir, and "
+          "harness/guidance.py refuses any dest_dir or HOME that resolves "
+          "to the real one.")
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Exit status, always from the runner result and the memory guard.
+
+    (The old shape ended `unittest.main(...); return 0` — unreachable, since
+    `unittest.main` exits the process itself. The status is computed here now,
+    on every path.)
+    """
+    opts = parse_argv(list(sys.argv[1:] if argv is None else argv))
+    # The snapshot comes BEFORE the targeted-run branch, not after it. It used
+    # to sit below, so `python3 test/run_tests.py TestFoo.test_bar` returned
+    # without ever taking one — and a targeted run is precisely how a reviewer
+    # re-runs the single test they are mutating, which is the run that
+    # destroyed a 56 KB ~/.claude/CLAUDE.md in round 1. Every exit path below
+    # goes through memory_guard().
+    memory = user_memory_path()
+    before = user_memory_fingerprint(memory)
+    if opts.targets:
+        # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) goes
+        # through unittest.main, which addresses only this module's own
+        # classes — a discovered module is run by name with
+        # `python3 test/issues/<file>.py`.
+        print(f"NARROWED RUN: targeting {' '.join(opts.targets)} within "
+              f"{__name__}'s own classes — the discovered "
+              f"{DISCOVERY_PATTERN} modules are NOT in this run.")
+        program = unittest.main(module=sys.modules[__name__],
+                                argv=[sys.argv[0]] + opts.targets, exit=False)
+        return memory_guard(memory, before,
+                            0 if program.result.wasSuccessful() else 1)
+    suite, selected, total = select_tests(opts)
+    if opts.patterns and selected == 0:
+        # `-k NoSuchThingAtAll` used to print the NARROWED RUN line, run zero
+        # tests and exit 0 — an OK from a run that measured nothing, which is
+        # exactly how a renamed or mistyped test disappears from a CI lane
+        # without anyone noticing. Exit 2 on zero is this repo's convention
+        # already: _agent-guidance's check-guidance-coverage.js states it in
+        # its own header, and the guidance subject's objective-only branch
+        # (N-f) adopted it for the same reason.
+        print(f"FAILED: -k {', '.join(repr(p) for p in opts.patterns)} "
+              f"selected 0 of {total} tests. A pattern that matches nothing "
+              "is a typo, not a clean run: an empty measurement is not a "
+              "passing one.")
+        return memory_guard(memory, before, 2)
+    if selected != total:
+        print(f"NARROWED RUN: -k selected {selected} of {total} tests — an OK "
+              "from this run is not a full-suite pass.")
+    verbosity = 2 if opts.verbose else (0 if opts.quiet else 1)
+    result = unittest.TextTestRunner(verbosity=verbosity,
+                                     failfast=opts.failfast).run(suite)
+    status = 0 if result.wasSuccessful() else 1
+    # Nothing INSIDE this runner can police this line. A test asserting that
+    # a failing suite exits 1 would have to fail the suite to say so, and a
+    # runner mutated to a constant 0 would print OK and be believed. The only
+    # teeth are the two child-rc pins in test/issues/test_issue_97.py, which
+    # spawn `python3 test/run_tests.py` and read the CHILD's exit code:
+    # test_planted_issue_module_is_discovered_and_fails_the_runner (a planted
+    # failing module must give rc 1) and
+    # test_removing_the_planted_module_puts_the_runner_back_to_zero (rc 0
+    # with nothing planted). Both stand down inside a child, so each runs
+    # once per suite. memory_guard's override below is pinned the same way,
+    # by a child run with $SKILLS_EVALS_USER_MEMORY redirected.
+    return memory_guard(memory, before, status)
+
+
 if __name__ == "__main__":
-    unittest.main()
+    raise SystemExit(main())

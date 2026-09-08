@@ -28,6 +28,28 @@
 #   boundary just the same as a maintainer's own push: treat it as trusted,
 #   or drop the key.
 #
+# * _agent-guidance is now inside that same boundary, and this is new with
+#   the guidance subject (#97). A guidance fixture's `with` arm delivers a
+#   payload assembled from that repo's agents-md/base.md into the agent's
+#   user memory and then runs the agent under bypassPermissions with the key
+#   in env — so the guidance content is EXECUTED here, exactly as skill
+#   content from a registry is. Write access to _agent-guidance's default
+#   branch is therefore equivalent to key access here. It is checked out with
+#   persist-credentials: false like every other checkout, and it is NOT a
+#   skill registry: it gets --guidance, never --registry.
+#
+# * The fixture that runs is a dispatch input (`fixture`, default
+#   evals/workflow-path-audit), read from $GITHUB_EVENT_PATH as DATA in the
+#   validation step below and never interpolated into a run: block —
+#   `${{ inputs.* }}` in a shell script is an injection surface, and this is
+#   the workflow that holds the key. The value is first refused outright if it
+#   carries any character outside [A-Za-z0-9/_.-] — a newline included, which
+#   is what a `grep -F` match alone could not catch, since grep treats each
+#   LINE of its pattern as a pattern of its own — and only then matched
+#   against the set of evals/**/fixture.yaml directories present in this
+#   checkout. Anything failing either check fails the step BEFORE the token
+#   exchange runs. The scheduled run passes no input and gets the default.
+#
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
 #   secret exists. The Claude Code CLI does not resolve the
 #   ANTHROPIC_FEDERATION_* env vars (it hangs credential-less — verified
@@ -52,7 +74,11 @@
 #   calls share the token). Dispatches from non-main refs get no
 #   credential — the rule's sub claim matches ref:refs/heads/main only —
 #   which also supersedes the old maintainer-branch trust widening
-#   caveat. Cost: a full run is 2 agent arms + 2 judge calls. The fixture
+#   caveat. Cost depends on the fixture: a skill A/B is 2 agent arms +
+#   2 judge calls; a guidance dispatch is one agent call AND one tool-free
+#   guard probe per declared arm, which is 5 + 5 for the delivery canary. The
+#   report's cost column counts the SCORED leg only — the guard probes are
+#   real calls and are not in it. The fixture
 #   pins a mid-tier agent and a strong judge — carried over unchanged from
 #   the predecessor fixture — which puts a run at ~$0.30–0.90, i.e.
 #   ~$1.50–4/month at weekly cadence. Unpinning any of them would make the
@@ -62,12 +88,33 @@
 #   (600s per arm, 120s per judge call); the workspace spend limit, not
 #   this workflow, is the hard ceiling.
 #
-# * All four checkouts use `persist-credentials: false`; push auth is injected
+# * All five checkouts use `persist-credentials: false`; push auth is injected
 #   only in the final commit step's env. While the bypassPermissions agent is
-#   running, no GitHub write credential exists anywhere on the runner — the
-#   only credential in reach is the short-lived WIF-derived access token
-#   (and the single-use OIDC token file) scoped to the spend-capped
-#   workspace — no long-lived secret exists on the runner.
+#   running, no GitHub write credential exists anywhere on the runner and no
+#   long-lived secret exists on the runner. What IS in reach differs by
+#   subject, because the two arms are built differently:
+#
+#     - a SKILL arm's agent inherits the runner's whole ambient environment
+#       (harness/run_eval.py's `agent_env` is `dict(os.environ)`), so besides
+#       the short-lived WIF-derived Anthropic access token and the single-use
+#       OIDC token file it also has ACTIONS_ID_TOKEN_REQUEST_TOKEN and
+#       ACTIONS_ID_TOKEN_REQUEST_URL — which mint a GitHub OIDC assertion for
+#       any audience while `id-token: write` is granted — and
+#       ACTIONS_RUNTIME_TOKEN, which writes this run's artifacts and cache.
+#       None of them writes to the repository.
+#     - a GUIDANCE arm's agent gets an ALLOWLIST built from nothing
+#       (harness/guidance.py's `agent_env`): PATH, LANG, LC_ALL, SHELL, USER,
+#       NODE_PATH, plus the HOME, TMPDIR, CLAUDE_CONFIG_DIR and WORKSPACE the
+#       harness sets and every ANTHROPIC_* variable, and on top of all of
+#       that the fixture's own `env:` block, which may add any name except
+#       those three isolation variables (HOME, TMPDIR, CLAUDE_CONFIG_DIR are
+#       refused by name, because the block is applied after they are set, so
+#       a fixture allowed to name one could point an arm at the real config
+#       dir). The two GitHub tokens above are NOT in that set.
+#
+#   Re-pointing the skill arm at the allowlist is a separate change with its
+#   own byte-for-byte fixture comparison, not something this workflow's header
+#   can assert.
 #
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run
@@ -95,6 +142,14 @@ on:
   schedule:
     - cron: "0 7 * * 1" # Mondays 07:00 UTC
   workflow_dispatch:
+    inputs:
+      fixture:
+        description: >-
+          Fixture directory to run, e.g. evals/workflow-path-audit or
+          evals/guidance/_delivery. Validated against the committed
+          evals/**/fixture.yaml set before any credential is minted.
+        required: false
+        default: evals/workflow-path-audit
 
 # Single job, so contents:write is the whole workflow's privilege set. It is
 # required for the badge/results push; splitting eval and commit into separate
@@ -114,7 +169,14 @@ concurrency:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 45 # 2 arms x 10 min agent budget + judges + setup
+    # 45 min covers the widest committed shape, not just the 2-arm skill
+    # A/B: a guidance fixture spends (agent budget + guard budget) per
+    # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
+    # five-arm fixture that inherited the defaults instead (600 + 300 s)
+    # would need 75 min and not fit —
+    # test_every_guidance_fixture_fits_inside_the_workflow_job_timeout is
+    # what catches that, over every guidance fixture under evals/.
+    timeout-minutes: 45
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -146,6 +208,17 @@ jobs:
           path: adamdaniel.ai
           persist-credentials: false
 
+      - name: Check out _agent-guidance (side-by-side)
+        # NOT a skill registry: this is the guidance subject's source, read by
+        # harness/guidance.py through --guidance. Its content is executed
+        # under bypassPermissions by a guidance fixture's `with` arm — see the
+        # header's trust-boundary clause.
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/_agent-guidance
+          path: _agent-guidance
+          persist-credentials: false
+
       - name: Set up Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
         with:
@@ -166,7 +239,99 @@ jobs:
           python-version: "3.12"
 
       - name: Install harness dependencies
-        run: pip install pyyaml
+        # markdown-it-py is pinned exact, per this repo's cooling-off
+        # convention: harness/guidance.py locates a section's extent with a
+        # real markdown parse, and a floating parser version could silently
+        # change what a `section` arm delivers.
+        run: pip install pyyaml markdown-it-py==4.2.0
+
+      # Runs BEFORE the token exchange, deliberately: a dispatch naming a
+      # fixture that does not exist must fail here, with no credential minted
+      # and nothing spent. The value is read from the event payload as DATA
+      # (jq, no `${{ }}` interpolation into this shell), checked for SHAPE,
+      # and only then matched against the set of directories that actually
+      # carry a committed fixture.yaml — so a traversal, an absolute path, a
+      # shell metacharacter, a newline or a stale name never gets past here.
+      # "Committed" here means "present in this checkout": the set comes from
+      # `find`, not `git ls-files`, so an untracked fixture directory would be
+      # accepted too. Equivalent in the fresh CI checkout this workflow runs
+      # in, where nothing is untracked.
+      - name: Select and validate the fixture to run
+        working-directory: skills-evals
+        run: |
+          set -euo pipefail
+          # Byte semantics for the character class below, so what this gate
+          # accepts does not depend on the runner's locale.
+          export LC_ALL=C
+          fixture=""
+          if [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "$GITHUB_EVENT_PATH" ]; then
+            # NUL FIRST, on the event file itself, before any command
+            # substitution. `jq -r` emits a NUL faithfully and bash's `$( )`
+            # then DROPS it ("warning: command substitution: ignored null
+            # byte in input"), so every check below would be judging a string
+            # the dispatcher did not send, and the step's own `fixture:` log
+            # line would name something else again. Measured: a value whose
+            # JSON spelling is the NUL escape followed by
+            # evals/workflow-path-audit was accepted AS that fixture, rc 0.
+            # It fails safe — no uncommitted fixture can be reached this way,
+            # because whatever survives the substitution still has to match a
+            # committed path — but the gate never sees the byte it would
+            # refuse, and this workflow's header promises that it does.
+            # `jq -e` exits non-zero for a non-string (a number, a list) too,
+            # which simply falls through to the shape gate that already
+            # refuses those. No value is echoed, same as every other
+            # rejection here.
+            if jq -e '(.inputs.fixture // "") | test("\u0000")' \
+                 "$GITHUB_EVENT_PATH" >/dev/null 2>&1; then
+              echo "eval.yml: dispatch input 'fixture' contains a NUL byte"
+              exit 1
+            fi
+            fixture="$(jq -r '.inputs.fixture // empty' "$GITHUB_EVENT_PATH")"
+          fi
+          # The scheduled run carries no inputs at all; it gets the default.
+          if [ -z "$fixture" ]; then
+            fixture="evals/workflow-path-audit"
+          fi
+          # SHAPE FIRST, before any matching. `grep -F` treats each LINE of
+          # its pattern as a separate pattern, so a MULTI-LINE dispatch value
+          # used to pass this gate whenever either line named a committed
+          # fixture — and the whole two-line string was then written to
+          # $RUNNER_TEMP/eval-fixture, so the OIDC exchange ran, a real bearer
+          # was minted and the WIF preflight spent a call before the run step
+          # finally failed on "no such fixture.yaml". Nothing was injectable
+          # (every use is quoted) and no uncommitted fixture could run, but
+          # the ordering guarantee this header makes twice was false for that
+          # value. NEITHER rejection branch echoes the value back: this log
+          # is public, so both messages name the rule, not the input. (The
+          # "names no committed fixture" branch below used to append
+          # `: $fixture` — charset-clean, but still up to 100 KB of dispatch
+          # input copied into a public log, and contradicting this very
+          # sentence. The dispatched value is already on the run's own inputs
+          # for anyone who can read the log at all, so naming it here buys
+          # nothing.)
+          case "$fixture" in
+            *[!A-Za-z0-9/_.-]*)
+              echo "eval.yml: dispatch input 'fixture' has characters outside [A-Za-z0-9/_.-]"
+              exit 1 ;;
+          esac
+          committed="$(find evals -mindepth 1 -name fixture.yaml -printf '%h\n' | sort)"
+          # A here-string, never `printf ... | grep -Fxq`: piping a list into
+          # an early-exit reader under `pipefail` makes the writer take
+          # SIGPIPE the moment grep matches, and the step then fails CLOSED on
+          # a perfectly valid fixture once the list outgrows a pipe buffer.
+          # Safe at today's ~250 bytes; measured to reject valid fixtures from
+          # ~66 KB of committed list upward.
+          if ! grep -Fxq -- "$fixture" <<<"$committed"; then
+            echo "eval.yml: dispatch input 'fixture' names no committed fixture"
+            echo "Committed fixtures:"
+            sed 's/^/  /' <<<"$committed"
+            exit 1
+          fi
+          printf '%s' "$fixture" > "$RUNNER_TEMP/eval-fixture"
+          # The results/badge key is the fixture path without its evals/
+          # prefix: `workflow-path-audit`, or `guidance/<section id>`.
+          printf '%s' "${fixture#evals/}" > "$RUNNER_TEMP/eval-key"
+          echo "fixture: $fixture"
 
       - name: Mint OIDC token and exchange for Anthropic access token
         run: |
@@ -209,13 +374,18 @@ jobs:
           printf '%s\n' "$out" | tail -c 4000
           exit $rc
 
+      # `--arm both` means "every arm this fixture declares": the two arms of
+      # a skill fixture, and for a guidance fixture the arms it names (five,
+      # one per delivery mode, for the delivery canary).
       - name: Run the eval (both arms, judge)
         working-directory: skills-evals
         run: |
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
           export ANTHROPIC_AUTH_TOKEN
-          python3 harness/run_eval.py evals/workflow-path-audit \
+          fixture="$(cat "$RUNNER_TEMP/eval-fixture")"
+          python3 harness/run_eval.py "$fixture" \
             --arm both \
+            --guidance ../_agent-guidance \
             --registry agentskills=../agentskills \
             --registry cms-platform=../cms-platform \
             --registry adamdaniel.ai=../adamdaniel.ai
@@ -262,13 +432,18 @@ jobs:
             git checkout -B eval-results
           fi
           [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
+          # The published badge is the reference A/B's, always: it is what the
+          # README renders, and rebuilding it from the accumulated window is a
+          # no-op on a run of some other fixture. A dispatched fixture's own
+          # results are still committed below; make_badge.py takes a
+          # `guidance/<id>` name too, for when a guidance A/B earns a badge.
           python3 "$RUNNER_TEMP/make_badge.py" workflow-path-audit
           git add badges results
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "eval: workflow-path-audit run + badge [skip ci]"
+          git commit -m "eval: $(cat "$RUNNER_TEMP/eval-key") run + badge [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
 
