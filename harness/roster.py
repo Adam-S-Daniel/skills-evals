@@ -905,13 +905,38 @@ class _Relevance:
         today), and the id order is already total over a deduped list, so
         a rung after it could never fire anyway.
         """
-        keys: dict[str, tuple] = {}
-        for model_id in ids:
-            if model_id in self._turns or model_id in self._live:
-                keys[model_id] = (1, -self._turns.get(model_id, 0), model_id)
-            else:
-                keys[model_id] = (3, 0, model_id)
-        return keys
+        return {model_id: (self.tier(model_id),
+                           -self._turns.get(model_id, 0), model_id)
+                for model_id in ids}
+
+    def tier(self, model_id) -> int:
+        """Which tier `model_id` sits in, on its own — 1 when one of the
+        two documents the previous roster does not write NAMES it (an
+        in-window census key, or a live catalogue id), and 3, the residue,
+        when neither does.
+
+        Split out of `rank` (#129 review round 12) so both readings come
+        from ONE place. `rank` asks it per list, for the caps' order;
+        `_update_catalogue_seen`'s ageing rule asks it per entry, because
+        an entry this run's census still names may not be aged out of the
+        history on the strength of a date the previous roster wrote
+        (BLOCKER 2). A second spelling of the question would be a second
+        thing to keep in step with the first.
+        """
+        return 1 if (model_id in self._turns or model_id in self._live) else 3
+
+    def is_live(self, model_id) -> bool:
+        """Whether THIS run's Models API returned `model_id`.
+
+        `_update_catalogue_seen` has always kept its live ids outside the
+        cap (`room = max(0, CATALOGUE_SEEN_CAP - len(live))`) and
+        `_clean_previous_arms` did not, so the two caps disagreed about a
+        model the Models API still lists: `catalogue_seen` published all
+        10,001 of them while `arms` retired 9,500 of the same ids
+        (SHOULD-FIX 1, #129 review round 12). Both caps now ask this one
+        object the same question.
+        """
+        return model_id in self._live
 
 
 def _relevance(api_ids, count_turns) -> _Relevance:
@@ -1164,14 +1189,45 @@ def _clean_previous_arms(previous, warn,
         # residue is carried whole rather than filled or evicted by id
         # order, and `UNCAPPED_CARRY_CEILING` is the one bound left.
         order = relevant.rank(ids)
-        named = [i for i in ids if order[i][0] < 3]
+        # THE CAP NEVER EVICTS ONE OF THIS RUN'S OWN LIVE `api_ids`
+        # (SHOULD-FIX 1, #129 review round 12) — the exemption
+        # `_update_catalogue_seen` has had since round 6 and this cap did
+        # not. Being TIER 1 is not being carried: tier 1 is the set the cap
+        # BOUNDS, and a live id with no census turns of its own sorts
+        # `(1, 0, id)` — last inside tier 1 — so it was the first thing the
+        # cap took. Eviction here is not a trim either, it is a
+        # RETIREMENT: `compute_roster` reads `carried` for the hold-over,
+        # so an evicted live arm falls through to the exit-bar branch and
+        # is published `RETIRED ... (0.0% of rankable census usage)`.
+        # Measured through `main()` before this: 502 live ids, all of them
+        # previous arms and no census at all, retired 1 live model; 5,000
+        # retired 4,499; 10,001 retired 9,500 while `catalogue_seen`
+        # published all 10,001 of the same ids. The census half is
+        # planter-reachable at 501 in-window census keys named in `arms`,
+        # which retires a live arm whose own usage the census records
+        # under a dated alias and publishes `below the 2% exit bar ...
+        # (5.0% of rankable census usage)` — a sentence its own
+        # parenthesis contradicts.
+        #
+        # `residue` is still partitioned by the TIER, not by `is_live`, and
+        # that is deliberate: it is what keeps tier-1 route (b) — a live
+        # catalogue id is tier 1 — load-bearing here. Drop that route and
+        # every live id lands in `live` AND in `residue`, which duplicates
+        # it in `carried` and counts it against `UNCAPPED_CARRY_CEILING`,
+        # so a 10,001-live-arm previous roster refuses to publish instead
+        # of publishing (TestIssue67Review12::test_route_b_keeps_a_live
+        # _previous_arm_out_of_the_residue_the_ceiling_bounds).
+        live = [i for i in ids if relevant.is_live(i)]
+        named = [i for i in ids
+                 if order[i][0] < 3 and not relevant.is_live(i)]
         residue = [i for i in ids if order[i][0] == 3]
-        if len(named) > PREVIOUS_ARMS_CAP:
-            dropped = len(named) - PREVIOUS_ARMS_CAP
-            named = sorted(named, key=lambda i: order[i])[:PREVIOUS_ARMS_CAP]
+        room = max(0, PREVIOUS_ARMS_CAP - len(live))
+        if len(named) > room:
+            dropped = len(named) - room
+            named = sorted(named, key=lambda i: order[i])[:room]
             warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
                  f"the {PREVIOUS_ARMS_CAP}-entry cap")
-        carried = named + residue
+        carried = live + named + residue
         # The ceiling bounds the RESIDUE, which is the part no cap will
         # order — not the carried list, which is the residue plus at most
         # `PREVIOUS_ARMS_CAP` entries the census itself bounded (N-2, #129
@@ -2060,14 +2116,24 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 # prior revision carried a dead `elif not usable:` branch
                 # here for exactly the case this comment rules out; it
                 # could never execute.) The `carried_arms` half of that is
-                # what `api_ids=` at the `_clean_previous_arms` call site
-                # buys: a previous arm the Models API still lists is always
-                # relevant, so the cap always carries it forward and it can
-                # never reach this branch on a stale census. Dropping that
-                # argument retires it here at a measured 0.0% on no
-                # evidence at all — see
+                # what `_clean_previous_arms`'s LIVE-ID EXEMPTION buys: a
+                # previous arm the Models API still lists is never evicted
+                # by that cap, so it is always carried forward and cannot
+                # reach this branch on a stale census.
+                #
+                # THIS COMMENT ASSERTED THAT PROPERTY FROM ROUND 8 TO ROUND
+                # 11 WHILE THE CODE DID NOT HAVE IT (SHOULD-FIX 1, #129
+                # review round 12). What the `relevant=` argument at the
+                # call site buys is TIER 1 — and being tier 1 is not being
+                # carried, it is being inside the set the cap bounds. A
+                # live id with no census turns of its own sorts last there,
+                # so it was the first thing evicted, and 502 live previous
+                # arms with no census at all published one of them
+                # `RETIRED ... (0.0% ...)`. See
                 # TestIssue67Review8::test_a_live_previous_arm_survives
-                # _the_cap_and_is_held_over.
+                # _the_cap_and_is_held_over for the stale-census row, and
+                # TestIssue67Review12::test_the_arms_cap_never_evicts_a
+                # _live_previous_arm for the overflow one.
                 held = usage_share(counts, model_id, exit_weeks, rungs, aliases,
                                   api_ids=api_ids, previous_arms=carried_arms,
                                   catalogue_seen=catalogue_seen)

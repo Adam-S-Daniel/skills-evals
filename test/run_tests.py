@@ -19053,35 +19053,35 @@ class TestIssue67Review11(unittest.TestCase):
 
     _LIVE_ARMS = [f"claude-sonnet-5-{i:06d}" for i in range(502)]
 
-    def test_the_arms_cap_ranks_and_bounds_live_previous_arms(self):
-        """MUTATION: dropping tier-1 route (b) (the live catalogue id) from
-        `_Relevance.rank`.
+    def test_the_arms_cap_ranks_live_previous_arms_but_never_evicts_one(self):
+        """502 models the Models API lists this run, every one of them also
+        an arm of the previous roster, and NO census.
 
-        502 models the Models API lists this run, every one of them also an
-        arm of the previous roster, and NO census. Route (b) makes all 502
-        tier 1, so the arms cap ranks them — with no census there are no
-        turns to rank by, so the id order decides — and bounds them at 500.
-        Two are evicted from `carried_arms`, which is what the hold-over
-        check reads, so one fewer model is held over and the previous arm
-        that lost its hold-over is reported retired.
+        WHAT THIS ROW PINNED WHEN ROUND 11 WROTE IT, and why it changed.
+        It was the mutation floor for tier-1 route (b) (the live catalogue
+        id) in `_Relevance.rank`, and it asserted 501 arms and 1
+        retirement: route (b) made all 502 tier 1, the arms cap ranked
+        them by the id (no census, so no turns to rank by) and bounded
+        them at 500, and the two it evicted from `carried_arms` lost their
+        hold-over and were reported retired. Its own docstring said the
+        outcome deserved a look — a model the Models API still lists,
+        reported retired because an untrusted `arms` list was long — and
+        round 12 took it: SHOULD-FIX 1 gives `_clean_previous_arms` the
+        live-id exemption `_update_catalogue_seen` already had, so the
+        expectation here flips to 502 arms and NOTHING retired.
 
-        Without route (b) all 502 are residue instead, all 502 are carried,
-        all 502 are held over and NOTHING is retired: 502 arms, and this
-        row goes red on both counts. Measured at 500 and 501 as well, where
-        the two agree exactly — 502 is the smallest input that separates
-        them, which is why it is the input.
+        RED on `7ef5780` (501 arms, 2 retired — one of them a live model
+        published `RETIRED ... below the 2% exit bar ... (0.0% of rankable
+        census usage)` on a run with no census at all).
 
-        WHAT THIS ROW DOES NOT SAY IS THAT THE OUTCOME IS RIGHT. It is a
-        floor under a clause the table showed nothing was measuring, and
-        the outcome it pins deserves the round-12 look the PR body asks
-        for: `_update_catalogue_seen` exempts this run's own live ids from
-        its cap entirely, `_clean_previous_arms` does not, and the visible
-        consequence is that a model the Models API still lists can be
-        reported retired because an untrusted `arms` list was long. What
-        route (b) buys in exchange is measured and small: it is the reason
-        a previous roster carrying more than `UNCAPPED_CARRY_CEILING` live
-        arms publishes at all rather than refusing, since a live id that is
-        tier 1 is not part of the residue the ceiling bounds."""
+        ROUTE (b)'s MUTATION FLOOR MOVED, because this row no longer
+        separates it: without route (b) all 502 are residue, all 502 are
+        carried, and the published counts are the same 502/0 this now
+        asserts. It is `TestIssue67Review12::test_route_b_keeps_a_live
+        _previous_arm_out_of_the_residue_the_ceiling_bounds` that is red
+        for the mutation now — a live id that is not tier 1 lands in the
+        residue as well as in the exemption, and a 10,001-live-arm
+        previous roster refuses to publish instead of publishing."""
         previous = {"arms": [{"id": i, "reason": "was an arm"}
                              for i in self._LIVE_ARMS],
                     "catalogue_seen": []}
@@ -19091,14 +19091,14 @@ class TestIssue67Review11(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, err = self._run_main(tmp, models, previous=previous)
         self.assertEqual(rc, 0, err)
-        self.assertEqual(len(published["arms"]), 501,
-                         "the cap bounds tier 1 at 500 carried arms, and "
-                         "one more model is seated on newest-per-tier")
-        self.assertEqual(len(published["retired_since_last"]), 1,
-                         "the previous arm the cap evicted from "
-                         "`carried_arms` loses its hold-over; without "
-                         "route (b) every one of the 502 is residue, is "
-                         "carried, and nothing is retired at all")
+        self.assertEqual(len(published["arms"]), 502,
+                         "the cap ranks live previous arms but never "
+                         "evicts one, so every one of the 502 is carried "
+                         "and held over")
+        self.assertEqual(published["retired_since_last"], [],
+                         "a model the Models API still lists must never be "
+                         "reported retired because the `arms` list an "
+                         "untrusted branch wrote was long")
 
     def test_the_arms_ceiling_bounds_the_residue_not_the_carried_list(self):
         """MUTATION: `if len(carried) > UNCAPPED_CARRY_CEILING` in
@@ -19402,6 +19402,129 @@ class TestIssue67Review11(unittest.TestCase):
                 self.assertIn(str(roster.UNCAPPED_CARRY_CEILING), err)
                 self.assertNotIn("0plant-000500", err)
                 self.assertNotIn("0arm-000500", err)
+
+
+class TestIssue67Review12(unittest.TestCase):
+    """Round 12 fixes for #67 (PR #129 review round 12), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review11, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST
+    FIXTURE data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every row is driven through `main()` with files on disk, the way
+    eval.yml invokes it. `main()` reads the wall clock, so `_run_main`
+    freezes it.
+
+    WHAT THIS ROUND IS ABOUT, in one line: five rounds hardened the CAP
+    ORDER against `previous.json` and nobody hardened the ATTRIBUTABLE
+    DENOMINATOR beside it, which reads the same file and is the shorter
+    path to the same outcome. See `_ATTACK_TABLE` below for the class
+    floors, which are the point rather than a supplement to it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- SHOULD-FIX 1: `_clean_previous_arms` never evicts a live id ----
+    #
+    # `_update_catalogue_seen` has kept this run's own `api_ids` outside
+    # its cap since round 6 (`room = max(0, CAP - len(live))`);
+    # `_clean_previous_arms` did not, and a load-bearing comment in
+    # `compute_roster`'s retirement branch asserted from round 8 to round
+    # 11 that it did. Being TIER 1 is not being carried. The 502-live-id
+    # row is `TestIssue67Review11::test_the_arms_cap_ranks_live_previous
+    # _arms_but_never_evicts_one`, flipped to the new expectation; the two
+    # rows below are the halves that test had not reached.
+
+    _DATED = "claude-sonnet-5-20260601"
+
+    def test_the_cap_holds_a_live_arm_whose_turns_are_under_a_dated_alias(self):
+        """The planter-reachable half of SHOULD-FIX 1, which needs no
+        502-model Models API answer at all: 501 in-window census keys,
+        every one of them also named in `arms`.
+
+        The victim is LIVE and a previous arm, and the census records its
+        usage under a dated alias of its own id, so its own id carries
+        ZERO turns and sorts `(1, 0, id)` — last inside tier 1, the first
+        thing the cap takes. Its 500 turns are 5.0% of the 9,519 rankable
+        in-window turns, comfortably over the 2% exit bar.
+
+        RED on `7ef5780`, where the published sentence contradicts its own
+        parenthesis: `RETIRED: below the 2% exit bar for the last 8 weeks
+        (5.0% of rankable census usage)`. Measured there at 501 and 600
+        keys; 499 keys is green on both trees, which is what makes this a
+        differential rather than an assertion about nothing."""
+        victim = "claude-sonnet-5"
+        keys = [f"claude-haiku-4-k{i:04d}" for i in range(501)]
+        counts = {self._DATED: {self.W[0]: 500}}
+        counts.update({k: {self.W[0]: 18} for k in keys})
+        census = TestIssue67._census_doc(counts=counts)
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(victim, "2026-02-01T00:00:00Z"),
+                             self._model("claude-sonnet-7",
+                                         "2026-03-01T00:00:00Z")]}
+        previous = {"arms": [{"id": i, "reason": "was an arm"}
+                             for i in [victim] + keys],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, models, census=census, previous=previous)
+        self.assertEqual(rc, 0, err)
+        self.assertIn(victim, self._arm_ids(published),
+                      "a live previous arm carrying 5.0% of the window "
+                      "must not be evicted by 501 census keys the planter "
+                      "chose to name in `arms`")
+        self.assertNotIn(victim,
+                         {t["id"] for t in published["retired_since_last"]})
+
+    def test_route_b_keeps_a_live_previous_arm_out_of_the_residue_the_ceiling_bounds(self):
+        """MUTATION: dropping tier-1 route (b) (the live catalogue id) from
+        `_Relevance.tier`.
+
+        This is where route (b)'s floor went when SHOULD-FIX 1 flipped
+        round 11's 502-model row (see that test). With the live-id
+        exemption in place, a live previous arm is carried whether it is
+        tier 1 or residue, so the counts no longer separate the two — what
+        still separates them is the RESIDUE, which `UNCAPPED_CARRY_CEILING`
+        bounds and the exemption does not remove an id from. Drop route (b)
+        and every one of the 10,001 live ids is residue as well as exempt:
+        it is carried twice and counted against the ceiling, and the run
+        refuses to publish (rc 4) a roster it publishes fine (rc 0) with
+        the route in place.
+
+        Also red on `7ef5780` on the retirement count: there the same
+        input published 501 arms and reported 9,500 LIVE models retired,
+        with no census at all to measure any of them against."""
+        live = [f"claude-sonnet-5-{i:06d}"
+                for i in range(roster.UNCAPPED_CARRY_CEILING + 1)]
+        previous = {"arms": [{"id": i, "reason": "was an arm"} for i in live],
+                    "catalogue_seen": []}
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in live]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(tmp, models,
+                                                   previous=previous)
+        self.assertEqual(rc, 0, f"{err}\na live catalogue id is tier 1, so "
+                                f"it is not part of the residue the ceiling "
+                                f"bounds")
+        self.assertEqual(len(published["arms"]), len(live))
+        self.assertEqual(published["retired_since_last"], [],
+                         "no model the Models API returned this run may be "
+                         "reported retired for being one of many")
 
 
 if __name__ == "__main__":
