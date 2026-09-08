@@ -4,8 +4,11 @@
 systematic-evals effort (skills and fleet guidance, six epics across five
 repositories), where it stands, what is parked and why, and how to pick it up.
 It was written by the orchestrator session when Adam paused the programme on
-2026-09-08 (decision 9 below). Everything here was read from GitHub or from a
-child session at the stated time; nothing is reconstructed from memory.
+2026-09-08 (decision 9 below) and **last updated on 2026-09-08 after the
+parked-PR wave** (decision 10): Adam answered all three park comments with "1",
+#131 and #130 merged, and #129 is in flight. Everything here was read from
+GitHub or measured directly at the stated time; nothing is reconstructed from
+memory.
 
 - **Live operational state** (rewritten hourly while the programme ran, final
   at the pause): the status board,
@@ -75,9 +78,9 @@ verifier and its dependencies. Unqualified `#n` above means skills-evals.
   the site PRs park on Adam's approval of the regression-review environment gate.
 - **Docs last**: #73, #125.
 
-## 2. Where it stands (2026-09-08, the pause)
+## 2. Where it stands (2026-09-08, after the parked-PR wave)
 
-### Merged and verified (nine PRs)
+### Merged and verified (eleven PRs)
 
 Each was merged with a merge commit after the check-run conclusions and the
 combined status on its head were read, its verifier re-run in a fresh worktree
@@ -96,7 +99,10 @@ run links are on the board and in each PR body.
 | #74 review-bash-ci-reliability fixture | [#132](https://github.com/Adam-S-Daniel/skills-evals/pull/132) | `d5e06ee` | 588 | real run stopped |
 | #80 writing-adrs, two fixtures | [#136](https://github.com/Adam-S-Daniel/skills-evals/pull/136) | `7c966ba` | 673 | real run stopped |
 
-`main` of skills-evals is `7c966ba`; `main` of _agent-guidance is `5f13def`.
+| #81 adam-writing-style, three Class C fixtures + the judge mode | [#131](https://github.com/Adam-S-Daniel/skills-evals/pull/131) | `d13166d` | 863 | round 8 code review; real run stopped |
+| #84 cms-stuck-pr-triage + the shared fake `gh` | [#130](https://github.com/Adam-S-Daniel/skills-evals/pull/130) | `700f48a` | 836 | round 6 code review; real run stopped |
+
+`main` of skills-evals is `700f48a`; `main` of _agent-guidance is `5f13def`.
 
 ### In flight at the pause (two PRs, neither merged)
 
@@ -143,17 +149,69 @@ both halves (the `sync.yml` door read against the security header), prompts at
 merge → read the `sync.yml` run it triggers by conclusion → close #123. NOT
 CLEAN → fix round 4, the last of three.
 
-### Parked on Adam (exact action on the board's "Blocked on Adam" section)
+### The parked-PR wave (2026-09-08, decision 10) — RESOLVED for two of three
 
-| PR | Issue | State | Adam's action |
-|---|---|---|---|
-| [#129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) | #67 model roster (harness lane) | 12 rounds, all NOT CLEAN; two-strikes fired seven times; fix rounds 9 to 11 were the renewed budget; round 12 NOT CLEAN on both halves (adversarial: two blockers needing only `previous.json`; code half: recommends merge, the prose is the defect) | reply 1, 2 or 3 on [the park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5576912058): one more scoped fix round (recommended), merge as is plus a follow-up issue, or something else |
-| [#130](https://github.com/Adam-S-Daniel/skills-evals/pull/130) | #84 cms-stuck-pr-triage + the shared fake `gh` | round 5 code CLEAN, adversarial one documentation should-fix; budget spent; STOPPED by decision 8 | close, or reopen the lane ([the park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/130#issuecomment-5555337295)) |
-| [#131](https://github.com/Adam-S-Daniel/skills-evals/pull/131) | #81 adam-writing-style, the Class C pilot | round 6 NOT CLEAN on both halves (the provenance rule is defeated at cost 1/R; composition belongs to the pairwise judge #97 wires in); budget spent; STOPPED by decision 8 | close, or reopen the lane ([the park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/131#issuecomment-5555421442)) |
+Adam's reply to all three park comments was **1**. What "1" meant differed per
+PR, because each park comment offered its own numbered options:
 
-Both parked fixture branches conflict with `main` (#130 in `run_eval.py`, #131 in
-one import line); rule 22 gives each a merge-main step by a worker before any
-further review.
+| PR | Option 1 was | Outcome |
+|---|---|---|
+| [#131](https://github.com/Adam-S-Daniel/skills-evals/pull/131) (#81) | make the objective check honest and merge; let the judge carry the defence | **MERGED** `d13166d`. Fix round 7 + round 8 code review (0 blocker, 1 should-fix, 4 nits) + a prose-only correction round. |
+| [#130](https://github.com/Adam-S-Daniel/skills-evals/pull/130) (#84) | one fix round, documentation and nits only | **MERGED** `700f48a`. Fix round 6 + round 6 code review (0 blocker, 2 should-fix, 3 nits) + a correction round adding one test. |
+| [#129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) (#67) | one more fix round scoped to the adversarial fix list; round 13 decides | **IN FLIGHT.** Fix round 12 landed `4790845` (954 tests). Merged onto the new `main` twice as `22830cb`. Round 13 not yet run. |
+
+**Answering a park comment with option 1 carried that PR to a merge; it did not
+reopen epic #62 or #96.** Nothing else in either lane was dispatched, and the
+real N=3 runs owed for the now-eight merged skill fixtures are still not
+pursued. #81 and #84 stay OPEN as "merged hermetic; real run stopped".
+
+#### #129's state, precisely (this is where a resuming session starts)
+
+Branch `claude/skills-evals-67` at `22830cb`, pushed. Fix round 12 closed both
+round-12 blockers, the three should-fixes and the four nits, and added the
+**class-floor table** the round was gated on: inputs enumerated *from the code*
+(`_clean_previous_arms` reads `previous["arms"]` and `entry["id"]`;
+`_clean_catalogue_seen` reads `previous["catalogue_seen"]`, `entry["id"]` and
+`entry["last_seen"]`; nothing else in the file is read) — four inputs, ten rows,
+both directions, each red-first with a red mutation.
+
+Three things the fix worker reported against its own interest, all of which
+round 13 must rule on:
+
+1. **It departed from the reviewer's prescribed remedy.** A pure "denominators
+   disagree by more than f" rule was measured wrong at both ends — at small f it
+   refuses essentially every retirement (1,126 of 1,503 `compute_roster` calls in
+   the suite sit above 0.5); at large f it permits a bounded false retirement.
+   What shipped is **verdict disagreement AND the fraction**.
+2. **It could not reproduce the round-12 adversarial half's should-fix-2
+   falsifier** (a true 10.0% published as 100.0%). Its own falsifier is 10 points,
+   not 90: 498 filler census keys hold a live arm at its true 6.7%, 499 publish
+   16.7%. It asks that the 90-point figure be treated as unreproduced.
+3. **One cell is open and pinned as open** by `test_the_one_cell_this_cannot_cover`:
+   deleting a since-retired model from **both** lists drops its turns and publishes
+   a true 5.0% as 100.0%. It is the *inflation* direction (seats a model,
+   re-decided next run) where the blockers closed the *deflation* direction (which
+   retires permanently). Closing it needs a trusted history the harness does not
+   have.
+
+**The merge onto the new `main` surfaced a real cross-branch defect, and it is
+the most important open item on this PR.** `select_models()` is deliberately
+FAIL CLOSED — its docstring: falling through to the CLI default *"publishes a
+badge for a model nobody chose and makes every week-over-week comparison a
+comparison against a different model."* Four tests that arrived from #130 and
+#131 predate the roster and drive `run_eval.py` end to end with no `--model`,
+no fixture pin and no roster present, so the merged suite went **RED (1307
+tests, 4 failures)**. This is not a merge error: the first failure was already
+present after the first merge, before `harness/run_eval.py` was touched.
+**Ruling: `select_models()` does not change** — relaxing it undoes the point of
+#67 — the four tests get a model pin instead, which the same docstring blesses.
+A fix is in flight.
+
+The open question handed to round 13 either way: **if a committed fixture pins
+neither `model:` nor `judge.model:`, a real `eval.yml` dispatch fails closed
+unless a roster is present.** A per-fixture pin table and a reading of what
+`eval.yml` actually supplies were commissioned; that is what would bite on the
+first real run after #97.
 
 ### Stopped by decision 8 (2026-09-08 01:20 UTC): "Stop adding and completing evals for specific skills"
 
@@ -198,6 +256,11 @@ be built and tested hermetically but have nothing real to run against.
    at 02:10 Adam confirmed the guidance fixtures (#100 to #120) count too.
 9. 01:40 09-08: bring everything to the best stopping place within 10% more of
    the weekly allowance; one place to get up to speed (this file).
+10. 2026-09-08, after the pause: process the three PRs parked on Adam, "in all 3
+    cases, this is my reply to the park comment: 1", fetch and pull latest on all
+    relevant repos first, and **cleanly pause within 8% of the weekly allowance**
+    (about $205 on decision 9's calibration), updating this file, the board and
+    every relevant issue and PR on the way out. Two merged, #129 in flight.
 
 ## 3. How the programme is run (the rules that emerged, condensed)
 
@@ -348,7 +411,18 @@ env allowlist as its own PR (#97 round 1 adversarial S6); #97 round 1's
 record-only items; #136 round 7's nit (one clause in the N-b pin's comment,
 `test/run_tests.py:4308-4309`); the record-only lists in each #138 and #124
 round report; if Adam picks option 2 on #129, a follow-up issue for its
-findings.
+findings. Opened during the parked-PR wave and still open:
+[#142](https://github.com/Adam-S-Daniel/skills-evals/issues/142) (a test asserts
+an environment fact, so `main` fails locally where the fleet repos are cloned
+side by side), [#143](https://github.com/Adam-S-Daniel/skills-evals/issues/143)
+(`_read_matched` raises `PermissionError` on an unreadable file instead of
+failing the check by name) and
+[#144](https://github.com/Adam-S-Daniel/skills-evals/issues/144)
+(`materialize_workspace` leaks its temp workspace on any exception that is not
+`SetupFailedError`). Also owed: the round-8 review of #131 could not call a real
+model, so **whether a judge actually ranks a spliced paste last — the premise
+option 1 rests on — is unmeasured**; #97's first real dispatch is what validates
+it.
 
 ## 7. Resume checklist
 
@@ -356,11 +430,16 @@ findings.
    and the last entries of `state-log.md` on `claude/orchestration-state`.
 2. Confirm reach: skills-evals, _agent-guidance, agentskills, cms-platform and
    adamdaniel.ai attached; the session-provisioned GitHub connector present.
-3. Read Adam's answers: the three park comments (#129, #130, #131) and the
-   board's comments.
-4. For #138 and _agent-guidance#124: re-verify the head in a fresh worktree
-   (section 3), read CI, then launch the next review round from the prompts on
-   the snapshot branch with the head's md5s filled in.
+3. Read Adam's answers: the board's comments, and — for #129, the only park
+   still live — the wave record in section 2 above.
+4. For #129: the branch is `claude/skills-evals-67` at `22830cb`. Get the suite
+   to exit 0 first (the four pre-roster tests above), then run round 13, both
+   halves, on the merged head, ruling on the three self-reported items and the
+   unpinned-fixture question. For #138 and _agent-guidance#124: re-verify the
+   head in a fresh worktree (section 3), read CI, then launch the next review
+   round from the prompts on the snapshot branch with the head's md5s filled in.
+   **Run the suite from a git worktree under `.claude/worktrees/`, not from the
+   repo root** — see [#142](https://github.com/Adam-S-Daniel/skills-evals/issues/142).
 5. Re-set `/goal` with the condition at the bottom of the board if it was
    cleared; schedule the hourly wake; rewrite the board with a dated state.
 6. Keep one message to Adam per wave: merged, running, blocked on him, spend,
