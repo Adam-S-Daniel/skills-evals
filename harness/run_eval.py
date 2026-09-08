@@ -397,8 +397,22 @@ _ALLOWED_ENV = (
 # Prefixes, for families whose members are not knowable in advance.
 _ALLOWED_ENV_PREFIXES = (
     "ANTHROPIC_",  # the API credential: eval.yml exports ANTHROPIC_AUTH_TOKEN
-                   # step-locally, local runs use ANTHROPIC_API_KEY
-    "CLAUDE_",     # the CLI's own knobs, including CLAUDE_CODE_OAUTH_TOKEN
+                   # step-locally, local runs use ANTHROPIC_API_KEY. Forwarded
+                   # by design — the CLI cannot authenticate otherwise — which
+                   # also makes it one of the variables the arm's own
+                   # published transcript could leak (see "a variable that
+                   # reaches the arm is a variable an arm can publish" above);
+                   # nothing here redacts it before raw.json is written.
+    "CLAUDE_",     # the CLI's own knobs, including CLAUDE_CODE_OAUTH_TOKEN.
+                   # Also carries CLAUDE_BIN, which only the harness itself
+                   # reads (run_agent/judge.score/run_canary via os.environ,
+                   # never the CLI) — a residue of the prefix, not something
+                   # under test needing it — and CLAUDE_CODE_USE_BEDROCK/
+                   # _VERTEX with none of the AWS_*/GOOGLE_APPLICATION_
+                   # CREDENTIALS that would authenticate them: this allowlist
+                   # assumes the first-party API, which is what eval.yml
+                   # uses. Adding those credential families to reach
+                   # Bedrock/Vertex would undo B1's own point.
     "LC_",         # the per-category locale settings LANG does not cover
     "XDG_",        # config/cache/data/state/runtime dirs the CLI writes under
 )

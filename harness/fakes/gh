@@ -51,10 +51,10 @@ What remains movable is the anchor itself, and the log itself: both are
 ordinary files in the workspace, and editing them is the same class of
 thing as editing any other evidence there. The interpreter is under the
 same ceiling -- a planted sitecustomize.py on PYTHONPATH can stub
-os.path.realpath before any of this runs. Nothing THIS FILE reads is
-settable; what runs it is another matter. Whoever builds a workspace by
-hand and wants this to run in it writes that anchor by hand: one line, the
-workspace's own absolute path.
+os.path.realpath before any of this runs. No variable and no cwd this
+file reads is settable; what runs it is another matter. Whoever builds a
+workspace by hand and wants this to run in it writes that anchor by hand:
+one line, the workspace's own absolute path.
 
 The key is recorded for EVERY class, not only for the reads a file backed:
 it is the identity of the normalized argv (see payload_key), not a claim
