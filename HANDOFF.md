@@ -6,7 +6,7 @@ repositories), where it stands, what is parked and why, and how to pick it up.
 It was written by the orchestrator session when Adam paused the programme on
 2026-09-08 (decision 9 below) and **last updated on 2026-09-08 after the
 parked-PR wave** (decision 10): Adam answered all three park comments with "1",
-#131 and #130 merged, and #129 is in flight. Everything here was read from
+#131 and #130 merged, and #129 is PARKED ON ADAM again after round 13. Everything here was read from
 GitHub or measured directly at the stated time; nothing is reconstructed from
 memory.
 
@@ -158,7 +158,7 @@ PR, because each park comment offered its own numbered options:
 |---|---|---|
 | [#131](https://github.com/Adam-S-Daniel/skills-evals/pull/131) (#81) | make the objective check honest and merge; let the judge carry the defence | **MERGED** `d13166d`. Fix round 7 + round 8 code review (0 blocker, 1 should-fix, 4 nits) + a prose-only correction round. |
 | [#130](https://github.com/Adam-S-Daniel/skills-evals/pull/130) (#84) | one fix round, documentation and nits only | **MERGED** `700f48a`. Fix round 6 + round 6 code review (0 blocker, 2 should-fix, 3 nits) + a correction round adding one test. |
-| [#129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) (#67) | one more fix round scoped to the adversarial fix list; round 13 decides | **IN FLIGHT.** Fix round 12 landed `4790845` (954 tests). Merged onto the new `main` twice as `22830cb`. Round 13 not yet run. |
+| [#129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) (#67) | one more fix round scoped to the adversarial fix list; round 13 decides | **PARKED ON ADAM** at `d84c1c8`. Round 13 NOT CLEAN on both halves (adversarial 3 blocker / 3 should-fix / 3 nit, PARK; code 0 blocker / 3 should-fix / 3 nit, "the round's gate does not pass"). [The park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5589817444) carries four options. |
 
 **Answering a park comment with option 1 carried that PR to a merge; it did not
 reopen epic #62 or #96.** Nothing else in either lane was dispatched, and the
@@ -167,51 +167,74 @@ pursued. #81 and #84 stay OPEN as "merged hermetic; real run stopped".
 
 #### #129's state, precisely (this is where a resuming session starts)
 
-Branch `claude/skills-evals-67` at `22830cb`, pushed. Fix round 12 closed both
-round-12 blockers, the three should-fixes and the four nits, and added the
-**class-floor table** the round was gated on: inputs enumerated *from the code*
-(`_clean_previous_arms` reads `previous["arms"]` and `entry["id"]`;
-`_clean_catalogue_seen` reads `previous["catalogue_seen"]`, `entry["id"]` and
-`entry["last_seen"]`; nothing else in the file is read) — four inputs, ten rows,
-both directions, each red-first with a red mutation.
+Branch `claude/skills-evals-67` at **`d84c1c8`**, pushed, suite green (1307 tests
+exit 0, propagation 164), mergeable against `main`. **PARKED ON ADAM** — round 13
+was NOT CLEAN on both halves and option 1's fix round is spent. The four options
+are on [the park comment](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5589817444).
 
-Three things the fix worker reported against its own interest, all of which
-round 13 must rule on:
+**Nothing is blocked by not merging it.** `eval.yml` on `main` dispatches exactly
+one fixture, `evals/workflow-path-audit`, which pins both `model:` and
+`judge.model:`, and its `workflow_dispatch` carries no inputs — verified in round
+13. So a real dispatch does not fail closed today whether or not #129 lands.
 
-1. **It departed from the reviewer's prescribed remedy.** A pure "denominators
-   disagree by more than f" rule was measured wrong at both ends — at small f it
-   refuses essentially every retirement (1,126 of 1,503 `compute_roster` calls in
-   the suite sit above 0.5); at large f it permits a bounded false retirement.
-   What shipped is **verdict disagreement AND the fraction**.
-2. **It could not reproduce the round-12 adversarial half's should-fix-2
-   falsifier** (a true 10.0% published as 100.0%). Its own falsifier is 10 points,
-   not 90: 498 filler census keys hold a live arm at its true 6.7%, 499 publish
-   16.7%. It asks that the 90-point figure be treated as unreproduced.
-3. **One cell is open and pinned as open** by `test_the_one_cell_this_cannot_cover`:
-   deleting a since-retired model from **both** lists drops its turns and publishes
-   a true 5.0% as 100.0%. It is the *inflation* direction (seats a model,
-   re-decided next run) where the blockers closed the *deflation* direction (which
-   retires permanently). Closing it needs a trusted history the harness does not
-   have.
+**What fix round 12 closed.** Every row it was written to: round 12's own
+committed repros are green on head (blocker 1 in both placements, blocker 2,
+should-fix 1 at 500/501/502/600/5,000 live arms — 0 retired at every size).
+Nothing rounds 6 to 11 won regressed. The two merges of `main` touched no roster
+surface (`harness/roster.py` byte-identical from `4790845` to head). The
+one-way-door read is clean, including the roster step's `run:` block **executed**
+against six hostile inputs (an 18 MB / 450,000-arm roster refused without
+exporting `EVAL_ROSTER`, no id echoed, no token leaked).
 
-**The merge onto the new `main` surfaced a real cross-branch defect, and it is
-the most important open item on this PR.** `select_models()` is deliberately
-FAIL CLOSED — its docstring: falling through to the CLI default *"publishes a
-badge for a model nobody chose and makes every week-over-week comparison a
-comparison against a different model."* Four tests that arrived from #130 and
-#131 predate the roster and drive `run_eval.py` end to end with no `--model`,
-no fixture pin and no roster present, so the merged suite went **RED (1307
-tests, 4 failures)**. This is not a merge error: the first failure was already
-present after the first merge, before `harness/run_eval.py` was touched.
-**Ruling: `select_models()` does not change** — relaxing it undoes the point of
-#67 — the four tests get a model pin instead, which the same docstring blesses.
-A fix is in flight.
+**Why it parked, in one sentence.** *All three of round 12's remedies are keyed
+on RAW IDENTITY, while the mechanism they guard — attribution — is keyed on the
+FOLD RELATION.* Every class-floor row's victim is a live model whose census key
+is its own id; give the victim the fold shape this repo's own
+`TestIssue67Review9` fixture builds and all three remedies are inert. Measured
+and independently reproduced by the orchestrator:
 
-The open question handed to round 13 either way: **if a committed fixture pins
-neither `model:` nor `judge.model:`, a real `eval.yml` dispatch fails closed
-unless a roster is present.** A per-fixture pin table and a reading of what
-`eval.yml` actually supplies were commissioned; that is what would bite on the
-first real run after #97.
+```
+control  held= 94.340%  anchored_held=  0.000%  previous_only=94.3%  veto_fires=False
+PLANTED  held=  1.234%  anchored_held=  0.000%  previous_only=99.9%  veto_fires=False
+```
+
+A model carrying 94.3% publishes as `RETIRED … (1.2%)`, rc 0, permanently, from
+one added `arms` line.
+
+**The three blockers.** (A) the above; (B) one **deletion** from `catalogue_seen`
+retires an arm carrying 60.0% at `0.0%`, rc 0, **empty stderr**, permanent —
+seven different primitives on that one entry do it, and it falsifies
+`test_the_one_cell_this_cannot_cover`'s two load-bearing sentences; (C) round
+12's blocker 2 unchanged through the fold relation (true 5.0% → `carries
+100.0%`), with the distinguishability remedy printing a **byte-identical** line
+to a legitimate ageing event.
+
+**Two corrections to what fix round 12 reported about itself, both settled by
+measurement.** The worker's **departure from the prescribed remedy is the
+defect**, not a justified improvement: with `anchored_held` at 0.000% the added
+conjunct is false while the prescribed fraction alone is true, so the conjunction
+blocks a veto the prescription would have fired. (The round-13 code half ruled
+the departure safe by inferring `anchored_held ≥ held` from `anchored ⊆ wide`;
+that inference is false, because the anchored map has a smaller **numerator**
+too.) And the worker's claim that round 12's should-fix-2 falsifier was
+**unreproducible is wrong** — both round-13 halves reproduced it independently:
+tier-1 membership is decided over the 8-week union while the published share is
+divided by the 4-week enter window, so filler turns placed outside the enter
+window tip a true 9.99% to `carries 100.0%` at 499 fillers. The worker was right
+only that round 12's *own committed script* prints 16.7%, so round 12's report
+quoted a number its shipped script does not produce.
+
+**If option 1 is chosen**, the fix now has a shape: revert the veto to the
+prescribed fraction-alone rule (or make conjunct 1 `anchored_held >= bar OR the
+anchored map cannot follow this arm's own chain`); give the ageing loop the fold
+relation rather than `tier()`'s raw membership; refuse a retirement whose
+numerator fell to zero because a `previous.json` entry went away; and
+re-instantiate **every** class-floor row twice — once raw-id, once fold-reached.
+Plus the three should-fixes: the 1,503/170/107 distribution figure does not
+reproduce (measured 1,456–1,480 across the PR, never 1,503) and no test
+distinguishes the notice constant at 0.10 from 0.90; the clause-1 cost recorded
+as "ten points" is measured at 90; and the notice is computed over the union
+while seating is decided over the enter window.
 
 ### Stopped by decision 8 (2026-09-08 01:20 UTC): "Stop adding and completing evals for specific skills"
 
@@ -260,7 +283,9 @@ be built and tested hermetically but have nothing real to run against.
     cases, this is my reply to the park comment: 1", fetch and pull latest on all
     relevant repos first, and **cleanly pause within 8% of the weekly allowance**
     (about $205 on decision 9's calibration), updating this file, the board and
-    every relevant issue and PR on the way out. Two merged, #129 in flight.
+    every relevant issue and PR on the way out. Outcome: #131 and #130 merged,
+    #129 parked again on a NOT CLEAN round 13, spend about $140 (68% of the
+    line).
 
 ## 3. How the programme is run (the rules that emerged, condensed)
 
