@@ -8212,6 +8212,19 @@ class SetupHookTests(unittest.TestCase):
     def test_run_arm_short_circuits_before_the_agent_on_a_failing_setup(self):
         # run_agent must never be reached — a failing setup fails the arm
         # with a named error, not a traceback and not a wasted agent call.
+        #
+        # Round 6, NIT 2: the half-built workspace `materialize_workspace`
+        # still made before `run_setup` failed must not leak — `_run_arm`'s
+        # SetupFailedError handler cleans it up with `shutil.rmtree(
+        # exc.workspace, ignore_errors=True)`. Captured rather than let run
+        # for real, the same way `_materialize_via_run_arm` above captures
+        # its own rmtree call, so the assertion pins the CALL (and which
+        # path it names) instead of a filesystem side effect.
+        captured: list[Path] = []
+
+        def capture_rmtree(path, *a, **kw):
+            captured.append(Path(path))
+
         with tempfile.TemporaryDirectory() as tmp:
             seed = Path(tmp) / "seed"
             seed.mkdir()
@@ -8222,13 +8235,18 @@ class SetupHookTests(unittest.TestCase):
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
             with mock.patch.object(run_eval, "run_agent",
-                                   side_effect=AssertionError("run_agent must not be called")):
+                                   side_effect=AssertionError("run_agent must not be called")), \
+                mock.patch.object(run_eval.shutil, "rmtree", capture_rmtree):
                 result = run_eval._run_arm("without_skill", fixture, seed, registries,
                                            args, "20260101T000000Z")
         self.assertEqual(result["error"]["type"], "setup_failed")
         self.assertIsNone(result["agent"])
         self.assertIsNone(result["objective_checks"])
         self.assertIsNone(result["judge"])
+        self.assertEqual(len(captured), 1, captured)
+        self.assertTrue(captured[0].name.startswith(run_eval.WORKSPACE_PREFIX),
+                        captured[0])
+        shutil.rmtree(captured[0], ignore_errors=True)
 
     def test_main_objective_only_reports_setup_failure_without_a_traceback(self):
         with tempfile.TemporaryDirectory() as tmp:
