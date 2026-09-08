@@ -14638,9 +14638,20 @@ class TestIssue81(unittest.TestCase):
         # which is not what is wrong with it — the runner drives absolute.
         # Both sides casefold, so the refusal is about the instrument
         # rather than about the shift key.
+        #
+        # Both the agent and the judge model are pinned here: this run goes
+        # through select_models() (#67), which fails closed with a
+        # runner-level error when a fixture pins no model and no roster is
+        # on disk. `--no-judge` would dodge that gate too, but it also
+        # short-circuits the judge_mode_unsupported check this test exists
+        # to exercise (that check only runs `and not args.no_judge`) — so
+        # the judge model is pinned on the fixture instead, and the judge
+        # actually runs.
         with tempfile.TemporaryDirectory() as tmp:
-            eval_dir = self._planted_fixture(Path(tmp), judge={"mode": "Absolute"})
-            proc, _ = self._run_eval_on(eval_dir, "--arm", "without_skill")
+            eval_dir = self._planted_fixture(
+                Path(tmp), judge={"mode": "Absolute", "model": "claude-opus-4-6"})
+            proc, _ = self._run_eval_on(eval_dir, "--model", "claude-sonnet-4-6",
+                                        "--arm", "without_skill")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertNotIn("judge_mode_unsupported", proc.stdout)
         # And judge.score() reads it the same way, so the two cannot
