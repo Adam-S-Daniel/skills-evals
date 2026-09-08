@@ -10546,6 +10546,20 @@ class TestIssue81(unittest.TestCase):
             self.assertIn(phrase, source,
                           "the measured margins are not recorded beside the "
                           "constants")
+        # Fix round 6, finding 3: _SEED_COVERAGE_RUN's own comment used to
+        # give 126 and 63 as the wrap-column cells lost at R=4 and R=5,
+        # measured at C = 0.60 rather than the C = 0.75 this module ships.
+        # The corrected figures (63 at four, 0 at five) and the margin that
+        # actually justifies six over five (a ceiling of 0.9167 against a
+        # paste floor of 0.9259 at R=5 — inside the 0.1 floor, not outside
+        # it) were unpinned by this test, so a future edit could gut them
+        # the same way the round-6 nit N-b found the docstring's ceiling
+        # clause already gutted in one place with the suite still green.
+        for phrase in ("63 of the 189", "0.9167", "0.9259",
+                      "a margin of 0.009"):
+            self.assertIn(phrase, source,
+                          "the corrected R=6 comment's own figures are "
+                          "not recorded")
 
 
 class TestIssue80(unittest.TestCase):
