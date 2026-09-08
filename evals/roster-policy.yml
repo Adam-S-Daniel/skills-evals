@@ -124,7 +124,27 @@ min_ranked_share: 0.01
 # returns that id THIS run; an id that stops being genuinely observed
 # — including one planted directly on the branch, which the Models API
 # will never return — ages out and is dropped once its `last_seen` is
-# older than this many days. Without an age at all, a single planted id
+# older than this many days. TWO EXEMPTIONS, and both exist because
+# dropping an entry drops its census turns out of the ATTRIBUTABLE
+# DENOMINATOR every published share is divided by, while `last_seen` is
+# a field the previous roster itself writes. An entry this run's census
+# still records in-window turns for is kept (BLOCKER 2, #129 review
+# round 12): one back-dated date on a real since-retired model published
+# a live arm's true 5.0% as `carries 100.0%`. And an entry the usage
+# alias map needs as a HOP — on the chain from a census key to the
+# numerator that collects its turns — is kept too (ITEM 3, round 13):
+# such an entry is named by NEITHER document, so it is tier-3 residue
+# that no cap will ever evict, and ageing was killing it anyway. That
+# one needs no hostile input at all, because a bridge's `last_seen` is
+# only ever refreshed for a LIVE id, so an honest bridge crosses this
+# window on its own — measured through a two-run chain in which run 1 is
+# this harness's own output and run 2 reads it back 200 days later,
+# publishing a live arm carrying 60.0% of the window as `RETIRED ...
+# (0.0%)`. The two are separate QUESTIONS, not two spellings of one:
+# the first is raw identity and is what the caps order by, the second is
+# the fold relation and deliberately does not enter that order, because
+# an entry the caps rank is an entry the caps can evict. Without an age
+# at all, a single planted id
 # stayed attributable forever and was republished by this harness as its
 # own output on every later run, diluting a real held-over arm's measured
 # share to a false 0.1% and retiring it on no evidence — reverting the
@@ -178,9 +198,9 @@ min_ranked_share: 0.01
 # census names more entries than a cap can rank, in which case the
 # lowest-turn of them go, never a live catalogue id — every id the usage
 # alias map needs as a hop from such a key to the numerator that
-# collects its turns survives the caps, and an entry that neither the
-# live catalogue nor the census needs, under any spelling, never
-# outranks one that either does.
+# collects its turns survives the caps AND the ageing window, and an
+# entry that neither the live catalogue nor the census needs, under any
+# spelling, never outranks one that either does.
 #
 # THE QUALIFIER IN CLAUSE 1 IS THE ROUND-12 CORRECTION, and it is inside
 # the sentence rather than forty-five lines below it because that is

@@ -27206,9 +27206,10 @@ class TestIssue67Review10(unittest.TestCase):
         "names more entries than a cap can rank, in which case the "
         "lowest-turn of them go, never a live catalogue id — every id the "
         "usage alias map needs as a hop from such a key to the numerator "
-        "that collects its turns survives the caps, and an entry that "
-        "neither the live catalogue nor the census needs, under any "
-        "spelling, never outranks one that either does")
+        "that collects its turns survives the caps and the ageing "
+        "window, and an entry that neither the live catalogue nor the "
+        "census needs, under any spelling, never outranks one that "
+        "either does")
 
     ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
 
@@ -29241,12 +29242,20 @@ class TestIssue67Review13(unittest.TestCase):
         the list. They are eleven ways to make ONE entry stop bridging,
         and they enter through four different pieces of machinery: three
         are dropped by `_clean_catalogue_seen`'s per-entry shape check, one
-        by its whole-field type check, one by the ageing rule, one by
-        `by_id`'s last-write-wins, and the rest never touch
+        by its whole-field type check, two by the ageing rule (one of
+        them by `by_id`'s last-write-wins), and the rest never touch
         `catalogue_seen`'s machinery at all — they simply spell a
         different id, or no id. That is why the refusal sits at the SINK,
         where the retirement is decided, and not at any of them: an
         enumeration of the sources is a list that the next round adds to.
+
+        TWO OF THE ELEVEN ARE REPAIRED RATHER THAN REFUSED, and the split
+        is what the two round-13 rules are for. The two ageing-window
+        rows drop an entry that is still THERE, so ITEM 3 keeps it as a
+        needed hop and the chain — and the arm's real 60.0% — survives
+        intact. The other nine remove the entry for good, and no rule can
+        rebuild it, so what is left is BLOCKER B's refusal to act on the
+        zero. Both outcomes keep the seat; only one keeps the number.
 
         THE LAST FOUR ARE NOT FROM ANY REVIEW ROUND'S LIST. They were
         invented against the finished rule to test whether it generalises,
@@ -29260,33 +29269,44 @@ class TestIssue67Review13(unittest.TestCase):
         self.assertIn("60.0%", self._reason(control, self._ZERO_LIVE),
                       "the control must measure the victim at its true "
                       "60.0%, or the rows below are about nothing")
+        # (label, the entry, which of the two rules answers it). REPAIRED
+        # means ITEM 3 kept the bridge and the chain is intact, so the
+        # published sentence is the CONTROL'S, byte for byte — the arm's
+        # real 60.0%. REFUSED means the entry is gone for good and no
+        # rule can rebuild it, so BLOCKER B's sink declines to act on the
+        # zero it leaves. Which of the two answers a row is a property of
+        # the row, not a choice: only an ageing-window row is repairable,
+        # because only ageing drops an entry that is still THERE.
         rows = [
-            ("the entry removed outright", None),
+            ("the entry removed outright", None, "refused"),
             ("`last_seen` unparseable",
-             {"id": self._ZERO_SEEN, "last_seen": "garbage"}),
+             {"id": self._ZERO_SEEN, "last_seen": "garbage"}, "refused"),
             ("`last_seen` is not a string",
-             {"id": self._ZERO_SEEN, "last_seen": [1]}),
+             {"id": self._ZERO_SEEN, "last_seen": [1]}, "refused"),
             ("`last_seen` a year-0001 date with a positive offset",
              {"id": self._ZERO_SEEN,
-              "last_seen": "0001-01-01T00:00:00+05:00"}),
+              "last_seen": "0001-01-01T00:00:00+05:00"}, "refused"),
             ("`last_seen` back-dated past the ageing window",
-             {"id": self._ZERO_SEEN, "last_seen": self._days_ago(400)}),
+             {"id": self._ZERO_SEEN, "last_seen": self._days_ago(400)},
+             "repaired"),
             ("`id` changed by one character's case",
              {"id": "Claude-haiku-4-20250101",
-              "last_seen": self._days_ago(3)}),
-            ("the whole entry replaced by a scalar", 42),
-            # --- invented against the finished rule, not taken from any
+              "last_seen": self._days_ago(3)}, "refused"),
+            ("the whole entry replaced by a scalar", 42, "refused"),
+            # --- invented against the finished rules, not taken from any
             # round's list of what was already known to reach it ---
             ("`catalogue_seen` is a dict, not a list",
-             self._WHOLE_FIELD_IS_A_DICT),
+             self._WHOLE_FIELD_IS_A_DICT, "refused"),
             ("the same id twice, the second back-dated (last write wins)",
-             self._SAME_ID_TWICE),
+             self._SAME_ID_TWICE, "repaired"),
             ("`id` padded with one trailing dot",
-             {"id": self._ZERO_SEEN + ".", "last_seen": self._days_ago(3)}),
+             {"id": self._ZERO_SEEN + ".", "last_seen": self._days_ago(3)},
+             "refused"),
             ("`catalogue_seen` absent from `previous.json` entirely",
-             self._FIELD_ABSENT),
+             self._FIELD_ABSENT, "refused"),
         ]
-        for label, entry in rows:
+        healthy = self._reason(control, self._ZERO_LIVE)
+        for label, entry, answered_by in rows:
             with self.subTest(primitive=label):
                 published, err = self._zero_row(entry)
                 self.assertIn(self._ZERO_LIVE, self._arm_ids(published),
@@ -29296,8 +29316,14 @@ class TestIssue67Review13(unittest.TestCase):
                     self._ZERO_LIVE,
                     {t["id"] for t in published["retired_since_last"]},
                     "the permanent, unrecoverable half")
-                self.assertIn("a numerator of exactly zero",
-                              self._reason(published, self._ZERO_LIVE))
+                sentence = self._reason(published, self._ZERO_LIVE)
+                if answered_by == "repaired":
+                    self.assertEqual(sentence, healthy,
+                                     "an entry the alias map needs as a "
+                                     "hop is not aged out, so the chain "
+                                     "and the share both survive intact")
+                else:
+                    self.assertIn("a numerator of exactly zero", sentence)
                 # Counts and shapes only: no warning may echo an id, and
                 # the case-changed spelling is an id the input chose.
                 self.assertNotIn("Claude-haiku-4-20250101", err)
@@ -29380,6 +29406,344 @@ class TestIssue67Review13(unittest.TestCase):
                       "it is the only thing that does")
         self.assertIn("no longer returned by the Models API",
                       retired[victim])
+
+
+    # --- ITEM 3: the ageing loop asked the RAW-IDENTITY question --------
+    #
+    # `_update_catalogue_seen`'s ageing rule held an entry past the
+    # window on `relevant.tier(model_id) < 3`, which is `1 if (id in
+    # count_turns or id in api_ids) else 3` — the id's OWN spelling in
+    # one of the two documents. A BRIDGE is neither: it is not a live
+    # catalogue id and not itself an in-window census key, it is an id
+    # the usage alias map walks THROUGH on the way from a census key to
+    # the numerator that collects its turns. So it is tier 3, the caps
+    # carry it whole as residue, and ageing killed it. That asymmetry is
+    # the hole.
+
+    _HOP_LIVE = "claude-haiku-4"              # live, previous arm, victim
+    _HOP_BRIDGE = "claude-haiku-4-20250101"   # the bridge: neither document's
+    _HOP_KEY = "claude-haiku-4-20250101-20260101"
+
+    @classmethod
+    def _hop_catalogue(cls, *, with_bridge):
+        models = [cls._model(cls._HOP_LIVE, "2025-06-01T00:00:00Z"),
+                  cls._model("claude-haiku-5", "2026-07-01T00:00:00Z"),
+                  cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+                  cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]
+        if with_bridge:
+            models.insert(1, cls._model(cls._HOP_BRIDGE,
+                                        "2025-01-01T00:00:00Z"))
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    @classmethod
+    def _hop_census(cls):
+        return TestIssue67._census_doc(counts={
+            cls._HOP_KEY: {cls.W[0]: 3_000},
+            "claude-sonnet-5": {cls.W[0]: 2_000}})
+
+    def test_a_hostile_back_date_cannot_age_out_a_needed_alias_hop(self):
+        """ROW (a) — HOSTILE. The bridge's `last_seen` is back-dated 400
+        days and nothing else changes. The victim carries 3,000 of the
+        window's 5,000 rankable turns, a true 60.0%, every one of them
+        under a census key the bridge is the only route from.
+
+        RED on `87f2031`: the bridge ages out on the date the previous
+        roster wrote, the chain breaks, and the live arm is published
+        `RETIRED: below the 2% exit bar for the last 8 weeks (0.0% of
+        rankable census usage)`, rc 0. Round 12's ageing exemption does
+        not reach it — the bridge is not itself a census key, so
+        `tier()` puts it in the residue.
+
+        MUTATION: deleting the `relevant.is_needed_hop(model_id)` branch
+        from the ageing loop."""
+        control = self._hop_row(self._days_ago(3))
+        planted, err = self._hop_row(self._days_ago(400), want_err=True)
+        self.assertIn("60.0%", self._reason(control, self._HOP_LIVE),
+                      "the control must measure the victim at its true "
+                      "60.0%, or the row is about nothing")
+        self.assertEqual(self._reason(control, self._HOP_LIVE),
+                         self._reason(planted, self._HOP_LIVE),
+                         "one back-dated `last_seen` on a BRIDGE moved "
+                         "this arm's published share")
+        self.assertIn(self._HOP_BRIDGE, self._seen_ids(planted),
+                      "an id the usage alias map needs as a hop may not "
+                      "be aged out on a date the previous roster wrote")
+        # A THIRD, distinct, count-only line: the ageing warning, round
+        # 12's census line, and this one say different things, and a
+        # reader who cannot tell them apart is reading no signal.
+        self.assertIn("kept 1 entry/entries past the 180-day window that "
+                      "the usage alias map needs to attribute this run's "
+                      "census", err)
+        self.assertNotIn("dropped", err)
+        self.assertNotIn(self._HOP_BRIDGE, err,
+                         "a warning about an untrusted input names "
+                         "counts, never an id")
+
+    def _hop_row(self, last_seen, *, want_err=False):
+        previous = {"arms": [{"id": self._HOP_LIVE, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._HOP_BRIDGE,
+                                        "last_seen": last_seen}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._hop_catalogue(with_bridge=False),
+                census=self._hop_census(), previous=previous)
+        self.assertEqual(rc, 0, err)
+        return (published, err) if want_err else published
+
+    def test_an_honest_two_run_chain_does_not_age_out_its_own_bridge(self):
+        """ROW (b) — HONEST, and it is the half that matters: there is no
+        planter anywhere in it. Run 1's `previous.json` is None, run 2's
+        is run 1's own published roster, byte for byte, read back 200
+        days later. Nothing is edited in between.
+
+        A BRIDGE'S CLOCK NEVER RESTARTS. `_update_catalogue_seen`
+        refreshes `last_seen` only for an id THIS run's Models API
+        returns, so an id that has left the catalogue holds whatever date
+        it last had. Run 1 lists the bridge, so run 1 stamps it with run
+        1's date; by run 2 the catalogue has replaced it and that date is
+        200 days old. Ageing then drops it, the chain from run 2's census
+        key breaks, and a live arm carrying 60.0% of the window is
+        published `RETIRED ... (0.0%)` — RED on `87f2031`, from a file
+        this harness wrote itself.
+
+        MUTATION: the same deletion as row (a)."""
+        run1_now = self.NOW - timedelta(days=200)
+        run1_weeks = [timeweeks.iso_week(run1_now - timedelta(weeks=i))
+                      for i in range(8)]
+        run1_census = {
+            "generated_at": run1_now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "weeks": list(run1_weeks),
+            "counts": {self._HOP_LIVE: {run1_weeks[0]: 3_000},
+                       "claude-sonnet-5": {run1_weeks[0]: 2_000}}}
+
+        class _Run1Now(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return run1_now
+
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(TestIssue67Review9, "_FrozenNow", _Run1Now):
+            rc, first, _, err = self._run_main(
+                tmp, self._hop_catalogue(with_bridge=True),
+                census=run1_census, previous=None)
+        self.assertEqual(rc, 0, err)
+        seen = {e["id"]: e["last_seen"] for e in first["catalogue_seen"]}
+        self.assertIn(self._HOP_BRIDGE, seen,
+                      "run 1's catalogue lists the bridge, so run 1 "
+                      "records it — by design, no plant involved")
+        self.assertEqual(seen[self._HOP_BRIDGE],
+                         run1_now.strftime("%Y-%m-%d"))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, second, _, err = self._run_main(
+                tmp, self._hop_catalogue(with_bridge=False),
+                census=self._hop_census(), previous=first)
+        self.assertEqual(rc, 0, err)
+        self.assertIn(self._HOP_LIVE, self._arm_ids(second),
+                      "an honest bridge crossed the 180-day window on "
+                      "its own and took a live arm's 60.0% with it")
+        self.assertNotIn(self._HOP_LIVE,
+                         {t["id"] for t in second["retired_since_last"]})
+        self.assertIn("60.0%", self._reason(second, self._HOP_LIVE))
+        self.assertIn(self._HOP_BRIDGE, self._seen_ids(second))
+
+    def test_a_needed_hop_never_enters_the_caps_tier_or_order(self):
+        """The second question must NOT be a fourth route into `tier`,
+        and this is the floor for that rather than a comment about it.
+
+        Round 12's should-fix 2 measured the OVERFLOW regime: when tier 1
+        alone exceeds a cap, the lowest-turn tier-1 entry is evicted. Move
+        a bridge into tier 1 and it becomes evictable in exactly that
+        regime — the caps carry a tier-3 residue entry unconditionally,
+        so routing bridges through `tier` would trade an entry that is
+        never evicted for one that is evicted FIRST.
+
+        Asserted on the object, where the distinction lives: a bridge is
+        tier 3 and orders as residue, and `is_needed_hop` says yes to it
+        and no to everything the alias map does not walk through.
+
+        MUTATION: `return 1 if ... or self.is_needed_hop(model_id) else 3`
+        in `_Relevance.tier` — this row goes red on the tier and on the
+        rank key."""
+        relevant = roster._relevance(
+            ["claude-sonnet-7"], {self._HOP_KEY: 3_000})
+        relevant.note_needed_hops([self._HOP_BRIDGE, self._HOP_LIVE])
+        self.assertTrue(relevant.is_needed_hop(self._HOP_BRIDGE))
+        self.assertFalse(relevant.is_needed_hop("0filler-0000"))
+        self.assertEqual(relevant.tier(self._HOP_BRIDGE), 3,
+                         "a needed hop is still RESIDUE to the caps, "
+                         "which is what keeps it un-evictable")
+        order = relevant.rank([self._HOP_BRIDGE, self._HOP_KEY,
+                               "0filler-0000"])
+        self.assertEqual(order[self._HOP_BRIDGE],
+                         (3, 0, self._HOP_BRIDGE),
+                         "the needed-hop answer may not reach the caps' "
+                         "sort key")
+        self.assertEqual(order[self._HOP_BRIDGE][0],
+                         order["0filler-0000"][0],
+                         "a bridge and a filler are the same tier to the "
+                         "caps; only the ageing rule tells them apart")
+        # And the default is the answer that changes nothing, so a caller
+        # that never notes the hops behaves exactly as before.
+        self.assertFalse(roster._relevance(["claude-sonnet-7"], {})
+                         .is_needed_hop(self._HOP_BRIDGE))
+
+    def test_the_needed_hop_set_is_taken_before_anything_is_evicted(self):
+        """`_needed_alias_hops` walks the ONE-HOP map, not the composed
+        one, and it is asked over the PRE-eviction id set. Both are easy
+        to get subtly wrong and neither is visible from the composed map:
+        composition re-points every key at the chain's END, so the ids in
+        the middle — the only ones at issue — are exactly what it throws
+        away.
+
+        MUTATION: `_needed_alias_hops(_usage_alias_map(...), ...)` in
+        `compute_roster` — the composed map answers with the chain's
+        endpoint alone, so the bridge is not in the set and both rows
+        above go red."""
+        api_ids = ["claude-haiku-4-20260601", "claude-haiku-5"]
+        other = [self._HOP_KEY, self._HOP_BRIDGE, "claude-haiku-4"]
+        hops = roster._usage_alias_hops(
+            api_ids, other, roster.alias_map(api_ids), api_ids)
+        composed = roster._usage_alias_map(
+            api_ids, other, roster.alias_map(api_ids), api_ids)
+        self.assertEqual(composed[self._HOP_KEY], "claude-haiku-4-20260601",
+                         "the composed map answers with the chain's end")
+        self.assertEqual(hops[self._HOP_KEY], self._HOP_BRIDGE,
+                         "the one-hop map answers with the next id along")
+        needed = roster._needed_alias_hops(hops, {self._HOP_KEY: 3_000})
+        self.assertIn(self._HOP_BRIDGE, needed)
+        self.assertIn("claude-haiku-4", needed)
+        self.assertNotIn(self._HOP_KEY, needed,
+                         "the key itself is already TIER 1 and needs no "
+                         "second route")
+        # The composed map cannot answer this question at all, which is
+        # the whole reason the builder was split.
+        self.assertNotIn(
+            self._HOP_BRIDGE,
+            roster._needed_alias_hops(composed, {self._HOP_KEY: 3_000}))
+
+    def test_a_cycle_in_the_hop_map_terminates(self):
+        """`_needed_alias_hops` walks a map it does not build, so its
+        `seen` guard is load-bearing rather than defensive: rules (1) and
+        (3) of `_usage_alias_hops` do not shorten an id, so nothing in
+        the construction rules a cycle out.
+
+        The walk stops the first time it revisits an id, so the answer
+        is the cycle minus the key it started from — the key is excluded
+        by design, and re-adding it would be the one case where
+        `is_needed_hop` and `tier` answered the same thing.
+
+        MUTATION: dropping `and target not in seen` from the walk — this
+        row hangs instead of failing, which is why it is a two-element
+        cycle and not a long one."""
+        cycle = {"claude-opus-4-a": "claude-opus-4-b",
+                 "claude-opus-4-b": "claude-opus-4-a"}
+        self.assertEqual(
+            roster._needed_alias_hops(cycle, {"claude-opus-4-a": 1}),
+            {"claude-opus-4-b"})
+
+
+    # --- two sources invented against the finished rules ---------------
+    #
+    # Neither shape appears in round 13's findings or in the brief that
+    # scoped this round's work. They exist to test whether the two rules
+    # above generalise past the sources that were already known to reach
+    # them, which is what a check AT THE SINK is supposed to buy and what
+    # an enumeration of sources never does. Both were applied and run on
+    # `87f2031` first, and both are RED there.
+
+    def test_the_widening_entry_need_not_name_the_key_it_makes_countable(self):
+        """INVENTED. Every measured attack on the denominator so far
+        NAMES the unattributable census key — one `arms` line, or one
+        `catalogue_seen` line, spelled exactly like the key. This one
+        never names it: the planted `arms` entry is a DATED SPELLING of
+        the key, and the wide alias map folds the entry onto the key,
+        which is what puts the key in `previous_arms_folded` and so into
+        the denominator.
+
+        Same outcome, one indirection further out: the victim's 5,000 of
+        5,300 rankable turns become 5,000 of 405,300, its wide share
+        falls to 1.2%, and on `87f2031` it is published `RETIRED: below
+        the 2% exit bar for the last 8 weeks (1.2% of rankable census
+        usage)`, rc 0. The anchored measurement is 0.000% here too — the
+        victim is reached through a fold chain — so round 12's conjunct
+        blocked its own veto exactly as it did for the direct spelling.
+
+        A check placed on "an `arms` entry that equals a census key"
+        would miss this. The fraction test at the sink does not."""
+        key = "claude-opus-4-1-router-eu"
+        dated = key + "-20250101"
+        counts = {self._KEY: {self.W[0]: 5_000},
+                  "claude-sonnet-5": {self.W[0]: 300},
+                  key: {self.W[0]: 400_000}}
+        previous = {"arms": [{"id": self._ARM, "reason": "was an arm"},
+                             {"id": self._LIVE, "reason": "was an arm"},
+                             {"id": dated, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._SEEN,
+                                        "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        self.assertNotIn(key, [a["id"] for a in previous["arms"]],
+                         "the point of the row is that the key itself is "
+                         "never named")
+        self.assertIn(self._LIVE, self._arm_ids(published))
+        self.assertNotIn(self._LIVE,
+                         {t["id"] for t in published["retired_since_last"]})
+        self.assertIn("the retirement is refused rather than acted on",
+                      self._reason(published, self._LIVE))
+
+    def test_an_aged_out_hop_can_inflate_an_unrelated_arm_instead(self):
+        """INVENTED. Both of round 13's ageing rows end in a RETIREMENT
+        of the model the broken chain belongs to. This one ends the other
+        way round: the chain belongs to a since-retired model, and
+        breaking it deflates the DENOMINATOR, so an unrelated live arm's
+        true 5.0% is published as `carries 100.0%` — a hold-over turned
+        into a seat, on a share that is wrong by 95 points.
+
+        The bridge is `claude-opus-4-20250101`: not live, not itself a
+        census key, and the only route from the census key
+        `claude-opus-4-20250101-20260101` to `claude-opus-4`, which
+        `catalogue_seen` vouches for. It is tier 3, so no cap will ever
+        evict it — and on `87f2031` ageing dropped it anyway, which is
+        the asymmetry ITEM 3 closes.
+
+        RED on `87f2031`. The two rows differ only in the bridge's
+        `last_seen`."""
+        victim = "claude-sonnet-5"
+        departed = "claude-opus-4"
+        bridge = departed + "-20250101"
+        key = bridge + "-20260101"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(victim, "2026-02-01T00:00:00Z"),
+            self._model("claude-sonnet-7", "2026-03-01T00:00:00Z")]}
+        census = TestIssue67._census_doc(counts={
+            victim: {self.W[0]: 500}, key: {self.W[0]: 9_500}})
+
+        def run(bridge_age):
+            previous = {"arms": [{"id": victim, "reason": "was an arm"}],
+                        "catalogue_seen": [
+                            {"id": departed, "last_seen": self._days_ago(1)},
+                            {"id": bridge,
+                             "last_seen": self._days_ago(bridge_age)}]}
+            with tempfile.TemporaryDirectory() as tmp:
+                rc, published, _, err = self._run_main(
+                    tmp, models, census=census, previous=previous)
+            self.assertEqual(rc, 0, err)
+            return published
+
+        fresh = run(1)
+        aged = run(400)
+        self.assertIn("still 5.0%", self._reason(fresh, victim),
+                      "the control must measure the victim at its true "
+                      "5.0%, or the row is about nothing")
+        self.assertEqual(self._reason(fresh, victim),
+                         self._reason(aged, victim),
+                         "one date on a BRIDGE moved an unrelated arm's "
+                         "published share by 95 points")
 
 
     # --- the cell BLOCKER B leaves open ---------------------------------
