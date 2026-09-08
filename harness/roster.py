@@ -548,43 +548,91 @@ def _fold_set(ids: set[str], aliases: dict) -> set[str]:
 #:
 #: THE SHAPE OF THE FIX. Seating still reads the WIDE denominator — that
 #: is round 6's B1, and a seat is reversible next run. RETIREMENT is the
-#: permanent, destructive half, so it is measured a second time against an
-#: ANCHORED denominator: the same computation with `previous.json`'s
-#: contribution removed entirely, over `models.json` and the census alone.
-#: When the anchored measurement puts the arm at or above the exit bar
-#: while the wide one puts it below, the retirement is REFUSED and the arm
-#: is held over with a named reason — the same "refuse rather than act on
-#: an order the input writes" the residue ceiling already does.
+#: permanent, destructive half, so it is not acted on at all while more
+#: than this fraction of the exit window's ranked denominator is
+#: attributable ONLY through `previous.json` — that is, while
+#: `exit_ranked_total - anchored_exit_ranked_total` (the same computation
+#: with the previous roster's contribution removed entirely, over
+#: `models.json` and the census alone) is more than
+#: `RETIREMENT_ANCHOR_TOLERANCE` of the denominator the bar was measured
+#: against. The arm is held over with a named reason — the same "refuse
+#: rather than act on an order the input writes" the residue ceiling
+#: already does.
 #:
-#: WHY THE TOLERANCE IS NOT ZERO, and what fixes the number. The two
-#: measurements can straddle the bar by a hair on an honest input, and
-#: refusing a retirement over that is noise rather than defence. A
-#: disagreement is acted on only when previous-roster-only attribution
-#: supplies more than this fraction of the exit window's ranked
-#: denominator.
+#: THE DECISION READS THE FRACTION AND NOTHING ELSE. Round 12's shipped
+#: code also required the ANCHORED SHARE to be at or above the exit bar,
+#: on the reasoning that `anchored ⊆ wide` makes `anchored_held >= held`
+#: and so the conjunct only ever refuses more precisely. That inference
+#: is false and the conjunct was the defect (BLOCKER A, #129 review round
+#: 13): the anchored map is a subset in its NUMERATOR too, because it
+#: cannot follow a chain whose middle hop lives in `previous.json`, so an
+#: arm reached only through such a chain measures 0.000% anchored while
+#: its true share of the window is 94.340%. The conjunct was then FALSE
+#: and BLOCKED the refusal — one added `arms` line published a live arm
+#: as `RETIRED ... (1.2%)`, rc 0, permanently. The anchored share is
+#: still computed and still published in the reason, as a number; it
+#: decides nothing, and the sentence no longer claims it clears any bar.
+#:
+#: WHAT THE BROADER RULE COSTS, stated rather than left to be discovered:
+#: an arm UNDER the exit bar whose exit-window denominator is more than
+#: 1% previous-roster-attributable is HELD OVER rather than retired, for
+#: as long as that stays true — including when it really has stopped
+#: being used, and including when the previous roster is entirely honest
+#: (a real since-retired model with in-window turns is exactly this
+#: shape). It is not a permanent block, and these still retire it: the
+#: since-retired entries age out of `catalogue_seen` or their turns leave
+#: the window, at which point the fraction falls under the tolerance and
+#: the ordinary exit bar decides; and a model that leaves the Models API
+#: leaves the arm set that same run, by a path that never reaches this
+#: branch at all. What it does NOT cost is a wrong seat: the arm was
+#: already an arm, and this only declines to remove it.
 #:
 #: THE VALUE IS 0.01, and here is the measurement that fixes it, taken at
 #: THE SHIPPED CONFIGURATION — `evals/roster-policy.yml` as this branch
 #: ships it, `arm_exit_usage_pct: 2` over `arm_exit_window_weeks: 8`.
 #:
-#: THE MARGIN. If previous-roster-only attribution supplies a fraction `f`
-#: of the denominator then `anchored >= (1 - f) * wide`, so the anchored
-#: share is at most `wide_share / (1 - f)`. A retirement is acted on only
-#: while `f <= 0.01` and `wide_share < 2`, so the widest TRUE share a
-#: retirement can still be acted on at is `2 / 0.99` = 2.0202% — THE
-#: MARGIN IS 0.0202 PERCENTAGE POINTS above the shipped exit bar, and it
-#: is a supremum rather than a value that is reached. At 0.10 the same
-#: arithmetic gives 2.222% (0.222 points); at 0.50 it gives 4.0% — a model
-#: at twice the bar, retired.
+#: THE MARGIN, and it reads `f` alone, which is why it survives the
+#: conjunct's deletion unchanged. If previous-roster-only attribution
+#: supplies a fraction `f` of the denominator then
+#: `anchored >= (1 - f) * wide`, so the arm's share measured over the
+#: anchored denominator is at most `wide_share / (1 - f)`. A retirement
+#: is now acted on only while `f <= 0.01`, and it is only reached at all
+#: while `wide_share < 2`, so the widest TRUE share a retirement can
+#: still be acted on at is `2 / 0.99` = 2.0202% — THE MARGIN IS 0.0202
+#: PERCENTAGE POINTS above the shipped exit bar, and it is a supremum
+#: rather than a value that is reached. At 0.10 the same arithmetic gives
+#: 2.222% (0.222 points); at 0.50 it gives 4.0% — a model at twice the
+#: bar, retired. (The bound is one-directional on purpose: BLOCKER A is
+#: the case where the anchored NUMERATOR is smaller too, which only makes
+#: the anchored share lower, so the bound still holds and the anchored
+#: share still cannot be read as an independent verdict.)
 #:
-#: WHY NOT ZERO. At exactly 0 the clause is DEAD, not strict, and that is
-#: a proof rather than a sample: `anchored <= wide` always (see
-#: `compute_roster`'s `anchor_aliases`), so the anchored share is at or
-#: above the bar while the wide one is under it ONLY when the two
-#: denominators already differ. `previous_only > 0` is therefore implied
-#: by the condition it sits beside, nothing could turn that spelling red,
-#: and F-2's rule (#129 review round 10) is that such a clause is deleted
-#: rather than kept as belt-and-braces.
+#: WHY NOT ZERO. The argument changed with the conjunct (BLOCKER A, #129
+#: review round 13). It used to be that at 0 the clause was DEAD —
+#: implied by the `anchored_held >= bar` conjunct it sat beside — so the
+#: number could not be 0 without F-2 deleting the whole comparison. With
+#: that conjunct gone the fraction is the ONLY test, so 0 is no longer
+#: dead: it is `previous_only > 0`, which vetoes every retirement whose
+#: two denominators differ AT ALL.
+#:
+#: THAT IS NOT A FREE STRENGTHENING, and here is what it costs. The two
+#: denominators differ by one turn as soon as the census records a single
+#: in-window turn under any key the live catalogue cannot reach on its
+#: own — one real since-retired model, one dated spelling of a departed
+#: arm, one snapshot id the API stopped listing last week. Those are
+#: ordinary, honest runs, not attacks, and at 0 not one of them can ever
+#: retire anything: a model that genuinely went to zero usage keeps its
+#: seat for as long as any other id in the window is attributable through
+#: history. The exit bar would then be unreachable on every run whose
+#: census is not perfectly contemporaneous with the catalogue, which is
+#: most of them — the roster would stop shrinking, and #67 is about a
+#: roster that goes stale without anyone noticing.
+#:
+#: 0.01 IS WHERE THAT STOPS AND THE MARGIN ABOVE STARTS. It is small
+#: enough that the arithmetic below bounds the error at 0.0202 points
+#: over the shipped bar, and large enough that a handful of history-only
+#: turns in a busy window — 1 in 100 — still lets an unused arm retire.
+#: The two sides are measured, one turn apart, in the row named below.
 #:
 #: MEASURED BOTH SIDES OF THE NUMBER, through `main()`, in
 #: TestIssue67Review12::test_the_anchor_tolerance_is_measured_on_both
@@ -2317,9 +2365,28 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                         api_ids=api_ids, previous_arms=(), catalogue_seen=())
                     previous_only = (exit_ranked_total
                                      - anchored_exit_ranked_total)
-                    if (anchored_held >= policy["arm_exit_usage_pct"]
-                            and previous_only > (RETIREMENT_ANCHOR_TOLERANCE
-                                                 * exit_ranked_total)):
+                    if previous_only > (RETIREMENT_ANCHOR_TOLERANCE
+                                        * exit_ranked_total):
+                        # THE FRACTION ALONE, and the conjunct that used to
+                        # sit beside it — `anchored_held >= exit bar` — is
+                        # deleted (BLOCKER A, #129 review round 13). It read
+                        # as a free strengthening: only refuse when the
+                        # anchored reading positively disagrees. The
+                        # inference behind it, `anchored ⊆ wide` so
+                        # `anchored_held >= held`, is FALSE. The anchored
+                        # map is a subset in its DENOMINATOR and in its
+                        # NUMERATOR both: it cannot follow a chain whose
+                        # middle hop lives in `previous.json`, so a census
+                        # key that folds onto this arm through a
+                        # `catalogue_seen` entry or a departed arm folds
+                        # onto nothing there and the arm's own turns leave
+                        # its numerator. Measured through `main()`: an arm
+                        # carrying 94.340% of the exit window measures
+                        # 0.000% anchored, so the deleted conjunct was
+                        # false, and it BLOCKED the refusal — one added
+                        # `arms` line published `RETIRED ... (1.2%)`, rc 0,
+                        # permanently. See `RETIREMENT_ANCHOR_TOLERANCE`
+                        # for what the broader rule costs.
                         reason = (
                             f"held over from the previous roster: "
                             f"{_format_share(held, policy['arm_exit_usage_pct'], under=True)}% "
@@ -2328,11 +2395,15 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                             f"{policy['arm_exit_usage_pct']}% exit bar, but "
                             f"{100 * previous_only / exit_ranked_total:.1f}% of that "
                             f"denominator is attributable only through the previous "
-                            f"roster's own entries — against this run's live "
-                            f"catalogue alone it still carries "
-                            f"{_format_share(anchored_held, policy['arm_exit_usage_pct'])}% "
-                            f"(at or above the {policy['arm_exit_usage_pct']}% exit "
-                            f"bar), so the retirement is refused rather than acted on")
+                            f"roster's own entries, so the measurement that would "
+                            f"retire it rests on a file this harness treats as "
+                            f"untrusted input — the retirement is refused rather "
+                            f"than acted on. Against this run's live catalogue "
+                            f"alone the same window measures "
+                            f"{_format_share(anchored_held, policy['arm_exit_usage_pct'], under=True)}% "
+                            f"for this arm, over a denominator those same entries "
+                            f"are missing from, so it is a second reading of the "
+                            f"same doubt rather than an independent one")
         if reason:
             arms.append({"id": model_id, "reason": reason})
         elif created is None:

@@ -28420,8 +28420,21 @@ class TestIssue67Review12(unittest.TestCase):
                          "return it — but the VICTIM must not be")
         self.assertIn("the retirement is refused rather than acted on",
                       self._reason(planted, self._VICTIM))
-        self.assertIn("against this run's live catalogue alone it still "
-                      "carries 100.0%", self._reason(planted, self._VICTIM))
+        # The published sentence used to end "against this run's live
+        # catalogue alone it still carries 100.0% (at or above the 2%
+        # exit bar)", and this row asserted that clause. Round 13's
+        # BLOCKER A deleted the conjunct that checked it, so the sentence
+        # no longer claims the anchored share clears anything — it
+        # reports it as a number over a denominator it names as
+        # different. The assertion moves with the sentence, and what it
+        # still pins is that the number is published at all.
+        self.assertIn("Against this run's live catalogue alone the same "
+                      "window measures 100.0% for this arm",
+                      self._reason(planted, self._VICTIM))
+        self.assertNotIn("at or above the 2% exit bar",
+                         self._reason(planted, self._VICTIM),
+                         "no clause of the refusal sentence may assert "
+                         "something the code no longer checks")
 
     def test_one_catalogue_seen_entry_cannot_retire_a_live_arm_either(self):
         """The same row through the OTHER list. `7ef5780` publishes an
@@ -28957,6 +28970,165 @@ class TestIssue67Review12(unittest.TestCase):
         source = self._prose(TestIssue67Review10.ROSTER_SRC)
         self.assertNotIn("what the cap bounds is tier 1 and tier 2", source)
         self.assertIn("what the cap bounds is tier 1 only", source)
+
+
+class TestIssue67Review13(unittest.TestCase):
+    """Round 13 fixes for #67 (PR #129 review round 13), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review12, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST
+    FIXTURE data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    WHAT THIS ROUND IS ABOUT, in one line: every remedy round 12 shipped
+    is keyed on RAW IDENTITY — is this id a live catalogue id, is this id
+    an in-window census key — while the mechanism they guard,
+    ATTRIBUTION, is keyed on the FOLD RELATION. Give the victim the fold
+    shape `TestIssue67Review9::test_a_three_hop_census_key_still_reaches
+    _the_live_snapshot` builds and all three go inert, which is why
+    `TestIssue67Review12::test_every_previous_json_input_has_a_control
+    _versus_hostile_floor` now runs its whole table under BOTH victim
+    shapes.
+
+    THE FOLD CHAIN used below, one hop per input, is that fixture's:
+    census key -> `catalogue_seen` entry -> previous arm -> live
+    snapshot. Nothing in it is hostile; it is what an ordinary catalogue
+    that renames its snapshots produces on its own.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    #: The park comment's own chain, verbatim. `_KEY` is the only census
+    #: key the victim's turns arrive under; `_SEEN` and `_ARM` are the two
+    #: hops, one supplied by each of `previous.json`'s two lists; `_LIVE`
+    #: is the victim, a live catalogue id AND a previous arm.
+    _KEY = "claude-haiku-4-20250101-20260101"
+    _SEEN = "claude-haiku-4-20250101"
+    _ARM = "claude-haiku-4"
+    _LIVE = "claude-haiku-4-20260601"
+    _NEWER = "claude-haiku-5"
+    #: A ranked census key nothing can credit — no catalogue id, no fold
+    #: of one. `TestIssue67Review12._GHOST`, reused deliberately: it is
+    #: the same primitive, and the point of this round is that the same
+    #: primitive reaches further than round 12 measured.
+    _GHOST = TestIssue67Review12._GHOST
+
+    @classmethod
+    def _catalogue(cls):
+        """`_LIVE` with a NEWER haiku beside it, so the victim is not
+        newest in its tier and there is no newest-per-tier fallback to
+        rescue a share the denominator got wrong."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls._LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls._NEWER, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+
+    # --- BLOCKER A: the retirement veto reverts to the fraction alone ---
+    #
+    # Round 12 PRESCRIBED `previous_only > RETIREMENT_ANCHOR_TOLERANCE *
+    # exit_ranked_total`. The shipped code added `anchored_held >=
+    # arm_exit_usage_pct` beside it, on the inference that `anchored ⊆
+    # wide` gives `anchored_held >= held`. That inference is false: the
+    # anchored map has a smaller NUMERATOR too, because it cannot follow a
+    # chain whose middle hop lives in `previous.json`. The added conjunct
+    # was therefore FALSE exactly when the chain is a fold chain, and it
+    # BLOCKED the refusal the prescription would have made.
+
+    def _park_row(self, *, planted):
+        counts = {self._KEY: {self.W[0]: 5_000},
+                  "claude-sonnet-5": {self.W[0]: 300}}
+        arms = [{"id": self._ARM, "reason": "was an arm"},
+                {"id": self._LIVE, "reason": "was an arm"}]
+        if planted:
+            counts[self._GHOST] = {self.W[0]: 400_000}
+            arms.append({"id": self._GHOST, "reason": "was an arm"})
+        previous = {"arms": arms,
+                    "catalogue_seen": [{"id": self._SEEN,
+                                        "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    def test_one_arms_line_cannot_retire_an_arm_reached_through_a_fold_chain(self):
+        """THE PARK COMMENT'S MEASUREMENT, through `main()`.
+
+        The victim carries 5,000 of the window's 5,300 rankable turns — a
+        true 94.340% — and every one of them arrives under a census key
+        three hops away. ONE added `arms` line naming a ranked key nothing
+        can credit widens the denominator to 405,300, which puts the
+        victim's wide share at 1.2%, under the 2% exit bar.
+
+        RED on `87f2031`: `RETIRED: below the 2% exit bar for the last 8
+        weeks (1.2% of rankable census usage)`, rc 0. The anchored
+        measurement that was supposed to refuse it reads 0.000%, not
+        94.340%, because the anchored alias map cannot follow a chain
+        whose middle hop is a `catalogue_seen` entry — so round 12's added
+        conjunct was false and blocked its own veto.
+
+        It is PERMANENT: run 2 reads run 1's roster, where the model is no
+        longer an arm, so the exit bar no longer applies to it and real
+        usage never re-seats it.
+
+        MUTATION: restoring `anchored_held >= policy["arm_exit_usage_pct"]
+        and` in front of the fraction test in `compute_roster`'s hold-over
+        branch."""
+        control, _ = self._park_row(planted=False)
+        planted, err = self._park_row(planted=True)
+        self.assertIn(self._LIVE, self._arm_ids(control))
+        self.assertIn("94.3%", self._reason(control, self._LIVE),
+                      "the control must measure the victim at its true "
+                      "94.3%, or the row is about nothing")
+        self.assertIn(self._LIVE, self._arm_ids(planted),
+                      "one `arms` entry retired a live arm carrying 94.3% "
+                      "of the window through a fold chain")
+        self.assertNotIn(self._LIVE,
+                         {t["id"] for t in planted["retired_since_last"]},
+                         "the permanent, unrecoverable half")
+        self.assertIn("the retirement is refused rather than acted on",
+                      self._reason(planted, self._LIVE))
+
+    def test_the_refusal_sentence_asserts_only_what_the_code_checked(self):
+        """Every clause of a published reason is a claim, and a claim
+        nothing checks is the shape round 13's BLOCKER A came in: the
+        sentence asserted the anchored share was "at or above the exit
+        bar" for a whole round after the code stopped requiring it.
+
+        Here the anchored share is 0.0% and the wide one 1.2%, so the old
+        sentence would have published a self-contradiction. The number is
+        still reported — a reader needs it — with the denominator it
+        belongs to named beside it and no verdict attached.
+
+        MUTATION: putting the "(at or above the ...% exit bar)" clause
+        back on the anchored share."""
+        planted, _ = self._park_row(planted=True)
+        sentence = self._reason(planted, self._LIVE)
+        self.assertIn("Against this run's live catalogue alone the same "
+                      "window measures 0.0% for this arm", sentence)
+        self.assertNotIn("at or above", sentence)
+        self.assertNotIn("still carries", sentence)
+        # The two clauses that ARE checked, in the order the code checks
+        # them: the wide share is under the bar, and the fraction is over
+        # the tolerance.
+        self.assertIn("1.2% of rankable census usage over the last 8 weeks "
+                      "is under the 2% exit bar", sentence)
+        self.assertIn("99.9% of that denominator is attributable only "
+                      "through the previous roster's own entries", sentence)
 
 
 if __name__ == "__main__":
