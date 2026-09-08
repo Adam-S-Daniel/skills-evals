@@ -195,7 +195,7 @@ three fixtures set `strip_seed`, and it has to be a real boolean — a
 - A paste **re-spelled in confusable characters** — Cyrillic homoglyphs
   everywhere except the fact tokens — is not the seed's words in any byte
   sense and passes all three rules. NFKC normalises compatibility forms,
-  not confusables. It is the one shape provenance cannot see. The pairwise
+  not confusables. It is another shape provenance cannot see. The pairwise
   judge is the backstop for this and for the dilution above, and it is not
   wired into `run_eval` until #97.
 - A sentence that reproduces the seed's own words **end to end** is the
