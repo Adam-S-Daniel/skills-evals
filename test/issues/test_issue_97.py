@@ -1601,6 +1601,107 @@ class TestIssue97(unittest.TestCase):
     # it — plus `env`.
     # ------------------------------------------------------------------
 
+    # ------------------------------------------------------------------
+    # A-N1-2 — the fixture CONTAINER, and the `env:` entries inside it
+    #
+    # A-N1 typed the mapping-valued KEYS. The container that holds them and
+    # the entries inside `env:` are the same defect one level out and one
+    # level in, and both were rc 1 with a traceback on f9115ce:
+    #   * a fixture whose root is a LIST — `AttributeError: 'list' object has
+    #     no attribute 'get'`;
+    #   * an EMPTY fixture file (YAML `None`) — `TypeError: argument of type
+    #     'NoneType' is not iterable`, raised INSIDE A-N1's own
+    #     `_require_mapping`;
+    #   * `env: {"A=B": "x"}` — `ValueError: illegal environment variable
+    #     name`, out of subprocess, after the arm had started.
+    # The container is typed in `load_fixture` (all three CLIs have one) and
+    # in `_require_mapping` itself, so a direct caller is sound too; the
+    # entries are checked by one predicate at every function that builds a
+    # child environment out of them, not at the loader alone.
+    # ------------------------------------------------------------------
+
+    BAD_FIXTURE_ROOTS = (
+        ("a list root", "- a\n- b\n", "must be a YAML mapping"),
+        ("an empty file", "", "the file is empty"),
+        ("a scalar root", "just a string\n", "must be a YAML mapping"),
+        ("a null root", "~\n", "the file is empty"),
+    )
+
+    # Every shape `execve` refuses, and only those: an int VALUE is
+    # stringified rather than rejected, which is agent_env's documented
+    # behaviour and is pinned by two committed tests
+    # (AgentEnvTests.test_workspace_and_existing_vars_expand and
+    # test_validate_timeouts_itself_refuses_a_non_mapping_parent), so the
+    # check is on the stringified forms the OS actually sees.
+    BAD_ENV_ENTRIES = (
+        ("a name with an =", {"A=B": "x"}, "not a legal environment"),
+        ("an empty name", {"": "x"}, "not a legal environment"),
+        ("a NUL in the name", {"A\0B": "x"}, "not a legal environment"),
+        ("a NUL in the value", {"A": "x\0y"}, "contains a NUL byte"),
+    )
+
+    def test_a_fixture_whose_root_is_not_a_mapping_is_a_named_error(self):
+        root = self._checkout()
+        for label, text, expected in self.BAD_FIXTURE_ROOTS:
+            with self.subTest(row=label):
+                tmp = Path(tempfile.mkdtemp(prefix="fixture-root-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                eval_dir = tmp / "eval"
+                eval_dir.mkdir()
+                (eval_dir / "fixture.yaml").write_text(text, encoding="utf-8")
+                results = tmp / "results"
+                rc, out = self._run_main_subprocess(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", results, "--no-judge"])
+                self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                self.assertIn(expected, out, f"{label}: {out}")
+                self.assertNotIn("Traceback", out, f"{label}: {out}")
+                self.assertFalse(results.exists(),
+                                 f"{label}: a refused fixture writes nothing")
+
+    def test_an_illegal_env_entry_is_a_named_error_before_any_cli_call(self):
+        root = self._checkout()
+        for label, block, expected in self.BAD_ENV_ENTRIES:
+            with self.subTest(row=label):
+                tmp = Path(tempfile.mkdtemp(prefix="fixture-env-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                results = tmp / "results"
+                eval_dir = self._guidance_fixture(tmp, env=block)
+                rc, out = self._run_main_subprocess(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", results, "--no-judge"])
+                self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                self.assertIn(expected, out, f"{label}: {out}")
+                self.assertNotIn("Traceback", out, f"{label}: {out}")
+                self.assertFalse(results.exists(),
+                                 f"{label}: a refused fixture writes nothing")
+
+    def test_an_ordinary_env_block_and_an_absent_one_still_run(self):
+        # The floor: `env: {}` and no `env:` at all are untouched by this, and
+        # so is the one committed fixture that declares a real block.
+        for label, block in (("an empty block", {}), ("absent", None)):
+            with self.subTest(row=label):
+                guidance.check_env_block(block, "probe")
+        guidance.check_env_block({"PATH": "$WORKSPACE/bin:$PATH"}, "probe")
+        # An int value and an int name are stringified, not refused: that is
+        # agent_env's committed behaviour and two tests on f9115ce assert it.
+        guidance.check_env_block({"N": 7, 5: "x"}, "probe")
+        committed = yaml.safe_load(
+            (REPO_ROOT / "evals" / "windows-elevation-from-wsl"
+             / "fixture.yaml").read_text(encoding="utf-8"))
+        guidance.check_env_block(committed.get("env"), "the committed fixture")
+
+    def test_require_mapping_refuses_a_non_mapping_fixture_directly(self):
+        # The direct-call half: A-N1's own predicate assumed the shape of its
+        # first argument, so an empty fixture file died with a TypeError
+        # inside the thing added to keep shapes out of the harness.
+        path = Path("/nonexistent/fixture.yaml")
+        for bad in (None, [1], "x", 7):
+            with self.subTest(fixture=bad):
+                with self.assertRaises(guidance.GuidanceError) as caught:
+                    run_eval._require_mapping(bad, "guard", path)
+                self.assertIn("expected a mapping", str(caught.exception))
+
     NON_MAPPINGS = ([1], "x", 7)
 
     def test_a_non_mapping_fixture_key_is_a_named_configuration_error(self):

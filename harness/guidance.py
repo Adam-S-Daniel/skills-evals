@@ -245,6 +245,56 @@ SINK_TIMEOUT_REMEDY = (
 
 
 # ---------------------------------------------------------------------------
+# a fixture's `env:` — ONE predicate, at every place a child environment is
+# built
+#
+# A-N1-2. `env: {"A=B": "x"}` reached `subprocess.run(env=...)` and came back
+# as `ValueError: illegal environment variable name` — rc 1 and a traceback,
+# outside the rc-2 configuration contract every other malformed fixture key
+# gets. The OS's rule is short and absolute: a name is a non-empty string with
+# no `=` and no NUL, and a value is a string with no NUL. Checked HERE, at
+# every function that builds a child environment out of a fixture's block,
+# rather than at the loader alone, because a loader check is a claim about the
+# callers a loader knows.
+
+
+def check_env_entry(name, value, where: str) -> None:
+    """One `env:` entry, exactly as the OS will take it, or a named
+    GuidanceError.
+
+    The rule is `execve`'s and nothing more. Both harness `agent_env`s
+    stringify a name and a value before handing them over — an int from YAML
+    becomes "7", which is documented and pinned — so the check is on the
+    STRINGIFIED forms, not on their Python types: refusing an int here would
+    reject fixtures that work today, and accepting an `=` or a NUL rejects
+    nothing while letting the OS raise a ValueError traceback part-way into a
+    run.
+    """
+    spelled = str(name)
+    if not spelled or "=" in spelled or "\0" in spelled:
+        raise GuidanceError(
+            f"{where}: `env:` name {name!r} is not a legal environment "
+            "variable name — it must be non-empty and contain neither `=` "
+            "nor a NUL byte. `execve` refuses anything else, so this used to "
+            "reach subprocess as `ValueError: illegal environment variable "
+            "name`: rc 1 and a traceback, after the arm had started.")
+    if "\0" in str(value):
+        raise GuidanceError(
+            f"{where}: `env:` value for {spelled!r} contains a NUL byte, "
+            "which no environment value may carry.")
+
+
+def check_env_block(env_spec, where: str) -> None:
+    """Every entry of a fixture's `env:` block. An absent or null block is
+    fine and means "no entries"; a non-mapping is the caller's own check
+    (run_eval.validate_mapping_keys)."""
+    if not isinstance(env_spec, dict):
+        return
+    for name, value in env_spec.items():
+        check_env_entry(name, value, where)
+
+
+# ---------------------------------------------------------------------------
 # checkout + manifest
 
 
@@ -722,6 +772,7 @@ def agent_env(*, workspace: Path, home: Path, tmpdir: Path, config_dir: Path,
     env["TMPDIR"] = str(tmpdir)
     env["CLAUDE_CONFIG_DIR"] = str(config_dir)
     env["WORKSPACE"] = str(workspace)
+    check_env_block(env_spec, "the fixture's `env:`")
     for key, value in (env_spec or {}).items():
         if str(key) in ISOLATION_NAMES:
             raise GuidanceError(

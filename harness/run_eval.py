@@ -44,8 +44,25 @@ from scorers import judge, objective  # noqa: E402
 
 
 def load_fixture(eval_dir: Path) -> dict:
-    with open(eval_dir / "fixture.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """The fixture, or a named configuration error.
+
+    A-N1-2. A-N1 typed the mapping-valued KEYS; the container that holds them
+    was never typed at all. Measured on f9115ce: a fixture whose root is a
+    LIST was `AttributeError: 'list' object has no attribute 'get'` and rc 1,
+    and an EMPTY file (YAML `None`) was `TypeError: argument of type
+    'NoneType' is not iterable` raised inside A-N1's own `_require_mapping` —
+    both outside the rc-2 contract, and the second one inside the very
+    predicate added to keep shapes out of the harness.
+    """
+    path = eval_dir / "fixture.yaml"
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict):
+        raise guidance.GuidanceError(
+            f"{path} must be a YAML mapping of fixture keys, got "
+            f"{type(doc).__name__}"
+            + (" (the file is empty)" if doc is None else f": {doc!r}"))
+    return doc
 
 
 # Every timeout knob a fixture can set, as (key, path-to-its-mapping). Each is
@@ -85,6 +102,12 @@ def _require_mapping(fixture: dict, key: str, fixture_path: Path) -> None:
     happily, and each of them reaches `.get()`/`.items()` on the wrong type
     and dies with an AttributeError traceback instead of naming the rule.
     """
+    if not isinstance(fixture, dict):
+        raise guidance.GuidanceError(
+            f"{fixture_path}: expected a mapping of fixture keys, got "
+            f"{type(fixture).__name__} — `{key}:` cannot be looked up in it. "
+            "A-N1-2: this predicate used to assume its own argument's shape, "
+            "so an empty fixture file died with a TypeError inside it.")
     if key not in fixture or fixture[key] is None or isinstance(fixture[key], dict):
         return
     raise guidance.GuidanceError(
@@ -100,6 +123,7 @@ def validate_mapping_keys(fixture: dict, fixture_path: Path) -> None:
     subject branch, any path is derived and any CLI is invoked."""
     for key in MAPPING_FIXTURE_KEYS:
         _require_mapping(fixture, key, fixture_path)
+    guidance.check_env_block(fixture.get("env"), f"{fixture_path}: `env:`")
 
 
 # The CEILING every knob above is checked against, and the predicate that
@@ -455,9 +479,15 @@ def agent_env(workspace: Path, env_spec: dict | None) -> dict:
     That is what lets a seed put a fake binary on the agent's PATH
     (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B "fake `gh` on the seed
     workspace's PATH" move DESIGN.md prescribes, without the seed carrying an
-    absolute path. Values are strings; a non-string is stringified rather
-    than rejected, since YAML will happily hand over an int.
+    Values are strings; a non-string is stringified rather than rejected,
+    since YAML will happily hand over an int. What IS refused, here at the
+    function that builds the child's environment and by the same predicate
+    guidance.agent_env uses, is a name or value the OS itself will not take:
+    a name with an `=` in it reached `subprocess.run(env=...)` and came back
+    as `ValueError: illegal environment variable name` — rc 1 and a
+    traceback, after the arm had started.
     """
+    guidance.check_env_block(env_spec, "the fixture's `env:`")
     env = dict(os.environ)
     env["WORKSPACE"] = str(workspace)
     for key, value in (env_spec or {}).items():
@@ -1545,8 +1575,8 @@ def main() -> int:
             print(f"configuration error: {exc}")
             return 2
 
-    fixture = load_fixture(args.eval_dir)
     try:
+        fixture = load_fixture(args.eval_dir)
         validate_mapping_keys(fixture, args.eval_dir / "fixture.yaml")
         validate_timeouts(fixture, args.eval_dir / "fixture.yaml")
     except guidance.GuidanceError as exc:

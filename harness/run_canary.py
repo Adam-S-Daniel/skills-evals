@@ -36,8 +36,24 @@ import yaml
 
 
 def load_fixture(eval_dir: Path) -> dict:
-    with open(eval_dir / "fixture.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """The fixture, or a named configuration error.
+
+    A-N1-2, applied to every entry point that loads one: the container that
+    holds a fixture's keys was never typed, so a LIST root was
+    `AttributeError: 'list' object has no attribute 'get'` and an EMPTY file
+    (YAML `None`) a `TypeError`, both rc 1 and both outside the rc-2
+    configuration contract.
+    """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    path = eval_dir / "fixture.yaml"
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict):
+        raise guidance.GuidanceError(
+            f"{path} must be a YAML mapping of fixture keys, got "
+            f"{type(doc).__name__}"
+            + (" (the file is empty)" if doc is None else f": {doc!r}"))
+    return doc
 
 
 # The bound on the `--version` probe. Named rather than inlined so the sink
@@ -268,8 +284,8 @@ def main() -> int:
         print(f"configuration error: {exc}")
         return 2
 
-    fixture = load_fixture(args.eval_dir)
     try:
+        fixture = load_fixture(args.eval_dir)
         version = claude_version()
         legs = _build_legs(fixture, args.eval_dir, args.subagent)
         results = [_run_leg(leg, args.model, args.timeout) for leg in legs]
