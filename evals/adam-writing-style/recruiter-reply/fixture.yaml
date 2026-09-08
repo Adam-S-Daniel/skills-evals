@@ -110,10 +110,17 @@ objective_checks:
   # through March 2027." (every six-word window in that sentence now
   # contains an inserted "and", so no run survives to mark anything) and
   # ALL-PASSES every check on all three fixtures, cites-both-facts
-  # included. Coverage does not degrade toward some number near the 0.75
-  # floor as a splice gets denser; past one inserted word in six it
-  # collapses straight to zero, because the rule marks WHOLE runs, not
-  # partial credit. That is what "a floor, not a proof" means in practice:
+  # included. On THIS sentence, coverage does not degrade toward some
+  # number near the 0.75 floor as the splice gets denser; past one
+  # inserted word in six it collapses straight to zero, because the rule
+  # marks WHOLE runs, not partial credit. That is not a property of
+  # coverage generally, only of a sentence with no six-word run of the
+  # seed's own words left unbroken: at this same 1-in-5 density the
+  # highest sentence coverage anywhere in the flattened seed is 0.8000,
+  # comfortably above the floor, and the REQ-4417-bearing sentence (a
+  # different fact, spliced the same way) measures 0.1714, not zero —
+  # both keep at least one six-word run the insertions happened to miss.
+  # That is what "a floor, not a proof" means in practice:
   # this check certifies that a reply is not an unmodified or
   # lightly-modified paste of the seed, and nothing past that — it does not
   # establish that the agent wrote any given sentence, only that the
