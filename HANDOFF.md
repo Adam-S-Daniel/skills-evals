@@ -49,11 +49,11 @@ hermetic and its issue stays open until a real run exists.
 
 | Epic | Scope | Sub-issues |
 |---|---|---|
-| [skills-evals#60](https://github.com/Adam-S-Daniel/skills-evals/issues/60) | Coverage: harness resolves any registry, census, gate, scaffold | #63 (closed), #64, agentskills#153, #65 |
-| [skills-evals#61](https://github.com/Adam-S-Daniel/skills-evals/issues/61) | Systematic runs: multi-fixture N trials, model roster, matrix, regression, gates, improvement loop, explorer, docs | #66, #67, #68, #69, #70, #71, #72, adamdaniel.ai#3536, #73 |
-| [skills-evals#62](https://github.com/Adam-S-Daniel/skills-evals/issues/62) | One fixture per skill (21) plus cms-platform#408 | #74 to #94, cms-platform#408 — **STOPPED by decision 8** |
+| [skills-evals#60](https://github.com/Adam-S-Daniel/skills-evals/issues/60) | Coverage: harness resolves any registry, census, gate, scaffold | #63 (closed), #64, [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153), #65 |
+| [skills-evals#61](https://github.com/Adam-S-Daniel/skills-evals/issues/61) | Systematic runs: multi-fixture N trials, model roster, matrix, regression, gates, improvement loop, explorer, docs | #66, #67, #68, #69, #70, #71, #72, [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536), #73 |
+| [skills-evals#62](https://github.com/Adam-S-Daniel/skills-evals/issues/62) | One fixture per skill (21) plus [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408) | #74 to #94, [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408) — **STOPPED by decision 8** |
 | [_agent-guidance#118](https://github.com/Adam-S-Daniel/_agent-guidance/issues/118) | Guidance subject: manifest, harness, touch gate, scaffold, InstructionsLoaded receipts | _agent-guidance#119 (closed), #97, _agent-guidance#120 (closed), #98, _agent-guidance#123, #139 |
-| [skills-evals#95](https://github.com/Adam-S-Daniel/skills-evals/issues/95) | Guidance systematic runs: matrix, regression, improvement loop, explorer view, gates, site page, docs | #99, #121, #122, #123, #124, adamdaniel.ai#3538, #125 |
+| [skills-evals#95](https://github.com/Adam-S-Daniel/skills-evals/issues/95) | Guidance systematic runs: matrix, regression, improvement loop, explorer view, gates, site page, docs | #99, #121, #122, #123, #124, [adamdaniel.ai#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538), #125 |
 | [skills-evals#96](https://github.com/Adam-S-Daniel/skills-evals/issues/96) | One fixture per guidance section (21) | #100 to #120 — **STOPPED by decision 8** (Adam ruled them evals for specific skills, 02:10 09-08) |
 
 Every sub-issue's first line names its model (`claude-sonnet-5` or
@@ -70,8 +70,8 @@ verifier and its dependencies. Unqualified `#n` above means skills-evals.
   #74 to #94 in the order #62 gives (#84 first, it builds the shared fake `gh`);
   guidance #100 to #120 in the order #96 gives (#112 first). A guidance
   fixture's real N=3 run waits for #97.
-- **Gates**: _agent-guidance#119 → #120 (both merged); agentskills#153 after #64.
-- **Explorer and site**: #72 → adamdaniel.ai#3536 → #123 → adamdaniel.ai#3538;
+- **Gates**: _agent-guidance#119 → #120 (both merged); [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153) after #64.
+- **Explorer and site**: #72 → [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536) → #123 → [adamdaniel.ai#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538);
   the site PRs park on Adam's approval of the regression-review environment gate.
 - **Docs last**: #73, #125.
 
@@ -86,7 +86,7 @@ run links are on the board and in each PR body.
 
 | Issue | PR | Merge commit | Verified count | Note |
 |---|---|---|---|---|
-| _agent-guidance#119 section manifest + graduation gate (closed) | [_agent-guidance#121](https://github.com/Adam-S-Daniel/_agent-guidance/pull/121) | `5b371e3` | 1166 passed | post-merge `sync.yml` green |
+| _agent-guidance#119 section manifest + graduation gate (closed) | [_agent-guidance#121](https://github.com/Adam-S-Daniel/_agent-guidance/pull/121) | `5b371e3` | 1166 passed | the post-merge `sync.yml` run ([33921229215](https://github.com/Adam-S-Daniel/_agent-guidance/actions/runs/33921229215)) read as success by the orchestrator on 09-04 |
 | #63 harness resolves any registry layout (closed) | [#128](https://github.com/Adam-S-Daniel/skills-evals/pull/128) | `af06d0f` | 157 tests | |
 | #82 rename-pdfs fixture | [#137](https://github.com/Adam-S-Daniel/skills-evals/pull/137) | `a6c882a` | 217 | real run stopped (decision 8) |
 | #86 post-failure-comment fixture | [#134](https://github.com/Adam-S-Daniel/skills-evals/pull/134) | `8d131bd` | 305 | real run stopped |
@@ -158,7 +158,7 @@ further review.
 ### Stopped by decision 8 (2026-09-08 01:20 UTC): "Stop adding and completing evals for specific skills"
 
 Epic #62 in full: no dispatch on #75, #76, #78, #79, #83, #87 to #94 or
-cms-platform#408; #130 and #131 stay parked as stopped; the real N=3 runs and
+[cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408); #130 and #131 stay parked as stopped; the real N=3 runs and
 `docs/skill-impact.md` entries owed for the six merged skill fixtures (#82,
 #86, #85, #77, #74, #80) are not pursued. Those issues stay open as "merged
 hermetic; real run stopped" until Adam closes them or reopens the lane. Epic
@@ -173,8 +173,8 @@ be built and tested hermetically but have nothing real to run against.
 
 - Harness lane after #97: #139, #66, #64, #68, #99, #69, #121, #70, #124, #71,
   #122, #65, #98 (in that order; #67 parked).
-- Gates: agentskills#153 (after #64).
-- Explorer and site: #72, adamdaniel.ai#3536, #123, adamdaniel.ai#3538.
+- Gates: [agentskills#153](https://github.com/Adam-S-Daniel/agentskills/issues/153) (after #64).
+- Explorer and site: #72, [adamdaniel.ai#3536](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3536), #123, [adamdaniel.ai#3538](https://github.com/Adam-S-Daniel/adamdaniel.ai/issues/3538).
 - Docs: #73, #125.
 
 ### Adam's decisions in force
@@ -184,14 +184,15 @@ be built and tested hermetically but have nothing real to run against.
    pre-emptively for any (each) additional PR that needs them." Read as a
    budget of three fix rounds per PR beyond the two-strikes park. Budgets at the
    pause: #132 3/3 merged; #131 3/3 parked; #134 2/3 merged; #130 3/3 parked;
-   _agent-guidance#122 1/3 merged; #136 3/3 merged; #138 3/3 (the third running
-   at the pause); _agent-guidance#124 2/3 (the second running at the pause).
+   _agent-guidance#122 1/3 merged; #136 3/3 merged; #138 3/3, all three landed (the third
+   verified at 02:33 on 09-08); _agent-guidance#124 2/3, both landed (the second
+   verified at 03:12 on 09-08). Neither PR has had its next review round.
 3. 15:49 09-05: "1. Continue as before 2. Merge with the commits": the
    empty-wave hold lifted; no history rewrite of real-address commits.
 4. "1" on PR #129 (17:07 09-05): a fresh budget of three for #129 (spent).
 5. 20:03 to 21:04 09-05: identify InstructionsLoaded-hook uses and implement via
    agents → skills-evals#139 and _agent-guidance#123 opened as sub-issues of #118.
-6. 00:50 09-06: a 1.5-day pause (resumed 17:10 09-07).
+6. 00:50 09-06: a 40-hour pause (resumed 17:10 09-07).
 7. "What percentage of the way done?" → answered 15 to 20%.
 8. 01:20 09-08: stop adding and completing evals for specific skills (above);
    at 02:10 Adam confirmed the guidance fixtures (#100 to #120) count too.
@@ -294,11 +295,11 @@ wave (amendment 3).
 
 ## 4. Costs and the allowance
 
-- Spend at the pause: orchestrator about $2,000 (127 review subagents inside
-  it), workers about $1,180 across 88 child sessions (55 Sonnet 5, 33 Opus 5)
-  plus the two Opus sessions running at the pause. Total about $3,200 over
-  roughly 38 running hours on 09-04 to 09-08 (a 5.5-hour rate-limit outage and
-  a 40-hour pause excluded).
+- Spend at the pause: orchestrator about $2,020 (128 review subagents inside
+  it), workers $1,262 across 88 child sessions (55 Sonnet 5, 33 Opus 5), the
+  last two being the fix rounds that landed at the pause ($54.75 and $32.99).
+  Total about $3,280 over roughly 40 running hours on 09-04 to 09-08 (a
+  5.5-hour rate-limit outage and a 40-hour pause excluded).
 - Calibration to the weekly allowance: $2,378 of programme spend read 93% of
   the seven-day window at the 09-06 pause, so one allowance is about $2,560 of
   this usage if the programme is the account's whole use.
