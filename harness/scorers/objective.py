@@ -1924,13 +1924,19 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
 
     Zero-width characters and soft hyphens are folded out first, on every
     check: they take up no width, so `lever\u00adage` and `deep\u200b dive`
-    read to the operator as the banned terms and are scored as them. A
-    `must_not_match` pattern is also checked against a second, NFD-decomposed
-    reading of each candidate (`invisibles.fold_marks_again`), because a
-    combining mark NFKC composed onto a letter \u2014 `leve\u0155age` \u2014 is not a mark
-    by the time the ordinary fold sees it and would otherwise switch a ban
-    off. `must_match` and the seed pre-pass below do not use this reading:
-    it also strips a genuinely accented word's accent.
+    read to the operator as the banned terms and are scored as them. Every
+    reading also gets a second, NFD-decomposed reading appended
+    (`invisibles.fold_marks_again`), because a combining mark NFKC composed
+    onto a letter \u2014 `leve\u0155age` \u2014 is not a mark by the time the ordinary
+    fold sees it and would otherwise switch a ban off. It joins the SAME
+    list `must_match` is checked against with `any()`, so a
+    `must_not_match` pattern is forbidden in it (the point) and a
+    `must_match` pattern may also be satisfied by it alone \u2014 a permissive
+    side effect, not a tightening one; see the append loop below for the
+    worked example and why that costs nothing today. The one thing this
+    reading never reaches is provenance: the seed pre-pass below has
+    already run by the time it is appended, and `fold_marks_again` has no
+    other call site.
 
     `seed` arrives only when the fixture's check sets `strip_seed: true`,
     and it turns on the provenance pre-pass (`strip_seed_material`): the
@@ -1964,13 +1970,28 @@ def transcript_matches(workspace: str, patterns: list[str], must_match=None,
     # combining mark NFKC composed onto the letter in front of it
     # (`leveŕage`) is not a mark by the time `fold` sees it, so the ordinary
     # reading above cannot drop it — nine of Unicode's `Mn` code points do
-    # this onto a plain ASCII letter. `invisibles.fold_marks_again` is the
-    # second reading: NFD-decompose and drop Cf/Mn again, which exposes and
-    # removes the mark. Appended rather than swapped in: `must_match` still
-    # needs the ordinary reading too (this one strips a genuine accent as
-    # well — see its own docstring), and `must_not_match` forbids a pattern
-    # in ALL readings, so adding a stricter one can only catch more, never
-    # fewer.
+    # this onto a bare `r` (28 onto some plain ASCII letter).
+    # `invisibles.fold_marks_again` is the second reading: NFD-decompose
+    # and drop Cf/Mn again, which exposes and removes the mark. Appended
+    # rather than swapped in, to the SAME list `_text_matches_any` scores
+    # `must_match` over with `any(...)` below — so this is NOT a
+    # `must_not_match`-only reading the way an earlier version of this
+    # comment claimed: a banned term is forbidden in it (the point), and a
+    # `must_match` pattern may ALSO be satisfied by it alone, which is a
+    # permissive side effect, not a tightening one. Worked example: take
+    # the committed self-appraisal-opening in-voice reference and write
+    # every standalone "I" as `Í` (I + U+0301) — appraisal-is-first-
+    # person's `must_match` pattern fails against the ordinary reading
+    # (there is no bare "I" left) and passes once this second reading is
+    # appended, because NFD recovers one. Nothing is wrong TODAY because of
+    # it: 0 of the 10 committed `must_match` patterns across the three
+    # adam-writing-style fixtures, 0 of the 6 committed references and 0 of
+    # the 3 committed seeds are altered by this reading — `fold_marks_again`
+    # is a no-op on every one of those files. `must_match` still needs the
+    # ordinary reading too (this one strips a genuine accent as well — see
+    # its own docstring). Provenance is the one thing this reading never
+    # reaches: `strip_seed_material` above has already run by the time this
+    # loop executes, and `fold_marks_again` has no other call site.
     for reading in list(readings):
         second = invisibles.fold_marks_again(reading)
         if second not in readings:

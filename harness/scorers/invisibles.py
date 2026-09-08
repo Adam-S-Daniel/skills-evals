@@ -46,14 +46,15 @@ fixture.yaml` for where that lands.
 
 One more residual, in the "every `Mn` goes" claim above: step 1 COMPOSES a
 mark onto the preceding letter before step 2 gets a chance to drop it, and
-nine of Unicode's `Mn` code points compose onto a plain ASCII letter this
-way — `r` + U+0301 becomes `ŕ`, an ordinary `Ll` letter, not a mark
-standing alone. `fold` never sees a mark to drop; it sees an accented
-letter, the same shape `café` is and must stay. So `fold("lever" + "́"
-+ "age")` is `"leveŕage"`, not `"leverage"`, and a `must_not_match` pattern
-anchored to the unaccented spelling misses it. `fold_marks_again` below is
-the second reading that catches this, for `must_not_match` only — see its
-own docstring for why `must_match` and provenance do not use it.
+nine of Unicode's `Mn` code points compose onto a bare `r` this way (28
+onto some plain ASCII letter) — `r` + U+0301 becomes `ŕ`, an ordinary `Ll`
+letter, not a mark standing alone. `fold` never sees a mark to drop; it
+sees an accented letter, the same shape `café` is and must stay. So
+`fold("lever" + "́" + "age")` is `"leveŕage"`, not `"leverage"`, and a
+`must_not_match` pattern anchored to the unaccented spelling misses it.
+`fold_marks_again` below is the second reading that catches this — see
+its own docstring for who else reads it, and for the one caller that
+never does.
 """
 
 from __future__ import annotations
@@ -99,16 +100,19 @@ def fold(text: str) -> str:
 
 
 def fold_marks_again(text: str) -> str:
-    """A second reading of `fold`'s own output, for `must_not_match` only.
+    """A second reading of `fold`'s own output, appended by its one
+    caller to whatever list of readings it is already scoring — not a
+    reading scoped to `must_not_match` alone.
 
     `fold` composes before it drops, so a combining mark NFKC composes onto
     the letter in front of it — `r` + U+0301 becomes `ŕ`, an ordinary `Ll`
     letter — survives the fold as an accented letter rather than being read
-    as a mark. Nine of Unicode's `Mn` code points compose onto a plain ASCII
-    letter this way, and `lever` + one of them + `age` folds to `leveŕage`,
-    not `leverage` — the same pattern `objective._TAG_READINGS` already uses
-    for a bare wrapper tag mid-word (two honest normalisations, so score
-    both and let `must_not_match` object to either).
+    as a mark. Nine of Unicode's `Mn` code points compose onto a bare `r`
+    this way (28 onto some plain ASCII letter), and `lever` + one of them +
+    `age` folds to `leveŕage`, not `leverage` — the same pattern
+    `objective._TAG_READINGS` already uses for a bare wrapper tag mid-word
+    (two honest normalisations, so score both and let `must_not_match`
+    object to either).
 
     NFD is the second reading: it decomposes `ŕ` back into `r` + U+0301,
     and dropping `Cf`/`Mn` a second time removes the mark this exposes —
@@ -116,14 +120,18 @@ def fold_marks_again(text: str) -> str:
     `fold`'s output, not to raw text, so this reading keeps NFKC's width and
     ligature folding and only spends the mark a second time.
 
-    NOT the reading `must_match` or provenance use: NFD strips the accent
-    off a genuinely accented word too (`café` reads as `cafe` here), which
-    is exactly the letter `fold`'s NFKC-first step exists to protect. A
-    `must_not_match` pattern can afford that cost — a banned word stays
-    banned in one more of its honest readings — where a `must_match` check
-    would instead lose credit for text that legitimately carries the
-    accent, and provenance would start counting an accented word of the
-    agent's own as a coverage mismatch against an unaccented seed word.
+    `objective.transcript_matches` appends it to the SAME list `any()`
+    checks `must_match` against, so a `must_match` pattern may also be
+    satisfied by it alone — a permissive side effect, not a reading
+    scoped to bans; see that function's append-loop comment for the
+    worked example and why nothing is wrong today. NFD is why it stays
+    additive rather than replacing the ordinary reading either way: it
+    strips the accent off a genuinely accented word too (`café` reads
+    as `cafe` here), which is exactly the letter `fold`'s NFKC-first step
+    exists to protect, so `must_match` keeps the ordinary reading scored
+    as well. Provenance is the one reader that never sees this one at
+    all: `strip_seed_material` has already run by the time
+    `transcript_matches` calls this function, and nothing else calls it.
     """
     if not text:
         return ""
