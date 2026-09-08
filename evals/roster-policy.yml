@@ -206,12 +206,17 @@ min_ranked_share: 0.01
 # the sentence rather than forty-five lines below it because that is
 # where a reader meets the guarantee. Clause 1 was stated flat in all
 # five copies of this sentence and is FALSE in the overflow regime:
-# measured through the CLI, a census key carrying 900 in-window turns
+# measured through the CLI, a census key carrying 901 in-window turns
 # whose only entry is itself a one-turn census key loses that entry to
-# 499 higher-sorting one-turn keys, and a live arm's true 6.7% publishes
-# as "carries 16.7% ... at or above the 10% entry bar" — ten points, and
-# a hold-over turned into a seat. Clauses 2 and 3 were tested for the
-# same failure and hold.
+# 499 higher-sorting one-turn keys, and a live arm's true 9.99%
+# publishes as "carries 100.0% ... at or above the 10% entry bar" —
+# ninety points, and a hold-over turned into a seat. (Round 12 recorded
+# TEN points here. Same regime, weaker instance: tier 1 is decided over
+# the 8-week union while the published entry share is divided by the
+# 4-week enter window, so filler keys whose turns sit inside the enter
+# window dilute the very share their eviction distorts. Round 13's ITEM
+# 6 moved them out of it and re-measured.) Clauses 2 and 3 were tested
+# for the same failure and hold.
 #
 # The order matters because eviction here is PERMANENT — the next run
 # reads this run's own output back — and because everything the previous
@@ -294,11 +299,12 @@ min_ranked_share: 0.01
 # entry there is, so what the cap takes first is the hop, and the key's
 # whole turn count leaves the denominator behind it. And the published
 # consequence is a WRONG SHARE rather than a missing line — measured
-# through the CLI, a census key carrying 900 in-window turns whose only
+# through the CLI, a census key carrying 901 in-window turns whose only
 # entry is itself a one-turn census key loses that entry to 499
-# higher-sorting one-turn keys, and a live arm's true 6.7% publishes as
-# "carries 16.7% ... at or above the 10% entry bar": ten points, and a
-# hold-over turned into a seat. A LIVE catalogue id is no longer among
+# higher-sorting one-turn keys, and a live arm's true 9.99% publishes as
+# "carries 100.0% ... at or above the 10% entry bar": ninety points, and
+# a hold-over turned into a seat — see the round-13 note above for why
+# this number was recorded as ten for one round. A LIVE catalogue id is no longer among
 # what goes — round 12's should-fix 1 exempts this run's own api ids from
 # both caps, where before that 502 live previous arms published one of
 # them as retired at 0.0% with no census at all.

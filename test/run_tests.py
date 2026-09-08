@@ -28542,7 +28542,15 @@ class TestIssue67Review12(unittest.TestCase):
         second denominator there to compare against, which is the whole
         finding. Counts and a percentage only — no id may appear."""
         _, attack = self._denominator_row(arms_extra=[self._GHOST])
-        self.assertIn("98.8% of the ranked census denominator", attack)
+        # ONE LINE PER DECIDING WINDOW, each naming its own (ITEM 7,
+        # #129 review round 13). Both fire here because the plant fills
+        # both windows; on the shipped policy the exit window IS the
+        # 8-week union, so the second line is what the single union line
+        # used to say.
+        self.assertIn("98.8% of the ranked census denominator over the "
+                      "enter window's last 4 weeks", attack)
+        self.assertIn("98.8% of the ranked census denominator over the "
+                      "exit window's last 8 weeks", attack)
         self.assertIn("attributable only through the previous roster's own "
                       "entries", attack)
         self.assertNotIn(self._GHOST, attack,
@@ -28578,6 +28586,70 @@ class TestIssue67Review12(unittest.TestCase):
         self.assertNotIn("attributable only through", quiet,
                          "5% of the denominator is under the threshold and "
                          "must not print a line")
+        # Row 4 — the MIDDLE of the band, which nothing measured until
+        # round 13's ITEM 5: rows 2 and 3 pin the constant from below
+        # (0% and 5.0%, both silent) and row 1 pins it from above at
+        # 98.8%, so between them the constant could have been anything
+        # from just over 0.05 to just under 0.988 and every row would
+        # still have been green. 50.0% is strictly inside 0.10..0.90, so
+        # this row goes red if the constant is moved to either end.
+        counts = {self._VICTIM: {self.W[0]: 500},
+                  self._GHOST: {self.W[0]: 500}}
+        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
+                             {"id": self._GHOST, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, _, _, midband = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, midband)
+        for window, weeks in (("enter", 4), ("exit", 8)):
+            self.assertIn(f"50.0% of the ranked census denominator over "
+                          f"the {window} window's last {weeks} weeks",
+                          midband,
+                          "half the denominator is previous-roster-only "
+                          "and the run must say so")
+        self.assertNotIn(self._GHOST, midband)
+
+    def test_the_notice_is_measured_over_the_windows_that_decide(self):
+        """ITEM 7, #129 review round 13. The line used to be computed
+        over the 8-week UNION, and the union decides no share: SEATING is
+        decided over the 4-week enter window and RETIREMENT over the
+        8-week exit window.
+
+        Here the previous-roster-only turns are 20 of the enter window's
+        120 — 16.7%, over the threshold — while the union carries 100,000
+        more turns in a week the enter window does not reach, so the
+        union fraction is 0.02% and the exit window's is the same. The
+        union measurement stays silent about a share that is out by a
+        sixth.
+
+        RED on `87f2031`, where the only line there is is the union's and
+        this run prints nothing at all. Note which way the asymmetry
+        runs: no row of the existing corpus is caught by the enter window
+        alone (measured — `python3 test/run_tests.py
+        --measure-previous-only-distribution` reports it), so this row is
+        the whole floor for the change, and it is red if the notice ever
+        goes back to one window."""
+        counts = {self._VICTIM: {self.W[0]: 100, self.W[4]: 100_000},
+                  self._GHOST: {self.W[0]: 20}}
+        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
+                             {"id": self._GHOST, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, _, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        self.assertIn("16.7% of the ranked census denominator over the "
+                      "enter window's last 4 weeks", err)
+        self.assertNotIn("exit window", err,
+                         "the union — and so the exit window, which IS "
+                         "the union on the shipped policy — is at 0.02% "
+                         "here, which is the point of the row")
+        self.assertNotIn(self._GHOST, err)
 
     # --- SHOULD-FIX 3: a floor for the CLASS, not for the rows that were
     # measured ------------------------------------------------------------
@@ -28962,15 +29034,23 @@ class TestIssue67Review12(unittest.TestCase):
     _C1_KEY = "claude-opus-4"
     _C1_BRIDGE = "claude-opus-4-20250101"
 
-    def _clause_one_row(self, fillers):
-        """A census key carrying 900 in-window turns whose ONLY entry is
-        itself a one-turn census key, against `fillers` one-turn keys that
-        sort ahead of it and are named in `arms` too."""
+    def _clause_one_row(self, fillers, *, key_turns=900, filler_week=0):
+        """A census key carrying `key_turns` in-window turns whose ONLY
+        entry is itself a one-turn census key, against `fillers` one-turn
+        keys that sort ahead of it and are named in `arms` too.
+
+        `filler_week` is where the one-turn keys' usage sits, and it is
+        what decides how big the resulting error is (#129 review round
+        13, ITEM 6). Tier 1 is decided over the 8-week UNION, but the
+        published entry share is divided by the 4-WEEK ENTER WINDOW, so
+        putting the fillers' turns at `W[4]` — inside the union, outside
+        the enter window — fills tier 1 without diluting the share the
+        eviction then distorts."""
         keys = [f"0key-haiku-4-{i:04d}" for i in range(fillers)]
         counts = {self._VICTIM: {self.W[0]: 100},
-                  self._C1_KEY: {self.W[0]: 900},
-                  self._C1_BRIDGE: {self.W[0]: 1}}
-        counts.update({k: {self.W[0]: 1} for k in keys})
+                  self._C1_KEY: {self.W[0]: key_turns},
+                  self._C1_BRIDGE: {self.W[filler_week]: 1}}
+        counts.update({k: {self.W[filler_week]: 1} for k in keys})
         previous = self._prev([self._VICTIM, self._C1_BRIDGE] + keys, [])
         with tempfile.TemporaryDirectory() as tmp:
             rc, published, _, err = self._run_main(
@@ -28982,26 +29062,51 @@ class TestIssue67Review12(unittest.TestCase):
 
     def test_the_invariant_qualifier_names_a_regime_the_code_really_has(self):
         """Clause 1's qualifier is a statement about measured behaviour,
-        so it gets a measurement.
+        so it gets a measurement — and round 13 found the recorded COST
+        was the weak instance of the regime rather than the worst one, so
+        both are pinned now.
 
-        498 filler keys: tier 1 fits inside the cap, the bridge survives,
-        the census key's 900 turns stay in the denominator and the victim
-        is held over at its true 6.7%. 499: tier 1 overflows by one, the
+        ROW 1, round 12's own, filler turns INSIDE the enter window. 498
+        filler keys: tier 1 fits inside the cap, the bridge survives, the
+        census key's 900 turns stay in the denominator and the victim is
+        held over at its true 6.7%. 499: tier 1 overflows by one, the
         bridge is the lowest-turn tier-1 entry and goes first, the 900
         turns leave with it, and the victim publishes `carries 16.7% ...
-        at or above the 10% entry bar` — a wrong share AND a hold-over
+        at or above the 10% entry bar`. TEN POINTS, and a hold-over
         turned into a seat.
 
-        GREEN on `7ef5780`, deliberately: this row asserts the CURRENT
-        behaviour, because clause 1 is false there in exactly the same way
-        and round 12 corrects the sentence rather than the code. Its
-        mutation is the sentence itself — `test_the_invariant_sentence_is
-        _pinned_in_the_policy_and_the_code` goes red if any copy drops the
-        qualifier, and this row goes red if the code ever stops having the
-        regime the qualifier describes, at which point the qualifier
-        should be deleted rather than left standing over nothing."""
+        ROW 2, the same regime with the filler turns moved OUT of the
+        enter window — `W[4]`, inside the 8-week union that decides tier
+        1, outside the 4-week window the published entry share is divided
+        by. The two windows are what makes the difference: the fillers
+        still fill tier 1 and still evict the bridge, but they no longer
+        sit in the denominator the error is measured against. A true
+        9.99% publishes as `carries 100.0%`. NINETY POINTS, from the same
+        eviction, and this is the number `_relevance`'s docstring records.
+
+        THE ROWS DIFFER BY ONE THING and that thing is not the cap. Both
+        evict the same entry for the same reason; the second one just
+        does not dilute what is left. Round 12 measured only the first
+        and wrote its 10 points into the docstring as the cost of the
+        regime, which is how a number that is right about one input
+        becomes wrong about the class.
+
+        GREEN on `7ef5780` and on `87f2031`, deliberately: these rows
+        assert the CURRENT behaviour, because clause 1 is false there in
+        exactly the same way and round 12 corrected the sentence rather
+        than the code. Their mutation is the sentence itself —
+        `test_the_invariant_sentence_is_pinned_in_the_policy_and_the_code`
+        goes red if any copy drops the qualifier, and these rows go red
+        if the code ever stops having the regime the qualifier describes,
+        at which point the qualifier should be deleted rather than left
+        standing over nothing."""
         self.assertIn("still 6.7%", self._clause_one_row(498))
         self.assertIn("carries 16.7%", self._clause_one_row(499))
+        worst = dict(key_turns=901, filler_week=4)
+        self.assertIn("still 6.7%", self._clause_one_row(498, **worst))
+        self.assertIn("carries 100.0%", self._clause_one_row(499, **worst),
+                      "the worst instance of the regime, which is what "
+                      "the docstring has to record")
 
     def test_the_qualifier_is_inside_every_copy_of_the_sentence(self):
         """F-1 pins the sentence in five places; this is the assertion
@@ -29929,5 +30034,103 @@ class TestIssue67Review13(unittest.TestCase):
                       "which")
 
 
+def _measure_previous_only_distribution():
+    """How often `PREVIOUS_ONLY_DENOMINATOR_NOTICE` fires across this
+    suite, and over which window — the measurement behind the constant's
+    own docstring in `harness/roster.py`.
+
+    RUN IT WITH:
+
+        python3 test/run_tests.py --measure-previous-only-distribution
+
+    It is a re-runnable command rather than a number in a comment because
+    round 13 could not reproduce round 12's figure (1,503 calls across
+    170 tests) from anything written down, and an unreproducible
+    measurement is indistinguishable from an invented one. The number
+    MOVES as tests are added; the docstring records what this command
+    printed at the head that shipped it, and the way to check it is to
+    run it again.
+
+    HOW IT WORKS, and where it is fragile: `compute_roster` calls
+    `_in_window_totals` exactly five times, in a fixed order — union,
+    enter, exit, anchored enter, anchored exit — so the two fractions the
+    notice reads can be recovered positionally. A call that does not make
+    exactly five is not counted, which is what keeps a future refactor
+    from silently reporting nonsense instead of failing to report.
+
+    WHAT IT CANNOT SEE: a `compute_roster` that runs in a SUBPROCESS. A
+    handful of rows drive the CLI through `subprocess.run` rather than
+    through `main()` in-process, and those calls are invisible here. The
+    figure is therefore a lower bound on the suite's calls, which is the
+    direction that matters for "how often does this stay silent".
+    """
+    per_call = []
+    state = {"test": None, "totals": None}
+    real_compute = roster.compute_roster
+    real_totals = roster._in_window_totals
+
+    def totals(*args, **kwargs):
+        out = real_totals(*args, **kwargs)
+        if state["totals"] is not None:
+            state["totals"].append(out)
+        return out
+
+    def compute(*args, **kwargs):
+        outer, state["totals"] = state["totals"], []
+        try:
+            return real_compute(*args, **kwargs)
+        finally:
+            seen, state["totals"] = state["totals"], outer
+            if len(seen) == 5:
+                enter, exit_ = seen[1][1], seen[2][1]
+                a_enter, a_exit = seen[3][1], seen[4][1]
+                per_call.append((
+                    state["test"],
+                    (enter - a_enter) / enter if enter else None,
+                    (exit_ - a_exit) / exit_ if exit_ else None))
+
+    class _Result(unittest.TextTestResult):
+        def startTest(self, test):
+            state["test"] = test.id()
+            super().startTest(test)
+
+    roster.compute_roster = compute
+    roster._in_window_totals = totals
+    try:
+        suite = unittest.defaultTestLoader.loadTestsFromModule(
+            sys.modules["__main__"])
+        with open(os.devnull, "w", encoding="utf-8") as sink:
+            unittest.TextTestRunner(resultclass=_Result, verbosity=0,
+                                    stream=sink).run(suite)
+    finally:
+        roster.compute_roster = real_compute
+        roster._in_window_totals = real_totals
+
+    bar = roster.PREVIOUS_ONLY_DENOMINATOR_NOTICE
+    with_denominator = [c for c in per_call
+                        if c[1] is not None or c[2] is not None]
+    tests = {c[0] for c in with_denominator}
+    loud = {c[0] for c in with_denominator
+            if (c[1] is not None and c[1] >= bar)
+            or (c[2] is not None and c[2] >= bar)}
+    enter_only = {c[0] for c in with_denominator
+                  if c[1] is not None and c[1] >= bar
+                  and not (c[2] is not None and c[2] >= bar)}
+    quiet = tests - loud
+    print(f"instrumented compute_roster calls: {len(per_call)}")
+    print(f"  reaching a census-derived denominator: "
+          f"{len(with_denominator)}, across {len(tests)} distinct tests")
+    print(f"  tests that stay under {bar} in BOTH windows and emit "
+          f"nothing: {len(quiet)} of {len(tests)} "
+          f"({100 * len(quiet) / len(tests):.0f}%)")
+    print(f"  tests where at least one window is at or over {bar}: "
+          f"{len(loud)}")
+    print(f"  ... of those, tests the ENTER window alone would have "
+          f"caught: {len(enter_only)}")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--measure-previous-only-distribution" in sys.argv:
+        raise SystemExit(_measure_previous_only_distribution())
     unittest.main()

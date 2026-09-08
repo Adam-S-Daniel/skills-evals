@@ -707,14 +707,30 @@ def _fold_set(ids: set[str], aliases: dict) -> set[str]:
 RETIREMENT_ANCHOR_TOLERANCE = 0.01
 
 #: WHEN PREVIOUS-ROSTER-ONLY ATTRIBUTION IS LOUD ENOUGH TO SAY SO — the
-#: count-only line that makes the case above visible in the step summary
-#: even on the runs where it changes no decision (BLOCKER 1, #129 review
-#: round 12).
+#: count-only line, ONE PER WINDOW THAT DECIDES SOMETHING, that makes the
+#: case above visible in the step summary even on the runs where it
+#: changes no decision (BLOCKER 1, #129 review round 12; the windows are
+#: round 13's ITEM 7).
 #:
 #: A share this harness publishes is only as good as the denominator it
 #: was divided by, and a reader of the run has no way to tell how much of
 #: that denominator exists because `previous.json` said so. This is the
 #: fraction past which the run says it out loud.
+#:
+#: WHICH WINDOW, AND IT IS NOT THE UNION. The line was measured over the
+#: 8-week `window_union` for one round, and the union decides no
+#: published share at all: SEATING is decided over the enter window and
+#: RETIREMENT over the exit window, so a union fraction under this
+#: threshold can sit well over it in the window that actually decided
+#: something. Measured through `main()`: 20 previous-roster-only turns
+#: against 100 real ones inside the 4-week enter window, plus 100,000
+#: real turns in a week only the 8-week window reaches, gives 16.7% in
+#: the window the seat was decided in and 0.02% in the union — silence,
+#: about a share that is out by a sixth. Each window's line names its own
+#: window, and both can fire on one run; on the shipped policy the exit
+#: window IS the union, so the exit line is what the old single line used
+#: to say. Pinned by TestIssue67Review12::test_the_notice_is_measured
+#: _over_the_windows_that_decide.
 #:
 #: THE VALUE IS 0.10, and two measurements fix it, both taken at THE
 #: SHIPPED CONFIGURATION — `evals/roster-policy.yml` as this branch ships
@@ -726,11 +742,29 @@ RETIREMENT_ANCHOR_TOLERANCE = 0.01
 #: itself, which is 0.22 points at the shipped 2% exit bar and 1.11 points
 #: at the 10% entry bar.
 #:
-#: (2) THE DISTRIBUTION, measured rather than assumed. Every
-#: `compute_roster` call in the suite was instrumented and the whole suite
-#: run: 1,503 calls across 170 distinct tests reach a census-derived
-#: denominator, and 107 of those 170 — 63% — stay under 0.10 and emit
-#: nothing. The 63 that do not are the plant, filler, departed-arm and
+#: (2) THE DISTRIBUTION, measured rather than assumed — AND RE-RUNNABLE,
+#: which round 12's figure was not. That round recorded "1,503 calls
+#: across 170 distinct tests ... 107 of those 170 — 63%" with no way to
+#: reproduce it; round 13 could not get 1,503 from anything on the branch
+#: and measured 1,456-1,480 instead. An unreproducible measurement is
+#: indistinguishable from an invented one, so the instrumentation now
+#: ships as a command:
+#:
+#:     python3 test/run_tests.py --measure-previous-only-distribution
+#:
+#: AT THE HEAD THAT SHIPPED THIS it prints: 1,590 instrumented
+#: `compute_roster` calls, of which 1,535 reach a census-derived
+#: denominator, across 150 distinct tests; 73 of those 150 — 49% — stay
+#: under 0.10 in BOTH windows and emit nothing; 77 have at least one
+#: window at or over it; and exactly 1 of the 77 is caught by the ENTER
+#: window alone, which is the row ITEM 7 added and the whole measured
+#: cost of not having it. THE NUMBERS MOVE AS TESTS ARE ADDED — they went
+#: 1,586/149 to 1,590/150 across one commit of this same round — so read
+#: them as what that command printed here, and re-run it rather than
+#: trusting the transcription. It cannot see a `compute_roster` that runs
+#: in a subprocess, so the call count is a lower bound.
+#:
+#: The 77 that speak are the plant, filler, departed-arm and
 #: since-retired-model fixtures: precisely the runs whose denominator the
 #: previous roster really does supply, which is what the line exists to
 #: say. A LOWER number does not separate them better, it only adds the
@@ -741,8 +775,14 @@ RETIREMENT_ANCHOR_TOLERANCE = 0.01
 #: The suite is adversarial-heavy by construction, so treat its
 #: distribution as an upper bound on how often this fires in production
 #: rather than as a model of it.
+#:
+#: PINNED FROM BOTH SIDES, AND FROM THE MIDDLE (ITEM 5, round 13).
 #: TestIssue67Review12::test_the_notice_fires_on_the_attack_and_not_on
-#: _the_ordinary_run measures both sides.
+#: _the_ordinary_run carries four rows: 0% and 5.0% are silent, 50.0% and
+#: 98.8% speak. The middle one is round 13's — with only the other three,
+#: the constant could have been moved anywhere from just over 0.05 to
+#: just under 0.988 and every row would still have been green, so nothing
+#: distinguished 0.10 from 0.90.
 PREVIOUS_ONLY_DENOMINATOR_NOTICE = 0.10
 
 
@@ -1269,11 +1309,24 @@ def _relevance(api_ids, count_turns) -> _Relevance:
     more than `PREVIOUS_ARMS_CAP`/`CATALOGUE_SEEN_CAP` entries — and the
     falsifier publishes a wrong number rather than merely dropping a key.
     MEASURED through `main()`, identical on this head and on `7ef5780`: a
-    census key carrying 900 in-window turns whose ONLY entry is itself a
+    census key carrying 901 in-window turns whose ONLY entry is itself a
     one-turn census key loses that entry to 499 higher-sorting one-turn
-    keys, its 900 turns leave the denominator, and a live arm's true 6.7%
-    publishes as `carries 16.7% ... (at or above the 10% entry bar)` —
-    ten points, and a hold-over turned into a seat. It needs the census
+    keys, its 901 turns leave the denominator, and a live arm's true
+    9.99% publishes as `carries 100.0% ... (at or above the 10% entry
+    bar)` — NINETY POINTS, and a hold-over turned into a seat.
+
+    THAT NUMBER WAS TEN UNTIL ROUND 13 (ITEM 6), and the correction is
+    about which INSTANCE of the regime gets recorded rather than about
+    the regime. Tier 1 is decided over the 8-week UNION and the published
+    entry share is divided by the 4-WEEK ENTER WINDOW, so where the
+    one-turn filler keys' usage sits decides how much of the error
+    survives: put it inside the enter window and the fillers dilute the
+    share they distort, giving the ten-point instance round 12 measured
+    and wrote down as the cost; put it at `W[4]` — inside the union,
+    outside the enter window — and the same eviction of the same entry
+    costs ninety. Both are pinned, one turn either side of the cap, in
+    `TestIssue67Review12::test_the_invariant_qualifier_names_a_regime_the
+    _code_really_has`, so the number cannot rot back. It needs the census
     to name over 500 in-window keys as well as the previous roster to
     name the entries, which `eval.yml:352-354` grants to one writer; see
     `_relevance`'s own WHY EACH INPUT IS SAFE for what that does and does
@@ -2363,22 +2416,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         counts, window_union, rungs, aliases=aliases,
         api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
-    _, anchored_ranked_total = _in_window_totals(
-        counts, window_union, rungs, aliases=anchor_aliases,
-        api_ids=api_ids, previous_arms=(), catalogue_seen=())
-    # ONE count-only line whenever previous-roster-only attribution
-    # supplies a material share of the denominator every published share
-    # is divided by, whether or not it changes a decision this run — a
-    # reader of the step summary otherwise has no way to tell (BLOCKER 1,
-    # #129 review round 12). See `PREVIOUS_ONLY_DENOMINATOR_NOTICE` for
-    # what fixes the fraction.
-    if (ranked_total > 0 and ranked_total - anchored_ranked_total
-            >= PREVIOUS_ONLY_DENOMINATOR_NOTICE * ranked_total):
-        warn(f"{100 * (ranked_total - anchored_ranked_total) / ranked_total:.1f}% "
-             f"of the ranked census denominator over the last "
-             f"{len(window_union)} weeks is attributable only through the "
-             f"previous roster's own entries, not through this run's live "
-             f"catalogue")
     usable, stale_note, census_code = _census_verdict(
         census_doc, raw_total, ranked_total, policy, now,
         census_problem=census_problem)
@@ -2412,11 +2449,51 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         counts, set(exit_weeks), rungs, aliases=aliases,
         api_ids=api_ids, previous_arms=carried_arms,
         catalogue_seen=catalogue_seen)
-    # The exit window's own anchored total. RETIREMENT is measured over
-    # this window, so this is the one the tolerance is taken against.
+    # The two windows' own anchored totals. RETIREMENT is measured over
+    # the exit window, so that is the one `RETIREMENT_ANCHOR_TOLERANCE`
+    # is taken against; SEATING is measured over the enter window, and
+    # its anchored total exists for the notice below (ITEM 7, #129 review
+    # round 13). The UNION's anchored total used to be computed here and
+    # is not any more: the notice was the only reader, and a total
+    # nothing reads is a pass over the census for nothing.
+    _, anchored_enter_ranked_total = _in_window_totals(
+        counts, set(enter_weeks), rungs, aliases=anchor_aliases,
+        api_ids=api_ids, previous_arms=(), catalogue_seen=())
     _, anchored_exit_ranked_total = _in_window_totals(
         counts, set(exit_weeks), rungs, aliases=anchor_aliases,
         api_ids=api_ids, previous_arms=(), catalogue_seen=())
+    # ONE count-only line PER WINDOW THAT DECIDES SOMETHING, whenever
+    # previous-roster-only attribution supplies a material share of the
+    # denominator that window's published shares are divided by — whether
+    # or not it changes a decision this run, because a reader of the step
+    # summary otherwise has no way to tell (BLOCKER 1, #129 review round
+    # 12; measured over the right windows in round 13's ITEM 7).
+    #
+    # IT WAS COMPUTED OVER THE 8-WEEK UNION, and the union decides no
+    # share. Seating is decided over the ENTER window and retirement over
+    # the EXIT window, and a fraction under the threshold in the union can
+    # sit over it in either — put the previous-roster-only turns inside
+    # the 4-week enter window and the rest of the census outside it and
+    # the union reads 0.02% while the enter window reads 16.7%. The line
+    # a reader gets has to be about the window the number they are reading
+    # came from, which is why it names the window now.
+    #
+    # Both lines can fire on one run, and that is not noise: they are two
+    # different denominators, and on the shipped policy the exit window is
+    # the union, so the second line is what the old one used to say.
+    for window, weeks_in_window, window_total, window_anchored in (
+            ("enter", policy["arm_enter_window_weeks"], enter_ranked_total,
+             anchored_enter_ranked_total),
+            ("exit", policy["arm_exit_window_weeks"], exit_ranked_total,
+             anchored_exit_ranked_total)):
+        if (window_total > 0
+                and window_total - window_anchored
+                >= PREVIOUS_ONLY_DENOMINATOR_NOTICE * window_total):
+            warn(f"{100 * (window_total - window_anchored) / window_total:.1f}% "
+                 f"of the ranked census denominator over the {window} "
+                 f"window's last {weeks_in_window} weeks is attributable only "
+                 f"through the previous roster's own entries, not through "
+                 f"this run's live catalogue")
     enter_usable = (usable and enter_ranked_total >= policy["min_ranked_turns"]
                    and enter_ranked_total >= policy["min_ranked_share"] * enter_raw_total)
     exit_usable = (usable and exit_ranked_total >= policy["min_ranked_turns"]
