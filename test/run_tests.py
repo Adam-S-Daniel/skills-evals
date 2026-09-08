@@ -5972,6 +5972,23 @@ class TestIssue81(unittest.TestCase):
                 self.assertIn("diluted with enough of the agent's own words",
                               text)
                 self.assertIn("#97", text)
+        # Fix round 7: the every-fifth-word splice — coverage 0.000 on the
+        # fact sentence, ALL-PASS on every fixture, zero substantive words
+        # of the agent's — and the floor/proof language that follows from
+        # it. Only the recruiter-reply header carries the worked example in
+        # full; proposal-bio and self-appraisal-opening point at it, so this
+        # is checked once rather than per fixture.
+        recruiter_text = flat["recruiter-reply"]
+        for phrase in (
+                "inserted after every FIFTH word",
+                "56 insertions in 281 seed words",
+                "measures coverage 0.000",
+                "never a proof that the agent composed anything",
+                "The pairwise judge — blind, reading the whole reply "
+                "against the committed references — is the scorer that "
+                "actually tells a spliced paste from real writing"):
+            with self.subTest(phrase=phrase[:40]):
+                self.assertIn(phrase, recruiter_text)
 
     def test_the_recruiter_header_names_the_shapes_it_covers(self):
         # The operative words: the header claims coverage of the shapes the
@@ -6014,6 +6031,17 @@ class TestIssue81(unittest.TestCase):
                 "re-spelled in confusable characters",
                 "NFKC normalises compatibility forms, not confusables",
                 "not wired into `run_eval` until #97"):
+            with self.subTest(phrase=phrase[:40]):
+                self.assertIn(phrase, readme)
+        # Fix round 7: the every-fifth-word splice, and the floor/proof
+        # language it grounds.
+        for phrase in (
+                "inserted after every FIFTH word",
+                "56 insertions in 281 seed words",
+                "measures coverage 0.000",
+                "all three fixtures ALL-PASS, including",
+                "The objective column is a floor under echoing, not proof "
+                "of authorship"):
             with self.subTest(phrase=phrase[:40]):
                 self.assertIn(phrase, readme)
 

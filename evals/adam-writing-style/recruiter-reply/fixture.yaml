@@ -99,13 +99,36 @@ objective_checks:
   # THE CEILING, which is real and is not fixed. Below the coverage floor a
   # sentence is the agent's BY RULE, so a paste diluted with enough of the
   # agent's own words in the SAME sentence survives by design — that is the
-  # price of deciding authorship by the words rather than by the markup.
-  # And coverage is a test over words as they are spelled: a paste
+  # price of scoring the residue by the words rather than by the markup,
+  # and it makes this check a FLOOR under echoing, never a proof that the
+  # agent composed anything.
+  #
+  # "Enough" is smaller than the word "diluted" suggests. The whole seed,
+  # flattened, with the single word "and" inserted after every FIFTH word —
+  # zero substantive words of the agent's, 56 insertions in 281 seed
+  # words — measures coverage 0.000 on "The engagement is contracted and
+  # through March 2027." (every six-word window in that sentence now
+  # contains an inserted "and", so no run survives to mark anything) and
+  # ALL-PASSES every check on all three fixtures, cites-both-facts
+  # included. Coverage does not degrade toward some number near the 0.75
+  # floor as a splice gets denser; past one inserted word in six it
+  # collapses straight to zero, because the rule marks WHOLE runs, not
+  # partial credit. That is what "a floor, not a proof" means in practice:
+  # this check certifies that a reply is not an unmodified or
+  # lightly-modified paste of the seed, and nothing past that — it does not
+  # establish that the agent wrote any given sentence, only that the
+  # sentence is not cheaply attributable to the seed by this rule's own
+  # test. Coverage is also a test over words as they are spelled: a paste
   # re-spelled in Cyrillic homoglyphs everywhere except the fact tokens is
   # not the seed's words in any byte sense and passes all three rules,
-  # because NFKC maps compatibility forms and not confusables. That is the
-  # one shape provenance cannot see. The pairwise judge is the backstop for
-  # both, and it is not wired into run_eval until #97.
+  # because NFKC maps compatibility forms and not confusables. Neither
+  # shape is an oversight this module can patch — a sentence-level
+  # word-run rule cannot also refuse a splice below its own run length.
+  # The pairwise judge — blind, reading the whole reply against the
+  # committed references — is the scorer that actually tells a spliced
+  # paste from real writing; it is not wired into run_eval until #97, so
+  # until then this check's PASS is a floor cleared, never authorship
+  # decided.
   #
   # What is left is unwrapped and unquoted, so a reply the agent handed
   # back inside a `> ` block — the shape every calibration example in
@@ -185,7 +208,9 @@ objective_checks:
   # does. Between the two sits the sentence the rule cannot call — one
   # diluted below the coverage floor with the agent's own words — and that
   # one still counts as the agent being specific. The check is a floor
-  # under echoing, not a proof of composition.
+  # under echoing, not a proof of composition. See THE CEILING above for
+  # how cheap "diluted" is; the pairwise judge is what actually reads the
+  # residue of a spliced paste as a spliced paste.
   - id: cites-both-facts
     description: The reply quotes the requisition number and the contract end date
     type: transcript_matches

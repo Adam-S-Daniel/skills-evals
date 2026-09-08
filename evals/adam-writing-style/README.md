@@ -166,16 +166,32 @@ three fixtures set `strip_seed`, and it has to be a real boolean — a
   That is the point, not a leak. A sentence the agent **composed** out of
   the seed's phrases used to count too — two seed runs joined by its own
   connective carries a word order the seed does not have, and for four
-  rounds that made it the agent's. It does not any more: authorship is
-  decided by how MUCH of the sentence is the seed's (at least 0.75 of its
-  words inside runs of six or more consecutive seed words), not by whether
-  the seed's words arrived in one piece, because re-ordering someone
-  else's words is not writing.
+  rounds that made it the agent's. It does not any more: this check calls a
+  sentence the seed's based on how MUCH of it is the seed's (at least 0.75
+  of its words inside runs of six or more consecutive seed words), not on
+  whether the seed's words arrived in one piece, because re-ordering
+  someone else's words is not writing — a rule this check applies, not a
+  determination of who actually wrote the sentence.
 - **Below the coverage floor the sentence is the agent's by rule**, so a
   paste diluted with enough of the agent's own words *in the same sentence*
-  survives by design. That is the price of deciding authorship by the words
-  rather than by the markup, and it is a floor under echoing rather than a
-  proof that the agent composed anything.
+  survives by design. That is the price of scoring the residue by the words
+  rather than by the markup, and it makes this check a floor under echoing,
+  never a proof that the agent composed anything.
+
+  **"Enough" is smaller than "diluted" suggests.** The whole seed,
+  flattened, with the single word "and" inserted after every FIFTH word —
+  zero substantive words of the agent's, 56 insertions in 281 seed words —
+  measures coverage 0.000 on the fact-bearing sentence (no six-word window
+  survives the splice clean) and **all three fixtures ALL-PASS, including
+  `cites-both-facts`**. Coverage does not degrade toward some number near
+  the floor as a splice gets denser; past one inserted word in six it
+  collapses straight to zero, because the rule marks whole runs, not
+  partial credit. Passing this check certifies only that a reply is not an
+  unmodified or lightly-modified paste of the seed — nothing past that.
+  **The objective column is a floor under echoing, not proof of
+  authorship; the blind pairwise judge, reading the whole reply against
+  the committed references, is the scorer that actually ranks a spliced
+  paste against real writing.**
 - A paste **re-spelled in confusable characters** — Cyrillic homoglyphs
   everywhere except the fact tokens — is not the seed's words in any byte
   sense and passes all three rules. NFKC normalises compatibility forms,

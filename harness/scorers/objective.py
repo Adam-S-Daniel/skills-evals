@@ -1584,7 +1584,8 @@ def strip_seed_material(text: str, seed: str | None,
     A deliverable the agent chose to present as a blockquote or inside a
     fence is not seed material: it stays, unwrapped, and its bans fire.
     Every calibration example in the skill under test is a blockquote, so
-    formatting cannot be allowed to decide authorship.
+    formatting cannot be allowed to decide whether a sentence counts as the
+    agent's own.
 
     What is NO LONGER the agent's, and was for four rounds: a sentence
     "composed" out of the seed's phrases. Two of her non-adjacent clauses
@@ -1627,12 +1628,24 @@ def strip_seed_material(text: str, seed: str | None,
     because the thing a check looks for is never only in a line the agent
     could have copied. Below the coverage floor the sentence is the agent's
     BY RULE, so a paste diluted with enough of the agent's own words in the
-    same sentence survives by design. And coverage is a test over WORDS: a
-    paste re-spelled in Cyrillic homoglyphs everywhere except the fact
-    tokens is not the seed's words in any byte sense and passes all three
-    rules — NFKC does not map confusables onto each other. The pairwise
-    judge is the backstop for both, and it is not wired into `run_eval`
-    until #97.
+    same sentence survives by design — and "enough" is smaller than
+    "diluted" suggests: the whole seed, flattened, with the single word
+    "and" inserted after every FIFTH word (zero substantive words of the
+    agent's) measures coverage 0.000 on the fact-bearing sentence and
+    ALL-PASSES every check on all three fixtures, because no six-word
+    window survives the splice clean and coverage collapses straight to
+    zero rather than degrading toward the floor. This function is a FLOOR
+    under echoing — it certifies that a reply is not an unmodified or
+    lightly-modified paste of the seed, and nothing past that — never a
+    proof that the agent composed anything. Coverage is also a test over
+    WORDS: a paste re-spelled in Cyrillic homoglyphs everywhere except the
+    fact tokens is not the seed's words in any byte sense and passes all
+    three rules — NFKC does not map confusables onto each other. Neither
+    shape is a gap this function can patch by itself: a sentence-level
+    word-run rule cannot also refuse a splice below its own run length. The
+    pairwise judge — blind, reading the whole reply against the committed
+    references — is the scorer that actually ranks a spliced paste against
+    real writing, and it is not wired into `run_eval` until #97.
     """
     paragraphs = _provenance_paragraphs(text, seed, tag_gap)
     out: list[str] = []
