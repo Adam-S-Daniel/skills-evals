@@ -137,7 +137,7 @@ payload guards, two docs commits; all noreply); the orchestrator VERIFIED `8ec4c
 03:12 on 09-08 in a fresh worktree with the pinned yq: `./test/run-tests.sh` 1716
 passed, 0 failed (1584 on `0d73ac4`), the three gates exit 0 (28 gap, 1 skipped, 0
 covered), `.github/` unchanged since `0d73ac4`, `main` an ancestor, merge-tree clean.
-The worker's own report (a PR comment) is the last thing it posts; read it before round 4. **Next step**: round 4,
+The worker was interrupted at 03:27 on 09-08, inside its mutation battery, under decision 9's budget line (cost $32.99), so it posted no report of its own; the thirteen commits, their messages and the orchestrator's verification are the record. Its dispatch brief (`.orchestration/2026-09-07/briefs/123-fix3.md` on the snapshot branch) lists what each item had to prove. **Next step**: round 4,
 both halves (the `sync.yml` door read against the security header), prompts at
 `.orchestration/2026-09-07/prompts/` for #124 round 3. CLEAN → fresh CI read →
 merge → read the `sync.yml` run it triggers by conclusion → close #123. NOT
