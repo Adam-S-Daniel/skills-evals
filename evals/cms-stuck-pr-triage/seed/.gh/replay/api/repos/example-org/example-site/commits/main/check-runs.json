@@ -1,0 +1,21 @@
+{
+  "total_count": 1,
+  "check_runs": [
+    {
+      "name": "deploy",
+      "status": "completed",
+      "conclusion": "success",
+      "started_at": "2026-08-31T18:23:02Z",
+      "completed_at": "2026-08-31T18:31:44Z",
+      "head_sha": "9e41b7c2d6084f1ab3c57e0d9a2f6b18c4d70e35",
+      "check_suite": {
+        "id": 20690,
+        "head_branch": "main"
+      },
+      "output": {
+        "title": "deployed to production",
+        "summary": "https://www.example.com served the new build."
+      }
+    }
+  ]
+}
