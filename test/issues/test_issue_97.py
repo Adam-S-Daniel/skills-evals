@@ -3002,6 +3002,203 @@ class TestIssue97(unittest.TestCase):
                         "the harness reads it only from inside the checkout, "
                         "whose sink is the public eval-results branch")
 
+    # ------------------------------------------------------------------
+    # F-1-N — the funnel is the only way to build a path from the checkout
+    #
+    # F-1 bounded the manifest's `file:` and left the enumeration beside it:
+    # "base.md, stub.md, the manifest itself and fleet-memory.sh are module
+    # constants". A module constant is a NAME, not a location. Measured on
+    # f9115ce, both identical on a6d165d and both rc 0:
+    #   * `agents-md/eval-coverage.yml` replaced by a symlink out — the
+    #     OUTSIDE file was read as the manifest and its ids reached stdout,
+    #     because `load_manifest` called `path.read_text()` on a path it built
+    #     itself;
+    #   * `.claude/hooks/fleet-memory.sh` replaced by a symlink out — the
+    #     OUTSIDE script was EXECUTED.
+    # And `_read`'s own containment was unpinned: reverting it alone to
+    # `Path(guidance_dir) / rel` left all 120 tests green.
+    #
+    # So the rule is the sink, not the list: `inside_checkout` is the only
+    # thing in harness/guidance.py allowed to turn `guidance_dir` into a path.
+    # Every read and every exec has to build a path first, so funnelling
+    # construction funnels all of them — including the one a future edit adds.
+    # ------------------------------------------------------------------
+
+    OUTSIDE_MANIFEST_ID = "F1N-OUTSIDE-MANIFEST-ID"
+    OUTSIDE_HOOK_MARKER = "f1n-outside-hook-ran"
+
+    def test_the_checkout_funnel_is_the_only_way_a_path_is_built(self):
+        tree = ast.parse((HARNESS_DIR / "guidance.py").read_text(encoding="utf-8"))
+        funnelled, escapes = 0, []
+
+        def mentions_the_checkout(node) -> bool:
+            return any(isinstance(n, ast.Name) and n.id == "guidance_dir"
+                       for n in ast.walk(node))
+
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if fn.name == "inside_checkout":
+                continue  # the funnel itself
+            exempt = set()
+            for node in ast.walk(fn):
+                if (isinstance(node, ast.Call)
+                        and getattr(node.func, "id", None) == "inside_checkout"):
+                    if node.args and mentions_the_checkout(node.args[0]):
+                        funnelled += 1
+                    for argument in node.args:
+                        for sub in ast.walk(argument):
+                            exempt.add(id(sub))
+            for node in ast.walk(fn):
+                if id(node) in exempt:
+                    continue
+                derived = False
+                if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
+                    derived = mentions_the_checkout(node.left)
+                elif isinstance(node, ast.Call):
+                    name = (node.func.attr
+                            if isinstance(node.func, ast.Attribute)
+                            else getattr(node.func, "id", None))
+                    if name in ("Path", "join", "joinpath"):
+                        derived = any(mentions_the_checkout(a) for a in node.args)
+                        if isinstance(node.func, ast.Attribute):
+                            derived = derived or mentions_the_checkout(node.func.value)
+                if derived:
+                    escapes.append(
+                        f"{fn.name}():{node.lineno}  {ast.unparse(node)}")
+
+        self.assertGreater(
+            funnelled, 0,
+            "nothing in harness/guidance.py passes the checkout through "
+            "inside_checkout any more — this assertion must not be able to "
+            "pass vacuously")
+        self.assertEqual(
+            sorted(escapes), [],
+            "these expressions build a path out of `guidance_dir` without "
+            "passing inside_checkout, so whatever they go on to read, write "
+            "or EXECUTE is not bounded by the checkout:\n  "
+            + "\n  ".join(sorted(escapes))
+            + "\nEvery read and every exec builds a path first, which is why "
+            "the funnel is on the construction rather than on a list of the "
+            "reads someone remembered.")
+
+        # And the funnel is really inside `_read`, which is how base.md,
+        # stub.md and every manifest `file:` reach it.
+        read_fn = next(n for n in ast.walk(tree)
+                       if isinstance(n, ast.FunctionDef) and n.name == "_read")
+        self.assertIn(
+            "inside_checkout",
+            {getattr(c.func, "id", None) for c in ast.walk(read_fn)
+             if isinstance(c, ast.Call)},
+            "_read no longer calls inside_checkout — reverting exactly that "
+            "left all 120 tests green on f9115ce")
+
+    def test_read_refuses_a_relative_escape_when_called_directly(self):
+        # The direct-call half: `load_manifest` validates every row at load,
+        # so a caller that arrives around it — a hand-built row, a future
+        # second entry point — is what `_read`'s own check is for, and
+        # nothing exercised it.
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-read-direct-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = make_guidance_checkout(tmp / "checkout")
+        (tmp / "x.md").write_text("# outside\n", encoding="utf-8")
+        with self.assertRaises(guidance.GuidanceError) as caught:
+            guidance._read(root, "../x.md")
+        self.assertIn("OUTSIDE the checkout", str(caught.exception))
+        # ...and through assemble(), with a row that never saw load_manifest.
+        with self.assertRaises(guidance.GuidanceError) as caught:
+            guidance.assemble(root, {"id": "x", "heading": "Alpha",
+                                     "file": "../x.md"}, "section")
+        self.assertIn("OUTSIDE the checkout", str(caught.exception))
+
+    def test_a_symlinked_manifest_cannot_be_read_from_outside_the_checkout(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-manifest-link-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = make_guidance_checkout(tmp / "checkout")
+        outside = tmp / "OUTSIDE_MANIFEST.yml"
+        outside.write_text(yaml.safe_dump(
+            [{"id": self.OUTSIDE_MANIFEST_ID, "heading": "Alpha",
+              "file": "agents-md/base.md"}], sort_keys=False), encoding="utf-8")
+        manifest = root / "agents-md" / "eval-coverage.yml"
+        manifest.unlink()
+        manifest.symlink_to(outside)
+        self.assertTrue(manifest.is_file(), "the symlink must resolve, or "
+                        "this proves nothing")
+
+        results = tmp / "results"
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "canary_loader"})
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--delivery", "project",
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("OUTSIDE the checkout", out, out)
+        self.assertNotIn("Traceback", out, out)
+        self.assertNotIn(self.OUTSIDE_MANIFEST_ID, out,
+                         "the outside manifest's ids must not reach stdout")
+        if results.exists():
+            for path in results.rglob("*"):
+                if path.is_file():
+                    self.assertNotIn(
+                        self.OUTSIDE_MANIFEST_ID,
+                        path.read_text(encoding="utf-8", errors="replace"),
+                        f"{path} carries an id from outside the checkout")
+
+    def test_a_symlinked_hook_is_never_executed_from_outside_the_checkout(self):
+        tmp = Path(tempfile.mkdtemp(prefix="guidance-hook-link-"))
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        root = make_guidance_checkout(tmp / "checkout")
+        hook = root / ".claude" / "hooks" / "fleet-memory.sh"
+        if not hook.is_file():
+            self.skipTest("no sibling _agent-guidance checkout: "
+                          "make_guidance_checkout copied no real hook")
+        marker = tmp / f"{self.OUTSIDE_HOOK_MARKER}.txt"
+        outside = tmp / "outside-hook.sh"
+        outside.write_text(f'#!/bin/bash\ntouch "{marker}"\nexit 0\n',
+                           encoding="utf-8")
+        outside.chmod(0o755)
+        hook.unlink()
+        hook.symlink_to(outside)
+        self.assertTrue(hook.is_file(), "the symlink must resolve, or this "
+                        "proves nothing")
+
+        argv_log = tmp / "argv.jsonl"
+        results = tmp / "results"
+        eval_dir = self._guidance_fixture(
+            tmp, env={"FAKE_CLAUDE_MODE": "guidance_probe",
+                      "FAKE_CLAUDE_ARGV_LOG": str(argv_log)})
+        rc, out = self._run_main([eval_dir, "--arm", "both", "--guidance", root,
+                                  "--results-dir", results, "--no-judge"])
+        self.assertEqual(rc, 2, out)
+        self.assertIn("OUTSIDE the checkout", out, out)
+        self.assertNotIn("Traceback", out, out)
+        self.assertFalse(marker.exists(),
+                         "the hook outside the checkout was EXECUTED")
+        self.assertFalse(argv_log.exists(),
+                         "the CLI was invoked before the hook's path was "
+                         "checked")
+
+    def test_a_non_string_manifest_file_is_a_named_configuration_error(self):
+        root_template = make_guidance_checkout
+        for value in (5, ["agents-md/base.md"], {"path": "x"}, True):
+            with self.subTest(file=value):
+                tmp = Path(tempfile.mkdtemp(prefix="guidance-file-type-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                root = root_template(tmp / "checkout")
+                self._retarget_first_row(root, value)
+                results = tmp / "results"
+                eval_dir = self._guidance_fixture(
+                    tmp, env={"FAKE_CLAUDE_MODE": "canary_loader"})
+                rc, out = self._run_main(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--delivery", "project", "--results-dir", results,
+                     "--no-judge"])
+                self.assertEqual(rc, 2, out)
+                self.assertIn("must be a string path", out, out)
+                self.assertNotIn("Traceback", out, out)
+                self.assertFalse(results.exists(),
+                                 "a refused manifest must write nothing")
+
     def test_unknown_section_id_through_main_exits_2_naming_the_manifest(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-badid-"))
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)

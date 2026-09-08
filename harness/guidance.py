@@ -276,7 +276,7 @@ def require_guidance_dir(guidance_dir: Path) -> Path:
             "--guidance PATH, set $AGENT_GUIDANCE_DIR, or check it out "
             "side by side as ../_agent-guidance")
     for rel in (MANIFEST_REL, BASE_REL):
-        if not (guidance_dir / rel).is_file():
+        if not inside_checkout(guidance_dir, rel).is_file():
             raise GuidanceError(
                 f"{guidance_dir} does not look like an _agent-guidance "
                 f"checkout: {rel} is missing — pass --guidance PATH, set "
@@ -288,7 +288,7 @@ def require_guidance_dir(guidance_dir: Path) -> Path:
 def load_manifest(guidance_dir: Path) -> list[dict]:
     """`agents-md/eval-coverage.yml` — one row per `##` heading, keyed by a
     stable `id` that never moves when the heading's wording does."""
-    path = guidance_dir / MANIFEST_REL
+    path = inside_checkout(guidance_dir, MANIFEST_REL)
     try:
         doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     except (OSError, yaml.YAMLError) as exc:
@@ -302,6 +302,18 @@ def load_manifest(guidance_dir: Path) -> list[dict]:
         if missing:
             raise GuidanceError(
                 f"{path} row {i} is missing required field(s): {', '.join(missing)}")
+        # TYPE, not just presence: `not row.get("file")` is a truthiness test,
+        # so `file: 5` and `file: [x]` sailed past it and reached
+        # `root / 5` inside inside_checkout — `TypeError: unsupported operand
+        # type(s) for /` and rc 1, outside the rc-2 configuration contract
+        # every other malformed row gets.
+        if not isinstance(row["file"], str):
+            raise GuidanceError(
+                f"{path} row {i}'s `file:` must be a string path relative to "
+                f"the checkout, got {row['file']!r} "
+                f"({type(row['file']).__name__}). It is joined to the checkout "
+                "root and read, so anything else is a configuration mistake "
+                "rather than a path.")
         # Checked HERE, at load, and not only at the read: the manifest is
         # loaded once in `_run_guidance` before any arm exists, so a hostile
         # row is refused before ANY arm is delivered anything — including the
@@ -330,7 +342,8 @@ def find_row(manifest: list[dict], section_id: str, guidance_dir: Path) -> dict:
     known = ", ".join(sorted(str(row["id"]) for row in manifest))
     raise GuidanceError(
         f"unknown section id {section_id!r} — no row in "
-        f"{guidance_dir / MANIFEST_REL} carries it (known ids: {known})")
+        f"{inside_checkout(guidance_dir, MANIFEST_REL)} carries it "
+        f"(known ids: {known})")
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +562,9 @@ def assemble(guidance_dir: Path, row: dict, mode: str,
         own = _read(guidance_dir, row["file"])
         spans = h2_extents(own)
         if not spans:
-            raise GuidanceError(f"{guidance_dir / row['file']} has no `##` heading")
+            raise GuidanceError(
+                f"{inside_checkout(guidance_dir, row['file'])} has no `##` "
+                "heading")
         extent = _extent_of(own, row["heading"], str(row["file"]))
         # The file's intro — everything before its FIRST `##` — prepended, so
         # a section arrives with the framing the real file gives it. A
@@ -577,7 +592,8 @@ def assemble(guidance_dir: Path, row: dict, mode: str,
         # whole class, not a fix for that one cause.
         raise GuidanceError(
             f"the `{mode}` payload for section {row.get('id')!r} is empty — "
-            f"{guidance_dir / row['file']} yielded no section text (a file "
+            f"{inside_checkout(guidance_dir, row['file'])} yielded no "
+            "section text (a file "
             "with lone-CR line endings does this). Delivering it would give "
             "the arm the magic word and no guidance, which passes the "
             "delivery guard and measures nothing.")
@@ -643,7 +659,11 @@ def deliver(guidance_dir: Path, *, scratch: Path, dest_dir: Path, home: Path,
         return {"bytes": 0, "verdict": None, "installed": False,
                 "returncode": None, "dest": str(dest)}
 
-    hook = guidance_dir / HOOK_REL
+    # F-1-N. The hook is EXECUTED, and it was the one path in this module
+    # built from `guidance_dir` that never passed the funnel: measured on
+    # f9115ce, `.claude/hooks/fleet-memory.sh` replaced by a symlink pointing
+    # out of the checkout ran the OUTSIDE script and finished rc 0.
+    hook = inside_checkout(guidance_dir, HOOK_REL)
     if not hook.is_file():
         raise GuidanceError(
             f"no fleet-memory hook at {hook} — the guidance subject delivers "
