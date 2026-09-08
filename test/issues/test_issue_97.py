@@ -4419,6 +4419,45 @@ class TestIssue97(unittest.TestCase):
     # rc 2 at 120.2 s.
     DELIVER_BUDGET_S = 120
 
+    @staticmethod
+    def _judge_branch_keys() -> tuple[str, ...]:
+        """The fixture key(s) `_run_guidance_arm`'s judge branch actually
+        reads, parsed out of the harness.
+
+        A-N3-2. A-N3 said "use the key the harness reads" and the helper then
+        hardcoded `judge_rubric`, with nothing tying the two together — the
+        fit test parses `_run_guidance_arm` for the `setup_timeout_s` claim
+        and did not parse it for this one. Measured: changing the harness to
+        `fixture.get("judge_prompt", fixture.get("judge_rubric"))` and adding
+        a committed five-arm fixture that declares `judge_prompt:` and
+        `judge: {timeout_s: 2700}` left the fit test green at 1 800 s against
+        a real worst case of 15 300 s under a 2 700 s job. The A-N3 defect
+        verbatim, one key-spelling over.
+        """
+        tree = ast.parse((HARNESS_DIR / "run_eval.py").read_text(
+            encoding="utf-8"))
+        arm_fn = next(node for node in ast.walk(tree)
+                      if isinstance(node, ast.FunctionDef)
+                      and node.name == "_run_guidance_arm")
+        keys = []
+        for node in ast.walk(arm_fn):
+            if not isinstance(node, ast.If):
+                continue
+            if not any(ast.unparse(sub) == "args.no_judge"
+                       for sub in ast.walk(node.test)):
+                continue
+            for call in ast.walk(node.test):
+                if (isinstance(call, ast.Call)
+                        and isinstance(call.func, ast.Attribute)
+                        and call.func.attr == "get"
+                        and isinstance(call.func.value, ast.Name)
+                        and call.func.value.id == "fixture"
+                        and call.args
+                        and isinstance(call.args[0], ast.Constant)
+                        and isinstance(call.args[0].value, str)):
+                    keys.append(call.args[0].value)
+        return tuple(dict.fromkeys(keys))
+
     @classmethod
     def _guidance_fixture_budget(cls, fixture: dict) -> tuple[int, int]:
         """(per-arm seconds, arm count) for a guidance fixture, defaults and
@@ -4436,18 +4475,21 @@ class TestIssue97(unittest.TestCase):
         the guidance path, so a guidance fixture's `setup_timeout_s` is
         validated and then inert.
 
-        The judge is counted only when the fixture declares a `judge_rubric:`
-        — the key `_run_guidance_arm` actually branches on (`if not
-        args.no_judge and fixture.get("judge_rubric")`). eval.yml passes no
-        `--no-judge`, so a declared rubric IS spent; it passes no `--timeout`
-        either, so the agent leg is the fixture's own knob.
+        The judge is counted whenever the fixture declares any key
+        `_run_guidance_arm`'s judge branch reads — READ OUT OF THE HARNESS by
+        `_judge_branch_keys`, not written down here, so the budget uses
+        whatever the branch tests rather than whatever it tested when this
+        was written. eval.yml passes no `--no-judge`, so a declared rubric IS
+        spent; it passes no `--timeout` either, so the agent leg is the
+        fixture's own knob.
         """
         agent = fixture.get("timeout_s", cls.DEFAULT_AGENT_BUDGET_S)
         guard = (fixture.get("guard") or {}).get(
             "timeout_s", cls.DEFAULT_GUARD_BUDGET_S)
         judge = ((fixture.get("judge") or {}).get(
             "timeout_s", cls.DEFAULT_JUDGE_BUDGET_S)
-            if fixture.get("judge_rubric") else 0)
+            if any(fixture.get(key) for key in cls._judge_branch_keys())
+            else 0)
         arms = fixture.get("arms")
         count = len(arms) if isinstance(arms, dict) and arms else 2
         return agent + guard + judge + cls.DELIVER_BUDGET_S, count
@@ -4464,6 +4506,16 @@ class TestIssue97(unittest.TestCase):
                 "arms": {"a": {}, "b": {}, "c": {}}}
         deliver = self.DELIVER_BUDGET_S
 
+        # A-N3-2: the keys come from the harness, and the assertions below
+        # are driven by them rather than by a spelling written down here.
+        judge_keys = self._judge_branch_keys()
+        self.assertTrue(
+            judge_keys,
+            "no `fixture.get(...)` found in _run_guidance_arm's judge branch "
+            "— the budget would then count the judge for nothing, and this "
+            "assertion must not pass vacuously. Has the branch's shape "
+            "changed?")
+
         per_arm, arms = self._guidance_fixture_budget(base)
         self.assertEqual(arms, 3)
         self.assertEqual(
@@ -4471,16 +4523,20 @@ class TestIssue97(unittest.TestCase):
             "without a `judge_rubric:` the judge is never called — "
             "`_run_guidance_arm` branches on that key — so it costs nothing")
 
-        with_rubric = dict(base, judge_rubric="score it")
-        per_arm, _ = self._guidance_fixture_budget(with_rubric)
-        self.assertEqual(
-            per_arm, deliver + 10 + 20 + 30,
-            "a declared `judge_rubric:` IS spent: eval.yml passes no "
-            "`--no-judge`, so every arm pays `judge.timeout_s` as well")
+        for key in judge_keys:
+            with self.subTest(judge_key=key):
+                per_arm, _ = self._guidance_fixture_budget(
+                    dict(base, **{key: "score it"}))
+                self.assertEqual(
+                    per_arm, deliver + 10 + 20 + 30,
+                    f"a declared `{key}:` IS spent: _run_guidance_arm's judge "
+                    "branch reads that key and eval.yml passes no "
+                    "`--no-judge`, so every arm pays `judge.timeout_s` as "
+                    "well")
 
         # The defaults, all four of them, for a fixture that omits every knob.
         per_arm, arms = self._guidance_fixture_budget(
-            {"judge_rubric": "score it"})
+            {judge_keys[0]: "score it"})
         self.assertEqual(arms, 2, "a fixture with no `arms:` runs the default "
                          "treatment/control pair")
         self.assertEqual(per_arm, deliver + self.DEFAULT_AGENT_BUDGET_S
@@ -4528,8 +4584,11 @@ class TestIssue97(unittest.TestCase):
                     f"{self.DELIVER_BUDGET_S} + {self.DEFAULT_AGENT_BUDGET_S} "
                     f"+ {self.DEFAULT_GUARD_BUDGET_S} + "
                     f"{self.DEFAULT_JUDGE_BUDGET_S}s per arm; a declared "
-                    "`judge_rubric:` is spent because eval.yml passes no "
-                    "`--no-judge`.")
+                    + " or ".join(f"`{key}:`"
+                                  for key in self._judge_branch_keys())
+                    + " is spent because eval.yml passes no `--no-judge` "
+                    "(those are the keys _run_guidance_arm's judge branch "
+                    "reads, parsed out of the harness).")
         self.assertGreater(checked, 0,
                            "no committed guidance fixture — this test would "
                            "pass vacuously")
