@@ -1053,12 +1053,31 @@ def _relevance(api_ids, count_turns) -> _Relevance:
     The one question both caps order by, so they answer it the same way
     and one mutation cannot quietly change only one of them.
 
-    THE INVARIANT (B1', #129 review round 10; B, round 11): every census
-    key with in-window turns that any entry folds onto keeps at least one
-    entry that folds onto it, every id the usage alias map needs as a hop
-    from such a key to the numerator that collects its turns survives the
-    caps, and an entry that neither the live catalogue nor the census
-    needs, under any spelling, never outranks one that either does.
+    THE INVARIANT (B1', #129 review round 10; B, round 11; clause 1
+    QUALIFIED in round 12, see below): every census key with in-window
+    turns that any entry folds onto keeps at least one entry that folds
+    onto it — unless the census names more entries than a cap can rank,
+    in which case the lowest-turn of them go, never a live catalogue id
+    — every id the usage alias map needs as a hop from such a key to the
+    numerator that collects its turns survives the caps, and an entry
+    that neither the live catalogue nor the census needs, under any
+    spelling, never outranks one that either does.
+
+    THE QUALIFIER IS NOT DECORATION, and it was missing from all five
+    copies until round 12's should-fix 2. Clause 1 is FALSE in the
+    overflow regime — tier 1 alone exceeds the cap when the census names
+    more than `PREVIOUS_ARMS_CAP`/`CATALOGUE_SEEN_CAP` entries — and the
+    falsifier publishes a wrong number rather than merely dropping a key.
+    MEASURED through `main()`, identical on this head and on `7ef5780`: a
+    census key carrying 900 in-window turns whose ONLY entry is itself a
+    one-turn census key loses that entry to 499 higher-sorting one-turn
+    keys, its 900 turns leave the denominator, and a live arm's true 6.7%
+    publishes as `carries 16.7% ... (at or above the 10% entry bar)` —
+    ten points, and a hold-over turned into a seat. It needs the census
+    to name over 500 in-window keys as well as the previous roster to
+    name the entries, which `eval.yml:352-354` grants to one writer; see
+    `_relevance`'s own WHY EACH INPUT IS SAFE for what that does and does
+    not buy.
 
     WHAT CARRIES ALL THREE CLAUSES IS THE RESIDUE RULE, and not a ladder
     of routes (#129 review round 11). An entry neither document names is
@@ -1196,13 +1215,16 @@ def _clean_previous_arms(previous, warn,
     actually say something about — see `_relevance`, whose whole answer is
     the live catalogue and the census read through the fold relation — is
     kept ahead of filler, and only then does the id order break ties. THE
-    INVARIANT, the same one written over the `catalogue_seen` cap: every
-    census key with in-window turns that any entry folds onto keeps at
-    least one entry that folds onto it, every id the usage alias map needs
-    as a hop from such a key to the numerator that collects its turns
-    survives the caps, and an entry that neither the live catalogue nor
-    the census needs, under any spelling, never outranks one that either
-    does. The plain `sorted(ids)[:PREVIOUS_ARMS_CAP]` this
+    INVARIANT, the same one written over the `catalogue_seen` cap and
+    carrying the same round-12 qualifier: every census key with in-window
+    turns that any entry folds onto keeps at least one entry that folds
+    onto it — unless the census names more entries than a cap can rank,
+    in which case the lowest-turn of them go, never a live catalogue id
+    — every id the usage alias map needs as a hop from such a key to the
+    numerator that collects its turns survives the caps, and an entry
+    that neither the live catalogue nor the census needs, under any
+    spelling, never outranks one that either does. The plain
+    `sorted(ids)[:PREVIOUS_ARMS_CAP]` this
     replaces had the same alphabetical-head shape S2 fixes for
     `catalogue_seen`. `relevant` is REQUIRED, and was an optional
     None-defaulting spelling-only fallback until F-2 (#129 review round
@@ -1535,7 +1557,9 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
 
     THE INVARIANT the cap's order satisfies, written out over the sort
     below as well: every census key with in-window turns that any entry
-    folds onto keeps at least one entry that folds onto it, every id the
+    folds onto keeps at least one entry that folds onto it — unless the
+    census names more entries than a cap can rank, in which case the
+    lowest-turn of them go, never a live catalogue id — every id the
     usage alias map needs as a hop from such a key to the numerator that
     collects its turns survives the caps, and an entry that neither the
     live catalogue nor the census needs, under any spelling, never
@@ -1607,12 +1631,15 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     live = sorted(i for i in survivors if i in api_id_set)
     historical = [i for i in survivors if i not in api_id_set]
     # THE INVARIANT the cap's order has to satisfy (F1, #129 review round
-    # 8; B1, round 9; B1', round 10; B, round 11): EVERY CENSUS KEY WITH
-    # IN-WINDOW TURNS THAT ANY ENTRY FOLDS ONTO KEEPS AT LEAST ONE ENTRY
-    # THAT FOLDS ONTO IT, EVERY ID THE USAGE ALIAS MAP NEEDS AS A HOP FROM
-    # SUCH A KEY TO THE NUMERATOR THAT COLLECTS ITS TURNS SURVIVES THE
-    # CAPS, AND AN ENTRY THAT NEITHER THE LIVE CATALOGUE NOR THE CENSUS
-    # NEEDS, UNDER ANY SPELLING, NEVER OUTRANKS ONE THAT EITHER DOES. Who
+    # 8; B1, round 9; B1', round 10; B, round 11; clause 1 qualified in
+    # round 12): EVERY CENSUS KEY WITH IN-WINDOW TURNS THAT ANY ENTRY
+    # FOLDS ONTO KEEPS AT LEAST ONE ENTRY THAT FOLDS ONTO IT — UNLESS THE
+    # CENSUS NAMES MORE ENTRIES THAN A CAP CAN RANK, IN WHICH CASE THE
+    # LOWEST-TURN OF THEM GO, NEVER A LIVE CATALOGUE ID — EVERY ID THE
+    # USAGE ALIAS MAP NEEDS AS A HOP FROM SUCH A KEY TO THE NUMERATOR
+    # THAT COLLECTS ITS TURNS SURVIVES THE CAPS, AND AN ENTRY THAT
+    # NEITHER THE LIVE CATALOGUE NOR THE CENSUS NEEDS, UNDER ANY
+    # SPELLING, NEVER OUTRANKS ONE THAT EITHER DOES. Who
     # survives is decided by data the previous roster does not write — the
     # live catalogue and the census — never by anything the previous
     # roster asserts about itself, and never by how an entry is spelled.

@@ -18478,11 +18478,13 @@ class TestIssue67Review10(unittest.TestCase):
     #: different).
     INVARIANT = (
         "every census key with in-window turns that any entry folds onto "
-        "keeps at least one entry that folds onto it, every id the usage "
-        "alias map needs as a hop from such a key to the numerator that "
-        "collects its turns survives the caps, and an entry that neither "
-        "the live catalogue nor the census needs, under any spelling, "
-        "never outranks one that either does")
+        "keeps at least one entry that folds onto it — unless the census "
+        "names more entries than a cap can rank, in which case the "
+        "lowest-turn of them go, never a live catalogue id — every id the "
+        "usage alias map needs as a hop from such a key to the numerator "
+        "that collects its turns survives the caps, and an entry that "
+        "neither the live catalogue nor the census needs, under any "
+        "spelling, never outranks one that either does")
 
     ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
 
@@ -20080,6 +20082,79 @@ class TestIssue67Review12(unittest.TestCase):
         self.assertIn(V, self._arm_ids(after),
                       "the cell is an INFLATION: the victim keeps its seat "
                       "on an overstated share, and is not retired")
+
+    # --- SHOULD-FIX 2: clause 1 of the invariant, qualified ------------
+    #
+    # The sentence was stated flat in all five copies and is FALSE in the
+    # overflow regime. `evals/roster-policy.yml` carried the caveat
+    # forty-five lines below the sentence, in the one copy four of the
+    # five readers never see: F-1 pins the sentence, nothing pinned the
+    # caveat next to it. The qualifier is now a clause OF the sentence, so
+    # F-1's pin covers it, and the row below is what stops the qualifier
+    # from being decoration.
+
+    _C1_KEY = "claude-opus-4"
+    _C1_BRIDGE = "claude-opus-4-20250101"
+
+    def _clause_one_row(self, fillers):
+        """A census key carrying 900 in-window turns whose ONLY entry is
+        itself a one-turn census key, against `fillers` one-turn keys that
+        sort ahead of it and are named in `arms` too."""
+        keys = [f"0key-haiku-4-{i:04d}" for i in range(fillers)]
+        counts = {self._VICTIM: {self.W[0]: 100},
+                  self._C1_KEY: {self.W[0]: 900},
+                  self._C1_BRIDGE: {self.W[0]: 1}}
+        counts.update({k: {self.W[0]: 1} for k in keys})
+        previous = self._prev([self._VICTIM, self._C1_BRIDGE] + keys, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return self._reason(published, self._VICTIM)
+
+    def test_the_invariant_qualifier_names_a_regime_the_code_really_has(self):
+        """Clause 1's qualifier is a statement about measured behaviour,
+        so it gets a measurement.
+
+        498 filler keys: tier 1 fits inside the cap, the bridge survives,
+        the census key's 900 turns stay in the denominator and the victim
+        is held over at its true 6.7%. 499: tier 1 overflows by one, the
+        bridge is the lowest-turn tier-1 entry and goes first, the 900
+        turns leave with it, and the victim publishes `carries 16.7% ...
+        at or above the 10% entry bar` — a wrong share AND a hold-over
+        turned into a seat.
+
+        GREEN on `7ef5780`, deliberately: this row asserts the CURRENT
+        behaviour, because clause 1 is false there in exactly the same way
+        and round 12 corrects the sentence rather than the code. Its
+        mutation is the sentence itself — `test_the_invariant_sentence_is
+        _pinned_in_the_policy_and_the_code` goes red if any copy drops the
+        qualifier, and this row goes red if the code ever stops having the
+        regime the qualifier describes, at which point the qualifier
+        should be deleted rather than left standing over nothing."""
+        self.assertIn("still 6.7%", self._clause_one_row(498))
+        self.assertIn("carries 16.7%", self._clause_one_row(499))
+
+    def test_the_qualifier_is_inside_every_copy_of_the_sentence(self):
+        """F-1 pins the sentence in five places; this is the assertion
+        that the qualifier is part of the sentence rather than a paragraph
+        beside one of them. Round 12's finding was that the policy DID
+        carry the caveat, forty-five lines below, in the one copy four of
+        the five readers never open."""
+        qualifier = ("unless the census names more entries than a cap can "
+                     "rank, in which case the lowest-turn of them go, "
+                     "never a live catalogue id")
+        normalise = TestIssue67Review10._normalised
+        policy = normalise(TestIssue67Review10.POLICY.read_text(
+            encoding="utf-8"))
+        self.assertIn(qualifier, policy)
+        source = normalise(TestIssue67Review10.ROSTER_SRC.read_text(
+            encoding="utf-8"))
+        self.assertEqual(source.count(qualifier), 4,
+                         "the qualifier travels with the sentence, so it "
+                         "appears in each of roster.py's four copies")
 
 
 if __name__ == "__main__":

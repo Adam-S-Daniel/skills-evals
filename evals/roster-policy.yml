@@ -162,11 +162,24 @@ min_ranked_share: 0.01
 # file.
 #
 # THE INVARIANT: every census key with in-window turns that any entry
-# folds onto keeps at least one entry that folds onto it, every id the
-# usage alias map needs as a hop from such a key to the numerator that
+# folds onto keeps at least one entry that folds onto it — unless the
+# census names more entries than a cap can rank, in which case the
+# lowest-turn of them go, never a live catalogue id — every id the usage
+# alias map needs as a hop from such a key to the numerator that
 # collects its turns survives the caps, and an entry that neither the
 # live catalogue nor the census needs, under any spelling, never
 # outranks one that either does.
+#
+# THE QUALIFIER IN CLAUSE 1 IS THE ROUND-12 CORRECTION, and it is inside
+# the sentence rather than forty-five lines below it because that is
+# where a reader meets the guarantee. Clause 1 was stated flat in all
+# five copies of this sentence and is FALSE in the overflow regime:
+# measured through the CLI, a census key carrying 900 in-window turns
+# whose only entry is itself a one-turn census key loses that entry to
+# 499 higher-sorting one-turn keys, and a live arm's true 6.7% publishes
+# as "carries 16.7% ... at or above the 10% entry bar" — ten points, and
+# a hold-over turned into a seat. Clauses 2 and 3 were tested for the
+# same failure and hold.
 #
 # The order matters because eviction here is PERMANENT — the next run
 # reads this run's own output back — and because everything the previous
@@ -210,10 +223,33 @@ min_ranked_share: 0.01
 # take a real entry's place, because the only entries the cap can evict
 # are ones the census or the catalogue names, and a planter writes
 # neither document. See roster.py's `_relevance`. Among residue entries
-# there is no order at all, and those entries move no share. The
-# invariant holds SUBJECT TO THE CAP: tier 1 alone can exceed 500 if the
-# census names more entries than that, and then the lowest-turn ones go
-# — raising the cap moves that number, it does not remove the case.
+# there is no order at all, and those entries move no share.
+#
+# THE CAVEAT THAT USED TO LIVE HERE IS NOW INSIDE THE SENTENCE ITSELF
+# (round 12's should-fix 2). It read "the invariant holds SUBJECT TO THE
+# CAP: tier 1 alone can exceed 500 if the census names more entries than
+# that, and then the lowest-turn ones go", and it sat forty-five lines
+# below the guarantee it qualifies, in one of five copies — four of them
+# in roster.py, where a reader never sees this paragraph at all. It is
+# now a clause of the invariant, so every copy carries it and the pin
+# that asserts the sentence asserts the qualifier with it. Raising the
+# cap moves the number at which the case starts; it does not remove the
+# case.
+#
+# TWO THINGS THE OLD WORDING UNDERSTATED, both now measured. "The
+# lowest-turn ones go" does not say WHAT goes with them: the entry a
+# census key needs to stay attributable is often the lowest-turn tier-1
+# entry there is, so what the cap takes first is the hop, and the key's
+# whole turn count leaves the denominator behind it. And the published
+# consequence is a WRONG SHARE rather than a missing line — measured
+# through the CLI, a census key carrying 900 in-window turns whose only
+# entry is itself a one-turn census key loses that entry to 499
+# higher-sorting one-turn keys, and a live arm's true 6.7% publishes as
+# "carries 16.7% ... at or above the 10% entry bar": ten points, and a
+# hold-over turned into a seat. A LIVE catalogue id is no longer among
+# what goes — round 12's should-fix 1 exempts this run's own api ids from
+# both caps, where before that 502 live previous arms published one of
+# them as retired at 0.0% with no census at all.
 #
 # TWO MECHANISMS WERE TRIED HERE AND ARE GONE. They are recorded because
 # the reasoning that reached for them is the reasoning a later round will
