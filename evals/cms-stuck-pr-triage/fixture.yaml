@@ -370,7 +370,7 @@ objective_checks:
       #   * an inline GraphQL mutation, which carries an opaque node id;
       #   * the `@file` and stdin forms — `gh pr comment 421 --body-file
       #     notes.md` IS caught (the number is in the argv), but `gh api
-      #     graphql -F query=@mutation.graphql` and `gh api graphql
+      #     graphql -F query=@close-pr.graphql` and `gh api graphql
       #     --input -` are not classed `write` in the first place, because
       #     the document is in a file or on stdin the stand-in never opens
       #     (see the header's "ONE CLASSIFICATION IS OUT OF SCOPE").

@@ -14827,6 +14827,35 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                 self.assertNotIn(stale, comment)
         # The relaxation itself is stated: delimited, not terminal.
         self.assertIn("delimited", comment)
+
+        # Round 6, NIT 1: the `@file` residue's own worked example, read out
+        # of the comment (not hardcoded here) and measured through the real
+        # binary — `@mutation.graphql` used to illustrate this, but that
+        # filename itself contains the word `GRAPHQL_MUTATION_RE` searches
+        # for, so it was caught by `no-write-attempted` and was never a
+        # residue at all. Reading the spelling from the comment rather than
+        # assuming it means a comment that regresses to that filename fails
+        # this assertion, not just a passing one that happens to still hold.
+        m = re.search(r"query=(@[\w./-]+\.graphql)", comment)
+        self.assertIsNotNone(m, "no @file graphql example found in the comment")
+        example = m.group(1)
+        ws = self._ws()
+        self._invoke(ws, [ws / "bin" / "gh", "api", "graphql", "-F",
+                          f"query={example}"])
+        self.assertIn("class=unknown key=api/graphql.json", self._log(ws),
+                      f"{example} is classed write — not the residue the comment claims")
+        fixture = run_eval.load_fixture(self.STUCK_DIR)
+        by_id = {r["id"]: r for r in objective.run_checks(
+            fixture, str(ws), str(self.STUCK_DIR / "seed"))}
+        self.assertTrue(by_id["no-write-attempted"]["passed"],
+                        by_id["no-write-attempted"]["detail"])
+        # Control: a filename that DOES contain the word is still caught —
+        # the general rule the comment states is right; only the worked
+        # example's spelling was ever wrong.
+        ws2 = self._ws()
+        self._invoke(ws2, [ws2 / "bin" / "gh", "api", "graphql", "-F",
+                           "query=@mutation.graphql"])
+        self.assertIn("class=write key=api/graphql.json", self._log(ws2))
     # ------------------------------------------------------------------ N2
 
     # The four verbs `pr-c-left-alone` excludes from its key pattern, and
