@@ -19839,6 +19839,248 @@ class TestIssue67Review12(unittest.TestCase):
                          "5% of the denominator is under the threshold and "
                          "must not print a line")
 
+    # --- SHOULD-FIX 3: a floor for the CLASS, not for the rows that were
+    # measured ------------------------------------------------------------
+    #
+    # THE DEFECT THIS EXISTS TO STOP REPEATING. Round 7 (S3), round 8
+    # (A3), round 9 (S2), round 10 (F-1/F-2), round 11 (should-fix 2) and
+    # round 12 (both blockers) are one defect in six costumes: a defence
+    # written to the rows that were measured rather than to the class.
+    # Every floor for the attribution machinery — `:7869`, `:8837`,
+    # `:8388`, `:9072` — is a scenario in which the previous roster is
+    # HONEST. A mutation row proves a clause is LOAD-BEARING; it cannot
+    # prove it is BOUNDED, and no row asked the adversarial question.
+    #
+    # THE RULE THIS TABLE APPLIES. For EVERY input the caps and
+    # `_is_attributable` read from `previous.json`, in BOTH directions,
+    # one row of the form "a control run, versus the same run with one
+    # hostile entry or one hostile field value". The inputs are enumerated
+    # from the code rather than from the attacks that happen to be known:
+    # `_clean_previous_arms` reads `previous["arms"]` and `entry["id"]`;
+    # `_clean_catalogue_seen` reads `previous["catalogue_seen"]`,
+    # `entry["id"]` and `entry["last_seen"]`; nothing else in the file is
+    # read at all. That is FOUR inputs — `arms[].id`,
+    # `catalogue_seen[].id`, `catalogue_seen[].last_seen`, and the ENTRY
+    # COUNT of either list, which is what puts a cap or the ceiling into
+    # play — and every one of them gets a row in each direction below.
+    #
+    # WHAT "UNCHANGED" MEANS PER ROW, and why it is not one thing.
+    # `reason` rows assert the victim's published sentence is BYTE-
+    # IDENTICAL to the control's. `seat` rows assert the weaker property:
+    # the victim keeps its seat and is not retired, while its published
+    # reason may change. The ADD direction is the `seat` one, and that is
+    # a deliberate limit rather than an oversight — SEATING reads the wide
+    # denominator on purpose (round 6's B1: a departed arm's real turns
+    # deflating a false 100% to the truth, which is why the route may not
+    # be deleted), so an added entry CAN move a published share. What
+    # round 12 bounds is what the move may DO: it may no longer retire a
+    # live arm, which is the permanent, unrecoverable half.
+    # `test_the_one_cell_this_cannot_cover` states the one cell that stays
+    # open and why no rule can close it.
+
+    _DEPARTED_REAL = "claude-opus-4-9"
+    _FILLERS = [f"0filler-{i:04d}" for i in range(501)]
+
+    @classmethod
+    def _class_census(cls):
+        """VICTIM 500 turns, a real since-retired model 9,500, and a
+        ranked key nothing can credit at 400,000. The victim's TRUE share
+        is 500/10,000 = 5.0%: over the 2% exit bar, under the 10% entry
+        bar, so it is held over and the exit bar is what decides it."""
+        return TestIssue67._census_doc(counts={
+            cls._VICTIM: {cls.W[0]: 500},
+            cls._DEPARTED_REAL: {cls.W[0]: 9_500},
+            cls._GHOST: {cls.W[0]: 400_000}})
+
+    @classmethod
+    def _prev(cls, arms, seen):
+        return {"arms": [{"id": i, "reason": "was an arm"} for i in arms],
+                "catalogue_seen": [e if isinstance(e, dict)
+                                   else {"id": e,
+                                         "last_seen": cls._days_ago(1)}
+                                   for e in seen]}
+
+    def _class_run(self, previous):
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(), census=self._class_census(),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    def test_every_previous_json_input_has_a_control_versus_hostile_floor(self):
+        """THE CLASS FLOOR. Ten rows, four inputs, both directions."""
+        V, D, G = self._VICTIM, self._DEPARTED_REAL, self._GHOST
+        # BASE A — the departed real model is vouched for by
+        # `catalogue_seen` alone, so a `catalogue_seen` field value is
+        # what decides its attribution.
+        base_a = self._prev([V], [D])
+        # BASE B — vouched for by BOTH lists, so either one alone can be
+        # removed and the other still attributes it.
+        base_b = self._prev([V, D], [D])
+        # (label, control, hostile, expectation, the MUTATION that turns
+        # this row red — every one of them applied and run, none quoted
+        # from reasoning). `RED@7ef5780` marks a row that additionally
+        # fails on the pre-fix tree itself.
+        rows = [
+            ("arms[].id ADD one entry naming a ranked key nothing credits",
+             base_a, self._prev([V, G], [D]), "seat",
+             "RED@7ef5780; also: `previous_only = 0` in compute_roster's "
+             "hold-over branch, which is the anchored refusal deleted"),
+            ("catalogue_seen[].id ADD the same entry",
+             base_a, self._prev([V], [D, G]), "seat",
+             "RED@7ef5780; also: the same deletion"),
+            ("catalogue_seen[].last_seen back-dated past the window",
+             base_a, self._prev([V], [{"id": D,
+                                       "last_seen": self._days_ago(400)}]),
+             "reason",
+             "RED@7ef5780; also: `relevant.tier(model_id) < 3` deleted "
+             "from `_update_catalogue_seen`'s ageing loop"),
+            ("catalogue_seen[].last_seen dated in the far future",
+             base_a, self._prev([V], [{"id": D,
+                                       "last_seen": "9999-12-31T00:00:00Z"}]),
+             "reason+value",
+             "`rendered = _as_date(parsed)` in `_clean_catalogue_seen` — "
+             "the future-date clamp dropped, which republishes 9999 to "
+             "the public branch"),
+            # `seat`, not `reason`, and measured rather than assumed:
+            # `_clean_catalogue_seen` SKIPS a malformed entry (with a
+            # count-only warning naming no value), so the entry's
+            # attribution goes with it and the victim's sentence changes
+            # to the relative floor's. That is the same primitive as
+            # deleting the entry outright — a planter who can write the
+            # field can write the file — so it grants nothing new, and
+            # unlike a deletion it is REPORTED. The seat is what has to
+            # hold, and does.
+            ("catalogue_seen[].last_seen unparseable",
+             base_a, self._prev([V], [{"id": D, "last_seen": "garbage"}]),
+             "seat+value",
+             "`by_id[entry['id']] = entry['last_seen']` on an unparseable "
+             "date instead of skipping it — round 7's N1, which puts the "
+             "raw value in the published roster"),
+            ("arms[].id REMOVE the departed arm (catalogue_seen still has it)",
+             base_b, self._prev([V], [D]), "reason",
+             "`folded in catalogue_seen_folded` deleted from "
+             "`_is_attributable` — the route that still attributes the "
+             "departed model once its `arms` entry is gone"),
+            ("catalogue_seen[].id REMOVE the entry (arms still has it)",
+             base_b, self._prev([V, D], []), "reason",
+             "`folded in previous_arms_folded` deleted from "
+             "`_is_attributable` — the mirror route, and the ONLY row of "
+             "this table that mutation turns red"),
+            # The three entry-count rows each put the departed model in
+            # the ONE list whose cap the fillers crowd, so the cap is what
+            # decides the row rather than the other list rescuing it.
+            ("entry count: 501 filler `arms` entries",
+             self._prev([V, D], []),
+             self._prev([V, D] + self._FILLERS, []), "reason",
+             "`order = {i: (1, 0, i) for i in ids}` in "
+             "`_clean_previous_arms` — round 6's plain id order, under "
+             "which 499 `0filler-` entries evict the departed model"),
+            ("entry count: 501 filler `catalogue_seen` entries",
+             base_a, self._prev([V], [D] + self._FILLERS), "reason",
+             "the same id order in `_update_catalogue_seen`"),
+            ("entry count: 501 fillers in BOTH lists",
+             base_b,
+             self._prev([V, D] + self._FILLERS, [D] + self._FILLERS),
+             "reason",
+             "both id-order mutations at once — either list alone still "
+             "attributes the departed model, which is why this row needs "
+             "both and is not a duplicate of the two above"),
+        ]
+        hostile_values = ("9999", "garbage")
+        for label, control, hostile, expectation, mutation in rows:
+            self.assertTrue(mutation,
+                            f"row {label!r} records no mutation that turns "
+                            f"it red")
+            with self.subTest(row=label):
+                before, _ = self._class_run(control)
+                after, err = self._class_run(hostile)
+                self.assertIn(V, self._arm_ids(before), "control row")
+                self.assertIn("still 5.0%", self._reason(before, V),
+                              "the control must measure the victim at its "
+                              "true 5.0%, or the row is about nothing")
+                self.assertIn(V, self._arm_ids(after),
+                              "one hostile entry cost a live arm its seat")
+                self.assertNotIn(
+                    V, {t["id"] for t in after["retired_since_last"]},
+                    "one hostile entry retired a live arm carrying real "
+                    "in-window usage — the permanent, unrecoverable half")
+                if expectation.startswith("reason"):
+                    self.assertEqual(self._reason(before, V),
+                                     self._reason(after, V),
+                                     "one hostile entry moved the victim's "
+                                     "published share")
+                if expectation.endswith("value"):
+                    # A hostile FIELD VALUE must not reach the published
+                    # roster on the public branch, nor the log: the
+                    # `last_seen` rows are the two that carry one, and
+                    # this is what keeps the clamp and the skip
+                    # load-bearing rather than incidental.
+                    published_text = json.dumps(after)
+                    for value in hostile_values:
+                        self.assertNotIn(value, published_text)
+                        self.assertNotIn(value, err)
+        # RED-FIRST, per row, on `7ef5780` through `main()`: rows 1, 2 and
+        # 3 fail there — the two blockers. Rows 4-10 are green there,
+        # because rounds 6-11 closed the CAP-ORDER half of the same class
+        # and this table is the statement that the DENOMINATOR half is
+        # closed too. Every one of the ten carries the mutation that turns
+        # it red in its own tuple above, and every one of those mutations
+        # was applied to a throwaway copy and run rather than reasoned
+        # about.
+
+    def test_the_one_cell_this_cannot_cover(self):
+        """The one hostile edit the table above does not close, stated and
+        pinned rather than left for the next round to find.
+
+        REMOVE a since-retired model from `arms` AND from
+        `catalogue_seen` at once. Its census turns then leave the
+        denominator, and the victim's true 5.0% publishes as 100.0% —
+        a seat it should not have.
+
+        WHY NO RULE CLOSES IT. `previous.json` IS this harness's only
+        record of what it has seen; the anchored denominator is
+        deliberately blind to it, so it reads a removal as the ordinary
+        healthy case and there is no second copy to compare against.
+        Closing it needs a trusted history the harness does not have.
+
+        WHY IT IS THE CHEAP HALF. The outcome is an INFLATION, which
+        seats a model — reversible on the next honest run, since seating
+        is re-decided every run from the census. The blockers this round
+        closed were the deflation direction, which RETIRES, and a
+        retirement is permanent: the model is no longer a previous arm,
+        so the exit bar no longer applies and real usage never re-seats
+        it. A planter who deletes the history gets a seat for one run; a
+        planter who added to the denominator used to get a live arm
+        destroyed for good."""
+        V, D = self._VICTIM, self._DEPARTED_REAL
+        # Its OWN census, without the table's 400,000-turn unattributable
+        # key: that key's raw turns trip the ranked/raw relative floor,
+        # which holds the victim over and MASKS this cell. Measured — the
+        # floor is a real partial defence here, and saying which defence
+        # is doing the work is the point of the row.
+        census = TestIssue67._census_doc(counts={V: {self.W[0]: 500},
+                                                 D: {self.W[0]: 9_500}})
+
+        def run(previous):
+            with tempfile.TemporaryDirectory() as tmp:
+                rc, published, _, err = self._run_main(
+                    tmp, self._two_sonnets(), census=census,
+                    previous=previous)
+            self.assertEqual(rc, 0, err)
+            return published
+
+        before = run(self._prev([V, D], [D]))
+        after = run(self._prev([V], []))
+        self.assertIn("still 5.0%", self._reason(before, V))
+        self.assertIn("carries 100.0%", self._reason(after, V),
+                      "if this ever stops being true the limit has been "
+                      "closed and this test should be rewritten as a floor")
+        self.assertIn(V, self._arm_ids(after),
+                      "the cell is an INFLATION: the victim keeps its seat "
+                      "on an overstated share, and is not retired")
+
 
 if __name__ == "__main__":
     unittest.main()
