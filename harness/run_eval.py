@@ -862,7 +862,8 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up."""
-    workspace = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm_name}-"))
+    workspace = Path(tempfile.mkdtemp(
+        prefix=f"{ARM_WORKSPACE_PREFIX}{arm_name}-"))
     try:
         shutil.copytree(seed, workspace, dirs_exist_ok=True)
 
@@ -1011,6 +1012,39 @@ DEFAULT_GUIDANCE_ARMS = {"with_guidance": {"mode": "section"},
 
 _ARM_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
+# A-N2-2. An arm name becomes more paths than the arm directory, and the two
+# it also becomes were unmodelled. Measured on f9115ce, both rc 1 and both a
+# traceback:
+#   * an arm named `report.md` collided with the run's OWN report — the arm's
+#     summary.json and transcripts/raw.json were written first, then
+#     `_render_report` opened the arm DIRECTORY for writing:
+#     `IsADirectoryError: [Errno 21]`;
+#   * `a` * 255 (and 256, and 4096) was `OSError: [Errno 36] File name too
+#     long`, out of the per-arm workspace's mkdtemp rather than out of the
+#     arm directory, because that path carries a prefix as well as the name.
+#
+# The files a run writes INTO the run directory, beside the per-arm dirs, and
+# the ones it writes INSIDE an arm dir. Only the first class can collide with
+# an arm name; the second is why an arm called `summary.json` is harmless.
+# `test_the_arm_name_refusal_covers_every_file_the_run_writes` parses this
+# module and refuses any write-open whose filename is in neither tuple, so a
+# new run-directory file cannot arrive without being classified.
+REPORT_NAME = "report.md"
+RUN_DIR_FILES = (REPORT_NAME,)
+ARM_DIR_FILES = ("summary.json", "raw.json")
+
+# The prefix every per-arm workspace's mkdtemp carries, named once so the
+# length cap below and the call sites cannot drift apart.
+ARM_WORKSPACE_PREFIX = "skills-evals-"
+# mkdtemp appends 8 random characters to the prefix it is given, and the
+# longest single filesystem component is 255 bytes on every filesystem this
+# runs on. The workspace is the tightest consumer of an arm name, so it is
+# what the cap is derived from rather than a number someone picked.
+_NAME_MAX = 255
+_MKDTEMP_RANDOM_LEN = 8
+MAX_ARM_NAME_LEN = (_NAME_MAX - len(ARM_WORKSPACE_PREFIX) - 1
+                    - _MKDTEMP_RANDOM_LEN)
+
 # The anchor `_names_a_new_directory` measures against. Any absolute path that
 # is not the filesystem root works; it never exists and is never written.
 _ARM_NAME_ANCHOR = Path("/arm-name-check")
@@ -1044,6 +1078,23 @@ DECOY_PLACEHOLDER = "$DECOY_TOKEN"
 
 
 def _validate_arm_entry(name: str, entry: dict) -> dict:
+    if isinstance(name, str) and name in RUN_DIR_FILES:
+        raise guidance.GuidanceError(
+            f"invalid arm name {name!r}: the run writes "
+            f"{', '.join(RUN_DIR_FILES)} into the run directory itself, "
+            "beside the per-arm directories, so an arm of that name is a "
+            "directory where a file has to go — the arm's own summary.json "
+            "and transcripts/raw.json are written first and the report then "
+            "fails with IsADirectoryError, after the run has spent every arm")
+    if isinstance(name, str) and len(name) > MAX_ARM_NAME_LEN:
+        raise guidance.GuidanceError(
+            f"invalid arm name of {len(name)} characters: an arm name may be "
+            f"at most {MAX_ARM_NAME_LEN}. It becomes a directory name under "
+            "results/ AND the per-arm workspace "
+            f"`{ARM_WORKSPACE_PREFIX}<name>-XXXXXXXX`, which is the longer of "
+            f"the two; past {_NAME_MAX} bytes the filesystem refuses it with "
+            "`File name too long` part-way into the run instead of naming a "
+            "rule here")
     if (not isinstance(name, str) or not _ARM_NAME_RE.fullmatch(name)
             or not _names_a_new_directory(name)):
         raise guidance.GuidanceError(
@@ -1181,7 +1232,8 @@ def _guard_error(guard: dict) -> dict:
 def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
-    scratch = Path(tempfile.mkdtemp(prefix=f"skills-evals-{arm['name']}-"))
+    scratch = Path(tempfile.mkdtemp(
+        prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
     try:
         workspace, home = scratch / "ws", scratch / "home"
         config, tmpdir = scratch / "config", scratch / "tmp"
@@ -1475,7 +1527,7 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
             arm_bytes[arm["arm"]] = json.load(f)["bytes"]
     report = _render_guidance_report(section, fixture["prompt"], timestamp,
                                      args.delivery, arm_bytes, arm_summaries)
-    with open(report_dir / "report.md", "w", encoding="utf-8") as f:
+    with open(report_dir / REPORT_NAME, "w", encoding="utf-8") as f:
         f.write(report)
 
     inconclusive = [s for s in arm_summaries if s["inconclusive"]]
@@ -1695,7 +1747,7 @@ def main() -> int:
         return 2
 
     report = _render_report(fixture["skill"], fixture["prompt"], timestamp, arm_summaries)
-    report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
+    report_path = args.results_dir / fixture["skill"] / timestamp / REPORT_NAME
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:
         f.write(report)

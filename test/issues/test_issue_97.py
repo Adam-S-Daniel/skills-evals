@@ -1640,6 +1640,154 @@ class TestIssue97(unittest.TestCase):
         ("a NUL in the value", {"A": "x\0y"}, "contains a NUL byte"),
     )
 
+    # ------------------------------------------------------------------
+    # A-N2-2 — every path an arm name becomes, not just the arm directory
+    #
+    # A-N2 modelled ONE path: the arm dir under the run dir. Measured on
+    # f9115ce, both rc 1 with a traceback:
+    #   * an arm named `report.md` — the run's own report is written into the
+    #     run directory beside the arm dirs, so `_render_report` opened a
+    #     DIRECTORY for writing (`IsADirectoryError`) AFTER both arms had been
+    #     spent and their summaries written;
+    #   * `a` * 255 / 256 / 4096 — `OSError: [Errno 36] File name too long`,
+    #     raised by the per-arm workspace's mkdtemp, whose prefix makes it the
+    #     tightest consumer of the name rather than the arm dir.
+    # ------------------------------------------------------------------
+
+    def test_the_arm_name_refusal_covers_every_file_the_run_writes(self):
+        """The classification is derived from the code, not remembered: every
+        file this module opens for writing is named either in RUN_DIR_FILES
+        (beside the arm dirs, so an arm of that name collides) or in
+        ARM_DIR_FILES (inside an arm dir, so it cannot)."""
+        source = (HARNESS_DIR / "run_eval.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        constants = {}
+        for node in tree.body:
+            if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                    and isinstance(node.targets[0], ast.Name)
+                    and isinstance(node.value, ast.Constant)
+                    and isinstance(node.value.value, str)):
+                constants[node.targets[0].id] = node.value.value
+
+        def terminal(expr, bindings):
+            """The last path component of `expr`, as a filename or None."""
+            if isinstance(expr, ast.BinOp) and isinstance(expr.op, ast.Div):
+                return terminal(expr.right, bindings)
+            if isinstance(expr, ast.Constant) and isinstance(expr.value, str):
+                return expr.value
+            if isinstance(expr, ast.Name):
+                if expr.id in constants:
+                    return constants[expr.id]
+                if expr.id in bindings:
+                    return terminal(bindings[expr.id], bindings)
+            return None
+
+        written = set()
+        for fn in ast.walk(tree):
+            if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            bindings = {}
+            for node in ast.walk(fn):
+                if (isinstance(node, ast.Assign) and len(node.targets) == 1
+                        and isinstance(node.targets[0], ast.Name)):
+                    bindings[node.targets[0].id] = node.value
+            for node in ast.walk(fn):
+                if not (isinstance(node, ast.Call)
+                        and getattr(node.func, "id", None) == "open"):
+                    continue
+                mode = (node.args[1].value if len(node.args) > 1
+                        and isinstance(node.args[1], ast.Constant) else "r")
+                if "w" not in str(mode) and "a" not in str(mode):
+                    continue
+                name = terminal(node.args[0], bindings)
+                self.assertIsNotNone(
+                    name,
+                    f"run_eval.py:{node.lineno} opens a path for writing whose "
+                    "filename this pin cannot read. Name it with a module "
+                    "constant so it can be classified.")
+                written.add(name)
+
+        self.assertTrue(written, "no write-open found in run_eval.py — this "
+                                 "pin must not pass vacuously")
+        classified = set(run_eval.RUN_DIR_FILES) | set(run_eval.ARM_DIR_FILES)
+        self.assertEqual(
+            sorted(written - classified), [],
+            f"{sorted(written - classified)}: run_eval.py writes these files "
+            "and neither RUN_DIR_FILES nor ARM_DIR_FILES names them, so "
+            "nothing says whether an arm of the same name would collide with "
+            "one. Classify each: beside the arm dirs (RUN_DIR_FILES, and the "
+            "arm-name check then refuses it) or inside one (ARM_DIR_FILES).")
+        self.assertEqual(
+            sorted(set(run_eval.RUN_DIR_FILES) - written), [],
+            "RUN_DIR_FILES names a file run_eval.py no longer writes")
+
+        # ...and every RUN_DIR_FILES name really is refused as an arm name.
+        for name in run_eval.RUN_DIR_FILES:
+            with self.subTest(arm=name):
+                with self.assertRaises(guidance.GuidanceError) as caught:
+                    run_eval._validate_arm_entry(name, {"mode": "none"})
+                self.assertIn("run directory", str(caught.exception))
+
+    def test_the_arm_name_length_cap_is_the_workspace_prefixs_own_limit(self):
+        # Derived, not picked: the cap is what leaves the per-arm workspace
+        # inside a 255-byte filesystem component once mkdtemp's prefix and its
+        # 8 random characters are added.
+        longest = "a" * run_eval.MAX_ARM_NAME_LEN
+        run_eval._validate_arm_entry(longest, {"mode": "none"})
+        probe = f"{run_eval.ARM_WORKSPACE_PREFIX}{longest}-XXXXXXXX"
+        self.assertLessEqual(
+            len(probe), 255,
+            "the accepted longest arm name still makes a workspace directory "
+            f"name of {len(probe)} bytes")
+        for over in (run_eval.MAX_ARM_NAME_LEN + 1, 255, 256):
+            with self.subTest(length=over):
+                with self.assertRaises(guidance.GuidanceError) as caught:
+                    run_eval._validate_arm_entry("a" * over, {"mode": "none"})
+                self.assertIn("at most", str(caught.exception))
+
+    def test_a_colliding_or_overlong_arm_name_is_refused_before_anything_runs(self):
+        root = self._checkout()
+        for label, arm_name in (("report.md", "report.md"),
+                                ("a*255", "a" * 255),
+                                ("a*256", "a" * 256)):
+            with self.subTest(row=label):
+                tmp = Path(tempfile.mkdtemp(prefix="arm-name-"))
+                self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+                argv_log = tmp / "argv.jsonl"
+                results = tmp / "results"
+                eval_dir = self._guidance_fixture(
+                    tmp, arms={arm_name: {"mode": "section"},
+                               "control": {"mode": "none"}},
+                    env={"FAKE_CLAUDE_MODE": "guidance_probe",
+                         "FAKE_CLAUDE_ARGV_LOG": str(argv_log)})
+                rc, out = self._run_main_subprocess(
+                    [eval_dir, "--arm", "both", "--guidance", root,
+                     "--results-dir", results, "--no-judge"])
+                self.assertEqual(rc, 2, f"{label}: expected rc 2\n{out}")
+                self.assertIn("invalid arm name", out, f"{label}: {out}")
+                self.assertNotIn("Traceback", out, f"{label}: {out}")
+                self.assertFalse(argv_log.exists(),
+                                 f"{label}: the CLI was invoked before the "
+                                 "arm name was checked")
+                self.assertFalse(results.exists(),
+                                 f"{label}: a refused arm name writes nothing")
+
+    def test_every_committed_arm_name_is_still_accepted(self):
+        seen = 0
+        for path in sorted((REPO_ROOT / "evals").rglob("fixture.yaml")):
+            fixture = yaml.safe_load(path.read_text(encoding="utf-8"))
+            # Guidance fixtures only: `_validate_arm_entry` is the guidance
+            # subject's gate, and a skill fixture's `arms:` entries are a
+            # different shape with no `mode:`.
+            if fixture.get("subject") != "guidance":
+                continue
+            for name, entry in (fixture.get("arms") or {}).items():
+                seen += 1
+                with self.subTest(fixture=str(path.parent), arm=name):
+                    run_eval._validate_arm_entry(name, entry)
+        self.assertGreater(seen, 0, "no committed guidance arm names — this "
+                                    "floor would pass vacuously")
+
     def test_a_fixture_whose_root_is_not_a_mapping_is_a_named_error(self):
         root = self._checkout()
         for label, text, expected in self.BAD_FIXTURE_ROOTS:
