@@ -485,6 +485,20 @@ Five properties are load-bearing and should survive any rework:
    `last_seen` is older than `catalogue_seen_max_age_days` (roster-policy.yml,
    180 by default) — the only exit besides a length cap (`CATALOGUE_SEEN_CAP`
    in roster.py, currently 500, never evicting this run's own live ids).
+   **Two exemptions from the age, and both exist because dropping an entry
+   drops its census turns out of the attributable denominator while
+   `last_seen` is a field the previous roster itself writes.** An entry
+   this run's census still records in-window turns for is kept; and so is
+   an entry the usage alias map needs as a HOP on the chain from a census
+   key to the numerator that collects its turns. They are two different
+   questions — raw identity, and the fold relation — and the second one
+   matters most where there is no planter at all: a hop's `last_seen` is
+   only ever refreshed for a LIVE id, so an honest bridge crosses the
+   window on its own, and a two-run chain in which run 1 is this harness's
+   own output and run 2 reads it back 200 days later published a live arm
+   carrying 60.0% of the window as `RETIRED ... (0.0%)`. Only the first
+   question feeds the caps' order, deliberately: an entry the caps rank is
+   an entry the caps can evict.
    Without an age, a single id planted directly on the branch stayed
    attributable forever and was republished by this harness as its own
    output on every later run — reverting the plant on the branch did not
