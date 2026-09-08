@@ -5974,21 +5974,38 @@ class TestIssue81(unittest.TestCase):
                 self.assertIn("#97", text)
         # Fix round 7: the every-fifth-word splice — coverage 0.000 on the
         # fact sentence, ALL-PASS on every fixture, zero substantive words
-        # of the agent's — and the floor/proof language that follows from
-        # it. Only the recruiter-reply header carries the worked example in
-        # full; proposal-bio and self-appraisal-opening point at it, so this
-        # is checked once rather than per fixture.
+        # of the agent's. Only the recruiter-reply header carries the
+        # worked example in full (the FIFTH-word count, the insertion
+        # count, the coverage figure, and the judge sentence below), so
+        # those four phrases are checked once rather than per fixture.
         recruiter_text = flat["recruiter-reply"]
         for phrase in (
                 "inserted after every FIFTH word",
                 "56 insertions in 281 seed words",
                 "measures coverage 0.000",
-                "never a proof that the agent composed anything",
                 "The pairwise judge — blind, reading the whole reply "
                 "against the committed references — is the scorer that "
                 "actually tells a spliced paste from real writing"):
             with self.subTest(phrase=phrase[:40]):
                 self.assertIn(phrase, recruiter_text)
+        # Fix round 8 finding 3: the floor/proof language IS per fixture —
+        # proposal-bio and self-appraisal-opening used to point at
+        # recruiter-reply for it and say nothing themselves, which left two
+        # of the three headers silent on the one sentence that keeps a
+        # reader from reading this check as proof of authorship.
+        for name, text in flat.items():
+            with self.subTest(fixture=name, claim="floor not proof"):
+                self.assertIn("never a proof that the agent composed anything",
+                              text)
+        # And the two that point at recruiter-reply's worked example say
+        # what they are pointing at, in the same words the measurement
+        # brief uses: "enough" is one inserted word in five, not some
+        # unstated fraction.
+        for name in ("proposal-bio", "self-appraisal-opening"):
+            with self.subTest(fixture=name, claim="one in five pointer"):
+                self.assertIn("one inserted word in five", flat[name])
+                self.assertIn("recruiter-reply/fixture.yaml for the "
+                              "measurement", flat[name])
 
     def test_the_recruiter_header_names_the_shapes_it_covers(self):
         # The operative words: the header claims coverage of the shapes the

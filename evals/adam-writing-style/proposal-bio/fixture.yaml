@@ -50,10 +50,12 @@
 #
 # THE CEILING. Below the coverage floor a sentence is the agent's BY RULE,
 # so a paste diluted with enough of the agent's own words in the same
-# sentence survives by design; and a paste re-spelled in Cyrillic
-# homoglyphs except for the fact tokens passes every rule, because NFKC
-# does not map confusables. The pairwise judge is the backstop for both,
-# and it is not wired into run_eval until #97. See
+# sentence survives by design — a floor under echoing, never a proof that
+# the agent composed anything. "Enough" is one inserted word in five — see
+# recruiter-reply/fixture.yaml for the measurement. A paste re-spelled in
+# Cyrillic homoglyphs except for the fact tokens passes every rule too,
+# because NFKC does not map confusables. The pairwise judge is the
+# backstop for both, and it is not wired into run_eval until #97. See
 # recruiter-reply/fixture.yaml, which carries this in full.
 #
 # A reply that is nothing but the quoted material has an empty residue, so
