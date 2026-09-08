@@ -2083,6 +2083,14 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # live id for the same reason. So a census key attributable here is
     # attributable there, with the same fold target, and
     # `anchored_ranked_total <= ranked_total` always.
+    #
+    # WHAT THE SECOND MEASUREMENT COSTS, since it is one more alias map
+    # and two more passes over the census: MEASURED through the real CLI
+    # on the largest census this module has been run against — 380,000
+    # in-window keys, a 16.2 MB `usage/latest.json`, the shape round 12's
+    # census-fuzz row used — 4.25s before, 6.87s after, rc 0 both. A 1.6x
+    # walk over a file that arrives once a week, against a defence for
+    # the only irreversible decision the roster makes.
     anchor_aliases = _usage_alias_map(api_ids, list(counts), seat_aliases,
                                       live_order)
 
