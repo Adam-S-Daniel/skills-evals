@@ -1127,14 +1127,24 @@ _FOOTNOTE_MARKER_RE = re.compile(r"^[^\S\n]*\[\^[^\]\n]+\]:[^\S\n]*")
 # it is too short: a genuine draft written FROM the seed reuses four- and
 # five-word runs of it constantly and legitimately — "Staff Platform
 # Engineer role at", "the shared deployment repository", "a clean Section
-# 508 audit" — and the committed in-voice references, which are the
-# fixtures' own proof that the checks are satisfiable by real writing, lost
-# `cites-both-facts` at 126 of the 189 wrap-column cells at four and 63 at
-# five. At six the whole battery of genuine drafts passes at every column
-# from 38 to 100, and the paste shapes still measure at or above 0.93. Six
-# is also the shortest value at which the seed's own longest FACT phrases —
-# an employer, a job title, a repo path, a date — cannot be a run on their
-# own, which is what the run length is for.
+# 508 audit" — and at the shipped C = 0.75 the committed in-voice
+# references, which are the fixtures' own proof that the checks are
+# satisfiable by real writing, lose `cites-both-facts` at 63 of the 189
+# wrap-column cells at four and 0 at five. (An earlier version of this
+# comment put those two figures at 126 and 63 — real numbers, but measured
+# at C = 0.60, the brief's starting value, not the C = 0.75 this module
+# ships; re-measure through `seed_coverage_report` before trusting either
+# one, this comment included.) Five is not the answer either, though: at
+# five the genuine newly-claimable ceiling jumps to 0.9167
+# (in-voice/self-appraisal-opening at column 38) against a paste floor of
+# 0.9259 — a margin of 0.009, nowhere near the 0.1 this module requires
+# (see _SEED_COVERAGE below). At six the ceiling drops back to 0.59 with
+# the paste floor still at or above 0.93, margin to spare on both sides,
+# and no paste shape moves. Six is also the shortest value at which the
+# seed's own longest FACT phrases — an employer, a job title, a repo path,
+# a date — cannot be a run on their own (the longest, "Northgate Bell
+# Talent Group", is four words), though that alone would not have ruled
+# out five; the margin above is what does.
 _SEED_COVERAGE_RUN = 6
 
 # 0.75, with the margins measured by the batteries in
