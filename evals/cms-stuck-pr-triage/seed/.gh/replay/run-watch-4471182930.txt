@@ -1,0 +1,19 @@
+Refreshing run status every 3 seconds. Press Ctrl+C to quit.
+
+X main CMS Publish Loop — Prod Mutation Playground · 4471182930
+Triggered via workflow_dispatch at 2026-09-02T05:41:02Z
+
+JOBS
+X prod-loop / prod-mutate in 33m9s (ID 12554300811)
+  ✓ Set up job
+  ✓ Checkout site
+  ✓ Checkout cms-platform
+  ✓ Install Playwright browsers
+  X Run prod-mutate playground loop
+  ✓ Post failure summary
+
+ANNOTATIONS
+X Timed out waiting for the URL to reflect the change
+prod-loop / prod-mutate: .github/workflows/cms-publish-loop-prod.yml#L64
+
+X Run CMS Publish Loop — Prod Mutation Playground (4471182930) completed with 'failure'

@@ -1,0 +1,18 @@
+# Preview deploy for a pull request. Publishes the `deploy-preview` status
+# context; skipped on the loop's own `automated-test` PRs, which have nothing
+# an editor would want to look at.
+name: deploy-preview
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  deploy-preview:
+    if: ${{ !contains(github.event.pull_request.labels.*.name, 'automated-test') }}
+    uses: example-org/cms-platform/.github/workflows/deploy-preview.yml@v0.1.104
+    with:
+      platform_ref: v0.1.104

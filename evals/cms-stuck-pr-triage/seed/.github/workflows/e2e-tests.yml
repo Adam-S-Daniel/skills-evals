@@ -1,0 +1,22 @@
+# Thin caller for the platform's reusable e2e workflow. It fans a `project`
+# matrix out to one job per Playwright project and puts an aggregating `e2e`
+# gate job behind them. The single required status context is `e2e / e2e`;
+# the per-project contexts (`e2e / project (…)`) are informational.
+name: e2e
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  e2e:
+    uses: example-org/cms-platform/.github/workflows/e2e-tests.yml@v0.1.104
+    with:
+      platform_ref: v0.1.104
+      browser: all
+    secrets:
+      CMS_E2E_PAT: ${{ secrets.CMS_E2E_PAT }}

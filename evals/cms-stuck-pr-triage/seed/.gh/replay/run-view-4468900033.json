@@ -1,0 +1,56 @@
+{
+  "databaseId": 4468900033,
+  "workflowName": "e2e",
+  "displayTitle": "Create Post “Spring release notes”",
+  "headBranch": "cms/posts/spring-release-notes",
+  "headSha": "c47a1f9e02b6538d7ac194e0f2b83d65a70c19bb",
+  "event": "pull_request",
+  "status": "completed",
+  "conclusion": "failure",
+  "createdAt": "2026-08-30T09:15:09Z",
+  "updatedAt": "2026-08-30T09:41:07Z",
+  "url": "https://github.com/example-org/example-site/actions/runs/4468900033",
+  "jobs": [
+    {
+      "databaseId": 12488110441,
+      "name": "e2e / project (chromium-desktop-1080)",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "conclusion": "success",
+          "number": 1
+        },
+        {
+          "name": "Checkout merge commit",
+          "conclusion": "success",
+          "number": 2
+        },
+        {
+          "name": "Install Playwright browsers",
+          "conclusion": "success",
+          "number": 3
+        },
+        {
+          "name": "Run Playwright",
+          "conclusion": "failure",
+          "number": 4
+        }
+      ]
+    },
+    {
+      "databaseId": 12488110455,
+      "name": "e2e / e2e",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Aggregate project results",
+          "conclusion": "failure",
+          "number": 1
+        }
+      ]
+    }
+  ]
+}
