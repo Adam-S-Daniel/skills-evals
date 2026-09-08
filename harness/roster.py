@@ -2365,8 +2365,91 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                         api_ids=api_ids, previous_arms=(), catalogue_seen=())
                     previous_only = (exit_ranked_total
                                      - anchored_exit_ranked_total)
-                    if previous_only > (RETIREMENT_ANCHOR_TOLERANCE
-                                        * exit_ranked_total):
+                    if held == 0.0:
+                        # A LIVE CATALOGUE ID IS NEVER RETIRED ON A
+                        # NUMERATOR OF ZERO (BLOCKER B, #129 review round
+                        # 13). ONE deletion from `catalogue_seen` — the
+                        # entry bridging this arm's own census key onto
+                        # it — takes every one of its turns out of its
+                        # numerator, and the arm is published `RETIRED
+                        # ... (0.0%)`, rc 0, EMPTY stderr, permanently.
+                        # Seven different primitives on that one entry
+                        # reach it, measured through `main()`: removing
+                        # it, an unparseable `last_seen`, a `last_seen`
+                        # that is not a string, a year-0001 date, a date
+                        # 400 days old, a one-character case change in
+                        # the `id`, and replacing the whole entry with a
+                        # scalar.
+                        #
+                        # THE CAUSE IS UNDETECTABLE IN PRINCIPLE, so the
+                        # rule is stated over the OBSERVABLE rather than
+                        # over the cause. `previous.json` is this
+                        # harness's only record of what it has seen, so
+                        # "this id was never an arm" and "the record was
+                        # tampered with" are the same input; separating
+                        # them needs a trusted history this harness does
+                        # not have (`TestIssue67Review12::test_the_one
+                        # _cell_this_cannot_cover` is where that limit is
+                        # written down). What IS observable is that the
+                        # attribution machinery credits a model the
+                        # Models API still lists exactly nothing — and
+                        # "unused" and "chain broken" are not equally
+                        # reversible, so the zero is refused as evidence
+                        # for the irreversible half.
+                        #
+                        # `held == 0.0` IS AN EXACT TEST FOR A ZERO
+                        # NUMERATOR, not a rounding one. This branch is
+                        # only reached when `exit_usable` is true, which
+                        # requires `exit_ranked_total >=
+                        # policy["min_ranked_turns"]`, so the denominator
+                        # is a positive int; `usage_share` returns `0.0
+                        # if total == 0 else (100 * mine) / total` over
+                        # two ints, and for a positive int denominator
+                        # that quotient is exactly 0.0 iff `mine` is 0.
+                        # Nothing here reads a rendered string or
+                        # `_format_share`'s output, either of which says
+                        # "0.0" for a share that is merely tiny.
+                        #
+                        # THERE IS NO `relevant.is_live(model_id)`
+                        # CONJUNCT, and the liveness is written here
+                        # instead because no mutation could turn such a
+                        # conjunct red: this loop runs over `available`,
+                        # a subset of `ranked`, a subset of
+                        # `_clean_models(models_doc)` — the same list
+                        # `api_ids` is built from — so every `model_id`
+                        # reaching this line IS one of this run's live
+                        # catalogue ids. F-2 (#129 review round 10)
+                        # deletes a clause with no red mutation rather
+                        # than keeping it as belt-and-braces, and
+                        # `test_two_dead_clauses_stay_deleted` is the
+                        # precedent this follows.
+                        #
+                        # WHAT IT COSTS, stated rather than left to be
+                        # discovered: a live model that genuinely stops
+                        # being used is HELD OVER rather than retired,
+                        # for as long as it stays live. What still
+                        # removes it is the Models API — the arm set is
+                        # rebuilt from `available` every run, so the
+                        # model leaves it the run its id stops being
+                        # returned, by the departed-arm path that never
+                        # reaches this branch. The list cannot grow
+                        # without bound either: every arm is a live
+                        # catalogue id, so `arms` is bounded by the
+                        # catalogue itself.
+                        reason = (
+                            f"held over from the previous roster: not one of "
+                            f"the {exit_ranked_total} rankable, attributable "
+                            f"turns over the last "
+                            f"{policy['arm_exit_window_weeks']} weeks is "
+                            f"credited to it, and a numerator of exactly zero "
+                            f"is what a genuinely unused model and a broken "
+                            f"attribution chain both look like — this run's "
+                            f"Models API still lists this model, and "
+                            f"`previous.json` is the only record of the chain "
+                            f"there is, so the two cannot be told apart and "
+                            f"the retirement is refused rather than acted on")
+                    elif previous_only > (RETIREMENT_ANCHOR_TOLERANCE
+                                          * exit_ranked_total):
                         # THE FRACTION ALONE, and the conjunct that used to
                         # sit beside it — `anchored_held >= exit bar` — is
                         # deleted (BLOCKER A, #129 review round 13). It read
