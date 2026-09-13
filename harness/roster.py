@@ -1266,58 +1266,35 @@ def _relevance(api_ids, count_turns) -> _Relevance:
     return _Relevance(api_ids, count_turns)
 
 
-#: N3 (#129 review round 6): the same cap `CATALOGUE_SEEN_CAP` applies to
-#: `catalogue_seen`, sized the same way — see that constant's own comment.
-PREVIOUS_ARMS_CAP = 500
+# THE TWO 500-ENTRY CAPS AND THE CARRY CEILING ARE GONE (#147, ADR 0001
+# decision 4, which names all three constants), and so is the tier
+# ordering they evicted by.
+#
+# WHAT THEY WERE FOR. The previous roster came off `eval-results`, so its
+# `arms` and `catalogue_seen` lists were unbounded public input: anyone
+# with write access could add 500 entries, and six review rounds went into
+# finding an order that decided which of them survived WITHOUT reading
+# anything the writer of that file controlled. The answer they converged
+# on — rank by the live catalogue and the census, carry whole everything
+# neither names, and refuse to publish at all past 10,000 unorderable
+# entries — is an approximation of a trusted history, which is exactly
+# what ADR 0001 says to delete rather than keep beside the real thing.
+#
+# THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING. The lists they
+# bounded come from `evals/roster.yml`, and a line cannot appear there
+# without a reviewed commit on a ruleset-protected branch. So the input
+# the caps bounded is bounded by review, and every remaining effect of a
+# cap was on HONEST data: a repository with more than 500 genuinely
+# observed models would have had its own reviewed history evicted, by an
+# order chosen to defeat an attacker who can no longer write the file.
+# The denial of service the ceiling's own comment documented — 10,001
+# planted lines refusing the refresh for good, and not clearing itself —
+# goes with them, because those lines would now have to be merged.
+#
+# WHAT REPLACES THEM AS THE BOUND ON AN UNTRUSTED INPUT is
+# `CENSUS_MAX_KEYS`/`CENSUS_MAX_BYTES`, over the census, which is the one
+# document still written by a job on another machine.
 
-#: The ONE bound left on the entries neither cap will evict — the tier-3
-#: residue, which is everything the live catalogue and the census say
-#: nothing about (A, #129 review round 10, generalised in round 11: round
-#: 10 asked the question of the whole census file, so one in-window turn
-#: under any key at all re-armed the eviction). Both caps exist to bound
-#: an unbounded public input; with no trusted order to evict by, the
-#: honest answer is to carry everything, and past this to refuse to
-#: publish at all rather than fall back to an order the input writes.
-#:
-#: 10,000, chosen against the two costs `_clean_previous_arms` measured for
-#: F3 (#129 review round 8) and stopping short of BOTH: a roughly
-#: 16,000-entry `arms` list crosses GitHub's 1 MiB cap on a step summary,
-#: past which the roster summary is simply not rendered for the humans
-#: reading the run; a roughly 1,000,000-entry one crosses GitHub's 100 MB
-#: file limit, at which the whole results/badge commit step fails and takes
-#: the run's badge with it. A refusal here is a named one-line message and
-#: a nonzero exit; those two are a silently missing summary and a failed
-#: push that has nothing to do with the roster. 10,000 is also twenty times
-#: the 500 either cap allows when the census CAN order them, so no honest
-#: history reaches it. MEASURED at the ceiling, both lists full: a 1.61 MB
-#: `roster/latest.json` and a 0.60 MB step summary, in 0.17s — inside the
-#: 1 MiB summary cap and two orders of magnitude inside the 100 MB file
-#: limit, which is the property the number is picked for.
-#:
-#: WHO CAN TRIGGER IT, AND THE COST BEING ACCEPTED (nit 3, #129 review
-#: round 12). The prose above frames this only as self-protection, and it
-#: is also a DENIAL OF THE ROSTER REFRESH that a planter reaches with
-#: 10,001 lines in `previous.json` and nothing else — no census, no
-#: catalogue, no cap involved. Measured with a real arm present at a true
-#: 30.0%, in `arms` and in `catalogue_seen` alike: 9,999 and 10,000
-#: residue entries publish `carries 30.0%` behind one count-only line,
-#: and 10,001 is rc 4 with nothing published and no id echoed. It does
-#: not clear itself either — refusing means `roster/latest.json` is not
-#: rewritten, so the planted file is still there on the next run and
-#: every run after it, until someone reverts the branch.
-#:
-#: IT IS STILL THE RIGHT TRADE, and what decides that is how each failure
-#: looks from outside. Refusing is LOUD and non-destructive: `eval.yml`
-#: turns rc 4 into `::warning::model roster NOT refreshed` and falls back
-#: to each fixture's pinned arms, so the evals keep running against the
-#: last known-good roster and a human is told why. The alternative — trim
-#: to some length and publish — is silent and permanent: a trim has no
-#: order available that the previous roster did not write, which is the
-#: whole of the residue rule, so it would publish a roster whose contents
-#: a planter chose and the next run would read that back as its own
-#: history. A denial of service that says so beats a wrong answer that
-#: does not.
-UNCAPPED_CARRY_CEILING = 10_000
 
 
 class RosterRefusal(Exception):
@@ -1334,108 +1311,35 @@ def _clean_previous_arms(previous, warn,
 
     A malformed entry is skipped, not fatal.
 
-    Shape-checked with `PREVIOUS_ARM_ID_RE`, not just type-checked: a
-    previous roster is a JSON file read off a public branch, and every id
-    from it is interpolated verbatim into render_summary's Markdown, which
-    eval.yml prints to stdout — where GitHub parses `::` workflow commands.
-    An offender is dropped the same way a bad-shaped `entry` is, and the
-    warning names no value — only the count.
+    Shape-checked with `PREVIOUS_ARM_ID_RE`, not just type-checked: every
+    id from here is interpolated verbatim into render_summary's Markdown,
+    which eval.yml prints to stdout — where GitHub parses `::` workflow
+    commands. An offender is dropped the same way a bad-shaped `entry` is,
+    and the warning names no value — only the count.
 
     Dedup is a SET membership test, not `entry not in ids` over the
     growing output list — the latter is O(n^2) and measured at 5.4s for
     40,000 entries, 37s for 100,000, publishing a 2.7MB roster with no
     warning at all. It has no deterministic regression floor and is not
     getting one: its only symptom is wall-clock time, and a timing
-    assertion is a flaky test, not a floor (N8, #129 review round 7). What
-    actually BOUNDS the work here is the cap below — the dedup is a
-    constant-factor courtesy on the way to it, keeping the scan linear
-    rather than quadratic while the input is still unbounded. The accepted
-    list is also capped at
-    `PREVIOUS_ARMS_CAP`, and the warning names the dropped COUNT, never a
-    dropped id.
+    assertion is a flaky test, not a floor (N8, #129 review round 7).
 
-    Past the cap, RELEVANCE decides who survives, not spelling (S3, #129
-    review round 7; B1, round 9; B1', round 10). An id this run can
-    actually say something about — see `_relevance`, whose whole answer is
-    the live catalogue and the census read through the fold relation — is
-    kept ahead of filler, and only then does the id order break ties. THE
-    INVARIANT, the same one written over the `catalogue_seen` cap and
-    carrying the same round-12 qualifier: every census key with in-window
-    turns that any entry folds onto keeps at least one entry that folds
-    onto it — unless the census names more entries than a cap can rank,
-    in which case the lowest-turn of them go, never a live catalogue id
-    — every id the usage alias map needs as a hop from such a key to the
-    numerator that collects its turns survives the caps AND the
-    ageing window, and an entry that neither the live catalogue nor the
-    census needs, under any spelling, never outranks one that either
-    does. The plain
-    `sorted(ids)[:PREVIOUS_ARMS_CAP]` this
-    replaces had the same alphabetical-head shape S2 fixes for
-    `catalogue_seen`. `relevant` is REQUIRED, and was an optional
-    None-defaulting spelling-only fallback until F-2 (#129 review round
-    10): `compute_roster` is the only caller and always has a
-    `_Relevance` to give, so the fallback was unreachable — a clause with
-    no mutation that can turn the suite red is deleted rather than kept as
-    belt-and-braces.
+    THE 500-ENTRY CAP THAT USED TO BOUND THIS LIST IS GONE (#147, ADR
+    0001 decision 4), and so is the tier ordering it evicted by. Six
+    review rounds went into finding an order that could decide which
+    entries of an UNBOUNDED, PUBLICLY-WRITABLE `arms` list survived
+    WITHOUT reading anything that list's own writer controlled. This list
+    comes from `evals/roster.yml` now, so it is bounded by review: a line
+    cannot get into it without a merged commit. Every remaining effect of
+    the cap was on honest data — a repository with more than 500 reviewed
+    arms would have had its own history evicted by an order chosen to
+    defeat an attacker who can no longer write the file.
 
-    WHAT THE CAP BOUNDS IS TIER 1 ONLY — the entries the live catalogue
-    or the census names, this run's own live ids excepted — and the
-    TIER-3 RESIDUE is carried whole (A, round 10, generalised in round
-    11; the live-id exemption is round 12's should-fix 1). This sentence
-    said "TIER 1 AND TIER 2" until round 12's nit 1: tier 2 was deleted
-    in the round-11 continuation, `rank.__doc__` says THERE IS NO TIER 2
-    and the policy says WHAT THE CAP BOUNDS IS TIER 1 ONLY, and this was
-    the last present-tense survivor of it in this file. The F-1 test pins
-    the invariant sentence, not the prose around it, which is exactly why
-    it slipped. For a residue entry
-    there is nothing left to decide by but `last_seen` and the id, both
-    of them written by whoever writes `previous.json`. Round 10 stopped
-    evicting only when the census named NOTHING, which was a test on the
-    whole file: one in-window turn under any key at all — an unrelated
-    live id, a router alias, a planted id — made it false and put 500
-    plants back in front of a real arm on the id order. See
-    `UNCAPPED_CARRY_CEILING` for the one bound that is left, and
-    TestIssue67Review11 for the rows.
-
-    THE CAP GOVERNS ONLY WHAT IS CARRIED FORWARD (F3, #129 review round
-    8) — hence the two lists. A real departed arm with ZERO census turns
-    is neither listed by the Models API nor named by the census, so 500
-    fillers still capped it out and `retired_since_last` — the line
-    render_summary leads with — still lost the only retirement that
-    happened; round 7's own test avoided the case by giving the arm 8,000
-    turns. Nothing in the data tells a filler apart from a real id there,
-    so no ordering can fix it: `reported` is the whole shape-validated
-    list, and every arm the previous roster named that is not an arm now
-    is reported retired. `carried` is that list capped, and is what
-    attribution and the hold-over check read.
-
-    WHAT THAT COSTS, measured rather than assumed: `retired_since_last`
-    is now as long as the previous roster's own `arms` list. A planted
-    38MB `previous.json` holding a million arm entries publishes a 96MB
-    roster and 64MB of `render_summary` Markdown, where the cap used to
-    hold both to 500 entries. It is linear in the input, it needs write
-    access to `eval-results` to reach at all, and it does not compound:
-    the next run's `previous.json` is the small roster this harness
-    itself publishes, not the planted one.
-
-    WHERE THOSE TWO NUMBERS LAND, which the sizes alone do not say (N2,
-    #129 review round 9). The Markdown goes to `$GITHUB_STEP_SUMMARY`
-    (eval.yml's roster step pipes `render_summary`'s stdout there), and
-    GitHub caps a step's summary at 1 MiB — crossed at roughly 16,000
-    planted arms, past which the roster summary is simply not rendered
-    for the humans reading the run, while the job itself still succeeds.
-    The JSON goes to `roster/latest.json`, committed to `eval-results`,
-    and GitHub refuses a push containing a file over 100 MB — reached at
-    roughly a million arms, at which point the whole results/badge commit
-    step fails, taking the run's badge and results with it even though
-    neither has anything to do with the roster.
-
-    A size cap would not buy the invariant back — it would only move the
-    number at which a real retirement can be hidden, from 501 planted
-    entries to whatever the new cap is, and hiding it is the failure
-    this exists to remove. Nothing in the data tells a filler apart from
-    a real id, so the choice is between reporting all of them and
-    silently reporting the wrong 500.
+    THE TWO LISTS STAY FOR NOW and are equal (F3, #129 review round 8):
+    `reported` is every arm the previous roster named, which is what
+    `added_since_last`/`retired_since_last` compare against, and `carried`
+    is what attribution and the hold-over check read. The split existed
+    because the cap made them differ.
     """
     if previous is None:
         return [], []
@@ -1459,67 +1363,7 @@ def _clean_previous_arms(previous, warn,
     if skipped:
         warn(f"previous roster: skipped {skipped} `arms` entry/entries that are "
              f"not an object with a well-formed model-id-shaped `id`")
-    carried = ids
-    if len(ids) > PREVIOUS_ARMS_CAP:
-        # THE CAP BOUNDS ONLY WHAT THE TWO DOCUMENTS NAME (round 11's
-        # census-silent generalisation of A, #129 review round 10). Tier 1
-        # is decided by the live catalogue and the census; the tier-3
-        # RESIDUE is the entries neither names under any spelling, and
-        # there is nothing left to order those by but `last_seen` and the
-        # id — both written by whoever writes `previous.json`. So the
-        # residue is carried whole rather than filled or evicted by id
-        # order, and `UNCAPPED_CARRY_CEILING` is the one bound left.
-        order = relevant.rank(ids)
-        # THE CAP NEVER EVICTS ONE OF THIS RUN'S OWN LIVE `api_ids`
-        # (SHOULD-FIX 1, #129 review round 12) — the exemption
-        # `_update_catalogue_seen` has had since round 6 and this cap did
-        # not. Being TIER 1 is not being carried: tier 1 is the set the cap
-        # BOUNDS, and a live id with no census turns of its own sorts
-        # `(1, 0, id)` — last inside tier 1 — so it was the first thing the
-        # cap took. Eviction here is not a trim either, it is a
-        # RETIREMENT: `compute_roster` reads `carried` for the hold-over,
-        # so an evicted live arm falls through to the exit-bar branch and
-        # is published `RETIRED ... (0.0% of rankable census usage)`.
-        # Measured through `main()` before this: 502 live ids, all of them
-        # previous arms and no census at all, retired 1 live model; 5,000
-        # retired 4,499; 10,001 retired 9,500 while `catalogue_seen`
-        # published all 10,001 of the same ids. The census half is
-        # planter-reachable at 501 in-window census keys named in `arms`,
-        # which retires a live arm whose own usage the census records
-        # under a dated alias and publishes `below the 2% exit bar ...
-        # (5.0% of rankable census usage)` — a sentence its own
-        # parenthesis contradicts.
-        #
-        # `residue` is still partitioned by the TIER, not by `is_live`, and
-        # that is deliberate: it is what keeps tier-1 route (b) — a live
-        # catalogue id is tier 1 — load-bearing here. Drop that route and
-        # every live id lands in `live` AND in `residue`, which duplicates
-        # it in `carried` and counts it against `UNCAPPED_CARRY_CEILING`,
-        # so a 10,001-live-arm previous roster refuses to publish instead
-        # of publishing (TestIssue67Review12::test_route_b_keeps_a_live
-        # _previous_arm_out_of_the_residue_the_ceiling_bounds).
-        live = [i for i in ids if relevant.is_live(i)]
-        named = [i for i in ids
-                 if order[i][0] < 3 and not relevant.is_live(i)]
-        residue = [i for i in ids if order[i][0] == 3]
-        room = max(0, PREVIOUS_ARMS_CAP - len(live))
-        if len(named) > room:
-            dropped = len(named) - room
-            named = sorted(named, key=lambda i: order[i])[:room]
-            warn(f"previous roster: dropped {dropped} `arms` entry/entries past "
-                 f"the {PREVIOUS_ARMS_CAP}-entry cap")
-        carried = live + named + residue
-        # The ceiling bounds the RESIDUE, which is the part no cap will
-        # order — not the carried list, which is the residue plus at most
-        # `PREVIOUS_ARMS_CAP` entries the census itself bounded (N-2, #129
-        # review round 11).
-        if len(residue) > UNCAPPED_CARRY_CEILING:
-            raise RosterRefusal(
-                f"refusing to publish: the census names nothing about "
-                f"{len(residue)} of the previous roster's `arms` entries, so "
-                f"they cannot be ordered by anything the input does not write "
-                f"— past the {UNCAPPED_CARRY_CEILING}-entry ceiling")
-    return ids, carried
+    return ids, ids
 
 
 def _as_date(moment: datetime) -> str:
@@ -1552,13 +1396,6 @@ def _as_date(moment: datetime) -> str:
     happen. `_clean_catalogue_seen` used to; it no longer does.
     """
     return moment.astimezone(timezone.utc).date().isoformat()
-
-
-#: `catalogue_seen`'s cap (N3, merged into S3's rewrite): a length past
-#: which the O(1)-membership dedup below still leaves an unbounded, ever-
-#: growing publish. This run's own live api ids are never evicted by it —
-#: see `_update_catalogue_seen` — only accumulated HISTORY is trimmed.
-CATALOGUE_SEEN_CAP = 500
 
 
 def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
@@ -1674,52 +1511,32 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
 
 def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
                            policy: dict, warn, relevant) -> list[dict]:
-    """This run's `catalogue_seen` history: refresh, evict, cap.
+    """This run's `catalogue_seen` history: refresh and age.
 
     Every id THIS run's Models API actually listed gets its `last_seen`
     refreshed to today — that is the only way an id's clock resets. Every
     other previously-seen id keeps its own `last_seen`, and is DROPPED
     once that is older than `policy["catalogue_seen_max_age_days"]`. That
-    is the ONLY way an id leaves this history now: the two exemptions
-    that used to sit beside it are deleted (#147), because this history
-    is a reviewed file on `main` and an exemption exists to disbelieve a
-    date, which is a thing a trusted record does not need. A model id
-    planted directly in
-    `catalogue_seen` on `eval-results` (an untrusted branch, per the
-    module docstring) that the Models API never actually returns has no
-    way to get its `last_seen` refreshed, so it ages out on its own once
-    the census stops naming it; reverting the plant on the branch is not
-    even necessary.
+    is the ONLY way an id leaves this history: the two exemptions that
+    used to sit beside the age, and the 500-entry cap that used to sit
+    after it, are all deleted (#147, ADR 0001 decision 4). A model id
+    planted directly in a previous roster that the Models API never
+    actually returns has no way to get its `last_seen` refreshed, so it
+    ages out on its own.
 
     Ageing out ends a plant's future effect. It
     does not undo a retirement the plant already caused (N6, #129 review
     round 7): a model whose measured share the fabricated usage pushed
-    under the exit bar is retired, and by the time the plant expires that
+    under the exit bar is proposed for retirement, and once it is merged the
     model is no longer a previous arm at all — so the exit bar no longer
     applies to it, and a trickle of real usage (a dozen turns a week, say)
     never re-seats it. It comes back only by clearing the ENTRY bar, by
     being the newest in its tier, or by hand.
 
-    The cap NEVER evicts one of this run's own live `api_ids` — only
-    accumulated history beyond them — so `catalogue_seen` stays a
-    superset of `api_ids`, the property `usage_share`'s docstring and
-    `compute_roster`'s callers rely on. Past that, `relevant` (the same
-    tiering `_clean_previous_arms` takes — see `_relevance`) decides who
-    survives, ahead of any date, and eviction there is PERMANENT for the
-    same reason ageing out is not a repair.
-
-    THE INVARIANT the cap's order satisfies, written out over the sort
-    below as well: every census key with in-window turns that any entry
-    folds onto keeps at least one entry that folds onto it — unless the
-    census names more entries than a cap can rank, in which case the
-    lowest-turn of them go, never a live catalogue id — every id the
-    usage alias map needs as a hop from such a key to the numerator that
-    collects its turns survives the caps AND the ageing window, and an
-    entry that neither the live catalogue nor the census needs, under
-    any spelling, never outranks one that either does. What the cap bounds is
-    tier 1; the tier-3 residue — entries neither document names, which
-    nothing but the previous roster itself can order — is carried whole,
-    and `UNCAPPED_CARRY_CEILING` is the one bound left on it.
+    `catalogue_seen` stays a superset of `api_ids` — every live id is
+    stamped today by the loop above and nothing evicts it — which is the
+    property `usage_share`'s docstring and `compute_roster`'s callers
+    rely on.
     """
     today = _as_date(now)
     by_id = {e["id"]: e["last_seen"] for e in previous_entries}
@@ -1760,118 +1577,16 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     if aged_out:
         warn(f"catalogue_seen: dropped {aged_out} entry/entries older than "
              f"the {policy['catalogue_seen_max_age_days']}-day window")
-    api_id_set = set(api_ids)
-    live = sorted(i for i in survivors if i in api_id_set)
-    historical = [i for i in survivors if i not in api_id_set]
-    # THE INVARIANT the cap's order has to satisfy (F1, #129 review round
-    # 8; B1, round 9; B1', round 10; B, round 11; clause 1 qualified in
-    # round 12): EVERY CENSUS KEY WITH IN-WINDOW TURNS THAT ANY ENTRY
-    # FOLDS ONTO KEEPS AT LEAST ONE ENTRY THAT FOLDS ONTO IT — UNLESS THE
-    # CENSUS NAMES MORE ENTRIES THAN A CAP CAN RANK, IN WHICH CASE THE
-    # LOWEST-TURN OF THEM GO, NEVER A LIVE CATALOGUE ID — EVERY ID THE
-    # USAGE ALIAS MAP NEEDS AS A HOP FROM SUCH A KEY TO THE NUMERATOR
-    # THAT COLLECTS ITS TURNS SURVIVES THE CAPS AND THE AGEING
-    # WINDOW, AND AN ENTRY THAT NEITHER THE LIVE CATALOGUE NOR THE
-    # CENSUS NEEDS, UNDER ANY SPELLING, NEVER OUTRANKS ONE THAT EITHER
-    # DOES. Who
-    # survives is decided by data the previous roster does not write — the
-    # live catalogue and the census — never by anything the previous
-    # roster asserts about itself, and never by how an entry is spelled.
-    # Entries neither document needs are not ordered at all: they are the
-    # TIER-3 RESIDUE, and the cap neither fills its room from them nor
-    # evicts them, because the only things left to order them by —
-    # `last_seen` and the id — are both written by whoever writes
-    # `previous.json`. `UNCAPPED_CARRY_CEILING` is what bounds them.
-    #
-    # Age does not satisfy it, spelling does not satisfy it, and neither
-    # does a predicate over the spelling. Round 6 sorted by id, and
-    # `PREVIOUS_ARM_ID_RE` accepts a leading digit, so 500 low-sorting ids
-    # evicted a real since-retired model by nothing but its spelling.
-    # Round 7 sorted by `last_seen` — but the planter writes `last_seen`
-    # too: a future date clamps to today and every bare string migrates
-    # stamped today, so 498 entries dated today, or 500 bare strings,
-    # still evicted it. Round 8 put census relevance first but decided it
-    # by SPELLING (`SNAPSHOT_SUFFIX` wants eight DIGITS, not a date), so
-    # 500 ids spelled `<census key>-00000000` … `-00000499` — or spelled
-    # as dated versions of the victim's own id — read as census-named and
-    # evicted it again. Round 9 keyed it on the two documents at last, but
-    # in one direction only — census key -> base, never entry -> census
-    # key — so a DATED departed arm whose usage the census records under
-    # its UNDATED alias was relevant to nothing, and 500 filler entries
-    # evicted it just the same. Round 10 stopped evicting when the census
-    # named NOTHING, but asked that of the whole FILE — one in-window turn
-    # under any key at all, an unrelated live id or a router alias or a
-    # planted id or a 4,000-character junk string, made it false and put
-    # the 500 plants back in front on the id order, a fifth time. Either
-    # way the evicted model's turns left the usage denominator and an
-    # unrelated model was published as carrying 100.0% of census usage
-    # where it really carried 9.09%, or 33.3%. AND THE MIRROR IMAGE IS
-    # JUST AS REACHABLE, which four rounds of writing this comment as an
-    # inflation story missed: the evicted model's own share is only
-    # rescued by the newest-in-tier fallback when it happens to BE the
-    # newest in its tier. Put a newer model beside it and there is no
-    # fallback, so a previous arm carrying 57.1% of the window is
-    # measured against the exit bar at the 0.0% the broken chain leaves
-    # it and published `RETIRED: below the 2% exit bar for the last 8
-    # weeks (0.0% of rankable census usage)` — measured through `main()`
-    # from 498 filler arms, or 496 planted history entries. That is not
-    # a transient wrong number: by the time the plant ages out the model
-    # is no longer a previous arm, so the exit bar no longer applies and
-    # real usage never re-seats it.
-    #
-    # EVICTION IS PERMANENT. The next run's `previous.json` is this run's
-    # output, so an id dropped here is gone from the history for good —
-    # the same "ageing out is not a repair" property N6 wrote down for a
-    # retirement (see this function's docstring). That is why the order
-    # may not be something the input can dictate.
-    #
-    # ONE composite key, not a stack of stable sorts: `_Relevance.rank`
-    # answers the whole question at once — tier, then the census's own
-    # in-window turns descending, then the id. Round 11 needed that
-    # because the tiers were not independent of one another (the deleted
-    # tier 2 was decided by which entries were tier 1), and it is kept
-    # because the cap reads one key for both the partition and the order,
-    # so a stack of sorts could disagree with the partition it sorts.
-    # `last_seen` is gone from the order entirely: the previous roster
-    # writes it, it never decided anything the id did not already decide,
-    # and a rung after a total order cannot fire.
-    #
-    # The id term of that key is what makes the order TOTAL, and it is the
-    # only thing that does: `historical` is no longer pre-sorted (F-2,
-    # #129 review round 10 — a pre-sort made the key's own id term
-    # redundant, so dropping it left the suite green, which is a defence
-    # with no floor). `test_the_cap_breaks_a_tie_by_id_not_by_input_order`
-    # is the floor: same input, two orders, one published roster.
-    #
-    # THE CAP APPLIES TO `named` ONLY (round 11). `residue` is appended
-    # whole, so `catalogue_seen` can exceed `CATALOGUE_SEEN_CAP` — the cap
-    # bounds what an untrusted input does not order, and the ceiling
-    # bounds the rest. Live ids stay exempt from both, which is what keeps
-    # `catalogue_seen` a superset of `api_ids`.
-    order = relevant.rank(historical)
-    named = sorted((i for i in historical if order[i][0] < 3),
-                   key=lambda i: order[i])
-    residue = [i for i in historical if order[i][0] == 3]
-    room = max(0, CATALOGUE_SEEN_CAP - len(live))
-    kept = live + named[:room] + residue
-    # The ceiling bounds the RESIDUE — the part no cap will order — and
-    # not `kept`, which also holds this run's own live ids (N-2, #129
-    # review round 11). Bounding `kept` would make a catalogue larger than
-    # the ceiling refuse to publish, which is the never-evict-a-live-id
-    # rule failing closed for a reason that has nothing to do with an
-    # untrusted input.
-    if len(residue) > UNCAPPED_CARRY_CEILING:
-        raise RosterRefusal(
-            f"refusing to publish: the census names nothing about "
-            f"{len(residue)} of `catalogue_seen`'s entries, so they cannot be "
-            f"ordered by anything the input does not write — past the "
-            f"{UNCAPPED_CARRY_CEILING}-entry ceiling")
-    dropped = len(survivors) - len(kept)
-    if dropped:
-        warn(f"catalogue_seen: dropped {dropped} entry/entries past the "
-             f"{CATALOGUE_SEEN_CAP}-entry cap")
-    return [{"id": model_id, "last_seen": survivors[model_id]}
-           for model_id in sorted(kept)]
+    # NO LENGTH CAP (#147). What is left is every surviving entry, in id
+    # order. The cap that used to sit here evicted accumulated history by
+    # an order built from the live catalogue and the census — an order
+    # designed so that an untrusted `previous.json` could not choose its
+    # own survivors. This history is committed on `main` now, so its
+    # length is a reviewed fact and evicting from it would only ever
+    # discard something a human merged.
+    return [{"id": model_id, "last_seen": last_seen}
+           for model_id, last_seen in sorted(survivors.items())]
+
 
 
 def _in_window_totals(counts: dict, weeks: set[str], rungs: list[list[str]],
@@ -2127,17 +1842,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     catalogue_seen_entries = _update_catalogue_seen(
         api_ids, previous_seen, now, policy, warn, relevant=relevant)
     catalogue_seen = {e["id"] for e in catalogue_seen_entries}
-
-    # ONE count-only line for the state both caps just took (A, #129
-    # review round 10, generalised in round 11), emitted here because it
-    # is a fact about the run rather than about either list, and only when
-    # a cap would otherwise have fired — a five-entry history carried
-    # "uncapped" is not news.
-    if (len(carried_arms) > PREVIOUS_ARMS_CAP
-            or len(catalogue_seen_entries) > CATALOGUE_SEEN_CAP):
-        warn(f"entries the census names nothing about are carried uncapped "
-             f"rather than evicted by an order the previous roster writes "
-             f"({len(carried_arms) + len(catalogue_seen_entries)} entries)")
 
     # Built AFTER `available` is ordered and the two capped lists exist:
     # rule (3) of `_usage_alias_map` needs this run's own capability order
