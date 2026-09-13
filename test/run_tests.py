@@ -28469,9 +28469,19 @@ class TestIssue67Review12(unittest.TestCase):
 
         Both rows are red on `7ef5780` in the same direction — there is no
         second measurement there, so both retire. MUTATION: setting the
-        tolerance to 0.0 holds the g = 101 row over as well (the clause
-        the tolerance sits in is dead at 0, which is why it is not 0);
-        setting it to 0.10 retires the g = 102 row."""
+        tolerance to 0.0 holds the g = 101 row over as well; setting it
+        to 0.10 retires the g = 102 row.
+
+        WHY THE NUMBER IS NOT 0 — corrected, because the reason changed
+        under this row and the row did not notice. It used to be that at
+        0 the comparison was DEAD, implied by the `anchored_held >= exit
+        bar` conjunct beside it, so F-2 would have deleted the whole
+        clause. BLOCKER A (#129 review round 13) deleted that conjunct,
+        so the fraction is now the only test and 0 is live: it reads
+        `previous_only > 0` and vetoes every retirement whose two
+        denominators differ at all. The reason 0 is still wrong is a
+        COST, not deadness — see `RETIREMENT_ANCHOR_TOLERANCE`'s own
+        comment, "THAT IS NOT A FREE STRENGTHENING"."""
         for g, expect_retired in ((101, True), (102, False)):
             with self.subTest(previous_only_turns=g):
                 counts = {self._VICTIM: {self.W[0]: 200},
