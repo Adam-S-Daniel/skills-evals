@@ -16,6 +16,7 @@ import hashlib
 import itertools
 import json
 import math
+import builtins
 import os
 import re
 import shutil
@@ -20244,6 +20245,87 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         self.assertNotIn("nothing served and nothing recorded, anywhere", readme)
         gh = self.FAKE_GH.read_text(encoding="utf-8")
         self.assertIn("Nothing settable is read to decide it", gh)
+
+
+class TestIssue143(unittest.TestCase):
+    """`_read_matched` must not let an unreadable regular file crash the
+    scorer with an uncaught `PermissionError`/`OSError` — it should be
+    skipped, leaving `require_present`'s absent/empty branch to name the
+    check as failed instead.
+    """
+
+    def test_chmod_000_file_is_skipped_not_raised(self):
+        # Real-permissions pin. Running as root (as this container does)
+        # makes chmod 000 non-restrictive for reads, so this self-skips —
+        # the monkeypatch test below exercises the same code path without
+        # depending on the calling user's privilege.
+        if os.getuid() == 0:
+            self.skipTest("running as root: chmod 000 does not block reads")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "secret.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("hello\n")
+            os.chmod(path, 0o000)
+            try:
+                text, names = objective._read_matched(tmp, ["*.txt"])
+                self.assertEqual(text, "")
+                self.assertEqual(names, [])
+                ok, msg = objective.file_matches(tmp, ["*.txt"], require_present=True)
+                self.assertFalse(ok)
+                self.assertIn("empty", msg)
+            finally:
+                os.chmod(path, 0o644)
+
+    def test_unreadable_file_is_skipped_not_raised(self):
+        # Privilege-independent pin: monkeypatch `open` to raise
+        # PermissionError for the matched path, exercising the same
+        # try/except regardless of who runs the suite.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "secret.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("hello\n")
+
+            real_open = builtins.open
+
+            def fake_open(file, *args, **kwargs):
+                if os.fspath(file) == path:
+                    raise PermissionError(13, "Permission denied", path)
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch("builtins.open", fake_open):
+                text, names = objective._read_matched(tmp, ["*.txt"])
+            self.assertEqual(text, "")
+            self.assertEqual(names, [])
+
+            with mock.patch("builtins.open", fake_open):
+                ok, msg = objective.file_matches(tmp, ["*.txt"], require_present=True)
+            self.assertFalse(ok)
+            self.assertIn("empty", msg)
+
+    def test_one_unreadable_file_does_not_hide_a_readable_sibling(self):
+        # The skip must be per-file: a readable match alongside an
+        # unreadable one still contributes its own text and name.
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "a-bad.txt")
+            good = os.path.join(tmp, "b-good.txt")
+            with open(bad, "w", encoding="utf-8") as f:
+                f.write("forbidden\n")
+            with open(good, "w", encoding="utf-8") as f:
+                f.write("readable\n")
+
+            real_open = builtins.open
+
+            def fake_open(file, *args, **kwargs):
+                if os.fspath(file) == bad:
+                    raise PermissionError(13, "Permission denied", bad)
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch("builtins.open", fake_open):
+                text, names = objective._read_matched(tmp, ["*.txt"])
+            self.assertEqual(names, ["b-good.txt"])
+            self.assertIn("readable", text)
+            self.assertNotIn("forbidden", text)
+
 
 if __name__ == "__main__":
     unittest.main()

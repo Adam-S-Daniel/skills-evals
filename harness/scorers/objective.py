@@ -981,15 +981,26 @@ def file_digests_match(workspace: str, patterns: list[str],
 
 
 def _read_matched(workspace: str, patterns: list[str]) -> tuple[str, list[str]]:
-    """Concatenate every file the patterns match; return (text, relative paths)."""
+    """Concatenate every file the patterns match; return (text, relative paths).
+
+    A matched file that can't actually be opened (permission bits an agent
+    left restrictive, e.g.) is skipped rather than raising — an unreadable
+    file contributes nothing to the concatenated text, and `require_present`'s
+    existing absent/empty branch is what names the check as failed, not an
+    uncaught `OSError`/`PermissionError` crashing the whole scorer.
+    """
     chunks, names = [], []
     for pattern in patterns:
         for path in sorted(glob.glob(os.path.join(workspace, pattern))):
             if not os.path.isfile(path):
                 continue
+            try:
+                with open(path, encoding="utf-8", errors="replace") as f:
+                    text = f.read()
+            except OSError:
+                continue
             names.append(os.path.relpath(path, workspace).replace(os.sep, "/"))
-            with open(path, encoding="utf-8", errors="replace") as f:
-                chunks.append(f.read())
+            chunks.append(text)
     return "\n".join(chunks), names
 
 
