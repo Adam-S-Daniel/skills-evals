@@ -19,6 +19,7 @@ import io
 import itertools
 import json
 import math
+import builtins
 import os
 import re
 import shutil
@@ -6373,9 +6374,42 @@ class TestIssue63Review(unittest.TestCase):
         # no fixture references it — validating every registries.yml entry
         # unconditionally would make eval.yml's real run (which never checks
         # it out) fail on every dispatch.
-        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        self.assertFalse(registries["agentskills-private"]["path"].is_dir())
-        run_eval._validate_registry_paths(registries)  # must not raise
+        #
+        # Issue #142: the original version of this test resolved the
+        # sibling default against REPO_ROOT (this repo's own checkout) and
+        # asserted the resulting path is NOT a directory — an environment
+        # fact, not a property of the code. It fails on any machine that
+        # happens to have the real fleet repo `agentskills-private` cloned
+        # beside `skills-evals` (this account's own workstation does).
+        # Hermetic fix, mirroring `test_registry_not_found_ends_via_exit_2_
+        # with_message_naming_path` above: resolve against a throwaway
+        # base_dir instead of REPO_ROOT, and prove
+        # `_validate_registry_paths` doesn't raise regardless of whether
+        # that base_dir's sibling exists — by creating, then removing, a
+        # real `agentskills-private` directory beside a throwaway copy
+        # (never beside the real checkout).
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            fake_repo_root = tmp_root / "skills-evals"
+            fake_repo_root.mkdir()
+            sibling = tmp_root / "agentskills-private"
+
+            # Condition 1: no sibling checkout present.
+            self.assertFalse(sibling.is_dir())
+            registries = run_eval.resolve_registries(None, None, fake_repo_root)
+            self.assertEqual(registries["agentskills-private"]["path"], sibling.resolve())
+            run_eval._validate_registry_paths(registries)  # must not raise
+
+            # Condition 2: a real sibling checkout now exists.
+            sibling.mkdir()
+            registries = run_eval.resolve_registries(None, None, fake_repo_root)
+            self.assertTrue(registries["agentskills-private"]["path"].is_dir())
+            run_eval._validate_registry_paths(registries)  # must not raise either way
+
+            # Tear back down to condition 1, proving removal doesn't matter.
+            sibling.rmdir()
+            run_eval._validate_registry_paths(
+                run_eval.resolve_registries(None, None, fake_repo_root))
 
     def test_override_path_is_resolved_to_an_absolute_path(self):
         # Previously only the sibling-default branch called .resolve(); an
@@ -20304,6 +20338,174 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         self.assertNotIn("nothing served and nothing recorded, anywhere", readme)
         gh = self.FAKE_GH.read_text(encoding="utf-8")
         self.assertIn("Nothing settable is read to decide it", gh)
+
+class TestIssue143(unittest.TestCase):
+    """`_read_matched` must not let an unreadable regular file crash the
+    scorer with an uncaught `PermissionError`/`OSError` — it should be
+    skipped, leaving `require_present`'s absent/empty branch to name the
+    check as failed instead.
+    """
+
+    def test_chmod_000_file_is_skipped_not_raised(self):
+        # Real-permissions pin. Running as root (as this container does)
+        # makes chmod 000 non-restrictive for reads, so this self-skips —
+        # the monkeypatch test below exercises the same code path without
+        # depending on the calling user's privilege.
+        if os.getuid() == 0:
+            self.skipTest("running as root: chmod 000 does not block reads")
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "secret.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("hello\n")
+            os.chmod(path, 0o000)
+            try:
+                text, names = objective._read_matched(tmp, ["*.txt"])
+                self.assertEqual(text, "")
+                self.assertEqual(names, [])
+                ok, msg = objective.file_matches(tmp, ["*.txt"], require_present=True)
+                self.assertFalse(ok)
+                self.assertIn("empty", msg)
+            finally:
+                os.chmod(path, 0o644)
+
+    def test_unreadable_file_is_skipped_not_raised(self):
+        # Privilege-independent pin: monkeypatch `open` to raise
+        # PermissionError for the matched path, exercising the same
+        # try/except regardless of who runs the suite.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "secret.txt")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("hello\n")
+
+            real_open = builtins.open
+
+            def fake_open(file, *args, **kwargs):
+                if os.fspath(file) == path:
+                    raise PermissionError(13, "Permission denied", path)
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch("builtins.open", fake_open):
+                text, names = objective._read_matched(tmp, ["*.txt"])
+            self.assertEqual(text, "")
+            self.assertEqual(names, [])
+
+            with mock.patch("builtins.open", fake_open):
+                ok, msg = objective.file_matches(tmp, ["*.txt"], require_present=True)
+            self.assertFalse(ok)
+            self.assertIn("empty", msg)
+
+    def test_one_unreadable_file_does_not_hide_a_readable_sibling(self):
+        # The skip must be per-file: a readable match alongside an
+        # unreadable one still contributes its own text and name.
+        with tempfile.TemporaryDirectory() as tmp:
+            bad = os.path.join(tmp, "a-bad.txt")
+            good = os.path.join(tmp, "b-good.txt")
+            with open(bad, "w", encoding="utf-8") as f:
+                f.write("forbidden\n")
+            with open(good, "w", encoding="utf-8") as f:
+                f.write("readable\n")
+
+            real_open = builtins.open
+
+            def fake_open(file, *args, **kwargs):
+                if os.fspath(file) == bad:
+                    raise PermissionError(13, "Permission denied", bad)
+                return real_open(file, *args, **kwargs)
+
+            with mock.patch("builtins.open", fake_open):
+                text, names = objective._read_matched(tmp, ["*.txt"])
+            self.assertEqual(names, ["b-good.txt"])
+            self.assertIn("readable", text)
+            self.assertNotIn("forbidden", text)
+
+
+class TestIssue144(unittest.TestCase):
+    """`materialize_workspace` must not leak its `mkdtemp` workspace on an
+    exception it didn't ask the caller to own — only `SetupFailedError` is
+    exempt (`_run_arm`'s own handler needs that half-built directory)."""
+
+    def _seed(self, tmp):
+        seed = Path(tmp) / "seed"
+        seed.mkdir()
+        (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
+        return seed
+
+    def _scoped_mkdtemp(self, scratch):
+        """A `tempfile.mkdtemp` that always lands inside `scratch`, so
+        counting `WORKSPACE_PREFIX` directories there counts exactly the
+        workspaces this test's own calls created — nothing from any other
+        suite running concurrently in this container.
+        """
+        real_mkdtemp = tempfile.mkdtemp
+
+        def scoped(prefix=None, dir=None):
+            return real_mkdtemp(prefix=prefix, dir=str(scratch))
+        return scoped
+
+    def _leaked(self, scratch):
+        return len([d for d in os.listdir(scratch)
+                    if d.startswith(run_eval.WORKSPACE_PREFIX)])
+
+    def test_git_commit_failure_does_not_leak_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch-tmpdir"
+            scratch.mkdir()
+            seed = self._seed(tmp)
+
+            real_git = run_eval._git
+
+            def fake_git(*args, cwd):
+                if args and args[0] == "commit":
+                    raise subprocess.CalledProcessError(1, ["git", "commit"])
+                return real_git(*args, cwd=cwd)
+
+            self.assertEqual(self._leaked(scratch), 0)
+            with mock.patch.object(run_eval.tempfile, "mkdtemp",
+                                   self._scoped_mkdtemp(scratch)), \
+                mock.patch.object(run_eval, "_git", fake_git):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    run_eval.materialize_workspace(seed)
+            self.assertEqual(self._leaked(scratch), 0)
+
+    def test_run_setup_oserror_does_not_leak_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch-tmpdir"
+            scratch.mkdir()
+            seed = self._seed(tmp)
+            fixture = {"setup": "true", "skill": "some-skill", "prompt": "do it"}
+
+            self.assertEqual(self._leaked(scratch), 0)
+            with mock.patch.object(run_eval.tempfile, "mkdtemp",
+                                   self._scoped_mkdtemp(scratch)), \
+                mock.patch.object(run_eval, "run_setup", side_effect=OSError("boom")):
+                with self.assertRaises(OSError):
+                    run_eval.materialize_workspace(seed, fixture)
+            self.assertEqual(self._leaked(scratch), 0)
+
+    def test_setup_failed_error_still_leaves_workspace_for_the_caller(self):
+        # The one exempt path: `_run_arm`'s SetupFailedError handler is the
+        # one that cleans this workspace up (see
+        # test_run_arm_short_circuits_before_the_agent_on_a_failing_setup
+        # above) — materialize_workspace itself must NOT rmtree it here, or
+        # that handler has nothing left to inspect/clean.
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch-tmpdir"
+            scratch.mkdir()
+            seed = self._seed(tmp)
+            fixture = {"setup": "true", "skill": "some-skill", "prompt": "do it"}
+
+            def failing_setup(workspace, fixture):
+                return {"error": "setup_failed", "detail": "nope"}
+
+            self.assertEqual(self._leaked(scratch), 0)
+            with mock.patch.object(run_eval.tempfile, "mkdtemp",
+                                   self._scoped_mkdtemp(scratch)), \
+                mock.patch.object(run_eval, "run_setup", failing_setup):
+                with self.assertRaises(run_eval.SetupFailedError) as ctx:
+                    run_eval.materialize_workspace(seed, fixture)
+            self.assertEqual(self._leaked(scratch), 1)
+            shutil.rmtree(ctx.exception.workspace, ignore_errors=True)
+
 
 # ---------------------------------------------------------------------------
 # Per-issue test discovery (#97)
