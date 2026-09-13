@@ -1,0 +1,55 @@
+{
+  "arm": "with_guidance_stub",
+  "timestamp": "20260913T221638Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.012848150000000001,
+    "num_turns": 1,
+    "duration_ms": 1841,
+    "usage": {
+      "input_tokens": 9,
+      "cache_creation_input_tokens": 7773,
+      "cache_read_input_tokens": 16369,
+      "output_tokens": 172,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 7773
+      },
+      "inference_geo": "not_available",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "token-visible-under-stub",
+      "passed": true,
+      "detail": "transcript matches"
+    }
+  ],
+  "judge": null,
+  "subject": "guidance",
+  "section": "security",
+  "mode": "stub",
+  "bytes": 3426,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (v003e5c4e, 3426 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-haiku-4-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "MSKOGWRV-3757"
+  }
+}

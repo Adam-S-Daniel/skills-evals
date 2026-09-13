@@ -1,0 +1,55 @@
+{
+  "arm": "with_guidance_full_minus_section",
+  "timestamp": "20260913T221638Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.030325650000000003,
+    "num_turns": 1,
+    "duration_ms": 2452,
+    "usage": {
+      "input_tokens": 9,
+      "cache_creation_input_tokens": 21819,
+      "cache_read_input_tokens": 16369,
+      "output_tokens": 156,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 21819
+      },
+      "inference_geo": "not_available",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "token-visible-under-full-minus-section",
+      "passed": true,
+      "detail": "transcript matches"
+    }
+  ],
+  "judge": null,
+  "subject": "guidance",
+  "section": "security",
+  "mode": "full-minus-section",
+  "bytes": 55495,
+  "delivery": "user",
+  "hook_verdict": "fleet-guidance: installed (ve4e66098, 55495 bytes) -> ~/.claude/CLAUDE.md",
+  "installed": true,
+  "decoy": null,
+  "hook_returncode": 0,
+  "guard": {
+    "expected": true,
+    "observed": true,
+    "contaminated": false,
+    "ok": true,
+    "model": "claude-haiku-4-5",
+    "setting_sources": "user,project",
+    "error": null,
+    "reply": "MSKOGWRV-3757"
+  }
+}
