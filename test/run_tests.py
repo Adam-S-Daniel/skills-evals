@@ -5766,30 +5766,6 @@ class TestIssue67Review(unittest.TestCase):
         previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
         text = roster.render_summary(self._compute(previous=previous))
         self.assertIn("No change to the arm set", text)
-
-    def test_summary_says_inputs_unavailable_when_the_previous_was_unreadable(self):
-        text = roster.render_summary(self._compute(previous=None),
-                                     previous_state="unavailable")
-        self.assertIn("roster inputs unavailable", text.lower())
-        self.assertNotIn("No change to the arm set", text)
-
-    def test_main_reports_unavailable_when_the_previous_roster_is_corrupt(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            models = Path(tmp) / "models.json"
-            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
-            previous = Path(tmp) / "previous.json"
-            previous.write_text("{ this is not json", encoding="utf-8")
-            out = Path(tmp) / "roster" / "latest.json"
-            argv = ["roster.py", "--models", str(models), "--policy",
-                    str(self.POLICY), "--previous", str(previous), "--out", str(out)]
-            stdout, stderr = io.StringIO(), io.StringIO()
-            with mock.patch.object(sys, "argv", argv), \
-                 contextlib.redirect_stdout(stdout), \
-                 contextlib.redirect_stderr(stderr):
-                rc = roster.main()
-            printed = stdout.getvalue()
-        self.assertEqual(rc, 0)
-        self.assertIn("roster inputs unavailable", printed.lower())
     # --- S13: a half-read catalogue is refused, loudly and without a body ---
 
     def test_a_models_api_that_never_stops_paging_is_refused(self):
@@ -6740,25 +6716,6 @@ exit 0
 
     # --- item 10: `compared_to_previous` collapses "unreadable previous"
     #              into "first run" — publish a third state -------------
-
-    def test_previous_state_is_published_and_the_summary_reads_it_off_the_roster(self):
-        """The JSON and the Markdown used to disagree by construction: main()
-        derived render_summary's `previous_state` argument from
-        `previous_problem` itself, while the roster dict only ever recorded
-        `compared_to_previous: previous is not None` — collapsing "the
-        previous roster was there but unreadable" into the same `False` as
-        "there is no previous roster (first run)". Publishing the state in
-        the roster means render_summary(roster), with no override, already
-        agrees with what actually happened."""
-        result = roster.compute_roster(
-            models_doc=self._models_doc(), census_doc=self._census_doc(),
-            policy=self._policy(), previous=None, now=self.NOW,
-            previous_problem="previous.json is present but unreadable (JSONDecodeError)")
-        self.assertEqual(result["previous_state"], "unavailable")
-        text = roster.render_summary(result)
-        self.assertIn("roster inputs unavailable", text.lower())
-        self.assertNotIn("No change to the arm set", text)
-        self.assertNotIn("First published roster here", text)
 
     def test_previous_state_distinguishes_none_from_compared(self):
         first_run = roster.compute_roster(
@@ -24856,7 +24813,18 @@ class TestIssue67Review7(unittest.TestCase):
         `RecursionError` instead, which escaped as a traceback carrying
         the runner's absolute paths where the module docstring promises a
         one-line named message. Driven through `main()`, with files on
-        disk."""
+        disk.
+
+        THE VERDICT MOVED IN #147 AND THE PROPERTY DID NOT. The previous
+        roster is the COMMITTED `evals/roster.yml` now, so a
+        present-but-unreadable one is a repo defect rather than a fact
+        about an unprotected branch: it is fatal (rc 5) and nothing is
+        published, where it used to be a warning the run carried on past.
+        What this row is about — NAMED, one line, no traceback, no
+        absolute path — is unchanged, and it is now asserted on the fatal
+        path instead of the warning one. `read_trusted_roster` carries
+        the same `RecursionError` catch `read_json` does, for the same
+        reason."""
         with tempfile.TemporaryDirectory() as tmp:
             models = Path(tmp) / "models.json"
             models.write_text(json.dumps(TestIssue67._models_doc()),
@@ -24873,11 +24841,13 @@ class TestIssue67Review7(unittest.TestCase):
                  contextlib.redirect_stderr(stderr):
                 rc = roster.main()
             err = stderr.getvalue()
-            self.assertEqual(rc, 0, stdout.getvalue() + err)
+            self.assertEqual(rc, 5, stdout.getvalue() + err)
             self.assertIn("previous.json is present but unreadable", err)
             self.assertIn("RecursionError", err)
             self.assertNotIn("Traceback", err)
-            self.assertTrue(out.is_file())
+            self.assertNotIn(tmp, err, "no absolute path reaches the log")
+            self.assertFalse(out.exists(),
+                             "nothing is published on the fatal path")
         # Mutation check (manual): narrowing the `except` back to
         # `(json.JSONDecodeError, OSError, UnicodeDecodeError)` lets the
         # RecursionError propagate out of `main()` — the test errors.
@@ -30477,11 +30447,18 @@ class TestIssue147(unittest.TestCase):
                 except ValueError:
                     problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
                                     f"is not an ISO YYYY-MM-DD date")
-        ids = arm_ids + [e["id"] for e in (seen if isinstance(seen, list) else [])
-                         if isinstance(e, dict) and isinstance(e.get("id"), str)]
-        duplicates = sorted({i for i in ids if ids.count(i) > 1})
-        if duplicates:
-            problems.append(f"{len(duplicates)} id(s) appear more than once")
+        # WITHIN each list, never across the two: an arm is expected to
+        # appear in `catalogue_seen` as well — it is a model the Models
+        # API has been observed to list, which is the whole point of the
+        # history — so a cross-list check would fire on every honest
+        # roster.
+        seen_ids = [e["id"] for e in (seen if isinstance(seen, list) else [])
+                    if isinstance(e, dict) and isinstance(e.get("id"), str)]
+        for label, ids in (("arms", arm_ids), ("catalogue_seen", seen_ids)):
+            duplicates = sorted({i for i in ids if ids.count(i) > 1})
+            if duplicates:
+                problems.append(f"{len(duplicates)} id(s) appear more than "
+                                f"once in `{label}`")
         return problems
 
     def test_the_committed_roster_parses_and_passes_every_lint_clause(self):
@@ -30537,7 +30514,7 @@ class TestIssue147(unittest.TestCase):
             ("duplicate ids",
              mutate(arms=[{"id": "claude-sonnet-5", "reason": "a"},
                           {"id": "claude-sonnet-5", "reason": "b"}]),
-             "more than once"),
+             "more than once in `arms`"),
             ("not a mapping", ["claude-sonnet-5"], "not a mapping"),
         ]
         for name, document, needle in rows:
@@ -30688,6 +30665,311 @@ class TestIssue147(unittest.TestCase):
         self.assertIn("evals/roster.yml", step["run"],
                       "the preflight model comes from the trusted file too — "
                       "it used to be read out of the published roster")
+    # --- item 3: the computed roster is a PROPOSAL -----------------------
+
+    #: A canned live catalogue and census, deliberately independent of
+    #: TestIssue67's: this class is about the PROPOSAL, and reusing a
+    #: fixture built for the seating policy would make a change to that
+    #: policy read as a change here.
+    NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+
+    @classmethod
+    def _policy(cls):
+        return roster.load_policy(REPO_ROOT / "evals" / "roster-policy.yml")
+
+    @staticmethod
+    def _model(model_id, created="2026-01-01T00:00:00Z"):
+        return {"id": model_id, "created_at": created}
+
+    @classmethod
+    def _models(cls, *ids):
+        return {"fetched_at": "2026-09-13T11:00:00Z",
+                "models": [cls._model(i) for i in ids]}
+
+    @classmethod
+    def _census(cls, counts, weeks_back=1):
+        generated = (cls.NOW - timedelta(days=weeks_back)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        return {"generated_at": generated, "counts": counts}
+
+    @classmethod
+    def _week(cls, back=1):
+        return timeweeks.iso_week(cls.NOW - timedelta(weeks=back))
+
+    @classmethod
+    def _compute(cls, models=None, census=None, previous=None, warn=None,
+                 **kwargs):
+        return roster.compute_roster(
+            models_doc=models if models is not None
+            else cls._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8"),
+            census_doc=census, policy=cls._policy(), previous=previous,
+            now=cls.NOW, warn=warn or (lambda _m: None), **kwargs)
+
+    def test_the_computed_roster_carries_a_proposal(self):
+        result = self._compute(previous=self._committed())
+        self.assertIn("proposal", result)
+        self.assertIn(result["proposal"]["status"], ("same", "differs"))
+        self.assertIsInstance(result["proposal"]["changes"], list)
+        for change in result["proposal"]["changes"]:
+            self.assertEqual(sorted(change),
+                             ["field", "from", "kind", "reason", "to"])
+            self.assertIn(change["kind"], ("seat", "catalogue_seen"))
+            self.assertTrue(change["reason"].strip(),
+                            "a change nobody can explain is one nobody will "
+                            "override when it is wrong")
+
+    def _steady_state(self):
+        """A catalogue, census and previous roster that reproduce the
+        COMMITTED roster exactly — the state a run in a quiet week is in,
+        and the one that must propose nothing.
+
+        The haiku and opus models are inside the policy's cooling-off, so
+        the newest-per-tier rule seats neither and the committed roster's
+        single arm is the whole arm set; the judge is then the strongest
+        non-arm and the preflight the cheapest, which is what the
+        committed file already says.
+        """
+        committed = self._committed()
+        arm = committed["arms"][0]["id"]
+        fresh = (self.NOW - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            self._model(committed["preflight"]["id"], fresh),
+            self._model(arm, "2026-01-01T00:00:00Z"),
+            self._model(committed["judge"]["id"], fresh)]}
+        previous = {**committed, "catalogue_seen": [
+            {"id": i, "last_seen": self.NOW.date().isoformat()}
+            for i in sorted((committed["preflight"]["id"], arm,
+                             committed["judge"]["id"]))]}
+        return models, self._census({arm: {self._week(): 400}}), previous
+
+    def test_a_proposal_that_changes_nothing_says_same(self):
+        # The catalogue is exactly the committed roster's three seats and
+        # the census names the committed arm alone, so there is nothing to
+        # move. `same` is what closes the tracking issue.
+        models, census, previous = self._steady_state()
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(result["proposal"]["status"], "same",
+                         result["proposal"]["changes"])
+        self.assertEqual([a["id"] for a in result["arms"]],
+                         [a["id"] for a in self._committed()["arms"]])
+        self.assertFalse(result["judge"]["is_arm"])
+
+    def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
+        # A percentage with no counts behind it is unfalsifiable from the
+        # outside: 100.0% of two turns and 100.0% of nine thousand are the
+        # same string and are not the same claim.
+        committed = self._committed()
+        arm = committed["arms"][0]["id"]
+        result = self._compute(
+            models=self._models("claude-haiku-4-5", arm, "claude-opus-7"),
+            census=self._census({arm: {self._week(): 100},
+                                 "claude-opus-7": {self._week(): 900}}),
+            previous=committed)
+        seats = [c for c in result["proposal"]["changes"] if c["kind"] == "seat"
+                 and c["field"] == "arms"]
+        self.assertTrue(seats, result["proposal"])
+        for change in seats:
+            with self.subTest(change=change["to"] or change["from"]):
+                self.assertRegex(
+                    change["reason"],
+                    r"\d+ of the window's \d+ rankable, attributable census "
+                    r"turns — ",
+                    "a proposed seat has to carry the numerator and the "
+                    "denominator its share was taken over")
+
+    def test_render_summary_prints_the_proposal_in_words(self):
+        committed = self._committed()
+        arm = committed["arms"][0]["id"]
+        result = self._compute(
+            models=self._models("claude-haiku-4-5", arm, "claude-opus-7"),
+            census=self._census({arm: {self._week(): 100},
+                                 "claude-opus-7": {self._week(): 900}}),
+            previous=committed)
+        text = roster.render_summary(result)
+        self.assertIn("### Proposal", text)
+        self.assertIn("evals/roster.yml", text)
+        self.assertIn("rankable, attributable census turns", text)
+        self.assertIn("Nothing changes until a human merges it", text)
+
+    def test_render_summary_says_so_when_there_is_nothing_to_propose(self):
+        models, census, previous = self._steady_state()
+        text = roster.render_summary(
+            self._compute(models=models, census=census, previous=previous))
+        self.assertIn("Nothing to propose", text)
+
+    def test_an_unreadable_committed_roster_is_fatal_not_a_state(self):
+        """`previous_state: "unavailable"` was the right posture while the
+        previous roster came off `eval-results` — an unreadable file on an
+        unprotected branch is an ordinary fact and carrying on is the only
+        option. It is not an ordinary fact about `main`: it means somebody
+        merged a broken file, and the proposal an empty `previous` would
+        produce is "seat every live model", which is the shape a reviewer
+        is most likely to wave through.
+        """
+        with self.assertRaises(roster.TrustedRosterUnreadable) as ctx:
+            self._compute(previous=None,
+                          previous_problem="roster.yml is present but "
+                                           "unreadable (YAMLError)")
+        self.assertIn("defect in this repository", str(ctx.exception))
+        self.assertNotIn("unavailable",
+                         self._compute(previous=None)["previous_state"])
+
+    def test_main_exits_nonzero_and_publishes_nothing_on_a_broken_committed_roster(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(
+                self._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8")), encoding="utf-8")
+            previous = Path(tmp) / "roster.yml"
+            previous.write_text("arms: [\n", encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(REPO_ROOT / "evals" / "roster-policy.yml"),
+                    "--previous", str(previous), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertEqual(rc, 5, stderr.getvalue())
+            self.assertFalse(out.exists(), "nothing is published")
+            self.assertIn("defect in this repository", stderr.getvalue())
+
+    def test_main_reads_the_committed_roster_as_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(
+                self._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8")), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(REPO_ROOT / "evals" / "roster-policy.yml"),
+                    "--previous", str(self.ROSTER), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertEqual(rc, 0, stderr.getvalue())
+            published = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(published["previous_state"], "compared",
+                             "the committed YAML roster was read and compared")
+            self.assertIn("proposal", published)
+            self.assertIn("### Proposal", stdout.getvalue())
+
+    # --- the census size bound (the one bound left on an untrusted input) --
+
+    def test_a_census_naming_too_many_keys_is_refused_by_name(self):
+        counts = {f"claude-sonnet-5-{n:08d}": {self._week(): 1}
+                  for n in range(roster.CENSUS_MAX_KEYS + 1)}
+        with self.assertRaises(roster.RosterRefusal) as ctx:
+            self._compute(census=self._census(counts),
+                          previous=self._committed())
+        message = str(ctx.exception)
+        self.assertIn(str(roster.CENSUS_MAX_KEYS), message)
+        self.assertIn("model keys", message)
+        # Counts only, never a key: this message reaches a public log.
+        self.assertNotIn("claude-sonnet-5-0", message)
+
+    def test_a_census_just_under_the_key_bound_is_read(self):
+        # The negative control. Without it the row above passes for a
+        # refusal that fires on every census.
+        counts = {f"claude-sonnet-5-{n:08d}": {self._week(): 1}
+                  for n in range(10)}
+        result = self._compute(census=self._census(counts),
+                               previous=self._committed())
+        self.assertTrue(result["arms"])
+
+    def test_a_census_file_past_the_byte_bound_is_refused_before_it_is_parsed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(
+                self._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8")), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            # ONE key holding a huge string — the shape a key count
+            # structurally cannot bound, and the reason the byte check
+            # runs before the parser allocates anything.
+            census.write_bytes(b'{"counts": {"x": "'
+                               + b"a" * (roster.CENSUS_MAX_BYTES + 1)
+                               + b'"}}')
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(REPO_ROOT / "evals" / "roster-policy.yml"),
+                    "--census", str(census),
+                    "--previous", str(self.ROSTER), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertEqual(rc, 4, stderr.getvalue())
+            self.assertIn(str(roster.CENSUS_MAX_BYTES), stderr.getvalue())
+            self.assertFalse(out.exists())
+
+    # --- scripts/render_roster_yaml.py -----------------------------------
+
+    def test_render_roster_yaml_round_trips_through_the_lint(self):
+        """The renderer's output has to be a file the lint above accepts,
+        or a merged proposal breaks the very selection it was proposing
+        for."""
+        models, census, previous = self._steady_state()
+        computed = self._compute(models=models, census=census, previous=previous)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "latest.json"
+            source.write_text(json.dumps(computed), encoding="utf-8")
+            out = Path(tmp) / "roster.yml"
+            rc = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts" / "render_roster_yaml.py"),
+                 "--roster", str(source), "--out", str(out),
+                 "--run-id", "1234567890",
+                 "--eval-results-commit", "abc1234"],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(rc.returncode, 0, rc.stderr)
+            rendered = yaml.safe_load(out.read_text(encoding="utf-8"))
+        self.assertEqual(self._lint(rendered), [])
+        self.assertEqual(rendered["provenance"]["run_id"], "1234567890")
+        self.assertEqual(rendered["provenance"]["eval_results_commit"], "abc1234")
+        self.assertEqual([a["id"] for a in rendered["arms"]],
+                         [a["id"] for a in computed["arms"]])
+        self.assertEqual(rendered["judge"]["id"], computed["judge"]["id"])
+        self.assertEqual(rendered["preflight"]["id"], computed["preflight"]["id"])
+
+    def test_render_roster_yaml_reads_no_environment(self):
+        """N7, carried forward: eval.yml runs this in the same shell that
+        exports the Anthropic bearer, so the credential is in this
+        process's environment even though nothing here wants it. A module
+        that reads no environment cannot leak one — and the run id and the
+        eval-results commit are ARGUMENTS for that reason, not
+        `$GITHUB_RUN_ID` read from underneath.
+        """
+        source = (REPO_ROOT / "scripts" / "render_roster_yaml.py").read_text(
+            encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in (
+                    "environ", "getenv"):
+                self.fail(f"render_roster_yaml.py reads the environment "
+                          f"(line {node.lineno})")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    self.assertNotEqual(alias.name, "os")
+            if isinstance(node, ast.ImportFrom):
+                self.assertNotEqual(node.module, "os")
+
+    def test_render_roster_yaml_refuses_a_roster_with_no_arms(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "latest.json"
+            source.write_text(json.dumps({"arms": []}), encoding="utf-8")
+            out = Path(tmp) / "roster.yml"
+            rc = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts" / "render_roster_yaml.py"),
+                 "--roster", str(source), "--out", str(out),
+                 "--run-id", "1", "--eval-results-commit", "a"],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(rc.returncode, 1)
+            self.assertFalse(out.exists())
 
 if __name__ == "__main__":
     if "--measure-previous-only-distribution" in sys.argv:

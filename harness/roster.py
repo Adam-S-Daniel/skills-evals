@@ -190,6 +190,56 @@ def load_json(path: str | Path | None) -> dict | None:
     return read_json(path)[0]
 
 
+class TrustedRosterUnreadable(Exception):
+    """The COMMITTED roster is present and cannot be read (#147, ADR 0001).
+
+    A REPO DEFECT, not an untrusted input, and that is the whole reason it
+    is fatal where every other bad document here is a named one-line skip.
+    `evals/roster.yml` lives on `main`, behind a ruleset and a reviewed
+    commit; if it does not parse, somebody merged a broken file, and the
+    honest response is to refuse and say so rather than to compute a
+    proposal against nothing and publish the difference as though the
+    roster had been empty. Publishing that difference would propose
+    seating every live model at once, which is exactly the shape a
+    reviewer is most likely to wave through.
+
+    The `previous_state: "unavailable"` this replaces was the opposite
+    posture, and it was right while `previous` came off `eval-results`:
+    an unreadable file there is an ordinary fact about an unprotected
+    branch, and carrying on was the only option. It is not an ordinary
+    fact about `main`.
+    """
+
+
+def read_trusted_roster(path: str | Path | None) -> tuple[dict | None, str | None]:
+    """(document, problem) for the COMMITTED roster — YAML or JSON, by
+    CONTENT rather than by extension.
+
+    The trusted roster is YAML because a human edits it in a reviewed pull
+    request; a `--previous` pointing at a published `roster/latest.json` is
+    JSON. JSON is a subset of YAML 1.2, so one parser reads both and there
+    is no extension sniff to get wrong.
+
+    Absent or empty is NOT a problem — it is a genuine first run, and the
+    same `git show ... || true` shape `read_json` documents leaves an empty
+    file behind. Present-and-unparseable IS one, and `main()` turns it into
+    `TrustedRosterUnreadable`.
+    """
+    if path is None:
+        return None, None
+    file_path = Path(path)
+    if not file_path.is_file() or file_path.stat().st_size == 0:
+        return None, None
+    try:
+        with open(file_path, encoding="utf-8") as f:
+            document = yaml.safe_load(f)
+    except (yaml.YAMLError, ValueError, OSError, RecursionError) as exc:
+        return None, f"{file_path.name} is present but unreadable ({type(exc).__name__})"
+    if not isinstance(document, dict):
+        return None, f"{file_path.name} is not a mapping"
+    return document, None
+
+
 def tier_rungs(policy: dict) -> list[list[str]]:
     """The capability ladder, weakest rung first, each rung a list of peers.
 
@@ -885,11 +935,20 @@ def _format_share(value: float, bar: float, *, under: bool = False) -> str:
     return fixed[-1]
 
 
-def usage_share(counts: dict, model_id: str, weeks: list[str],
-                rungs: list[list[str]], aliases: dict | None = None,
-                api_ids=None, previous_arms=None, catalogue_seen=None) -> float:
-    """Percent of RANKED, ATTRIBUTABLE census usage over `weeks` that
-    `model_id` carries.
+def usage_numbers(counts: dict, model_id: str, weeks: list[str],
+                  rungs: list[list[str]], aliases: dict | None = None,
+                  api_ids=None, previous_arms=None, catalogue_seen=None) -> tuple[int, int]:
+    """(numerator, denominator) of RANKED, ATTRIBUTABLE census usage over
+    `weeks` — the turns credited to `model_id` and the turns the whole
+    rankable, attributable window holds. `usage_share` is the percentage
+    of the second the first is.
+
+    SPLIT OUT OF `usage_share` (#147) because a PROPOSAL has a reader a
+    threshold does not. A share is what a policy bar compares against; the
+    two counts are what a human merging a seat change needs in order to
+    check the claim, and a percentage with no denominator behind it asks
+    them to take one on trust. Both numbers come from ONE walk over the
+    census, so the share and the counts beside it can never disagree.
 
     The denominator counts every model the census saw THAT THE LADDER CAN
     PLACE, including ones the Models API no longer lists — work done on a
@@ -947,6 +1006,22 @@ def usage_share(counts: dict, model_id: str, weeks: list[str],
                 total += n
                 if folded == target:
                     mine += n
+    return mine, total
+
+
+def usage_share(counts: dict, model_id: str, weeks: list[str],
+                rungs: list[list[str]], aliases: dict | None = None,
+                api_ids=None, previous_arms=None, catalogue_seen=None) -> float:
+    """Percent of RANKED, ATTRIBUTABLE census usage over `weeks` that
+    `model_id` carries — `usage_numbers`' two counts as one percentage.
+
+    Every property of the denominator is written on `usage_numbers`; this
+    function is the division and the division's own arithmetic hazard, and
+    nothing else.
+    """
+    mine, total = usage_numbers(counts, model_id, weeks, rungs, aliases,
+                                api_ids=api_ids, previous_arms=previous_arms,
+                                catalogue_seen=catalogue_seen)
     # Integer multiplication FIRST, then a single true division of two ints
     # — not `100.0 * mine / total`, which multiplies the float `100.0` by
     # the int `mine` and so converts `mine` to a float before dividing at
@@ -1040,6 +1115,31 @@ def _clean_models(models_doc: dict, warn) -> list[dict]:
 #: above this in a single census cell is a bad value, not real usage — see
 #: `_clean_counts`'s upper-bound check.
 MAX_WEEKLY_TURNS = 10 ** 7
+
+#: A SIZE BOUND ON THE CENSUS DOCUMENT, in model keys (ADR 0001's "what
+#: stays"). The census is the one input that is still attacker-writable
+#: after #147 — it comes off `eval-results` — and every other bound on an
+#: untrusted input went with the caps it belonged to, because those caps
+#: existed to approximate a trusted history and the trusted history is a
+#: file on `main` now. What did NOT go away is that an unbounded document
+#: can exhaust the runner: `compute_roster` walks the census once per
+#: window per model, so the work is linear in keys times seats.
+#:
+#: 50,000 keys is two orders of magnitude past anything honest — the real
+#: census names the handful of models one account has run — and an order
+#: of magnitude inside the shape this module has been measured against
+#: (380,000 in-window keys, a 16.2 MB file, 6.87s). It is a refusal, not a
+#: trim: a trim would publish a proposal whose contents an untrusted input
+#: chose, and `eval.yml` turns a refusal into a `::warning::` with the
+#: committed roster still deciding every model the eval runs on.
+CENSUS_MAX_KEYS = 50_000
+
+#: The same bound in BYTES, checked before the file is parsed at all —
+#: keys alone cannot bound a document that is one key holding a
+#: hundred-megabyte string, and `json.load` has already allocated it by the
+#: time a key count could fire. 32 MiB is twice the largest census this
+#: module has been run against.
+CENSUS_MAX_BYTES = 32 * 1024 * 1024
 
 
 def _clean_counts(counts, warn) -> dict:
@@ -2268,6 +2368,17 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                    census_problem: str | None = None,
                    previous_problem: str | None = None) -> dict:
     warn = warn or _stderr
+    # FATAL, and it is the first thing checked (#147, ADR 0001). `previous`
+    # is the COMMITTED roster now. A present-but-unreadable one is a repo
+    # defect on a protected branch, not a fact about an unprotected one, so
+    # there is no honest roster to compute a proposal against — and the
+    # proposal an empty `previous` would produce ("seat every live model")
+    # is the shape a reviewer is most likely to wave through.
+    if previous_problem:
+        raise TrustedRosterUnreadable(
+            f"refusing to compute a roster: the committed roster is "
+            f"{previous_problem}, which is a defect in this repository "
+            f"rather than a fact about an untrusted input")
     rungs = tier_rungs(policy)
 
     entries = _clean_models(models_doc, warn)
@@ -2279,7 +2390,15 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 for m in entries if rung_of(m["id"], rungs) is None]
     unranked_ids = {u["id"] for u in unranked}
 
-    counts = _clean_counts((census_doc or {}).get("counts"), warn)
+    raw_counts = (census_doc or {}).get("counts")
+    # THE ONE BOUND LEFT ON AN UNTRUSTED INPUT (ADR 0001's "what stays").
+    # Counts only, never a key, like every other message about this file.
+    if isinstance(raw_counts, dict) and len(raw_counts) > CENSUS_MAX_KEYS:
+        raise RosterRefusal(
+            f"refusing to read the census: it names {len(raw_counts)} model "
+            f"keys, past the {CENSUS_MAX_KEYS}-key bound — an untrusted "
+            f"document may not decide how much work this run does")
+    counts = _clean_counts(raw_counts, warn)
 
     # Two alias maps, deliberately. SEATING may only collapse a snapshot onto
     # an alias the catalogue actually offers — an alias that exists solely as
@@ -2912,15 +3031,32 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                        f"rankable census usage)")
             retired.append({"id": model_id, "reason": why})
 
-    # Three states, not two: `previous is not None` alone collapses "the
-    # previous roster was there but unreadable" into the same false as
-    # "there is no previous roster (first run)" — the exact gap that let the
-    # published JSON and the rendered Markdown disagree about what happened,
-    # since main() derived the Markdown's state from `previous_problem`
-    # directly while the JSON only ever recorded the boolean. Publishing the
-    # state itself means every caller reads the same fact.
-    previous_state = ("unavailable" if previous_problem
-                      else "compared" if previous is not None else "none")
+    # TWO STATES NOW, NOT THREE (#147). `unavailable` is gone because it
+    # cannot happen and go unremarked any more: an unreadable committed
+    # roster raises `TrustedRosterUnreadable` at the top of this function
+    # and nothing is published at all. What is left is the honest pair —
+    # `compared` when there was a roster with something in it to compare
+    # against, and `none` when this run had nothing (a genuine first run,
+    # or a committed roster naming neither an arm nor an observed model).
+    previous_state = ("compared"
+                      if previous is not None and (previous_arms or previous_seen)
+                      else "none")
+
+    # THE EVIDENCE EVERY PROPOSED SEAT CHANGE CARRIES, computed here
+    # because it needs the windows and the alias map. A seat being ADDED
+    # is argued over the ENTER window, a seat being RETIRED over the EXIT
+    # window — the same two windows the decisions themselves were taken
+    # over, so the numbers a reviewer reads are the numbers the policy
+    # read.
+    evidence: dict[str, str] = {}
+    for model_id, weeks_for, bar in (
+            [(a["id"], enter_weeks, policy["arm_enter_usage_pct"]) for a in arms]
+            + [(i, exit_weeks, policy["arm_exit_usage_pct"])
+               for i in previous_arms if i not in arm_ids]):
+        mine, total = usage_numbers(counts, model_id, weeks_for, rungs, aliases,
+                                    api_ids=api_ids, previous_arms=previous_arms,
+                                    catalogue_seen=catalogue_seen)
+        evidence[model_id] = _usage_words(mine, total, bar)
 
     return {
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -2939,7 +3075,99 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         "retired_since_last": retired,
         "added_since_last": added,
         "catalogue_seen": catalogue_seen_entries,
+        "proposal": _proposal(previous, previous_arms, previous_seen, arms,
+                              judge, preflight, catalogue_seen_entries,
+                              evidence),
     }
+
+
+#: HOW MANY PROPOSED CHANGES THE STEP SUMMARY RENDERS. The JSON carries
+#: every one of them; this bounds the MARKDOWN, because GitHub caps a step
+#: summary at 1 MiB and a summary that is not rendered at all tells a
+#: reader nothing. The list is as long as the committed roster's own
+#: `arms` plus `catalogue_seen`, which is a reviewed length — so this is a
+#: readability bound, not a defence, and it says out loud how many rows it
+#: withheld rather than truncating silently.
+PROPOSAL_SUMMARY_ROWS = 50
+
+
+def _usage_words(mine: int, total: int, bar: float) -> str:
+    """A seat's evidence IN WORDS: numerator, denominator, and the share
+    they make — the three things a reviewer merging a proposal needs and a
+    bare percentage does not give them (#147).
+
+    A percentage on its own is unfalsifiable from the outside: `100.0%` of
+    two turns and `100.0%` of nine thousand are the same string and are not
+    the same claim. The counts are what separate them.
+    """
+    if total <= 0:
+        return ("no rankable, attributable census turns in the window at all, "
+                "so there is no share to quote")
+    return (f"{mine} of the window's {total} rankable, attributable census "
+            f"turns — {_format_share((100 * mine) / total, bar)}%")
+
+
+def _change(kind: str, field: str, from_value, to_value, reason: str) -> dict:
+    return {"kind": kind, "field": field, "from": from_value,
+            "to": to_value, "reason": reason}
+
+
+def _proposal(previous: dict | None, previous_arms: list[str],
+              previous_seen: list[dict], arms: list[dict], judge: dict,
+              preflight: dict, catalogue_seen_entries: list[dict],
+              evidence: dict) -> dict:
+    """What this run would CHANGE about the committed roster, and why.
+
+    THE OUTPUT OF THIS MODULE IS A PROPOSAL, NOT THE RUNNING SET (ADR
+    0001, decision 2). `previous` is `evals/roster.yml`, committed on a
+    ruleset-protected branch; the arms, judge, preflight and
+    `catalogue_seen` computed above are what the Models API and the census
+    say the roster SHOULD be. The difference is a diff for a human, and
+    `eval.yml` pushes it to the bot-owned `roster/proposal` branch and
+    files one tracking issue carrying it.
+
+    WHY EVERY CHANGE CARRIES ITS EVIDENCE. A proposal is only as honest as
+    the census, and the census stays attacker-writable — that is what ADR
+    0001's last consequence says this design does NOT buy. The defence is
+    that a reviewer sees the numbers the claim rests on beside the claim,
+    in a diff on `main`'s history rather than silently on a branch nobody
+    reads, and that reverting the merge undoes it.
+
+    `status` is "same" or "differs"; on "same" `eval.yml` closes the
+    tracking issue rather than leaving a stale one open.
+    """
+    changes: list[dict] = []
+    arm_ids = [a["id"] for a in arms]
+    previous_arm_ids = list(previous_arms)
+    for arm in arms:
+        if arm["id"] not in previous_arm_ids:
+            changes.append(_change(
+                "seat", "arms", None, arm["id"],
+                f"seat it: {arm['reason']}; {evidence.get(arm['id'], '')}".rstrip("; ")))
+    for model_id in sorted(previous_arm_ids):
+        if model_id not in arm_ids:
+            changes.append(_change(
+                "seat", "arms", model_id, None,
+                f"retire it: {evidence.get(model_id, 'no evidence recorded')}"))
+    for field, entry in (("judge", judge), ("preflight", preflight)):
+        before = (previous or {}).get(field) if isinstance(previous, dict) else None
+        before_id = before.get("id") if isinstance(before, dict) else None
+        if before_id != entry["id"]:
+            changes.append(_change("seat", field, before_id, entry["id"],
+                                   entry["reason"]))
+    seen_before = {e["id"] for e in previous_seen}
+    seen_now = {e["id"] for e in catalogue_seen_entries}
+    for model_id in sorted(seen_now - seen_before):
+        changes.append(_change(
+            "catalogue_seen", "catalogue_seen", None, model_id,
+            "the Models API listed it this run, so this harness has now "
+            "observed it"))
+    for model_id in sorted(seen_before - seen_now):
+        changes.append(_change(
+            "catalogue_seen", "catalogue_seen", model_id, None,
+            "its last_seen is older than the policy's catalogue_seen window "
+            "and the Models API did not list it this run"))
+    return {"status": "differs" if changes else "same", "changes": changes}
 
 
 def render_summary(roster: dict, previous_state: str = "auto") -> str:
@@ -2948,10 +3176,21 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     `previous_state` is "auto" (read the roster's own `previous_state`
     field — this is what every real caller does now that compute_roster
     fills it in, so the JSON and this Markdown cannot disagree) or an
-    explicit override ("unavailable", "compared", "none") for exercising one
-    state in isolation. The three cases are NOT interchangeable: printing
-    "No change to the arm set since the last run" on a first run, or when
-    the comparison never happened, is a claim about a comparison nobody made.
+    explicit override ("compared", "none") for exercising one state in
+    isolation. The two are NOT interchangeable: printing "No change to the
+    arm set since the last run" on a first run is a claim about a
+    comparison nobody made.
+
+    THE "unavailable" STATE IS GONE (#147). It said "a previous roster was
+    published but could not be read this run", which was an ordinary fact
+    about the unprotected branch `previous` used to come from. The
+    committed roster cannot be unreadable and unremarkable at the same
+    time: `compute_roster` raises and nothing is published.
+
+    THE PROPOSAL SECTION is what this summary is now FOR. The table below
+    it describes a roster that is not in force anywhere until a human
+    merges it; the proposal says what merging it would change, with the
+    numerator and denominator behind each seat.
     """
     lines = ["### Model roster", ""]
     changed = roster["added_since_last"] or roster["retired_since_last"]
@@ -2959,10 +3198,7 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
         previous_state = (roster.get("previous_state") or
                           ("compared" if roster.get("compared_to_previous")
                            else "none"))
-    if previous_state == "unavailable":
-        lines += ["**Roster inputs unavailable** — the previous roster could not "
-                  "be read this run, so nothing was compared against it.", ""]
-    elif changed:
+    if changed:
         lines.append("**Roster changed since the last run.**")
         for entry in roster["added_since_last"]:
             lines.append(f"- added `{entry['id']}` — {entry['reason']}")
@@ -2988,8 +3224,33 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     if roster["judge"].get("is_arm"):
         lines += ["", "> **The judge is also an arm this run.** Do not run it as "
                       "the arm and the judge of the same eval."]
+    proposal = roster.get("proposal") or {}
+    lines += ["", "### Proposal", ""]
+    if proposal.get("status") == "differs":
+        lines += ["**This run proposes a change to the committed roster** "
+                  "(`evals/roster.yml`). Nothing changes until a human merges "
+                  "it; the eval ran on the committed roster, as it always does.",
+                  ""]
+        lines += ["| Change | Field | From | To | Why |",
+                  "| --- | --- | --- | --- | --- |"]
+        changes = proposal.get("changes") or []
+        for change in changes[:PROPOSAL_SUMMARY_ROWS]:
+            before = f"`{change['from']}`" if change["from"] else "—"
+            after = f"`{change['to']}`" if change["to"] else "—"
+            lines.append(f"| {change['kind']} | {change['field']} | {before} "
+                         f"| {after} | {change['reason']} |")
+        lines.append("")
+        if len(changes) > PROPOSAL_SUMMARY_ROWS:
+            lines += [f"…and {len(changes) - PROPOSAL_SUMMARY_ROWS} further "
+                      f"change(s), not rendered here. The published roster "
+                      f"carries all of them, and so does the proposed file on "
+                      f"`roster/proposal`.", ""]
+    else:
+        lines += ["The committed roster (`evals/roster.yml`) already says what "
+                  "this run would compute. Nothing to propose.", ""]
+
     source = roster["source"]
-    lines += ["", f"Models API `{source['models_api_at']}` · census "
+    lines += [f"Models API `{source['models_api_at']}` · census "
                   f"`{source['census_at'] or 'none'}` · admin report "
                   f"`{source['admin_report_at'] or 'none'}`", ""]
     return "\n".join(lines)
@@ -3006,7 +3267,8 @@ def main() -> int:
     parser.add_argument("--admin-report", type=Path, default=None,
                         help="optional Admin API usage report; recorded as provenance")
     parser.add_argument("--previous", type=Path, default=None,
-                        help="the last published roster/latest.json; optional")
+                        help="the COMMITTED roster (evals/roster.yml) this run "
+                             "computes a proposal against; YAML or JSON")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -3022,12 +3284,23 @@ def main() -> int:
         print(str(exc), file=sys.stderr)
         return 1
 
+    # THE BYTE BOUND, checked before the parser allocates anything
+    # (`CENSUS_MAX_BYTES`). A key count cannot bound one key holding a
+    # hundred-megabyte string, and by the time a key count could fire the
+    # decoder has already built it.
+    if args.census is not None and Path(args.census).is_file():
+        size = Path(args.census).stat().st_size
+        if size > CENSUS_MAX_BYTES:
+            print(f"refusing to read the census: it is {size} bytes, past the "
+                  f"{CENSUS_MAX_BYTES}-byte bound — an untrusted document may "
+                  f"not decide how much work this run does", file=sys.stderr)
+            return 4
     census_doc, census_problem = read_json(args.census)
     if census_problem:
         _stderr(census_problem)
-    previous_doc, previous_problem = read_json(args.previous)
-    if previous_problem:
-        _stderr(previous_problem)
+    # YAML OR JSON, and a problem here is FATAL (#147). This is the
+    # committed roster on `main`, not a document off an unprotected branch.
+    previous_doc, previous_problem = read_trusted_roster(args.previous)
 
     try:
         roster = compute_roster(
@@ -3040,6 +3313,12 @@ def main() -> int:
             census_problem=census_problem,
             previous_problem=previous_problem,
         )
+    except TrustedRosterUnreadable as exc:
+        # A DISTINCT rc, so eval.yml can tell "somebody merged a broken
+        # evals/roster.yml" apart from "an untrusted input was out of
+        # bounds". Nothing is written either way.
+        print(str(exc), file=sys.stderr)
+        return 5
     except RosterRefusal as exc:
         # Named, one line, counts only — the same treatment every other
         # untrusted input gets, and a distinct rc from the "no arms"
