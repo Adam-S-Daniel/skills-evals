@@ -71,7 +71,16 @@ NOT survive; the branches do.
   `eval.yml` (a proposal step, `issues: write`), so it needs the one-way-door
   review class before merge. **Rule 19 (fixture parity vs `main`) was NOT
   run** — run it first. The new step has never executed.
-- **#138 / `claude/skills-evals-97` at `3c558a5`** — fix round 4 (`b583341`)
+- **#138 — MERGED as `e4dfa41` (22:11 UTC) under Adam's option 2; #97
+  closed.** The first two real `eval.yml` dispatches on `main` then both
+  succeeded: `evals/workflow-path-audit`
+  (https://github.com/Adam-S-Daniel/skills-evals/actions/runs/34786056328,
+  `eval-results` `5893c66`) and `evals/guidance/_delivery`
+  (https://github.com/Adam-S-Daniel/skills-evals/actions/runs/34786057436,
+  `eval-results` `d83d407`: all five modes guard-ok and 1/1, delivery `user`,
+  so the pinned CLI does read memory from `CLAUDE_CONFIG_DIR`). #152 (the
+  fork pin) is the follow-up. What follows is the pre-merge record.
+  `claude/skills-evals-97` at `3c558a5` was fix round 4 (`b583341`)
   + merges of `main` `1530b51` and `3fb20e1` + one reconciliation commit.
   Suite 1184 exit 0; CI `test` success on the head. Round 5 (deciding, both
   halves, ref `f9115ce`): **NOT CLEAN on both
@@ -147,10 +156,9 @@ NOT survive; the branches do.
      → merge with a merge commit → close #129 as superseded → the first real
      `eval.yml` dispatch on `main` (it exercises the proposal step for the
      first time). Watch that run by conclusion.
-   - **#138:** Adam's answer to the park comment (options 1–3). Option 2
-     (merge as is, #152 follow-up) is the recommendation. On merge: the first
-     real dispatch of `evals/workflow-path-audit`, then any fixture through
-     the `fixture` input, then #139.
+   - **#138:** DONE — merged, both first real dispatches green (above).
+     Next in that lane: #139 (the InstructionsLoaded receipt uses), then the
+     harness lane order below.
    - **_agent-guidance #124:** round 5, both halves, on `6e4d3b2` (the
      `sync.yml` door unchanged, read against the security header anyway).
      CLEAN → merge → read the `sync.yml` run by conclusion → close #123.
