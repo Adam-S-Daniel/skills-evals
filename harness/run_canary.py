@@ -36,16 +36,41 @@ import yaml
 
 
 def load_fixture(eval_dir: Path) -> dict:
-    with open(eval_dir / "fixture.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """The fixture, or a named configuration error.
+
+    A-N1-2, applied to every entry point that loads one: the container that
+    holds a fixture's keys was never typed, so a LIST root was
+    `AttributeError: 'list' object has no attribute 'get'` and an EMPTY file
+    (YAML `None`) a `TypeError`, both rc 1 and both outside the rc-2
+    configuration contract.
+    """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    path = eval_dir / "fixture.yaml"
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict):
+        raise guidance.GuidanceError(
+            f"{path} must be a YAML mapping of fixture keys, got "
+            f"{type(doc).__name__}"
+            + (" (the file is empty)" if doc is None else f": {doc!r}"))
+    return doc
+
+
+# The bound on the `--version` probe. Named rather than inlined so the sink
+# check and the `timeout=` argument are provably the same value.
+VERSION_TIMEOUT_S = 30
 
 
 def claude_version() -> str:
     """Record the CLI version under test; "unknown" if it can't be determined."""
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    guidance.check_timeout(VERSION_TIMEOUT_S,
+                           "run_canary.claude_version(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     try:
         result = subprocess.run(
             [os.environ.get("CLAUDE_BIN", "claude"), "--version"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=VERSION_TIMEOUT_S,
         )
         if result.returncode == 0:
             return result.stdout.strip()
@@ -55,26 +80,43 @@ def claude_version() -> str:
 
 
 def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
-           model: str | None, timeout: int) -> dict:
+           model: str | None, timeout: int,
+           setting_sources: str = "project", env: dict | None = None) -> dict:
     """Invoke the CLI once against a seeded workspace.
 
     Mirrors run_eval.run_agent's error-dict pattern: callers must check
     `"error" in result` rather than relying on exceptions. Success dicts carry
     "reply" (the agent's final text, possibly empty).
+
+    `setting_sources` and `env` exist for the guidance subject's per-arm
+    delivery guard (#97), which reuses this probe against an arm's own config
+    dir: guidance is delivered into USER memory, so its guard has to be
+    invoked with `user,project` and with that arm's scrubbed environment. The
+    defaults are exactly the canary's historical behaviour — `project`, and
+    the harness's own environment inherited — so the guidance-bridge canary is
+    byte-identical across this change.
     """
+    # S1-a-2. Checked at the SINK, before the spawn, whatever the caller
+    # passed: this leg is reached from run_canary's own `--timeout`, from
+    # guidance.run_guard with the `guard.timeout_s` knob, and from anywhere a
+    # later caller decides to reach it from.
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    guidance.check_timeout(timeout, "run_canary.run_leg(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     # Unlike run_eval, no --permission-mode bypassPermissions: the probe must
     # not use tools at all (read tools are explicitly disallowed), so the
     # default deny-without-a-prompter headless behavior is the safer choice —
     # and bypassPermissions is refused outright when running as root.
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p", prompt,
           "--output-format", "json",
-          "--setting-sources", "project", "--disallowedTools", disallowed_tools]
+          "--setting-sources", setting_sources,
+          "--disallowedTools", disallowed_tools]
     if model:
         cmd += ["--model", model]
 
     try:
         result = subprocess.run(cmd, cwd=workspace, capture_output=True,
-                                text=True, timeout=timeout)
+                                text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired:
         return {"error": "timeout", "detail": f"agent timed out after {timeout}s"}
 
@@ -213,15 +255,46 @@ def main() -> int:
                         help="also run the bridge-subagent leg (Task-launched subagent)")
     parser.add_argument("--model", default=None, help="override the model for all legs")
     parser.add_argument("--timeout", type=int, default=600,
-                        help="per-leg CLI timeout in seconds (default 600)")
+                        help="per-leg CLI timeout in seconds (default 600); "
+                             "1..2700, the harness-wide ceiling "
+                             "harness/guidance.py holds every timeout to")
     parser.add_argument("--results-dir", type=Path, default=Path("results"),
                         help="root directory for run outputs (summary + report)")
     args = parser.parse_args()
 
-    fixture = load_fixture(args.eval_dir)
-    version = claude_version()
-    legs = _build_legs(fixture, args.eval_dir, args.subagent)
-    results = [_run_leg(leg, args.model, args.timeout) for leg in legs]
+    # The SAME predicate and the SAME ceiling every other timeout in this
+    # harness is held to. `args.timeout` reaches `run_leg`'s
+    # `subprocess.run(timeout=...)` at :86 with nothing between: argparse's
+    # `type=int` accepts every integer there is, and 2 200 000 of them raise a
+    # bare `OverflowError: timeout is too large` instead of naming a rule.
+    # This is the flag beside the one round 3 caught in run_eval.py; a bound
+    # that only guards the entry point you were looking at is not a bound.
+    #
+    # Imported HERE and not at module scope: harness/guidance.py imports THIS
+    # module (`run_canary.run_leg` is the probe its guard reuses), so a
+    # module-scope import would close the cycle. By the time main() runs both
+    # modules are fully loaded, and `sys.path` already carries harness/ —
+    # either because guidance put it there, or because this file is
+    # `__main__` and its own directory is `sys.path[0]`.
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see above
+    try:
+        guidance.check_timeout(args.timeout, "--timeout",
+                               guidance.CLI_TIMEOUT_REMEDY)
+    except guidance.GuidanceError as exc:
+        print(f"configuration error: {exc}")
+        return 2
+
+    try:
+        fixture = load_fixture(args.eval_dir)
+        version = claude_version()
+        legs = _build_legs(fixture, args.eval_dir, args.subagent)
+        results = [_run_leg(leg, args.model, args.timeout) for leg in legs]
+    except guidance.GuidanceError as exc:
+        # The sink checks in claude_version() and run_leg() raise from inside
+        # the function that was about to spawn, whatever fed them. Named rc 2,
+        # never a traceback.
+        print(f"configuration error: {exc}")
+        return 2
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     report_dir = args.results_dir / fixture["name"] / timestamp

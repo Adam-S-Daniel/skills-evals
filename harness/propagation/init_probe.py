@@ -49,9 +49,27 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
+
+
+# S1-a-2. The one timeout predicate lives in harness/guidance.py, beside the
+# ceiling and the error type it raises, and every function in this file that
+# hands a timeout to a subprocess API calls it on entry. `guidance` is
+# imported inside those functions rather than at module scope — guidance.py
+# imports run_canary, and this package is imported from run_eval/
+# run_propagation while guidance is still initialising — so the directory it
+# lives in has to be reachable from here whichever entry point got us in.
+_HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
+if _HARNESS_DIR not in sys.path:
+    sys.path.insert(0, _HARNESS_DIR)
+
+# How long `probe` waits for a killed child to actually die. Named rather than
+# inlined so the sink check and the `timeout=` argument are provably the same
+# value (the pin compares the two expressions, not two beliefs about them).
+KILL_WAIT_TIMEOUT_S = 10
 
 # Everything the child is allowed to see. An allowlist, not the ambient
 # environment — see trap 2 and trap 3 in the module docstring. Adding a name
@@ -222,6 +240,10 @@ def probe(*, cwd: Path, home: Path, tmpdir: Path, env_extra: dict | None = None,
     a list. An absent `skills` key must NEVER read as "zero skills delivered" —
     that is the vacuous green this whole harness exists to prevent.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(KILL_WAIT_TIMEOUT_S,
+                           "init_probe.probe(<popen>.wait timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     for flag in extra_argv:
         if not allow_scope_flags and str(flag).split("=", 1)[0] in SCOPE_FLAGS:
             raise ProbeError(
@@ -273,7 +295,7 @@ def probe(*, cwd: Path, home: Path, tmpdir: Path, env_extra: dict | None = None,
     finally:
         proc.kill()
         try:
-            proc.wait(timeout=10)
+            proc.wait(timeout=KILL_WAIT_TIMEOUT_S)
         except subprocess.TimeoutExpired:  # pragma: no cover — kill(2) not honoured
             pass
         stderr = (proc.stderr.read() or "")[-2000:] if proc.stderr else ""

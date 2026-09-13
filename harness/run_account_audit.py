@@ -42,12 +42,20 @@ from propagation import account_store  # noqa: E402
 
 EXIT_OK, EXIT_DRIFT, EXIT_FAULT = 0, 1, 2
 
+# The bound on this module's own `git` call. Named rather than inlined so the
+# sink check and the `timeout=` argument are provably the same value.
+GIT_TIMEOUT_S = 30
+
 
 def registry_ref(registry: Path) -> str:
+    import guidance  # noqa: PLC0415 — cycle-avoidance (guidance imports run_canary)
+    guidance.check_timeout(GIT_TIMEOUT_S,
+                           "run_account_audit.registry_ref(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     try:
         proc = subprocess.run(  # noqa: S603 — argv list, no shell
             ["git", "-C", str(registry), "rev-parse", "HEAD"],
-            capture_output=True, text=True, timeout=30)
+            capture_output=True, text=True, timeout=GIT_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired):
         return "unknown"
     return proc.stdout.strip() if proc.returncode == 0 else "unknown"

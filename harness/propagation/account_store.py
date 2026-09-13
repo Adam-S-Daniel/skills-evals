@@ -63,11 +63,29 @@ from __future__ import annotations
 import hashlib
 import json
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+
+# S1-a-2. The one timeout predicate lives in harness/guidance.py, beside the
+# ceiling and the error type it raises, and every function in this file that
+# hands a timeout to a subprocess API calls it on entry. `guidance` is
+# imported inside those functions rather than at module scope — guidance.py
+# imports run_canary, and this package is imported from run_eval/
+# run_propagation while guidance is still initialising — so the directory it
+# lives in has to be reachable from here whichever entry point got us in.
+_HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
+if _HARNESS_DIR not in sys.path:
+    sys.path.insert(0, _HARNESS_DIR)
+
+# The bound on this module's own `git` call. Named rather than inlined so the
+# sink check and the `timeout=` argument are provably the same value: the pin
+# compares the two expressions, not two beliefs about them.
+GIT_TIMEOUT_S = 60
 
 MANIFEST_NAME = "manifest.json"
 STORE_RELPATH = Path(".claude") / "skills" / "synced"
@@ -136,10 +154,13 @@ def git_tracked(root: Path, subdir: Path) -> set | None:
     authoritative "what would be uploaded" set and it inherits .gitignore
     instead of restating it.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(GIT_TIMEOUT_S, "account_store.git_tracked(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     try:
         proc = subprocess.run(  # noqa: S603 — argv list, no shell
             ["git", "-C", str(root), "ls-files", "-z", "--", str(subdir)],
-            capture_output=True, timeout=60)
+            capture_output=True, timeout=GIT_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if proc.returncode != 0:

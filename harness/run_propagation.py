@@ -47,14 +47,30 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import guidance  # noqa: E402 — the harness-wide timeout ceiling and predicate
 from propagation import account_store, arms  # noqa: E402
 
 EXIT_OK, EXIT_FAILED, EXIT_FAULT = 0, 1, 2
 
 
 def load_fixture(eval_dir: Path) -> dict:
-    with open(eval_dir / "fixture.yaml", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+    """The fixture, or a named configuration error.
+
+    A-N1-2, applied to every entry point that loads one: the container that
+    holds a fixture's keys was never typed, so a LIST root was
+    `AttributeError: 'list' object has no attribute 'get'` and an EMPTY file
+    (YAML `None`) a `TypeError`, both rc 1 and both outside the rc-2
+    configuration contract.
+    """
+    path = eval_dir / "fixture.yaml"
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f)
+    if not isinstance(doc, dict):
+        raise guidance.GuidanceError(
+            f"{path} must be a YAML mapping of fixture keys, got "
+            f"{type(doc).__name__}"
+            + (" (the file is empty)" if doc is None else f": {doc!r}"))
+    return doc
 
 
 def resolve_registry(cli_value: Path | None) -> Path:
@@ -205,12 +221,31 @@ def main(argv=None) -> int:
                         help="ISO-8601 instant the freshness gate treats as now; "
                              "tests pass it so they never depend on the clock")
     parser.add_argument("--timeout", type=int, default=120,
-                        help="per-CLI-invocation timeout in seconds")
+                        help="per-CLI-invocation timeout in seconds; "
+                             "1..2700, the harness-wide ceiling "
+                             "harness/guidance.py holds every timeout to")
     parser.add_argument("--json", type=Path, default=None,
                         help="also write the machine-readable run record here")
     args = parser.parse_args(argv)
 
-    fixture = load_fixture(args.eval_dir)
+    # The SAME predicate and the SAME ceiling every other timeout in this
+    # harness is held to — `args.timeout` becomes `ctx.timeout` and reaches
+    # `arms._probe`'s and `arm_plugin_marketplace`'s
+    # `subprocess.run(timeout=...)` with nothing between, where argparse's
+    # `type=int` bounds neither end and a very large value raises a bare
+    # `OverflowError` instead of naming a rule.
+    try:
+        guidance.check_timeout(args.timeout, "--timeout",
+                               guidance.CLI_TIMEOUT_REMEDY)
+    except guidance.GuidanceError as exc:
+        print(f"configuration error: {exc}")
+        return EXIT_FAULT
+
+    try:
+        fixture = load_fixture(args.eval_dir)
+    except guidance.GuidanceError as exc:
+        print(f"configuration error: {exc}")
+        return EXIT_FAULT
     now = (account_store.parse_iso8601(args.now) if args.now
            else datetime.now(timezone.utc))
 
@@ -239,6 +274,12 @@ def main(argv=None) -> int:
                 results.append(arms.run_arm(name, ctx))
             if args.self_test:
                 self_test_ok, self_test_line = self_test(ctx)
+        except guidance.GuidanceError as exc:
+            # A subprocess sink under harness/propagation/ refused its timeout
+            # on entry (S1-a-2). That is a configuration error the operator
+            # must fix, not an inconclusive arm: named, rc 2, no traceback.
+            print(f"configuration error: {exc}")
+            return EXIT_FAULT
         except arms.ArmError as exc:
             print(f"{arms.INCONCLUSIVE} setup: {exc}")
             fault = True
