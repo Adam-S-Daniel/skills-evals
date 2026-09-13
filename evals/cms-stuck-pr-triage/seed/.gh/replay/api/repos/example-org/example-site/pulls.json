@@ -1,0 +1,98 @@
+[
+  {
+    "number": 412,
+    "state": "open",
+    "draft": false,
+    "title": "Create Post “Spring release notes”",
+    "user": {
+      "login": "cms-bot",
+      "type": "User"
+    },
+    "head": {
+      "ref": "cms/posts/spring-release-notes",
+      "repo": {
+        "full_name": "example-org/example-site"
+      }
+    },
+    "base": {
+      "ref": "main",
+      "repo": {
+        "full_name": "example-org/example-site"
+      }
+    },
+    "labels": [
+      {
+        "name": "automated-test"
+      },
+      {
+        "name": "cms/draft"
+      }
+    ],
+    "created_at": "2026-08-30T09:14:22Z",
+    "updated_at": "2026-08-30T09:41:07Z",
+    "html_url": "https://github.com/example-org/example-site/pull/412"
+  },
+  {
+    "number": 418,
+    "state": "open",
+    "draft": false,
+    "title": "Update Post “Canary post”",
+    "user": {
+      "login": "cms-bot",
+      "type": "User"
+    },
+    "head": {
+      "ref": "cms/e2e/canary-post",
+      "repo": {
+        "full_name": "example-org/example-site"
+      }
+    },
+    "base": {
+      "ref": "main",
+      "repo": {
+        "full_name": "example-org/example-site"
+      }
+    },
+    "labels": [
+      {
+        "name": "automated-test"
+      },
+      {
+        "name": "cms/ready"
+      }
+    ],
+    "created_at": "2026-08-28T05:03:11Z",
+    "updated_at": "2026-09-02T05:44:19Z",
+    "html_url": "https://github.com/example-org/example-site/pull/418"
+  },
+  {
+    "number": 421,
+    "state": "open",
+    "draft": false,
+    "title": "Create Post “Autumn opening hours”",
+    "user": {
+      "login": "editor-rowan",
+      "type": "User"
+    },
+    "head": {
+      "ref": "cms/posts/autumn-hours",
+      "repo": {
+        "full_name": "example-org/example-site"
+      }
+    },
+    "base": {
+      "ref": "main",
+      "repo": {
+        "full_name": "example-org/example-site"
+      }
+    },
+    "labels": [
+      {
+        "name": "decap-cms/pending_publish"
+      }
+    ],
+    "created_at": "2026-09-02T06:09:41Z",
+    "updated_at": "2026-09-02T06:10:02Z",
+    "html_url": "https://github.com/example-org/example-site/pull/421"
+  }
+]

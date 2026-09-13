@@ -69,3 +69,9 @@ session that lost the guidance must not also lose these.
 ## Repo-specific additions
 
 <!-- Add your repo-specific agent guidance below this line -->
+
+- **Evals programme handoff.** Read [`HANDOFF.md`](HANDOFF.md) first: the whole
+  systematic-evals effort (skills and fleet guidance, six epics), where it
+  stands, what is parked on Adam and why, and how to resume it. The live
+  operational state is the status board,
+  [skills-evals#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).

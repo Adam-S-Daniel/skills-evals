@@ -31,6 +31,11 @@ harness/
     init_probe.py          # the primitive: read a session's loaded skill set, free
     arms.py                # one arm per delivery channel, each with a control leg
     account_store.py       # account-store measurement + the freshness gate
+  fakes/                   # stand-in binaries shared across Class B fixtures
+    gh                     # offline GitHub CLI: replays recorded responses,
+                           # refuses every write, logs each invocation
+    README.md              # its keying rule, its classes, its invocation log
+  registries.yml           # registry name -> URL -> skill-directory layout
 evals/
   workflow-path-audit/     # the A/B eval
     fixture.yaml           # prompt, arms, objective checks, judge rubric
@@ -56,6 +61,14 @@ evals/
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
+  cms-stuck-pr-triage/     # A/B eval, Class B: diagnose a stuck publish loop
+    fixture.yaml           # prompt, env (PATH + replay dir), checks, rubric
+    seed/                  # the site checkout: bin/gh is a symlink to
+                           # harness/fakes/gh, and .gh/replay/ holds its
+                           # recorded responses
+  disarm-inherited-reach/  # A/B eval: severing an inherited git remote before it can reach prod
+    fixture.yaml           # prompt, setup: builds prod.git/checkout/scratch-wt, git-state checks
+    seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
     layouts/               # bridge / no-bridge / fence probe workspaces
@@ -65,6 +78,12 @@ evals/
   propagation/             # skill-delivery probes (issue #17)
     fixture.yaml           # arms, bundle, collision skill, staleness budget
     ROUTINE.md             # the Tier-3 scheduled session, and why it is session-bound
+  adam-writing-style/      # Class C pilot (issue #81): three writing fixtures,
+    README.md              # one dir each (recruiter-reply/, proposal-bio/,
+    <fixture>/             # self-appraisal-opening/), every one a runnable
+      fixture.yaml         # eval dir of its own — judge.mode: pairwise
+      seed/                # the material the writing is drawn from
+      references/          # the committed drafts the judge ranks against
 scripts/
   make_badge.py            # shields.io endpoint badge, averaged over the
                            # --window newest run summaries (default 5)
@@ -141,6 +160,38 @@ mix of the legacy `plugins/<skill>/skills/<skill>/` shape and the bundled
 and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
 code path. It then copies that resolved directory (the one containing
 `SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
+
+### The `judge:` block
+
+A fixture's `judge:` block picks the instrument and pins its model:
+
+| Key | Meaning |
+| --- | --- |
+| `model` | the judge's model, pinned strong (DESIGN.md's harness-wide rule) |
+| `timeout_s` | seconds before the judge call is abandoned (default 120); a timeout is recorded as a judge error, never as a score |
+| `weights` | absolute mode only: dimension name -> weight, used to recompute `overall` as a weighted mean. Rejected in pairwise mode rather than half-honoured |
+| `mode` | `absolute` (default) or `pairwise` |
+| `references` | pairwise only: `{name, path}` entries, paths relative to the fixture dir and refused if they climb out of it |
+
+`mode: absolute` is every fixture before #81: the judge sees the rubric, the
+transcript and the workspace diff, and returns per-dimension scores.
+`mode: pairwise` (Class C, DESIGN.md) shows the judge the writing under test
+together with the fixture's committed reference samples — blind, fenced, and
+shuffled per trial — and the score IS the rank, 1 = best. An unknown mode is
+an error rather than a silent fall back to absolute.
+
+> [!NOTE]
+> `run_eval.py` does not read `judge.mode` yet: it still calls
+> `judge.score()` with the arguments it knew before #81, so it cannot score
+> a pairwise fixture — and rather than scoring one with the absolute judge,
+> it now refuses. A fixture whose `judge.mode` is anything but `absolute`
+> exits 2 with a named `judge_mode_unsupported` error, written to
+> `report.md` and `summary.json`, before any arm runs; `--no-judge` runs it
+> with the objective column as the only score.
+> `harness/scorers/judge.py`'s `score_fixture()` is the seam that fixes it;
+> moving `_run_arm` onto it (plus a trial loop and a rank column in
+> `_render_report`) is
+> [#97](https://github.com/Adam-S-Daniel/skills-evals/issues/97).
 
 ## Guidance subject
 

@@ -470,29 +470,191 @@ def _validate_skill_name(skill: str) -> None:
             "segment with no path or glob metacharacters")
 
 
-def agent_env(workspace: Path, env_spec: dict | None) -> dict:
+_VAR_RE = re.compile(r"\$(\w+)|\$\{([^}]*)\}")
+
+
+def expand(value: str, env: dict) -> str:
+    """`$VAR` / `${VAR}` resolved against `env`, in ONE pass.
+
+    Not `os.path.expandvars`: that reads `os.environ`, so a `WORKSPACE`
+    already set in the harness's own environment won every time and
+    `$WORKSPACE/bin` resolved to the OUTER path — which silently removed the
+    fixture's fake from PATH and left whatever real tool was next on it, under
+    bypassPermissions. One pass also means the substituted text is never
+    re-scanned, so a workspace path holding a `$` cannot expand again.
+    """
+    return _VAR_RE.sub(lambda m: env.get(m.group(1) or m.group(2), m.group(0)), value)
+
+
+# The ONLY inherited variables an arm receives, for every fixture. An
+# ALLOWLIST, deliberately: a denylist forwards everything nobody thought to
+# name, and what reaches the arm then depends on the operator's shell.
+# Measured under the denylist this replaces, through `run_eval.py --arm
+# without_skill` with a stand-in `claude` that dumps its own environment:
+# `GH_HOST`, `GH_ENTERPRISE_TOKEN` and `GITHUB_ENTERPRISE_TOKEN` — the other
+# half of `gh`'s own credential resolution — arrived verbatim, and so did
+# `AWS_*`, `NPM_TOKEN`, `GITLAB_TOKEN`, `OPENAI_API_KEY`, `HF_TOKEN`,
+# `SSH_AUTH_SOCK`, `KUBECONFIG`, `DOCKER_CONFIG`, `GIT_ASKPASS`,
+# `PYTHONPATH`, `LD_PRELOAD`, and variables whose VALUES name the operator's
+# own checkout. The arm's workspace is its cwd under bypassPermissions, `env`
+# is one of the first things a shell reaches for, and `_write_summary` writes
+# the arm's transcript to `results/<skill>/<ts>/<arm>/transcripts/raw.json`,
+# which `.github/workflows/eval.yml` pushes to the public `eval-results`
+# branch — so a variable that reaches the arm is a variable an arm can
+# publish.
+#
+# Each entry carries the reason the CLI or the operating system needs it. A
+# name is added here only because something in `run_agent`'s invocation,
+# `_run_arm`, or eval.yml demonstrably needs it — never because a test
+# wanted it.
+_ALLOWED_ENV = (
+    "PATH",                # find the CLI, and the fixture's own stand-ins
+    "HOME",                # the CLI's config, cache and credential store
+    "USER",                # some tools shell out and read it; cheap to keep
+    "LOGNAME",             # the POSIX spelling of the same thing
+    "SHELL",               # what the CLI spawns for its own tool calls
+    "TERM",                # terminal capabilities; absent, some tools hang
+    "LANG",                # locale: decides the CLI's default text encoding
+    "LANGUAGE",            # locale fallback list, same reason
+    "TZ",                  # local time in anything the agent formats
+    "TMPDIR",              # where the CLI and its children write temp files
+    "TMP",                 # the same, spelled the other way
+    "TEMP",                # and the third spelling
+    "HTTP_PROXY",          # a runner may only reach the API through a proxy
+    "HTTPS_PROXY",         # the API is HTTPS, so this is the load-bearing one
+    "NO_PROXY",            # hosts that must bypass it
+    "ALL_PROXY",           # the catch-all spelling some clients read
+    "http_proxy",          # not an alias: clients read one case or the other
+    "https_proxy",         # the lower-case spelling curl and requests prefer
+    "no_proxy",            # the lower-case bypass list, read by the same clients
+    "all_proxy",           # the lower-case catch-all, for completeness of the pair
+    "SSL_CERT_FILE",       # a corporate CA bundle, or TLS fails outright
+    "SSL_CERT_DIR",        # the directory spelling of the same bundle
+    "NODE_EXTRA_CA_CERTS", # the CLI is a Node program; this is its CA hook
+    "REQUESTS_CA_BUNDLE",  # anything Python the CLI shells out to
+    "CURL_CA_BUNDLE",      # anything curl-based it shells out to
+)
+
+# Prefixes, for families whose members are not knowable in advance.
+_ALLOWED_ENV_PREFIXES = (
+    "ANTHROPIC_",  # the API credential: eval.yml exports ANTHROPIC_AUTH_TOKEN
+                   # step-locally, local runs use ANTHROPIC_API_KEY. Forwarded
+                   # by design — the CLI cannot authenticate otherwise — which
+                   # also makes it one of the variables the arm's own
+                   # published transcript could leak (see "a variable that
+                   # reaches the arm is a variable an arm can publish" above);
+                   # nothing here redacts it before raw.json is written.
+    "CLAUDE_",     # the CLI's own knobs, including CLAUDE_CODE_OAUTH_TOKEN.
+                   # Also carries CLAUDE_BIN, which only the harness itself
+                   # reads (run_agent/judge.score/run_canary via os.environ,
+                   # never the CLI) — a residue of the prefix, not something
+                   # under test needing it — and CLAUDE_CODE_USE_BEDROCK/
+                   # _VERTEX with none of the AWS_*/GOOGLE_APPLICATION_
+                   # CREDENTIALS that would authenticate them: this allowlist
+                   # assumes the first-party API, which is what eval.yml
+                   # uses. Adding those credential families to reach
+                   # Bedrock/Vertex would undo B1's own point.
+    "LC_",         # the per-category locale settings LANG does not cover
+    "XDG_",        # config/cache/data/state/runtime dirs the CLI writes under
+)
+
+# Emptied rather than dropped. `GH_TOKEN`/`GITHUB_TOKEN` are not on the
+# allowlist, so they no longer arrive on their own — but an arm under
+# bypassPermissions can call a real `gh` by absolute path, past the stand-in
+# on PATH, and an ABSENT token sends `gh` looking in its config and the
+# keyring for another one. Empty stops that search; `GH_CONFIG_DIR` points it
+# inside the workspace, where there is no host and no credential to find.
+_BLANKED_ENV = ("GH_TOKEN", "GITHUB_TOKEN")
+_WORKSPACE_GH_CONFIG = ".gh/config"
+
+
+def agent_env(workspace: Path, env_spec: dict | None,
+              source: dict | None = None) -> dict:
     """The environment the agent under test runs in.
 
-    A fixture's `env:` mapping is applied over the harness's own environment,
-    with `$WORKSPACE` (and any other `$VAR`) expanded against the workspace
-    the arm actually got — a temp dir the fixture cannot know in advance.
-    That is what lets a seed put a fake binary on the agent's PATH
-    (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B "fake `gh` on the seed
-    workspace's PATH" move DESIGN.md prescribes, without the seed carrying an
-    Values are strings; a non-string is stringified rather than rejected,
-    since YAML will happily hand over an int. What IS refused, here at the
-    function that builds the child's environment and by the same predicate
-    guidance.agent_env uses, is a name or value the OS itself will not take:
-    a name with an `=` in it reached `subprocess.run(env=...)` and came back
-    as `ValueError: illegal environment variable name` — rc 1 and a
-    traceback, after the arm had started.
+    A fixture's `env:` mapping is applied over an allowlisted slice of the
+    harness's own environment, with `$WORKSPACE` (and any other `$VAR`)
+    expanded against the workspace the arm actually got — a temp dir the
+    fixture cannot know in advance. That is what lets a seed put a fake
+    binary on the agent's PATH (`PATH: "$WORKSPACE/bin:$PATH"`), the Class B
+    "fake `gh` on the seed workspace's PATH" move DESIGN.md prescribes,
+    without the seed carrying an absolute path. Values are strings; a
+    non-string is stringified rather than rejected, since YAML will happily
+    hand over an int.
+
+    What the arm receives, and nothing else:
+
+      * the names in `_ALLOWED_ENV` and the prefixes in
+        `_ALLOWED_ENV_PREFIXES` that are present in `source`, forwarded
+        verbatim — every other inherited variable is dropped;
+      * the harness's own `WORKSPACE`, `GH_CONFIG_DIR` (inside the
+        workspace) and `GH_TOKEN`/`GITHUB_TOKEN` (empty strings);
+      * the fixture's own `env:` block, applied last, so a fixture that
+        wants a name back can say so.
+
+    `gh`'s token variables do not reach it from the harness's environment:
+    `GH_TOKEN` and `GITHUB_TOKEN` arrive empty, and `GH_ENTERPRISE_TOKEN`,
+    `GITHUB_ENTERPRISE_TOKEN` and `GH_HOST` are not on the list. A fixture's
+    own `env:` block can still name anything it likes — it is applied last,
+    and no fixture here names one of those.
+
+    What IS refused, here at the function that builds the child's environment
+    and by the same predicate `guidance.agent_env` uses, is a name or value
+    the OS itself will not take: a name with an `=` in it reached
+    `subprocess.run(env=...)` and came back as `ValueError: illegal
+    environment variable name` — rc 1 and a traceback, after the arm had
+    started. The allowlist decides what is INHERITED; this predicate decides
+    what is spellable at all, so neither widens nor narrows the other.
+
+    `source` is the parent environment to filter, defaulting to `os.environ`
+    — a test can hand over a mapping it built rather than mutating the
+    process's own environment, which is what makes "the arm received exactly
+    these names" decidable without depending on the operator's shell.
     """
     guidance.check_env_block(env_spec, "the fixture's `env:`")
-    env = dict(os.environ)
+    parent = os.environ if source is None else source
+    env = {key: value for key, value in parent.items()
+           if key in _ALLOWED_ENV or key.startswith(_ALLOWED_ENV_PREFIXES)}
     env["WORKSPACE"] = str(workspace)
+    for key in _BLANKED_ENV:
+        env[key] = ""
+    env["GH_CONFIG_DIR"] = str(workspace / _WORKSPACE_GH_CONFIG)
     for key, value in (env_spec or {}).items():
-        env[str(key)] = os.path.expandvars(str(value)).replace("$WORKSPACE", str(workspace))
+        env[str(key)] = expand(str(value), env)
     return env
+
+
+# Both spellings `expand()` honours, so a fixture cannot opt out of the
+# guard below by writing the braced one. `${WORKSPACE}` failed a
+# `startswith("$WORKSPACE")` test, which returned as if the fixture had put
+# nothing of its own on PATH.
+_WORKSPACE_SPELLINGS = ("$WORKSPACE", "${WORKSPACE}")
+
+
+def assert_stand_ins_on_path(workspace: Path, env: dict, env_spec: dict | None) -> None:
+    """A fixture that prepends `$WORKSPACE/<dir>` to PATH must actually get it.
+
+    The failure this catches is silent and total: the arm runs the REAL tool
+    the fixture meant to fake, under bypassPermissions, and scores whatever
+    that tool happened to say. Raising is the right end for it — a harness
+    that cannot honour a fixture's `env:` block has no result worth writing.
+
+    `$WORKSPACE/bin` and `${WORKSPACE}/bin` are the same fixture: `expand()`
+    resolves both, so both are guarded here.
+    """
+    spec = str((env_spec or {}).get("PATH", ""))
+    if not spec.startswith(_WORKSPACE_SPELLINGS):
+        return
+    wanted = Path(expand(spec.split(os.pathsep, 1)[0], dict(env)))
+    got = Path(env["PATH"].split(os.pathsep)[0])
+    if got != wanted:
+        raise RuntimeError(f"fixture PATH resolved to {got}, expected {wanted}")
+    stand_ins = ([p for p in sorted(wanted.iterdir())
+                  if p.is_file() and os.access(p, os.X_OK)] if wanted.is_dir() else [])
+    if not stand_ins:
+        raise RuntimeError(
+            f"no executable stand-in in {wanted}, which the fixture puts first "
+            "on PATH: the arm would run the real tool instead")
 
 
 def run_setup(workspace: Path, fixture: dict) -> dict | None:
@@ -506,9 +668,12 @@ def run_setup(workspace: Path, fixture: dict) -> dict | None:
     which `git add -A` on the harness's own bookkeeping commit treats as a
     submodule boundary rather than plain files). `setup:` names a shell
     command, run with `cwd=workspace` and `$WORKSPACE` (plus any other
-    `$VAR`) expanded the same way `env:` values are (see `agent_env`), so a
-    fixture can write `bash $WORKSPACE/setup.sh` or a bare `bash setup.sh`
-    interchangeably.
+    `$VAR`) expanded the same way `env:` values are (see `agent_env`) — one
+    pass, against the ALLOWLISTED environment, never `os.environ` directly
+    (see `expand`'s own docstring for why that distinction matters: a
+    `WORKSPACE` already set in the harness's own environment would otherwise
+    win over the one this run actually got), so a fixture can write `bash
+    $WORKSPACE/setup.sh` or a bare `bash setup.sh` interchangeably.
 
     Returns `None` when the fixture has no `setup:` (every existing fixture)
     or the command exits 0. Otherwise returns a `{"error": "setup_failed",
@@ -523,11 +688,12 @@ def run_setup(workspace: Path, fixture: dict) -> dict | None:
     setup_cmd = fixture.get("setup")
     if not setup_cmd:
         return None
-    cmd = os.path.expandvars(str(setup_cmd)).replace("$WORKSPACE", str(workspace))
+    env = agent_env(workspace, fixture.get("env"))
+    cmd = expand(str(setup_cmd), env)
     try:
         result = subprocess.run(["bash", "-c", cmd], cwd=workspace,
                                 capture_output=True, text=True, timeout=timeout,
-                                env=agent_env(workspace, fixture.get("env")))
+                                env=env)
     except subprocess.TimeoutExpired:
         return {"error": "setup_failed", "detail": f"setup timed out after {timeout}s"}
     if result.returncode != 0:
@@ -643,18 +809,102 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
     }
 
 
+# The arm's workspace is the agent's cwd, and it can read every byte of it:
+# `pwd`, `git log`, `ls -a`, `cat bin/gh`, `env`. So neither the directory
+# name nor the baseline commit's identity may name this repository, this
+# harness or the arm — `/tmp/skills-evals-with_skill-XXXX` and a commit
+# authored by "skills-evals harness" told the agent what it was being
+# measured with before it had read a single line of the seed.
+WORKSPACE_PREFIX = "workspace-"
+SEED_COMMIT_IDENTITY = ("ci@example.com", "ci")
+SEED_COMMIT_MESSAGE = "initial commit"
+
+# Where `materialize_workspace` records the workspace's own absolute path,
+# and where a stand-in binary in `<workspace>/bin/` reads it from.
+#
+# Under `.git/`, deliberately, and it is the whole of the mechanism:
+#   * `git status` never shows it, and no objective check in this repository
+#     globs into `.git/` — both measured — so it changes no check's verdict;
+#   * `cp -a` of the WHOLE workspace carries it — and it still names the
+#     ORIGINAL, so a copy of the workspace records where the original does;
+#   * a bare copy, or a hard link, of the binary alone never has it, so a
+#     copy in some other `bin/` has nothing to read and refuses.
+# The rule it replaces deduced the location from a directory NAME — a copy
+# of the binary in any `.../bin/` recorded into that directory's parent,
+# which put the record somewhere no check looks.
+WORKSPACE_ANCHOR = ".git/workspace-root"
+
+
+class SetupFailedError(RuntimeError):
+    """Raised by `materialize_workspace` when the fixture's `setup:` command
+    (see `run_setup`) fails. Carries the same `{"error": "setup_failed",
+    "detail": ...}` dict `run_setup` returns, plus the half-built workspace
+    it was raised over — `materialize_workspace` cannot simply swallow the
+    error (a fixture that needed setup and didn't get it must not silently
+    score a workspace that never had it), and the caller still owns cleanup
+    of the temp dir, since the exception fires before `materialize_workspace`
+    returns one.
+    """
+
+    def __init__(self, workspace: Path, detail: dict):
+        self.workspace = workspace
+        self.detail = detail
+        super().__init__(detail.get("detail", ""))
+
+
 def _git(*args: str, cwd: Path) -> subprocess.CompletedProcess:
     """Run git in `cwd` with a fixed local identity (don't rely on global
-    config). `errors="replace"` — a workspace an agent has been let loose in
-    can carry non-UTF-8 bytes git itself doesn't treat as binary (its own
-    heuristic only looks for a NUL byte early in the content), and a diff or
-    log that embeds them raw must not crash the whole run over it.
+    config, and don't name this repository or this harness — see
+    `SEED_COMMIT_IDENTITY`). `errors="replace"` — a workspace an agent has
+    been let loose in can carry non-UTF-8 bytes git itself doesn't treat as
+    binary (its own heuristic only looks for a NUL byte early in the
+    content), and a diff or log that embeds them raw must not crash the
+    whole run over it.
     """
+    email, name = SEED_COMMIT_IDENTITY
     return subprocess.run(
-        ["git", "-c", "user.email=skills-evals@local",
-         "-c", "user.name=skills-evals harness", *args],
+        ["git", "-c", f"user.email={email}",
+         "-c", f"user.name={name}", *args],
         cwd=cwd, check=True, capture_output=True, text=True, errors="replace",
     )
+
+
+def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
+    """A fresh arm workspace: the seed copied in, under a baseline git commit.
+
+    Extracted from `_run_arm` so a test can build the workspace the arm
+    actually gets rather than a hand-rolled lookalike — what an agent can
+    read in here is a property of THIS function, and a copy in a test would
+    drift away from it silently.
+
+    `fixture` is optional and defaults to `None`: every existing caller that
+    only needs the plain committed-and-anchored workspace (no `setup:`) can
+    keep calling `materialize_workspace(seed)` unchanged. When a fixture IS
+    given and carries a `setup:` command, `run_setup` runs it BEFORE the
+    baseline commit — a setup script (e.g. disarm-inherited-reach's) builds
+    real git repositories in the workspace and deletes its own machinery as
+    its last step, and committing first would let that machinery survive
+    into the "seed" commit even though it no longer exists on disk (see
+    `run_setup`'s own docstring). A failing setup raises `SetupFailedError`
+    rather than returning it, since this function's only other return shape
+    is a ready-to-use `Path` with nothing to attach an error to.
+    """
+    workspace = Path(tempfile.mkdtemp(prefix=WORKSPACE_PREFIX))
+    shutil.copytree(seed, workspace, dirs_exist_ok=True)
+    if fixture is not None:
+        setup_result = run_setup(workspace, fixture)
+        if setup_result is not None:
+            raise SetupFailedError(workspace, setup_result)
+    _git("init", "-q", cwd=workspace)
+    _git("add", "-A", cwd=workspace)
+    _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
+    # After the baseline commit, so the anchor is never part of it. A
+    # stand-in in `<workspace>/bin/` reads this to find where its invocation
+    # log goes; without it, it refuses to serve or record anything at all.
+    anchor = workspace / WORKSPACE_ANCHOR
+    anchor.parent.mkdir(parents=True, exist_ok=True)
+    anchor.write_text(f"{workspace}\n", encoding="utf-8")
+    return workspace
 
 
 def _nested_repo_dirs(workspace: Path) -> list[Path]:
@@ -822,6 +1072,11 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
             json.dump(raw, f, indent=2)
 
 
+# How much of an error detail one report table cell carries. The full
+# detail is always in summary.json; this is the reader's version.
+_REPORT_CELL_CHARS = 200
+
+
 def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[dict]) -> str:
     lines = [
         f"# Eval report: {skill}",
@@ -851,8 +1106,17 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
         duration_str = str(agent.get("duration_ms")) if agent.get("duration_ms") is not None else "-"
 
         err = s.get("error")
-        # Error details can carry multiline stderr or `|`s — keep the table intact.
-        err_str = " ".join(f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")[:200] if err else ""
+        # Error details can carry multiline stderr or `|`s — keep the table
+        # intact. The cut is marked: an error cut off mid-sentence at
+        # exactly 200 characters reads as the whole error, and the reader
+        # has no way to tell there is more of it in summary.json, which
+        # keeps the detail in full.
+        err_str = ""
+        if err:
+            err_str = " ".join(
+                f"{err['type']}: {err['detail']}".split()).replace("|", "\\|")
+            if len(err_str) > _REPORT_CELL_CHARS:
+                err_str = err_str[:_REPORT_CELL_CHARS - 1] + "…"
 
         lines.append(f"| {s['arm']} | {objective_str} | {judge_str} | {cost_str} | "
                      f"{turns_str} | {duration_str} | {err_str} |")
@@ -862,36 +1126,28 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
             args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a workspace, invoke the agent, score it, write results, clean up."""
-    workspace = Path(tempfile.mkdtemp(
-        prefix=f"{ARM_WORKSPACE_PREFIX}{arm_name}-"))
+    # run_setup (inside materialize_workspace, before the bookkeeping commit)
+    # can fail — a fixture's `setup:` script (e.g. disarm-inherited-reach's)
+    # builds real git repositories in the workspace and then deletes its own
+    # machinery (setup.sh, any template dir) as its last step, and committing
+    # first would let that machinery survive into the "seed" commit even
+    # though it no longer exists on disk (see `materialize_workspace`'s and
+    # `run_setup`'s own docstrings). `materialize_workspace` raises rather
+    # than returning an error dict here, so the failure is caught outside its
+    # own try/finally and the half-built workspace it still made is cleaned
+    # up via the exception's own `workspace` attribute.
     try:
-        shutil.copytree(seed, workspace, dirs_exist_ok=True)
-
-        # run_setup BEFORE the bookkeeping commit — a fixture's `setup:`
-        # script (e.g. disarm-inherited-reach's) builds real git repositories
-        # in the workspace and then deletes its own machinery (setup.sh, any
-        # template dir) as its last step. Committing first and running setup
-        # second used to let that machinery survive into the "seed" commit
-        # even though it no longer existed on disk: `git status --short` in
-        # the agent's own workspace showed it as a spurious deletion, and
-        # `git show HEAD:setup.sh` returned its content intact — both
-        # readable by the agent under test. A `setup:` script that writes
-        # into `.git/info/exclude` (again, disarm-inherited-reach's) still
-        # works in this order: `git init` on a `.git` directory that already
-        # has one (created by `mkdir -p` before the repo itself exists)
-        # initializes normally and leaves unrelated existing files alone —
-        # verified directly, not assumed.
-        setup_result = run_setup(workspace, fixture)
-        if setup_result is not None:
-            error = {"type": setup_result["error"], "detail": setup_result.get("detail", "")}
-            _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                           error, None, None, None, None)
-            return {"arm": arm_name, "error": error, "agent": None,
-                    "objective_checks": None, "judge": None}
-
-        _git("init", "-q", cwd=workspace)
-        _git("add", "-A", cwd=workspace)
-        _git("commit", "-q", "-m", "seed", cwd=workspace)
+        workspace = materialize_workspace(seed, fixture)
+    except SetupFailedError as exc:
+        error = {"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+        shutil.rmtree(exc.workspace, ignore_errors=True)
+        return {"arm": arm_name, "error": error, "agent": None,
+                "objective_checks": None, "judge": None}
+    try:
+        assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
+                                 fixture.get("env"))
 
         arm_config = {
             "name": arm_name,
@@ -961,8 +1217,24 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "duration_ms": result.get("duration_ms"),
                 "usage": result.get("usage"),
             }
-            objective_checks = objective.run_checks(
-                fixture, str(workspace), str(seed), transcript=result.get("transcript"))
+            # The SAME fixture errors the objective-only path names, at the
+            # one call site that has a transcript and so is the only place
+            # `SeedTooLarge` can actually fire: an uncaught one here came
+            # out of the list comprehension in `main` as a traceback and
+            # exit 1, losing both arms' artifacts with it. Recorded as an
+            # arm error, in the shape `run_setup` already uses, which
+            # `main` turns into exit 2.
+            try:
+                objective_checks = objective.run_checks(
+                    fixture, str(workspace), str(seed),
+                    transcript=result.get("transcript"))
+            except objective.FixtureError as exc:
+                error = {"type": "invalid_fixture", "detail": str(exc)}
+                _write_summary(args.results_dir, fixture["skill"], arm_name,
+                               timestamp, error, agent_summary, None, None, raw)
+                return {"arm": arm_name, "error": error,
+                        "agent": agent_summary, "objective_checks": None,
+                        "judge": None}
 
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
@@ -990,6 +1262,33 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 "objective_checks": objective_checks, "judge": judge_result}
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
+
+def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
+                         error_type: str, detail: str) -> str:
+    """Record a fixture-level error as the artifacts a run would have left.
+
+    A pre-run refusal that only printed to stdout left `results/` with
+    nothing in it, so the reason the run produced no numbers was visible
+    only to whoever watched it happen. The report and one summary.json per
+    arm carry the named error instead, in the shape `_render_report` and
+    `_write_summary` already use for an arm that failed.
+    """
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    error = {"type": error_type, "detail": detail}
+    arm_names = (["with_skill", "without_skill"] if args.arm == "both"
+                 else [args.arm])
+    for arm_name in arm_names:
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+    report = _render_report(fixture["skill"], fixture.get("prompt", ""),
+                            timestamp,
+                            [{"arm": name, "error": error} for name in arm_names])
+    report_path = args.results_dir / fixture["skill"] / timestamp / "report.md"
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+    return timestamp
 
 
 # ---------------------------------------------------------------------------
@@ -1685,6 +1984,77 @@ def main() -> int:
               ", ".join(f"{f!r} is {type(fixture[f]).__name__}" for f in bad_type))
         return 2
 
+    # Validated HERE, before anything derives a path from it. It used to
+    # run after the judge-mode guard below, and only for a non-objective-only
+    # arm — so a fixture carrying both `skill: ../../ESCAPED` and a judge
+    # mode this runner refuses had `_write_pre_run_error` build
+    # `<results-dir>/../../ESCAPED/<timestamp>/report.md` and write it,
+    # two directories above where the operator pointed the run. Every path
+    # this function builds comes off this name, so the check comes first
+    # and applies to every arm.
+    try:
+        _validate_skill_name(fixture["skill"])
+    except ValueError as exc:
+        print(f"invalid fixture: {exc}")
+        return 2
+
+    # `judge:` written as anything but a mapping — a list, a string, a
+    # number, a bare `true`; YAML hands over all of them — used to reach
+    # `.get("mode")` and raise an uncaught AttributeError: exit 1, a
+    # traceback, and none of the artifacts a fixture-level refusal is
+    # supposed to leave. Named and recorded like every other pre-run
+    # refusal, and for every arm: a malformed block is malformed whether or
+    # not this run would have reached the judge.
+    judge_cfg = fixture.get("judge")
+    if judge_cfg is None or judge_cfg == "":
+        judge_cfg = {}
+    if not isinstance(judge_cfg, dict):
+        detail = (f"fixture's `judge:` block is a {type(judge_cfg).__name__}, "
+                  "not a mapping: it must carry keys like `mode:`, `model:` "
+                  "and `references:`, or be left out entirely")
+        print(f"invalid_judge_block: {detail}")
+        _write_pre_run_error(args, fixture, "invalid_judge_block", detail)
+        return 2
+
+    # A fixture whose `judge:` block asks for an instrument this runner
+    # cannot drive is refused before any arm starts, rather than scored with
+    # the wrong one. `_run_arm` still calls `judge.score()` with the three
+    # keywords it knew before #81 — no mode, no references — so a
+    # `judge.mode: pairwise` fixture used to be scored by the ABSOLUTE judge
+    # against a ranking rubric: measured on recruiter-reply, exit 0 and a
+    # report reading "Judge overall | 7.5", which is not a rank and means
+    # nothing there. Wiring `_run_arm` onto `judge.score_fixture` belongs to
+    # #97 (https://github.com/Adam-S-Daniel/skills-evals/issues/97); until
+    # then the run either passes --no-judge or does not happen.
+    #
+    # The mode is casefolded, exactly as `judge.score()` casefolds it, so
+    # `mode: Absolute` is absolute rather than "a mode this runner cannot
+    # drive yet" — which said nothing true about a spelling of the mode the
+    # runner does drive.
+    #
+    # objective-only is exempt because it runs no judge at all: these
+    # fixtures are meant to exit 1 there with "no transcript", which is the
+    # documented asymmetry rather than a runner error.
+    judge_mode = judge_cfg.get("mode", "absolute")
+    normalised_mode = (judge_mode.strip().casefold()
+                       if isinstance(judge_mode, str) else judge_mode)
+    if (args.arm != "objective-only" and not args.no_judge
+            and normalised_mode not in (None, "", "absolute")):
+        # Front-loaded: `_render_report` truncates this cell to 200
+        # characters, and the three sentences of provenance that used to
+        # open it pushed the issue, its URL and the flag that makes the run
+        # work off the end of the report a reader actually sees.
+        detail = (f"cannot drive judge mode {judge_mode!r} yet: re-run with "
+                  "--no-judge and read the objective column. #97 "
+                  "https://github.com/Adam-S-Daniel/skills-evals/issues/97 "
+                  "wires the call site onto judge.score_fixture(); until "
+                  "then _run_arm still calls judge.score() with the "
+                  "arguments it knew before #81, so scoring this fixture "
+                  "here would rank it with the absolute judge.")
+        print(f"judge_mode_unsupported: {detail}")
+        _write_pre_run_error(args, fixture, "judge_mode_unsupported", detail)
+        return 2
+
     # Resolved and validated before ANY arm starts, including objective-only:
     # a bad --registry/$SKILLS_EVALS_REGISTRIES override used to be silently
     # ignored for objective-only (it never reaches resolve_registries at
@@ -1698,22 +2068,23 @@ def main() -> int:
         print(f"registry configuration error: {exc}")
         return 2
 
-    if args.arm != "objective-only":
-        try:
-            _validate_skill_name(fixture["skill"])
-        except ValueError as exc:
-            print(f"invalid fixture: {exc}")
-            return 2
-
     if args.arm == "objective-only":
+        # `objective.FixtureError` — a `strip_seed:` written as anything but
+        # a boolean, a seed file over the provenance read cap — is a fixture
+        # error, and every other fixture error here is a named line and exit
+        # 2. These two came out as an uncaught traceback and exit 1, which
+        # is the code a legitimately FAILING eval returns: a fixture that
+        # could not be scored at all was indistinguishable, to a CI job
+        # reading the exit code, from one whose agent wrote a bad reply.
         try:
             if args.workspace:
-                # An explicitly given workspace is scored as-is — the caller's
-                # own responsibility to have already run any `setup:`
-                # themselves (or to be scoring a hand-built workspace that
-                # never needed one).
+                # An explicitly given workspace is scored as-is — the
+                # caller's own responsibility to have already run any
+                # `setup:` themselves (or to be scoring a hand-built
+                # workspace that never needed it).
                 workspace = args.workspace
-                results = objective.run_checks(fixture, str(workspace), str(seed))
+                results = objective.run_checks(fixture, str(workspace),
+                                               str(seed))
             else:
                 with tempfile.TemporaryDirectory() as tmp:
                     workspace = Path(tmp) / "ws"
@@ -1727,6 +2098,11 @@ def main() -> int:
         except guidance.GuidanceError as exc:
             # run_setup's and the objective git checks' sink checks land here.
             print(f"configuration error: {exc}")
+            return 2
+        except objective.FixtureError as exc:
+            # `SeedTooLarge` is a `FixtureError`, so one clause covers both.
+            print(f"invalid_fixture: {exc}")
+            _write_pre_run_error(args, fixture, "invalid_fixture", str(exc))
             return 2
 
         print(json.dumps({"skill": fixture["skill"], "arm": args.arm,

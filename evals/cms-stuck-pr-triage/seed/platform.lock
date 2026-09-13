@@ -1,0 +1,6 @@
+# Single source of truth for which cms-platform release this site is pinned
+# to. Every `uses:@<tag>` in .github/workflows/ and every `platform_ref:`
+# input must equal `platform_ref` here.
+platform_repo: example-org/cms-platform
+platform_ref: v0.1.104
+theme_gem_tag: v0.1.104

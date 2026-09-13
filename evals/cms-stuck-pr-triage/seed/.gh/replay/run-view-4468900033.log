@@ -1,0 +1,19 @@
+e2e	Set up job	2026-08-30T09:15:12.1042117Z Current runner version: '2.331.0'
+e2e	Set up job	2026-08-30T09:15:12.1050338Z Job name: 'e2e / project (chromium-desktop-1080)'
+e2e	Set up job	2026-08-30T09:15:12.1058812Z Triggered by: pull_request on refs/pull/412/merge
+e2e	Checkout merge commit	2026-08-30T09:15:14.3390127Z Syncing repository: example-org/example-site
+e2e	Checkout merge commit	2026-08-30T09:15:16.0021994Z Merging cms/posts/spring-release-notes into base main@0f3c8ad51b9247e6c8d0a3f27b45e91c6d82af04
+e2e	Checkout merge commit	2026-08-30T09:15:16.4471003Z HEAD is now at c47a1f9 Create Post “Spring release notes”
+e2e	Install Playwright browsers	2026-08-30T09:15:18.0114420Z apt lock timeout configured: DPkg::Lock::Timeout "300";
+e2e	Install Playwright browsers	2026-08-30T09:16:44.7781203Z Playwright 1.58.2 browsers installed (chromium)
+e2e	Run Playwright	2026-08-30T09:16:47.2210441Z Running 47 tests using 4 workers
+e2e	Run Playwright	2026-08-30T09:40:51.8830127Z   1) [chromium-desktop-1080] › e2e/content-fixtures.spec.js:34:3 › every published post renders
+e2e	Run Playwright	2026-08-30T09:40:51.8833118Z
+e2e	Run Playwright	2026-08-30T09:40:51.8836204Z     Error: no entry found for slug "winter-hours" in collection "posts".
+e2e	Run Playwright	2026-08-30T09:40:51.8839117Z     The spec hardcodes the slug; the collection on this base still carries it.
+e2e	Run Playwright	2026-08-30T09:40:51.8842330Z
+e2e	Run Playwright	2026-08-30T09:40:51.8845118Z       at e2e/content-fixtures.spec.js:34
+e2e	Run Playwright	2026-08-30T09:40:57.1120448Z   1 failed
+e2e	Run Playwright	2026-08-30T09:40:57.1133711Z     [chromium-desktop-1080] › e2e/content-fixtures.spec.js:34:3 › every published post renders
+e2e	Run Playwright	2026-08-30T09:40:57.1140228Z   46 passed (24.1m)
+e2e	Run Playwright	2026-08-30T09:40:58.2201093Z ##[error]Process completed with exit code 1.

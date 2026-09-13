@@ -49,13 +49,19 @@ skills-evals/
   harness/                 # runner + scorers (Python)
     run_eval.py
     guidance.py            # guidance subject: payload assembly, delivery, guard
+    registries.yml         # registry name -> URL -> skill-directory layout
     scorers/
       objective.py
       judge.py
+    fakes/                 # stand-in binaries shared across Class B fixtures
+      gh                   # offline GitHub CLI (see "Four instruments", B)
+      README.md            # its keying rule, classes, and invocation log
   evals/
     <skill>/
       fixture.yaml         # prompt, seed ref, objective checks, judge rubric
       seed/                # input workspace the agent starts from
+      seed/bin/<tool>      # symlink to ../../../../harness/fakes/<tool>, for
+                           # a fixture whose `env:` puts it first on PATH
     guidance/<section id>/ # subject: guidance — a section, not a skill
       fixture.yaml         # section id, arms + delivery modes, checks, rubric
   results/                 # summaries committed; raw transcripts gitignored
@@ -277,15 +283,31 @@ Not every skill takes the same eval, and some take none. Classify first:
   canned JSON captured from the real incident (the same substitution move as
   `$CLAUDE_BIN`/`test/fake-claude`, applied to the tool the skill consults).
   The verdict is scored objectively against the postmortem; the judge grades
-  reasoning quality only. Candidates: `cms-stuck-pr-triage`,
-  `debug-github-workflows`, `ci-watcher-loops`, `editorial-label-audit`,
-  `skills-doctor`, `consumer-repo-provisioning` (the
-  which-secret-is-missing half).
+  reasoning quality only. `cms-stuck-pr-triage` graduated out of this list:
+  covered by `evals/cms-stuck-pr-triage/` (issue #84), which is also where
+  the shared `harness/fakes/gh` every other Class B fixture reuses came
+  from. Candidates: `debug-github-workflows`, `ci-watcher-loops`,
+  `editorial-label-audit`, `skills-doctor`, `consumer-repo-provisioning`
+  (the which-secret-is-missing half).
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over
   absolute rubric scores. Expect noise; run more trials. Candidates:
   `adam-writing-style`, `finding-unknowns`.
+
+  A Class C fixture says so in its `judge:` block: `mode: pairwise` plus
+  `references:` ({name, path} entries, relative to the fixture dir — a path
+  that climbs out of it is refused, because a yardstick from elsewhere on
+  the machine is neither reviewable nor reproducible). The judge is shown
+  the writing under test beside those references, blind: every draft is
+  normalised to the same line shape (a hard-wrapped reference beside an
+  unwrapped reply is separable without reading a word), fenced with a
+  per-call nonce so nothing inside a draft can pose as the prompt, and
+  shuffled systematically per trial so no draft keeps a slot. The score IS
+  the rank, 1 = best; `weights:` is an absolute-mode idea and is rejected
+  here rather than half-honoured. `timeout_s:` (default 120) bounds the
+  call, and a timeout is recorded as a judge error, never as a score.
+  `harness/scorers/judge.py` documents the returned shape.
 - **D. Wrong instrument entirely** — record the decision in the
   non-coverage table below instead of leaving a silent gap.
 
@@ -332,10 +354,18 @@ for every fixture, not folklore in one file's comments:
 - **Hermetic, always** — no network, no wall-clock; canned payloads and fake
   binaries.
   A fixture puts a fake binary in front of the real one with an `env:`
-  block (`PATH: "$WORKSPACE/bin:$PATH"`; `$WORKSPACE` expands to the arm's
-  temp workspace), and reads what the agent did off the log the fake writes
-  — `file_matches` over the log, `transcript_matches` over the final reply.
-  `windows-elevation-from-wsl` is the first fixture in that shape.
+  block (`PATH: "$WORKSPACE/bin:$PATH"` — `${WORKSPACE}` reads the same;
+  `$WORKSPACE` expands to the arm's temp workspace), and reads what the
+  agent did off the log the fake writes — `file_matches` over the log,
+  `transcript_matches` over the final reply.
+  `windows-elevation-from-wsl` is the first fixture in that shape;
+  `cms-stuck-pr-triage` is the second, and its `gh` is shared from
+  `harness/fakes/`.
+- **A check whose evidence is a log says so** (`require_present: true` on
+  `file_matches`). A `must_not_match` over a file that does not exist
+  PASSES, so "the agent attempted no write" is otherwise indistinguishable
+  from "the agent never ran the tool", and deleting the log becomes a way
+  to score restraint.
 
 ### Coverage accrues by process, not by project
 
