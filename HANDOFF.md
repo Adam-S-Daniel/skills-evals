@@ -116,7 +116,8 @@ NOT survive; the branches do.
   no report; their transcripts persist and `SendMessage` to the agent id
   resumes them with context intact. It fired once this session at ~15:46 UTC
   after ~1h50m with four to five opus agents running.
-- Session cost read from `get_session` at 18:04 UTC: $220.58.
+- Session cost read from `get_session`: $220.58 at 18:04 UTC, **$358.03 at
+  19:05 UTC** (the tie-off), for everything this session and its subagents did.
 
 ### Adam's decisions this session
 
