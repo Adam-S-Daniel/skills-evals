@@ -91,6 +91,19 @@ MAPPING_FIXTURE_KEYS = tuple(dict.fromkeys(
     [parent for _key, parents in TIMEOUT_KNOBS for parent in parents] + ["env"]))
 
 
+class MappingFixtureKeyError(guidance.GuidanceError):
+    """`_require_mapping` refused a key. Carries WHICH key, so `main()` can
+    route the `judge:` one onto `invalid_judge_block` — #81's named error,
+    which writes report.md and one summary.json per arm — while every other
+    key keeps the plain rc-2 configuration line. Without the key the two
+    guards could only be ordered, and whichever ran first silently decided
+    the error type for a fixture both of them refuse."""
+
+    def __init__(self, key: str, message: str):
+        self.key = key
+        super().__init__(message)
+
+
 def _require_mapping(fixture: dict, key: str, fixture_path: Path) -> None:
     """A PRESENT `key:` is a mapping, or an explicit null. Anything else is a
     named configuration error at fixture load.
@@ -110,9 +123,14 @@ def _require_mapping(fixture: dict, key: str, fixture_path: Path) -> None:
             "so an empty fixture file died with a TypeError inside it.")
     if key not in fixture or fixture[key] is None or isinstance(fixture[key], dict):
         return
-    raise guidance.GuidanceError(
+    raise MappingFixtureKeyError(
+        key,
         f"{fixture_path}: `{key}:` must be a mapping (or absent), got "
-        f"{fixture[key]!r}. The harness reads it with `.get()`/`.items()`, so "
+        f"{type(fixture[key]).__name__} {fixture[key]!r}. The value's TYPE is "
+        "named as well as its repr because the repr alone does not say it: "
+        "`True` and `3` read as a bool and an int only if you already know "
+        "YAML's spelling rules. The harness reads the key with "
+        "`.get()`/`.items()`, so "
         "a list, a string or a number here is not a configuration it can run "
         "— it used to reach the wrong type and die with an AttributeError "
         "traceback instead of naming the rule.")
@@ -1938,10 +1956,34 @@ def main() -> int:
             print(f"configuration error: {exc}")
             return 2
 
+    fixture = None
     try:
         fixture = load_fixture(args.eval_dir)
         validate_mapping_keys(fixture, args.eval_dir / "fixture.yaml")
         validate_timeouts(fixture, args.eval_dir / "fixture.yaml")
+    except MappingFixtureKeyError as exc:
+        # A malformed `judge:` is #81's `invalid_judge_block` — named in
+        # stdout AND recorded as report.md plus one summary.json per arm, so
+        # a run that produced no numbers says why in `results/` rather than
+        # only to whoever watched it. The load-time guard here refuses it
+        # before the later `isinstance(judge_cfg, dict)` check can, so that
+        # check would otherwise never be reached for a non-mapping and the
+        # artifacts would silently stop being written. Only when the fixture
+        # is well-formed enough to have a usable `skill:` — `_write_pre_run_
+        # error` derives every path it writes from that name.
+        skill_name = fixture.get("skill") if isinstance(fixture, dict) else None
+        usable_skill = isinstance(skill_name, str)
+        if usable_skill:
+            try:
+                _validate_skill_name(skill_name)
+            except ValueError:
+                usable_skill = False
+        if exc.key == "judge" and usable_skill:
+            print(f"invalid_judge_block: {exc}")
+            _write_pre_run_error(args, fixture, "invalid_judge_block", str(exc))
+            return 2
+        print(f"fixture configuration error: {exc}")
+        return 2
     except guidance.GuidanceError as exc:
         print(f"fixture configuration error: {exc}")
         return 2

@@ -1376,15 +1376,31 @@ class TestIssue97(unittest.TestCase):
                                  "is where the fleet hook delivers")
                 self.assertNotIn("SKILLS_EVALS_AMBIENT_LEAK", call["env_keys"])
 
-        # And the skill subject is untouched: still `project`, still the
-        # ambient environment it has always had.
+        # And the skill subject is untouched: still `project`.
+        #
+        # The two FAKE_CLAUDE_* names reach the child through the fixture's
+        # own `env:` block, not through the runner's ambient environment.
+        # Since #81 `run_eval.agent_env` is an allowlist and neither name is
+        # on it, so setting them in `os.environ` alone left the stand-in
+        # writing no log at all and this test died on a FileNotFoundError
+        # rather than on anything it was asserting. `env:` is applied last
+        # and always survives, which is the seam a fixture is meant to use —
+        # so the fixture is copied out and given one rather than the
+        # allowlist being widened for a test's convenience. CLAUDE_BIN stays
+        # ambient: the harness reads it itself and never passes it on.
         skill_log = tmp / "skill-argv.jsonl"
-        with mock.patch.dict(os.environ, {
-                "CLAUDE_BIN": str(FAKE_CLAUDE), "FAKE_CLAUDE_MODE": "agent",
-                "FAKE_CLAUDE_ARGV_LOG": str(skill_log)}):
+        skill_eval = tmp / "skill-eval"
+        shutil.copytree(REPO_ROOT / "evals" / "workflow-path-audit", skill_eval)
+        skill_fixture = yaml.safe_load(
+            (skill_eval / "fixture.yaml").read_text(encoding="utf-8"))
+        skill_fixture["env"] = {"FAKE_CLAUDE_MODE": "agent",
+                                "FAKE_CLAUDE_ARGV_LOG": str(skill_log)}
+        (skill_eval / "fixture.yaml").write_text(
+            yaml.safe_dump(skill_fixture, sort_keys=False), encoding="utf-8")
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE)}):
             proc = subprocess.run(
                 [sys.executable, str(HARNESS_DIR / "run_eval.py"),
-                 str(REPO_ROOT / "evals" / "workflow-path-audit"),
+                 str(skill_eval),
                  "--arm", "without_skill", "--no-judge",
                  "--results-dir", str(tmp / "skill-results")],
                 cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=300)
@@ -2262,8 +2278,12 @@ class TestIssue97(unittest.TestCase):
             (1, (("flag", "harness/run_eval.py"), ("knob", "timeout_s"))),
         ("harness/run_eval.py", "_nested_repo_diff", "subprocess.run",
          "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
-        ("harness/scorers/judge.py", "score", "subprocess.run", "timeout"):
-            (1, (("knob", "judge.timeout_s"),)),
+        # The sink moved out of `score()` when main's #81 work extracted the
+        # CLI call into `_run_judge_cli` — one function now hands a timeout
+        # to subprocess for BOTH judge modes, absolute and pairwise, and it
+        # is where the predicate sits. Same knob, same ceiling, one site.
+        ("harness/scorers/judge.py", "_run_judge_cli", "subprocess.run",
+         "timeout"): (1, (("knob", "judge.timeout_s"),)),
         ("harness/scorers/objective.py", "git_ref_unchanged", "subprocess.run",
          "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/scorers/objective.py", "git_remote_url_is", "subprocess.run",
@@ -2789,7 +2809,7 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),
-        ("harness/scorers/judge.py", "score"): ("param", "timeout"),
+        ("harness/scorers/judge.py", "_run_judge_cli"): ("param", "timeout"),
         ("harness/scorers/objective.py", "git_ref_unchanged"):
             ("const", "GIT_TIMEOUT_S"),
         ("harness/scorers/objective.py", "git_remote_url_is"):
@@ -2867,8 +2887,8 @@ class TestIssue97(unittest.TestCase):
             return fn(tmp, "p", kwargs["arm"])
         if name == "_nested_repo_diff":
             return fn(tmp, [])
-        if name == "score":
-            return fn("r", "t", "d", **kwargs)
+        if name == "_run_judge_cli":
+            return fn("a judge prompt", model=None, **kwargs)
         if name == "git_ref_unchanged":
             return fn(str(tmp), [], path=".", ref="HEAD", expected="x")
         if name == "git_remote_url_is":
@@ -4062,20 +4082,29 @@ class TestIssue97(unittest.TestCase):
     def test_the_header_names_what_is_in_reach_for_each_subject(self):
         # A6. The header used to say that while the bypassPermissions agent
         # runs, "the only credential in reach is the short-lived WIF-derived
-        # access token (and the single-use OIDC token file)". Measured: that
-        # is true of a GUIDANCE arm, which gets an allowlist built from
-        # nothing, and FALSE of a SKILL arm, whose `agent_env` is
-        # `dict(os.environ)` — it also inherits the runner's GitHub OIDC
-        # request token and the Actions runtime token. This test measures both
-        # environments through the real functions and requires the header to
-        # say what each one actually carries.
+        # access token (and the single-use OIDC token file)". Measured when
+        # this test was written: true of a GUIDANCE arm, which gets an
+        # allowlist built from nothing, and FALSE of a SKILL arm, whose
+        # `agent_env` was `dict(os.environ)` — it also inherited the runner's
+        # GitHub OIDC request token and the Actions runtime token.
+        #
+        # Merging #81 closed that half: `run_eval.agent_env` is an allowlist
+        # of its own now, so neither arm carries the three runner tokens. The
+        # test measures both environments through the real functions and goes
+        # on requiring the header to say what each one actually carries —
+        # which is what keeps the header honest in EITHER direction, since a
+        # name added back to `_ALLOWED_ENV` reds it just as its removal did.
+        # The ban below stays: the two allowlists still forward every
+        # ANTHROPIC_* variable and the skill one every CLAUDE_* variable
+        # (CLAUDE_CODE_OAUTH_TOKEN included), so "the only credential in
+        # reach" is not a sentence this header may make.
         header = self._eval_header_prose()
         self.assertFalse(
             "the only credential in reach" in header,
             "the header still claims the WIF token is 'the only credential in "
-            "reach'. That is false for the skill arm, whose agent_env is "
-            "dict(os.environ): it also inherits the runner's GitHub OIDC "
-            "request token and runtime token. Name what is in reach per "
+            "reach'. Both allowlists forward every ANTHROPIC_* variable, and "
+            "the skill arm's also forwards every CLAUDE_* one — "
+            "CLAUDE_CODE_OAUTH_TOKEN among them. Name what is in reach per "
             "subject instead.")
 
         tmp = Path(tempfile.mkdtemp(prefix="reach-"))
@@ -4092,16 +4121,37 @@ class TestIssue97(unittest.TestCase):
             guidance_env = guidance.agent_env(
                 workspace=workspace, home=home, tmpdir=tmpdir, config_dir=config)
 
+        # The environments are non-empty, so neither loop below can pass by
+        # measuring nothing: `agent_env` returning `{}` would otherwise
+        # satisfy every assertNotIn in it.
+        self.assertTrue(skill_env, "run_eval.agent_env returned nothing")
+        self.assertTrue(guidance_env, "guidance.agent_env returned nothing")
         for name in runner_only:
             with self.subTest(variable=name):
-                self.assertIn(name, skill_env,
-                              "measured: the skill arm inherits the runner's "
-                              "whole ambient environment")
+                self.assertNotIn(name, skill_env,
+                                 "measured: the skill arm gets an allowlist "
+                                 "too since #81, so the runner's GitHub "
+                                 "tokens are no longer in reach")
                 self.assertNotIn(name, guidance_env,
                                  "measured: the guidance arm gets an allowlist")
                 self.assertIn(name, header,
-                              "the header must NAME what the skill arm's "
-                              f"agent can reach; {name} is missing from it")
+                              "the header must still NAME each runner token "
+                              "and say it is out of reach — a reader who "
+                              "knows the runner sets it needs to be told "
+                              f"where it went; {name} is missing from it")
+        # The skill arm's allowlist, quoted in the header the same way the
+        # guidance arm's is. Names only: the four PREFIXES are families, and
+        # the header names the family.
+        for name in run_eval._ALLOWED_ENV:
+            with self.subTest(allowed=name):
+                self.assertIn(name, header,
+                              "the header quotes the skill arm's allowlist; "
+                              f"{name} is in _ALLOWED_ENV but not in it")
+        for prefix in run_eval._ALLOWED_ENV_PREFIXES:
+            with self.subTest(prefix=prefix):
+                self.assertIn(prefix.rstrip("_"), header,
+                              "the header quotes the skill arm's allowlist "
+                              f"prefixes; {prefix} is missing from it")
         # And it must still say what neither arm has.
         for phrase in ("no GitHub write credential", "no long-lived secret"):
             self.assertIn(phrase, header, f"the header must still say {phrase!r}")

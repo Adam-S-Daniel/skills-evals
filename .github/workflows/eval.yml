@@ -94,14 +94,22 @@
 #   long-lived secret exists on the runner. What IS in reach differs by
 #   subject, because the two arms are built differently:
 #
-#     - a SKILL arm's agent inherits the runner's whole ambient environment
-#       (harness/run_eval.py's `agent_env` is `dict(os.environ)`), so besides
-#       the short-lived WIF-derived Anthropic access token and the single-use
-#       OIDC token file it also has ACTIONS_ID_TOKEN_REQUEST_TOKEN and
-#       ACTIONS_ID_TOKEN_REQUEST_URL — which mint a GitHub OIDC assertion for
-#       any audience while `id-token: write` is granted — and
-#       ACTIONS_RUNTIME_TOKEN, which writes this run's artifacts and cache.
-#       None of them writes to the repository.
+#     - a SKILL arm's agent gets an ALLOWLIST too, since #81 (harness/
+#       run_eval.py's `_ALLOWED_ENV` + `_ALLOWED_ENV_PREFIXES`): PATH, HOME,
+#       USER, LOGNAME, SHELL, TERM, LANG, LANGUAGE, TZ, TMPDIR, TMP, TEMP,
+#       the proxy names HTTP_PROXY, HTTPS_PROXY, NO_PROXY, ALL_PROXY and
+#       their lower-case twins http_proxy, https_proxy, no_proxy, all_proxy,
+#       the CA-bundle names SSL_CERT_FILE, SSL_CERT_DIR, NODE_EXTRA_CA_CERTS,
+#       REQUESTS_CA_BUNDLE, CURL_CA_BUNDLE, and every variable whose name
+#       begins ANTHROPIC_, CLAUDE_, LC_ or XDG_ — plus the harness's own
+#       WORKSPACE and GH_CONFIG_DIR, the deliberately EMPTIED GH_TOKEN and
+#       GITHUB_TOKEN, and last the fixture's own `env:` block. It used to be
+#       `dict(os.environ)`, which also handed the agent
+#       ACTIONS_ID_TOKEN_REQUEST_TOKEN and ACTIONS_ID_TOKEN_REQUEST_URL —
+#       which mint a GitHub OIDC assertion for any audience while
+#       `id-token: write` is granted — and ACTIONS_RUNTIME_TOKEN, which
+#       writes this run's artifacts and cache. None of those three is in
+#       reach for either arm now.
 #     - a GUIDANCE arm's agent gets an ALLOWLIST built from nothing
 #       (harness/guidance.py's `agent_env`): PATH, LANG, LC_ALL, SHELL, USER,
 #       NODE_PATH, plus the HOME, TMPDIR, CLAUDE_CONFIG_DIR and WORKSPACE the
@@ -110,11 +118,15 @@
 #       those three isolation variables (HOME, TMPDIR, CLAUDE_CONFIG_DIR are
 #       refused by name, because the block is applied after they are set, so
 #       a fixture allowed to name one could point an arm at the real config
-#       dir). The two GitHub tokens above are NOT in that set.
+#       dir). The three GitHub runner tokens above are NOT in that set
+#       either.
 #
-#   Re-pointing the skill arm at the allowlist is a separate change with its
-#   own byte-for-byte fixture comparison, not something this workflow's header
-#   can assert.
+#   The two allowlists are deliberately DIFFERENT and neither derives from
+#   the other: the guidance one is the narrower, because a guidance arm is
+#   handed HOME, TMPDIR and CLAUDE_CONFIG_DIR by the harness and must not
+#   inherit the operator's. What they share is the predicate that refuses a
+#   name or value the OS itself will not take (`guidance.check_env_block`),
+#   which bounds what a fixture may SPELL rather than what is inherited.
 #
 # * The weekly badge commit doubles as cron keep-alive: GitHub disables
 #   scheduled workflows after ~60 days without repo activity, and each run

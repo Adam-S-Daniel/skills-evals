@@ -11594,11 +11594,21 @@ class TestIssue81(unittest.TestCase):
                  and isinstance(node.func, ast.Attribute)
                  and isinstance(node.func.value, ast.Name)
                  and node.func.value.id == "judge"]
-        self.assertEqual([node.func.attr for node in calls], ["score"],
+        # EVERY judge call site, not the first one: merging #97 added a
+        # second (`_run_guidance_arm`) beside `_run_arm`'s, and a pin that
+        # read `calls[0]` would have gone on passing while the other moved.
+        # The property is the same one — nothing in run_eval.py reaches
+        # `score_fixture` yet, and every call it does make has the
+        # pre-#81 shape.
+        self.assertTrue(calls, "no judge call site in run_eval.py at all — "
+                               "this pin must not pass vacuously")
+        self.assertEqual(sorted({node.func.attr for node in calls}), ["score"],
                          "run_eval.py's judge call site moved")
-        self.assertEqual(sorted(kw.arg for kw in calls[0].keywords),
-                         ["model", "timeout", "weights"],
-                         "run_eval.py's judge.score() call changed shape")
+        for call in calls:
+            with self.subTest(line=call.lineno):
+                self.assertEqual(sorted(kw.arg for kw in call.keywords),
+                                 ["model", "timeout", "weights"],
+                                 "run_eval.py's judge.score() call changed shape")
         readme = (self.STYLE_DIR / "README.md").read_text(encoding="utf-8")
         self.assertIn("run_eval.py` does not honour `judge.mode` yet", readme)
 
