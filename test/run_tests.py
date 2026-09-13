@@ -10558,15 +10558,17 @@ class TestIssue67Review6(unittest.TestCase):
         plant ages out once neither the Models API nor the census names
         it. Row 2 below is that property, unchanged in substance.
 
-        Row 1 is what the qualification costs and what pays for it. A
-        planter who forges the census AS WELL — a strictly stronger
-        primitive than the one S3 was written against, and one
-        `eval.yml:352-354` does grant, since both files come off the same
-        branch — keeps the plant alive. The arm is still not retired,
-        because round 12's ANCHORED denominator refuses a retirement whose
-        denominator the previous roster supplies: 99.9% of it here. That
-        is a stronger defence than ageing was, and it does not depend on a
-        date the planter writes.
+        Row 1 is what the qualification costs. A planter who forges the
+        census AS WELL keeps the plant alive, and the real arm's measured
+        share dilutes to 0.1%, so the run PROPOSES retiring it. Nothing
+        retires: the proposal is a line in a diff on `roster/proposal`
+        with its numerator and denominator beside it, and a human merges
+        it or does not (#147, ADR 0001). What used to sit in this row was
+        the anchored-denominator veto, which refused the retirement in
+        code because the previous roster supplied 99.9% of the
+        denominator; `previous` is a reviewed file now, so that fraction
+        no longer measures doubt, and the irreversible half of the
+        decision is the merge.
         """
         stale = (self.NOW - timedelta(days=181)).strftime("%Y-%m-%d")
         previous = {
@@ -10581,15 +10583,14 @@ class TestIssue67Review6(unittest.TestCase):
         census = TestIssue67._census_doc(counts=counts)
         result = self._compute(census=census, previous=previous)
         # ROW 1 — the census names the plant, so ageing does not drop it,
-        # and the ANCHORED denominator is what keeps the real arm.
+        # and the dilution it causes is PROPOSED rather than applied.
         self.assertIn("claude-sonnet-9-9", self._seen_ids(result))
-        self.assertIn("claude-opus-4-8", self._arm_ids(result))
-        reason = self._reason(result, "claude-opus-4-8")
-        self.assertIn("the retirement is refused rather than acted on",
-                      reason)
-        self.assertNotIn("still 0.1%", reason)
-        self.assertNotIn("claude-opus-4-8",
-                         {r["id"] for r in result["retired_since_last"]})
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("0.1%", retired["claude-opus-4-8"],
+                      "the diluted share is published with the proposal, "
+                      "so a reviewer sees the number the claim rests on")
+        self.assertEqual(result["proposal"]["status"], "differs")
         # ROW 2 — the census stops naming the plant, and it ages out on
         # its own with nothing reverted. This is S3's property in the form
         # round 12 leaves it in.
@@ -28445,249 +28446,6 @@ class TestIssue67Review12(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         return published, err
 
-    def test_one_arms_entry_cannot_retire_a_live_arm_by_widening_the_denominator(self):
-        """CONTROL vs the same run with ONE hostile `arms` entry.
-
-        RED on `7ef5780`: the planted row published `RETIRED: below the 2%
-        exit bar for the last 8 weeks (1.2% of rankable census usage)` for
-        a live arm carrying 100.0% of everything the live catalogue can
-        account for — rc 0, empty stderr, no warning of any kind. It is
-        PERMANENT: run 2 reads run 1's own roster, where the model is no
-        longer an arm, so the exit bar no longer applies and real usage
-        never re-seats it.
-
-        The arm KEEPS ITS SEAT here and NOTHING is retired. Its published
-        REASON does change — the wide denominator still decides seating,
-        because that is round 6's B1, where a departed arm's real turns
-        deflate a false 100% to the truth and the route may not be deleted
-        — so what the fix bounds is what the widening may DO, not that it
-        does nothing. The destructive half is closed; see
-        `TestIssue67Review12._ATTACK_TABLE` for the cell-by-cell statement
-        of which half each input keeps."""
-        control, _ = self._denominator_row()
-        planted, err = self._denominator_row(arms_extra=[self._GHOST])
-        self.assertIn(self._VICTIM, self._arm_ids(control))
-        self.assertIn(self._VICTIM, self._arm_ids(planted),
-                      "one `arms` entry naming a key nothing can credit "
-                      "retired a live arm carrying real in-window usage")
-        self.assertNotIn(self._VICTIM,
-                         {t["id"] for t in planted["retired_since_last"]},
-                         "the plant's own entry is reported retired — it "
-                         "was named in `arms` and the Models API does not "
-                         "return it — but the VICTIM must not be")
-        self.assertIn("the retirement is refused rather than acted on",
-                      self._reason(planted, self._VICTIM))
-        # The published sentence used to end "against this run's live
-        # catalogue alone it still carries 100.0% (at or above the 2%
-        # exit bar)", and this row asserted that clause. Round 13's
-        # BLOCKER A deleted the conjunct that checked it, so the sentence
-        # no longer claims the anchored share clears anything — it
-        # reports it as a number over a denominator it names as
-        # different. The assertion moves with the sentence, and what it
-        # still pins is that the number is published at all.
-        self.assertIn("Against this run's live catalogue alone the same "
-                      "window measures 100.0% for this arm",
-                      self._reason(planted, self._VICTIM))
-        self.assertNotIn("at or above the 2% exit bar",
-                         self._reason(planted, self._VICTIM),
-                         "no clause of the refusal sentence may assert "
-                         "something the code no longer checks")
-
-    def test_one_catalogue_seen_entry_cannot_retire_a_live_arm_either(self):
-        """The same row through the OTHER list. `7ef5780` publishes an
-        identical `RETIRED ... (1.2% ...)` for it — the reviewer measured
-        both placements and they are the same attack, so both get a
-        floor."""
-        control, _ = self._denominator_row()
-        planted, _ = self._denominator_row(seen_extra=[self._GHOST])
-        self.assertIn(self._VICTIM, self._arm_ids(control))
-        self.assertIn(self._VICTIM, self._arm_ids(planted))
-        self.assertEqual(planted["retired_since_last"], [],
-                         "nothing is retired at all on this placement — "
-                         "the plant is in `catalogue_seen`, which "
-                         "`retired_since_last` does not read")
-
-    def test_the_anchor_tolerance_is_measured_on_both_sides(self):
-        """What fixes `RETIREMENT_ANCHOR_TOLERANCE` at 0.01, through
-        `main()`, one turn either side of the number.
-
-        The victim carries 200 of the 10,000 turns this run's live
-        catalogue accounts for — a true 2.0%, exactly ON the shipped exit
-        bar. `g` more turns sit under a key only the previous roster
-        vouches for, which puts the wide share under the bar in both rows.
-
-        g = 101: previous-roster-only attribution is 101/10,101 =
-        0.009999 of the denominator, inside the tolerance, and the
-        retirement is ACTED ON. g = 102: 102/10,102 = 0.010097, outside
-        it, and the retirement is REFUSED. Nothing else differs between
-        the rows, so this measures the constant and not the mechanism
-        around it.
-
-        Both rows are red on `7ef5780` in the same direction — there is no
-        second measurement there, so both retire. MUTATION: setting the
-        tolerance to 0.0 holds the g = 101 row over as well; setting it
-        to 0.10 retires the g = 102 row.
-
-        WHY THE NUMBER IS NOT 0 — corrected, because the reason changed
-        under this row and the row did not notice. It used to be that at
-        0 the comparison was DEAD, implied by the `anchored_held >= exit
-        bar` conjunct beside it, so F-2 would have deleted the whole
-        clause. BLOCKER A (#129 review round 13) deleted that conjunct,
-        so the fraction is now the only test and 0 is live: it reads
-        `previous_only > 0` and vetoes every retirement whose two
-        denominators differ at all. The reason 0 is still wrong is a
-        COST, not deadness — see `RETIREMENT_ANCHOR_TOLERANCE`'s own
-        comment, "THAT IS NOT A FREE STRENGTHENING"."""
-        for g, expect_retired in ((101, True), (102, False)):
-            with self.subTest(previous_only_turns=g):
-                counts = {self._VICTIM: {self.W[0]: 200},
-                          "claude-haiku-4-5": {self.W[0]: 9_800},
-                          self._GHOST: {self.W[0]: g}}
-                previous = {"arms": [{"id": self._VICTIM,
-                                      "reason": "was an arm"},
-                                     {"id": self._GHOST,
-                                      "reason": "was an arm"}],
-                            "catalogue_seen": []}
-                models = TestIssue67._models_doc(
-                    drop={"claude-sonnet-4-6", "claude-opus-4-8",
-                          "claude-opus-5", "claude-fable-5-1"})
-                models["models"].append(
-                    self._model("claude-sonnet-7", "2026-03-01T00:00:00Z"))
-                with tempfile.TemporaryDirectory() as tmp:
-                    rc, published, _, err = self._run_main(
-                        tmp, models,
-                        census=TestIssue67._census_doc(counts=counts),
-                        previous=previous)
-                self.assertEqual(rc, 0, err)
-                retired = {t["id"] for t in published["retired_since_last"]}
-                self.assertEqual(self._VICTIM in retired, expect_retired,
-                                 f"g={g}: retired={sorted(retired)}, "
-                                 f"arms={self._arm_ids(published)}")
-
-    def test_the_notice_fires_on_the_attack_and_not_on_the_ordinary_run(self):
-        """What fixes `PREVIOUS_ONLY_DENOMINATOR_NOTICE` at 0.10: the line
-        has to be worth reading, which means firing on the runs whose
-        denominator the previous roster supplies and staying silent on the
-        ones it does not.
-
-        Row 1 is BLOCKER 1's own input — 98.8% of the denominator
-        attributable only through one planted `arms` entry. Row 2 is the
-        canned fixture every other test in this file uses, where every
-        census key is a live catalogue id and the fraction is 0.
-
-        RED on `7ef5780`, where neither row prints anything: there is no
-        second denominator there to compare against, which is the whole
-        finding. Counts and a percentage only — no id may appear."""
-        _, attack = self._denominator_row(arms_extra=[self._GHOST])
-        # ONE LINE PER DECIDING WINDOW, each naming its own (ITEM 7,
-        # #129 review round 13). Both fire here because the plant fills
-        # both windows; on the shipped policy the exit window IS the
-        # 8-week union, so the second line is what the single union line
-        # used to say.
-        self.assertIn("98.8% of the ranked census denominator over the "
-                      "enter window's last 4 weeks", attack)
-        self.assertIn("98.8% of the ranked census denominator over the "
-                      "exit window's last 8 weeks", attack)
-        self.assertIn("attributable only through the previous roster's own "
-                      "entries", attack)
-        self.assertNotIn(self._GHOST, attack,
-                         "a warning about an untrusted input names counts, "
-                         "never an id")
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, _, _, ordinary = self._run_main(
-                tmp, TestIssue67._models_doc(),
-                census=TestIssue67._census_doc(),
-                previous={"arms": [{"id": "claude-sonnet-5",
-                                    "reason": "was an arm"}],
-                          "catalogue_seen": []})
-        self.assertEqual(rc, 0, ordinary)
-        self.assertNotIn("attributable only through", ordinary,
-                         "the notice must stay silent on a run whose "
-                         "denominator the live catalogue accounts for")
-        # Row 3 — the LOWER side of the number, which row 2 cannot
-        # measure because its fraction is exactly 0. Here it is 500 of
-        # 10,000 = 5.0%: real previous-roster-only attribution, under the
-        # threshold, and still silent. Without this row the constant
-        # could be anything above 0 and nothing would notice.
-        counts = {self._VICTIM: {self.W[0]: 9_500},
-                  self._GHOST: {self.W[0]: 500}}
-        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
-                             {"id": self._GHOST, "reason": "was an arm"}],
-                    "catalogue_seen": []}
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, _, _, quiet = self._run_main(
-                tmp, self._two_sonnets(),
-                census=TestIssue67._census_doc(counts=counts),
-                previous=previous)
-        self.assertEqual(rc, 0, quiet)
-        self.assertNotIn("attributable only through", quiet,
-                         "5% of the denominator is under the threshold and "
-                         "must not print a line")
-        # Row 4 — the MIDDLE of the band, which nothing measured until
-        # round 13's ITEM 5: rows 2 and 3 pin the constant from below
-        # (0% and 5.0%, both silent) and row 1 pins it from above at
-        # 98.8%, so between them the constant could have been anything
-        # from just over 0.05 to just under 0.988 and every row would
-        # still have been green. 50.0% is strictly inside 0.10..0.90, so
-        # this row goes red if the constant is moved to either end.
-        counts = {self._VICTIM: {self.W[0]: 500},
-                  self._GHOST: {self.W[0]: 500}}
-        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
-                             {"id": self._GHOST, "reason": "was an arm"}],
-                    "catalogue_seen": []}
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, _, _, midband = self._run_main(
-                tmp, self._two_sonnets(),
-                census=TestIssue67._census_doc(counts=counts),
-                previous=previous)
-        self.assertEqual(rc, 0, midband)
-        for window, weeks in (("enter", 4), ("exit", 8)):
-            self.assertIn(f"50.0% of the ranked census denominator over "
-                          f"the {window} window's last {weeks} weeks",
-                          midband,
-                          "half the denominator is previous-roster-only "
-                          "and the run must say so")
-        self.assertNotIn(self._GHOST, midband)
-
-    def test_the_notice_is_measured_over_the_windows_that_decide(self):
-        """ITEM 7, #129 review round 13. The line used to be computed
-        over the 8-week UNION, and the union decides no share: SEATING is
-        decided over the 4-week enter window and RETIREMENT over the
-        8-week exit window.
-
-        Here the previous-roster-only turns are 20 of the enter window's
-        120 — 16.7%, over the threshold — while the union carries 100,000
-        more turns in a week the enter window does not reach, so the
-        union fraction is 0.02% and the exit window's is the same. The
-        union measurement stays silent about a share that is out by a
-        sixth.
-
-        RED on `87f2031`, where the only line there is is the union's and
-        this run prints nothing at all. Note which way the asymmetry
-        runs: no row of the existing corpus is caught by the enter window
-        alone (measured — `python3 test/run_tests.py
-        --measure-previous-only-distribution` reports it), so this row is
-        the whole floor for the change, and it is red if the notice ever
-        goes back to one window."""
-        counts = {self._VICTIM: {self.W[0]: 100, self.W[4]: 100_000},
-                  self._GHOST: {self.W[0]: 20}}
-        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
-                             {"id": self._GHOST, "reason": "was an arm"}],
-                    "catalogue_seen": []}
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, _, _, err = self._run_main(
-                tmp, self._two_sonnets(),
-                census=TestIssue67._census_doc(counts=counts),
-                previous=previous)
-        self.assertEqual(rc, 0, err)
-        self.assertIn("16.7% of the ranked census denominator over the "
-                      "enter window's last 4 weeks", err)
-        self.assertNotIn("exit window", err,
-                         "the union — and so the exit window, which IS "
-                         "the union on the shipped policy — is at 0.02% "
-                         "here, which is the point of the row")
-        self.assertNotIn(self._GHOST, err)
-
     # --- SHOULD-FIX 3: a floor for the CLASS, not for the rows that were
     # measured ------------------------------------------------------------
     #
@@ -28813,13 +28571,6 @@ class TestIssue67Review12(unittest.TestCase):
                 census=self._class_census(victim_key), previous=previous)
         self.assertEqual(rc, 0, err)
         return published, err
-
-    def test_every_previous_json_input_has_a_control_versus_hostile_floor(self):
-        """THE CLASS FLOOR. Eleven rows, four inputs, both directions,
-        under BOTH victim shapes."""
-        for shape in self._VICTIM_SHAPES:
-            with self.subTest(victim_shape=shape):
-                self._class_floor_table(shape)
 
     def _class_floor_table(self, shape):
         V, key, arm_hops, seen_hops, catalogue = self._victim_shape(shape)
@@ -29380,71 +29131,6 @@ class TestIssue67Review13(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         return published, err
 
-    def test_one_arms_line_cannot_retire_an_arm_reached_through_a_fold_chain(self):
-        """THE PARK COMMENT'S MEASUREMENT, through `main()`.
-
-        The victim carries 5,000 of the window's 5,300 rankable turns — a
-        true 94.340% — and every one of them arrives under a census key
-        three hops away. ONE added `arms` line naming a ranked key nothing
-        can credit widens the denominator to 405,300, which puts the
-        victim's wide share at 1.2%, under the 2% exit bar.
-
-        RED on `87f2031`: `RETIRED: below the 2% exit bar for the last 8
-        weeks (1.2% of rankable census usage)`, rc 0. The anchored
-        measurement that was supposed to refuse it reads 0.000%, not
-        94.340%, because the anchored alias map cannot follow a chain
-        whose middle hop is a `catalogue_seen` entry — so round 12's added
-        conjunct was false and blocked its own veto.
-
-        It is PERMANENT: run 2 reads run 1's roster, where the model is no
-        longer an arm, so the exit bar no longer applies to it and real
-        usage never re-seats it.
-
-        MUTATION: restoring `anchored_held >= policy["arm_exit_usage_pct"]
-        and` in front of the fraction test in `compute_roster`'s hold-over
-        branch."""
-        control, _ = self._park_row(planted=False)
-        planted, err = self._park_row(planted=True)
-        self.assertIn(self._LIVE, self._arm_ids(control))
-        self.assertIn("94.3%", self._reason(control, self._LIVE),
-                      "the control must measure the victim at its true "
-                      "94.3%, or the row is about nothing")
-        self.assertIn(self._LIVE, self._arm_ids(planted),
-                      "one `arms` entry retired a live arm carrying 94.3% "
-                      "of the window through a fold chain")
-        self.assertNotIn(self._LIVE,
-                         {t["id"] for t in planted["retired_since_last"]},
-                         "the permanent, unrecoverable half")
-        self.assertIn("the retirement is refused rather than acted on",
-                      self._reason(planted, self._LIVE))
-
-    def test_the_refusal_sentence_asserts_only_what_the_code_checked(self):
-        """Every clause of a published reason is a claim, and a claim
-        nothing checks is the shape round 13's BLOCKER A came in: the
-        sentence asserted the anchored share was "at or above the exit
-        bar" for a whole round after the code stopped requiring it.
-
-        Here the anchored share is 0.0% and the wide one 1.2%, so the old
-        sentence would have published a self-contradiction. The number is
-        still reported — a reader needs it — with the denominator it
-        belongs to named beside it and no verdict attached.
-
-        MUTATION: putting the "(at or above the ...% exit bar)" clause
-        back on the anchored share."""
-        planted, _ = self._park_row(planted=True)
-        sentence = self._reason(planted, self._LIVE)
-        self.assertIn("Against this run's live catalogue alone the same "
-                      "window measures 0.0% for this arm", sentence)
-        self.assertNotIn("at or above", sentence)
-        self.assertNotIn("still carries", sentence)
-        # The two clauses that ARE checked, in the order the code checks
-        # them: the wide share is under the bar, and the fraction is over
-        # the tolerance.
-        self.assertIn("1.2% of rankable census usage over the last 8 weeks "
-                      "is under the 2% exit bar", sentence)
-        self.assertIn("99.9% of that denominator is attributable only "
-                      "through the previous roster's own entries", sentence)
-
     # --- BLOCKER B: one deletion from `catalogue_seen` retires a live arm
     # at a numerator of zero ---------------------------------------------
     #
@@ -29930,50 +29616,6 @@ class TestIssue67Review13(unittest.TestCase):
     # an enumeration of sources never does. Both were applied and run on
     # `87f2031` first, and both are RED there.
 
-    def test_the_widening_entry_need_not_name_the_key_it_makes_countable(self):
-        """INVENTED. Every measured attack on the denominator so far
-        NAMES the unattributable census key — one `arms` line, or one
-        `catalogue_seen` line, spelled exactly like the key. This one
-        never names it: the planted `arms` entry is a DATED SPELLING of
-        the key, and the wide alias map folds the entry onto the key,
-        which is what puts the key in `previous_arms_folded` and so into
-        the denominator.
-
-        Same outcome, one indirection further out: the victim's 5,000 of
-        5,300 rankable turns become 5,000 of 405,300, its wide share
-        falls to 1.2%, and on `87f2031` it is published `RETIRED: below
-        the 2% exit bar for the last 8 weeks (1.2% of rankable census
-        usage)`, rc 0. The anchored measurement is 0.000% here too — the
-        victim is reached through a fold chain — so round 12's conjunct
-        blocked its own veto exactly as it did for the direct spelling.
-
-        A check placed on "an `arms` entry that equals a census key"
-        would miss this. The fraction test at the sink does not."""
-        key = "claude-opus-4-1-router-eu"
-        dated = key + "-20250101"
-        counts = {self._KEY: {self.W[0]: 5_000},
-                  "claude-sonnet-5": {self.W[0]: 300},
-                  key: {self.W[0]: 400_000}}
-        previous = {"arms": [{"id": self._ARM, "reason": "was an arm"},
-                             {"id": self._LIVE, "reason": "was an arm"},
-                             {"id": dated, "reason": "was an arm"}],
-                    "catalogue_seen": [{"id": self._SEEN,
-                                        "last_seen": self._days_ago(3)}]}
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, published, _, err = self._run_main(
-                tmp, self._catalogue(),
-                census=TestIssue67._census_doc(counts=counts),
-                previous=previous)
-        self.assertEqual(rc, 0, err)
-        self.assertNotIn(key, [a["id"] for a in previous["arms"]],
-                         "the point of the row is that the key itself is "
-                         "never named")
-        self.assertIn(self._LIVE, self._arm_ids(published))
-        self.assertNotIn(self._LIVE,
-                         {t["id"] for t in published["retired_since_last"]})
-        self.assertIn("the retirement is refused rather than acted on",
-                      self._reason(published, self._LIVE))
-
     def test_an_aged_out_hop_can_inflate_an_unrelated_arm_instead(self):
         """INVENTED. Both of round 13's ageing rows end in a RETIREMENT
         of the model the broken chain belongs to. This one ends the other
@@ -30100,102 +29742,6 @@ class TestIssue67Review13(unittest.TestCase):
                       "this row pins the NONZERO deflation specifically, "
                       "and the share it names is what distinguishes it "
                       "from the zero-numerator half")
-
-
-def _measure_previous_only_distribution():
-    """How often `PREVIOUS_ONLY_DENOMINATOR_NOTICE` fires across this
-    suite, and over which window — the measurement behind the constant's
-    own docstring in `harness/roster.py`.
-
-    RUN IT WITH:
-
-        python3 test/run_tests.py --measure-previous-only-distribution
-
-    It is a re-runnable command rather than a number in a comment because
-    round 13 could not reproduce round 12's figure (1,503 calls across
-    170 tests) from anything written down, and an unreproducible
-    measurement is indistinguishable from an invented one. The number
-    MOVES as tests are added; the docstring records what this command
-    printed at the head that shipped it, and the way to check it is to
-    run it again.
-
-    HOW IT WORKS, and where it is fragile: `compute_roster` calls
-    `_in_window_totals` exactly five times, in a fixed order — union,
-    enter, exit, anchored enter, anchored exit — so the two fractions the
-    notice reads can be recovered positionally. A call that does not make
-    exactly five is not counted, which is what keeps a future refactor
-    from silently reporting nonsense instead of failing to report.
-
-    WHAT IT CANNOT SEE: a `compute_roster` that runs in a SUBPROCESS. A
-    handful of rows drive the CLI through `subprocess.run` rather than
-    through `main()` in-process, and those calls are invisible here. The
-    figure is therefore a lower bound on the suite's calls, which is the
-    direction that matters for "how often does this stay silent".
-    """
-    per_call = []
-    state = {"test": None, "totals": None}
-    real_compute = roster.compute_roster
-    real_totals = roster._in_window_totals
-
-    def totals(*args, **kwargs):
-        out = real_totals(*args, **kwargs)
-        if state["totals"] is not None:
-            state["totals"].append(out)
-        return out
-
-    def compute(*args, **kwargs):
-        outer, state["totals"] = state["totals"], []
-        try:
-            return real_compute(*args, **kwargs)
-        finally:
-            seen, state["totals"] = state["totals"], outer
-            if len(seen) == 5:
-                enter, exit_ = seen[1][1], seen[2][1]
-                a_enter, a_exit = seen[3][1], seen[4][1]
-                per_call.append((
-                    state["test"],
-                    (enter - a_enter) / enter if enter else None,
-                    (exit_ - a_exit) / exit_ if exit_ else None))
-
-    class _Result(unittest.TextTestResult):
-        def startTest(self, test):
-            state["test"] = test.id()
-            super().startTest(test)
-
-    roster.compute_roster = compute
-    roster._in_window_totals = totals
-    try:
-        suite = unittest.defaultTestLoader.loadTestsFromModule(
-            sys.modules["__main__"])
-        with open(os.devnull, "w", encoding="utf-8") as sink:
-            unittest.TextTestRunner(resultclass=_Result, verbosity=0,
-                                    stream=sink).run(suite)
-    finally:
-        roster.compute_roster = real_compute
-        roster._in_window_totals = real_totals
-
-    bar = roster.PREVIOUS_ONLY_DENOMINATOR_NOTICE
-    with_denominator = [c for c in per_call
-                        if c[1] is not None or c[2] is not None]
-    tests = {c[0] for c in with_denominator}
-    loud = {c[0] for c in with_denominator
-            if (c[1] is not None and c[1] >= bar)
-            or (c[2] is not None and c[2] >= bar)}
-    enter_only = {c[0] for c in with_denominator
-                  if c[1] is not None and c[1] >= bar
-                  and not (c[2] is not None and c[2] >= bar)}
-    quiet = tests - loud
-    print(f"instrumented compute_roster calls: {len(per_call)}")
-    print(f"  reaching a census-derived denominator: "
-          f"{len(with_denominator)}, across {len(tests)} distinct tests")
-    print(f"  tests that stay under {bar} in BOTH windows and emit "
-          f"nothing: {len(quiet)} of {len(tests)} "
-          f"({100 * len(quiet) / len(tests):.0f}%)")
-    print(f"  tests where at least one window is at or over {bar}: "
-          f"{len(loud)}")
-    print(f"  ... of those, tests the ENTER window alone would have "
-          f"caught: {len(enter_only)}")
-    return 0
 
 
 class TestIssue143(unittest.TestCase):
@@ -30971,7 +30517,6 @@ class TestIssue147(unittest.TestCase):
             self.assertEqual(rc.returncode, 1)
             self.assertFalse(out.exists())
 
+
 if __name__ == "__main__":
-    if "--measure-previous-only-distribution" in sys.argv:
-        raise SystemExit(_measure_previous_only_distribution())
     unittest.main()
