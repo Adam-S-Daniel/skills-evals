@@ -1,0 +1,54 @@
+# THE ROSTER THIS HARNESS RUNS ON. Trusted because it is committed on `main`,
+# which is ruleset-protected and pull-request-only: an arm, the judge, the
+# preflight model or a `catalogue_seen` entry cannot appear here or vanish
+# from here without a reviewed commit. See docs/decisions/0001-roster-trusted
+# -on-main.md.
+#
+# NOTHING WRITES THIS FILE AUTOMATICALLY. `harness/roster.py` computes a
+# PROPOSAL against it and `.github/workflows/eval.yml` pushes that proposal to
+# the bot-owned branch `roster/proposal` and files one tracking issue; a human
+# opens the pull request and merges it. The roster published to `eval-results`
+# as `roster/latest.json` is an exhibit for the explorer and is read by no
+# decision.
+#
+# `harness/run_eval.py` reads this file, and only this file, for the roster
+# rung of its model precedence (`--model` > the fixture's own pin > this file
+# > error). The model ids below are DATA, exactly as a fixture's `model:` pin
+# is data — `test_no_model_ids_are_hardcoded_outside_fixtures` admits this one
+# file by name for that reason, and still refuses an id in roster.py,
+# refresh_models.py, model_usage_census.py or roster-policy.yml.
+schema: 1
+
+arms:
+  - id: claude-sonnet-5
+    reason: >-
+      the arm every committed fixture under evals/ pins today (13 of 13), so it
+      is what this harness has actually been measuring skills against
+judge:
+  id: claude-opus-4-8
+  reason: >-
+    the judge 12 of the 13 committed fixtures pin, and a tier above the arm, so
+    it is not grading a run of its own
+  is_arm: false
+preflight:
+  id: claude-haiku-4-5
+  reason: >-
+    the cheapest model this account runs, and the documented roster fallback
+    eval.yml's WIF auth preflight already canaries the minted bearer with
+
+# Every model id the Models API has been observed to list, with the date it
+# was last seen. Empty at the seed: this harness's own observation history
+# lived only on `eval-results`, which is not trusted to supply it, so the
+# first run after this lands behaves exactly like a first run — the same
+# migration `catalogue_seen`'s own introduction made.
+catalogue_seen: []
+
+provenance:
+  seeded: "by hand, ADR 0001 / #147, 2026-09-13"
+  from: >-
+    the model:/judge.model: pins of every fixture under evals/ (13 pin
+    model: claude-sonnet-5; 12 of 13 pin judge.model: claude-opus-4-8 and
+    evals/github-actions-sha-pinning pins claude-opus-5), plus, for the
+    preflight seat, the ROSTER FALLBACK literal marked as such in
+    .github/workflows/eval.yml
+generated_at: "2026-09-13T00:00:00Z"

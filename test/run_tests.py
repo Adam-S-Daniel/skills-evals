@@ -5131,6 +5131,12 @@ class TestIssue67(unittest.TestCase):
         for shape in ("claude-opus-4-8", "claude-3-opus-20240229",
                       "claude-opus-latest", "claude-mythos-5-1"):
             self.assertRegex(shape, pattern, "the guard's own pattern is inert")
+        # `evals/roster.yml` is DELIBERATELY ABSENT from this list and is
+        # asserted on separately below: it is the committed roster the
+        # harness runs on (ADR 0001), so the ids in it are DATA — exactly
+        # as a fixture's own `model:` pin is data — rather than machinery
+        # that stops working the day a model retires. Every other file
+        # here is machinery and may not name one.
         for rel in ("harness/roster.py", "harness/timeweeks.py",
                     "harness/run_eval.py", "scripts/refresh_models.py",
                     "scripts/model_usage_census.py", "evals/roster-policy.yml",
@@ -5145,6 +5151,16 @@ class TestIssue67(unittest.TestCase):
             self.assertLessEqual(len(marked), 1,
                                  f"{rel} carries more than one marked fallback "
                                  f"literal; there is only ever one")
+        # The ONE data file admitted, named here so the admission is a
+        # decision in the test rather than an omission from the list
+        # above. It really does carry ids, and that is the point of it.
+        roster_yml = (REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8")
+        self.assertTrue(
+            pattern.search(roster_yml),
+            "evals/roster.yml is admitted to this guard as a DATA file "
+            "carrying model ids; if it no longer carries any, the "
+            "admission is stale and should be reconsidered rather than "
+            "left standing")
 
     # --- eval.yml -----------------------------------------------------------
 
@@ -30356,6 +30372,161 @@ class TestIssue144(unittest.TestCase):
             self.assertEqual(self._leaked(scratch), 1)
             shutil.rmtree(ctx.exception.workspace, ignore_errors=True)
 
+
+
+class TestIssue147(unittest.TestCase):
+    """[#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147) — the
+    roster the harness RUNS ON is a file committed on `main`, and a computed
+    roster is only a proposal. ADR 0001.
+
+    This first group is the LINT over the committed file. It is the only
+    check that stands between a hand-edited `evals/roster.yml` and a run:
+    `main` is ruleset-protected, so nothing can write this file without a
+    reviewed commit, but a reviewer can still merge a malformed one, and a
+    malformed roster is the one input `run_eval.select_models` may not
+    fail soft on. Every assertion below is mutation-proven in
+    `test_every_lint_clause_has_a_mutation_that_reds_it`.
+
+    Every model id in this class is TEST FIXTURE data or is read from the
+    committed data file; the machinery under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard, and
+    it admits `evals/roster.yml` by name as data).
+    """
+
+    ROSTER = REPO_ROOT / "evals" / "roster.yml"
+
+    @classmethod
+    def _committed(cls) -> dict:
+        return yaml.safe_load(cls.ROSTER.read_text(encoding="utf-8"))
+
+    # --- the lint -------------------------------------------------------
+
+    @staticmethod
+    def _lint(document) -> list[str]:
+        """Every problem with a committed roster document, named. Empty
+        means the file is usable.
+
+        A list rather than a raise: a reviewer reading a failed CI run
+        wants every defect at once, not the first one.
+        """
+        problems: list[str] = []
+        if not isinstance(document, dict):
+            return ["the roster is not a mapping"]
+        if document.get("schema") != 1:
+            problems.append(f"`schema` is {document.get('schema')!r}, not 1")
+        arms = document.get("arms")
+        arm_ids: list[str] = []
+        if not isinstance(arms, list) or not arms:
+            problems.append("`arms` is not a non-empty list")
+        else:
+            for index, entry in enumerate(arms):
+                if not (isinstance(entry, dict)
+                        and isinstance(entry.get("id"), str) and entry["id"]):
+                    problems.append(f"`arms[{index}]` has no non-empty string `id`")
+                else:
+                    arm_ids.append(entry["id"])
+        for seat in ("judge", "preflight"):
+            entry = document.get(seat)
+            if not (isinstance(entry, dict)
+                    and isinstance(entry.get("id"), str) and entry["id"]):
+                problems.append(f"`{seat}` has no non-empty string `id`")
+        judge_entry = document.get("judge")
+        if isinstance(judge_entry, dict):
+            if judge_entry.get("is_arm") is not False:
+                problems.append("`judge.is_arm` is not False; a model must not "
+                                "grade its own run")
+            if isinstance(judge_entry.get("id"), str) and judge_entry["id"] in arm_ids:
+                problems.append("the judge id is also an arm; a model must not "
+                                "grade its own run")
+        seen = document.get("catalogue_seen")
+        if not isinstance(seen, list):
+            problems.append("`catalogue_seen` is not a list")
+        else:
+            for index, entry in enumerate(seen):
+                if not (isinstance(entry, dict)
+                        and isinstance(entry.get("id"), str) and entry["id"]
+                        and isinstance(entry.get("last_seen"), str)):
+                    problems.append(f"`catalogue_seen[{index}]` is not "
+                                    f"{{id, last_seen}} with string values")
+                    continue
+                try:
+                    datetime.strptime(entry["last_seen"], "%Y-%m-%d")
+                except ValueError:
+                    problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
+                                    f"is not an ISO YYYY-MM-DD date")
+        ids = arm_ids + [e["id"] for e in (seen if isinstance(seen, list) else [])
+                         if isinstance(e, dict) and isinstance(e.get("id"), str)]
+        duplicates = sorted({i for i in ids if ids.count(i) > 1})
+        if duplicates:
+            problems.append(f"{len(duplicates)} id(s) appear more than once")
+        return problems
+
+    def test_the_committed_roster_parses_and_passes_every_lint_clause(self):
+        self.assertTrue(self.ROSTER.is_file(),
+                        "evals/roster.yml is the roster the harness runs on "
+                        "(ADR 0001); it is committed, not computed")
+        self.assertEqual(self._lint(self._committed()), [])
+
+    def test_the_committed_roster_records_its_own_provenance(self):
+        # A hand-seeded file with no account of where its values came from
+        # is indistinguishable from one somebody guessed.
+        provenance = self._committed().get("provenance")
+        self.assertIsInstance(provenance, dict)
+        for key in ("seeded", "from"):
+            self.assertIsInstance(provenance.get(key), str)
+            self.assertTrue(provenance[key].strip())
+        self.assertIsInstance(self._committed().get("generated_at"), str)
+
+    def test_every_lint_clause_has_a_mutation_that_reds_it(self):
+        """A lint whose clauses cannot be made to fire is a green light
+        wired to nothing. Each row mutates a THROWAWAY copy of the
+        committed document and asserts the named clause fires.
+        """
+        good = self._committed()
+
+        def mutate(**changes):
+            copied = copy.deepcopy(good)
+            copied.update(changes)
+            return copied
+
+        rows = [
+            ("schema", mutate(schema=2), "`schema`"),
+            ("arms empty", mutate(arms=[]), "`arms`"),
+            ("arms not a list", mutate(arms="claude-sonnet-5"), "`arms`"),
+            ("arm id missing", mutate(arms=[{"reason": "x"}]), "`arms[0]`"),
+            ("arm id blank", mutate(arms=[{"id": "", "reason": "x"}]), "`arms[0]`"),
+            ("judge id missing", mutate(judge={"is_arm": False}), "`judge`"),
+            ("preflight id missing", mutate(preflight={}), "`preflight`"),
+            ("judge.is_arm true",
+             mutate(judge={**good["judge"], "is_arm": True}), "`judge.is_arm`"),
+            ("judge.is_arm absent",
+             mutate(judge={"id": good["judge"]["id"], "reason": "x"}), "`judge.is_arm`"),
+            ("judge is an arm",
+             mutate(judge={"id": good["arms"][0]["id"], "reason": "x",
+                           "is_arm": False}), "also an arm"),
+            ("catalogue_seen not a list",
+             mutate(catalogue_seen={}), "`catalogue_seen`"),
+            ("catalogue_seen entry shape",
+             mutate(catalogue_seen=["claude-opus-4-8"]), "catalogue_seen[0]"),
+            ("catalogue_seen bad date",
+             mutate(catalogue_seen=[{"id": "claude-opus-4-8",
+                                     "last_seen": "yesterday"}]), "ISO"),
+            ("duplicate ids",
+             mutate(arms=[{"id": "claude-sonnet-5", "reason": "a"},
+                          {"id": "claude-sonnet-5", "reason": "b"}]),
+             "more than once"),
+            ("not a mapping", ["claude-sonnet-5"], "not a mapping"),
+        ]
+        for name, document, needle in rows:
+            with self.subTest(mutation=name):
+                problems = self._lint(document)
+                self.assertTrue(
+                    any(needle in p for p in problems),
+                    f"mutation {name!r} produced {problems!r}, which does not "
+                    f"name {needle!r} — the clause is inert")
+        # The negative control: the unmutated document must still be clean,
+        # or every row above passes for the wrong reason.
+        self.assertEqual(self._lint(good), [])
 
 if __name__ == "__main__":
     if "--measure-previous-only-distribution" in sys.argv:

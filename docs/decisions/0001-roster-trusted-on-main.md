@@ -93,9 +93,12 @@ a one-way-door review of the writer.
   `pull_request` workflows, which is why the job pushes a branch and files an
   issue rather than opening the PR itself.
 - **Migration.** `evals/roster.yml` is seeded by hand in the same PR from what
-  every committed fixture pins today (arms `claude-sonnet-5`, judge
-  `claude-opus-4-8`, preflight `claude-haiku-4-5`), with an empty
-  `catalogue_seen` and a `provenance` block naming this ADR. The first real run
+  the committed fixtures pin today: arms `claude-sonnet-5` (all 13 fixtures),
+  judge `claude-opus-4-8` (12 of the 13 — `evals/github-actions-sha-pinning`
+  pins `claude-opus-5`), and preflight `claude-haiku-4-5`, which is not a
+  fixture pin at all but the marked ROSTER FALLBACK literal in `eval.yml`'s
+  own preflight step; with an empty `catalogue_seen` and a `provenance` block
+  naming this ADR. The first real run
   after merge proposes the difference between that seed and what the Models API
   and census say, exactly as a first run always did; `roster/latest.json`
   already on `eval-results` is not read.
