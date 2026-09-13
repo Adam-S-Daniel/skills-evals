@@ -28936,6 +28936,255 @@ class TestIssue147(unittest.TestCase):
             self.assertEqual(rc.returncode, 1)
             self.assertFalse(out.exists())
 
+    # --- item 5: the five #147 defects, as regression rows ---------------
+    #
+    # EACH ROW IS THE SAME CLAIM ABOUT A DIFFERENT DEFECT, and the claim is
+    # not "the harness now detects this input". It is that the input cannot
+    # reach a decision at all:
+    #
+    #   (a) THE RUNNING SET. The hostile document is written where
+    #       `eval-results` puts it — `<repo>/roster/latest.json`, the path
+    #       `_resolve_roster` defaulted to on `424eebf` and the one
+    #       `eval.yml` pointed `$EVAL_ROSTER` at. `select_models`, resolved
+    #       the way a real run resolves it (no `--model`, no `--roster`, no
+    #       `$EVAL_ROSTER`), must still return the COMMITTED roster's arm
+    #       and judge. RED on `424eebf`, where it returns the plant's.
+    #
+    #   (b) THE PROPOSAL IS ALL THE PLANT CAN MOVE. Fed as `previous` — the
+    #       position `eval.yml` used to pass it in — the hostile document
+    #       still produces the defect, and that output is now a PROPOSAL a
+    #       human merges. The same computation against the trusted roster
+    #       does not produce it. Both halves are asserted per row, because
+    #       "the attack no longer works" and "the attack no longer reaches
+    #       a decision" are different claims and only the second is true.
+    #
+    # `roster/` is gitignored (it is published on `eval-results` and
+    # untracked on `main`), which is what makes writing the plant into the
+    # real checkout safe; every row removes it again in `addCleanup`,
+    # including on failure.
+
+    _PUBLISHED = REPO_ROOT / "roster" / "latest.json"
+
+    def _plant_published_roster(self, document) -> None:
+        """Write `document` where the published roster lands, and take it
+        away again however this test ends."""
+        self._PUBLISHED.parent.mkdir(parents=True, exist_ok=True)
+        self.addCleanup(shutil.rmtree, self._PUBLISHED.parent,
+                        ignore_errors=True)
+        self._PUBLISHED.write_text(json.dumps(document), encoding="utf-8")
+
+    def _running_set(self):
+        """(agent, judge) as a real run resolves them — no flag, no
+        environment."""
+        args = argparse.Namespace(model=None, roster=None, no_judge=False)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            agent, judge_model, error = run_eval.select_models({}, args)
+        self.assertIsNone(error)
+        return agent, judge_model
+
+    def _assert_running_set_is_committed(self, published):
+        """`published` is the roster this run WOULD have published from the
+        hostile input — which is exactly what `eval.yml` wrote to
+        `eval-results` and what the next run read back on `424eebf`. It is
+        planted where the published roster lands, and the running set must
+        be the committed one regardless."""
+        committed = self._committed()
+        self._plant_published_roster(published)
+        agent, judge_model = self._running_set()
+        self.assertEqual(agent, committed["arms"][0]["id"])
+        self.assertEqual(judge_model, committed["judge"]["id"])
+        # And the plant really was where the old default looked, or the
+        # row proves nothing.
+        self.assertTrue(self._PUBLISHED.is_file())
+        self.assertNotEqual(
+            run_eval._resolve_roster(None), self._PUBLISHED,
+            "selection must not resolve to the published roster")
+
+    #: A live catalogue with a NEWER model beside the victim, so there is
+    #: no newest-per-tier fallback to rescue a share the denominator got
+    #: wrong. Same shape TestIssue67Review12/13 use, restated here so this
+    #: class does not inherit a fixture built for another question.
+    _VICTIM = "claude-haiku-4-5"
+    _NEWER = "claude-haiku-9"
+    _BRIDGE = "claude-haiku-4-5-20250101"
+    _BRIDGED_KEY = "claude-haiku-4-5-20250101-20260101"
+    _DEPARTED = "claude-haiku-3"
+    _DEPARTED_DATED = "claude-haiku-3-20250101"
+    _GHOST = "claude-opus-4-1-proxy-eu"
+
+    @classmethod
+    def _victim_catalogue(cls):
+        return {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            cls._model(cls._VICTIM, "2026-06-01T00:00:00Z"),
+            cls._model(cls._NEWER, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).date().isoformat()
+
+    def _run(self, previous, census, models=None):
+        return self._compute(models=models or self._victim_catalogue(),
+                             census=census, previous=previous)
+
+    @staticmethod
+    def _arm_ids(result):
+        return [a["id"] for a in result["arms"]]
+
+    @staticmethod
+    def _reason(result, model_id):
+        for entry in result["arms"] + result["retired_since_last"]:
+            if entry["id"] == model_id:
+                return entry["reason"]
+        return ""
+
+    # --- row 1: round-13 BLOCKER B — one deletion from catalogue_seen ----
+
+    def test_row1_a_catalogue_seen_deletion_cannot_reach_the_running_set(self):
+        """#147 defect 1. On `eval-results`, delete the ONE
+        `catalogue_seen` entry that bridges a live arm's own census key
+        onto it. Its 3,000 turns leave the attributable denominator, the
+        arm measures 0.0%, and it is published `RETIRED ... (0.0%)` — rc
+        0, empty stderr, and permanent, because the next run reads that
+        roster back.
+        """
+        census = self._census({self._BRIDGED_KEY: {self._week(): 3_000},
+                               "claude-sonnet-5": {self._week(): 2_000}})
+        bridged = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                   "catalogue_seen": [{"id": self._BRIDGE,
+                                       "last_seen": self._days_ago(3)}]}
+        deleted = {"arms": bridged["arms"], "catalogue_seen": []}
+
+        intact = self._run(bridged, census)
+        self.assertIn(self._VICTIM, self._arm_ids(intact))
+        self.assertIn("60.0%", self._reason(intact, self._VICTIM),
+                      "the control must measure the victim at its true "
+                      "60.0%, or this row is about nothing")
+        # (b) the deletion still produces the defect — as a PROPOSAL.
+        broken = self._run(deleted, census)
+        # (a) THE HEADLINE CLAIM, and the assertion that is RED on
+        # `424eebf`: this defective roster is what the run published and
+        # what the next run read back, and it does not decide a thing.
+        self._assert_running_set_is_committed(broken)
+        self.assertNotIn(self._VICTIM, self._arm_ids(broken))
+        self.assertEqual(broken["proposal"]["status"], "differs")
+
+    # --- row 2: round-14 BLOCKER 1 — a planted `arms` line ---------------
+
+    def test_row2_a_planted_arms_line_cannot_reach_the_running_set(self):
+        """#147 defect 2. One `arms` entry naming a ranked census key
+        nothing can credit widens the attributable denominator, which puts
+        a live arm carrying 100% of what the catalogue can account for
+        under the exit bar. The revert of `0db198a` returns this to a
+        survival; what closes it is that the line cannot get into
+        `evals/roster.yml` without a reviewed commit.
+        """
+        census = self._census({self._VICTIM: {self._week(): 625},
+                               self._GHOST: {self._week(): 50_000}})
+        honest = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}]}
+        planted = {"arms": honest["arms"] + [{"id": self._GHOST,
+                                              "reason": "was an arm"}]}
+
+        control = self._run(honest, census)
+        self.assertIn(self._VICTIM, self._arm_ids(control))
+        # (b) the plant is expressible as a proposal and no further.
+        with_plant = self._run(planted, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(with_plant)
+        self.assertEqual(with_plant["proposal"]["status"], "differs")
+
+    # --- row 3: round-14 BLOCKER 2 — a needed hop aged out ---------------
+
+    def test_row3_an_aged_out_hop_cannot_reach_the_running_set(self):
+        """#147 defect 3, and the one that needs NO hostile input at all:
+        a bridge's `last_seen` is only ever refreshed for a LIVE id, so an
+        honest bridge crosses `catalogue_seen_max_age_days` on its own and
+        the next busy window retires the arm it was bridging. The trusted
+        record does not make the ageing cleverer — the entry ages out here
+        too. What it changes is that the roster the ageing produced is a
+        proposal, so the retirement is a line in a diff a person reads
+        rather than a fact about the next run.
+        """
+        census = self._census({self._BRIDGED_KEY: {self._week(): 3_000},
+                               "claude-sonnet-5": {self._week(): 2_000}})
+        fresh = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                 "catalogue_seen": [{"id": self._BRIDGE,
+                                     "last_seen": self._days_ago(3)}]}
+        quiet = {"arms": fresh["arms"],
+                 "catalogue_seen": [{"id": self._BRIDGE,
+                                     "last_seen": self._days_ago(400)}]}
+
+        control = self._run(fresh, census)
+        self.assertIn(self._VICTIM, self._arm_ids(control))
+        aged = self._run(quiet, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(aged)
+        self.assertEqual(aged["proposal"]["status"], "differs")
+
+    # --- row 4: round-14 BLOCKER 3 — the fold SOURCE, under a dated id ---
+
+    def test_row4_a_dated_fold_source_cannot_reach_the_running_set(self):
+        """#147 defect 4 (= round 13's BLOCKER C). A model this harness
+        observed under a DATED id, whose census usage the census records
+        under the UNDATED alias. `tier()` misses it (raw identity) and
+        `is_needed_hop` missed it too (it walks FORWARD from census keys,
+        and this entry is the fold SOURCE rather than a hop). One
+        `last_seen` date and 9,500 real turns leave the denominator, so a
+        hold-over at a true 5.0% becomes a seat at `carries 100.0%`.
+        """
+        census = self._census({self._VICTIM: {self._week(): 500},
+                               self._DEPARTED: {self._week(): 9_500}})
+        observed = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._DEPARTED_DATED,
+                                        "last_seen": self._days_ago(3)}]}
+        expired = {"arms": observed["arms"],
+                   "catalogue_seen": [{"id": self._DEPARTED_DATED,
+                                       "last_seen": self._days_ago(400)}]}
+
+        control = self._run(observed, census)
+        self.assertIn("5.0%", self._reason(control, self._VICTIM),
+                      "the control must measure the victim at its true "
+                      "5.0%, or this row is about nothing")
+        gone = self._run(expired, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(gone)
+        self.assertIn("carries 100.0%", self._reason(gone, self._VICTIM),
+                      "the inflation this row is about")
+        self.assertEqual(gone["proposal"]["status"], "differs")
+
+    # --- row 5: the declared open cell ----------------------------------
+
+    def test_row5_the_open_cell_cannot_reach_the_running_set(self):
+        """#147 defect 5 — the cell
+        `TestIssue67Review12::test_the_one_cell_this_cannot_cover`
+        declared open and could not close: remove a since-retired model
+        from `arms` AND from `catalogue_seen` at once, and its census
+        turns leave the denominator, so the victim's true 5.0% publishes
+        as `carries 100.0%`. That test's own reasoning named the fix:
+        "closing it needs a trusted history the harness does not have."
+        This is that history, and the closure is not a rule that detects
+        the removal — no rule can, because the removal and an honest
+        absence are the same bytes — it is that the removal has to be
+        MERGED.
+        """
+        census = self._census({self._VICTIM: {self._week(): 500},
+                               self._DEPARTED: {self._week(): 9_500}})
+        before = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
+                           {"id": self._DEPARTED, "reason": "was an arm"}],
+                  "catalogue_seen": [{"id": self._DEPARTED,
+                                      "last_seen": self._days_ago(1)}]}
+        after = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                 "catalogue_seen": []}
+
+        control = self._run(before, census)
+        self.assertIn("5.0%", self._reason(control, self._VICTIM))
+        removed = self._run(after, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(removed)
+        self.assertIn("carries 100.0%", self._reason(removed, self._VICTIM))
+        self.assertEqual(removed["proposal"]["status"], "differs")
+
     def test_no_row_above_can_be_applied_without_a_human(self):
         """The claim every row leans on, asserted once at the workflow:
         nothing in `eval.yml` writes `evals/roster.yml`. It renders a
