@@ -90,7 +90,9 @@
 #   refresh_models.py is written to produce nothing else.
 #
 # * All four checkouts use `persist-credentials: false`; push auth is injected
-#   only in the final commit step's env. While the bypassPermissions agent is
+#   only in the two steps that push — the roster-proposal step and the final
+#   commit step — and only in their own `env:`. Both sit AFTER the eval, so
+#   while the bypassPermissions agent is
 #   running, no GitHub write credential exists anywhere on the runner — the
 #   only credential in reach is the short-lived WIF-derived access token
 #   (and the single-use OIDC token file) scoped to the spend-capped
@@ -123,14 +125,21 @@ on:
     - cron: "0 7 * * 1" # Mondays 07:00 UTC
   workflow_dispatch:
 
-# Single job, so contents:write is the whole workflow's privilege set. It is
-# required for the badge/results push; splitting eval and commit into separate
-# jobs would not shed it (the commit job still needs write + the results
-# artifact), it would only add an artifact hand-off surface. GITHUB_TOKEN here
-# gets no other scopes.
+# Single job, so this block is the whole workflow's privilege set.
+# `contents: write` is required for the badge/results push; splitting eval and
+# commit into separate jobs would not shed it (the commit job still needs write
+# + the results artifact), it would only add an artifact hand-off surface.
+# `issues: write` is #147's one addition, for the roster-proposal tracking
+# issue. GITHUB_TOKEN here gets no other scopes.
 permissions:
   contents: write
   id-token: write
+  # #147: the roster proposal step upserts ONE tracking issue (marker
+  # `<!-- skills-evals:roster-proposal -->`) and closes it again when the
+  # computed roster matches the committed one. That is the ONLY new
+  # permission this workflow has taken; the `roster/proposal` branch push
+  # needs none, because the job already pushes `eval-results`.
+  issues: write
 
 # Never let two runs (e.g. a manual dispatch during the weekly run) race the
 # badge commit; queue instead of cancelling so results are never half-written.
@@ -461,6 +470,150 @@ jobs:
             --registry agentskills=../agentskills \
             --registry cms-platform=../cms-platform \
             --registry adamdaniel.ai=../adamdaniel.ai
+
+      # THE PROPOSAL (#147, ADR 0001 decision 2). The roster step above
+      # computed what the roster SHOULD be; this step is what a human ever
+      # sees of it. When it differs from the committed `evals/roster.yml`
+      # it pushes the proposed file as ONE commit on the bot-owned branch
+      # `roster/proposal` and upserts ONE tracking issue carrying the
+      # rendered summary and the compare link. When it does not differ it
+      # closes that issue, so a stale one never sits open claiming a change
+      # that has already landed or gone away.
+      #
+      # WHY A BRANCH AND AN ISSUE, AND NOT A PULL REQUEST. A pull request
+      # opened by `GITHUB_TOKEN` does not trigger `pull_request` workflows,
+      # so a PR this job opened would sit with no CI on it — and this repo's
+      # `main` is ruleset-protected and PR-only, which is the whole reason
+      # the roster is trusted. A human opens the PR from the branch and
+      # merges it after CI. This is the fleet's sanctioned bot-write path:
+      # a branch and a pull request a person merges, never a direct push to
+      # a protected branch and never a ruleset bypass actor.
+      #
+      # `roster/proposal` IS BOT-OWNED AND IS NEVER SHARED. It is recreated
+      # from this run's checked-out `main` sha every run and force-pushed
+      # with `--force-with-lease`; nobody commits to it by hand and nothing
+      # else reads it. That is the one sanctioned exception to the fleet's
+      # "do not force-push a shared branch" rule, and it is sanctioned
+      # because the branch is not shared: a proposal computed against last
+      # week's `main` is not a thing to preserve, it is a thing to replace.
+      # The lease is what keeps that honest — a push that would discard a
+      # commit this run has not seen fails rather than silently winning.
+      #
+      # IT RUNS AFTER THE EVAL, deliberately. The eval must run on the
+      # committed roster with no GitHub write credential anywhere on the
+      # runner (the security header's fourth rule); this step holds one, so
+      # it sits after the bypassPermissions agent has finished. It does its
+      # git work in a WORKTREE under $RUNNER_TEMP so the main checkout is
+      # untouched for the badge/commit step that follows.
+      #
+      # Nothing here interpolates a GitHub Actions expression into the
+      # shell. The run id, the repository and the server URL arrive through
+      # `env:` and are read as variables.
+      - name: Propose a roster change
+        working-directory: skills-evals
+        env:
+          # Write auth lives only in this step and the commit step.
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          marker='<!-- skills-evals:roster-proposal -->'
+          computed="$RUNNER_TEMP/roster/latest.json"
+          if [ ! -f "$computed" ]; then
+            echo "::notice::no roster was computed this run, so there is nothing to propose"
+            exit 0
+          fi
+          status=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("proposal") or {}).get("status")) or "")' "$computed")
+          echo "proposal status: ${status:-unknown}"
+
+          # The open tracking issue, found by the marker in its body. The
+          # listing is written to a file and parsed, rather than piped into
+          # a filter: `gh api` prints its raw error body to STDOUT on a
+          # non-2xx, so a `|| true` around a pipeline would capture that
+          # error JSON and read it as data.
+          issues="$RUNNER_TEMP/roster-issues.json"
+          if ! gh api "repos/$REPO/issues?state=open&per_page=100" > "$issues"; then
+            echo "::warning::could not list issues; the roster proposal was not filed"
+            exit 0
+          fi
+          # One line, no heredoc: this is a YAML block scalar, so a
+          # continuation line at column 0 would end the block, and a
+          # heredoc body indented to the block would be indented Python.
+          issue=$(python3 -c "import json,sys; rows=json.load(open(sys.argv[1])); hits=[str(r['number']) for r in rows if not r.get('pull_request') and sys.argv[2] in (r.get('body') or '')]; print(hits[0] if hits else '')" "$issues" "$marker")
+
+          if [ "$status" != "differs" ]; then
+            if [ -n "$issue" ]; then
+              gh issue close "$issue" --repo "$REPO" \
+                --comment "This run computes the same roster the committed \`evals/roster.yml\` already names. Closing until something changes."
+              echo "closed the stale proposal issue #$issue"
+            else
+              echo "nothing to propose and no open proposal issue"
+            fi
+            exit 0
+          fi
+
+          # The eval-results commit the census came from, recorded in the
+          # rendered file's provenance so a merged proposal says which
+          # untrusted document shaped it.
+          census_commit=$(git rev-parse origin/eval-results 2>/dev/null) || census_commit="none"
+          python3 scripts/render_roster_yaml.py \
+            --roster "$computed" \
+            --out "$RUNNER_TEMP/proposed-roster.yml" \
+            --run-id "$RUN_ID" \
+            --eval-results-commit "$census_commit"
+
+          base=$(git rev-parse HEAD)
+          worktree="$RUNNER_TEMP/proposal-worktree"
+          rm -rf "$worktree"
+          git worktree add --detach "$worktree" "$base"
+          cp "$RUNNER_TEMP/proposed-roster.yml" "$worktree/evals/roster.yml"
+          git -C "$worktree" checkout -B roster/proposal
+          git -C "$worktree" add evals/roster.yml
+          if git -C "$worktree" diff --cached --quiet; then
+            echo "::notice::the proposal renders byte-identically to the committed roster; nothing pushed"
+            git worktree remove --force "$worktree"
+            exit 0
+          fi
+          # `-c user.*` rather than `git config`: a worktree shares the
+          # parent checkout's config, so `git config` here would rewrite
+          # the identity of the checkout the next step commits from.
+          git -C "$worktree" \
+            -c user.name="skills-evals real-eval bot" \
+            -c user.email="skills-evals@users.noreply.github.com" \
+            commit -q -m "roster: proposed model roster (run $RUN_ID)"
+          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
+          # Fetch first so the lease has something to compare against: with
+          # no remote-tracking ref, --force-with-lease has no expectation to
+          # enforce and degrades to a plain force.
+          git -c "http.$SERVER_URL/.extraheader=$auth" fetch origin \
+            '+refs/heads/roster/proposal:refs/remotes/origin/roster/proposal' || true
+          git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \
+            push --force-with-lease origin roster/proposal
+          git worktree remove --force "$worktree"
+
+          body="$RUNNER_TEMP/proposal-body.md"
+          {
+            printf '%s\n\n' "$marker"
+            echo "The weekly run computes a model roster that differs from the committed \`evals/roster.yml\`."
+            echo
+            echo "**Nothing has changed yet.** The harness runs on the committed file (ADR 0001); this is a proposal."
+            echo "Open a pull request from \`roster/proposal\` and merge it after CI if the reasons below hold up."
+            echo
+            echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
+            echo
+            cat "$RUNNER_TEMP/roster-inputs/summary.md"
+          } > "$body"
+          if [ -n "$issue" ]; then
+            gh issue edit "$issue" --repo "$REPO" \
+              --title "Model roster: a change is proposed" --body-file "$body"
+            echo "updated the proposal issue #$issue"
+          else
+            gh issue create --repo "$REPO" \
+              --title "Model roster: a change is proposed" --body-file "$body"
+          fi
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists

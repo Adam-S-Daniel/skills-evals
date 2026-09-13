@@ -4079,17 +4079,47 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "bypassPermissions — pull_request/pull_request_target must never "
             "be added, per the header's first rule")
 
-    def test_permissions_are_exactly_contents_write_and_id_token_write(self):
-        # "Single job, so contents:write is the whole workflow's privilege
-        # set" — the header's own claim. A widened `permissions:` block
-        # (an added scope, or contents: write turning into admin) would slip
+    def test_permissions_are_exactly_the_three_the_header_names(self):
+        # "Single job, so this block is the whole workflow's privilege set"
+        # — the header's own claim. A widened `permissions:` block (an
+        # added scope, or contents: write turning into admin) would slip
         # past every other test in this class.
+        #
+        # `issues: write` IS #147's ONE ADDITION and is pinned as such:
+        # the roster proposal step upserts one tracking issue and closes it
+        # again. The set is asserted for EQUALITY, so a fourth scope reds
+        # this row whatever it is, and the two assertions below say
+        # separately that the two pre-existing scopes are unchanged — so a
+        # future widening cannot be smuggled in by rewriting the expected
+        # dict wholesale.
         doc = self._doc()
         self.assertEqual(
-            doc.get("permissions"), {"contents": "write", "id-token": "write"},
+            doc.get("permissions"),
+            {"contents": "write", "id-token": "write", "issues": "write"},
             "eval.yml's permissions must be exactly {contents: write, "
-            "id-token: write} — the header states this is the workflow's "
-            "whole privilege set")
+            "id-token: write, issues: write} — the header states this is "
+            "the workflow's whole privilege set, and `issues: write` is the "
+            "only scope #147 added")
+        self.assertEqual(doc["permissions"]["contents"], "write")
+        self.assertEqual(doc["permissions"]["id-token"], "write")
+
+    def test_the_proposal_step_carries_no_expression_in_its_run_block(self):
+        # The general rule is asserted over every step by
+        # `test_no_expression_interpolation_in_any_run_block`; this row
+        # names the #147 step specifically, because it is the one that
+        # holds a write credential AND reads run-scoped values (the run
+        # id, the repository, the server URL). Those arrive through `env:`
+        # and are read as shell variables.
+        step = next(s for s in self._steps()
+                    if (s.get("name") or "") == "Propose a roster change")
+        self.assertNotIn("${{", step["run"])
+        self.assertEqual(
+            sorted(step.get("env") or {}),
+            ["GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID", "SERVER_URL"],
+            "every run-scoped value the proposal step reads arrives through "
+            "env:, and the write credential is step-local")
+        for name in ("RUN_ID", "REPO", "SERVER_URL"):
+            self.assertIn(f"${name}", step["run"])
 
     def test_no_workflow_or_job_level_env(self):
         # The header requires GITHUB_TOKEN (and the exchanged bearer token)
@@ -5196,7 +5226,14 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"],
                          "eval.yml holds a credential and runs the agent under "
                          "bypassPermissions — no pull_request trigger, ever")
-        self.assertEqual(doc["permissions"], {"contents": "write", "id-token": "write"})
+        # `issues: write` is #147's one addition, for the roster-proposal
+        # tracking issue. Asserted for EQUALITY here too, so a fourth
+        # scope reds this row as well as its sibling in
+        # EvalWorkflowSecurityHeaderTests — the duplication is deliberate
+        # and predates #147: this is the test nobody may delete.
+        self.assertEqual(doc["permissions"],
+                         {"contents": "write", "id-token": "write",
+                          "issues": "write"})
         for step in doc["jobs"]["eval"]["steps"]:
             script = step.get("run") or ""
             self.assertNotIn("${{", script,
@@ -27742,77 +27779,6 @@ class TestIssue67Review12(unittest.TestCase):
         # was first written with left it green, because this input trips
         # both round-13 refusals independently.
 
-    def test_the_one_cell_this_cannot_cover(self):
-        """The one hostile edit the table above does not close, stated and
-        pinned rather than left for the next round to find.
-
-        REMOVE a since-retired model from `arms` AND from
-        `catalogue_seen` at once. Its census turns then leave the
-        denominator, and the victim's true 5.0% publishes as 100.0% —
-        a seat it should not have.
-
-        WHY NO RULE CLOSES IT. `previous.json` IS this harness's only
-        record of what it has seen; the anchored denominator is
-        deliberately blind to it, so it reads a removal as the ordinary
-        healthy case and there is no second copy to compare against.
-        Closing it needs a trusted history the harness does not have.
-
-        THIS ROW MEASURES THE INFLATION OUTCOME, which is reversible:
-        seating is re-decided every run from the census, so the next
-        honest run corrects it.
-
-        ROUND 13 FALSIFIED THE TWO SENTENCES THAT USED TO SIT HERE. They
-        said the removal direction was CONFINED to inflation and was
-        re-decided next run. Neither is true, and reverting `0db198a`
-        does not make them true again — the falsification was a
-        measurement, not a consequence of the rule that commit added.
-        Removing the entry that bridges a LIVE arm's own census key onto
-        it deflates instead, and that direction RETIRES — permanently,
-        since the model is then no longer a previous arm, so the exit
-        bar no longer applies and real usage never re-seats it. Eleven
-        different primitives on that one entry reach it (BLOCKER B).
-
-        WHAT IS OPEN, AFTER THE REVERT OF `0db198a`. BOTH halves of the
-        deflation direction are open again. The zero-numerator half is a
-        KNOWN SURVIVAL pinned as an expected failure —
-        `TestIssue67Review13::test_no_live_catalogue_id_is_retired_on_a
-        _numerator_of_zero` — because the refusal that closed it created
-        a worse defect (a planted `arms` line that can never retire, so
-        `judge.is_arm` goes true and every unpinned fixture is refused).
-        The nonzero half is pinned by
-        `TestIssue67Review13::test_the_open_cell_is_a_deflation_to_a
-        _nonzero_share`. Both halves have the same cause and the same
-        non-fix — `previous.json` is the only record there is, so a
-        removal reads as the ordinary healthy case — and closing them
-        needs the trusted history designed under
-        https://github.com/Adam-S-Daniel/skills-evals/issues/147."""
-        V, D = self._VICTIM, self._DEPARTED_REAL
-        # Its OWN census, without the table's 400,000-turn unattributable
-        # key: that key's raw turns trip the ranked/raw relative floor,
-        # which holds the victim over and MASKS this cell. Measured — the
-        # floor is a real partial defence here, and saying which defence
-        # is doing the work is the point of the row.
-        census = TestIssue67._census_doc(counts={V: {self.W[0]: 500},
-                                                 D: {self.W[0]: 9_500}})
-
-        def run(previous):
-            with tempfile.TemporaryDirectory() as tmp:
-                rc, published, _, err = self._run_main(
-                    tmp, self._two_sonnets(), census=census,
-                    previous=previous)
-            self.assertEqual(rc, 0, err)
-            return published
-
-        before = run(self._prev([V, D], [D]))
-        after = run(self._prev([V], []))
-        self.assertIn("still 5.0%", self._reason(before, V))
-        self.assertIn("carries 100.0%", self._reason(after, V),
-                      "if this ever stops being true the limit has been "
-                      "closed and this test should be rewritten as a floor")
-        self.assertIn(V, self._arm_ids(after),
-                      "the cell is an INFLATION: the victim keeps its seat "
-                      "on an overstated share, and is not retired")
-
     # --- SHOULD-FIX 2: clause 1 of the invariant, qualified ------------
     #
     # The sentence was stated flat in all five copies and is FALSE in the
@@ -28081,130 +28047,6 @@ class TestIssue67Review13(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         return published, err
 
-    @unittest.expectedFailure
-    def test_no_live_catalogue_id_is_retired_on_a_numerator_of_zero(self):
-        """PINNED SURVIVAL, NOT A PASSING FLOOR — expected to fail.
-
-        The rule this table measured (`0db198a`, the `held == 0.0`
-        hold-over at `compute_roster`'s retirement sink) is REVERTED,
-        because refusing a zero numerator made a planted `arms` line
-        immortal: `judge.is_arm` goes true and `run_eval.select_models`
-        refuses every unpinned fixture, permanently, from one line on an
-        untrusted branch. See round 14's park comment,
-        https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5591678318,
-        and issue https://github.com/Adam-S-Daniel/skills-evals/issues/147,
-        defect 1 (this table) and defect 2 (the halt).
-
-        SO THIS ROW IS KEPT AND MARKED RATHER THAN DELETED. Nine of the
-        eleven rows — every one answered `refused` below — are RED again:
-        the live arm carrying a true 60.0% is published `RETIRED ...
-        (0.0%)`, rc 0, empty stderr, permanently. The two rows answered
-        `repaired` still pass on their own, because ITEM 3's needed-hop
-        rule keeps a bridge the ageing window would have dropped and is
-        not touched by the revert; they cannot be read off this row's
-        verdict while the other nine are red. An UNEXPECTED SUCCESS here
-        is the signal that #147 has closed the survival, and it fails the
-        suite so it cannot pass unnoticed.
-
-        WHAT IT MEASURED, unchanged: eleven primitives on ONE
-        `catalogue_seen` entry, each measured through `main()` rather
-        than reasoned about, and every one of them RED on `87f2031` in
-        the same way: `RETIRED: below the 2% exit bar
-        for the last 8 weeks (0.0% of rankable census usage)`, rc 0, for a
-        live arm carrying a true 60.0% of the window.
-
-        THEY ARE NOT ELEVEN BUGS, and the count is the point rather than
-        the list. They are eleven ways to make ONE entry stop bridging,
-        and they enter through four different pieces of machinery: three
-        are dropped by `_clean_catalogue_seen`'s per-entry shape check, one
-        by its whole-field type check, two by the ageing rule (one of
-        them by `by_id`'s last-write-wins), and the rest never touch
-        `catalogue_seen`'s machinery at all — they simply spell a
-        different id, or no id. That is why the refusal sits at the SINK,
-        where the retirement is decided, and not at any of them: an
-        enumeration of the sources is a list that the next round adds to.
-
-        TWO OF THE ELEVEN ARE REPAIRED RATHER THAN REFUSED, and the split
-        is what the two round-13 rules are for. The two ageing-window
-        rows drop an entry that is still THERE, so ITEM 3 keeps it as a
-        needed hop and the chain — and the arm's real 60.0% — survives
-        intact. The other nine remove the entry for good, and no rule can
-        rebuild it, so what is left is BLOCKER B's refusal to act on the
-        zero. Both outcomes keep the seat; only one keeps the number.
-
-        THE LAST FOUR ARE NOT FROM ANY REVIEW ROUND'S LIST. They were
-        invented against the finished rule to test whether it generalises,
-        and they were applied and run rather than reasoned about.
-
-        MUTATION, while the rule existed: deleting the `held == 0.0`
-        branch from `compute_roster`'s hold-over branch restored all
-        eleven. That deletion is now the shipped state, which is why this
-        row is an expected failure rather than a floor."""
-        control, _ = self._zero_row({"id": self._ZERO_SEEN,
-                                     "last_seen": self._days_ago(3)})
-        self.assertIn(self._ZERO_LIVE, self._arm_ids(control))
-        self.assertIn("60.0%", self._reason(control, self._ZERO_LIVE),
-                      "the control must measure the victim at its true "
-                      "60.0%, or the rows below are about nothing")
-        # (label, the entry, which of the two rules answers it). REPAIRED
-        # means ITEM 3 kept the bridge and the chain is intact, so the
-        # published sentence is the CONTROL'S, byte for byte — the arm's
-        # real 60.0%. REFUSED means the entry is gone for good and no
-        # rule can rebuild it, so BLOCKER B's sink declines to act on the
-        # zero it leaves. Which of the two answers a row is a property of
-        # the row, not a choice: only an ageing-window row is repairable,
-        # because only ageing drops an entry that is still THERE.
-        rows = [
-            ("the entry removed outright", None, "refused"),
-            ("`last_seen` unparseable",
-             {"id": self._ZERO_SEEN, "last_seen": "garbage"}, "refused"),
-            ("`last_seen` is not a string",
-             {"id": self._ZERO_SEEN, "last_seen": [1]}, "refused"),
-            ("`last_seen` a year-0001 date with a positive offset",
-             {"id": self._ZERO_SEEN,
-              "last_seen": "0001-01-01T00:00:00+05:00"}, "refused"),
-            ("`last_seen` back-dated past the ageing window",
-             {"id": self._ZERO_SEEN, "last_seen": self._days_ago(400)},
-             "repaired"),
-            ("`id` changed by one character's case",
-             {"id": "Claude-haiku-4-20250101",
-              "last_seen": self._days_ago(3)}, "refused"),
-            ("the whole entry replaced by a scalar", 42, "refused"),
-            # --- invented against the finished rules, not taken from any
-            # round's list of what was already known to reach it ---
-            ("`catalogue_seen` is a dict, not a list",
-             self._WHOLE_FIELD_IS_A_DICT, "refused"),
-            ("the same id twice, the second back-dated (last write wins)",
-             self._SAME_ID_TWICE, "repaired"),
-            ("`id` padded with one trailing dot",
-             {"id": self._ZERO_SEEN + ".", "last_seen": self._days_ago(3)},
-             "refused"),
-            ("`catalogue_seen` absent from `previous.json` entirely",
-             self._FIELD_ABSENT, "refused"),
-        ]
-        healthy = self._reason(control, self._ZERO_LIVE)
-        for label, entry, answered_by in rows:
-            with self.subTest(primitive=label):
-                published, err = self._zero_row(entry)
-                self.assertIn(self._ZERO_LIVE, self._arm_ids(published),
-                              "one broken bridging entry retired a live "
-                              "arm carrying 60.0% of the window")
-                self.assertNotIn(
-                    self._ZERO_LIVE,
-                    {t["id"] for t in published["retired_since_last"]},
-                    "the permanent, unrecoverable half")
-                sentence = self._reason(published, self._ZERO_LIVE)
-                if answered_by == "repaired":
-                    self.assertEqual(sentence, healthy,
-                                     "an entry the alias map needs as a "
-                                     "hop is not aged out, so the chain "
-                                     "and the share both survive intact")
-                else:
-                    self.assertIn("a numerator of exactly zero", sentence)
-                # Counts and shapes only: no warning may echo an id, and
-                # the case-changed spelling is an id the input chose.
-                self.assertNotIn("Claude-haiku-4-20250101", err)
-
     def test_a_zero_numerator_is_measured_not_rendered(self):
         """A share that RENDERS as "0.0" is not a zero numerator, and the
         two must not be confused by whatever decides a retirement.
@@ -28319,75 +28161,6 @@ class TestIssue67Review13(unittest.TestCase):
     _OPEN_SEEN = "claude-sonnet-5-20250101"
     _OPEN_KEY = "claude-sonnet-5-20250101-20260101"
     _OPEN_OTHER = "claude-haiku-4-5"
-
-    def test_the_open_cell_is_a_deflation_to_a_nonzero_share(self):
-        """THE LIMIT, stated and pinned rather than left for the next
-        round to find — the successor to
-        `TestIssue67Review12::test_the_one_cell_this_cannot_cover`, whose
-        two load-bearing sentences round 13 falsified.
-
-        The victim's turns arrive under TWO census keys: 10 under its own
-        id, and 390 through a fold chain. Removing the chain's bridging
-        `catalogue_seen` entry costs it 390 of its 400 turns and 390 of
-        the window's 10,000, so its true 4.0% is measured at 0.1% — under
-        the exit bar, and NOT zero. The rest of the window is carried by
-        a LIVE model, so previous-roster-only attribution is 0 and
-        `RETIREMENT_ANCHOR_TOLERANCE`'s refusal does not fire.
-
-        IT WAS WRITTEN AS THE HALF `0db198a` LEFT OPEN, and it survives
-        that commit's revert unchanged: the zero-numerator refusal is
-        gone, so the zero half is open too (see the pinned survival
-        `test_no_live_catalogue_id_is_retired_on_a_numerator_of_zero`
-        above), and this row goes on measuring the nonzero half that no
-        proposed rule ever reached. Neither half closes without the
-        trusted history designed under
-        https://github.com/Adam-S-Daniel/skills-evals/issues/147.
-
-        WHY NO RULE CLOSES IT, unchanged from round 12: `previous.json` IS
-        this harness's only record of what it has seen, the anchored
-        denominator is deliberately blind to it, and a removal is
-        indistinguishable from the ordinary healthy case. Closing it needs
-        a trusted history — a signed or main-committed `catalogue_seen` —
-        which is a different piece of work.
-
-        If this ever stops being true the limit has been closed and this
-        test should be rewritten as a floor."""
-        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
-            self._model(self._OPEN_LIVE, "2026-02-01T00:00:00Z"),
-            self._model("claude-sonnet-7", "2026-03-01T00:00:00Z"),
-            self._model(self._OPEN_OTHER, "2026-01-01T00:00:00Z")]}
-        census = TestIssue67._census_doc(counts={
-            self._OPEN_KEY: {self.W[0]: 390},
-            self._OPEN_LIVE: {self.W[0]: 10},
-            self._OPEN_OTHER: {self.W[0]: 9_600}})
-
-        def run(seen):
-            previous = {"arms": [{"id": self._OPEN_LIVE,
-                                  "reason": "was an arm"},
-                                 {"id": self._OPEN_ARM,
-                                  "reason": "was an arm"}],
-                        "catalogue_seen": seen}
-            with tempfile.TemporaryDirectory() as tmp:
-                rc, published, _, err = self._run_main(
-                    tmp, models, census=census, previous=previous)
-            self.assertEqual(rc, 0, err)
-            return published
-
-        before = run([{"id": self._OPEN_SEEN,
-                       "last_seen": self._days_ago(1)}])
-        after = run([])
-        self.assertIn("still 4.0%", self._reason(before, self._OPEN_LIVE))
-        retired = {t["id"]: t["reason"]
-                   for t in after["retired_since_last"]}
-        self.assertIn(self._OPEN_LIVE, retired,
-                      "if this ever stops being true the limit has been "
-                      "closed and this test should be rewritten as a "
-                      "floor")
-        self.assertIn("0.1% of rankable census usage",
-                      retired[self._OPEN_LIVE],
-                      "this row pins the NONZERO deflation specifically, "
-                      "and the share it names is what distinguishes it "
-                      "from the zero-numerator half")
 
 
 class TestIssue143(unittest.TestCase):
@@ -29163,6 +28936,26 @@ class TestIssue147(unittest.TestCase):
             self.assertEqual(rc.returncode, 1)
             self.assertFalse(out.exists())
 
+    def test_no_row_above_can_be_applied_without_a_human(self):
+        """The claim every row leans on, asserted once at the workflow:
+        nothing in `eval.yml` writes `evals/roster.yml`. It renders a
+        PROPOSED copy into `$RUNNER_TEMP`, commits it on a bot-owned
+        branch, and files an issue; a person opens the pull request.
+        """
+        raw = (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+            encoding="utf-8")
+        doc = yaml.safe_load(raw)
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            code = "\n".join(line for line in script.splitlines()
+                             if not line.lstrip().startswith("#"))
+            with self.subTest(step=step.get("name")):
+                for verb in ("> evals/roster.yml", ">> evals/roster.yml",
+                             "cp \"$RUNNER_TEMP/proposed-roster.yml\" evals/roster.yml"):
+                    self.assertNotIn(verb, code,
+                                     "no step may write the committed roster")
+        self.assertIn("roster/proposal", raw)
+        self.assertIn("<!-- skills-evals:roster-proposal -->", raw)
 
 if __name__ == "__main__":
     unittest.main()
