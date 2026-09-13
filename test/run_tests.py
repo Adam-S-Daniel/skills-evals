@@ -6360,9 +6360,42 @@ class TestIssue63Review(unittest.TestCase):
         # no fixture references it — validating every registries.yml entry
         # unconditionally would make eval.yml's real run (which never checks
         # it out) fail on every dispatch.
-        registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        self.assertFalse(registries["agentskills-private"]["path"].is_dir())
-        run_eval._validate_registry_paths(registries)  # must not raise
+        #
+        # Issue #142: the original version of this test resolved the
+        # sibling default against REPO_ROOT (this repo's own checkout) and
+        # asserted the resulting path is NOT a directory — an environment
+        # fact, not a property of the code. It fails on any machine that
+        # happens to have the real fleet repo `agentskills-private` cloned
+        # beside `skills-evals` (this account's own workstation does).
+        # Hermetic fix, mirroring `test_registry_not_found_ends_via_exit_2_
+        # with_message_naming_path` above: resolve against a throwaway
+        # base_dir instead of REPO_ROOT, and prove
+        # `_validate_registry_paths` doesn't raise regardless of whether
+        # that base_dir's sibling exists — by creating, then removing, a
+        # real `agentskills-private` directory beside a throwaway copy
+        # (never beside the real checkout).
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_root = Path(tmp)
+            fake_repo_root = tmp_root / "skills-evals"
+            fake_repo_root.mkdir()
+            sibling = tmp_root / "agentskills-private"
+
+            # Condition 1: no sibling checkout present.
+            self.assertFalse(sibling.is_dir())
+            registries = run_eval.resolve_registries(None, None, fake_repo_root)
+            self.assertEqual(registries["agentskills-private"]["path"], sibling.resolve())
+            run_eval._validate_registry_paths(registries)  # must not raise
+
+            # Condition 2: a real sibling checkout now exists.
+            sibling.mkdir()
+            registries = run_eval.resolve_registries(None, None, fake_repo_root)
+            self.assertTrue(registries["agentskills-private"]["path"].is_dir())
+            run_eval._validate_registry_paths(registries)  # must not raise either way
+
+            # Tear back down to condition 1, proving removal doesn't matter.
+            sibling.rmdir()
+            run_eval._validate_registry_paths(
+                run_eval.resolve_registries(None, None, fake_repo_root))
 
     def test_override_path_is_resolved_to_an_absolute_path(self):
         # Previously only the sibling-default branch called .resolve(); an
