@@ -5576,8 +5576,18 @@ class TestIssue67Review(unittest.TestCase):
     def test_an_empty_arm_set_is_fatal_and_publishes_nothing(self):
         """An all-inside-cooling-off tier used to yield `arms: []` and exit 0
         — a roster with no arms is not a roster, it is a silent no-op run."""
-        fresh_only = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
-            TestIssue67._model("claude-haiku-9", "2026-09-02T00:00:00Z")]}
+        # `roster.main()` is called with no `now=` override below, so it reads
+        # the REAL wall clock. A hard-coded `created_at` (was
+        # "2026-09-02T00:00:00Z") drifted outside the policy's 7-day
+        # cooling-off window and went red on 2026-09-10 with no code change —
+        # the model had simply aged past cooling-off. `days=1` is always
+        # inside any positive `cooling_off_days`, so build the timestamp
+        # relative to "now" instead of pinning a calendar date.
+        now = datetime.now(timezone.utc)
+        one_day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        fresh_only = {"fetched_at": fetched_at, "models": [
+            TestIssue67._model("claude-haiku-9", one_day_ago)]}
         with tempfile.TemporaryDirectory() as tmp:
             models = Path(tmp) / "models.json"
             models.write_text(json.dumps(fresh_only), encoding="utf-8")
@@ -9275,12 +9285,22 @@ class TestIssue67Review3(unittest.TestCase):
         the LAST line — a model's detail, not the headline — and the comment
         claimed otherwise.
         """
+        # `roster.py` is invoked as a real subprocess below with no frozen
+        # `now`, so it reads the REAL wall clock. A hard-coded `created_at`
+        # (was "2026-09-02T00:00:00Z") drifted outside the policy's 7-day
+        # cooling-off window and went red on 2026-09-10 with no code change —
+        # the model had simply aged past cooling-off. `days=1` is always
+        # inside any positive `cooling_off_days`, so build the timestamp
+        # relative to "now" instead of pinning a calendar date.
+        now = datetime.now(timezone.utc)
+        one_day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         with tempfile.TemporaryDirectory() as tmp:
             models = Path(tmp) / "models.json"
             models.write_text(json.dumps({
-                "fetched_at": "2026-09-04T11:00:00Z",
+                "fetched_at": fetched_at,
                 "models": [TestIssue67._model("claude-haiku-9",
-                                              "2026-09-02T00:00:00Z")],
+                                              one_day_ago)],
             }), encoding="utf-8")
             out = Path(tmp) / "roster" / "latest.json"
             proc = subprocess.run(
