@@ -383,8 +383,8 @@ def _usage_alias_hops(api_ids, other_ids, seat_aliases: dict,
     written down. What needed the intermediate form is a question the
     composed map cannot answer, because composition DISCARDS the hops it
     walked through: WHICH IDS DOES A CHAIN GO THROUGH? See
-    `_needed_alias_hops`, and `_update_catalogue_seen`'s ageing rule for
-    why an id in the middle of a chain may not be dropped.
+    the ageing rule's own comment in `_update_catalogue_seen` for why
+    that question stopped being asked (#147).
     """
     live = {i for i in api_ids if isinstance(i, str)}
     wide = alias_map(list(api_ids) + list(other_ids))
@@ -444,43 +444,6 @@ def _compose_alias_chains(hops: dict[str, str]) -> dict[str, str]:
             target = mapping[target]
         mapping[model_id] = target
     return mapping
-
-
-def _needed_alias_hops(hops: dict[str, str], census_keys) -> set[str]:
-    """Every id a chain from an in-window census key PASSES THROUGH.
-
-    `hops` is `_usage_alias_hops`'s one-hop map; `census_keys` is the set
-    of census keys with in-window turns (`compute_roster`'s
-    `count_turns`). The answer is every id reachable from one of those
-    keys by following `hops`, the key itself excluded — that is, every
-    id which, if it stopped existing, would leave the chain from that key
-    stranded short of the numerator that collects its turns.
-
-    WHY THE KEY ITSELF IS EXCLUDED: a census key with in-window turns is
-    already TIER 1 by `_Relevance.tier`, so it needs no second route to
-    survive, and including it would make `is_needed_hop` answer "yes" for
-    every census key and so blur what the two questions are for.
-
-    WHY IT IS COMPUTED FROM THE HOPS AND NOT THE COMPOSED MAP: the
-    composed map answers "where does this key's usage land", which is the
-    chain's END. The ids in the MIDDLE are exactly what composition
-    throws away, and they are exactly what has to survive for the chain
-    to exist at all next run.
-
-    `seen` bounds the walk: `hops` is built from `SNAPSHOT_SUFFIX`, which
-    strictly shortens an id at every rule-(2) hop, but rules (1) and (3)
-    do not, so a cycle is not excluded by construction and a walk without
-    a guard would hang on one.
-    """
-    needed: set[str] = set()
-    for key in census_keys:
-        seen = {key}
-        target = hops.get(key)
-        while target is not None and target not in seen:
-            needed.add(target)
-            seen.add(target)
-            target = hops.get(target)
-    return needed
 
 
 def _is_attributable(folded: str, api_ids: set[str] | None,
@@ -1065,21 +1028,6 @@ class _Relevance:
         # nothing". Neither of the two checks that used to sit over
         # `count_turns` dropped a key in any run either.
         self._turns = dict(count_turns)
-        # THE SECOND QUESTION, and it arrives after construction because
-        # it cannot be answered before this object exists: it is computed
-        # over the usage alias map, whose domain includes the CARRIED arm
-        # list, and which entries are carried is decided by the caps —
-        # which order themselves by this same object. `compute_roster` is
-        # the only caller and calls `note_needed_hops` before the one
-        # reader, `_update_catalogue_seen`'s ageing rule, ever runs; an
-        # empty set is the answer for anything that does not, which is
-        # the answer that changes nothing.
-        self._needed_hops: set[str] = set()
-
-    def note_needed_hops(self, ids) -> None:
-        """Record the ids the usage alias map needs as HOPS — see
-        `_needed_alias_hops`, and `is_needed_hop` for what reads it."""
-        self._needed_hops = set(ids)
 
     def rank(self, ids) -> dict[str, tuple]:
         """{id: sort key} for the list being capped, ascending — smallest
@@ -1145,53 +1093,14 @@ class _Relevance:
         thing to keep in step with the first, which is why there is not
         one.
 
-        `is_needed_hop` IS NOT A SECOND SPELLING OF IT (ITEM 3, #129
-        review round 13). It is a different question — the FOLD RELATION
-        rather than raw identity — and it deliberately does NOT feed
-        `rank`, because an entry the caps rank is an entry the caps can
-        evict. See `is_needed_hop` for which reader wants which, and why
-        answering both here would trade one hole for a worse one.
+        A SECOND QUESTION USED TO SIT BESIDE IT — the FOLD RELATION
+        rather than raw identity, asked by the ageing rule so that an id
+        the alias map walks THROUGH was not dropped on a date the
+        previous roster wrote. It is deleted (#147): the history is a
+        reviewed file now, and a rule that asks whether to disbelieve a
+        date is a rule a trusted record does not need.
         """
         return 1 if (model_id in self._turns or model_id in self._live) else 3
-
-    def is_needed_hop(self, model_id) -> bool:
-        """Whether the usage alias map needs `model_id` as a HOP on the
-        chain from some in-window census key to the numerator that
-        collects its turns (BLOCKER C / ITEM 3, #129 review round 13).
-
-        A SECOND, SEPARATELY NAMED QUESTION, and the reason there are now
-        two is not that one was hard to spell. `tier` asks about RAW
-        IDENTITY — is this id itself an in-window census key, or itself a
-        live catalogue id — and that is the right question for the CAPS,
-        because it is the question whose answer neither cap may take from
-        `previous.json`. This asks about the FOLD RELATION, which is the
-        question ATTRIBUTION actually asks, and a BRIDGE — an id that is
-        neither document's, but that the alias map walks THROUGH — is
-        tier 3 under the first question and load-bearing under the
-        second. The caps carry a tier-3 residue entry whole; the ageing
-        rule dropped it. That asymmetry is the hole this closes.
-
-        IT MUST NOT ENTER THE CAPS' TIER OR ORDER, and that is the whole
-        reason it is a separate method rather than a fourth route inside
-        `tier`. Moving a residue entry into a capped tier makes it
-        EVICTABLE in the overflow regime — the regime round 12's
-        should-fix 2 measured, where tier 1 alone exceeds the cap and the
-        lowest-turn of it goes — so routing bridges through `tier` would
-        trade an entry that is never evicted for one that is evicted
-        first. The ageing rule is the only reader.
-
-        IT GRANTS A PLANTER NOTHING NEW, by the same argument round 12's
-        ageing rule carries: an entry a planter wants kept past the
-        window they can already keep by writing today's `last_seen` (a
-        future date clamps to today, and a bare string migrates stamped
-        today). All this removes is the ability to KILL a hop the census
-        still needs — including by doing nothing at all, which is the
-        case with no planter in it: a bridge's `last_seen` is only ever
-        refreshed for a LIVE id, so an honest bridge crosses
-        `catalogue_seen_max_age_days` on its own and silently breaks the
-        chain.
-        """
-        return model_id in self._needed_hops
 
     def is_live(self, model_id) -> bool:
         """Whether THIS run's Models API returned `model_id`.
@@ -1225,21 +1134,12 @@ def _relevance(api_ids, count_turns) -> _Relevance:
     census needs, under any spelling, never outranks one that either
     does.
 
-    "AND THE AGEING WINDOW" IS ROUND 13's CORRECTION TO CLAUSE 2, and
-    the sentence said only "survives the caps" until then. The caps and
-    the ageing rule are two ways an entry leaves, and both are permanent
-    — the next run's `previous.json` is this run's output — so a
-    guarantee that covers one of them covers half the mechanism. It was
-    the wrong half: the caps carry a tier-3 residue entry whole, and
-    ageing dropped it, so a BRIDGE (an id neither document names, that
-    the alias map walks THROUGH) survived every cap and died of old age.
-    It needs no hostile input to reach — a bridge's `last_seen` is only
-    ever refreshed for a LIVE id, so an honest one crosses
-    `catalogue_seen_max_age_days` on its own — and the ageing rule now
-    asks `_Relevance.is_needed_hop`, which is a SECOND question and
-    deliberately not a fourth route into `tier`; see that method for why
-    routing bridges through the caps' order would trade this hole for a
-    worse one.
+    "AND THE AGEING WINDOW" WAS ROUND 13's CORRECTION TO CLAUSE 2, and
+    it is gone with the rule it described (#147). Ageing no longer asks
+    whether an id is a bridge the alias map walks through: the history it
+    reads is committed on `main`, so an old `last_seen` has only one
+    reading left — that this harness has not observed the model in that
+    long — and the exemption existed to disbelieve the other one.
 
     THE QUALIFIER IS NOT DECORATION, and it was missing from all five
     copies until round 12's should-fix 2. Clause 1 is FALSE in the
@@ -1779,16 +1679,12 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     Every id THIS run's Models API actually listed gets its `last_seen`
     refreshed to today — that is the only way an id's clock resets. Every
     other previously-seen id keeps its own `last_seen`, and is DROPPED
-    once that is older than `policy["catalogue_seen_max_age_days"]` —
-    UNLESS this run's census still records in-window turns for it
-    (BLOCKER 2 of #129 review round 12), or the usage alias map needs it
-    as a HOP on the chain from a census key to the numerator that
-    collects its turns (ITEM 3, round 13). Both are written out over the
-    loop itself, and they are two QUESTIONS rather than one spelling of
-    one: the first is raw identity, the second is the fold relation, and
-    a bridge is tier 3 under the first and load-bearing under the
-    second. Those three together are the only way an id LEAVES this
-    history, besides the cap below. A model id planted directly in
+    once that is older than `policy["catalogue_seen_max_age_days"]`. That
+    is the ONLY way an id leaves this history now: the two exemptions
+    that used to sit beside it are deleted (#147), because this history
+    is a reviewed file on `main` and an exemption exists to disbelieve a
+    date, which is a thing a trusted record does not need. A model id
+    planted directly in
     `catalogue_seen` on `eval-results` (an untrusted branch, per the
     module docstring) that the Models API never actually returns has no
     way to get its `last_seen` refreshed, so it ages out on its own once
@@ -1832,98 +1728,38 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
     max_age = timedelta(days=policy["catalogue_seen_max_age_days"])
     survivors: dict[str, str] = {}
     aged_out = 0
-    held_by_census = 0
-    held_as_hop = 0
     for model_id, last_seen in by_id.items():
         seen_at = parse_ts(last_seen) or now
         if now - seen_at > max_age:
-            # AGEING MAY NOT DROP AN ENTRY THIS RUN'S CENSUS STILL NAMES
-            # (BLOCKER 2, #129 review round 12). `last_seen` is written by
-            # whoever writes `previous.json`, and dropping an entry drops
-            # its census turns out of the ATTRIBUTABLE DENOMINATOR — so
-            # one back-dated date on a real since-retired model published
-            # a live arm's true 5.0% as `carries 100.0%`, 95 points of
-            # error, with rc 0 and a warning byte-identical to the one a
-            # legitimate ageing event produces. Round 11's attack table
-            # measured `last_seen` and concluded "held — `last_seen` is
-            # out of the cap ORDER, as claimed"; correct about the cap,
-            # and ageing is not the cap.
+            # NO EXEMPTIONS ANY MORE (#147, ADR 0001 decision 4). Two used
+            # to sit here — keep an entry this run's census still names,
+            # and keep an entry the usage alias map needs as a HOP — and
+            # both existed because `last_seen` was written by whoever
+            # wrote `previous.json` on an unprotected branch, so a
+            # back-dated date could drop a real model's turns out of the
+            # attributable denominator and no local rule could tell that
+            # apart from an honest expiry.
             #
-            # It grants a planter nothing, which is why this is the safe
-            # half of the fix: an entry the planter wants attributable
-            # they can already keep attributable by writing today's date
-            # (a future date clamps to today, and a bare string migrates
-            # stamped today). All this removes is the ability to KILL an
-            # entry the census still vouches for.
-            #
-            # TWO QUESTIONS, NOT ONE, and this comment used to argue the
-            # opposite — "`tier() < 3` rather than a second spelling of
-            # 'the census names it': one question, asked in one place, so
-            # the caps and this cannot drift apart". The two clauses below
-            # are not two spellings of one question; they are two
-            # different questions, and the second is the one ATTRIBUTION
-            # asks (ITEM 3, #129 review round 13).
-            #
-            # `tier() < 3` is RAW IDENTITY: is this id itself an in-window
-            # census key, or itself a live catalogue id. That is the right
-            # question for the caps, because it is the one neither cap may
-            # take from `previous.json`, and it is what round 12's BLOCKER
-            # 2 needed here. A LIVE id never reaches this branch at all —
-            # the loop above stamps every one of them with today — so tier
-            # 1 here always means the census, which is what the first
-            # warning says.
-            #
-            # `is_needed_hop` is the FOLD RELATION: is this id one the
-            # usage alias map walks THROUGH on the way from an in-window
-            # census key to the numerator that collects its turns. A
-            # BRIDGE is tier 3 under the first question and load-bearing
-            # under the second — neither document names it, so the caps
-            # carry it whole as residue, and ageing killed it. Measured
-            # through `main()` with no hostile input at all: a two-run
-            # chain where run 1 is this harness's own output and run 2
-            # reads it back 200 days later published a live arm carrying
-            # 60.0% of the window as `RETIRED ... (0.0%)`. A bridge's
-            # `last_seen` is only ever refreshed for a LIVE id, so an
-            # honest bridge crosses this window on its own.
-            #
-            # The two are kept in that order because the counts are
-            # reported separately and an entry that is both should be
-            # reported as the census's, which is the stronger claim.
-            if relevant.tier(model_id) < 3:
-                held_by_census += 1
-                survivors[model_id] = last_seen
-                continue
-            if relevant.is_needed_hop(model_id):
-                held_as_hop += 1
-                survivors[model_id] = last_seen
-                continue
+            # THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING: this
+            # history is `evals/roster.yml`'s `catalogue_seen`, committed
+            # on a ruleset-protected branch. A `last_seen` here is a date
+            # a reviewer merged, so "the record was tampered with" is no
+            # longer one of the two readings of an old date — the only
+            # remaining reading is the true one, that this harness has not
+            # observed the model in that long. The census-names-it
+            # exemption then keeps an entry the trusted record says should
+            # go, and the needed-hop exemption did the same for a chain;
+            # both make the trusted history disagree with itself, which is
+            # the one thing it is for. Round 14's BLOCKER 2 — a quiet
+            # window ageing a needed hop out for good — is closed by the
+            # record surviving in a reviewed file rather than by a rule
+            # that guesses which dates to disbelieve.
             aged_out += 1
             continue
         survivors[model_id] = last_seen
     if aged_out:
         warn(f"catalogue_seen: dropped {aged_out} entry/entries older than "
              f"the {policy['catalogue_seen_max_age_days']}-day window")
-    if held_by_census:
-        # DISTINGUISHABLE FROM THE LINE ABOVE, deliberately (BLOCKER 2).
-        # The ageing warning cannot be a signal while a hostile ageing and
-        # an ordinary one print the same bytes; the hostile case now
-        # prints this line instead, and the ordinary one still prints only
-        # that one. Counts only, like every other warning about an
-        # untrusted input.
-        warn(f"catalogue_seen: kept {held_by_census} entry/entries past the "
-             f"{policy['catalogue_seen_max_age_days']}-day window that this "
-             f"run's census still records in-window turns for")
-    if held_as_hop:
-        # A THIRD DISTINCT LINE, for the same reason there is a second
-        # one: the three cases say different things about the run and a
-        # reader who cannot tell them apart is reading no signal at all.
-        # This one is the ORDINARY case as often as the hostile one — an
-        # honest bridge ages on its own — so it is worded as what it is
-        # rather than as an alarm. Counts only, like every other warning
-        # about an untrusted input.
-        warn(f"catalogue_seen: kept {held_as_hop} entry/entries past the "
-             f"{policy['catalogue_seen_max_age_days']}-day window that the "
-             f"usage alias map needs to attribute this run's census")
     api_id_set = set(api_ids)
     live = sorted(i for i in survivors if i in api_id_set)
     historical = [i for i in survivors if i not in api_id_set]
@@ -2287,30 +2123,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # shape; `catalogue_seen` stays a plain set of ids for every downstream
     # membership check (`_is_attributable`, `_fold_set`'s callers, etc.).
     previous_seen = _clean_catalogue_seen(previous, warn, now)
-
-    # THE SECOND QUESTION THE AGEING RULE ASKS, computed HERE because it
-    # has to be asked over the PRE-EVICTION entry set (ITEM 3, #129
-    # review round 13). The question is "would dropping this id strand a
-    # chain", and it is unanswerable once something has already been
-    # dropped: the id whose absence breaks the chain is precisely the one
-    # that is no longer there to ask about.
-    #
-    # The id set is the same one the wide alias map below is built over,
-    # taken BEFORE `_update_catalogue_seen` ages or caps anything: this
-    # run's `api_ids`, every census key, the carried arms, and every id
-    # the previous roster's `catalogue_seen` named. It is a superset of
-    # the post-eviction set by construction, which is what makes the
-    # answer "is this id load-bearing" rather than "was it".
-    #
-    # `_usage_alias_hops` rather than `_usage_alias_map`: composition
-    # discards the ids in the middle of a chain, and those are exactly
-    # the ones at issue. See `_needed_alias_hops`.
-    relevant.note_needed_hops(_needed_alias_hops(
-        _usage_alias_hops(
-            api_ids,
-            list(counts) + carried_arms + [e["id"] for e in previous_seen],
-            seat_aliases, live_order),
-        count_turns))
 
     catalogue_seen_entries = _update_catalogue_seen(
         api_ids, previous_seen, now, policy, warn, relevant=relevant)
