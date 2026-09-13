@@ -5706,20 +5706,9 @@ class TestIssue67Review(unittest.TestCase):
                              {"id": "claude-opus-4-8"}]}
         result, notes = self._warned(previous=previous)
         self.assertTrue(any("previous" in n for n in notes), notes)
-        # The one well-formed entry is still honoured — READ, that is,
-        # which is what this row is about. It used to assert
-        # `retired_since_last == ["claude-opus-4-8"]`; BLOCKER B (#129
-        # review round 13) refuses to retire a LIVE catalogue id whose
-        # exit-window numerator is exactly zero, and this canned census
-        # gives that model no turns at all, so it is now held over on
-        # that named reason instead. Either way the entry was read: a
-        # skipped one would leave the model with no `held over from the
-        # previous roster` sentence anywhere.
-        held = next(a["reason"] for a in result["arms"]
-                    if a["id"] == "claude-opus-4-8")
-        self.assertIn("held over from the previous roster", held)
-        self.assertIn("a numerator of exactly zero", held)
-        self.assertEqual(result["retired_since_last"], [])
+        # The one well-formed entry is still honoured.
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
 
     def test_a_wrong_shaped_previous_document_does_not_raise(self):
         for previous in ({"arms": "claude-opus-5"}, {"arms": None}, {}):
@@ -10077,16 +10066,7 @@ class TestIssue67Review5(unittest.TestCase):
         raw window total must not be held back by the new relative guard —
         retirement proceeds normally."""
         previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
-        # ONE turn a week for the arm under test, and it is load-bearing
-        # rather than decoration: BLOCKER B (#129 review round 13) will
-        # not retire a LIVE catalogue id whose exit-window numerator is
-        # exactly ZERO, so a row written with no turns at all would now
-        # measure that refusal instead of the relative floor it is about.
-        # 8 of 808 rankable turns is 0.99% — real usage, comfortably
-        # under the 2% exit bar — so the retirement this row asserts is
-        # decided by the bar, which is the point.
-        counts = {"claude-sonnet-5": {w: 100 for w in self.W},
-                  "claude-opus-4-8": {w: 1 for w in self.W}}
+        counts = {"claude-sonnet-5": {w: 100 for w in self.W}}
         census = TestIssue67._census_doc(counts=counts)
         result = self._compute(census=census, previous=previous)
         self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
@@ -24275,19 +24255,10 @@ class TestIssue67Review7(unittest.TestCase):
         self._assert_snapshots_are_not_both_at_100(second)
         # Mutation check (manual): as above — red.
 
-    def test_a_previous_arm_with_no_census_turns_is_measured_at_zero(self):
+    def test_a_previous_arm_with_no_census_turns_is_retired_at_zero(self):
         """The older snapshot is a previous arm with LITERALLY no turns of
-        its own; the bare alias sits in history. Its numerator must be
-        ZERO, not the newer snapshot's 4000 turns.
-
-        RENAMED from `..._is_retired_at_zero` (#129 review round 13). The
-        subject is unchanged and is the alias map: what the row measures
-        is whose turns land in SNAP_OLD's numerator. What changed is what
-        the roster then DOES about a zero — BLOCKER B refuses to retire a
-        LIVE catalogue id the attribution machinery credits nothing, so
-        the same zero now publishes as a named hold-over instead of a
-        retirement. The old name asserted the consequence rather than the
-        measurement, which is why it moved."""
+        its own; the bare alias sits in history. It must be retired at
+        0.0%, not kept on the newer snapshot's turns."""
         census = TestIssue67._census_doc(counts={
             self.SNAP_NEW: {self.W[0]: 4000},
             "claude-sonnet-5": {self.W[0]: 40}})
@@ -24296,15 +24267,15 @@ class TestIssue67Review7(unittest.TestCase):
                         {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
         result = self._compute(models=self._two_snapshot_models(),
                                census=census, previous=previous)
-        held = next(a["reason"] for a in result["arms"]
-                    if a["id"] == self.SNAP_OLD)
-        self.assertIn("a numerator of exactly zero", held)
-        self.assertNotIn("carries", held)
-        self.assertEqual(result["retired_since_last"], [])
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result))
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == self.SNAP_OLD)
+        self.assertIn("exit bar", entry["reason"])
+        self.assertIn("0.0%", entry["reason"])
         # Mutation check (manual): as above — the wide map gives SNAP_OLD
-        # the newer snapshot's 4000 turns and seats it at "carries
-        # 100.0%", so `held` carries neither the zero-numerator sentence
-        # nor anything but "carries", and both assertions go red.
+        # the newer snapshot's 4000 turns, seats it at "carries 100.0%",
+        # and `retired_since_last` is empty — `next(...)` raises
+        # StopIteration and the test errors.
 
     def test_the_two_snapshot_roster_still_offers_a_non_arm_judge(self):
         """The extra seat consumed the last non-arm model, so the judge
@@ -28883,15 +28854,18 @@ class TestIssue67Review12(unittest.TestCase):
             ("catalogue_seen[].id REMOVE the victim's own chain hops",
              _prev([V], [D]),
              self._prev(list(arm_hops) + [V], [D]), "seat",
-             "BOTH round-13 refusals deleted at once — `held == 0.0` AND "
              "`previous_only = 0` in compute_roster's hold-over branch. "
-             "MEASURED, not assumed: either one alone leaves this row "
-             "GREEN, because this input trips both independently (the "
-             "victim's numerator falls to zero AND 100% of what is left "
-             "of the denominator is previous-roster-only). It is the "
-             "one row of the table that needs two, and it is red only "
-             "in the fold-reached shape — in the raw-id shape it is the "
-             "identity, which is the finding"),
+             "MEASURED, not assumed: this input trips the anchor-"
+             "tolerance refusal on its own — 100% of what is left of the "
+             "denominator is previous-roster-only — so that one mutation "
+             "is now sufficient. It used to need two, because "
+             "`0db198a`'s `held == 0.0` refusal caught the same input "
+             "independently (the victim's numerator falls to zero) and "
+             "either one alone left the row GREEN. That commit is "
+             "reverted (see `TestIssue67Review13`'s pinned survival), so "
+             "only this refusal is left holding the row up. It is red "
+             "only in the fold-reached shape — in the raw-id shape it is "
+             "the identity, which is the finding"),
         ]
         hostile_values = ("9999", "garbage")
         for label, control, hostile, expectation, mutation in rows:
@@ -28976,24 +28950,29 @@ class TestIssue67Review12(unittest.TestCase):
 
         ROUND 13 FALSIFIED THE TWO SENTENCES THAT USED TO SIT HERE. They
         said the removal direction was CONFINED to inflation and was
-        re-decided next run. Neither is true. Removing the entry that
-        bridges a LIVE arm's own census key onto it deflates instead, and
-        that direction RETIRES — permanently, since the model is then no
-        longer a previous arm, so the exit bar no longer applies and real
-        usage never re-seats it. Seven different primitives on that one
-        entry reached it (BLOCKER B).
+        re-decided next run. Neither is true, and reverting `0db198a`
+        does not make them true again — the falsification was a
+        measurement, not a consequence of the rule that commit added.
+        Removing the entry that bridges a LIVE arm's own census key onto
+        it deflates instead, and that direction RETIRES — permanently,
+        since the model is then no longer a previous arm, so the exit
+        bar no longer applies and real usage never re-seats it. Eleven
+        different primitives on that one entry reach it (BLOCKER B).
 
-        WHAT IS LEFT OPEN, AFTER BLOCKER B. The deflation direction is
-        now refused where it lands on a numerator of EXACTLY ZERO —
-        `compute_roster` will not retire a live catalogue id the
-        attribution machinery credits nothing. A removal that deflates a
-        live arm to a NONZERO share under the exit bar is still
-        undetectable, and it is pinned as its own row rather than left in
-        prose: see `TestIssue67Review13::test_the_open_cell_is_a
-        _deflation_to_a_nonzero_share`. Both halves of the cell have the
-        same cause and the same non-fix — `previous.json` is the only
-        record there is, so a removal reads as the ordinary healthy
-        case."""
+        WHAT IS OPEN, AFTER THE REVERT OF `0db198a`. BOTH halves of the
+        deflation direction are open again. The zero-numerator half is a
+        KNOWN SURVIVAL pinned as an expected failure —
+        `TestIssue67Review13::test_no_live_catalogue_id_is_retired_on_a
+        _numerator_of_zero` — because the refusal that closed it created
+        a worse defect (a planted `arms` line that can never retire, so
+        `judge.is_arm` goes true and every unpinned fixture is refused).
+        The nonzero half is pinned by
+        `TestIssue67Review13::test_the_open_cell_is_a_deflation_to_a
+        _nonzero_share`. Both halves have the same cause and the same
+        non-fix — `previous.json` is the only record there is, so a
+        removal reads as the ordinary healthy case — and closing them
+        needs the trusted history designed under
+        https://github.com/Adam-S-Daniel/skills-evals/issues/147."""
         V, D = self._VICTIM, self._DEPARTED_REAL
         # Its OWN census, without the table's 400,000-turn unattributable
         # key: that key's raw turns trip the ranked/raw relative floor,
@@ -29403,11 +29382,20 @@ class TestIssue67Review13(unittest.TestCase):
     # exactly 0.0% and is published `RETIRED ... (0.0%)`, rc 0, empty
     # stderr, permanently.
     #
-    # THE RULE IS OVER THE OBSERVABLE, NOT THE CAUSE, because the cause is
-    # undetectable in principle: `previous.json` is the harness's only
-    # record, so "was never an arm" and "the record was tampered with" are
-    # the same input. What is observable is a model this run's Models API
-    # still lists that attribution credits exactly nothing.
+    # THE RULE THAT CLOSED THIS IS REVERTED, AND THE TABLE BELOW IS KEPT
+    # AS THE PINNED SURVIVAL. `0db198a` refused to retire a live
+    # catalogue id on a numerator of exactly zero, stated over the
+    # OBSERVABLE because the cause is undetectable in principle:
+    # `previous.json` is the harness's only record, so "was never an
+    # arm" and "the record was tampered with" are the same input. Round
+    # 14 measured what that refusal cost — a planted `arms` line naming
+    # an unused live model can then NEVER retire, `judge.is_arm` goes
+    # true, and `run_eval.select_models` refuses every unpinned fixture
+    # permanently — so the commit is reverted and the defect goes back to
+    # being a survival. Both readings of a zero are one untrusted line
+    # away from each other; separating them needs the trusted history
+    # designed under
+    # https://github.com/Adam-S-Daniel/skills-evals/issues/147.
 
     _ZERO_LIVE = "claude-haiku-4-20260601"
     _ZERO_SEEN = "claude-haiku-4-20250101"
@@ -29449,10 +29437,35 @@ class TestIssue67Review13(unittest.TestCase):
         self.assertEqual(rc, 0, err)
         return published, err
 
+    @unittest.expectedFailure
     def test_no_live_catalogue_id_is_retired_on_a_numerator_of_zero(self):
-        """ELEVEN PRIMITIVES on ONE `catalogue_seen` entry, each measured
-        through `main()` rather than reasoned about, and every one of them
-        RED on `87f2031` in the same way: `RETIRED: below the 2% exit bar
+        """PINNED SURVIVAL, NOT A PASSING FLOOR — expected to fail.
+
+        The rule this table measured (`0db198a`, the `held == 0.0`
+        hold-over at `compute_roster`'s retirement sink) is REVERTED,
+        because refusing a zero numerator made a planted `arms` line
+        immortal: `judge.is_arm` goes true and `run_eval.select_models`
+        refuses every unpinned fixture, permanently, from one line on an
+        untrusted branch. See round 14's park comment,
+        https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5591678318,
+        and issue https://github.com/Adam-S-Daniel/skills-evals/issues/147,
+        defect 1 (this table) and defect 2 (the halt).
+
+        SO THIS ROW IS KEPT AND MARKED RATHER THAN DELETED. Nine of the
+        eleven rows — every one answered `refused` below — are RED again:
+        the live arm carrying a true 60.0% is published `RETIRED ...
+        (0.0%)`, rc 0, empty stderr, permanently. The two rows answered
+        `repaired` still pass on their own, because ITEM 3's needed-hop
+        rule keeps a bridge the ageing window would have dropped and is
+        not touched by the revert; they cannot be read off this row's
+        verdict while the other nine are red. An UNEXPECTED SUCCESS here
+        is the signal that #147 has closed the survival, and it fails the
+        suite so it cannot pass unnoticed.
+
+        WHAT IT MEASURED, unchanged: eleven primitives on ONE
+        `catalogue_seen` entry, each measured through `main()` rather
+        than reasoned about, and every one of them RED on `87f2031` in
+        the same way: `RETIRED: below the 2% exit bar
         for the last 8 weeks (0.0% of rankable census usage)`, rc 0, for a
         live arm carrying a true 60.0% of the window.
 
@@ -29479,8 +29492,10 @@ class TestIssue67Review13(unittest.TestCase):
         invented against the finished rule to test whether it generalises,
         and they were applied and run rather than reasoned about.
 
-        MUTATION: deleting the `held == 0.0` branch from
-        `compute_roster`'s hold-over branch restores all eleven."""
+        MUTATION, while the rule existed: deleting the `held == 0.0`
+        branch from `compute_roster`'s hold-over branch restored all
+        eleven. That deletion is now the shipped state, which is why this
+        row is an expected failure rather than a floor."""
         control, _ = self._zero_row({"id": self._ZERO_SEEN,
                                      "last_seen": self._days_ago(3)})
         self.assertIn(self._ZERO_LIVE, self._arm_ids(control))
@@ -29547,19 +29562,23 @@ class TestIssue67Review13(unittest.TestCase):
                 self.assertNotIn("Claude-haiku-4-20250101", err)
 
     def test_a_zero_numerator_is_measured_not_rendered(self):
-        """The check is `held == 0.0`, which is exact for "the numerator
-        is zero" in this branch, and it is deliberately NOT a test on
-        `_format_share`'s output — that renders a merely tiny share as
-        "0.0" at one decimal place and would hold over an arm the exit bar
-        really has decided about.
+        """A share that RENDERS as "0.0" is not a zero numerator, and the
+        two must not be confused by whatever decides a retirement.
 
-        Here the victim carries ONE of the window's 100,001 rankable
-        turns: 0.001%, which the published sentence renders at the
-        escalated precision `_format_share` exists for, and which is
-        RETIRED because the numerator is not zero.
+        THE ROW OUTLIVES THE RULE IT WAS WRITTEN AGAINST. It was
+        `0db198a`'s proof that `held == 0.0` was an exact test rather
+        than a rounding one; that branch is reverted (see this section's
+        header and
+        https://github.com/Adam-S-Daniel/skills-evals/issues/147), and
+        what the row measures now is the surviving half: a victim
+        carrying ONE of the window's 100,001 rankable turns — 0.001% — is
+        RETIRED under the exit bar, and the published sentence renders it
+        at the escalated precision `_format_share` exists for rather than
+        flattening it to "0.0".
 
-        MUTATION: `_format_share(held, ...) == "0.0"` in place of `held ==
-        0.0` holds this arm over instead."""
+        It is kept because any future rule that reads a zero has to read
+        the MEASUREMENT and not the rendering, and this is where that
+        distinction is pinned."""
         counts = {self._ZERO_KEY: {self.W[0]: 1},
                   "claude-sonnet-5": {self.W[0]: 100_000}}
         previous = {"arms": [{"id": self._ZERO_ARM, "reason": "was an arm"},
@@ -29580,50 +29599,18 @@ class TestIssue67Review13(unittest.TestCase):
                       "small")
         self.assertIn("0.001%", retired[self._ZERO_LIVE])
 
-    def test_what_a_zero_numerator_hold_over_costs_and_what_still_removes_it(self):
-        """THE COST OF BLOCKER B'S RULE, measured rather than asserted in
-        a comment: a live model that genuinely stops being used is now
-        HELD OVER rather than retired, for as long as it stays live.
-        Nothing here is hostile — the previous roster is the harness's
-        own, the census is honest, and the model simply has no turns.
+    # REMOVED WITH THE REVERT OF `0db198a`:
+    # `test_what_a_zero_numerator_hold_over_costs_and_what_still_removes
+    # _it`. It measured the COST of that commit's zero-numerator
+    # hold-over — a live model that genuinely stops being used is held
+    # over rather than retired, and only leaving the Models API removes
+    # it. With the rule reverted there is no such cost: a genuinely
+    # unused live arm retires on the exit bar again, which is the
+    # pre-`0db198a` behaviour, so the row asserted a hold-over that no
+    # longer happens and had no subject left. It is named here rather
+    # than deleted silently; `git show 0db198a` carries its body. See
+    # https://github.com/Adam-S-Daniel/skills-evals/issues/147.
 
-        WHAT STILL REMOVES IT is the Models API. Row 2 is the same
-        `previous.json` against a catalogue that no longer lists the
-        model, and it retires that same run on the departed-arm path,
-        which never reaches the branch this rule lives in.
-
-        This is the row to read before widening the rule, and the row to
-        delete if a trusted history ever makes the zero readable."""
-        victim = "claude-sonnet-5"
-        census = TestIssue67._census_doc(
-            counts={"claude-sonnet-7": {self.W[0]: 500}})
-        previous = {"arms": [{"id": victim, "reason": "was an arm"}],
-                    "catalogue_seen": []}
-        listed = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
-            self._model(victim, "2026-02-01T00:00:00Z"),
-            self._model("claude-sonnet-7", "2026-03-01T00:00:00Z")]}
-        delisted = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
-            self._model("claude-sonnet-7", "2026-03-01T00:00:00Z")]}
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, still_listed, _, err = self._run_main(
-                tmp, listed, census=census, previous=previous)
-        self.assertEqual(rc, 0, err)
-        self.assertIn(victim, self._arm_ids(still_listed),
-                      "the cost: no usage at all is not evidence this "
-                      "harness will retire a live model on")
-        self.assertIn("a numerator of exactly zero",
-                      self._reason(still_listed, victim))
-        self.assertEqual(still_listed["retired_since_last"], [])
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, gone, _, err = self._run_main(
-                tmp, delisted, census=census, previous=previous)
-        self.assertEqual(rc, 0, err)
-        retired = {t["id"]: t["reason"] for t in gone["retired_since_last"]}
-        self.assertIn(victim, retired,
-                      "leaving the live catalogue still removes it, and "
-                      "it is the only thing that does")
-        self.assertIn("no longer returned by the Models API",
-                      retired[victim])
 
 
     # --- ITEM 3: the ageing loop asked the RAW-IDENTITY question --------
@@ -29964,7 +29951,7 @@ class TestIssue67Review13(unittest.TestCase):
                          "published share by 95 points")
 
 
-    # --- the cell BLOCKER B leaves open ---------------------------------
+    # --- the nonzero half of the cell, which no rule ever closed -------
 
     _OPEN_LIVE = "claude-sonnet-5-20260601"
     _OPEN_ARM = "claude-sonnet-5"
@@ -29982,10 +29969,18 @@ class TestIssue67Review13(unittest.TestCase):
         id, and 390 through a fold chain. Removing the chain's bridging
         `catalogue_seen` entry costs it 390 of its 400 turns and 390 of
         the window's 10,000, so its true 4.0% is measured at 0.1% — under
-        the exit bar, and NOT zero, so BLOCKER B's refusal does not fire.
-        The rest of the window is carried by a LIVE model, so
-        previous-roster-only attribution is 0 and
-        `RETIREMENT_ANCHOR_TOLERANCE`'s refusal does not fire either.
+        the exit bar, and NOT zero. The rest of the window is carried by
+        a LIVE model, so previous-roster-only attribution is 0 and
+        `RETIREMENT_ANCHOR_TOLERANCE`'s refusal does not fire.
+
+        IT WAS WRITTEN AS THE HALF `0db198a` LEFT OPEN, and it survives
+        that commit's revert unchanged: the zero-numerator refusal is
+        gone, so the zero half is open too (see the pinned survival
+        `test_no_live_catalogue_id_is_retired_on_a_numerator_of_zero`
+        above), and this row goes on measuring the nonzero half that no
+        proposed rule ever reached. Neither half closes without the
+        trusted history designed under
+        https://github.com/Adam-S-Daniel/skills-evals/issues/147.
 
         WHY NO RULE CLOSES IT, unchanged from round 12: `previous.json` IS
         this harness's only record of what it has seen, the anchored
@@ -30029,9 +30024,9 @@ class TestIssue67Review13(unittest.TestCase):
                       "floor")
         self.assertIn("0.1% of rankable census usage",
                       retired[self._OPEN_LIVE],
-                      "the open cell is the NONZERO deflation: a zero one "
-                      "is refused, and this row is what says which is "
-                      "which")
+                      "this row pins the NONZERO deflation specifically, "
+                      "and the share it names is what distinguishes it "
+                      "from the zero-numerator half")
 
 
 def _measure_previous_only_distribution():
