@@ -106,7 +106,9 @@ NOT survive; the branches do.
   by hand around the 09-06 pause. `eval-results` carries nothing newer than
   `c35c57b` (09-06). Re-enabling it is Adam's call (it spends the allowance
   daily); `gate` is not a required context, so merges proceeded on a green
-  `test` with a standing-down comment each time.
+  `test` with a standing-down comment each time. **RESOLVED 19:44 UTC:** Adam
+  re-ran the Routine; `eval-results` `e94b25d` carries a fresh `pass` artifact,
+  so the gate reads green from the next run. Nothing is waiting on him here.
 - **Two roster tests read the wall clock** through `roster.main()` (fixed on
   the #67 branch). Any test that drives `roster.py` without a frozen `now`
   and a hard-coded `created_at` will do the same; build dates relative to now.
