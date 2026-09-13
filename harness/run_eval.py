@@ -332,13 +332,30 @@ def _validate_skill_name(skill: str) -> None:
             "segment with no path or glob metacharacters")
 
 
-def _resolve_roster(cli_value: Path | None) -> Path:
-    """Model roster: --roster, else $EVAL_ROSTER, else this checkout's roster/.
+#: THE TRUSTED ROSTER (ADR 0001, #147). `main` is ruleset-protected and
+#: pull-request-only, so an arm, the judge, the preflight model or a
+#: `catalogue_seen` entry cannot appear here or vanish from here without a
+#: reviewed commit — which is the one property the published
+#: `roster/latest.json` on `eval-results` never had.
+TRUSTED_ROSTER = Path(__file__).resolve().parent.parent / "evals" / "roster.yml"
 
-    The roster is published to the `eval-results` branch as `roster/latest.json`
-    (harness/roster.py); CI materializes it before the eval runs and points
-    $EVAL_ROSTER at it, which is why the eval invocation itself needs no new
-    flag. Whether a missing roster is an error depends on the fixture — see
+
+def _resolve_roster(cli_value: Path | None) -> Path:
+    """Model roster: --roster, else $EVAL_ROSTER, else the COMMITTED file.
+
+    THE DEFAULT USED TO BE `roster/latest.json`, materialised by CI from the
+    `eval-results` branch and pointed at by `$EVAL_ROSTER` — a branch other
+    jobs on other machines write to, which the design treats as untrusted
+    input. That made one line on that branch decide which models every
+    unpinned fixture ran against, and fourteen review rounds on PR #129
+    could not make a local check over it safe (issue #147). The roster the
+    harness RUNS ON is `evals/roster.yml` now; `roster/latest.json` is an
+    exhibit for the explorer and is read by no decision.
+
+    `--roster` and `$EVAL_ROSTER` stay as overrides for tests and local runs
+    (ADR 0001, decision 1). Neither is set by `eval.yml` any more.
+
+    Whether a missing roster is an error depends on the fixture — see
     select_models(): it is for an unpinned one, and it is not for a pinned one.
     """
     if cli_value:
@@ -346,18 +363,29 @@ def _resolve_roster(cli_value: Path | None) -> Path:
     env = os.environ.get("EVAL_ROSTER")
     if env:
         return Path(env).expanduser()
-    return Path(__file__).resolve().parent.parent / "roster" / "latest.json"
+    return TRUSTED_ROSTER
 
 
 def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
     """(roster, problem). Never raises, and never returns a half-shaped roster.
 
-    The roster is a JSON file written by another job on another machine and
-    read off a public branch. Every one of these shapes was reachable and
+    YAML AND JSON, DECIDED BY CONTENT AND NOT BY EXTENSION (#147). The
+    trusted roster is YAML, because a human edits it in a reviewed pull
+    request and YAML is what every other hand-edited file in this repo is;
+    a `--roster` pointing at a published `roster/latest.json` is still JSON.
+    JSON is a subset of YAML 1.2, so `yaml.safe_load` reads both and there
+    is no extension sniff to get wrong — a file named `.json` holding YAML,
+    or the reverse, reads the same either way.
+
+    The NEVER-RAISES, NEVER-HALF-SHAPED CONTRACT IS UNCHANGED, and it is
+    what this function is for. Every one of these shapes was reachable and
     three of them crashed with an AttributeError three frames down: a
     top-level list, `arms` as a list of strings, `judge` as a string, a
     truncated file, an empty file. A named problem is the whole difference
     between a run that says what is wrong and a stack trace in a CI log.
+    The problem names the same three cases it always did — absent/empty,
+    unreadable, not a mapping — so nothing downstream has to learn a new
+    vocabulary for a parser change.
     """
     if roster_path is None:
         return None, "no roster path was resolved"
@@ -371,11 +399,20 @@ def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
         return None, f"no model roster at {path.name}"
     try:
         with open(path, encoding="utf-8") as f:
-            document = json.load(f)
-    except (json.JSONDecodeError, OSError, UnicodeDecodeError) as exc:
+            document = yaml.safe_load(f)
+    # `yaml.YAMLError` covers a truncated or otherwise unparseable
+    # document (it is `ScannerError`/`ParserError`'s base), and the JSON
+    # errors stay named beside it because `json` is still in this module's
+    # vocabulary and a caller reading the message wants the class that
+    # fired, not a category. `RecursionError` is here for the same reason
+    # roster.read_json has it: a deeply nested document exhausts the
+    # parser's stack rather than failing to parse, and used to escape as a
+    # traceback carrying the runner's absolute paths.
+    except (yaml.YAMLError, json.JSONDecodeError, OSError, UnicodeDecodeError,
+            ValueError, RecursionError) as exc:
         return None, f"model roster at {path.name} is unreadable ({type(exc).__name__})"
     if not isinstance(document, dict):
-        return None, f"model roster at {path.name} is not a JSON object"
+        return None, f"model roster at {path.name} is not a mapping"
     return document, None
 
 

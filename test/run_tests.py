@@ -6073,7 +6073,13 @@ class TestIssue67Review(unittest.TestCase):
 
     def test_the_preflight_takes_its_model_from_the_roster(self):
         script = self._step_named("preflight")["run"]
-        self.assertIn("roster/latest.json", script,
+        # THE COMMITTED ROSTER, not the computed one (#147, ADR 0001). The
+        # property this row exists for — `preflight` is computed and
+        # consumed by something, rather than by nothing while the step
+        # hardcodes a model of its own — is unchanged; WHICH roster it
+        # consumes is what moved, and it moved because the computed one is
+        # a proposal partly derived from an untrusted census.
+        self.assertIn("evals/roster.yml", script,
                       "`preflight` was computed and consumed by nothing")
         self.assertIn('"preflight"', script, "it reads the preflight entry")
         self.assertIn('--model "$model"', script,
@@ -6195,7 +6201,11 @@ class TestIssue67Review(unittest.TestCase):
         got = self._run_roster_step()
         self.assertEqual(got["rc"], 0, got["out"])
         self.assertTrue(got["roster"].is_file(), got["out"])
-        self.assertIn("EVAL_ROSTER=", got["env"])
+        # NO `EVAL_ROSTER=` LINE ANY MORE (#147): the step used to point
+        # the eval's model selection at the roster it had just computed
+        # from an untrusted census. Selection reads the committed
+        # `evals/roster.yml` now and the step exports nothing.
+        self.assertNotIn("EVAL_ROSTER", got["env"])
         self.assertIn("Model roster", got["summary"])
 
     def test_a_models_api_failure_does_not_fail_the_eval(self):
@@ -6206,7 +6216,9 @@ class TestIssue67Review(unittest.TestCase):
         self.assertIn("::warning::", got["out"])
         self.assertFalse(got["roster"].exists(),
                          "no roster is published — never a partial one")
-        self.assertNotIn("EVAL_ROSTER=", got["env"])
+        # The happy-path row is where the `EVAL_ROSTER` absence is
+        # asserted now (#147) — here it would be vacuous, since the step
+        # exports nothing on either path.
         self.assertIn("not refreshed", got["summary"].lower())
 
     #: `fetch` fails, `ls-remote` says the branch is there — a transient
@@ -6502,10 +6514,14 @@ exec {GIT} "$@"
         runner = tmp / "runner"
         runner.mkdir()
         (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        # THE COMMITTED ROSTER, in the step's own working directory
+        # (#147). It used to be `$RUNNER_TEMP/roster/latest.json` — this
+        # run's own proposal — so a census plant chose which model the job
+        # canaried its bearer against.
         if roster_doc is not None:
-            (runner / "roster").mkdir()
-            (runner / "roster" / "latest.json").write_text(
-                json.dumps(roster_doc), encoding="utf-8")
+            (tmp / "evals").mkdir()
+            (tmp / "evals" / "roster.yml").write_text(
+                yaml.safe_dump(roster_doc), encoding="utf-8")
         bindir = tmp / "bin"
         bindir.mkdir()
         fake = bindir / "claude"
@@ -29205,17 +29221,24 @@ class TestIssue67Review12(unittest.TestCase):
 
         RED on `7ef5780`, where all three sentences are present.
 
-        The workflow half of the row is measured, not quoted: the two
-        `git show` lines are read out of `eval.yml` itself, so this goes
-        red if the workflow ever stops taking both files off the same
-        branch — at which point the prose should be revisited rather than
-        this test relaxed."""
+        THE PREMISE NARROWED IN #147 AND THE ROW SURVIVES IT. The previous
+        roster is the committed `evals/roster.yml` now and is not taken
+        off `eval-results` at all, so "one write grants both" is no longer
+        true — but the CENSUS still comes off that branch, and it is the
+        census these sentences were wrong about. The workflow half is
+        measured rather than quoted, in both directions: the census IS
+        read from `eval-results`, and the roster is NOT.
+        """
         workflow = (REPO_ROOT / ".github" / "workflows"
                     / "eval.yml").read_text(encoding="utf-8")
-        for document in ("roster/latest.json", "usage/latest.json"):
-            self.assertIn(f"git show origin/eval-results:{document}",
-                          workflow,
-                          "the premise this test is about has changed")
+        self.assertIn("git show origin/eval-results:usage/latest.json",
+                      workflow,
+                      "the premise this test is about has changed")
+        self.assertNotIn("git show origin/eval-results:roster/latest.json",
+                         workflow,
+                         "the previous roster is the committed file now "
+                         "(#147); nothing may materialise it from the "
+                         "untrusted branch")
         policy = TestIssue67Review10.POLICY.read_text(encoding="utf-8")
         source = TestIssue67Review10.ROSTER_SRC.read_text(encoding="utf-8")
         for text, name in ((policy, "evals/roster-policy.yml"),
@@ -30527,6 +30550,144 @@ class TestIssue147(unittest.TestCase):
         # The negative control: the unmutated document must still be clean,
         # or every row above passes for the wrong reason.
         self.assertEqual(self._lint(good), [])
+    # --- item 2: selection reads the committed file, and only it ---------
+
+    def test_the_default_roster_path_is_the_committed_file(self):
+        # `roster/latest.json` is published to `eval-results` and is an
+        # EXHIBIT — read by the explorer, by no decision (ADR 0001,
+        # decision 3). The default rung of the precedence has to name the
+        # trusted file instead, or a checkout with a stray `roster/`
+        # directory in it selects from an untrusted document.
+        with mock.patch.dict(os.environ, {}, clear=True):
+            resolved = run_eval._resolve_roster(None)
+        self.assertEqual(resolved, REPO_ROOT / "evals" / "roster.yml")
+
+    def test_the_overrides_still_outrank_the_committed_file(self):
+        # `--roster` and `$EVAL_ROSTER` survive for tests and local runs
+        # (ADR 0001, decision 1). Precedence: flag, then environment, then
+        # the committed file.
+        with mock.patch.dict(os.environ, {"EVAL_ROSTER": "/tmp/env.yml"}, clear=True):
+            self.assertEqual(run_eval._resolve_roster(Path("/tmp/flag.yml")),
+                             Path("/tmp/flag.yml"))
+            self.assertEqual(run_eval._resolve_roster(None), Path("/tmp/env.yml"))
+
+    def test_read_roster_parses_the_committed_yaml(self):
+        # The trusted file is YAML, because a human edits it in a reviewed
+        # pull request and YAML is what every other hand-edited file in
+        # this repo is. `read_roster` used to be JSON-only.
+        document, problem = run_eval.read_roster(self.ROSTER)
+        self.assertIsNone(problem)
+        self.assertEqual(document["arms"][0]["id"], self._committed()["arms"][0]["id"])
+
+    def test_read_roster_still_parses_json_by_content(self):
+        # JSON is a subset of YAML 1.2, so ONE parser serves both and the
+        # reader never has to decide by file extension — which is what a
+        # `--roster` pointing at a published `roster/latest.json` (a local
+        # run, a test) still hands it.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.json"
+            path.write_text(json.dumps({"arms": [{"id": "claude-sonnet-5"}],
+                                        "judge": {"id": "claude-opus-4-8"}}),
+                            encoding="utf-8")
+            document, problem = run_eval.read_roster(path)
+            self.assertIsNone(problem)
+            self.assertEqual(document["arms"][0]["id"], "claude-sonnet-5")
+
+    def test_read_roster_keeps_its_never_raises_never_half_shaped_contract(self):
+        # Every row here was reachable and three of them used to crash
+        # three frames down. The contract is the whole difference between
+        # a run that says what is wrong and a stack trace in a CI log, and
+        # the parser change must not quietly drop it.
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [
+                ("absent", None, "no model roster at"),
+                ("empty", "", "no model roster at"),
+                ("a top-level list", "- claude-sonnet-5", "is not a"),
+                ("a bare scalar", "claude-sonnet-5", "is not a"),
+                ("unparseable", "arms: [\n", "is unreadable"),
+            ]
+            for name, body, needle in rows:
+                with self.subTest(row=name):
+                    path = Path(tmp) / f"{abs(hash(name))}.yml"
+                    if body is not None:
+                        path.write_text(body, encoding="utf-8")
+                    document, problem = run_eval.read_roster(path)
+                    self.assertIsNone(document)
+                    self.assertIn(needle, problem)
+                    # The BASENAME only: this string flows into
+                    # summary.json, which eval.yml commits to a public
+                    # branch.
+                    self.assertNotIn(str(Path(tmp)), problem)
+
+    def test_select_models_reads_the_committed_roster_end_to_end(self):
+        args = argparse.Namespace(model=None, roster=None, no_judge=False)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            agent, judge_model, error = run_eval.select_models({}, args)
+        self.assertIsNone(error)
+        committed = self._committed()
+        self.assertEqual(agent, committed["arms"][0]["id"])
+        self.assertEqual(judge_model, committed["judge"]["id"])
+
+    def test_the_precedence_above_the_roster_is_unchanged(self):
+        committed = self._committed()
+        rows = [
+            ("--model wins over everything",
+             argparse.Namespace(model="claude-opus-4-8", roster=None, no_judge=True),
+             {}, "claude-opus-4-8"),
+            ("the fixture pin wins over the roster",
+             argparse.Namespace(model=None, roster=None, no_judge=True),
+             {"model": "claude-haiku-4-5"}, "claude-haiku-4-5"),
+            ("the roster is the last rung",
+             argparse.Namespace(model=None, roster=None, no_judge=True),
+             {}, committed["arms"][0]["id"]),
+        ]
+        for name, args, fixture, expected in rows:
+            with self.subTest(row=name), mock.patch.dict(os.environ, {}, clear=True):
+                agent, _, error = run_eval.select_models(fixture, args)
+                self.assertIsNone(error)
+                self.assertEqual(agent, expected)
+
+    def test_eval_yml_no_longer_points_selection_at_eval_results(self):
+        # THE WHOLE OF #147's FIRST DEFECT CLASS, asserted at the workflow.
+        # While `$EVAL_ROSTER` named a file materialised from
+        # `origin/eval-results`, one line on that branch chose the models
+        # every unpinned fixture ran against.
+        #
+        # Asserted over the PARSED steps, not over the raw file: the
+        # header comment says out loud that nothing here sets
+        # `$EVAL_ROSTER`, and a raw grep for the name would red-fail on
+        # the sentence that documents the rule — the same defect the
+        # platform's "a lint that forbids a token must not read comments"
+        # rule names.
+        doc = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            code = "\n".join(line for line in script.splitlines()
+                              if not line.lstrip().startswith("#"))
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn(
+                    "EVAL_ROSTER", code,
+                    "eval.yml must not point selection at anything off "
+                    "eval-results; the committed evals/roster.yml is the "
+                    "roster the harness runs on (ADR 0001)")
+                self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
+                self.assertNotIn(
+                    "roster/latest.json > ", code,
+                    "the previous roster is the committed file now, not a "
+                    "copy materialised from the untrusted branch")
+        self.assertNotIn("EVAL_ROSTER", (doc.get("env") or {}))
+
+    def test_eval_yml_preflight_reads_the_committed_file(self):
+        doc = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        step = next(s for s in doc["jobs"]["eval"]["steps"]
+                    if "preflight" in (s.get("name") or "").lower())
+        self.assertIn("evals/roster.yml", step["run"],
+                      "the preflight model comes from the trusted file too — "
+                      "it used to be read out of the published roster")
 
 if __name__ == "__main__":
     if "--measure-previous-only-distribution" in sys.argv:

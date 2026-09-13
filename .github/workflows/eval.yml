@@ -223,16 +223,20 @@ jobs:
           echo "::add-mask::$tok"
           printf '%s' "$tok" > "$RUNNER_TEMP/anthropic-bearer"
 
-      # Model roster (#67). Recomputes which models this harness should be
-      # running against — arms, judge, preflight — from what the Models API
-      # says is AVAILABLE and what the published usage census says is USED,
-      # and publishes it with the run. Deliberately small and separate: the
-      # eval step below is untouched, and the roster reaches it through
-      # $EVAL_ROSTER rather than through a new flag on its command line.
+      # Model roster (#67, redesigned in #147). Recomputes which models this
+      # harness SHOULD be running against — arms, judge, preflight — from
+      # what the Models API says is AVAILABLE and what the published usage
+      # census says is USED, and publishes it with the run.
       #
-      # It runs BEFORE the preflight because the preflight consumes it: the
-      # roster's `preflight` entry is the cheapest model the Models API still
-      # returns, which is exactly what a cheap canary should be spending.
+      # IT COMPUTES A PROPOSAL, NOT THE RUNNING SET (ADR 0001). The models
+      # the eval below actually runs come from the committed
+      # `evals/roster.yml` and from nothing else; this step's `--previous`
+      # is that same committed file, and its output goes to `eval-results`
+      # as an exhibit plus, when it differs, to the bot-owned
+      # `roster/proposal` branch and one tracking issue for a human to
+      # merge. Nothing here sets $EVAL_ROSTER, and nothing materialises a
+      # roster off `eval-results` for selection — that is what let one line
+      # on an unprotected branch pick every unpinned fixture's models.
       #
       # No new credential. The Models API call reuses the same WIF-derived
       # bearer minted above; ANTHROPIC_ADMIN_KEY is optional and its absence
@@ -349,8 +353,12 @@ jobs:
                 return 1
               fi
             fi
+            # THE CENSUS ONLY. The previous roster is the COMMITTED
+            # evals/roster.yml now (ADR 0001) — it is not materialised
+            # from this branch at all, because a document read off an
+            # unprotected branch cannot be the harness's record of what
+            # it has observed (#147).
             if git rev-parse -q --verify origin/eval-results >/dev/null 2>&1; then
-              git show origin/eval-results:roster/latest.json > "$work/previous.json" 2>/dev/null || true
               git show origin/eval-results:usage/latest.json > "$work/census.json" 2>/dev/null || true
             fi
             # stderr is captured, not swallowed: it is echoed back to the log
@@ -370,7 +378,7 @@ jobs:
                  --policy evals/roster-policy.yml \
                  --census "$work/census.json" \
                  --admin-report "$RUNNER_TEMP/admin-usage.json" \
-                 --previous "$work/previous.json" \
+                 --previous evals/roster.yml \
                  --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
               cat "$work/roster.err" >&2
               reason="$(extract_reason "$work/roster.err")"
@@ -381,9 +389,7 @@ jobs:
             emit_roster_warnings "$work/roster.err"
             return 0
           }
-          if refresh; then
-            echo "EVAL_ROSTER=$pub/latest.json" >> "$GITHUB_ENV"
-          else
+          if ! refresh; then
             rm -f "$pub/latest.json" "$pub"/*.partial
             echo "::warning::model roster NOT refreshed: ${reason:-unknown failure}"
             {
@@ -391,7 +397,8 @@ jobs:
               echo
               echo "**The roster was not refreshed this run.** ${reason:-unknown failure}"
               echo
-              echo "No roster is published; the eval below ran on the fixture pins."
+              echo "No roster is published and no proposal is made; the eval below"
+              echo "ran on the committed evals/roster.yml, as it always does."
             } >> "$GITHUB_STEP_SUMMARY"
             emit_roster_warnings "$work/roster.err"
           fi
@@ -401,21 +408,27 @@ jobs:
       # API still returns. That entry used to be computed and consumed by
       # nothing while this step hardcoded a model of its own.
       #
+      # THE COMMITTED FILE, not the computed one (ADR 0001, #147). The
+      # preflight used to read `$RUNNER_TEMP/roster/latest.json` — this
+      # run's own proposal, computed partly from an untrusted census — so a
+      # census plant could choose which model the job canaried its bearer
+      # against. `evals/roster.yml` is on `main`, behind a reviewed commit.
+      #
       # The literal below is the documented ROSTER FALLBACK, and it is the
-      # only model id in this file. It is used when the step above could not
-      # publish a roster, AND as the one retry when the roster's own
+      # only model id in this file. It is used when the committed roster
+      # cannot be read, AND as the one retry when the roster's own
       # preflight pick fails (a day-old cheapest-tier model can be past the
       # roster's cooling-off check yet still not entitled for this bearer) —
       # `test_no_model_ids_are_hardcoded_outside_fixtures` allows exactly one
       # such literal and only because the marker on its line says what it is.
       - name: WIF auth preflight
+        working-directory: skills-evals
         run: |
           set +e
           fallback="claude-haiku-4-5" # ROSTER FALLBACK: used when no roster, and retried once if the roster's preflight model fails
           model="$fallback"
-          roster="$RUNNER_TEMP/roster/latest.json"
-          if [ -f "$roster" ]; then
-            from_roster=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); p=(d.get("preflight") or {}).get("id"); print(p if isinstance(p, str) else "")' "$roster" 2>/dev/null)
+          if [ -f evals/roster.yml ]; then
+            from_roster=$(python3 -c 'import yaml,sys; d=yaml.safe_load(open(sys.argv[1])) or {}; p=(d.get("preflight") or {}).get("id"); print(p if isinstance(p, str) else "")' evals/roster.yml 2>/dev/null)
             if [ -n "$from_roster" ]; then model="$from_roster"; fi
           fi
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
