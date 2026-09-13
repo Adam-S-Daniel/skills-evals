@@ -20327,5 +20327,93 @@ class TestIssue143(unittest.TestCase):
             self.assertNotIn("forbidden", text)
 
 
+class TestIssue144(unittest.TestCase):
+    """`materialize_workspace` must not leak its `mkdtemp` workspace on an
+    exception it didn't ask the caller to own — only `SetupFailedError` is
+    exempt (`_run_arm`'s own handler needs that half-built directory)."""
+
+    def _seed(self, tmp):
+        seed = Path(tmp) / "seed"
+        seed.mkdir()
+        (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
+        return seed
+
+    def _scoped_mkdtemp(self, scratch):
+        """A `tempfile.mkdtemp` that always lands inside `scratch`, so
+        counting `WORKSPACE_PREFIX` directories there counts exactly the
+        workspaces this test's own calls created — nothing from any other
+        suite running concurrently in this container.
+        """
+        real_mkdtemp = tempfile.mkdtemp
+
+        def scoped(prefix=None, dir=None):
+            return real_mkdtemp(prefix=prefix, dir=str(scratch))
+        return scoped
+
+    def _leaked(self, scratch):
+        return len([d for d in os.listdir(scratch)
+                    if d.startswith(run_eval.WORKSPACE_PREFIX)])
+
+    def test_git_commit_failure_does_not_leak_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch-tmpdir"
+            scratch.mkdir()
+            seed = self._seed(tmp)
+
+            real_git = run_eval._git
+
+            def fake_git(*args, cwd):
+                if args and args[0] == "commit":
+                    raise subprocess.CalledProcessError(1, ["git", "commit"])
+                return real_git(*args, cwd=cwd)
+
+            self.assertEqual(self._leaked(scratch), 0)
+            with mock.patch.object(run_eval.tempfile, "mkdtemp",
+                                   self._scoped_mkdtemp(scratch)), \
+                mock.patch.object(run_eval, "_git", fake_git):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    run_eval.materialize_workspace(seed)
+            self.assertEqual(self._leaked(scratch), 0)
+
+    def test_run_setup_oserror_does_not_leak_workspace(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch-tmpdir"
+            scratch.mkdir()
+            seed = self._seed(tmp)
+            fixture = {"setup": "true", "skill": "some-skill", "prompt": "do it"}
+
+            self.assertEqual(self._leaked(scratch), 0)
+            with mock.patch.object(run_eval.tempfile, "mkdtemp",
+                                   self._scoped_mkdtemp(scratch)), \
+                mock.patch.object(run_eval, "run_setup", side_effect=OSError("boom")):
+                with self.assertRaises(OSError):
+                    run_eval.materialize_workspace(seed, fixture)
+            self.assertEqual(self._leaked(scratch), 0)
+
+    def test_setup_failed_error_still_leaves_workspace_for_the_caller(self):
+        # The one exempt path: `_run_arm`'s SetupFailedError handler is the
+        # one that cleans this workspace up (see
+        # test_run_arm_short_circuits_before_the_agent_on_a_failing_setup
+        # above) — materialize_workspace itself must NOT rmtree it here, or
+        # that handler has nothing left to inspect/clean.
+        with tempfile.TemporaryDirectory() as tmp:
+            scratch = Path(tmp) / "scratch-tmpdir"
+            scratch.mkdir()
+            seed = self._seed(tmp)
+            fixture = {"setup": "true", "skill": "some-skill", "prompt": "do it"}
+
+            def failing_setup(workspace, fixture):
+                return {"error": "setup_failed", "detail": "nope"}
+
+            self.assertEqual(self._leaked(scratch), 0)
+            with mock.patch.object(run_eval.tempfile, "mkdtemp",
+                                   self._scoped_mkdtemp(scratch)), \
+                mock.patch.object(run_eval, "run_setup", failing_setup):
+                with self.assertRaises(run_eval.SetupFailedError) as ctx:
+                    run_eval.materialize_workspace(seed, fixture)
+            self.assertEqual(self._leaked(scratch), 1)
+            shutil.rmtree(ctx.exception.workspace, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()
