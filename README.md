@@ -362,7 +362,19 @@ their real code path rather than a canned answer.
 Which models does this harness run against today? Until #67 the answer was a
 literal in each fixture — an arm pinned here, a judge there, a preflight in the
 workflow — and **nothing noticed when a model shipped or retired.**
-`harness/roster.py` computes the answer instead, from two inputs:
+
+**The answer is [`evals/roster.yml`](evals/roster.yml), committed on `main`.**
+`main` is ruleset-protected and pull-request-only, so an arm, the judge, the
+preflight model or a `catalogue_seen` entry cannot appear there or vanish from
+there without a reviewed commit. That is
+[ADR 0001](docs/decisions/0001-roster-trusted-on-main.md), and it is what
+replaced reading the roster off the `eval-results` branch — where one line
+decided which models every unpinned fixture ran against, and fourteen review
+rounds on [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
+could not make a local check over it safe
+([#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147)).
+
+`harness/roster.py` still computes what the roster SHOULD be, from two inputs:
 
 - **availability** — `scripts/refresh_models.py` reads `GET /v1/models` (the
   only network call in the feature) using the WIF-derived bearer `eval.yml`
@@ -370,25 +382,39 @@ workflow — and **nothing noticed when a model shipped or retired.**
 - **usage** — `scripts/model_usage_census.py` counts what this account actually
   ran, per model per ISO week, from the local Claude Code transcripts.
 
+**But what it computes is a PROPOSAL.** When it differs from the committed
+file, the weekly run renders the proposed `evals/roster.yml`
+(`scripts/render_roster_yaml.py`), pushes it as one commit on the bot-owned
+branch `roster/proposal`, and upserts one tracking issue carrying the rendered
+summary — every seat's reason in words, with the numerator and denominator its
+share was taken over — and a `main...roster/proposal` compare link. A human
+opens the pull request and merges it after CI. Nothing in CI writes
+`evals/roster.yml`. When the computed roster matches the committed one, that
+issue is closed.
+
 Thresholds and the capability ladder live in
 [`evals/roster-policy.yml`](evals/roster-policy.yml) — no model id appears in
 the roster code, in the policy file, or in either script; a model's tier comes
-from the family word in its own id. The rationale and the numbers' provenance
-belong in an ADR: [#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73).
-`DESIGN.md` covers where the roster sits in the harness.
+from the family word in its own id. `evals/roster.yml` is the one data file
+admitted to that guard, exactly as a fixture's own `model:` pin is. The
+rationale and the numbers' provenance belong in an ADR:
+[#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). `DESIGN.md`
+covers where the roster sits in the harness, and what each store is trusted
+for.
 
-The published roster lives on the `eval-results` branch as
-`roster/latest.json`, recomputed by each real run, and every entry carries its
-reason **in words** — a roster nobody can explain is one nobody will override
-when it is wrong.
+The computed roster is also published to the `eval-results` branch as
+`roster/latest.json`, recomputed by each real run. **That copy is an exhibit**
+— it is what the explorer renders, and it is read by no decision.
 
 **Precedence for the model a run uses:** `--model` > the fixture's `model:` pin
-> the roster > **error**. That last rung is not a fallback: an unpinned fixture
-with no usable roster is a runner-level error naming the roster path, because
-falling through to the CLI's own default publishes a badge for a model nobody
-chose and makes every week-over-week comparison a comparison against a
-different model. Both current fixtures keep their pins — "deliberately one tier
-below the ceiling" is a per-fixture calibration the roster cannot express.
+> `evals/roster.yml` > **error**. That last rung is not a fallback: an unpinned
+fixture with no usable roster is a runner-level error naming the roster path,
+because falling through to the CLI's own default publishes a badge for a model
+nobody chose and makes every week-over-week comparison a comparison against a
+different model. `--roster` and `$EVAL_ROSTER` remain as overrides for tests
+and local runs; `eval.yml` sets neither. Both current fixtures keep their pins
+— "deliberately one tier below the ceiling" is a per-fixture calibration the
+roster cannot express.
 
 **The census's public-output contract.** Its output is committed to a public
 branch, so it emits `{model_id: {iso_week: count}}` and nothing else: no
@@ -407,16 +433,23 @@ published but empty over the window, published but holding no usage the
 tier ladder can rank or attribute, and holding some but under either the
 absolute or the relative rankable-usage floor — and in every one the roster
 falls back to newest-per-tier and says, in every arm's reason, which of
-those it was.
+those it was. **It remains the one input written by another machine**, so it
+is the one input with a size bound on it (`CENSUS_MAX_KEYS`,
+`CENSUS_MAX_BYTES`): past either, the run refuses with a named error rather
+than letting an untrusted document decide how much work it does.
 
 **What moved since last time.** The published roster carries `previous_state`
-— `compared` (a previous roster was read and diffed against), `none` (first
-run: no previous roster exists), or `unavailable` (a previous roster was
-published but could not be read this run, so nothing was compared) — plus
-`added_since_last`/`retired_since_last`, the arms that changed. The three
-states are not interchangeable: reporting "no change since the last run" on a
-first run, or when the comparison never happened, is a claim about a
-comparison nobody made.
+— `compared` (the committed roster was read and diffed against) or `none`
+(nothing to compare against: a genuine first run, or a committed roster naming
+neither an arm nor an observed model) — plus
+`added_since_last`/`retired_since_last`, the arms that changed, and the
+`proposal` block itself. The two states are not interchangeable: reporting "no
+change since the last run" on a first run is a claim about a comparison nobody
+made. A third state, `unavailable`, used to sit beside them for "a previous
+roster was published but could not be read"; it is gone, because a committed
+roster that is present and unreadable is a defect in this repository rather
+than a fact about an unprotected branch — the run exits 5 and publishes
+nothing.
 
 ## Quality badge (real weekly run)
 

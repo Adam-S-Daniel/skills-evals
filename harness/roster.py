@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
-"""Compute the model roster: which models this harness runs against today.
+"""Compute a PROPOSED model roster: which models this harness SHOULD be
+running against today.
+
+IT DOES NOT DECIDE WHAT RUNS. The roster the harness runs on is
+`evals/roster.yml`, committed on `main` — ruleset-protected and
+pull-request-only, so a seat or a `catalogue_seen` entry cannot appear
+there or vanish from there without a reviewed commit. See
+docs/decisions/0001-roster-trusted-on-main.md. What this module produces is
+a DIFF against that file, published with every seat's reason in words and
+its numerator and denominator beside it, for a human to merge or not.
+`run_eval.select_models` never reads this module's output.
 
 A PURE FUNCTION OVER FILES. `compute_roster()` takes already-parsed documents
 and a frozen `now`, and returns the roster dict — no network, no clock, no
@@ -8,33 +18,51 @@ environment. The one network call in the whole feature lives in
 
 Inputs
   models_doc   {"fetched_at": ..., "models": [{id, created_at, ...}, ...]} —
-               availability, straight from GET /v1/models.
+               availability, straight from GET /v1/models. Trusted for
+               availability within the run that fetched it.
   census_doc   {"generated_at": ..., "weeks": [...], "counts": {model: {week: n}}}
                — usage, published to `eval-results` as usage/latest.json by
-               scripts/model_usage_census.py. Optional: absent, older than the
-               policy's freshness window, dated in the future, or empty over
-               the window, and the roster falls back to "newest per tier" and
-               says which of those it was in every reason.
+               scripts/model_usage_census.py. THE ONE INPUT STILL WRITTEN BY
+               A JOB ON ANOTHER MACHINE, and trusted for nothing: it can
+               shape a proposal and nothing else. Optional: absent, older
+               than the policy's freshness window, dated in the future, or
+               empty over the window, and the roster falls back to "newest
+               per tier" and says which of those it was in every reason.
   policy       evals/roster-policy.yml — every threshold, plus the tier ladder.
-  previous     the last published roster, for added/retired-since-last.
+  previous     THE COMMITTED `evals/roster.yml`. Trusted, and the source of
+               the observation history (`catalogue_seen`). Present and
+               unreadable is FATAL (`TrustedRosterUnreadable`): that is a
+               defect in this repository, not a fact about an untrusted
+               input, and the proposal an empty `previous` would produce —
+               seat every live model — is the shape a reviewer is most
+               likely to wave through.
 
-TWO OF THOSE THREE COME OFF A PUBLIC BRANCH, written by other jobs on other
-machines. They are inputs, not invariants: an entry without a string `id`, a
-count that is not a number, a `previous.arms` entry that is not a dict — each
-is skipped with a one-line named message, never a traceback, and never with
-the offending value echoed into a public log.
+THE CENSUS IS AN INPUT, NOT AN INVARIANT: a row that is not
+`model -> {week: count}`, a count that is not a number, a `catalogue_seen`
+entry that is not `{id, last_seen}` — each is skipped with a one-line named
+message, never a traceback, and never with the offending value echoed into a
+public log. It also carries a SIZE BOUND (`CENSUS_MAX_KEYS`,
+`CENSUS_MAX_BYTES`), past which the run refuses rather than let an untrusted
+document decide how much work it does.
 
-Output — roster/latest.json on `eval-results`:
+Output — roster/latest.json on `eval-results`, an EXHIBIT read by no
+decision, plus `proposal`, which is what `eval.yml` acts on:
   {generated_at, source: {models_api_at, census_at, admin_report_at},
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
-   compared_to_previous: bool, previous_state: "compared"|"none"|"unavailable",
+   compared_to_previous: bool, previous_state: "compared"|"none",
    retired_since_last: [...], added_since_last: [...],
-   catalogue_seen: [{id, last_seen}, ...]}
+   catalogue_seen: [{id, last_seen}, ...],
+   proposal: {status: "same"|"differs",
+              changes: [{kind, field, from, to, reason}, ...]}}
 
-`catalogue_seen` is read back next run as `previous`'s own field of the same
-name (property 5, DESIGN.md) — it round-trips through this same untrusted
-branch, aged and capped; see `_update_catalogue_seen`.
+`catalogue_seen` is the union of every model id the Models API has been
+observed to list, each with the date it was last seen (property 5,
+DESIGN.md). It comes IN from the committed roster and goes OUT in the
+proposal; it no longer round-trips through `eval-results`, and it is no
+longer capped or exempted — an entry leaves when its `last_seen` is older
+than the policy's window, and by no other route. See
+`_update_catalogue_seen`.
 
 Every entry carries its reason IN WORDS. The explorer tool renders them, and a
 roster nobody can explain is one nobody will override when it is wrong.

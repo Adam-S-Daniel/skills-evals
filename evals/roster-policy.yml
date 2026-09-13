@@ -115,278 +115,95 @@ min_ranked_turns: 20
 # out of 4,000,025 raw ones in the 4-week enter window alone.
 min_ranked_share: 0.01
 
-# `catalogue_seen` (the published roster's record of every model id the
-# Models API has EVER listed, across runs — see roster.py's module
-# docstring, property 5) is read back from `previous.json` on
-# `eval-results`, a branch OTHER JOBS ON OTHER MACHINES write to and this
-# harness treats as untrusted input, not an invariant. Every entry carries
-# a `last_seen` date, refreshed to today whenever the Models API actually
-# returns that id THIS run; an id that stops being genuinely observed
-# — including one planted directly on the branch, which the Models API
-# will never return — ages out and is dropped once its `last_seen` is
-# older than this many days. TWO EXEMPTIONS, and both exist because
-# dropping an entry drops its census turns out of the ATTRIBUTABLE
-# DENOMINATOR every published share is divided by, while `last_seen` is
-# a field the previous roster itself writes. An entry this run's census
-# still records in-window turns for is kept (BLOCKER 2, #129 review
-# round 12): one back-dated date on a real since-retired model published
-# a live arm's true 5.0% as `carries 100.0%`. And an entry the usage
-# alias map needs as a HOP — on the chain from a census key to the
-# numerator that collects its turns — is kept too (ITEM 3, round 13):
-# such an entry is named by NEITHER document, so it is tier-3 residue
-# that no cap will ever evict, and ageing was killing it anyway. That
-# one needs no hostile input at all, because a bridge's `last_seen` is
-# only ever refreshed for a LIVE id, so an honest bridge crosses this
-# window on its own — measured through a two-run chain in which run 1 is
-# this harness's own output and run 2 reads it back 200 days later,
-# publishing a live arm carrying 60.0% of the window as `RETIRED ...
-# (0.0%)`. The two are separate QUESTIONS, not two spellings of one:
-# the first is raw identity and is what the caps order by, the second is
-# the fold relation and deliberately does not enter that order, because
-# an entry the caps rank is an entry the caps can evict. Without an age
-# at all, a single planted id
-# stayed attributable forever and was republished by this harness as its
-# own output on every later run, diluting a real held-over arm's measured
-# share to a false 0.1% and retiring it on no evidence — reverting the
-# plant on the branch did not undo that, because the harness's own prior
-# output had already carried it forward. Picked at roughly 6 months: long
-# enough that a model still genuinely in occasional use across the
-# harness's own weekly cadence keeps counting, short enough that a
-# one-time plant cannot persist indefinitely. This run's own live ids are
-# never aged out by this (they get `last_seen` = today every run) — only
-# accumulated history can. See also the length cap in roster.py's
-# `CATALOGUE_SEEN_CAP` (currently 500 entries), which is not a bound on
-# the published FILE: this run's own live ids are exempt from it
-# entirely, so a 10,000-model catalogue publishes 10,000 entries —
-# correct, by the rule that a live id is never evicted — and the
-# tier-3 residue below is exempt too. Past it, who survives is
-# decided by data the previous roster does not write, in TWO tiers —
-# numbered 1 and 3, for the reason the record of the deleted tier 2
-# below gives. TIER 1 is every entry the census names outright (an
-# in-window census key) or the live catalogue lists. TIER 3 is
-# everything else: the RESIDUE. Within tier 1 the census's own in-window
-# turn count decides, descending, and the id order breaks the tie; tier
-# 3 is not ordered at all. This run's own live ids are exempt from the
-# cap entirely.
+# `catalogue_seen` — the roster's record of every model id the Models API
+# has EVER listed, across runs (see roster.py's module docstring, property
+# 5) — lives in the COMMITTED `evals/roster.yml`, on `main`. `main` is
+# ruleset-protected and pull-request-only, so an entry cannot appear there
+# or vanish from there without a reviewed commit. That is
+# docs/decisions/0001-roster-trusted-on-main.md, and it is what replaced
+# reading the history back from `roster/latest.json` on `eval-results` —
+# a branch other jobs on other machines write to, which this harness
+# treated as untrusted input (issue #147).
 #
-# WHAT THE CAP BOUNDS IS TIER 1 ONLY. The tier-3 residue — entries
-# neither the live catalogue nor the census names, under any spelling —
-# is carried whole and is NEVER evicted by any order the previous roster
-# writes: the cap neither fills its room from it nor evicts from it,
-# because the only things left to order those entries by are `last_seen`
-# and the id, both written by whoever writes the file. The ONE bound left
-# on the residue is roster.py's `UNCAPPED_CARRY_CEILING`, and past it the
-# run refuses to publish (exit code 4) rather than keep 500 entries a
-# planter chose. So `catalogue_seen` can be published longer than 500
-# entries; the 500 is a bound on what the census can order, not on the
-# file.
+# Every entry carries a `last_seen` date, refreshed to today whenever the
+# Models API actually returns that id THIS run. An entry is DROPPED once
+# its `last_seen` is older than this many days, and that is the ONLY way
+# an entry leaves. Picked at roughly 6 months: long enough that a model
+# still genuinely in occasional use across the harness's own weekly
+# cadence keeps counting, short enough that an id nobody has observed in
+# half a year stops propping up a denominator. This run's own live ids
+# are never aged out (they get `last_seen` = today every run) — only
+# accumulated history can be.
 #
-# THAT REFUSAL IS ALSO A DENIAL OF THE ROSTER REFRESH, reachable with
-# 10,001 lines in `previous.json` and nothing else, and it does not clear
-# itself: refusing means the harness does not rewrite
-# `roster/latest.json`, so the planted file is still there next run and
-# every run after it, until someone reverts the branch. It is accepted
-# deliberately, because eval.yml turns exit code 4 into
-# `::warning::model roster NOT refreshed` and falls back to each
-# fixture's pinned arms — loud, non-destructive, and a human is told why
-# — where the alternative is to trim by an order only the previous roster
-# writes and publish a roster a planter chose, silently and for good. See
-# roster.py's `UNCAPPED_CARRY_CEILING` for the measurements.
+# WHAT USED TO SIT HERE, AND WHY IT IS GONE. Six review rounds of #129
+# built machinery in this position and it is all deleted (ADR 0001,
+# decision 4, which names each of the deleted constants by identifier —
+# nothing else in the tree does, because a name that no longer resolves is
+# a name a reader will go looking for):
 #
-# THE INVARIANT: every census key with in-window turns that any entry
-# folds onto keeps at least one entry that folds onto it — unless the
-# census names more entries than a cap can rank, in which case the
-# lowest-turn of them go, never a live catalogue id — every id the usage
-# alias map needs as a hop from such a key to the numerator that
-# collects its turns survives the caps AND the ageing window, and an
-# entry that neither the live catalogue nor the census needs, under any
-# spelling, never outranks one that either does.
+#   * TWO EXEMPTIONS from the age — keep an entry this run's census still
+#     names, and keep an entry the usage alias map needs as a HOP on the
+#     chain from a census key to the numerator that collects its turns.
+#     Both existed because `last_seen` was a field the untrusted previous
+#     roster itself wrote, so a back-dated date could drop a real model's
+#     turns out of the attributable denominator and no local rule could
+#     tell that apart from an honest expiry. A `last_seen` is a date a
+#     reviewer merged now, so there is only one reading of an old one left
+#     — the true one — and an exemption exists to disbelieve a date.
 #
-# THE QUALIFIER IN CLAUSE 1 IS THE ROUND-12 CORRECTION, and it is inside
-# the sentence rather than forty-five lines below it because that is
-# where a reader meets the guarantee. Clause 1 was stated flat in all
-# five copies of this sentence and is FALSE in the overflow regime:
-# measured through the CLI, a census key carrying 901 in-window turns
-# whose only entry is itself a one-turn census key loses that entry to
-# 499 higher-sorting one-turn keys, and a live arm's true 9.99%
-# publishes as "carries 100.0% ... at or above the 10% entry bar" —
-# ninety points, and a hold-over turned into a seat. (Round 12 recorded
-# TEN points here. Same regime, weaker instance: tier 1 is decided over
-# the 8-week union while the published entry share is divided by the
-# 4-week enter window, so filler keys whose turns sit inside the enter
-# window dilute the very share their eviction distorts. Round 13's ITEM
-# 6 moved them out of it and re-measured.) Clauses 2 and 3 were tested
-# for the same failure and hold.
+#   * TWO 500-ENTRY LENGTH CAPS, one over each list, the two-tier ordering
+#     they evicted by, and the 10,000-entry carry ceiling past which the
+#     run refused to publish at all. They bounded an unbounded public input, and the
+#     order they used — rank by the live catalogue and the census, carry
+#     whole anything neither names — was built so that the writer of
+#     `previous.json` could not choose its own survivors. The input is
+#     bounded by review now, so every remaining effect of a cap was on
+#     honest data: a repository with more than 500 genuinely observed
+#     models would have had its own reviewed history evicted, by an order
+#     chosen to defeat an attacker who can no longer write the file. The
+#     denial-of-service the ceiling documented — 10,001 planted lines
+#     refusing the refresh for good — goes with them, because those lines
+#     would now have to be merged.
 #
-# The order matters because eviction here is PERMANENT — the next run
-# reads this run's own output back — and because everything the previous
-# roster asserts about itself, including how its entries are SPELLED, is
-# something a planter can write. Ordering by the id alone let 500
-# low-sorting planted ids evict a real since-retired model by nothing but
-# its spelling (S2, #129 review round 7); ordering by `last_seen` alone
-# let 498 entries dated today, or 500 bare strings (which migrate stamped
-# today, since seeing one is the only evidence there is), do exactly the
-# same (F1, round 8); deciding "the census names this" from the entry's
-# own spelling let 500 ids spelled `<census key>-00000000` …
-# `-00000499` — eight digits, which is not a date, but nothing could tell
-# the difference — do it a third time (B1, round 9); and reading the
-# alias relation in ONE direction only (census key -> base, never entry
-# -> census key) let 500 plain fillers evict a DATED departed arm whose
-# usage the census records under its UNDATED alias, a fourth time (B1',
-# round 10). Either way the evicted model's turns left the usage
-# denominator and an unrelated model was published as carrying 100.0% of
-# census usage where it really carried 9.09%, or 33.3%.
+#   * THE ANCHORED DENOMINATOR, the retirement veto keyed on it, and the
+#     count-only notice beside them.
+#     They measured how much of a window's denominator rested on
+#     `previous.json`. With `previous` reviewed, that fraction measures
+#     how much of the usage belongs to models this repository has a merged
+#     record of — so a veto keyed on it refuses precisely the honest case
+#     (a real since-retired arm with in-window turns) and refuses nothing
+#     an attacker can still reach, because the attacker's remaining reach
+#     is the census, which sits in both denominators at once and cancels
+#     out of the difference.
 #
-# AND THE MIRROR IMAGE IS JUST AS REACHABLE, which four rounds of writing
-# this paragraph as an inflation story missed. A model whose share the
-# eviction takes away is only published on the newest-in-tier fallback
-# because it happens to BE the newest in its tier; put a newer model
-# beside it and there is no fallback left, so a previous arm carrying
-# 57.1% of the window is measured against the exit bar at the 0.0% the
-# broken chain leaves it and published `RETIRED: below the 2% exit bar
-# for the last 8 weeks (0.0% of rankable census usage)`. Measured through
-# `main()` from 498 filler arms, or 496 planted history entries. A
-# retirement is not a transient wrong number: by the time the plant ages
-# out the model is no longer a previous arm, so the exit bar no longer
-# applies to it and real usage never re-seats it.
+# THE ONE INPUT STILL WRITTEN BY ANOTHER MACHINE IS THE CENSUS.
+# `.github/workflows/eval.yml` takes it from
+# `origin/eval-results:usage/latest.json` — and takes the previous roster
+# from the COMMITTED `evals/roster.yml` instead, which is the whole of
+# #147: one write to `eval-results` used to grant both, and now it grants
+# only this one. The census is trusted for nothing:
+# it can shape a PROPOSAL and nothing else. What guards it is named rather
+# than assumed — the freshness window and the ranked/raw floors below, the
+# schema validation in `_clean_counts` (a bad row or cell is a named
+# one-line skip, never a traceback and never an echoed value), and a SIZE
+# BOUND, `CENSUS_MAX_KEYS` / `CENSUS_MAX_BYTES` in roster.py, past which
+# the run refuses with a named error rather than let an untrusted document
+# decide how much work it does.
 #
-# So relevance is decided by what the two documents NAME, and not by how
-# anything is spelled. A census key names itself; the live catalogue
-# names its own ids; an entry neither names is residue and is carried
-# rather than ranked. A planter who knows a census key therefore gains
-# nothing by spelling a plant after it — `<key>-00000000` was already
-# going to be carried as residue, and the key itself was already tier 1.
-# See roster.py's `_relevance`. Among residue entries there is no order
-# at all, and those entries move no share.
+# A FORGED CENSUS IS STILL A FORGED MEASUREMENT OF THE QUANTITY BEING
+# MEASURED, and no ordering rule ever defended against that. What changed
+# is what a forgery can reach: the roster it distorts is a proposal,
+# published with each seat's numerator and denominator in words, pushed to
+# the bot-owned `roster/proposal` branch and filed as one tracking issue.
+# A person merges it or does not. The defence is that the distortion is
+# visible in a diff on `main`'s history rather than silent on a branch
+# nobody reads, and that reverting the merge undoes it — the two
+# properties `eval-results` never had.
 #
-# WHICH DOCUMENTS A PLANTER WRITES, corrected in round 12. This paragraph
-# used to end "a planter writes neither document", and roster.py's
-# `_relevance` said "a planter cannot add a census key" twice. THAT IS
-# FALSE, and `.github/workflows/eval.yml` lines 352-354 are where: they
-# take `previous.json`
-# from `origin/eval-results:roster/latest.json` AND `census.json` from
-# `origin/eval-results:usage/latest.json`, off the SAME branch, so one
-# write grants both. Only `models.json` — the Models API's own answer
-# this run — is out of reach.
-#
-# The property that does hold, and that every measurement in this file
-# demonstrates, is narrower: a planter who writes ONLY `previous.json`
-# cannot take a real entry's place, because the only entries a cap can
-# evict are ones the census or the catalogue names. A planter who also
-# forges the census can assert that any model has no usage, which no
-# ordering rule defends against — a forged census is a forged
-# measurement of the quantity being measured. The guards for that are
-# named where they live: the absolute and relative ranked/raw floors
-# below, `census_max_age_days` freshness, and roster.py's
-# `RETIREMENT_ANCHOR_TOLERANCE`, which refuses to act on a retirement
-# whose denominator the previous roster supplies. That is why the
-# denominator is BOUNDED rather than trusted.
-#
-# THE CAVEAT THAT USED TO LIVE HERE IS NOW INSIDE THE SENTENCE ITSELF
-# (round 12's should-fix 2). It read "the invariant holds SUBJECT TO THE
-# CAP: tier 1 alone can exceed 500 if the census names more entries than
-# that, and then the lowest-turn ones go", and it sat forty-five lines
-# below the guarantee it qualifies, in one of five copies — four of them
-# in roster.py, where a reader never sees this paragraph at all. It is
-# now a clause of the invariant, so every copy carries it and the pin
-# that asserts the sentence asserts the qualifier with it. Raising the
-# cap moves the number at which the case starts; it does not remove the
-# case.
-#
-# TWO THINGS THE OLD WORDING UNDERSTATED, both now measured. "The
-# lowest-turn ones go" does not say WHAT goes with them: the entry a
-# census key needs to stay attributable is often the lowest-turn tier-1
-# entry there is, so what the cap takes first is the hop, and the key's
-# whole turn count leaves the denominator behind it. And the published
-# consequence is a WRONG SHARE rather than a missing line — measured
-# through the CLI, a census key carrying 901 in-window turns whose only
-# entry is itself a one-turn census key loses that entry to 499
-# higher-sorting one-turn keys, and a live arm's true 9.99% publishes as
-# "carries 100.0% ... at or above the 10% entry bar": ninety points, and
-# a hold-over turned into a seat — see the round-13 note above for why
-# this number was recorded as ten for one round. A LIVE catalogue id is no longer among
-# what goes — round 12's should-fix 1 exempts this run's own api ids from
-# both caps, where before that 502 live previous arms published one of
-# them as retired at 0.0% with no census at all.
-#
-# TWO MECHANISMS WERE TRIED HERE AND ARE GONE. They are recorded because
-# the reasoning that reached for them is the reasoning a later round will
-# reach for again, and because a mechanism deleted without a record comes
-# back. The first was a rationed TIER 2 (rounds 8 to 10): ONE slot per
-# census key that no tier-1 entry folded onto, so the key kept some entry
-# it could be attributed through, with the slot COUNT bounded by the
-# census rather than by the file — a planter could win a key's slot with
-# `<key>-00000000`, which left the key attributable through the plant and
-# moved no share, but could not take the slot away. The second was
-# DESIGN DECISION 5 of review round 11: every id the usage alias map
-# needs as a HOP from an in-window census key to the model whose
-# numerator collects its turns was made tier 1 in its own right, because
-# a dated census key that is itself an entry covered its own fold group,
-# spent no slot, and left the bare alias between it and the live snapshot
-# — the only hop the map had — in the third tier behind every filler,
-# where 500 of them evicted it.
-#
-# BOTH ARE SUBSUMED by the residue rule above, and the argument is a
-# proof rather than a measurement. An id NEITHER document names can no
-# longer be evicted at all, so a hop that is not a census key is carried
-# whatever else happens; and a hop that IS a census key reaches the
-# numerator through `counts`, which already puts that spelling in the
-# usage alias map's domain, and is tier 1 besides. Ten mutations of that
-# machinery left the whole test suite green — and this repository's rule
-# is that a clause with no mutation able to turn the suite red is deleted
-# rather than kept as belt-and-braces. Keeping the hop route also had a
-# cost, one-directional: promoting a hop into tier 1 EXPOSES it to the
-# cap, where as residue it could not be evicted at all.
-#
-# THE TIER NUMBERS STAY 1 AND 3 rather than being closed up. "Tier 2"
-# names the deleted slot in four rounds of review notes, in roster.py and
-# in this file, and reusing the number for the tier nothing can evict
-# would silently falsify every one of them.
-#
-# WHAT THAT COSTS WITH NO PLANTER INVOLVED AT ALL, since the number
-# without a curve reads like a corner case: the loss is proportional to
-# how far past the cap the census itself runs. Measured through
-# `main()` on a census naming N ids that are all in `catalogue_seen`,
-# 3 turns each but for one carrying 8,800 (so the lowest-turn entries
-# are the ones the cap takes) and two live models: at N = 602, 104
-# entries are dropped and 312 of 10,603 turns leave the denominator,
-# 2.94%; at N = 1,202, 704 are dropped and 2,112 of 12,403 leave it,
-# 17.03%. Both numbers are unchanged by round 11's residue rule,
-# because every entry here is one the census names and the cap orders
-# them exactly as before.
-#
-# A census key with ZERO in-window turns names nothing: a census padded
-# with keys whose usage all falls outside the window is not evidence of
-# anything current, and treating it as evidence handed plants named after
-# those keys a relevance the census never had. When NO key has in-window
-# turns — the census absent, empty, the wrong type, or entirely
-# out-of-window — the census names nothing at all, and neither cap
-# evicts anything: every entry is tier-3 residue, and both lists are
-# carried whole with one count-only warning, up to roster.py's
-# `UNCAPPED_CARRY_CEILING`; past that the run refuses to publish with a
-# named error rather than keep 500 entries a planter chose.
-#
-# That is now just the extreme case of the rule above, and it has to be.
-# Asking whether the census names ANYTHING is a question about the whole
-# FILE, and one in-window turn under one key answered it — after which
-# every entry the census does not name was ordered by its id again, which
-# is the round-6 defect verbatim. The key doing that need be nothing at
-# all: an unrelated live id, a routing alias nothing can rank or seat, a
-# planted id, a 4,000-character junk string, or the surviving neighbour
-# of a malformed cell. Measured through two runs: 500 planted entries
-# evicted an 8,000-turn arm in run 1, and run 2 — reading run 1's own
-# output back, with a perfectly healthy census — published a permanent
-# false 100.0%. A rule keyed on how MANY keys the census names would be
-# the same defect one step over, since whoever writes the census can
-# write any number of one-turn keys; the question is asked per entry
-# instead.
-#
-# The previous roster's `arms` list is capped at the same 500, by
-# roster.py's `PREVIOUS_ARMS_CAP` (N3, #129 review round 6), under the
-# same tiering and the same invariant: the ids this run can actually say
-# something about are kept ahead of filler. That cap governs what is
-# carried forward for attribution; the roster's `retired_since_last`
-# report is computed BEFORE it, so a departed arm is reported whether or
-# not the census names it (F3, round 8). Neither list has any other bound
-# on how large a public branch could otherwise grow it.
+# Ageing out is not a repair, and that has not changed. It ends a plant's
+# future effect; it does not undo a retirement the plant already caused —
+# by the time it expires the model is no longer an arm, so the exit bar no
+# longer applies to it and a trickle of real usage never re-seats it. It
+# returns by clearing the ENTRY bar, by being the newest in its tier, or
+# by hand.
 catalogue_seen_max_age_days: 180

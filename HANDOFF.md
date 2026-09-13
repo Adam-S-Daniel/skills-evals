@@ -168,7 +168,21 @@ reopen epic #62 or #96.** Nothing else in either lane was dispatched, and the
 real N=3 runs owed for the now-eight merged skill fixtures are still not
 pursued. #81 and #84 stay OPEN as "merged hermetic; real run stopped".
 
-#### #129's state, precisely (this is where a resuming session starts)
+#### #129's state, precisely (superseded — see the note below)
+
+> **SUPERSEDED by #147, on branch `claude/skills-evals-147`.** ADR 0001
+> moves the roster the harness runs on into `evals/roster.yml`, committed
+> on `main`, and turns `harness/roster.py`'s output into a proposal. All
+> five defects below are closed, not by a fifteenth local check but by the
+> inputs they ride on no longer reaching a decision; every one carries a
+> regression row in `TestIssue147` that is RED on `424eebf`. The sections
+> below are kept as the RECORD of how #129 got to where it stopped, so
+> read them in the past tense: the mechanisms they name — the anchored
+> denominator and its veto, the fold-relation question the ageing rule
+> asked, both ageing exemptions, both length caps, the carry ceiling and
+> the tiering — are all deleted. `docs/decisions/0001-roster-trusted-on
+> -main.md` names each of them by identifier; nothing else in the tree
+> does.
 
 Branch `claude/skills-evals-67` at **`424eebf`**, pushed, **suite green — 1321
 tests exit 0, 2 skipped**, run by the orchestrator in the real worktree with
@@ -246,17 +260,19 @@ census key carrying a family word restores the plant's immunity. It raises the
 attack from one line to two; it does not close it. Do not re-derive this.
 
 **BLOCKERS 2 and 3 are survivals, measured byte-identical on both heads.**
-(2) `is_needed_hop` asks whether a chain needs an id in *this* run's census, but
+(2) the fold-relation question the ageing rule asked was about *this* run's
+census, but
 eviction is permanent and a kept hop's `last_seen` is never refreshed — so one
 quiet window ages the bridge out for good and the next busy window retires a live
 arm carrying a true 23.9% at 0.1%, rc 0, empty stderr, permanently, with **no
 hostile input at all** (run 2's `previous.json` is run 1's own output).
 Reproduced at bridge ages 181/200/365/400 days; the 179-day control does not
-fire. (3) = round 13's BLOCKER C, untouched: `is_needed_hop` walks *forward* from
+fire. (3) = round 13's BLOCKER C, untouched: that question walked *forward* from
 census keys, so it covers an entry that is a **hop** and not one that is the fold
 **source** — the documented B1'/round-10 shape, a model observed under a DATED id
 whose census usage is recorded under the UNDATED alias. `tier()` misses it (raw
-identity), `is_needed_hop` misses it (wrong direction). One `last_seen` date, and
+identity), the fold-relation question missed it (wrong direction). One
+`last_seen` date, and
 9,500 real turns leave the denominator permanently: a hold-over becomes a seat at
 `carries 100.0%` on a true 5.0%. No planter needed — the date is what this
 harness itself wrote.
@@ -270,7 +286,8 @@ this exact failure once, as round 12's should-fix 1, in the same function. Also
 `:2917-2920`, `:844` (`_format_share`'s "no caller can reach" clause, falsified
 by round 14's own new call site) and `test/run_tests.py:28502`. And the
 anchor-tolerance veto is structurally blind to the **deletion** direction —
-removing entries shrinks `previous_only` toward zero — which nothing in the `#:`
+removing entries shrinks the previous-roster-only denominator toward zero —
+which nothing in the `#:`
 block says.
 
 **Why fourteen rounds have not closed this, in one sentence.** *Every surviving

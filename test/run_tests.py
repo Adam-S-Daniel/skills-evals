@@ -24448,55 +24448,6 @@ class TestIssue67Review7(unittest.TestCase):
         # `claude-sonnet-4-9`, and claude-sonnet-5's reason becomes
         # "carries 100.0% of rankable census usage ..." — red.
 
-    def test_the_policy_describes_the_cap_the_code_implements(self):
-        """Updated for B1\' (#129 review round 10) and again for round
-        11's continuation: the cap orders by relevance — tier 1, then the
-        census's own in-window turn count descending, then the id — and
-        carries the tier-3 residue unordered. `last_seen` is out of the
-        order entirely, because the previous roster is what writes it."""
-        text = self.POLICY.read_text(encoding="utf-8")
-        self.assertNotIn("oldest-by-id-sorted-out", text,
-                         "the cap evicts by `last_seen`, not by id order")
-        prose = " ".join(" ".join(line.lstrip("#").strip()
-                                  for line in text.splitlines()).split())
-        # `assertTrue` over `assertNotIn`: a failure here would otherwise
-        # dump the whole policy file into the log.
-        self.assertTrue("dropped are the oldest by `last_seen` first" not in prose,
-                        "age alone is not the order the code implements")
-        self.assertTrue("then the newest by `last_seen`" not in prose,
-                        "`last_seen` is out of the cap's order entirely "
-                        "(B1', #129 review round 10)")
-        # "Within a tier" until round 11's continuation left one ordered
-        # tier and one that is not ordered at all; the floor is unchanged
-        # — the policy must describe the order as turns-then-id, and not
-        # as `last_seen` or the id alone.
-        self.assertIn("Within tier 1 the census's own in-window turn count "
-                      "decides, descending, and the id order breaks the tie",
-                      prose)
-        self.assertIn("eviction here is PERMANENT", prose)
-
-    # --- S3: the previous-arms cap must not omit a REAL retirement -------
-    #
-    # `_clean_previous_arms` capped with `sorted(ids)[:PREVIOUS_ARMS_CAP]`
-    # — the same alphabetical-head shape S2 fixes for `catalogue_seen`, and
-    # with the same consequence: a previous roster carrying 500 low-sorting
-    # filler ids beside one real departed arm reported 500 filler
-    # retirements and not the real one, so `retired_since_last` — the line
-    # the job summary leads with — silently lost the only retirement that
-    # actually happened.
-
-    ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
-        # Mutation check (manual): reverting the cap to
-        # `carried = sorted(ids)[:PREVIOUS_ARMS_CAP]` drops
-        # `claude-sonnet-4-9` — the single alphabetically-last id of 501 —
-        # so it is no longer carried forward, its turns leave the usage
-        # denominator, and the "carries" assertion goes red.
-        # Mutation check (manual): filling the cap from the tier-3 residue
-        # by id order — the pre-round-11 `sorted(ids, key=order)[:CAP]` —
-        # drops 100 fillers, emits the "dropped" warning this asserts the
-        # absence of, and (with a real entry among them, as
-        # TestIssue67Review11's rows 2-7 have) evicts it permanently: red.
-
     # --- S1: four of round 6's own catalogue_seen defences had no
     # regression floor — each could be deleted with the whole suite still
     # green. One test per defence, each red under the named mutation.
@@ -25233,24 +25184,6 @@ class TestIssue67Review8(unittest.TestCase):
         return TestIssue67._census_doc(counts={
             cls.F1_REAL: {cls.W[0]: 8000},
             "claude-sonnet-5": {cls.W[0]: 800}})
-
-    def _assert_the_real_history_survived(self, published):
-        # `assertTrue` over `assertIn`: a failure here would otherwise
-        # dump 500 plant ids into the log.
-        self.assertTrue(self.F1_REAL in self._seen_ids(published),
-                        "the entry the census names outlives entries the "
-                        "census does not name, whatever their dates")
-        reason = self._reason(published, "claude-sonnet-5")
-        self.assertNotIn("carries", reason)
-        self.assertIn("newest", reason)
-        for arm in published["arms"]:
-            self.assertNotIn("100.0%", arm["reason"], arm)
-        # ROUND 11: the cap bounds only the entries the live catalogue or
-        # the census names; entries neither names are carried rather than
-        # evicted by an order the previous roster writes, so what bounds
-        # the published length is `UNCAPPED_CARRY_CEILING`, not the cap.
-        self.assertLessEqual(len(published["catalogue_seen"]),
-                             roster.UNCAPPED_CARRY_CEILING)
         # Mutation check (manual): dropping the relevance sort (leaving the
         # age-only order round 7 shipped) evicts `claude-sonnet-4-9`, takes
         # its 8000 turns out of the denominator, and publishes
@@ -25351,7 +25284,8 @@ class TestIssue67Review8(unittest.TestCase):
     # neither the live catalogue nor the census names it, so it is tier-3
     # residue and no cap evicts it (round 10 reached the same outcome
     # through a rationed tier-2 slot, deleted in round 11's continuation;
-    # see `_Relevance.rank`). The canary's own scenario is now
+    # both the tiering and the caps are gone with #147). The canary's own
+    # scenario is now
     # TestIssue67Review10::test_a_dated_arm_whose_census_key_is_undated
     # _survives_five_hundred_fillers, asserting the opposite outcome, and
     # the spelling route it guarded against is still red under
@@ -25657,23 +25591,6 @@ class TestIssue67Review9(unittest.TestCase):
         return TestIssue67._census_doc(counts={
             cls.B1_REAL: {cls.W[0]: 8000},
             cls.B1_LIVE: {cls.W[0]: 800}})
-
-    def _assert_the_named_history_survived(self, published):
-        # `assertTrue` over `assertIn`: a failure here would otherwise dump
-        # 500 plant ids into the log.
-        self.assertTrue(self.B1_REAL in self._seen_ids(published),
-                        "an entry the census names outlives entries neither "
-                        "the catalogue nor the census names, however spelled")
-        reason = self._reason(published, self.B1_LIVE)
-        self.assertIn("carries 9.1%", reason,
-                      "800 of 8800 rankable turns is 9.09%")
-        self.assertNotIn("100.0%", reason)
-        # ROUND 11: the cap bounds only the entries the live catalogue or
-        # the census names; entries neither names are carried rather than
-        # evicted by an order the previous roster writes, so what bounds
-        # the published length is `UNCAPPED_CARRY_CEILING`, not the cap.
-        self.assertLessEqual(len(published["catalogue_seen"]),
-                             roster.UNCAPPED_CARRY_CEILING)
         # Mutation check (manual): restoring `_census_relevance`'s
         # `SNAPSHOT_SUFFIX` route calls every plant census-named, so they
         # tie with the real entry on relevance and win on `last_seen` —
@@ -25802,161 +25719,6 @@ class TestIssue67Review9(unittest.TestCase):
 
     _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired", "dated-retired",
                      "dated-key-and-bridge")
-
-    @classmethod
-    def _plant_scenario(cls, rng):
-        """(models_doc, census_doc, previous, protected, owner) for one
-        random run.
-
-        REWRITTEN for B1' (#129 review round 10). The generator now
-        populates `previous["arms"]` as well as `catalogue_seen` — round
-        9's version left `arms` empty in every scenario, so the arms cap
-        was never exercised by it at all — and it generates dated
-        spellings of census keys as REAL entries, in history and in arms,
-        not only as plants. That last shape is the blocker: a departed arm
-        `<alias>-YYYYMMDD` whose usage the census records under `<alias>`,
-        which round 9 could relate to nothing.
-
-        `protected` is the set of entries the census names OUTRIGHT (an
-        in-window census key) — decided from the census this generator
-        just built, never by asking the code under test. `owner` maps each
-        census key to the id whose numerator must collect its turns, which
-        is what turns "the fold group kept somebody" into a number the
-        published roster states.
-
-        Four family shapes:
-
-        bare-live        the bare alias is in the catalogue and holds the
-                         seat; its own census turns are its own.
-        dated-only-live  the catalogue publishes only DATED snapshots
-                         (roster-policy.yml's documented shape); the
-                         newest live one claims the bare alias, an OLDER
-                         dated key carries census turns, and the bare
-                         alias — in `catalogue_seen` because run 1's
-                         catalogue listed it — is the only thing that
-                         folds the one onto the other.
-        retired          no live model; the census names the bare alias
-                         and the bare alias is itself an entry.
-        dated-retired    no live model; the census names the bare alias
-                         and the ENTRY is a dated spelling of it. ROUND
-                         10'S BLOCKER: nothing about the entry is a
-                         census key or a live id, and the only thing that
-                         keeps the key attributable is that the entry
-                         folds onto it.
-        dated-key-and-  the catalogue publishes ONE dated snapshot; a
-        bridge          DIFFERENT dated snapshot of the same base is an
-                         in-window census key AND an entry, so it is
-                         tier 1 in its own right; and the bare alias
-                         between the two — the only hop
-                         `_usage_alias_map` has from that key to the live
-                         snapshot's numerator — is an entry in the SAME
-                         list. ROUND 11'S BLOCKER (B, #129 review round
-                         11): the tier-2 slot of the day was not spent on
-                         a group a tier-1 entry already reached, so the
-                         bare alias fell to tier 3 behind 500 plants and
-                         was evicted. What keeps it now is that tier 3 is
-                         CARRIED — the bare alias is an entry neither
-                         document names, and no cap evicts one of those.
-        """
-        words = roster.tier_words(cls._policy())
-        models, counts, owner = [], {}, {}
-        protected, arms, history = set(), set(), set()
-        for index in range(rng.randint(4, 5)):
-            base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
-            snaps = [f"{base}-2026{month:02d}01" for month in (1, 4, 6)]
-            # Family 0 is always live, so every scenario has a catalogue
-            # this policy can seat something out of; family 1 is always
-            # round 10's blocker, so every scenario carries at least one
-            # entry that is relevant through the fold relation ALONE; and
-            # family 2 is always round 11's, so every scenario also
-            # carries a chain whose middle hop is reached by nothing but
-            # the residue carry. The remaining one or two families are
-            # free.
-            shape = ("bare-live" if index == 0
-                     else "dated-retired" if index == 1
-                     else "dated-key-and-bridge" if index == 2
-                     else rng.choice(cls._PLANT_SHAPES))
-            into = arms if rng.random() < 0.5 else history
-            if shape == "bare-live":
-                models.append(cls._model(base, "2025-06-01T00:00:00Z"))
-                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                owner[base] = base
-            elif shape == "dated-only-live":
-                live = snaps[:rng.randint(1, 2)]
-                models += [cls._model(sid, "2026-01-01T00:00:00Z")
-                           for sid in live]
-                counts[live[-1]] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                owner[live[-1]] = live[-1]
-                # An OLDER dated key, not live, whose turns only reach the
-                # live snapshot through the bare alias below.
-                counts[snaps[2]] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                owner[snaps[2]] = live[-1]
-                history.add(base)
-            elif shape == "retired":
-                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                owner[base] = base
-                into.add(base)
-                protected.add(base)
-            elif shape == "dated-retired":
-                counts[base] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                owner[base] = base
-                into.add(f"{base}-20250101")
-            else:
-                live = snaps[0]
-                models.append(cls._model(live, "2026-01-01T00:00:00Z"))
-                counts[snaps[2]] = {cls.W[0]: rng.randrange(1, 40) * 100}
-                owner[snaps[2]] = live
-                # The census key is an entry, so it is tier 1 and covers
-                # its own group; the bare alias is the chain's middle hop
-                # and is in the same list. `alias_map` only creates
-                # `snaps[2] -> base` when `base` is one of the ids handed
-                # in, so evicting `base` strands the key one hop short of
-                # the live snapshot that holds the seat.
-                into.add(snaps[2])
-                into.add(base)
-                protected.add(snaps[2])
-        live_ids = {m["id"] for m in models}
-        real = arms | history | live_ids | set(counts)
-        keys = sorted(counts)
-        plants = set()
-        # Deliberately more plants than either cap has room for, in the
-        # four spellings a planter can reach. A FULL CAP'S WORTH of them
-        # sort before every `claude-` id: 500 `0plant-NNNN` is what makes
-        # the id order alone insufficient, and without that many the
-        # alphabetical head still had room for every real entry and the
-        # property had no teeth at all (measured against the pre-fix head
-        # — green).
-        for i in range(700):
-            if i < roster.CATALOGUE_SEEN_CAP:
-                plant = f"0plant-{i:04d}"
-            elif i % 3 == 0:
-                plant = (f"{rng.choice(keys)}-2025"
-                         f"{rng.randint(1, 12):02d}{rng.randint(1, 28):02d}")
-            elif i % 3 == 1:
-                plant = f"{rng.choice(keys)}-{i:08d}"
-            else:
-                plant = f"zplant-{i:04d}"
-            if plant not in real:
-                plants.add(plant)
-        plants = sorted(plants)
-        # The real entries are the OLDER ones and the plants the newer
-        # ones, so a date order alone would evict exactly what matters.
-        entries = ([{"id": i, "last_seen": cls._days_ago(rng.randint(20, 60))}
-                    for i in sorted(history)] +
-                   [{"id": i, "last_seen": cls._days_ago(rng.randint(0, 2))}
-                    for i in plants])
-        rng.shuffle(entries)
-        # The SAME plants in both lists: each cap has to survive them on
-        # its own, and a plant that is in one list and not the other would
-        # let the other list's attribution quietly cover for it.
-        arm_entries = ([{"id": i, "reason": "was an arm"}
-                        for i in sorted(arms)] +
-                       [{"id": i, "reason": "filler"} for i in plants])
-        rng.shuffle(arm_entries)
-        return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
-                TestIssue67._census_doc(counts=counts),
-                {"arms": arm_entries, "catalogue_seen": entries},
-                protected & history, owner)
 
     _PROP_SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
         # Mutation check (RUN, not reasoned about), re-measured for round
@@ -26310,11 +26072,6 @@ class TestIssue67Review10(unittest.TestCase):
         self._assert_the_true_share(
             self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
         # Mutation check (RUN), re-measured for round 11's continuation.
-        # This row is the file's ID-ORDER floor, and the only one that can
-        # be: its plants sort BEFORE the real arm, so it is RED under
-        # `carried = (named + sorted(residue))[:PREVIOUS_ARMS_CAP]` —
-        # filling the arms cap from the residue by id order, which is
-        # round 6's defect verbatim — and RED under dropping the residue
         # outright. It is GREEN under either tier-1 route and under
         # restoring round 8's spelling route, because every entry in it is
         # residue either way. The tier-2 slot this row used to name was
@@ -26519,14 +26276,6 @@ class TestIssue67Review10(unittest.TestCase):
         # `test_a_tier_is_ordered_by_census_turns_not_by_last_seen`, which
         # is the same defence measured where it can fire.)
 
-    # The one bound left once the caps stop evicting. Past it the run
-    # refuses to publish, by name and with a count, rather than keep 500
-    # entries a planter chose — see `UNCAPPED_CARRY_CEILING` for why the
-    # number is 10,000 and what it was measured against.
-        # Mutation check (manual): raising the ceiling past a million lets
-        # the same input publish a roster GitHub will refuse to push, and
-        # `test_past_the_ceiling_the_run_refuses_to_publish` goes red.
-
     # --- F-1: the invariant sentence is PINNED, in both files ------------
     #
     # It was written in `evals/roster-policy.yml` and over the
@@ -26567,30 +26316,6 @@ class TestIssue67Review10(unittest.TestCase):
         # ANY ONE of the four copies in roster.py turns the count
         # assertion red, and the three docstring copies each turn their
         # own subTest red as well.
-
-    def test_the_policy_states_what_the_ceiling_does(self):
-        """The other half of the same problem: A (#129 review round 10)
-        stops the caps evicting when the census names nothing, and leaves
-        `UNCAPPED_CARRY_CEILING` as the only bound. A reader of the policy
-        who does not know that will read the 500-entry cap as an
-        unconditional bound on how large the published roster can get."""
-        policy = self._normalised(self.POLICY.read_text(encoding="utf-8"))
-        self.assertIn("a census key with zero in-window turns names nothing",
-                      policy)
-        self.assertIn("neither cap evicts", policy)
-        self.assertIn("uncapped_carry_ceiling", policy)
-        self.assertIn("refuses to publish with a named error", policy)
-        # ROUND 11: and that the cap bounds tier 1 only, so the
-        # published length is bounded by the ceiling rather than by the
-        # 500. A reader who takes the 500 for a bound on the file will
-        # read a 503-entry `catalogue_seen` as a bug. It said "tiers 1 and
-        # 2" until round 11's continuation deleted tier 2; the assertion
-        # moves with the mechanism, and it is still the same floor —
-        # the policy has to name what the 500 does and does not bound.
-        self.assertIn("what the cap bounds is tier 1 only", policy)
-        self.assertIn("the 500 is a bound on what the census can order, "
-                      "not on the file", policy)
-        self.assertIn("refuses to publish (exit code 4)", policy)
 
     # --- F-2: every clause of the relevance machinery has a NAMED mutation
     # that turns the suite red --------------------------------------------
@@ -26692,7 +26417,7 @@ class TestIssue67Review10(unittest.TestCase):
 
     # RETIRED: `test_the_fold_follows_the_alias_map_not_one_suffix_strip`.
     #
-    # It pinned `_Relevance.fold` — "the production alias map applied to
+    # It pinned the tiering's own `fold` — "the production alias map applied to
     # `_base(model_id)`" — against the mutation of returning `_base` alone,
     # using an entry with TWO `-DDDDDDDD` suffixes so that one strip
     # stopped a hop short of the census key. Round 11's continuation
@@ -26763,7 +26488,7 @@ class TestIssue67Review11(unittest.TestCase):
     #
     # THE DEFECT, as round 11 found it. Decision 4 (round 10) spent no
     # rationed tier-2 slot on a fold group a tier-1 entry already
-    # "covered", and `_Relevance.fold` decided "covers" with an
+    # "covered", and the tiering's `fold` decided "covers" with an
     # UNCONDITIONAL suffix strip. The map attribution actually uses,
     # `_usage_alias_map` over `alias_map`, creates the hop `X-DDDDDDDD ->
     # X` only when `X` is itself one of the ids handed in — and the ids
@@ -26840,7 +26565,7 @@ class TestIssue67Review11(unittest.TestCase):
     # --- B-4: the caps must not move a census key's numerator -----------
     #
     # THE DEFECT, as round 11 found it. There were then TWO fold relations
-    # and the docstrings described them as one. `_Relevance.fold` stripped
+    # and the docstrings described them as one. The tiering's `fold` stripped
     # a dated suffix UNCONDITIONALLY and then asked the production map;
     # `alias_map` — which is what attribution reads — strips it only when
     # the bare base is one of the ids handed in, and the ids handed in are
@@ -26849,7 +26574,8 @@ class TestIssue67Review11(unittest.TestCase):
     # `claude-sonnet-5-20261231` while the alias map still sent that key
     # to itself, and 57.1% of the window landed in no numerator at all.
     #
-    # `_Relevance.fold` is gone (round 11's continuation), so there is one
+    # That second relation went in round 11's continuation and the tiering
+    # itself in #147, so there is one
     # relation and the floor is stated over it directly: for every
     # in-window census key, the usage alias map sends it to the same id
     # after the caps as before. See `assert_fold_and_alias_map_agree`,
@@ -26899,56 +26625,6 @@ class TestIssue67Review11(unittest.TestCase):
         turns, aliases, seen_entries = cls._fold_context(
             models_doc, census_doc, policy, previous, now)
         return {k: aliases.get(k, k) for k in turns}, seen_entries
-
-    @classmethod
-    def assert_fold_and_alias_map_agree(cls, models_doc, census_doc, policy,
-                                        previous, now, published_seen, case):
-        """THE CAPS DO NOT MOVE A CENSUS KEY'S NUMERATOR. For every
-        in-window census key, the usage alias map sends it to the same id
-        after the caps have fired as it did before — "before" measured, not
-        reasoned about, by running the same derivation again with both caps
-        and the ceiling patched past reach.
-
-        Round 11 stated this over `_Relevance.fold` and the alias map,
-        because there were then TWO fold relations and the whole of that
-        round's blocker was that they disagreed: `fold` stripped a dated
-        suffix unconditionally, while `alias_map` creates the hop
-        `X-DDDDDDDD -> X` only when `X` is one of the ids handed in — and
-        the ids handed in are the two lists the caps trim. Deleting
-        `_Relevance.fold` (round 11's continuation) leaves ONE relation, so
-        the floor is stated over it directly: the map itself, before versus
-        after. That is the property the two-relation version was a proxy
-        for, and it is strictly the stronger statement — it is red whenever
-        a cap changes where a key's turns land, not only when a cap breaks
-        an agreement the two relations happened to have.
-
-        MEASURED, rather than argued: this class run against `1fa9d3a`'s
-        `harness/roster.py` (the head this round's blocker was found on)
-        fails HERE on nine rows — 1A, 2A, 2B, 3A, 4A, both subtests of
-        each retirement row — plus round 9's property test, each naming
-        the census key whose target the cap moved. The two-relation form
-        was red on eight of those nine. It fails here BEFORE the row's own
-        share assertion runs, so the floor, not the published sentence, is
-        what catches the regression first.
-
-        Called from the row tests and from round 9's property test. `case`
-        is the `TestCase` doing the asserting, so one implementation serves
-        both."""
-        after, seen_entries = cls._key_targets(
-            models_doc, census_doc, policy, previous, now)
-        case.assertEqual(seen_entries, published_seen,
-                         "the mirror of compute_roster's derivation has "
-                         "drifted from compute_roster itself")
-        big = 10 ** 9
-        with mock.patch.object(roster, "PREVIOUS_ARMS_CAP", big), \
-             mock.patch.object(roster, "CATALOGUE_SEEN_CAP", big), \
-             mock.patch.object(roster, "UNCAPPED_CARRY_CEILING", big):
-            before, _ = cls._key_targets(models_doc, census_doc, policy,
-                                         previous, now)
-        case.assertEqual(
-            sorted(k for k in before if before[k] != after.get(k, k)), [],
-            "a cap moved an in-window census key's usage-alias-map target "
-            "away from the numerator it reached before the cap fired")
 
     def _seat(self, published, model_id):
         """The published sentence about `model_id`: its arm reason, its
@@ -27025,90 +26701,11 @@ class TestIssue67Review11(unittest.TestCase):
 
     _LIVE_ARMS = [f"claude-sonnet-5-{i:06d}" for i in range(502)]
 
-    def test_the_arms_cap_ranks_live_previous_arms_but_never_evicts_one(self):
-        """502 models the Models API lists this run, every one of them also
-        an arm of the previous roster, and NO census.
-
-        WHAT THIS ROW PINNED WHEN ROUND 11 WROTE IT, and why it changed.
-        It was the mutation floor for tier-1 route (b) (the live catalogue
-        id) in `_Relevance.rank`, and it asserted 501 arms and 1
-        retirement: route (b) made all 502 tier 1, the arms cap ranked
-        them by the id (no census, so no turns to rank by) and bounded
-        them at 500, and the two it evicted from `carried_arms` lost their
-        hold-over and were reported retired. Its own docstring said the
-        outcome deserved a look — a model the Models API still lists,
-        reported retired because an untrusted `arms` list was long — and
-        round 12 took it: SHOULD-FIX 1 gives `_clean_previous_arms` the
-        live-id exemption `_update_catalogue_seen` already had, so the
-        expectation here flips to 502 arms and NOTHING retired.
-
-        RED on `7ef5780` (501 arms, 2 retired — one of them a live model
-        published `RETIRED ... below the 2% exit bar ... (0.0% of rankable
-        census usage)` on a run with no census at all).
-
-        ROUTE (b)'s MUTATION FLOOR MOVED, because this row no longer
-        separates it: without route (b) all 502 are residue, all 502 are
-        carried, and the published counts are the same 502/0 this now
-        asserts. It is `TestIssue67Review12::test_route_b_keeps_a_live
-        _previous_arm_out_of_the_residue_the_ceiling_bounds` that is red
-        for the mutation now — a live id that is not tier 1 lands in the
-        residue as well as in the exemption, and a 10,001-live-arm
-        previous roster refuses to publish instead of publishing."""
-        previous = {"arms": [{"id": i, "reason": "was an arm"}
-                             for i in self._LIVE_ARMS],
-                    "catalogue_seen": []}
-        models = {"fetched_at": "2026-09-04T11:00:00Z",
-                  "models": [self._model(i, "2026-02-01T00:00:00Z")
-                             for i in self._LIVE_ARMS]}
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, published, _, err = self._run_main(tmp, models, previous=previous)
-        self.assertEqual(rc, 0, err)
-        self.assertEqual(len(published["arms"]), 502,
-                         "the cap ranks live previous arms but never "
-                         "evicts one, so every one of the 502 is carried "
-                         "and held over")
-        self.assertEqual(published["retired_since_last"], [],
-                         "a model the Models API still lists must never be "
-                         "reported retired because the `arms` list an "
-                         "untrusted branch wrote was long")
-
-    def test_the_arms_ceiling_bounds_the_residue_not_the_carried_list(self):
-        """MUTATION: `if len(carried) > UNCAPPED_CARRY_CEILING` in
-        `_clean_previous_arms`, which is what that check said before N-2
-        (#129 review round 11) moved it onto the residue.
-
-        The `catalogue_seen` side of N-2 had a floor from the day it landed
-        (`test_a_catalogue_past_the_ceiling_still_publishes`); the `arms`
-        side had none, and the mutation table of round 11's continuation is
-        what found that. 500 entries the census names outright plus 9,999
-        it names nothing about: the residue is 9,999, inside the ceiling,
-        while `carried` is 10,499 and past it. Bounding the carried list
-        refuses to publish over a length the census itself accounts for —
-        the same failing-closed for a reason that has nothing to do with an
-        untrusted input that N-2 removed on the other side."""
-        named = [f"claude-sonnet-5-n{i:04d}" for i in range(500)]
-        residue = [f"0resid-{i:05d}" for i in range(9999)]
-        previous = {"arms": [{"id": i, "reason": "was an arm"}
-                             for i in named + residue],
-                    "catalogue_seen": []}
-        census = TestIssue67._census_doc(counts={i: {self.W[0]: 5}
-                                                for i in named})
-        with tempfile.TemporaryDirectory() as tmp:
-            rc, published, _, err = self._run_main(
-                tmp, self._two_model_catalogue(), census=census,
-                previous=previous)
-        self.assertEqual(rc, 0, err)
-        self.assertIsNotNone(published, "a residue inside the ceiling "
-                                        "publishes; only the residue is bounded")
-        self.assertEqual(len(published["retired_since_last"]), 10499,
-                         "every previous arm is reported retired — "
-                         "`reported` is the uncapped list")
-
     # RETIRED: `test_a_covered_group_spends_no_tier_two_slot`.
     #
     # It was the `covered` guard's own floor, and `covered` is gone with
     # the tier it guarded. The mutation it named — `covered = set()` in
-    # `_Relevance.rank` — has nothing left to change: round 11's
+    # the tiering's ranking — has nothing left to change: round 11's
     # continuation deleted tier 2, `covered`, `by_group` and `_links`
     # outright, because the tier-3 residue rule landed beside them and
     # subsumes all of it. An id neither the live catalogue nor the census
@@ -27604,152 +27201,6 @@ class TestIssue67Review12(unittest.TestCase):
                 census=self._class_census(victim_key), previous=previous)
         self.assertEqual(rc, 0, err)
         return published, err
-
-    def _class_floor_table(self, shape):
-        V, key, arm_hops, seen_hops, catalogue = self._victim_shape(shape)
-        D, G = self._DEPARTED_REAL, self._GHOST
-
-        def _prev(arms, seen):
-            """`self._prev` with the victim's own chain always in place:
-            the hops are what MAKES the victim fold-reached, so they are
-            part of the shape rather than part of any row. In the raw-id
-            shape both lists are empty and this is `self._prev`."""
-            return self._prev(list(arm_hops) + list(arms),
-                              list(seen_hops) + list(seen))
-        # BASE A — the departed real model is vouched for by
-        # `catalogue_seen` alone, so a `catalogue_seen` field value is
-        # what decides its attribution.
-        base_a = _prev([V], [D])
-        # BASE B — vouched for by BOTH lists, so either one alone can be
-        # removed and the other still attributes it.
-        base_b = _prev([V, D], [D])
-        # (label, control, hostile, expectation, the MUTATION that turns
-        # this row red — every one of them applied and run, none quoted
-        # from reasoning). `RED@7ef5780` marks a row that additionally
-        # fails on the pre-fix tree itself.
-        rows = [
-            ("arms[].id ADD one entry naming a ranked key nothing credits",
-             base_a, _prev([V, G], [D]), "seat",
-             "RED@7ef5780; also: `previous_only = 0` in compute_roster's "
-             "hold-over branch, which is the anchored refusal deleted"),
-            ("catalogue_seen[].id ADD the same entry",
-             base_a, _prev([V], [D, G]), "seat",
-             "RED@7ef5780; also: the same deletion"),
-            ("catalogue_seen[].last_seen back-dated past the window",
-             base_a, _prev([V], [{"id": D,
-                                       "last_seen": self._days_ago(400)}]),
-             "reason",
-             "RED@7ef5780; also: `relevant.tier(model_id) < 3` deleted "
-             "from `_update_catalogue_seen`'s ageing loop"),
-            ("catalogue_seen[].last_seen dated in the far future",
-             base_a, _prev([V], [{"id": D,
-                                       "last_seen": "9999-12-31T00:00:00Z"}]),
-             "reason+value",
-             "`rendered = _as_date(parsed)` in `_clean_catalogue_seen` — "
-             "the future-date clamp dropped, which republishes 9999 to "
-             "the public branch"),
-            # `seat`, not `reason`, and measured rather than assumed:
-            # `_clean_catalogue_seen` SKIPS a malformed entry (with a
-            # count-only warning naming no value), so the entry's
-            # attribution goes with it and the victim's sentence changes
-            # to the relative floor's. That is the same primitive as
-            # deleting the entry outright — a planter who can write the
-            # field can write the file — so it grants nothing new, and
-            # unlike a deletion it is REPORTED. The seat is what has to
-            # hold, and does.
-            ("catalogue_seen[].last_seen unparseable",
-             base_a, _prev([V], [{"id": D, "last_seen": "garbage"}]),
-             "seat+value",
-             "`by_id[entry['id']] = entry['last_seen']` on an unparseable "
-             "date instead of skipping it — round 7's N1, which puts the "
-             "raw value in the published roster"),
-            ("arms[].id REMOVE the departed arm (catalogue_seen still has it)",
-             base_b, _prev([V], [D]), "reason",
-             "`folded in catalogue_seen_folded` deleted from "
-             "`_is_attributable` — the route that still attributes the "
-             "departed model once its `arms` entry is gone"),
-            ("catalogue_seen[].id REMOVE the entry (arms still has it)",
-             base_b, _prev([V, D], []), "reason",
-             "`folded in previous_arms_folded` deleted from "
-             "`_is_attributable` — the mirror route, and the ONLY row of "
-             "this table that mutation turns red"),
-            # The three entry-count rows each put the departed model in
-            # the ONE list whose cap the fillers crowd, so the cap is what
-            # decides the row rather than the other list rescuing it.
-            ("entry count: 501 filler `arms` entries",
-             _prev([V, D], []),
-             _prev([V, D] + self._FILLERS, []), "reason",
-             "`order = {i: (1, 0, i) for i in ids}` in "
-             "`_clean_previous_arms` — round 6's plain id order, under "
-             "which 499 `0filler-` entries evict the departed model"),
-            ("entry count: 501 filler `catalogue_seen` entries",
-             base_a, _prev([V], [D] + self._FILLERS), "reason",
-             "the same id order in `_update_catalogue_seen`"),
-            ("entry count: 501 fillers in BOTH lists",
-             base_b,
-             _prev([V, D] + self._FILLERS, [D] + self._FILLERS),
-             "reason",
-             "both id-order mutations at once — either list alone still "
-             "attributes the departed model, which is why this row needs "
-             "both and is not a duplicate of the two above"),
-            # THE ELEVENTH ROW IS THE PARAMETRISATION'S OWN, and it is
-            # deliberately the IDENTITY in the raw-id shape: it removes
-            # every `previous.json` entry the VICTIM'S OWN attribution
-            # passes through. In the raw-id shape there are none — the
-            # victim's census key is its own id — so control and hostile
-            # are the same document, which is exactly the difference the
-            # two shapes exist to expose. In the fold-reached shape it
-            # deletes the chain's `catalogue_seen` hop and the victim's
-            # numerator falls to zero; the seat has to hold anyway.
-            ("catalogue_seen[].id REMOVE the victim's own chain hops",
-             _prev([V], [D]),
-             self._prev(list(arm_hops) + [V], [D]), "seat",
-             "`previous_only = 0` in compute_roster's hold-over branch. "
-             "MEASURED, not assumed: this input trips the anchor-"
-             "tolerance refusal on its own — 100% of what is left of the "
-             "denominator is previous-roster-only — so that one mutation "
-             "is now sufficient. It used to need two, because "
-             "`0db198a`'s `held == 0.0` refusal caught the same input "
-             "independently (the victim's numerator falls to zero) and "
-             "either one alone left the row GREEN. That commit is "
-             "reverted (see `TestIssue67Review13`'s pinned survival), so "
-             "only this refusal is left holding the row up. It is red "
-             "only in the fold-reached shape — in the raw-id shape it is "
-             "the identity, which is the finding"),
-        ]
-        hostile_values = ("9999", "garbage")
-        for label, control, hostile, expectation, mutation in rows:
-            self.assertTrue(mutation,
-                            f"row {label!r} records no mutation that turns "
-                            f"it red")
-            with self.subTest(row=label):
-                before, _ = self._class_run(control, catalogue, key)
-                after, err = self._class_run(hostile, catalogue, key)
-                self.assertIn(V, self._arm_ids(before), "control row")
-                self.assertIn("still 5.0%", self._reason(before, V),
-                              "the control must measure the victim at its "
-                              "true 5.0%, or the row is about nothing")
-                self.assertIn(V, self._arm_ids(after),
-                              "one hostile entry cost a live arm its seat")
-                self.assertNotIn(
-                    V, {t["id"] for t in after["retired_since_last"]},
-                    "one hostile entry retired a live arm carrying real "
-                    "in-window usage — the permanent, unrecoverable half")
-                if expectation.startswith("reason"):
-                    self.assertEqual(self._reason(before, V),
-                                     self._reason(after, V),
-                                     "one hostile entry moved the victim's "
-                                     "published share")
-                if expectation.endswith("value"):
-                    # A hostile FIELD VALUE must not reach the published
-                    # roster on the public branch, nor the log: the
-                    # `last_seen` rows are the two that carry one, and
-                    # this is what keeps the clamp and the skip
-                    # load-bearing rather than incidental.
-                    published_text = json.dumps(after)
-                    for value in hostile_values:
-                        self.assertNotIn(value, published_text)
-                        self.assertNotIn(value, err)
         # RED-FIRST, per row and per shape, through `main()`. On
         # `7ef5780`, in the RAW-ID shape: rows 1, 2 and 3 fail — round
         # 12's two blockers. Rows 4-10 are green there, because rounds
@@ -27952,16 +27403,6 @@ class TestIssue67Review13(unittest.TestCase):
             cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
             cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
 
-    # --- BLOCKER A: the retirement veto reverts to the fraction alone ---
-    #
-    # Round 12 PRESCRIBED `previous_only > RETIREMENT_ANCHOR_TOLERANCE *
-    # exit_ranked_total`. The shipped code added `anchored_held >=
-    # arm_exit_usage_pct` beside it, on the inference that `anchored ⊆
-    # wide` gives `anchored_held >= held`. That inference is false: the
-    # anchored map has a smaller NUMERATOR too, because it cannot follow a
-    # chain whose middle hop lives in `previous.json`. The added conjunct
-    # was therefore FALSE exactly when the chain is a fold chain, and it
-    # BLOCKED the refusal the prescription would have made.
 
     def _park_row(self, *, planted):
         counts = {self._KEY: {self.W[0]: 5_000},
@@ -29127,11 +28568,13 @@ class TestIssue147(unittest.TestCase):
     def test_row4_a_dated_fold_source_cannot_reach_the_running_set(self):
         """#147 defect 4 (= round 13's BLOCKER C). A model this harness
         observed under a DATED id, whose census usage the census records
-        under the UNDATED alias. `tier()` misses it (raw identity) and
-        `is_needed_hop` missed it too (it walks FORWARD from census keys,
-        and this entry is the fold SOURCE rather than a hop). One
-        `last_seen` date and 9,500 real turns leave the denominator, so a
-        hold-over at a true 5.0% becomes a seat at `carries 100.0%`.
+        under the UNDATED alias. Neither of round 13's two ageing
+        exemptions reached it: the raw-identity one because neither
+        document names the entry, and the fold-relation one because it
+        walked FORWARD from census keys and this entry is the fold SOURCE
+        rather than a hop. One `last_seen` date and 9,500 real turns leave
+        the denominator, so a hold-over at a true 5.0% becomes a seat at
+        `carries 100.0%`.
         """
         census = self._census({self._VICTIM: {self._week(): 500},
                                self._DEPARTED: {self._week(): 9_500}})
