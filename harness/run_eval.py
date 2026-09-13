@@ -877,20 +877,32 @@ def materialize_workspace(seed: Path, fixture: dict | None = None) -> Path:
     is a ready-to-use `Path` with nothing to attach an error to.
     """
     workspace = Path(tempfile.mkdtemp(prefix=WORKSPACE_PREFIX))
-    shutil.copytree(seed, workspace, dirs_exist_ok=True)
-    if fixture is not None:
-        setup_result = run_setup(workspace, fixture)
-        if setup_result is not None:
-            raise SetupFailedError(workspace, setup_result)
-    _git("init", "-q", cwd=workspace)
-    _git("add", "-A", cwd=workspace)
-    _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
-    # After the baseline commit, so the anchor is never part of it. A
-    # stand-in in `<workspace>/bin/` reads this to find where its invocation
-    # log goes; without it, it refuses to serve or record anything at all.
-    anchor = workspace / WORKSPACE_ANCHOR
-    anchor.parent.mkdir(parents=True, exist_ok=True)
-    anchor.write_text(f"{workspace}\n", encoding="utf-8")
+    try:
+        shutil.copytree(seed, workspace, dirs_exist_ok=True)
+        if fixture is not None:
+            setup_result = run_setup(workspace, fixture)
+            if setup_result is not None:
+                raise SetupFailedError(workspace, setup_result)
+        _git("init", "-q", cwd=workspace)
+        _git("add", "-A", cwd=workspace)
+        _git("commit", "-q", "-m", SEED_COMMIT_MESSAGE, cwd=workspace)
+        # After the baseline commit, so the anchor is never part of it. A
+        # stand-in in `<workspace>/bin/` reads this to find where its
+        # invocation log goes; without it, it refuses to serve or record
+        # anything at all.
+        anchor = workspace / WORKSPACE_ANCHOR
+        anchor.parent.mkdir(parents=True, exist_ok=True)
+        anchor.write_text(f"{workspace}\n", encoding="utf-8")
+    except SetupFailedError:
+        # The caller still owns cleanup here (see the class docstring) --
+        # `_run_arm`'s handler needs the half-built workspace to inspect.
+        raise
+    except Exception:
+        # Anything else (a failed `_git` call, a `copytree` I/O error, ...)
+        # means this function is not handing the workspace back to anyone,
+        # so it must not leak the `mkdtemp` directory it created.
+        shutil.rmtree(workspace, ignore_errors=True)
+        raise
     return workspace
 
 
