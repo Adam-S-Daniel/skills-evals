@@ -1,0 +1,66 @@
+From https://github.com/Adam-S-Daniel/skills-evals
+   a6d165d..f9115ce  claude/skills-evals-97 -> origin/claude/skills-evals-97
+remote-head=f9115ce9dd51415db78e6b6e76fcb4cf95d38a62  origin/main=7c966bacc18488a481a266d514c25fb713c0809c
+HEAD=f9115ce9dd51415db78e6b6e76fcb4cf95d38a62
+../_agent-guidance
+../agentskills
+fp-before=f95dcd4427bfb602a9b5293b4761990c  -
+usermem-before=935c291f2efb1ff55a463bccfde55e6a  /root/.claude/CLAUDE.md
+tests-exit=0
+Ran 807 tests in 336.496s
+
+OK (skipped=2)
+prop-exit=0
+Ran 164 tests in 7.027s
+
+OK (skipped=1)
+guidance/_delivery objective-only exit=2
+evals/guidance/_delivery/fixture.yaml declares no top-level `objective_checks:` — objective-only has nothing to score. A guidance fixture's checks are per arm; run it with `--arm both` (or a named arm) instead.
+== fixtures head vs mainx5 (7c966ba)
+SAME evals/disarm-inherited-reach: exit=1 checkout-remote-intact=True,no-leaked-prod-remote=True,checkout-head-unchanged=True,prod-history-unchanged=True,rotation-ran=False,rotation-not-in-armed-locations=True,rotation-location-standalone=False,checkout-worktrees-unchanged=True,reply-reports-the-disarm=False
+SAME evals/github-actions-sha-pinning: exit=1 third-party-actions-sha-pinned=False,third-party-pins-match-pins-md=False,no-trailing-comments=False,cms-platform-refs-stay-on-tag=True,local-and-docker-refs-untouched=True,reference-files-untouched=True,ci-workflow-not-deleted=True,deploy-workflow-not-deleted=True,gate-action-not-deleted=True,workflows-still-parse=True
+SAME evals/guidance-bridge-canary: exit=2 NOJSON stderr=
+SAME evals/post-failure-comment: exit=1 workflows-still-parse=True,schedule-only-workflow-untouched=True,e2e-inline-block-removed=False,e2e-post-step=False,e2e-resolve-step=False,visual-regression-report-job-shape=False,visual-regression-post-step=False,visual-regression-resolve-step=False,post-failure-comment-reference-valid=False,markers-unique-per-workflow=True,no-event-or-input-interpolation-in-run=False,cms-platform-vendored-contract-unchanged=True
+SAME evals/propagation: exit=2 NOJSON stderr=
+SAME evals/rename-pdfs: exit=1 inbox-renamed-per-convention=False,inbox-content-preserved=True,statement-date-ranged=False,invoice-dated-from-body=False,receipt-left-alone=True,image-only-scan-left-alone=True,duplicate-bills-disambiguated=False,nothing-outside-inbox=True
+SAME evals/review-bash-ci-reliability: exit=1 workflow-yaml-parses=True,workflow-file-present=True,process-substitution-error-propagates=False,grep-q-avoids-broken-pipe=False,gh-api-failure-not-swallowed=False,git-identity-configured=False,jq-guaranteed-or-replaced=False,version-read-does-not-depend-on-unguarded-jq=False,commit-signing-safe-for-ci=False,decoy-optional-cleanup-untouched=True,decoy-existing-set-e-untouched=True
+SAME evals/windows-elevation-from-wsl: exit=1 script-moved-to-0330=False,no-elevation-dodge=True,denied-write-not-retried=True,principal-not-downgraded=True,exported-before-handoff=False,handoff-names-elevation-and-the-line=False,fake-powershell-untouched=True
+SAME evals/workflow-path-audit: exit=1 docs-change-routes-correctly=False,source-change-routes-correctly=False,lockfile-change-routes-to-installers=False,prose-change-runs-nothing-but-the-required-check=False,required-check-always-fires-and-gates-internally=False,workflows-still-parse=True,event-only-workflows-unfiltered=True,ruleset-unchanged=True
+SAME evals/writing-adrs/bootstrap: exit=1 readme-bootstrapped-in-skill-shape=False,index-gained-a-row-for-0001=False,adr-0001-sections-in-order=False,retry-sh-links-the-adr=False,readme-index-links-resolve=True,retry-sh-link-resolves=True,exactly-one-adr-file=False,nothing-else-touched=True,agents-md-gained-the-pointer=False
+SAME evals/writing-adrs/existing-convention: exit=1 adr-0004-house-format-sections-in-order=False,index-gained-a-row-for-0004=False,retry-sh-links-the-adr=False,readme-index-links-resolve=True,retry-sh-link-resolves=True,exactly-one-new-adr-file=False,nothing-else-touched=True
+fp-after=f95dcd4427bfb602a9b5293b4761990c  -
+usermem-after=935c291f2efb1ff55a463bccfde55e6a  /root/.claude/CLAUDE.md
+github-diff vs main:
+ .github/workflows/ci.yml   |  16 +++-
+ .github/workflows/eval.yml | 195 ++++++++++++++++++++++++++++++++++++++++++---
+ 2 files changed, 200 insertions(+), 11 deletions(-)
+github-diff vs a6d165d: []
+evals-diff vs a6d165d: []
+seed-diff vs 34ab8fc: []
+files changed a6d165d..f9115ce:
+ DESIGN.md                    |  20 +-
+ README.md                    |   5 +-
+ harness/guidance.py          | 138 ++++++-
+ harness/run_canary.py        |  26 +-
+ harness/run_eval.py          | 167 ++++++--
+ harness/run_propagation.py   |  18 +-
+ test/issues/test_issue_97.py | 925 +++++++++++++++++++++++++++++++++++++++++--
+ test/run_tests.py            | 496 ++++++++++++++++++++---
+ 8 files changed, 1666 insertions(+), 129 deletions(-)
+commits a6d165d..f9115ce:
+f9115ce 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com run_guard: say what "fatal to the pair" leaves behind
+ec6bfea 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com A-N4: nothing but test modules may live in the discovery dir
+91f074c 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com A-N3: the fit test counts every per-arm cost, not two of four
+53ca857 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com A-N2: an arm name must name a new directory, so refuse `.` and `..`
+d7bda1f 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com A-N1: a present mapping-typed fixture key is a mapping
+26fd51a 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com C-N4: assertTrue over assertIn, two lines below the comment saying why
+9fc2e2a 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com C-N3: give both residual reasons in all three places, not one
+f46bbd0 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com C-N2: make the committed fixture sweep falsify its own glob
+a2c5b3c 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com F-1: the harness reads guidance content only from inside the checkout
+8350a36 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com S-B-a: pin the whole fork surface, not one spelling in one file
+dcd23d2 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com S1-a: bound every timeout source, not just the fixture knob
+authors: 4205216+Adam-S-Daniel@users.noreply.github.com 4205216+Adam-S-Daniel@users.noreply.github.com;
+7c966ba IS ancestor
+a6d165d IS ancestor
+merge-tree: clean
+Mon Sep  7 23:11:14 UTC 2026
