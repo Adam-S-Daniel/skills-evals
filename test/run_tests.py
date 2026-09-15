@@ -4228,15 +4228,23 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
 
 class CiDispatchTests(unittest.TestCase):
-    """ci.yml must stay runnable by hand, WITHOUT losing its paths filters.
+    """ci.yml must stay runnable by hand, and `test` must always run on a
+    pull_request (cms-platform#437: it publishes a context meant to be
+    REQUIRED on main).
 
-    The two properties fight each other, which is why they are pinned
-    together. The filters above the trigger are what keep a docs-only pull
-    request off a runner — and they are equally what leaves a docs-only commit
-    with no way to run this suite at all. `workflow_dispatch` is that way; it
-    takes no `paths:` (GitHub ignores one there), so adding it cannot dilute
-    the filters, and a future edit that "simplifies" the triggers by dropping
-    them would.
+    Those two properties used to be in tension with a THIRD one — keeping a
+    docs-only pull request off a runner — which a workflow-level `paths:`
+    filter on `pull_request` can't do at the same time as guaranteeing the
+    run always exists. So the filter moved inside the job: `pull_request`
+    triggers unconditionally, and step `salient` decides at runtime whether
+    the rest of the job actually does anything. `push` (which publishes no
+    merge gate) keeps the cheap workflow-level filter, and SALIENT_PATHS —
+    the salient step's own env var — must equal `push`'s `paths:` exactly, so
+    the same commit can't run the suite on one event and skip it on the
+    other.
+
+    `workflow_dispatch` takes no `paths:` (GitHub ignores one there anyway),
+    so it stays unconditionally runnable regardless of either filter.
 
     Losing the dispatch again is silent — no red run, just a missing button on
     the day someone needs it. That is how it was lost the first time: a fix
@@ -4273,20 +4281,46 @@ class CiDispatchTests(unittest.TestCase):
             "and a `paths:` under workflow_dispatch is ignored by GitHub while "
             "reading like a filter that works")
 
+    def _salient_step(self) -> dict:
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        steps = doc["jobs"]["test"]["steps"]
+        return next(s for s in steps if s.get("id") == "salient")
+
     def test_both_filtered_events_keep_the_same_salient_paths(self):
         triggers = self._triggers()
-        for event in ("pull_request", "push"):
-            self.assertEqual(
-                triggers[event]["paths"], self.SALIENT,
-                f"{event}'s paths drifted from the derived salient list — the "
-                "two events must stay in step, or the same commit runs this "
-                "suite on one and skips it on the other")
+        # pull_request runs unconditionally now (cms-platform#437): the
+        # filter moved inside the job, so pull_request must declare no
+        # paths:/paths-ignore: at the trigger level — GitHub parses a bare
+        # `pull_request:` as None, but a mapping with neither key is just as
+        # correct, so accept either shape rather than pinning one.
+        pr_trigger = triggers["pull_request"]
+        if pr_trigger is not None:
+            self.assertNotIn("paths", pr_trigger,
+                             "pull_request must not filter at the trigger "
+                             "level — that can make the required `test` "
+                             "context go missing on a pull request")
+            self.assertNotIn("paths-ignore", pr_trigger,
+                             "pull_request must not filter at the trigger "
+                             "level — that can make the required `test` "
+                             "context go missing on a pull request")
+        self.assertEqual(
+            triggers["push"]["paths"], self.SALIENT,
+            "push's paths drifted from the derived salient list")
         # .get, not []: a dropped branch pin should report itself, not raise
         # a KeyError that says only that some key is missing.
         self.assertEqual(triggers["push"].get("branches"), ["main"],
                          "push is pinned to main: without the branch filter "
                          "every push to a pull-request branch ran `test` twice "
                          "(observed on 82596ff, 03:38:30 and 03:39:14)")
+        salient_step = self._salient_step()
+        lines = [ln for ln in salient_step["env"]["SALIENT_PATHS"].split("\n")
+                if ln.strip()]
+        self.assertEqual(lines, self.SALIENT,
+                         "the salient step's SALIENT_PATHS drifted from "
+                         "on.push.paths — the same commit must route "
+                         "identically on push and inside the pull_request "
+                         "job's own gate")
 
     @staticmethod
     def _is_repo_root_expr(node) -> bool:
@@ -4374,14 +4408,19 @@ class CiDispatchTests(unittest.TestCase):
         self.assertTrue(found, "the AST walk found no REPO_ROOT / \"*.md\" read at "
                         "all — it may have drifted from how this file spells that")
         triggers = self._triggers()
+        salient_lines = [ln for ln in
+                        self._salient_step()["env"]["SALIENT_PATHS"].split("\n")
+                        if ln.strip()]
         for name in sorted(found):
             self.assertIn(name, self.SALIENT,
                           f"{name} is read by this suite but is missing from "
                           "CiDispatchTests.SALIENT")
-            for event in ("pull_request", "push"):
-                self.assertIn(name, triggers[event]["paths"],
-                              f"{name} is read by this suite but is missing from "
-                              f"ci.yml's {event} paths: filter")
+            self.assertIn(name, triggers["push"]["paths"],
+                          f"{name} is read by this suite but is missing from "
+                          "ci.yml's push paths: filter")
+            self.assertIn(name, salient_lines,
+                          f"{name} is read by this suite but is missing from "
+                          "ci.yml's salient step SALIENT_PATHS")
 
     def test_root_markdown_reads_recognizes_test_dir_parent_spelling(self):
         # N3: `TEST_DIR.parent / "<name>.md"` is the realistic sibling spelling
@@ -4436,6 +4475,454 @@ class CiDispatchTests(unittest.TestCase):
         self.assertEqual(step["uses"].split("@", 1)[1], own_sha,
                          "the agentskills checkout must pin the same bare "
                          "40-hex SHA as ci.yml's own checkout")
+
+    # -- always-run + early-skip shape (cms-platform#437) -------------------
+
+    def _doc(self) -> dict:
+        import yaml
+        return yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+
+    def test_job_test_carries_none_of_the_gating_keys(self):
+        # A REQUIRED check must publish exactly one context named `test` with
+        # no variation — `name:`, `strategy:` (a matrix multiplies the
+        # context name), `concurrency:` and `timeout-minutes:` (either can
+        # end the job `cancelled`, which no merge mechanism can override —
+        # see AGENTS.md's "A cancelled required check blocks the merge").
+        job = self._doc()["jobs"]["test"]
+        for key in ("name", "strategy", "concurrency", "timeout-minutes"):
+            self.assertNotIn(key, job,
+                             f"job `test` must not declare `{key}:` — it "
+                             "publishes a context meant to be REQUIRED on "
+                             "main (cms-platform#437)")
+
+    def test_workflow_declares_no_concurrency(self):
+        doc = self._doc()
+        self.assertNotIn("concurrency", doc,
+                         "ci.yml must declare no concurrency group at all — "
+                         "a cancelled run would leave the required `test` "
+                         "context cancelled with no merge mechanism able to "
+                         "override it")
+
+    def test_salient_step_is_right_after_the_skills_evals_checkout(self):
+        steps = self._doc()["jobs"]["test"]["steps"]
+        own_checkout_idx = next(
+            i for i, s in enumerate(steps)
+            if (s.get("uses") or "").startswith("actions/checkout@")
+            and (s.get("with") or {}).get("path") == "skills-evals")
+        self.assertEqual(steps[own_checkout_idx + 1].get("id"), "salient",
+                         "the salient-detection step must be the step "
+                         "immediately after the skills-evals checkout")
+
+    def test_skills_evals_checkout_has_fetch_depth_two(self):
+        steps = self._doc()["jobs"]["test"]["steps"]
+        own_checkout = next(
+            s for s in steps
+            if (s.get("uses") or "").startswith("actions/checkout@")
+            and (s.get("with") or {}).get("path") == "skills-evals")
+        self.assertEqual(own_checkout["with"].get("fetch-depth"), 2,
+                         "the salient step diffs HEAD^1..HEAD, which needs "
+                         "the merge commit's parent — a depth-1 (default) "
+                         "checkout would not have it")
+
+    def test_every_step_after_salient_gates_on_its_output(self):
+        steps = self._doc()["jobs"]["test"]["steps"]
+        salient_idx = next(i for i, s in enumerate(steps)
+                           if s.get("id") == "salient")
+        for step in steps[salient_idx + 1:]:
+            cond = step.get("if", "")
+            self.assertIn("steps.salient.outputs.run", cond,
+                         f"step {step.get('name')!r} runs after `salient` "
+                         "but its `if:` does not reference "
+                         "steps.salient.outputs.run")
+
+    def test_final_step_reports_the_skip(self):
+        steps = self._doc()["jobs"]["test"]["steps"]
+        skip_steps = [s for s in steps
+                     if "steps.salient.outputs.run != 'true'" in s.get("if", "")]
+        self.assertEqual(len(skip_steps), 1,
+                         "expected exactly one step gated on the negative "
+                         "salient condition")
+        self.assertEqual(steps[-1], skip_steps[0],
+                         "the no-salient-change notice must be the LAST step, "
+                         "so it always runs when the suite is skipped")
+
+
+class CiSalientDetectionTests(unittest.TestCase):
+    """Executes ci.yml's own `salient` step script against a real git repo.
+
+    Both the script body and its SALIENT_PATHS env are extracted from the
+    workflow with PyYAML rather than duplicated here, so a future edit to
+    either is exercised by these tests automatically instead of silently
+    drifting from what actually runs in CI.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        doc = yaml.safe_load(cls.WORKFLOW.read_text(encoding="utf-8"))
+        steps = doc["jobs"]["test"]["steps"]
+        step = next(s for s in steps if s.get("id") == "salient")
+        cls.SCRIPT = step["run"]
+        cls.SALIENT_PATHS = step["env"]["SALIENT_PATHS"]
+
+    @staticmethod
+    def _git(repo: Path, *args: str) -> None:
+        env = {**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@example.com",
+              "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@example.com"}
+        subprocess.run(["git", *args], cwd=repo, env=env, check=True,
+                       capture_output=True, text=True)
+
+    def _repo_with_merge(self, tmp: Path, branch_files: dict[str, str]) -> Path:
+        """A base commit, a branch commit adding `branch_files`, and a
+        `--no-ff` merge back into main — so HEAD^1 is the base tip, matching
+        GitHub's synthetic merge-commit checkout for a pull_request event."""
+        repo = tmp / "repo"
+        repo.mkdir()
+        self._git(repo, "init", "-q", "-b", "main")
+        self._git(repo, "commit", "-q", "--allow-empty", "-m", "base")
+        self._git(repo, "checkout", "-q", "-b", "feature")
+        for rel, content in branch_files.items():
+            path = repo / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            self._git(repo, "add", rel)
+        self._git(repo, "commit", "-q", "-m", "feature")
+        self._git(repo, "checkout", "-q", "main")
+        self._git(repo, "merge", "--no-ff", "-q", "-m", "merge", "feature")
+        return repo
+
+    def _run(self, repo: Path, event_name: str,
+             salient_paths: str | None = None) -> tuple[subprocess.CompletedProcess, dict]:
+        output_path = repo.parent / "gh_output"
+        output_path.write_text("", encoding="utf-8")
+        env = {**os.environ, "EVENT_NAME": event_name,
+              "SALIENT_PATHS": self.SALIENT_PATHS if salient_paths is None else salient_paths,
+              "GITHUB_OUTPUT": str(output_path)}
+        result = subprocess.run(["bash", "-c", self.SCRIPT], cwd=repo, env=env,
+                                capture_output=True, text=True)
+        outputs = {}
+        for line in output_path.read_text(encoding="utf-8").splitlines():
+            if "=" in line:
+                key, value = line.split("=", 1)
+                outputs[key] = value
+        return result, outputs
+
+    def test_salient_change_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(Path(tmp), {"harness/x.py": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_non_salient_change_skips(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(Path(tmp), {"AGENTS.md": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "false")
+
+    def test_exact_root_file_readme_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(Path(tmp), {"README.md": "x"})
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_push_event_always_runs_without_diffing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            # A non-salient change on a branch that will never even be
+            # diffed: EVENT_NAME=push must short-circuit before HEAD^1 is
+            # ever consulted.
+            repo = self._repo_with_merge(Path(tmp), {"AGENTS.md": "x"})
+            result, outputs = self._run(repo, "push")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+
+    def test_missing_head_parent_fails_toward_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp) / "repo"
+            repo.mkdir()
+            self._git(repo, "init", "-q", "-b", "main")
+            self._git(repo, "commit", "-q", "--allow-empty", "-m", "only")
+            result, outputs = self._run(repo, "pull_request")
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(outputs.get("run"), "true")
+            self.assertIn("::warning::", result.stdout)
+
+    def test_unsupported_salient_entry_fails_loudly(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = self._repo_with_merge(Path(tmp), {"AGENTS.md": "x"})
+            result, outputs = self._run(repo, "push", salient_paths="src/*.py\n")
+            self.assertNotEqual(result.returncode, 0)
+            self.assertNotIn("run", outputs)
+
+
+class DependabotSweepTests(unittest.TestCase):
+    """Executes dependabot-auto-merge.yml's `sweep` script against stub
+    gh/git binaries — never the real network — matching the shape used
+    elsewhere in this suite for exercising a workflow's own embedded shell
+    against canned tool output.
+
+    The script is extracted from the workflow with PyYAML rather than
+    duplicated here, so a future edit to it is exercised automatically.
+    """
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml"
+    HEAD_SHA = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
+    REPO = "Adam-S-Daniel/skills-evals"
+    SELF_WORKFLOW = "Dependabot auto-merge"
+
+    GH_STUB = """#!/usr/bin/env bash
+set -u
+echo "$*" >> "$FIXTURES/calls.log"
+case "$1" in
+  pr)
+    case "$2" in
+      list)
+        cat "$FIXTURES/pr-numbers.txt"
+        exit 0
+        ;;
+      view)
+        num="$3"
+        counter="$FIXTURES/.view-count-${num}"
+        count=0
+        if [ -f "$counter" ]; then
+          count=$(cat "$counter")
+        fi
+        count=$((count + 1))
+        echo "$count" > "$counter"
+        if [ "$count" -gt 1 ] && [ -f "$FIXTURES/pr-${num}.after.json" ]; then
+          cat "$FIXTURES/pr-${num}.after.json"
+        else
+          cat "$FIXTURES/pr-${num}.json"
+        fi
+        exit 0
+        ;;
+      merge)
+        last="${!#}"
+        for bad in ${MERGE_FAILS:-}; do
+          if [ "$bad" = "$last" ]; then
+            echo "X Pull request #${last} is not mergeable: refused" >&2
+            exit 1
+          fi
+        done
+        exit 0
+        ;;
+      update-branch)
+        exit 0
+        ;;
+      *)
+        exit 90
+        ;;
+    esac
+    ;;
+  api)
+    echo '{"message":"Not Found"}'
+    exit 1
+    ;;
+  *)
+    exit 90
+    ;;
+esac
+"""
+
+    GIT_STUB = """#!/usr/bin/env bash
+set -u
+case "$1" in
+  fetch)
+    exit 0
+    ;;
+  diff)
+    echo ".github/workflows/ci.yml"
+    exit 0
+    ;;
+  *)
+    exit 0
+    ;;
+esac
+"""
+
+    @classmethod
+    def setUpClass(cls):
+        import yaml
+        doc = yaml.safe_load(cls.WORKFLOW.read_text(encoding="utf-8"))
+        steps = doc["jobs"]["sweep"]["steps"]
+        step = next(s for s in steps if s.get("name") == "Sweep open Dependabot PRs")
+        cls.SCRIPT = step["run"]
+
+    def _bin_dir(self) -> Path:
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        gh = d / "gh"
+        gh.write_text(self.GH_STUB, encoding="utf-8")
+        gh.chmod(0o755)
+        git = d / "git"
+        git.write_text(self.GIT_STUB, encoding="utf-8")
+        git.chmod(0o755)
+        return d
+
+    def _fixtures_dir(self) -> Path:
+        d = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, d, ignore_errors=True)
+        return d
+
+    def _pr(self, number: int, **overrides) -> dict:
+        pr = {
+            "number": number,
+            "baseRefName": "main",
+            "headRefOid": self.HEAD_SHA,
+            "mergeable": "MERGEABLE",
+            "mergeStateStatus": "CLEAN",
+            "statusCheckRollup": [
+                {"workflowName": "CI", "name": "test", "conclusion": "SUCCESS"},
+                {"workflowName": self.SELF_WORKFLOW, "name": "auto-merge",
+                 "conclusion": "SUCCESS"},
+            ],
+        }
+        pr.update(overrides)
+        return pr
+
+    def _write_pr(self, fixtures: Path, number: int, pr: dict, suffix: str = "") -> None:
+        (fixtures / f"pr-{number}{suffix}.json").write_text(json.dumps(pr), encoding="utf-8")
+
+    def _run(self, fixtures: Path, bin_dir: Path, numbers: list[int],
+             self_workflow: str | None = "Dependabot auto-merge",
+             merge_fails: str = "") -> subprocess.CompletedProcess:
+        (fixtures / "pr-numbers.txt").write_text(
+            "".join(f"{n}\n" for n in numbers), encoding="utf-8")
+        env = dict(os.environ)
+        env.pop("GH_TOKEN", None)
+        env.pop("GITHUB_TOKEN", None)
+        env["PATH"] = f"{bin_dir}{os.pathsep}{env['PATH']}"
+        env["FIXTURES"] = str(fixtures)
+        env["GITHUB_REPOSITORY"] = self.REPO
+        env["MERGE_FAILS"] = merge_fails
+        if self_workflow is None:
+            env.pop("SELF_WORKFLOW", None)
+        else:
+            env["SELF_WORKFLOW"] = self_workflow
+        return subprocess.run(["bash", "-c", self.SCRIPT], cwd=str(fixtures),
+                              env=env, capture_output=True, text=True)
+
+    def _calls(self, fixtures: Path) -> list[str]:
+        log = fixtures / "calls.log"
+        if not log.is_file():
+            return []
+        return log.read_text(encoding="utf-8").splitlines()
+
+    # -- (a) every check green, at least one from outside -> pinned merge --
+
+    def test_all_checks_green_including_outside_merges_pinned_to_head(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 42, self._pr(42))
+        result = self._run(fixtures, bin_dir, [42])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        merge_calls = [c for c in self._calls(fixtures) if c.startswith("pr merge")]
+        self.assertEqual(len(merge_calls), 1, self._calls(fixtures))
+        self.assertIn(f"--match-head-commit {self.HEAD_SHA}", merge_calls[0])
+        self.assertTrue(merge_calls[0].endswith("42"), merge_calls[0])
+        self.assertIn("merged=1 updated=0 skipped=0 blocked=0 failed=0", result.stdout)
+
+    # -- (b) only this workflow's own checks -> no merge --------------------
+
+    def test_only_own_workflow_checks_skips_without_merging(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        pr = self._pr(43, statusCheckRollup=[
+            {"workflowName": self.SELF_WORKFLOW, "name": "auto-merge",
+             "conclusion": "SUCCESS"},
+        ])
+        self._write_pr(fixtures, 43, pr)
+        result = self._run(fixtures, bin_dir, [43])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse([c for c in self._calls(fixtures) if c.startswith("pr merge")])
+        self.assertIn("every check on its head comes from this workflow", result.stdout)
+        self.assertIn("skipped=1", result.stdout)
+
+    # -- (c) a still-pending check -> no merge -------------------------------
+
+    def test_a_pending_check_skips_without_merging(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        pr = self._pr(44, statusCheckRollup=[
+            {"workflowName": "CI", "name": "test", "conclusion": None},
+            {"workflowName": self.SELF_WORKFLOW, "name": "auto-merge",
+             "conclusion": "SUCCESS"},
+        ])
+        self._write_pr(fixtures, 44, pr)
+        result = self._run(fixtures, bin_dir, [44])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse([c for c in self._calls(fixtures) if c.startswith("pr merge")])
+
+    # -- (d) refused merge, head moved -> skip, never update-branch ---------
+
+    def test_refused_merge_with_moved_head_skips_without_updating(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 45, self._pr(45, mergeStateStatus="BEHIND"))
+        self._write_pr(fixtures, 45, {"headRefOid": "b" * 40}, suffix=".after")
+        result = self._run(fixtures, bin_dir, [45], merge_fails="45")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse([c for c in self._calls(fixtures)
+                          if c.startswith("pr update-branch")])
+        self.assertIn("its head moved", result.stdout)
+        self.assertIn("skipped=1", result.stdout)
+
+    # -- (e) empty SELF_WORKFLOW -> refuse outright --------------------------
+
+    def test_empty_self_workflow_refuses_to_run(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        result = self._run(fixtures, bin_dir, [46], self_workflow="")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse([c for c in self._calls(fixtures) if c.startswith("pr merge")])
+
+    # -- (f) a non-sha headRefOid -> no merge --------------------------------
+
+    def test_non_sha_head_ref_oid_skips_without_merging(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 47, self._pr(47, headRefOid="abc"))
+        result = self._run(fixtures, bin_dir, [47])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse([c for c in self._calls(fixtures) if c.startswith("pr merge")])
+
+    # -- (g) refused merge, same head, BEHIND -> update-branch ---------------
+
+    def test_refused_merge_behind_same_head_updates_the_branch(self):
+        fixtures = self._fixtures_dir()
+        bin_dir = self._bin_dir()
+        self._write_pr(fixtures, 48, self._pr(48, mergeStateStatus="BEHIND"))
+        result = self._run(fixtures, bin_dir, [48], merge_fails="48")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue([c for c in self._calls(fixtures)
+                         if c.startswith("pr update-branch")], self._calls(fixtures))
+        self.assertIn("merged=0 updated=1 skipped=0 blocked=0 failed=0", result.stdout)
+
+
+class DependabotAutoMergeStructureTests(unittest.TestCase):
+    """job `auto-merge` must merge nothing (cms-platform#437): gh merges a
+    Dependabot PR on the spot the moment nothing is required, so the old
+    'Attempt auto-merge' `gh pr merge --auto` step is gone rather than kept
+    as a believed-harmless no-op."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependabot-auto-merge.yml"
+
+    def test_auto_merge_job_step_names_are_exact(self):
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        names = [s.get("name") for s in doc["jobs"]["auto-merge"]["steps"]]
+        self.assertEqual(
+            names,
+            ["Checkout", "Fetch base ref", "Get Dependabot metadata",
+             "Verify only manifest paths changed",
+             "Disable auto-merge (path check failed)"],
+            "job `auto-merge` must merge nothing (cms-platform#437: gh "
+            "merges a Dependabot PR on the spot when nothing is required, "
+            "so an 'Attempt auto-merge' step here is never safe)")
 
 
 class EndToEndTests(unittest.TestCase):

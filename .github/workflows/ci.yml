@@ -29,22 +29,14 @@ name: CI
 # pull_request. Observed on 82596ff: same commit, same job, finishing 03:38:30
 # and 03:39:14. Both events carry the same list; keep the two in step.
 #
-# A plain workflow-level filter is the right tool here, not always-run +
-# early-skip. That shape exists to keep a REQUIRED check present on every pull
-# request, and repo-settings' fleet.yml sets `required_status_checks: []` for
-# this fleet — nothing here gates a merge, so a filtered-out run cannot
-# deadlock one.
+# `test` now publishes a context meant to be REQUIRED on main (cms-platform#437
+# declares it in repo-settings' fleet.yml), so a pull_request run must always
+# exist: the filter moved inside the job (step `salient`), the push filter
+# stays as the cheap workflow-level one because a push to main publishes no
+# merge gate, and SALIENT_PATHS must equal on.push.paths (CiDispatchTests pins
+# both).
 on:
   pull_request:
-    paths:
-      - .github/workflows/ci.yml
-      - .github/workflows/eval.yml
-      - evals/**
-      - harness/**
-      - scripts/**
-      - test/**
-      - README.md
-      - DESIGN.md
   push:
     branches: [main]
     paths:
@@ -57,16 +49,16 @@ on:
       - README.md
       - DESIGN.md
   # Bare — no inputs, and deliberately no `paths:`, which GitHub ignores on a
-  # dispatch anyway. That is the point rather than an omission: the filters
-  # above are what make a docs-only pull request cheap, and they are therefore
+  # dispatch anyway. That is the point rather than an omission: the push
+  # filter above is what makes a docs-only push cheap, and it is therefore
   # also what leaves running this suite against such a commit with no button at
   # all. Added for the same reason as propagation.yml's: a fix merged and
   # confirming it was impossible — `422 Workflow does not have
   # 'workflow_dispatch' trigger` — so verification waited on the next
-  # qualifying push. Nothing to guard against here, unlike propagation.yml:
-  # this workflow declares no `concurrency` group at any level, so a manual run
-  # cancels nothing, and fleet.yml leaves the repo on the default
-  # `required_status_checks: []` regardless.
+  # qualifying push. Unlike propagation.yml, the dispatch is still safe
+  # because this workflow declares no `concurrency` group, so a manual run
+  # cancels nothing; the residual is a human cancelling a dispatched run on a
+  # PR head, which leaves the required `test` context cancelled until re-run.
   workflow_dispatch:
 
 # Least privilege: the suite is hermetic — no network, no pushes — so a read
@@ -81,8 +73,105 @@ jobs:
       - name: Check out skills-evals
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          fetch-depth: 2
           path: skills-evals
           persist-credentials: false
+
+      - name: Did this pull request touch a salient path?
+        id: salient
+        working-directory: skills-evals
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          SALIENT_PATHS: |
+            .github/workflows/ci.yml
+            .github/workflows/eval.yml
+            evals/**
+            harness/**
+            scripts/**
+            test/**
+            README.md
+            DESIGN.md
+        run: |
+          set -euo pipefail
+
+          # SALIENT_PATHS must equal on.push.paths above (CiDispatchTests pins
+          # both). Validate its shape up front: each non-empty line must be
+          # either an exact path (no `*` anywhere) or a `<prefix>/**` glob
+          # with no other `*` in it — a shape this matcher cannot honour must
+          # fail loudly here, never silently mismatch every changed file
+          # below.
+          while IFS= read -r entry; do
+            if [ -z "$entry" ]; then
+              continue
+            fi
+            case "$entry" in
+              */\*\*)
+                prefix="${entry%/**}"
+                case "$prefix" in
+                  *'*'*)
+                    echo "::error::SALIENT_PATHS entry '${entry}' has a '*' outside its trailing /** — this matcher cannot honour it"
+                    exit 1
+                    ;;
+                esac
+                ;;
+              *'*'*)
+                echo "::error::SALIENT_PATHS entry '${entry}' is neither an exact path nor a <prefix>/** glob — this matcher cannot honour it"
+                exit 1
+                ;;
+              *)
+                ;;
+            esac
+          done <<<"$SALIENT_PATHS"
+
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "event is ${EVENT_NAME}, not pull_request — always running"
+            exit 0
+          fi
+
+          # The checkout above is GitHub's synthetic merge commit for the PR
+          # (actions/checkout's default ref for a pull_request event), whose
+          # first parent is the base branch tip — so HEAD^1..HEAD is exactly
+          # the PR's changeset.
+          if ! changed=$(git diff --name-only HEAD^1 HEAD 2>&1); then
+            echo "::warning::$(head -n1 <<<"$changed") -- could not diff against HEAD^1; running the suite rather than risking a false skip"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          run=false
+          while IFS= read -r file; do
+            if [ -z "$file" ]; then
+              continue
+            fi
+            while IFS= read -r entry; do
+              if [ -z "$entry" ]; then
+                continue
+              fi
+              case "$entry" in
+                */\*\*)
+                  prefix="${entry%/**}"
+                  case "$file" in
+                    "${prefix}"/*)
+                      run=true
+                      ;;
+                  esac
+                  ;;
+                *)
+                  if [ "$file" = "$entry" ]; then
+                    run=true
+                  fi
+                  ;;
+              esac
+            done <<<"$SALIENT_PATHS"
+          done <<<"$changed"
+
+          echo "run=${run}" >> "$GITHUB_OUTPUT"
+          if [ "$run" = "true" ]; then
+            echo "a salient path changed — running the suite"
+          else
+            echo "no salient path changed — skipping the suite; \`test\` still reports success so the required context is present"
+          fi
 
       # Side-by-side, same convention as eval.yml and propagation.yml: this
       # is what makes the harness's sibling-directory default (`../agentskills`
@@ -90,6 +179,7 @@ jobs:
       # is what lets TestIssue63::test_registries_agree_with_agentskills_own_file
       # actually run in CI instead of skipping every time.
       - name: Check out agentskills registry (side-by-side)
+        if: steps.salient.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Adam-S-Daniel/agentskills
@@ -101,6 +191,7 @@ jobs:
       # manifest out of this checkout. Without it they skip with a printed
       # reason and CI never exercises the delivery path at all.
       - name: Check out _agent-guidance (side-by-side)
+        if: steps.salient.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: Adam-S-Daniel/_agent-guidance
@@ -108,10 +199,16 @@ jobs:
           persist-credentials: false
 
       - name: Install dependencies
+        if: steps.salient.outputs.run == 'true'
         # markdown-it-py is what harness/guidance.py parses a guidance
         # section's extent with, and the hermetic suite imports it. Pinned
         # exact, same convention as eval.yml.
         run: pip install pyyaml markdown-it-py==4.2.0
       - name: Run tests
+        if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals
         run: python3 test/run_tests.py
+
+      - name: No salient path changed
+        if: steps.salient.outputs.run != 'true'
+        run: echo "::notice::No salient path changed on this pull request — skipping the suite; this step's success is what keeps the required \`test\` context present."
