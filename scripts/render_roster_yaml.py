@@ -134,10 +134,18 @@ def render(roster: dict, run_id: str, eval_results_commit: str) -> str:
         lines.append(f"  - id: {_scalar(entry.get('id'))}")
         lines.append(f"    last_seen: {_scalar(entry.get('last_seen'))}")
     source = roster.get("source") or {}
+    census_source = (f"the usage census published at {source.get('census_at')}"
+                     if source.get("census_at")
+                     else "no usable usage census")
+    provenance_from = (
+        "the committed evals/roster.yml, the Models API catalogue fetched at "
+        f"{source.get('models_api_at') or 'an unrecorded time'}, and "
+        f"{census_source}; rendered from harness/roster.py's proposal")
     lines += [
         "",
         "provenance:",
         f"  seeded: {_block('proposed by harness/roster.py and rendered by scripts/render_roster_yaml.py; merged by a human, per ADR 0001', '    ')}",
+        f"  from: {_block(provenance_from, '    ')}",
         f"  run_id: {_scalar(run_id)}",
         f"  eval_results_commit: {_scalar(eval_results_commit)}",
         f"  models_api_at: {_scalar(source.get('models_api_at'))}",

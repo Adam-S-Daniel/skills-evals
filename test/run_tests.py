@@ -27973,15 +27973,18 @@ class TestIssue147(unittest.TestCase):
                         "(ADR 0001); it is committed, not computed")
         self.assertEqual(self._lint(self._committed()), [])
 
-    def test_the_committed_roster_records_its_own_provenance(self):
+    def _assert_roster_provenance(self, document):
         # A hand-seeded file with no account of where its values came from
         # is indistinguishable from one somebody guessed.
-        provenance = self._committed().get("provenance")
+        provenance = document.get("provenance")
         self.assertIsInstance(provenance, dict)
         for key in ("seeded", "from"):
             self.assertIsInstance(provenance.get(key), str)
             self.assertTrue(provenance[key].strip())
-        self.assertIsInstance(self._committed().get("generated_at"), str)
+        self.assertIsInstance(document.get("generated_at"), str)
+
+    def test_the_committed_roster_records_its_own_provenance(self):
+        self._assert_roster_provenance(self._committed())
 
     def test_every_lint_clause_has_a_mutation_that_reds_it(self):
         """A lint whose clauses cannot be made to fire is a green light
@@ -28435,6 +28438,10 @@ class TestIssue147(unittest.TestCase):
             self.assertEqual(rc.returncode, 0, rc.stderr)
             rendered = yaml.safe_load(out.read_text(encoding="utf-8"))
         self.assertEqual(self._lint(rendered), [])
+        self._assert_roster_provenance(rendered)
+        self.assertIn("evals/roster.yml", rendered["provenance"]["from"])
+        self.assertIn("Models API", rendered["provenance"]["from"])
+        self.assertIn("usage census", rendered["provenance"]["from"])
         self.assertEqual(rendered["provenance"]["run_id"], "1234567890")
         self.assertEqual(rendered["provenance"]["eval_results_commit"], "abc1234")
         self.assertEqual([a["id"] for a in rendered["arms"]],
