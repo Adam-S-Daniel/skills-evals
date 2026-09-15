@@ -28320,10 +28320,11 @@ class TestIssue147(unittest.TestCase):
 
     def _run_proposal_step(self, status, pages, *, computed=None,
                            listing_error=False, run_results=False,
-                           results_push_error=False):
+                           results_push_error=False, source=None):
         """Run eval.yml's real proposal shell with only recording shims."""
+        source = Path(source) if source is not None else REPO_ROOT
         document = yaml.safe_load(
-            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+            (source / ".github" / "workflows" / "eval.yml").read_text(
                 encoding="utf-8"))
         script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
                       if step.get("name") == "Propose a roster change")
@@ -28331,9 +28332,35 @@ class TestIssue147(unittest.TestCase):
             root = Path(tmp)
             temp = root / "temp"
             tools = root / "bin"
+            workspace = root / "workspace"
             temp.joinpath("roster").mkdir(parents=True)
             temp.joinpath("roster-inputs").mkdir()
             tools.mkdir()
+            # The real workflow shells normally run from the repository
+            # checkout.  Stage only their runtime inputs here so their branch
+            # switches, badge and roster writes cannot touch the test caller.
+            workspace.joinpath("scripts").mkdir(parents=True)
+            workspace.joinpath("harness").mkdir()
+            workspace.joinpath("evals").mkdir()
+            for relative in ("scripts/render_roster_yaml.py",
+                             "scripts/make_badge.py",
+                             "harness/roster.py",
+                             "harness/timeweeks.py",
+                             "evals/roster.yml"):
+                shutil.copy2(source / relative, workspace / relative)
+            # The publication shell snapshots and restores `results/` before
+            # adding it.  Supply a complete, deterministic run so that path
+            # is exercised rather than hidden behind an empty directory.
+            for arm, passed, judge in (("with_skill", 3, 8),
+                                       ("without_skill", 2, 7)):
+                summary = workspace / "results" / "workflow-path-audit" / \
+                    "20260915T000000Z" / arm / "summary.json"
+                summary.parent.mkdir(parents=True, exist_ok=True)
+                summary.write_text(json.dumps({
+                    "objective_checks": [
+                        {"passed": index < passed} for index in range(3)],
+                    "judge": {"overall": judge},
+                }), encoding="utf-8")
             roster_doc = computed or self._ordinary_computed_roster(multi_arm=False)
             roster_doc = copy.deepcopy(roster_doc)
             roster_doc["proposal"] = {"status": status, "changes": []}
@@ -28341,6 +28368,8 @@ class TestIssue147(unittest.TestCase):
                 json.dumps(roster_doc), encoding="utf-8")
             temp.joinpath("roster-inputs", "summary.md").write_text(
                 "Synthetic summary.\n", encoding="utf-8")
+            temp.joinpath("eval-key").write_text(
+                "workflow-path-audit", encoding="utf-8")
             pages_path = root / "pages.json"
             calls_path = root / "calls.jsonl"
             pages_path.write_text(json.dumps(pages), encoding="utf-8")
@@ -28390,27 +28419,18 @@ elif 'worktree' in args and 'remove' in args:
                    "RUNNER_TEMP": str(temp), "RUN_ID": "1", "REPO": "example/repo",
                    "SERVER_URL": "https://example.com", "GITHUB_TOKEN": "synthetic",
                    "GH_TOKEN": "synthetic", "PROPOSAL_CALLS": str(calls_path),
-                   "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(REPO_ROOT),
+                   "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(workspace),
                    "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0",
                    "PROPOSAL_RESULTS_PUSH_ERROR": "1" if results_push_error else "0",
                    "GITHUB_STEP_SUMMARY": str(temp / "summary")}
-            run = subprocess.run(["/bin/bash", "-c", script], cwd=REPO_ROOT,
+            run = subprocess.run(["/bin/bash", "-c", script], cwd=workspace,
                                  env=env, capture_output=True, text=True, timeout=60)
             results_run = None
-            created_results = False
             if run_results and run.returncode == 0:
-                results_dir = REPO_ROOT / "results"
-                if not results_dir.exists():
-                    results_dir.mkdir()
-                    created_results = True
                 results_script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
                                       if step.get("name") == "Build the badge over the run window, commit, and push")
-                try:
-                    results_run = subprocess.run(["/bin/bash", "-c", results_script], cwd=REPO_ROOT,
-                                                 env=env, capture_output=True, text=True, timeout=60)
-                finally:
-                    if created_results:
-                        results_dir.rmdir()
+                results_run = subprocess.run(["/bin/bash", "-c", results_script], cwd=workspace,
+                                             env=env, capture_output=True, text=True, timeout=60)
             calls = [json.loads(line) for line in calls_path.read_text(
                 encoding="utf-8").splitlines()] if calls_path.exists() else []
             body = temp.joinpath("proposal-body.md")
@@ -28568,16 +28588,63 @@ elif 'worktree' in args and 'remove' in args:
                 pushes = [call for call in calls if call[0] == "git" and "push" in call]
                 self.assertEqual(any("roster/proposal" in call for call in pushes), proposal_push, calls)
                 self.assertTrue(any("eval-results" in call for call in pushes), calls)
+                self.assertTrue(any(
+                    call[:3] == ["git", "commit", "-m"]
+                    and call[3] == "eval: workflow-path-audit run + badge + roster [skip ci]"
+                    for call in calls), calls)
                 if reason:
                     self.assertIn(reason, body)
 
-        run, _calls, _body, results_run = self._run_proposal_step(
+        run, calls, _body, results_run = self._run_proposal_step(
             "differs", [[bot]], computed=corrupted, run_results=True,
             results_push_error=True)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertIsNotNone(results_run)
         self.assertNotEqual(results_run.returncode, 0,
                             results_run.stdout + results_run.stderr)
+        self.assertTrue(any(
+            call[:3] == ["git", "commit", "-m"]
+            and call[3] == "eval: workflow-path-audit run + badge + roster [skip ci]"
+            for call in calls), calls)
+
+    def test_proposal_shells_do_not_touch_their_source_fixture(self):
+        """Both real shells leave a caller's generated outputs byte-identical."""
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source"
+            for relative in (".github/workflows/eval.yml",
+                             "scripts/render_roster_yaml.py",
+                             "scripts/make_badge.py",
+                             "harness/roster.py",
+                             "harness/timeweeks.py",
+                             "evals/roster.yml"):
+                destination = source / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / relative, destination)
+            sentinels = {
+                source / "badges" / "workflow-path-audit.json": b"badge sentinel\n",
+                source / "roster" / "latest.json": b"roster sentinel\n",
+                source / "results" / "reviewer-preserve.txt": b"results sentinel\n",
+            }
+            for path, content in sentinels.items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            for results_push_error in (False, True):
+                with self.subTest(results_push_error=results_push_error):
+                    run, _calls, _body, results_run = self._run_proposal_step(
+                        "differs", [[bot]],
+                        computed=self._ordinary_computed_roster(multi_arm=True),
+                        run_results=True, results_push_error=results_push_error,
+                        source=source)
+                    self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                    self.assertIsNotNone(results_run)
+                    self.assertEqual(results_run.returncode != 0, results_push_error,
+                                     results_run.stdout + results_run.stderr)
+                    for path, content in sentinels.items():
+                        self.assertEqual(path.read_bytes(), content, path)
 
     def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
         # A percentage with no counts behind it is unfalsifiable from the
