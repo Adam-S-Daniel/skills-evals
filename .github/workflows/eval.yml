@@ -111,9 +111,9 @@
 #   from, and it holds the published roster and nothing else so that a future
 #   directory copy cannot publish billing data to a public branch.
 #
-#   Nothing in this workflow ever prints a response body. The roster step's
-#   ::warning:: carries an HTTP status code or an exception class name, and
-#   refresh_models.py is written to produce nothing else.
+#   The roster step's ::warning:: carries an HTTP status code or an exception
+#   class name, and refresh_models.py is written to produce nothing else. The
+#   token-exchange failure output below is a separate pre-existing path.
 #
 # * All five checkouts use `persist-credentials: false`; push auth is injected
 #   only in the two steps that push — the roster-proposal step and the final
