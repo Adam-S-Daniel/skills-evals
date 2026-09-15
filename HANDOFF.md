@@ -35,9 +35,9 @@ continuation at a clean checkpoint after the account-wide weekly meter rose
 from 22% at 15:49 UTC to 58% at 17:22 UTC. The remaining PR #153 merge and
 first-live-run milestone was estimated to cost another 6–10 percentage points,
 above his 5-point ceiling; completing and documenting this checkpoint was
-estimated at 2–3 points. Resume next week in either Codex or Claude. Do not
-launch another session before then, and do not repeat completed broad review
-without a new concern.
+estimated at 2–3 points. Likely resume next week in either Codex or Claude. Do not
+launch another session automatically; resume when Adam requests it. Do not
+repeat completed broad review without a new concern.
 
 ### Roster redesign: PR #153
 
@@ -77,8 +77,9 @@ records the preceding round-three state and its single test-helper finding.
 - No merge or live proposal dispatch occurred. Before merging, run the
   generated full suite and bounded adversarial confirmation, verify current
   PR CI plus legacy and `main` status surfaces, and accept the exact-head
-  baseline and propagation evidence. Merge with a merge commit, record the
-  expected merge SHA, close [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
+  baseline and propagation evidence. Merge with a merge commit using the
+  expected PR head, then verify the actual merge commit and its ancestry on
+  `main`. Close [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
   as superseded, then dispatch and verify the first real proposal run.
 
 ### Suite-fork guard: issue #152
@@ -165,9 +166,12 @@ no cleanup blocker remains.
 
 Portable resume sequence (Codex or Claude):
 
-1. Read this §0A and `/home/passp/repos/.evals-resume-20260915/CURRENT_SESSION.md`;
-   confirm the three worktrees above are clean and their branch heads match
-   this checkpoint.
+1. Read this Git-backed §0A and the
+   [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
+   If available, also read the local
+   `/home/passp/repos/.evals-resume-20260915/CURRENT_SESSION.md`. Fetch the
+   named remote refs and create dedicated worktrees when the listed local
+   paths do not exist; then confirm their heads match this checkpoint.
 2. From the PR #153 candidate worktree, run the generated multi-arm full suite
    in the already specified isolated archive environment, then perform the
    bounded final adversarial confirmation. Do not start another broad review
@@ -175,9 +179,9 @@ Portable resume sequence (Codex or Claude):
 3. Read current PR #153 CI/check conclusions and `main`; merge only after every
    required condition above is green. Verify the merge commit, close PR #129,
    then dispatch and verify the first live proposal run.
-4. Rebase or merge current `main` into the issue #152 branch, run only affected
-   verification, obtain its first independent review, and open its PR. Continue
-   #139 afterward. Leave PR #124 and both fixture lanes stopped.
+4. Merge current `main` into the issue #152 branch, run only affected
+   verification, obtain its first independent review, and open its PR.
+   Continue #139 afterward. Leave PR #124 and both fixture lanes stopped.
 
 ## 0. Session of 2026-09-13 (superseded where § 0A differs)
 
