@@ -4,7 +4,7 @@
 systematic-evals effort (skills and fleet guidance, six epics across five
 repositories), where it stands, what is parked and why, and how to pick it up.
 It was written by the orchestrator session when Adam paused the programme on
-2026-09-08 (decision 9 below) and **last updated on 2026-09-13** (see § 0; the 2026-09-08 state after #129's
+2026-09-08 (decision 9 below) and **last updated on 2026-09-15** (see § 0A; § 0 preserves the September 13 session, and the 2026-09-08 state after #129's
 round 14, decision 11, follows it): #131 and #130 merged in the parked-PR wave, #129 ran a
 fourteenth review round, was NOT CLEAN on both halves again, and is now answered
 — revert round 14's ITEM 2, then redesign the roster's denominator around a
@@ -28,7 +28,98 @@ reconstructed from memory.
   status blockquote at the top of its body and a "Review rounds" record with
   each round's findings, fix-round session links and verified counts.
 
-## 0. Session of 2026-09-13 — RESUME HERE (supersedes § 7 where they differ)
+## 0A. Session of 2026-09-15 — RESUME HERE
+
+This section supersedes the September 13 state below. Adam requested a fresh
+top-level Codex session at the next clean checkpoint. No further fixture work
+was authorized; the stopped skill and guidance fixture lanes remain stopped.
+
+### Roster redesign: PR #153
+
+[PR #153](https://github.com/Adam-S-Daniel/skills-evals/pull/153) was based on
+`6136234` and conflicted with the subsequently merged guidance work on `main`
+`7d26e76`. The session reconciled the two in merge commit `11de068`, preserving
+the guidance dispatch input, timeout checks, environment allowlists, and the
+committed-roster/proposal distinction. A standalone timeout test now pins its
+fixture model so it reaches the timeout check in its partial harness copy.
+
+A separate fix, [`4766e39`](https://github.com/Adam-S-Daniel/skills-evals/commit/4766e39c2046780a878fcace9fba1ff55bcc62c0), repairs generated proposal provenance: the renderer
+omitted `provenance.from`, which the committed-roster CI check requires. Its new
+regression assertions run generated output through that existing provenance contract:
+one test fails before the fix and passes after it.
+
+Both commits are pushed to `claude/skills-evals-147`; the remote branch was
+fetched and verified to contain the exact `4766e39` commit. The
+[checkpoint report](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5683335519)
+records verification and the outstanding review.
+
+- The original `6136234` head was independently verified: **1,286 tests,
+  2 skipped, exit 0**; propagation **164 tests, 1 skipped, exit 0**. Tracked
+  source fingerprints matched before and after. The historical third skip
+  was a root-only permission-test skip; this WSL user can execute that test.
+- The merged test denominator is **1,438**: 1,286 + 1,184 on current main
+  - 1,032 shared tests. The provenance regression strengthens an existing
+  test, so the count is unchanged.
+- Final candidate `4766e39`: `python3 test/run_tests.py` ran **1,438 tests,
+  2 skipped, exit 0**; `python3 test/test_propagation.py` ran **164 tests,
+  1 skipped, exit 0**. The worktree is clean and all workers have released
+  their trees with no remaining child processes. Fixture parity was rerun
+  against `7d26e76`: all 13 common skill fixtures have
+  identical per-check results and exits, **98 checks per revision**. This
+  supersedes the interrupted worker's unpreserved claim of 109 checks; that
+  earlier denominator was not independently reproduced.
+- The code review is incomplete, and the separate adversarial review of the
+  candidate has not run. **Do not merge on these test results alone.**
+- An additional workflow defect is reproduced but not fixed: the proposal
+  tracking-issue lookup accepts the marker in any issue's body, without
+  checking who created it. A synthetic ordinary-user issue containing the
+  marker was selected and closed by the actual workflow script. Review the
+  tracking-issue ownership and pagination contract before extending it.
+
+### InstructionsLoaded receipts: _agent-guidance PR #124
+
+[_agent-guidance PR #124](https://github.com/Adam-S-Daniel/_agent-guidance/pull/124)
+remains at `6e4d3b2`. Round 5 is **not clean**: the code reviewer reproduced a
+fallback race that overwrites a newer unread receipt, and the claimed bounded
+receipt read is followed by an unbounded reread that can still block if the
+file changes type. Both independently prompted reviewers produced consistent
+synthetic receipt measurements; the adversarial worker was then stopped by an
+automated security filter before completing its review report. Its partial
+measurements survive, but are not a completed review.
+
+The code review's full suite reports **1,797 passed, 0 failed, exit 0**. The
+old root-run count was 1,790: seven existing permission assertions run only
+for a non-root user and all seven passed here, resolving the difference.
+All three separate gates pass. The source branch was not changed, and it
+also conflicts with current `main`.
+
+The [round 5 checkpoint report](https://github.com/Adam-S-Daniel/_agent-guidance/pull/124#issuecomment-5683345936)
+preserves both findings, their reproduction results, and verification limits.
+
+This was the review after the last previously authorized fix round. Follow the
+existing decision process before starting another fix round; do not silently
+treat this handoff as an additional fix-round authorization.
+
+### Local continuation pointers
+
+Persistent session artifacts are under the local workspace's
+`.evals-resume-20260915/`, including `START_HERE.md`, verifier
+logs, review reports, and a usage audit. Temporary `/tmp` artifacts disappeared
+at the previous interruption; keep new logs in persistent workspace storage.
+
+- Candidate worktree: `skills-evals/.claude/worktrees/codex-reconcile-evals-20260915`,
+  local branch `codex/reconcile-evals-20260915`.
+- Original-head verification worktree: `skills-evals/.claude/worktrees/codex-resume-evals-20260914`.
+- Handoff worktree: `skills-evals/.claude/worktrees/codex-handoff-evals-20260915`,
+  branch `codex/handoff-evals-20260915`.
+- Receipt source worktree: `_agent-guidance/.claude/worktrees/codex-resume-receipts-20260914`.
+
+Next: read the final reports and current PR heads; finish PR #153's required
+reviews, address their findings in a fresh worker, and repeat only verification
+affected by changes. The first real proposal dispatch still follows a reviewed
+merge. Then continue with #152 and #139, respecting the receipt-review hold.
+
+## 0. Session of 2026-09-13 (superseded where § 0A differs)
 
 Orchestrator session `session_01V1or9W61binLi5mFQXyKKR` (Fable 5.1), started
 13:58 UTC under Adam's instruction to use the remaining weekly allowance
