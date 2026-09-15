@@ -36,12 +36,25 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import init_probe
 from .init_probe import ProbeError, ProbeFacts
+
+
+# S1-a-2. The one timeout predicate lives in harness/guidance.py, beside the
+# ceiling and the error type it raises, and every function in this file that
+# hands a timeout to a subprocess API calls it on entry. `guidance` is
+# imported inside those functions rather than at module scope — guidance.py
+# imports run_canary, and this package is imported from run_eval/
+# run_propagation while guidance is still initialising — so the directory it
+# lives in has to be reachable from here whichever entry point got us in.
+_HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
+if _HARNESS_DIR not in sys.path:
+    sys.path.insert(0, _HARNESS_DIR)
 
 PASS = "PASS"
 FAIL = "FAIL"
@@ -347,6 +360,9 @@ def _delivery_finding(expected: set, delivered: Counter, channel: str) -> Findin
 def _run_hook(hook: Path, *, scratch: Scratch, env_extra: dict,
               timeout: int) -> str:
     """Run skills-bootstrap.sh and return its `additionalContext` verdict."""
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(timeout, "arms._run_hook(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     env = init_probe.build_env(home=scratch.home, tmpdir=scratch.tmp,
                                extra=env_extra)
     try:
@@ -438,6 +454,9 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
     cache records the checkout's HEAD. That assertion would ship red on day
     one and be muted by week one.
     """
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(ctx.timeout, "arms.arm_plugin_marketplace(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     scratch = make_scratch(ctx.root, "plugin-marketplace")
     control = _probe(scratch, timeout=ctx.timeout)
     if any(":" in name for name in control.skills):

@@ -26,9 +26,18 @@ import os
 import re
 import secrets
 import subprocess
+import sys
 from pathlib import Path
 
 from . import invisibles, wrapping
+
+# S1-a-2. The one timeout predicate lives in harness/guidance.py. It is
+# imported inside the sink below rather than at module scope (guidance.py
+# imports run_canary, and this package is imported from run_eval while
+# guidance is still initialising), so harness/ has to be reachable from here.
+_HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
+if _HARNESS_DIR not in sys.path:
+    sys.path.insert(0, _HARNESS_DIR)
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
@@ -137,6 +146,13 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     the UnicodeEncodeError a prompt carrying a lone surrogate raises on the
     way into the child's stdin.
     """
+    # S1-a-2. The ceiling sits at the SINK, and main's extraction of the CLI
+    # call out of `score()` moved the sink here: this is now the one function
+    # in this module that hands a timeout to subprocess, for both the
+    # absolute (`score`) and the pairwise (`score_pairwise`) judge.
+    import guidance  # noqa: PLC0415 — cycle-avoidance, see the preamble
+    guidance.check_timeout(timeout, "judge._run_judge_cli(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
     cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
           "--output-format", "json", "--permission-mode", "bypassPermissions"]
     if model:
