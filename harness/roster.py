@@ -117,6 +117,79 @@ def _stderr(message: str) -> None:
     print(f"roster: {message}", file=sys.stderr)
 
 
+def committed_roster_problems(document) -> list[str]:
+    """Return every violation of the reviewed roster-file contract.
+
+    This is deliberately shared by CI's committed-file test and the proposal
+    publication sink.  A generated file is only useful when a reviewer can
+    merge it without making the default model selection invalid.
+    """
+    problems: list[str] = []
+    if not isinstance(document, dict):
+        return ["the roster is not a mapping"]
+    if document.get("schema") != 1:
+        problems.append(f"`schema` is {document.get('schema')!r}, not 1")
+    arms = document.get("arms")
+    arm_ids: list[str] = []
+    if not isinstance(arms, list) or not arms:
+        problems.append("`arms` is not a non-empty list")
+    else:
+        for index, entry in enumerate(arms):
+            if not (isinstance(entry, dict)
+                    and isinstance(entry.get("id"), str) and entry["id"]):
+                problems.append(f"`arms[{index}]` has no non-empty string `id`")
+            else:
+                arm_ids.append(entry["id"])
+    for seat in ("judge", "preflight"):
+        entry = document.get(seat)
+        if not (isinstance(entry, dict)
+                and isinstance(entry.get("id"), str) and entry["id"]):
+            problems.append(f"`{seat}` has no non-empty string `id`")
+    judge_entry = document.get("judge")
+    if isinstance(judge_entry, dict):
+        if judge_entry.get("is_arm") is not False:
+            problems.append("`judge.is_arm` is not False; a model must not "
+                            "grade its own run")
+        if isinstance(judge_entry.get("id"), str) and judge_entry["id"] in arm_ids:
+            problems.append("the judge id is also an arm; a model must not "
+                            "grade its own run")
+    seen = document.get("catalogue_seen")
+    if not isinstance(seen, list):
+        problems.append("`catalogue_seen` is not a list")
+    else:
+        for index, entry in enumerate(seen):
+            if not (isinstance(entry, dict)
+                    and isinstance(entry.get("id"), str) and entry["id"]
+                    and isinstance(entry.get("last_seen"), str)):
+                problems.append(f"`catalogue_seen[{index}]` is not "
+                                f"{{id, last_seen}} with string values")
+                continue
+            try:
+                datetime.strptime(entry["last_seen"], "%Y-%m-%d")
+            except ValueError:
+                problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
+                                "is not an ISO YYYY-MM-DD date")
+    seen_ids = [e["id"] for e in (seen if isinstance(seen, list) else [])
+                if isinstance(e, dict) and isinstance(e.get("id"), str)]
+    for label, ids in (("arms", arm_ids), ("catalogue_seen", seen_ids)):
+        duplicates = sorted({i for i in ids if ids.count(i) > 1})
+        if duplicates:
+            problems.append(f"{len(duplicates)} id(s) appear more than "
+                            f"once in `{label}`")
+    provenance = document.get("provenance")
+    if not isinstance(provenance, dict):
+        problems.append("`provenance` is not a mapping")
+    else:
+        for key in ("seeded", "from"):
+            if not (isinstance(provenance.get(key), str)
+                    and provenance[key].strip()):
+                problems.append(f"`provenance.{key}` is not a non-empty string")
+    if not (isinstance(document.get("generated_at"), str)
+            and document["generated_at"].strip()):
+        problems.append("`generated_at` is not a non-empty string")
+    return problems
+
+
 def load_policy(path: str | Path) -> dict:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
@@ -1573,7 +1646,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     available.sort(key=lambda m: _rank(m, rungs))
     live_order = [m["id"] for m in available]
 
-    # The windows, hoisted above the caps because relevance is decided by
+    # The windows are computed before selection because relevance is decided by
     # IN-WINDOW census turns (A, #129 review round 10): a census key whose
     # usage all falls outside the window is evidence of nothing current,
     # and 600 such keys used to hand 600 plants named after them a
@@ -1598,14 +1671,13 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # review round 8): `previous_arms` is every arm the previous roster
     # named, and is what `added_since_last`/`retired_since_last` compare
     # against, so a departed arm is reported whether or not this run can
-    # say anything about it. `previous_arms` is that list capped, and is
-    # what attribution, the alias map and the hold-over check read — the
-    # cap bounds what is carried forward, nothing else.
+    # say anything about it. The same full reviewed list feeds attribution,
+    # the alias map and the hold-over check.
     previous_arms = _clean_previous_arms(previous, warn)
 
     # The union of every id the Models API has EVER listed across runs: this
     # run's api ids plus whatever the previous roster already accumulated,
-    # refreshed/aged/capped by `_update_catalogue_seen` (S3, #129 review
+    # refreshed and aged by `_update_catalogue_seen` (S3, #129 review
     # round 6). Read back next run as `previous`'s own `catalogue_seen` —
     # see `_is_attributable`'s FIRST-RUN CAVEAT for what an empty history
     # means. `catalogue_seen_entries` is the PUBLISHED `{id, last_seen}`
@@ -1617,11 +1689,10 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         api_ids, previous_seen, now, policy, warn)
     catalogue_seen = {e["id"] for e in catalogue_seen_entries}
 
-    # Built AFTER `available` is ordered and the two capped lists exist:
+    # Built AFTER `available` is ordered:
     # rule (3) of `_usage_alias_map` needs this run's own capability order
     # to decide which live snapshot a bare alias that is not itself in the
-    # catalogue names, and the wide map folds over what the caps carried
-    # forward.
+    # catalogue names, and the wide map folds over the reviewed history.
     aliases = _usage_alias_map(
         api_ids, list(counts) + previous_arms + list(catalogue_seen),
         seat_aliases, live_order)
@@ -2086,8 +2157,11 @@ def _proposal(previous: dict | None, previous_arms: list[str],
         if before_id != entry["id"]:
             changes.append(_change("seat", field, before_id, entry["id"],
                                    entry["reason"]))
-    seen_before = {e["id"] for e in previous_seen}
-    seen_now = {e["id"] for e in catalogue_seen_entries}
+    seen_before_dates = {e["id"]: e["last_seen"] for e in previous_seen}
+    seen_now_dates = {e["id"]: e["last_seen"]
+                      for e in catalogue_seen_entries}
+    seen_before = set(seen_before_dates)
+    seen_now = set(seen_now_dates)
     for model_id in sorted(seen_now - seen_before):
         changes.append(_change(
             "catalogue_seen", "catalogue_seen", None, model_id,
@@ -2098,6 +2172,19 @@ def _proposal(previous: dict | None, previous_arms: list[str],
             "catalogue_seen", "catalogue_seen", model_id, None,
             "its last_seen is older than the policy's catalogue_seen window "
             "and the Models API did not list it this run"))
+    for model_id in sorted(seen_before & seen_now):
+        before = seen_before_dates[model_id]
+        after = seen_now_dates[model_id]
+        if before != after:
+            changes.append(_change(
+                "catalogue_seen", "catalogue_seen.last_seen", before, after,
+                f"the Models API listed `{model_id}` this run, refreshing its "
+                "reviewed observation date"))
+    if previous_arm_ids != arm_ids and set(previous_arm_ids) == set(arm_ids):
+        changes.append(_change(
+            "seat", "arms.order", previous_arm_ids, arm_ids,
+            "the ordered arm list changed; its first entry is the default "
+            "unpinned model"))
     return {"status": "differs" if changes else "same", "changes": changes}
 
 

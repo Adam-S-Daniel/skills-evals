@@ -514,11 +514,10 @@ jobs:
           refresh() {
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
-            # Previous roster and published census come off eval-results
-            # WITHOUT checking it out — the branch switch belongs to the
-            # commit step, and both inputs are optional, so a genuine first
-            # run (no branch, no files) just leaves empty files behind and
-            # roster.py treats those as absent.
+            # The published census comes off eval-results WITHOUT checking it
+            # out; the previous roster is the committed evals/roster.yml.
+            # The branch switch belongs to the commit step, and an absent
+            # census remains an ordinary fallback case.
             if ! git fetch origin eval-results 2>/dev/null; then
               # `git ls-remote | grep -q` discards ls-remote's OWN exit status
               # under `pipefail`: on a correlated outage (fetch AND ls-remote
@@ -711,22 +710,46 @@ jobs:
           status=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("proposal") or {}).get("status")) or "")' "$computed")
           echo "proposal status: ${status:-unknown}"
 
-          # The open tracking issue, found by the marker in its body. The
-          # listing is written to a file and parsed, rather than piped into
-          # a filter: `gh api` prints its raw error body to STDOUT on a
-          # non-2xx, so a `|| true` around a pipeline would capture that
-          # error JSON and read it as data.
+          # The open tracking issue is owned by this workflow's bot account,
+          # not by whoever copied a public marker into an issue body. Query
+          # every page with GitHub's creator filter, then verify the creator
+          # again locally before a number can reach an edit or close command.
+          # `--slurp` preserves page boundaries, so malformed or incomplete
+          # listings fail closed rather than looking like no tracker.
           issues="$RUNNER_TEMP/roster-issues.json"
-          if ! gh api "repos/$REPO/issues?state=open&per_page=100" > "$issues"; then
+          tracker_creator='github-actions[bot]'
+          if ! gh api --paginate --slurp "repos/$REPO/issues?state=open&per_page=100&creator=github-actions%5Bbot%5D" > "$issues"; then
             echo "::warning::could not list issues; the roster proposal was not filed"
             exit 0
           fi
-          # One line, no heredoc: this is a YAML block scalar, so a
-          # continuation line at column 0 would end the block, and a
-          # heredoc body indented to the block would be indented Python.
-          issue=$(python3 -c "import json,sys; rows=json.load(open(sys.argv[1])); hits=[str(r['number']) for r in rows if not r.get('pull_request') and sys.argv[2] in (r.get('body') or '')]; print(hits[0] if hits else '')" "$issues" "$marker")
+          if ! issue=$(python3 - "$issues" "$marker" "$tracker_creator" <<'PY'
+          import json
+          import sys
 
-          if [ "$status" != "differs" ]; then
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              pages = json.load(handle)
+          if not isinstance(pages, list) or not all(isinstance(page, list) for page in pages):
+              raise SystemExit("tracker listing was not a complete paginated response")
+          rows = [row for page in pages for row in page]
+          if not all(isinstance(row, dict) for row in rows):
+              raise SystemExit("tracker listing contained a malformed issue")
+          hits = [row for row in rows
+                  if "pull_request" not in row
+                  and row.get("user", {}).get("login") == sys.argv[3]
+                  and row.get("user", {}).get("type") == "Bot"
+                  and sys.argv[2] in (row.get("body") or "")]
+          if len(hits) > 1:
+              raise SystemExit("multiple bot-owned roster tracking issues are open")
+          if hits and not isinstance(hits[0].get("number"), int):
+              raise SystemExit("bot-owned roster tracking issue has no number")
+          print(hits[0]["number"] if hits else "")
+          PY
+          ); then
+            echo "::warning::could not identify one bot-owned roster tracking issue; the roster proposal was not filed"
+            exit 0
+          fi
+
+          if [ "$status" = "same" ]; then
             if [ -n "$issue" ]; then
               gh issue close "$issue" --repo "$REPO" \
                 --comment "This run computes the same roster the committed \`evals/roster.yml\` already names. Closing until something changes."
@@ -734,6 +757,10 @@ jobs:
             else
               echo "nothing to propose and no open proposal issue"
             fi
+            exit 0
+          fi
+          if [ "$status" != "differs" ]; then
+            echo "::warning::the computed roster has an unknown proposal status; it was not filed"
             exit 0
           fi
 
@@ -746,6 +773,49 @@ jobs:
             --out "$RUNNER_TEMP/proposed-roster.yml" \
             --run-id "$RUN_ID" \
             --eval-results-commit "$census_commit"
+
+          # A computed roster may legitimately have no non-arm judge when
+          # every available model is seated. Preserve that observation in the
+          # published eval result, but do not publish a branch a reviewer
+          # cannot merge under the committed-roster contract.
+          admission="$RUNNER_TEMP/proposal-admission.txt"
+          if ! python3 - "$RUNNER_TEMP/proposed-roster.yml" > "$admission" <<'PY'
+          import sys
+
+          import yaml
+
+          sys.path.insert(0, "harness")
+          import roster
+
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              problems = roster.committed_roster_problems(yaml.safe_load(handle))
+          if problems:
+              print("\n".join(f"- {problem}" for problem in problems))
+              raise SystemExit(1)
+          PY
+          then
+            body="$RUNNER_TEMP/proposal-body.md"
+            {
+              printf '%s\n\n' "$marker"
+              echo "The weekly run computed a roster difference, but its rendered file does not meet the committed-roster contract."
+              echo
+              echo "**Needs review before publication.** No proposal branch or compare link was updated. The paid eval still ran on the committed \`evals/roster.yml\` and its results were published normally."
+              echo
+              echo "The rendered file was blocked for:"
+              cat "$admission"
+              echo
+              cat "$RUNNER_TEMP/roster-inputs/summary.md"
+            } > "$body"
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --repo "$REPO" \
+                --title "Model roster: proposal needs review" --body-file "$body"
+              echo "updated the blocked proposal issue #$issue"
+            else
+              gh issue create --repo "$REPO" \
+                --title "Model roster: proposal needs review" --body-file "$body"
+            fi
+            exit 0
+          fi
 
           base=$(git rev-parse HEAD)
           worktree="$RUNNER_TEMP/proposal-worktree"
@@ -767,9 +837,10 @@ jobs:
             -c user.email="skills-evals@users.noreply.github.com" \
             commit -q -m "roster: proposed model roster (run $RUN_ID)"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          # Fetch first so the lease has something to compare against: with
-          # no remote-tracking ref, --force-with-lease has no expectation to
-          # enforce and degrades to a plain force.
+          # Fetch first so the implicit lease compares against the current
+          # remote-tracking ref when the proposal branch already exists. A
+          # missing ref is not a plain-force permission; Git's explicit
+          # expected-value lease form can require that a destination is absent.
           git -c "http.$SERVER_URL/.extraheader=$auth" fetch origin \
             '+refs/heads/roster/proposal:refs/remotes/origin/roster/proposal' || true
           git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \

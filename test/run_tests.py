@@ -64,6 +64,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import make_badge  # noqa: E402
 import model_usage_census  # noqa: E402
 import refresh_models  # noqa: E402
+import render_roster_yaml  # noqa: E402
 
 
 class WithSkillInstallTests(unittest.TestCase):
@@ -27908,64 +27909,7 @@ class TestIssue147(unittest.TestCase):
         A list rather than a raise: a reviewer reading a failed CI run
         wants every defect at once, not the first one.
         """
-        problems: list[str] = []
-        if not isinstance(document, dict):
-            return ["the roster is not a mapping"]
-        if document.get("schema") != 1:
-            problems.append(f"`schema` is {document.get('schema')!r}, not 1")
-        arms = document.get("arms")
-        arm_ids: list[str] = []
-        if not isinstance(arms, list) or not arms:
-            problems.append("`arms` is not a non-empty list")
-        else:
-            for index, entry in enumerate(arms):
-                if not (isinstance(entry, dict)
-                        and isinstance(entry.get("id"), str) and entry["id"]):
-                    problems.append(f"`arms[{index}]` has no non-empty string `id`")
-                else:
-                    arm_ids.append(entry["id"])
-        for seat in ("judge", "preflight"):
-            entry = document.get(seat)
-            if not (isinstance(entry, dict)
-                    and isinstance(entry.get("id"), str) and entry["id"]):
-                problems.append(f"`{seat}` has no non-empty string `id`")
-        judge_entry = document.get("judge")
-        if isinstance(judge_entry, dict):
-            if judge_entry.get("is_arm") is not False:
-                problems.append("`judge.is_arm` is not False; a model must not "
-                                "grade its own run")
-            if isinstance(judge_entry.get("id"), str) and judge_entry["id"] in arm_ids:
-                problems.append("the judge id is also an arm; a model must not "
-                                "grade its own run")
-        seen = document.get("catalogue_seen")
-        if not isinstance(seen, list):
-            problems.append("`catalogue_seen` is not a list")
-        else:
-            for index, entry in enumerate(seen):
-                if not (isinstance(entry, dict)
-                        and isinstance(entry.get("id"), str) and entry["id"]
-                        and isinstance(entry.get("last_seen"), str)):
-                    problems.append(f"`catalogue_seen[{index}]` is not "
-                                    f"{{id, last_seen}} with string values")
-                    continue
-                try:
-                    datetime.strptime(entry["last_seen"], "%Y-%m-%d")
-                except ValueError:
-                    problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
-                                    f"is not an ISO YYYY-MM-DD date")
-        # WITHIN each list, never across the two: an arm is expected to
-        # appear in `catalogue_seen` as well — it is a model the Models
-        # API has been observed to list, which is the whole point of the
-        # history — so a cross-list check would fire on every honest
-        # roster.
-        seen_ids = [e["id"] for e in (seen if isinstance(seen, list) else [])
-                    if isinstance(e, dict) and isinstance(e.get("id"), str)]
-        for label, ids in (("arms", arm_ids), ("catalogue_seen", seen_ids)):
-            duplicates = sorted({i for i in ids if ids.count(i) > 1})
-            if duplicates:
-                problems.append(f"{len(duplicates)} id(s) appear more than "
-                                f"once in `{label}`")
-        return problems
+        return roster.committed_roster_problems(document)
 
     def test_the_committed_roster_parses_and_passes_every_lint_clause(self):
         self.assertTrue(self.ROSTER.is_file(),
@@ -28024,6 +27968,11 @@ class TestIssue147(unittest.TestCase):
              mutate(arms=[{"id": "claude-sonnet-5", "reason": "a"},
                           {"id": "claude-sonnet-5", "reason": "b"}]),
              "more than once in `arms`"),
+            ("provenance missing", mutate(provenance=None), "`provenance`"),
+            ("provenance source blank",
+             mutate(provenance={**good["provenance"], "from": ""}),
+             "`provenance.from`"),
+            ("generated time missing", mutate(generated_at=None), "`generated_at`"),
             ("not a mapping", ["claude-sonnet-5"], "not a mapping"),
         ]
         for name, document, needle in rows:
@@ -28229,27 +28178,28 @@ class TestIssue147(unittest.TestCase):
                             "override when it is wrong")
 
     def _steady_state(self):
-        """A catalogue, census and previous roster that reproduce the
-        COMMITTED roster exactly — the state a run in a quiet week is in,
-        and the one that must propose nothing.
+        """A fixed policy fixture whose quiet run proposes nothing.
 
-        The haiku and opus models are inside the policy's cooling-off, so
-        the newest-per-tier rule seats neither and the committed roster's
-        single arm is the whole arm set; the judge is then the strongest
-        non-arm and the preflight the cheapest, which is what the
-        committed file already says.
+        This must not mirror `evals/roster.yml`: that file is deliberately
+        mutable, and a valid future multi-arm proposal must still pass this
+        class without rewriting its synthetic Models API response.
         """
-        committed = self._committed()
-        arm = committed["arms"][0]["id"]
+        arm = "claude-sonnet-5"
         fresh = (self.NOW - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
         models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
-            self._model(committed["preflight"]["id"], fresh),
+            self._model("claude-haiku-4-5", fresh),
             self._model(arm, "2026-01-01T00:00:00Z"),
-            self._model(committed["judge"]["id"], fresh)]}
-        previous = {**committed, "catalogue_seen": [
+            self._model("claude-opus-4-8", fresh)]}
+        previous = {
+            "schema": 1,
+            "arms": [{"id": arm, "reason": "synthetic steady arm"}],
+            "judge": {"id": "claude-opus-4-8", "reason": "synthetic judge",
+                      "is_arm": False},
+            "preflight": {"id": "claude-haiku-4-5",
+                          "reason": "synthetic preflight"},
+            "catalogue_seen": [
             {"id": i, "last_seen": self.NOW.date().isoformat()}
-            for i in sorted((committed["preflight"]["id"], arm,
-                             committed["judge"]["id"]))]}
+            for i in ("claude-haiku-4-5", arm, "claude-opus-4-8")]}
         return models, self._census({arm: {self._week(): 400}}), previous
 
     def test_a_proposal_that_changes_nothing_says_same(self):
@@ -28261,8 +28211,234 @@ class TestIssue147(unittest.TestCase):
         self.assertEqual(result["proposal"]["status"], "same",
                          result["proposal"]["changes"])
         self.assertEqual([a["id"] for a in result["arms"]],
-                         [a["id"] for a in self._committed()["arms"]])
+                         [a["id"] for a in previous["arms"]])
         self.assertFalse(result["judge"]["is_arm"])
+
+    def test_fresh_catalogue_observations_are_proposed_and_survive_a_merge(self):
+        """A reviewed refresh resets the 180-day clock after a quiet week."""
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=179)).date().isoformat()
+        observed = self._compute(models=models, census=census, previous=previous)
+        refreshes = [change for change in observed["proposal"]["changes"]
+                     if change["field"] == "catalogue_seen.last_seen"]
+        self.assertEqual(observed["proposal"]["status"], "differs")
+        self.assertEqual(len(refreshes), len(previous["catalogue_seen"]))
+        merged = yaml.safe_load(render_roster_yaml.render(observed, "1", "a"))
+        departed = {**models, "models": [model for model in models["models"]
+                                            if model["id"] != "claude-sonnet-5"]}
+        later = roster.compute_roster(
+            departed, census, self._policy(), merged,
+            self.NOW + timedelta(days=7), warn=lambda _message: None)
+        self.assertIn("claude-sonnet-5",
+                      [entry["id"] for entry in later["catalogue_seen"]])
+
+    def test_arm_order_is_a_reviewable_proposal_change(self):
+        proposal = roster._proposal(
+            {"judge": {"id": "judge"}, "preflight": {"id": "arm-a"}},
+            ["arm-b", "arm-a"], [],
+            [{"id": "arm-a", "reason": "first"},
+             {"id": "arm-b", "reason": "second"}],
+            {"id": "judge", "reason": "judge"},
+            {"id": "arm-a", "reason": "preflight"}, [], {})
+        self.assertEqual(proposal["status"], "differs")
+        self.assertEqual(
+            [change["field"] for change in proposal["changes"]], ["arms.order"])
+        self.assertEqual(proposal["changes"][0]["from"], ["arm-b", "arm-a"])
+        self.assertEqual(proposal["changes"][0]["to"], ["arm-a", "arm-b"])
+
+    def _ordinary_computed_roster(self, *, multi_arm: bool) -> dict:
+        """A normal catalogue with an unseated fresh opus judge candidate."""
+        ids = (["claude-haiku-4-5", "claude-haiku-5", "claude-sonnet-5",
+                "claude-sonnet-6", "claude-opus-4-8"] if multi_arm
+               else ["claude-haiku-4-5"])
+        models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            self._model(model_id) for model_id in ids
+        ] + [self._model("claude-opus-9", "2026-09-11T12:00:00Z")]}
+        census = self._census({model_id: {self._week(): 100}
+                               for model_id in ids})
+        return self._compute(models=models, census=census,
+                             previous=self._steady_state()[2])
+
+    def test_ordinary_generated_rosters_meet_the_committed_contract(self):
+        for label, multi_arm in (("multiple arms", True), ("single arm", False)):
+            with self.subTest(shape=label):
+                computed = self._ordinary_computed_roster(multi_arm=multi_arm)
+                rendered = yaml.safe_load(render_roster_yaml.render(computed, "1", "a"))
+                self.assertEqual(self._lint(rendered), [])
+                self.assertFalse(rendered["judge"]["is_arm"])
+                self.assertIn(rendered["preflight"]["id"],
+                              [arm["id"] for arm in rendered["arms"]])
+                if multi_arm:
+                    self.assertGreater(len(rendered["arms"]), 1)
+
+    def test_admission_suite_accepts_a_rendered_multi_arm_roster(self):
+        if os.environ.get(TestTheRunnerItself.SUITE_CHILD_ENV):
+            self.skipTest("child suite run does not recursively run admission")
+        computed = self._ordinary_computed_roster(multi_arm=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "source.tar"
+            with archive.open("wb") as handle:
+                created = subprocess.run(
+                    ["git", "archive", "HEAD"], cwd=REPO_ROOT,
+                    stdout=handle, stderr=subprocess.PIPE, timeout=60)
+            self.assertEqual(created.returncode, 0, created.stderr.decode())
+            exported = root / "export"
+            exported.mkdir()
+            extracted = subprocess.run(
+                ["tar", "-xf", str(archive), "-C", str(exported)],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(extracted.returncode, 0, extracted.stderr)
+            self.assertFalse((exported / ".git").exists())
+            (exported / "evals" / "roster.yml").write_text(
+                render_roster_yaml.render(computed, "1", "a"), encoding="utf-8")
+            home = root / "home"
+            config = root / "claude"
+            memory = root / "memory"
+            home.mkdir()
+            config.mkdir()
+            memory.write_text("", encoding="utf-8")
+            env = {"PATH": "/usr/bin:/bin", "HOME": str(home),
+                   "CLAUDE_CONFIG_DIR": str(config),
+                   "SKILLS_EVALS_USER_MEMORY": str(memory),
+                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+            child = TestTheRunnerItself()._spawn_suite(
+                "TestIssue147", cwd=exported, environment=env)
+            output = child.stdout + child.stderr
+            self.assertEqual(child.returncode, 0, output[-4000:])
+            self.assertRegex(output, r"Ran [1-9][0-9]* tests")
+
+    def _run_proposal_step(self, status, pages, *, computed=None,
+                           listing_error=False):
+        """Run eval.yml's real proposal shell with only recording shims."""
+        document = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+                      if step.get("name") == "Propose a roster change")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temp = root / "temp"
+            tools = root / "bin"
+            temp.joinpath("roster").mkdir(parents=True)
+            temp.joinpath("roster-inputs").mkdir()
+            tools.mkdir()
+            roster_doc = computed or self._ordinary_computed_roster(multi_arm=False)
+            roster_doc = copy.deepcopy(roster_doc)
+            roster_doc["proposal"] = {"status": status, "changes": []}
+            temp.joinpath("roster", "latest.json").write_text(
+                json.dumps(roster_doc), encoding="utf-8")
+            temp.joinpath("roster-inputs", "summary.md").write_text(
+                "Synthetic summary.\n", encoding="utf-8")
+            pages_path = root / "pages.json"
+            calls_path = root / "calls.jsonl"
+            pages_path.write_text(json.dumps(pages), encoding="utf-8")
+            gh = tools / "gh"
+            gh.write_text("""#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ['PROPOSAL_CALLS'], 'a', encoding='utf-8') as handle:
+    handle.write(json.dumps(['gh', *args]) + '\\n')
+if args and args[0] == 'api':
+    if os.environ.get('PROPOSAL_LISTING_ERROR') == '1':
+        raise SystemExit(1)
+    print(pathlib.Path(os.environ['PROPOSAL_PAGES']).read_text(encoding='utf-8'))
+""", encoding="utf-8")
+            git = tools / "git"
+            git.write_text("""#!/usr/bin/env python3
+import json, os, pathlib, shutil, sys
+args = sys.argv[1:]
+with open(os.environ['PROPOSAL_CALLS'], 'a', encoding='utf-8') as handle:
+    handle.write(json.dumps(['git', *args]) + '\\n')
+if 'rev-parse' in args:
+    print('a' * 40)
+elif 'worktree' in args and 'add' in args:
+    worktree = pathlib.Path(args[args.index('--detach') + 1])
+    shutil.copytree(pathlib.Path(os.environ['PROPOSAL_SOURCE']) / 'evals',
+                    worktree / 'evals')
+elif 'diff' in args:
+    raise SystemExit(1)
+elif 'worktree' in args and 'remove' in args:
+    shutil.rmtree(args[-1], ignore_errors=True)
+""", encoding="utf-8")
+            gh.chmod(0o755)
+            git.chmod(0o755)
+            home = root / "home"
+            config = root / "claude"
+            memory = root / "memory"
+            home.mkdir()
+            config.mkdir()
+            memory.write_text("", encoding="utf-8")
+            env = {"PATH": f"{tools}:/usr/bin:/bin", "HOME": str(home),
+                   "CLAUDE_CONFIG_DIR": str(config),
+                   "SKILLS_EVALS_USER_MEMORY": str(memory),
+                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+                   "RUNNER_TEMP": str(temp), "RUN_ID": "1", "REPO": "example/repo",
+                   "SERVER_URL": "https://example.com", "GITHUB_TOKEN": "synthetic",
+                   "GH_TOKEN": "synthetic", "PROPOSAL_CALLS": str(calls_path),
+                   "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(REPO_ROOT),
+                   "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0"}
+            run = subprocess.run(["/bin/bash", "-c", script], cwd=REPO_ROOT,
+                                 env=env, capture_output=True, text=True, timeout=60)
+            calls = [json.loads(line) for line in calls_path.read_text(
+                encoding="utf-8").splitlines()] if calls_path.exists() else []
+            body = temp.joinpath("proposal-body.md")
+            return run, calls, body.read_text(encoding="utf-8") if body.exists() else ""
+
+    def test_proposal_step_uses_only_a_complete_bot_owned_tracker(self):
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        outsider = {"number": 91, "body": marker,
+                   "user": {"login": "ordinary-user", "type": "User"}}
+        pull = {"number": 22, "body": marker, "pull_request": {},
+                "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        rows = [
+            ("same closes owned only", "same", [[outsider, bot, pull]], False,
+             ["gh", "issue", "close", "17"]),
+            ("later page updates owned", "differs", [[outsider] * 100, [bot]], False,
+             ["gh", "issue", "edit", "17"]),
+            ("ordinary marker is never closed", "same", [[outsider]], False, None),
+            ("incomplete listing writes nothing", "differs", [[bot]], True, None),
+            ("ambiguous bot trackers write nothing", "differs", [[bot, {**bot, "number": 18}]], False, None),
+        ]
+        for label, status, pages, listing_error, expected in rows:
+            with self.subTest(case=label):
+                run, calls, _body = self._run_proposal_step(
+                    status, pages, listing_error=listing_error)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                mutations = [call for call in calls if call[:2] == ["gh", "issue"]]
+                if expected is None:
+                    self.assertEqual(mutations, [])
+                else:
+                    self.assertTrue(any(call[:4] == expected for call in mutations), calls)
+                self.assertTrue(any(call[:3] == ["gh", "api", "--paginate"]
+                                    for call in calls), calls)
+
+    def test_proposal_step_blocks_invalid_rendering_without_a_branch_update(self):
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        valid = self._ordinary_computed_roster(multi_arm=True)
+        run, calls, _body = self._run_proposal_step("differs", [[]], computed=valid)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertTrue(any(call[:2] == ["git", "-C"] and "push" in call
+                            for call in calls), calls)
+        self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
+
+        invalid = copy.deepcopy(valid)
+        invalid["judge"] = {"id": invalid["arms"][0]["id"],
+                            "reason": "all available models are arms", "is_arm": True}
+        run, calls, body = self._run_proposal_step("differs", [[bot]], computed=invalid)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertFalse(any(call[0] == "git" and "push" in call for call in calls), calls)
+        blocked_edit = next((call for call in calls
+                             if call[:4] == ["gh", "issue", "edit", "17"]), None)
+        self.assertIsNotNone(blocked_edit, calls)
+        self.assertIn("Model roster: proposal needs review", blocked_edit)
+        self.assertIn("Needs review before publication", body)
+        self.assertNotIn("compare/main...roster/proposal", body)
 
     def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
         # A percentage with no counts behind it is unfalsifiable from the
@@ -29214,7 +29390,8 @@ class TestTheRunnerItself(unittest.TestCase):
             print(reason)
             self.skipTest(reason)
 
-    def _spawn_suite(self, *argv_tail) -> subprocess.CompletedProcess:
+    def _spawn_suite(self, *argv_tail, cwd: Path | None = None,
+                     environment: dict | None = None) -> subprocess.CompletedProcess:
         """The ONE place in this file that spawns `python3 test/run_tests.py`,
         and it stands down itself when this run IS the child.
 
@@ -29230,10 +29407,11 @@ class TestTheRunnerItself(unittest.TestCase):
         return subprocess.run(
             [sys.executable, str(TEST_DIR / SUITE_RUNNER_NAME),
              *[str(a) for a in argv_tail]],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
+            cwd=str(cwd or REPO_ROOT), capture_output=True, text=True, timeout=900,
             # test/issues/test_issue_97.py's own spawner reads this and stands
             # down, and so does this method, so a child can never fork.
-            env=dict(os.environ, **{self.SUITE_CHILD_ENV: "1"}))
+            env=dict(environment if environment is not None else os.environ,
+                     **{self.SUITE_CHILD_ENV: "1"}))
 
     @staticmethod
     def _modules(suite: unittest.TestSuite) -> set[str]:

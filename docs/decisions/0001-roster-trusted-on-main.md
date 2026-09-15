@@ -6,13 +6,11 @@
 
 ## Context
 
-`harness/roster.py` computes which models the harness runs against (arms, judge,
-preflight) from three documents: the Models API listing (fetched live), the
-usage census (`usage/latest.json`) and the previous roster (`roster/latest.json`,
-carrying `catalogue_seen`, the harness's only record of which ids it has ever
-observed). The last two are read off the `eval-results` branch, which is
-unprotected and written by other jobs on other machines; the design treats it as
-untrusted input.
+Before this decision, `harness/roster.py` computed the running models (arms,
+judge, preflight) from the Models API listing, the usage census
+(`usage/latest.json`) and `roster/latest.json`. The last two came from the
+unprotected `eval-results` branch, written by other jobs on other machines, so
+the old design treated both as untrusted input.
 
 Fourteen review rounds on PR #129 kept a live arm from being silently retired or
 a planted arm from being seated only by adding sharper local checks over those
@@ -44,8 +42,9 @@ a one-way-door review of the writer.
    `roster/latest.json` off `eval-results`. Its census input stays
    `usage/latest.json` off `eval-results` (untrusted). Its output is still
    published to `eval-results` as `roster/latest.json` for the explorer, and
-   when it differs from the committed roster in any seat or in
-   `catalogue_seen`, `eval.yml` pushes the proposed file as one commit on the
+   when it differs from the committed roster in any seat, arm order, or
+   `catalogue_seen` membership or `last_seen` date, `eval.yml` pushes the
+   proposed file as one commit on the
    bot-owned branch `roster/proposal` (recreated from `main` every run; never a
    shared branch) and upserts one tracking issue (marker
    `<!-- skills-evals:roster-proposal -->`) carrying the diff, every seat's
@@ -80,18 +79,23 @@ a one-way-door review of the writer.
   proposal prints the share it lowered. Each defect carries a regression row
   whose assertion is "the running set is unchanged by this input" — RED on
   `424eebf`, where `select_models` reads the published roster.
-- **The trusted history costs a human merge per change.** Model releases and
-  retirements are a few-times-a-year event; that is a review each, on a diff of
-  a few lines with its reasons attached. Automation is kept where it is cheap
+- **The trusted history costs a human merge per meaningful change.** Model
+  releases and retirements need review, and a weekly Models API observation can
+  also refresh a committed `last_seen` date even when no seat changes. That
+  history-only proposal is intentional: it keeps the 180-day window based on
+  a reviewed observation rather than an unmerged ephemeral result. Automation
+  is kept where it is cheap
   (noticing, computing, proposing) and removed where it was expensive
   (deciding). This is the fleet's sanctioned bot-write path — a branch and a
   PR a human merges — not `PR + auto-merge` and not a bypass actor.
 - **`eval.yml` widens by `issues: write`.** That is a change to a key-bearing
   workflow and gets the one-way-door review (code half, adversarial half, the
   security-header read). The branch push needs no new permission: the job
-  already pushes `eval-results`. A PR opened by `GITHUB_TOKEN` does not trigger
-  `pull_request` workflows, which is why the job pushes a branch and files an
-  issue rather than opening the PR itself.
+  already pushes `eval-results`. GitHub can create approval-required workflow
+  runs for `pull_request` opened, synchronized, or reopened by `GITHUB_TOKEN`.
+  This design still pushes a branch and files an issue so a human opens and
+  reviews the PR; that route makes the proposed change and its admission state
+  explicit without adding a bot-created PR lifecycle.
 - **Migration.** `evals/roster.yml` is seeded by hand in the same PR from what
   the committed fixtures pin today: arms `claude-sonnet-5` (all 13 fixtures),
   judge `claude-opus-4-8` (12 of the 13 — `evals/github-actions-sha-pinning`
