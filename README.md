@@ -486,13 +486,16 @@ could not make a local check over it safe
 
 **But what it computes is a PROPOSAL.** When it differs from the committed
 file, the weekly run renders the proposed `evals/roster.yml`
-(`scripts/render_roster_yaml.py`), pushes it as one commit on the bot-owned
-branch `roster/proposal`, and upserts one tracking issue carrying the rendered
-summary — every seat's reason in words, with the numerator and denominator its
-share was taken over — and a `main...roster/proposal` compare link. A human
-opens the pull request and merges it after CI. Nothing in CI writes
-`evals/roster.yml`. When the computed roster matches the committed one, that
-issue is closed.
+(`scripts/render_roster_yaml.py`) and checks it against the committed-roster
+contract. A valid proposal is pushed as one commit on the bot-owned branch
+`roster/proposal`, with one tracking issue carrying the rendered summary —
+every seat's reason in words, with the numerator and denominator its share was
+taken over — and a `main...roster/proposal` compare link. An invalid proposal
+does not update the branch or compare link; its tracking issue says it needs
+review and lists the admission failures. The paid eval result still publishes
+from the committed roster. A human opens the pull request for a valid proposal
+and merges it after CI. Nothing in CI writes `evals/roster.yml`. When the
+computed roster matches the committed one, that issue is closed.
 
 Thresholds and the capability ladder live in
 [`evals/roster-policy.yml`](evals/roster-policy.yml) — no model id appears in

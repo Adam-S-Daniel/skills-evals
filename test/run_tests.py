@@ -28410,7 +28410,10 @@ elif 'worktree' in args and 'remove' in args:
              ["gh", "issue", "edit", "17"]),
             ("ordinary marker is never closed", "same", [[outsider]], False, None),
             ("incomplete listing writes nothing", "differs", [[bot]], True, None),
+            ("empty page list writes nothing", "differs", [], False, None),
+            ("malformed success listing writes nothing", "differs", [[{}]], False, None),
             ("ambiguous bot trackers write nothing", "differs", [[bot, {**bot, "number": 18}]], False, None),
+            ("unknown proposal status writes nothing", "unknown", [[bot]], False, None),
         ]
         for label, status, pages, listing_error, expected in rows:
             with self.subTest(case=label):

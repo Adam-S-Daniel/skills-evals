@@ -467,11 +467,15 @@ defects all came from leaving it unstated:
 | `roster/latest.json` (on `eval-results`) | nothing. An exhibit for the explorer, read by no decision | this workflow |
 
 **The proposal flow.** When the computed roster differs from the committed one,
-`eval.yml` renders the proposed file with `scripts/render_roster_yaml.py`,
-pushes it as one commit on the bot-owned branch `roster/proposal` (recreated
-from `main` every run — never a shared branch), and upserts one tracking issue
-carrying the rendered summary and the compare link. A human opens the pull
-request and merges it after CI. That is the fleet's sanctioned bot-write path;
+`eval.yml` renders it with `scripts/render_roster_yaml.py` and admits the
+rendered file against the committed-roster contract. A valid proposal is pushed
+as one commit on the bot-owned branch `roster/proposal` (recreated from `main`
+every run — never a shared branch), with one tracking issue carrying the
+rendered summary and compare link. An invalid proposal instead leaves the
+branch and compare link untouched and creates or updates a “needs review”
+tracking issue with its admission failures. The paid eval result is still
+published from the committed roster. A human opens the pull request for a valid
+proposal and merges it after CI. That is the fleet's sanctioned bot-write path;
 nothing in CI writes `evals/roster.yml`. When the computed roster matches, the
 tracking issue is closed.
 

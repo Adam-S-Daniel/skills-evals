@@ -43,13 +43,17 @@ a one-way-door review of the writer.
    `usage/latest.json` off `eval-results` (untrusted). Its output is still
    published to `eval-results` as `roster/latest.json` for the explorer, and
    when it differs from the committed roster in any seat, arm order, or
-   `catalogue_seen` membership or `last_seen` date, `eval.yml` pushes the
-   proposed file as one commit on the
+   `catalogue_seen` membership or `last_seen` date, `eval.yml` admits the
+   rendered proposal against the committed-roster contract. A valid proposal is
+   pushed as one commit on the
    bot-owned branch `roster/proposal` (recreated from `main` every run; never a
    shared branch) and upserts one tracking issue (marker
    `<!-- skills-evals:roster-proposal -->`) carrying the diff, every seat's
    reason in words with its numerator and denominator, and the compare link.
-   A human opens the PR from that branch and merges it after CI.
+   An invalid proposal instead has a “needs review” tracking issue listing its
+   admission failures; it does not update the branch or compare link, while the
+   paid eval result is still published from the committed roster. A human opens
+   the PR from a valid branch and merges it after CI.
 3. **What each store is trusted for.** `evals/roster.yml` is trusted for the
    running set and for the observation history (`catalogue_seen` with
    `last_seen`, refreshed only through a merged proposal). The Models API
