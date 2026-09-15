@@ -661,12 +661,11 @@ jobs:
       # closes that issue, so a stale one never sits open claiming a change
       # that has already landed or gone away.
       #
-      # WHY A BRANCH AND AN ISSUE, AND NOT A PULL REQUEST. A pull request
-      # opened by `GITHUB_TOKEN` does not trigger `pull_request` workflows,
-      # so a PR this job opened would sit with no CI on it — and this repo's
-      # `main` is ruleset-protected and PR-only, which is the whole reason
-      # the roster is trusted. A human opens the PR from the branch and
-      # merges it after CI. This is the fleet's sanctioned bot-write path:
+      # WHY A BRANCH AND AN ISSUE, AND NOT A PULL REQUEST. GitHub can create
+      # approval-required runs for pull_request opened, synchronized, or
+      # reopened by `GITHUB_TOKEN`. This design still has a human open the PR
+      # from the branch so the reviewer owns that route and its admission
+      # state before merging after CI. This is the fleet's sanctioned bot-write path:
       # a branch and a pull request a person merges, never a direct push to
       # a protected branch and never a ruleset bypass actor.
       #
@@ -799,7 +798,7 @@ jobs:
               printf '%s\n\n' "$marker"
               echo "The weekly run computed a roster difference, but its rendered file does not meet the committed-roster contract."
               echo
-              echo "**Needs review before publication.** No proposal branch or compare link was updated. The paid eval still ran on the committed \`evals/roster.yml\` and its results were published normally."
+              echo "**Needs review before publication.** No proposal branch or compare link was updated. The paid eval ran on the committed \`evals/roster.yml\`; its results will still be published normally."
               echo
               echo "The rendered file was blocked for:"
               cat "$admission"

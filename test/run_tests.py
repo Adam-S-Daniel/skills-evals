@@ -28308,6 +28308,15 @@ class TestIssue147(unittest.TestCase):
             output = child.stdout + child.stderr
             self.assertEqual(child.returncode, 0, output[-4000:])
             self.assertRegex(output, r"Ran [1-9][0-9]* tests")
+            invalid = yaml.safe_load(render_roster_yaml.render(computed, "1", "a"))
+            invalid["judge"] = {"id": invalid["arms"][0]["id"],
+                                "reason": "synthetic invalid overlap", "is_arm": True}
+            (exported / "evals" / "roster.yml").write_text(
+                yaml.safe_dump(invalid, sort_keys=False), encoding="utf-8")
+            rejected = TestTheRunnerItself()._spawn_suite(
+                "TestIssue147", cwd=exported, environment=env)
+            self.assertEqual(rejected.returncode, 1,
+                             (rejected.stdout + rejected.stderr)[-4000:])
 
     def _run_proposal_step(self, status, pages, *, computed=None,
                            listing_error=False):
@@ -28427,18 +28436,33 @@ elif 'worktree' in args and 'remove' in args:
                             for call in calls), calls)
         self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
 
-        invalid = copy.deepcopy(valid)
-        invalid["judge"] = {"id": invalid["arms"][0]["id"],
-                            "reason": "all available models are arms", "is_arm": True}
-        run, calls, body = self._run_proposal_step("differs", [[bot]], computed=invalid)
-        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-        self.assertFalse(any(call[0] == "git" and "push" in call for call in calls), calls)
-        blocked_edit = next((call for call in calls
-                             if call[:4] == ["gh", "issue", "edit", "17"]), None)
-        self.assertIsNotNone(blocked_edit, calls)
-        self.assertIn("Model roster: proposal needs review", blocked_edit)
-        self.assertIn("Needs review before publication", body)
-        self.assertNotIn("compare/main...roster/proposal", body)
+        mature_ids = ["claude-haiku-4-5", "claude-haiku-5", "claude-sonnet-5",
+                      "claude-sonnet-6", "claude-opus-4-8"]
+        mature_models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            self._model(model_id) for model_id in mature_ids]}
+        mature = self._compute(
+            models=mature_models,
+            census=self._census({model_id: {self._week(): 100}
+                                 for model_id in mature_ids}),
+            previous=self._steady_state()[2])
+        self.assertTrue(mature["judge"]["is_arm"])
+        duplicate_history = copy.deepcopy(valid)
+        duplicate_history["catalogue_seen"].append(
+            copy.deepcopy(duplicate_history["catalogue_seen"][0]))
+        for label, invalid in (("mature all-arm catalogue", mature),
+                               ("duplicate history", duplicate_history)):
+            with self.subTest(shape=label):
+                run, calls, body = self._run_proposal_step(
+                    "differs", [[bot]], computed=invalid)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertFalse(any(call[0] == "git" and "push" in call
+                                     for call in calls), calls)
+                blocked_edit = next((call for call in calls
+                                     if call[:4] == ["gh", "issue", "edit", "17"]), None)
+                self.assertIsNotNone(blocked_edit, calls)
+                self.assertIn("Model roster: proposal needs review", blocked_edit)
+                self.assertIn("Needs review before publication", body)
+                self.assertNotIn("compare/main...roster/proposal", body)
 
     def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
         # A percentage with no counts behind it is unfalsifiable from the
@@ -29404,10 +29428,11 @@ class TestTheRunnerItself(unittest.TestCase):
         test needs no guard of its own and no table entry.
         """
         self._skip_in_child()
+        root = REPO_ROOT if cwd is None else cwd
         return subprocess.run(
-            [sys.executable, str(TEST_DIR / SUITE_RUNNER_NAME),
+            [sys.executable, str(root / "test" / SUITE_RUNNER_NAME),
              *[str(a) for a in argv_tail]],
-            cwd=str(cwd or REPO_ROOT), capture_output=True, text=True, timeout=900,
+            cwd=str(root), capture_output=True, text=True, timeout=900,
             # test/issues/test_issue_97.py's own spawner reads this and stands
             # down, and so does this method, so a child can never fork.
             env=dict(environment if environment is not None else os.environ,
