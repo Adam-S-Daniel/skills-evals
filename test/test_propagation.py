@@ -291,12 +291,16 @@ class LockAndDigestTests(unittest.TestCase):
         generator = registry / "scripts" / "generate_skills_lock.py"
         if not generator.is_file():
             self.skipTest(f"no agentskills checkout at {registry}")
+        if os.environ.get("SKILLS_EVALS_SUITE_CHILD"):
+            raise unittest.SkipTest("child suite run — guarded lock generator")
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         skill = write_skill(root / "s", "s", "desc",
                             extra={"scripts/x.py": "print(1)\n"})
+        env = dict(os.environ)
+        env["SKILLS_EVALS_SUITE_CHILD"] = "1"
         proc = subprocess.run([sys.executable, str(generator), "--digest", str(skill)],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, env=env)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn(arms.digest_skill_dir(skill), proc.stdout)
 

@@ -19724,7 +19724,23 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                 env.pop(key, None)
             else:
                 env[key] = value
-        return subprocess.run([str(a) for a in argv], cwd=str(cwd or ws),
+        return self._guarded_invoke(argv, cwd=cwd or ws, env=env)
+
+    def _guarded_invoke(self, argv, *, cwd, env, stdin=None):
+        """Keep a Python-shaped fixture invocation bounded at its real sink.
+
+        Non-Python commands retain their ordinary subprocess behaviour. A
+        child suite skips before process creation.  For a Python command, the
+        marker is written after the supplied environment has been assembled,
+        so an override cannot turn a child back into a parent.
+        """
+        rendered = [str(a) for a in argv]
+        if rendered and Path(rendered[0]).name.startswith("python"):
+            if os.environ.get("SKILLS_EVALS_SUITE_CHILD"):
+                raise unittest.SkipTest("child suite run — guarded Python sink")
+            env = dict(env)
+            env["SKILLS_EVALS_SUITE_CHILD"] = "1"
+        return subprocess.run(rendered, cwd=str(cwd), stdin=stdin,
                               capture_output=True, text=True, env=env)
 
     def _logs_under(self, *roots: Path) -> list[str]:
@@ -19908,10 +19924,9 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         ws = self._arm_ws()
         before = self._log(ws)
         with open(ws / "bin" / "gh", "rb") as handle:
-            proc = subprocess.run([sys.executable, "-", "pr", "close", "421"],
-                                  cwd=str(ws), stdin=handle,
-                                  capture_output=True, text=True,
-                                  env=self._arm_env(ws))
+            proc = self._guarded_invoke(
+                [sys.executable, "-", "pr", "close", "421"], cwd=ws,
+                stdin=handle, env=self._arm_env(ws))
         self._refusal(proc)
         self.assertEqual(self._log(ws), before)
 
@@ -20662,20 +20677,132 @@ def select_tests(opts: argparse.Namespace
 SUITE_RUNNER_NAME = "run_tests.py"
 SUITE_RUNNER_MODULE = SUITE_RUNNER_NAME[:-len(".py")]
 
-# The trees a discovered test can import from. `test/` is `sys.path[0]` for
-# every `python3 test/run_tests.py` run — it is the directory the runner
-# itself lives in — and `harness/` is on `sys.path` from the moment
-# run_tests.py inserts it. Round 4 measured a forking helper in each, plus one
-# in a PACKAGE inside the discovery dir, all three invisible to a pin whose
-# file set was two globs. So the scan is the directory TREES, walked, not a
-# pattern anyone has to keep up to date.
-SUITE_SCAN_DIRS = ("test", "harness")
+# Scan roots are derived below from the runner's actual `sys.path.insert`
+# calls, plus the runner's own directory.  Keeping a second list here made a
+# newly importable helper invisible until somebody remembered to update it.
 # Everything that starts a process. `subprocess.run` is the spelling the
 # committed tree uses; the other seven are the ones round 3 measured walking
 # straight past the old pin.
 SPAWN_ATTRS = ("run", "Popen", "call", "check_call", "check_output")
 OS_SPAWN_PREFIXES = ("spawn", "exec")
 OS_SPAWN_NAMES = ("system", "posix_spawn", "posix_spawnp")
+
+
+class SuiteScanError(RuntimeError):
+    """The runner uses a path expression this bounded parser cannot prove."""
+
+
+_UNKNOWN = object()
+_PYTHON = object()
+
+
+def _static_value(node, bindings):
+    """Resolve the deliberately small expression language used for argv/path.
+
+    It accepts constants, locally bound names, path joins, string/list
+    concatenation, `str`/`Path`, and f-strings whose parts are all known.
+    Everything else is unknown.  In particular, this never imports a module
+    to inspect an imported value: uncertainty is a potential Python spawn.
+    """
+    if isinstance(node, ast.Constant) and isinstance(node.value, (str, int)):
+        return str(node.value)
+    if isinstance(node, ast.Name):
+        return bindings.get(node.id, _UNKNOWN)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        values = [_static_value(item, bindings) for item in node.elts]
+        # Preserve a known interpreter before an unknown target.  Collapsing
+        # the whole argv to unknown would accidentally classify it as an
+        # unknown *external* command instead of fail-closing Python.
+        return tuple(values)
+    if isinstance(node, ast.JoinedStr):
+        parts = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+            elif isinstance(value, ast.FormattedValue):
+                resolved = _static_value(value.value, bindings)
+                if resolved is _UNKNOWN or resolved is _PYTHON:
+                    return _UNKNOWN
+                parts.append(str(resolved))
+            else:
+                return _UNKNOWN
+        return "".join(parts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Div)):
+        left, right = _static_value(node.left, bindings), _static_value(node.right, bindings)
+        if left is _UNKNOWN or right is _UNKNOWN or left is _PYTHON or right is _PYTHON:
+            return _UNKNOWN
+        if isinstance(node.op, ast.Add) and isinstance(left, tuple) and isinstance(right, tuple):
+            return left + right
+        return str(left) + ("/" if isinstance(node.op, ast.Div) else "") + str(right)
+    if isinstance(node, ast.Attribute):
+        if (isinstance(node.value, ast.Name) and node.value.id == "sys"
+                and node.attr == "executable"):
+            return _PYTHON
+        value = _static_value(node.value, bindings)
+        if node.attr == "parent" and value not in (_UNKNOWN, _PYTHON):
+            return str(value) + "/.."
+        return _UNKNOWN
+    if isinstance(node, ast.Call):
+        if isinstance(node.func, ast.Name) and node.func.id in ("str", "Path") and len(node.args) == 1:
+            return _static_value(node.args[0], bindings)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "resolve" and not node.args:
+            return _static_value(node.func.value, bindings)
+    return _UNKNOWN
+
+
+def _module_bindings(tree):
+    """Resolve sequential module constants without executing source.
+
+    A later unsupported assignment shadows an earlier constant. Retaining the
+    old value would turn `target = 'other.py'; target = imported_value` into a
+    falsely proved safe program.
+    """
+    bindings = {"__file__": "__file__"}
+    assignments = []
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            assignments.extend((target, node.value) for target in node.targets)
+        elif isinstance(node, ast.AnnAssign) and node.value is not None:
+            assignments.append((node.target, node.value))
+    for target, value in assignments:
+        if isinstance(target, ast.Name):
+            bindings[target.id] = _static_value(value, bindings)
+    return bindings
+
+
+def _suite_scan_roots(repo_root: Path, runner_path: Path) -> tuple[Path, ...]:
+    """Return the runner directory and statically provable inserted roots.
+
+    The supported insertion syntax is the same bounded expression language as
+    argv analysis.  An unsupported or outside-repository root is an error;
+    silently scanning less source would turn a parser failure into a green pin.
+    """
+    tree = ast.parse(runner_path.read_text(encoding="utf-8"))
+    bindings = _module_bindings(tree)
+    roots = [runner_path.parent.resolve()]
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Attribute)
+                and isinstance(node.func.value.value, ast.Name)
+                and node.func.value.value.id == "sys"
+                and node.func.value.attr == "path" and node.func.attr == "insert"):
+            continue
+        if len(node.args) < 2:
+            raise SuiteScanError(f"unsupported sys.path.insert at line {node.lineno}")
+        value = _static_value(node.args[1], bindings)
+        if value is _UNKNOWN or value is _PYTHON:
+            raise SuiteScanError(f"unsupported scan root at {runner_path}:{node.lineno}")
+        # `__file__` is symbolic above; the runner's real parent is the only
+        # possible concrete origin in a repo-relative insertion.
+        text = str(value).replace("__file__", str(runner_path))
+        candidate = Path(text).resolve()
+        try:
+            candidate.relative_to(repo_root.resolve())
+        except ValueError as error:
+            raise SuiteScanError(
+                f"scan root outside repository at {runner_path}:{node.lineno}: {candidate}") from error
+        roots.append(candidate)
+    return tuple(dict.fromkeys(roots))
 
 
 class _SuiteForkScan:
@@ -20729,13 +20856,8 @@ class _SuiteForkScan:
                         self.runner_mains.add(alias.asname or alias.name)
 
     def _resolve_bindings(self) -> None:
-        """Names bound — at module OR class level — to something that mentions
-        the runner, or to the child-marker environment variable's name.
-
-        `RUNNER = TEST_DIR / "run_tests.py"` and
-        `PLANTED = ISSUES_DIR / "x.py"` are the same shape; only the first
-        mentions the runner, and only its NAME appears at the spawn.
-        """
+        """Bound values used by the no-execution target classifier."""
+        self.bindings = _module_bindings(self.tree)
         self.runner_names, self.guard_names = set(), set()
         for node in ast.walk(self.tree):
             if isinstance(node, ast.Assign):
@@ -20744,13 +20866,13 @@ class _SuiteForkScan:
                 targets, value = [node.target], node.value
             else:
                 continue
-            source = ast.unparse(value)
+            value = _static_value(value, self.bindings)
             for target in targets:
                 if not isinstance(target, ast.Name):
                     continue
-                if SUITE_RUNNER_NAME in source:
+                if value is not _UNKNOWN and value is not _PYTHON and SUITE_RUNNER_NAME in str(value):
                     self.runner_names.add(target.id)
-                if self.guard_env in source:
+                if value is not _UNKNOWN and value is not _PYTHON and self.guard_env in str(value):
                     self.guard_names.add(target.id)
 
     def _names_the_runner(self, node) -> bool:
@@ -20775,6 +20897,41 @@ class _SuiteForkScan:
                     or func.attr.startswith(OS_SPAWN_PREFIXES)):
                 return True
         return isinstance(func, ast.Name) and func.id in self.bare_spawners
+
+    @staticmethod
+    def _python_target(argv):
+        """Known other-script target, or `_UNKNOWN` for a possible suite run."""
+        if not isinstance(argv, tuple) or not argv:
+            return None
+        interpreter = argv[0]
+        if not (interpreter is _PYTHON or (isinstance(interpreter, str)
+                and interpreter.rsplit("/", 1)[-1] in ("python", "python3", "python3.11"))):
+            return None
+        index = 1
+        # Interpreter flags are not script targets. -c, -, and -m need code,
+        # stdin, or an import, none of which this bounded parser proves safe.
+        while index < len(argv) and isinstance(argv[index], str) and argv[index].startswith("-"):
+            if argv[index] in ("-c", "-", "-m"):
+                return _UNKNOWN
+            index += 2 if argv[index] in ("-W", "-X") else 1
+        if index >= len(argv) or argv[index] is _UNKNOWN:
+            return _UNKNOWN
+        target = argv[index]
+        if target is _PYTHON or not isinstance(target, str):
+            return _UNKNOWN
+        return target
+
+    def _potential_suite_spawn(self, call, bindings) -> bool:
+        if not self._is_spawn(call):
+            return False
+        argv_node = call.args[0] if call.args else next(
+            (keyword.value for keyword in call.keywords if keyword.arg == "args"), None)
+        if argv_node is None:
+            return False
+        target = self._python_target(_static_value(argv_node, bindings))
+        if target is None:
+            return False
+        return target is _UNKNOWN or SUITE_RUNNER_NAME in target
 
     def _reads_the_marker(self, node) -> bool:
         """A READ of the child marker, never a write.
@@ -20809,7 +20966,7 @@ class _SuiteForkScan:
             if any(mentions(n) for n in ast.walk(sub.left)):
                 return True
         # os.environ[MARKER]
-        if isinstance(sub, ast.Subscript) and any(
+        if isinstance(sub, ast.Subscript) and isinstance(sub.ctx, ast.Load) and any(
                 mentions(n) for n in ast.walk(sub.slice)):
             return True
         return False
@@ -20832,6 +20989,25 @@ class _SuiteForkScan:
                        for t in sub.targets)
         return False
 
+    def _marker_write_count(self, sub) -> int:
+        """Count writes so a later `MARKER = '0'` cannot hide behind one.
+
+        The sanctioned sinks set this one value exactly once, after composing
+        their optional environment. A second marker assignment is an override
+        candidate, not proof that the child marker remains authoritative.
+        """
+        count = 0
+        for node in ast.walk(sub):
+            if isinstance(node, ast.Dict):
+                count += sum(key is not None and self._mentions_the_marker(key)
+                             for key in node.keys)
+            elif isinstance(node, ast.Assign):
+                count += sum(isinstance(target, ast.Subscript)
+                             and any(self._mentions_the_marker(item)
+                                     for item in ast.walk(target.slice))
+                             for target in node.targets)
+        return count
+
     def _names_the_runner_in_process(self, node) -> bool:
         """`run_tests.main` named anywhere outside the runner's own module.
 
@@ -20853,9 +21029,23 @@ class _SuiteForkScan:
         return False
 
     def _walk_functions(self) -> None:
-        self.functions = [n for n in ast.walk(self.tree)
-                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-        self.lineno = {fn.name: fn.lineno for fn in self.functions}
+        def collect(body, prefix=""):
+            found = []
+            for node in body:
+                if isinstance(node, ast.ClassDef):
+                    found.extend(collect(node.body, prefix + node.name + "."))
+                elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    identity = prefix + node.name
+                    found.append((identity, node))
+                    found.extend(collect(node.body, identity + "."))
+            return found
+
+        # A bare method name is not an identity: two classes can both define
+        # `_run_suite`. Keep every map lexical-qualified so one cannot hide
+        # another's sink or marker check.
+        self.functions = collect(self.tree.body)
+        self.lineno = {identity: fn.lineno for identity, fn in self.functions}
+        identities = set(self.lineno)
         spawns_any, direct, callees, stands_down = {}, {}, {}, {}
         # Statement INDEX, inside the function's own body, of the first read of
         # the child marker and of the first spawn — so "stands down BEFORE it
@@ -20864,7 +21054,7 @@ class _SuiteForkScan:
         # child's environment, which nothing asserted before round 4: deleting
         # that one expression from `_run_suite` left the pin green and ran the
         # tree away.
-        first_marker_read, first_spawn, writes_marker = {}, {}, {}
+        first_marker_read, first_spawn, writes_marker, marker_writes = {}, {}, {}, {}
         # Callee names this function hands a runner-naming argument to. A
         # helper that takes the path as a PARAMETER names nothing itself.
         runner_arg_callees = {}
@@ -20872,13 +21062,41 @@ class _SuiteForkScan:
         # spawner that stands down through a helper (`self._skip_in_child()`)
         # can still be shown to do it BEFORE it spawns.
         stmt_calls = {}
-        for fn in self.functions:
+
+        def assigned_names(node):
+            names = set()
+            for item in ast.walk(node):
+                if isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                     ast.Lambda, ast.ClassDef)) and item is not node:
+                    continue
+                targets = item.targets if isinstance(item, ast.Assign) else (
+                    [item.target] if isinstance(item, (ast.AnnAssign, ast.AugAssign)) else [])
+                names.update(target.id for target in targets if isinstance(target, ast.Name))
+            return names
+
+        for identity, fn in self.functions:
             any_spawn = names_runner_at_spawn = False
             called, arg_callees = set(), set()
             calls_at = {}
             read_at = spawn_at = None
             wrote = False
+            write_count = 0
+            bindings = dict(self.bindings)
             for index, stmt in enumerate(fn.body):
+                if isinstance(stmt, ast.Assign):
+                    for target in stmt.targets:
+                        if isinstance(target, ast.Name):
+                            bindings[target.id] = _static_value(stmt.value, bindings)
+                elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+                    bindings[stmt.target.id] = _static_value(stmt.value, bindings)
+                else:
+                    # Branches, loops, try blocks and other control flow are
+                    # outside this bounded evaluator. Any target they assign
+                    # is unknown at the following sink, even if an earlier
+                    # straight-line assignment had a known value.
+                    for name in assigned_names(stmt):
+                        bindings[name] = _UNKNOWN
+                write_count += self._marker_write_count(stmt)
                 for node in ast.walk(stmt):
                     if self._writes_the_marker(node):
                         wrote = True
@@ -20889,10 +21107,13 @@ class _SuiteForkScan:
                     name = (node.func.attr if isinstance(node.func, ast.Attribute)
                             else getattr(node.func, "id", None))
                     if name:
-                        called.add(name)
-                        calls_at.setdefault(name, index)
+                        scope = identity.rpartition(".")[0]
+                        callee = ((scope + "." if scope else "") + name)
+                        callee = callee if callee in identities else name
+                        called.add(callee)
+                        calls_at.setdefault(callee, index)
                         if any(self._names_the_runner(a) for a in node.args):
-                            arg_callees.add(name)
+                            arg_callees.add(callee)
                     if self._names_the_runner_in_process(node):
                         names_runner_at_spawn = True
                         if spawn_at is None:
@@ -20902,32 +21123,40 @@ class _SuiteForkScan:
                     any_spawn = True
                     if spawn_at is None:
                         spawn_at = index
-                    if any(self._names_the_runner(a) for a in
-                           [*node.args, *(k.value for k in node.keywords)]):
+                    # OS exec/spawn has a different argv shape, but it can
+                    # still name the runner directly. Keep that historical
+                    # positive while Python subprocesses use fail-closed
+                    # target classification.
+                    if (self._potential_suite_spawn(node, bindings)
+                            or any(self._names_the_runner(argument) for argument in
+                                   [*node.args, *(keyword.value for keyword in node.keywords)])):
                         names_runner_at_spawn = True
-            spawns_any[fn.name] = any_spawn
-            direct[fn.name] = names_runner_at_spawn
-            callees[fn.name] = called
-            runner_arg_callees[fn.name] = arg_callees
-            stmt_calls[fn.name] = calls_at
-            first_marker_read[fn.name] = read_at
-            first_spawn[fn.name] = spawn_at
-            writes_marker[fn.name] = wrote
-            stands_down[fn.name] = (
-                "_skip_in_child" in called or self._reads_the_marker(fn))
+            spawns_any[identity] = any_spawn
+            direct[identity] = names_runner_at_spawn
+            callees[identity] = called
+            runner_arg_callees[identity] = arg_callees
+            stmt_calls[identity] = calls_at
+            first_marker_read[identity] = read_at
+            first_spawn[identity] = spawn_at
+            writes_marker[identity] = wrote
+            marker_writes[identity] = write_count
+            stands_down[identity] = (
+                any(callee.rsplit(".", 1)[-1] == "_skip_in_child"
+                    for callee in called) or self._reads_the_marker(fn))
         # Second pass: a call to a same-module function that itself reads the
         # marker counts as a read at that statement. `self._skip_in_child()`
         # is that shape, and it is the spelling both files already use.
-        reads_directly = {fn.name: self._reads_the_marker(fn)
-                          for fn in self.functions}
-        for fn in self.functions:
-            candidates = [i for i in (first_marker_read[fn.name],) if i is not None]
-            candidates += [index for callee, index in stmt_calls[fn.name].items()
+        reads_directly = {identity: self._reads_the_marker(fn)
+                          for identity, fn in self.functions}
+        for identity, _ in self.functions:
+            candidates = [i for i in (first_marker_read[identity],) if i is not None]
+            candidates += [index for callee, index in stmt_calls[identity].items()
                            if reads_directly.get(callee)]
-            first_marker_read[fn.name] = min(candidates) if candidates else None
+            first_marker_read[identity] = min(candidates) if candidates else None
         self.first_marker_read = first_marker_read
         self.first_spawn = first_spawn
         self.writes_marker = writes_marker
+        self.marker_writes = marker_writes
         self.runner_arg_callees = runner_arg_callees
         # A helper that takes the path as a PARAMETER names nothing itself;
         # its CALLER names the runner and does not spawn. Neither is caught by
@@ -20935,10 +21164,10 @@ class _SuiteForkScan:
         # SAME-MODULE spawner counts as naming the runner itself. The pin
         # applies the same rule across the whole scanned tree, because `test/`
         # is on sys.path and importing a helper from another file is free.
-        for fn in self.functions:
-            if runner_arg_callees[fn.name] & {
+        for identity, _ in self.functions:
+            if runner_arg_callees[identity] & {
                     name for name, spawns in spawns_any.items() if spawns}:
-                direct[fn.name] = True
+                direct[identity] = True
         self.spawns_any, self.callees = spawns_any, callees
         self.direct = direct
         # Retained for the message the pin prints: whether a flagged function
@@ -21201,15 +21430,16 @@ class TestTheRunnerItself(unittest.TestCase):
                     "assertions that can see this runner's exit code, and it "
                     "no longer exists")
 
-    # The ONLY functions in this repository allowed to name the suite runner
-    # at a spawn, as (file, function). Each of them stands down itself when
-    # the run IS the child, so every caller — in any file, guarded or not —
-    # is bounded by construction. The test below asserts this membership is
-    # EXACT over an `ast` walk of every `*.py` under test/ and harness/, so a
-    # forking helper anywhere in either tree is red with its file and line.
+    # The reviewed inventory of potential Python suite sinks, as (file,
+    # lexical function identity). Each reads the child marker before its sink
+    # and writes it exactly once after assembling the child environment. The
+    # test below asserts this membership is EXACT over every derived import
+    # root, so a new helper is red with its file and line.
     SUITE_SPAWNERS = (
-        ("test/issues/test_issue_97.py", "_run_suite"),
-        ("test/run_tests.py", "_spawn_suite"),
+        ("test/issues/test_issue_97.py", "TestIssue97._run_copy"),
+        ("test/issues/test_issue_97.py", "TestIssue97._run_suite"),
+        ("test/run_tests.py", "TestTheRunnerItself._spawn_suite"),
+        ("test/test_propagation.py", "LockAndDigestTests.test_digest_matches_the_registry_generator"),
     )
 
     # What unittest can execute on its own. Kept because the message a
@@ -21222,17 +21452,16 @@ class TestTheRunnerItself(unittest.TestCase):
 
     @classmethod
     def _scan_the_forkable_tree(cls) -> dict:
-        """`{relative path: _SuiteForkScan}` for every `*.py` under test/ and
-        harness/ that rglob finds — packages, subdirectories and `__init__.py`
-        included, `__pycache__` aside.
+        """Parse every Python file under the runner's real import roots.
 
-        A directory walk and not a file pattern: round 3's pin parsed one
-        file, round 4's parsed two globs, and each time the helper that ran
-        the tree away lived one directory over.
+        The root parser accepts constants, names, joins, `str` and `Path`.
+        Any other insertion expression fails named and closed; it never means
+        "scan fewer files". This proves only invocation construction, not
+        arbitrary code a known different script might subsequently import.
         """
         scans = {}
-        for directory in SUITE_SCAN_DIRS:
-            for path in sorted((REPO_ROOT / directory).rglob("*.py")):
+        for directory in _suite_scan_roots(REPO_ROOT, TEST_DIR / SUITE_RUNNER_NAME):
+            for path in sorted(directory.rglob("*.py")):
                 if "__pycache__" in path.parts:
                     continue
                 rel = path.relative_to(REPO_ROOT).as_posix()
@@ -21245,14 +21474,12 @@ class TestTheRunnerItself(unittest.TestCase):
         """S-B-a-2. Nothing in this repository can fork `test/run_tests.py`
         without standing down when it IS the child.
 
-        The invariant is enforced at the SPAWNER, not at its callers: exactly
-        two functions may name the runner at a spawn, each reads
-        $SKILLS_EVALS_SUITE_CHILD before it spawns, and `_run_suite` writes
-        that marker into the child's environment. Everything else — a new
-        forking test, a helper in `test/`, a helper in `harness/`, a helper in
-        a package inside the discovery dir — is red here with its file and
-        line, and the remedy is always the same one sentence: call the
-        spawner.
+        The invariant is enforced at the subprocess sink, not at its callers.
+        Every reviewed inventory member reads $SKILLS_EVALS_SUITE_CHILD before
+        spawning and writes it authoritatively for the child. Everything else
+        — a new forking test or importable helper — is red here with its file
+        and line and must gain the same verified guard or a provable other
+        program target.
 
         Measured on f9115ce, each in its own throwaway copy and each with the
         two round-3 pins GREEN: `test/r4forkhelper.py`, `harness/r4harnessfork.py`
@@ -21275,10 +21502,10 @@ class TestTheRunnerItself(unittest.TestCase):
                          for name, spawns in scan.spawns_any.items() if spawns}
         flagged = {}
         for rel, scan in scans.items():
-            for fn in scan.functions:
-                if scan.direct[fn.name] or (
-                        scan.runner_arg_callees[fn.name] & spawner_names):
-                    flagged[(rel, fn.name)] = scan.lineno[fn.name]
+            for identity, _ in scan.functions:
+                if scan.direct[identity] or (
+                        scan.runner_arg_callees[identity] & spawner_names):
+                    flagged[(rel, identity)] = scan.lineno[identity]
 
         self.assertTrue(
             flagged,
@@ -21287,15 +21514,10 @@ class TestTheRunnerItself(unittest.TestCase):
 
         self.assertEqual(
             sorted(flagged), sorted(self.SUITE_SPAWNERS),
-            "the set of functions that name `python3 test/run_tests.py` at a "
-            "spawn has changed. Exactly the functions in SUITE_SPAWNERS may "
-            "do it, and each of them stands down inside a child — so a test "
-            "that forks the suite THROUGH one of them needs no guard of its "
-            "own and no entry anywhere. If your new function is in this list, "
-            "route its spawn through `_run_suite` (or this file's "
-            "`_spawn_suite`) instead: a second unguarded spawner is how the "
-            "suite forks itself forever, measured at 19 concurrent runner "
-            "processes and still climbing.\n  flagged: "
+            "the reviewed inventory of potential Python suite sinks changed. "
+            "Every listed function must have a parser-verified child guard; "
+            "a new member needs either a provable other-program target or an "
+            "explicit guarded-inventory review.\n  flagged: "
             + "\n  ".join(f"{rel}:{lineno} {name}()"
                           for (rel, name), lineno in sorted(flagged.items())))
 
@@ -21315,10 +21537,16 @@ class TestTheRunnerItself(unittest.TestCase):
                     f"{rel}:{scan.lineno[name]} {name}() reads "
                     f"${self.SUITE_CHILD_ENV} only AFTER it has already "
                     "spawned — the child is already running by then")
+                self.assertEqual(
+                    scan.marker_writes[name], 1,
+                    f"{rel}:{scan.lineno[name]} {name}() must write "
+                    f"${self.SUITE_CHILD_ENV} exactly once after assembling "
+                    "its child environment; an extra write can override the "
+                    "child marker.")
 
         issue97 = scans["test/issues/test_issue_97.py"]
         self.assertTrue(
-            issue97.writes_marker["_run_suite"],
+            issue97.writes_marker["TestIssue97._run_suite"],
             "_run_suite no longer writes $" + self.SUITE_CHILD_ENV + " into "
             "the child's environment, so the child does not know it is one "
             "and nothing makes it stand down. Measured: with that single "
@@ -21582,6 +21810,139 @@ def main(argv: list[str] | None = None) -> int:
     # once per suite. memory_guard's override below is pinned the same way,
     # by a child run with $SKILLS_EVALS_USER_MEMORY redirected.
     return memory_guard(memory, before, status)
+
+
+class TestIssue152(unittest.TestCase):
+    """Parser-only regression rows for the suite-fork scan.
+
+    These sources are written under a temporary root and are never imported,
+    discovered, or executed. A finding is sufficient: executing a hostile
+    recursive fixture would be the failure mode this pin exists to prevent.
+    """
+
+    CHILD = "SKILLS_EVALS_SUITE_CHILD"
+
+    def _repo(self, runner_extra=""):
+        root = Path(tempfile.mkdtemp(prefix="issue152-parser-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        for name in ("test", "harness", "scripts", "fourth"):
+            (root / name).mkdir()
+        runner = """from pathlib import Path
+import sys
+TEST_DIR = Path(__file__).resolve().parent
+REPO_ROOT = TEST_DIR.parent
+HARNESS_DIR = REPO_ROOT / 'harness'
+sys.path.insert(0, str(HARNESS_DIR))
+sys.path.insert(0, str(REPO_ROOT / 'scripts'))
+sys.path.insert(0, str(REPO_ROOT / 'fourth'))
+""" + runner_extra
+        path = root / "test" / "run_tests.py"
+        path.write_text(runner, encoding="utf-8")
+        return root, path
+
+    def _scan_source(self, source):
+        root, _ = self._repo()
+        path = root / "scripts" / "hostile.py"
+        path.write_text(source, encoding="utf-8")
+        return _SuiteForkScan(path, self.CHILD)
+
+    def test_roots_follow_real_sys_path_insertions_including_a_fourth_tree(self):
+        root, runner = self._repo()
+        roots = _suite_scan_roots(root, runner)
+        self.assertEqual({path.relative_to(root).as_posix() for path in roots},
+                         {"test", "harness", "scripts", "fourth"})
+        (root / "fourth" / "helper.py").write_text("x = 1\n", encoding="utf-8")
+        scanned = {path.relative_to(root).as_posix()
+                   for directory in roots for path in directory.rglob("*.py")}
+        self.assertIn("fourth/helper.py", scanned)
+
+    def test_unsupported_or_outside_inserted_root_fails_named_and_closed(self):
+        root, runner = self._repo("sys.path.insert(0, dynamic_root)\n")
+        with self.assertRaisesRegex(SuiteScanError, "unsupported scan root"):
+            _suite_scan_roots(root, runner)
+        root, runner = self._repo("sys.path.insert(0, '/outside-the-repo')\n")
+        with self.assertRaisesRegex(SuiteScanError, "outside repository"):
+            _suite_scan_roots(root, runner)
+
+    def test_python_targets_fail_closed_but_known_other_programs_pass(self):
+        scan = self._scan_source("""import subprocess as sp
+import sys
+import os
+from run_tests import TEST_DIR, SUITE_RUNNER_NAME
+import run_tests as rt
+RUNNER = f'{TEST_DIR}/{SUITE_RUNNER_NAME}'
+UNKNOWN = imported_target
+def imported(): sp.run(args=[sys.executable, TEST_DIR / SUITE_RUNNER_NAME])
+def qualified(): sp.Popen([sys.executable, rt.TEST_DIR / rt.SUITE_RUNNER_NAME])
+def f_string(): sp.run([sys.executable, RUNNER])
+def unknown(): sp.run([sys.executable, UNKNOWN])
+def cycle():
+    one = two
+    two = one
+    sp.run([sys.executable, one])
+def reassigned():
+    target = 'other.py'
+    target = imported_target
+    sp.run([sys.executable, target])
+def branch_reassigned():
+    target = 'other.py'
+    if condition:
+        target = 'maybe.py'
+    sp.run([sys.executable, target])
+def sink(target): sp.run([sys.executable, target])
+def handoff(): sink('run_tests.py')
+def os_spawn(): os.spawnv(os.P_WAIT, sys.executable, [sys.executable, 'run_tests.py'])
+def in_process(): rt.main()
+def safe(): sp.run([sys.executable, 'scripts/generate_skills_lock.py'])
+""")
+        for name in ("imported", "qualified", "f_string", "unknown", "cycle",
+                     "reassigned", "branch_reassigned", "handoff", "os_spawn", "in_process"):
+            with self.subTest(name=name):
+                self.assertTrue(scan.direct[name])
+        self.assertFalse(scan.direct["safe"])
+
+    def test_guarded_sink_accepts_only_read_before_spawn_and_authoritative_write(self):
+        prefix = """import os, subprocess, sys, unittest
+def guarded():
+    if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):
+        raise unittest.SkipTest('child')
+    env = dict(os.environ)
+    env['SKILLS_EVALS_SUITE_CHILD'] = '1'
+    subprocess.run([sys.executable, 'run_tests.py'], env=env)
+"""
+        scan = self._scan_source(prefix)
+        self.assertTrue(scan.direct["guarded"])
+        self.assertLess(scan.first_marker_read["guarded"], scan.first_spawn["guarded"])
+        self.assertTrue(scan.writes_marker["guarded"])
+        self.assertEqual(scan.marker_writes["guarded"], 1)
+        for mutant in (
+                prefix.replace("os.environ.get('SKILLS_EVALS_SUITE_CHILD')", "False"),
+                prefix.replace("    env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n", ""),
+                prefix.replace("    env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n", "    env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n    env['SKILLS_EVALS_SUITE_CHILD'] = '0'\n")):
+            with self.subTest(mutant=mutant != prefix):
+                changed = self._scan_source(mutant)
+                # Deleting a read/write is directly false; a later override
+                # remains a parser-visible marker write for the outer pin to
+                # reject through its authoritative-write assertion.
+                self.assertTrue(changed.direct["guarded"])
+        no_read = self._scan_source(prefix.replace("os.environ.get('SKILLS_EVALS_SUITE_CHILD')", "False"))
+        no_write = self._scan_source(prefix.replace("    env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n", ""))
+        self.assertIsNone(no_read.first_marker_read["guarded"])
+        self.assertFalse(no_write.writes_marker["guarded"])
+        override = self._scan_source(prefix.replace(
+            "    env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n",
+            "    env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n    env['SKILLS_EVALS_SUITE_CHILD'] = '0'\n"))
+        self.assertEqual(override.marker_writes["guarded"], 2)
+
+    def test_generic_python_sink_is_a_qualified_verified_inventory_member(self):
+        scan = _SuiteForkScan(Path(__file__), self.CHILD, is_runner=True)
+        identity = "TestIssue84Round5._guarded_invoke"
+        self.assertTrue(scan.spawns_any[identity],
+                        "the generic sink must remain visible to the parser")
+        self.assertFalse(scan.direct[identity],
+                         "argv is caller-provided; this is not a claim that every external command is Python")
+        self.assertLess(scan.first_marker_read[identity], scan.first_spawn[identity])
+        self.assertEqual(scan.marker_writes[identity], 1)
 
 
 if __name__ == "__main__":

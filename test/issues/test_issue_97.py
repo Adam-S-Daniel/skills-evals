@@ -238,7 +238,9 @@ class TestIssue97(unittest.TestCase):
                       "re-fork the suite from inside itself")
             print(reason)
             raise unittest.SkipTest(reason)
-        env = dict(os.environ, **{CHILD_ENV: "1"}, **(env_extra or {}))
+        # The caller may add a throwaway-memory path, but may never clear the
+        # marker that makes a recursively launched suite stand down.
+        env = dict(os.environ, **(env_extra or {}), **{CHILD_ENV: "1"})
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
@@ -3017,8 +3019,11 @@ class TestIssue97(unittest.TestCase):
         return tmp / "harness" / "run_eval.py"
 
     def _run_copy(self, runner: Path, argv_tail) -> tuple[int, str]:
+        if os.environ.get(CHILD_ENV):
+            raise unittest.SkipTest("child suite run — guarded copied harness")
         cmd = [sys.executable, str(runner), *[str(a) for a in argv_tail]]
         env = dict(os.environ, CLAUDE_BIN=str(FAKE_CLAUDE))
+        env[CHILD_ENV] = "1"
         try:
             proc = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
                                   capture_output=True, text=True,
@@ -4667,4 +4672,3 @@ class TestIssue97(unittest.TestCase):
         self.assertTrue("per\n    # DECLARED arm" in comment,
                         "the timeout-minutes comment must account for a "
                         "guidance fixture's per-declared-arm budget")
-
