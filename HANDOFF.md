@@ -30,51 +30,89 @@ reconstructed from memory.
 
 ## 0A. Session of 2026-09-15 — RESUME HERE
 
-This section supersedes the September 13 state below. Adam requested a fresh
-top-level Codex session at the next clean checkpoint. No further fixture work
-was authorized; the stopped skill and guidance fixture lanes remain stopped.
+This section supersedes the September 13 state below. Adam stopped this
+continuation at a clean checkpoint after the account-wide weekly meter rose
+from 22% at 15:49 UTC to 58% at 17:22 UTC. The remaining PR #153 merge and
+first-live-run milestone was estimated to cost another 6–10 percentage points,
+above his 5-point ceiling; completing and documenting this checkpoint was
+estimated at 2–3 points. Resume next week in either Codex or Claude. Do not
+launch another session before then, and do not repeat completed broad review
+without a new concern.
 
 ### Roster redesign: PR #153
 
-[PR #153](https://github.com/Adam-S-Daniel/skills-evals/pull/153) was based on
-`6136234` and conflicted with the subsequently merged guidance work on `main`
-`7d26e76`. The session reconciled the two in merge commit `11de068`, preserving
-the guidance dispatch input, timeout checks, environment allowlists, and the
-committed-roster/proposal distinction. A standalone timeout test now pins its
-fixture model so it reaches the timeout check in its partial harness copy.
+[PR #153](https://github.com/Adam-S-Daniel/skills-evals/pull/153), branch
+`claude/skills-evals-147`, is pushed, fetched, exact-SHA verified and clean at
+`efb48b8849ffec0996348908aed80bf10994a3d7`. Its source worktree is
+`skills-evals/.claude/worktrees/codex-reconcile-evals-20260915`, local branch
+`codex/reconcile-evals-20260915`. All source and test-isolation fixes are done;
+the worker released the clean tree with zero children. The
+[latest public checkpoint](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5684654811)
+records the preceding round-three state and its single test-helper finding.
 
-A separate fix, [`4766e39`](https://github.com/Adam-S-Daniel/skills-evals/commit/4766e39c2046780a878fcace9fba1ff55bcc62c0), repairs generated proposal provenance: the renderer
-omitted `provenance.from`, which the committed-roster CI check requires. Its new
-regression assertions run generated output through that existing provenance contract:
-one test fails before the fix and passes after it.
+- The final test-only repair confines the proposal and results shell fixture
+  to a disposable workspace. Its independent red/green proof reproduced the
+  old caller-byte overwrite and confirmed the fixed helper preserves badge,
+  roster and results bytes. Focused `TestIssue147` verification is **40 tests,
+  exit 0**.
+- The final code review is **CLEAN**, contingent on accepting the separate
+  exact-head full verification. It found no new should-fix and did not repeat
+  unchanged production review.
+- Exact-head baseline: **1,446 tests, 2 skipped, exit 0** in 354.554 seconds;
+  propagation: **164 tests, 1 skipped, exit 0** in 2.470 seconds. All archive
+  manifests matched before and after at
+  `ca4bb2ab1f09b6b0028738d83dc14f982478073320db6e23f001a1ceda83a434`;
+  source manifests likewise matched at
+  `22f0b114f83a1b612c5fe7a229d172cd0bffe1370950f347c4da6580d0be5e2b`.
+  The local report is `final153-verification/REPORT.md`. Fixture parity from
+  the earlier candidate remains 13 common skill fixtures and 98 checks per
+  revision; it was not rerun because this final delta changes only the
+  isolated test helper.
+- The full generated multi-arm roster run and a bounded final adversarial
+  confirmation of test isolation were deliberately deferred under the
+  allowance stop. Earlier production adversarial coverage passed 11 tests
+  plus 2 review checks; the previous NOT CLEAN verdict concerned only the now
+  fixed test helper. Do not treat that earlier evidence as the missing final
+  confirmation.
+- No merge or live proposal dispatch occurred. Before merging, run the
+  generated full suite and bounded adversarial confirmation, verify current
+  PR CI plus legacy and `main` status surfaces, and accept the exact-head
+  baseline and propagation evidence. Merge with a merge commit, record the
+  expected merge SHA, close [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
+  as superseded, then dispatch and verify the first real proposal run.
 
-Both commits are pushed to `claude/skills-evals-147`; the remote branch was
-fetched and verified to contain the exact `4766e39` commit. The
-[checkpoint report](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5683335519)
-records verification and the outstanding review.
+### Suite-fork guard: issue #152
 
-- The original `6136234` head was independently verified: **1,286 tests,
-  2 skipped, exit 0**; propagation **164 tests, 1 skipped, exit 0**. Tracked
-  source fingerprints matched before and after. The historical third skip
-  was a root-only permission-test skip; this WSL user can execute that test.
-- The merged test denominator is **1,438**: 1,286 + 1,184 on current main
-  - 1,032 shared tests. The provenance regression strengthens an existing
-  test, so the count is unchanged.
-- Final candidate `4766e39`: `python3 test/run_tests.py` ran **1,438 tests,
-  2 skipped, exit 0**; `python3 test/test_propagation.py` ran **164 tests,
-  1 skipped, exit 0**. The worktree is clean and all workers have released
-  their trees with no remaining child processes. Fixture parity was rerun
-  against `7d26e76`: all 13 common skill fixtures have
-  identical per-check results and exits, **98 checks per revision**. This
-  supersedes the interrupted worker's unpreserved claim of 109 checks; that
-  earlier denominator was not independently reproduced.
-- The code review is incomplete, and the separate adversarial review of the
-  candidate has not run. **Do not merge on these test results alone.**
-- An additional workflow defect is reproduced but not fixed: the proposal
-  tracking-issue lookup accepts the marker in any issue's body, without
-  checking who created it. A synthetic ordinary-user issue containing the
-  marker was selected and closed by the actual workflow script. Review the
-  tracking-issue ownership and pagination contract before extending it.
+[Issue #152](https://github.com/Adam-S-Daniel/skills-evals/issues/152) is
+pushed, fetched and exact-SHA verified at
+`d6021b648724ac10aafa699c7b99b58d3e29d053` on branch
+`codex/suite-fork-152-20260915` in
+`skills-evals/.claude/worktrees/codex-suite-fork-152-20260915`. The first
+published implementation, `d0b492148e946704aa0165720a1c28ef4b9fb841`, had a
+NOT CLEAN review with seven findings, preserved in the
+[public review checkpoint](https://github.com/Adam-S-Daniel/skills-evals/issues/152#issuecomment-5684502689).
+The follow-up repairs the AST inventory, Python-target classification,
+source-order binding, fail-closed guard proof and environment-marker precedence.
+Its known inventory is 19 Python files, 42 explicit Python subprocess sites and
+one generic sink; five suite-forking helpers are both discovered and verified.
+
+- Final baseline: **1,195 tests, 2 skipped, exit 0**; propagation: **164
+  tests, 1 skipped, exit 0**; focused checks: **21 tests, exit 0**. The repair
+  also passed 26 actual-body mutation assertions, while three external mutants
+  each failed their two-test runner with exit 1 as required. All 566-file
+  manifests matched before and after. The local report is
+  `fix152-round1/REPORT.md`.
+- No fresh independent review or PR exists for the repaired candidate, and it
+  has not been integrated with PR #153 or `main`. Resume those steps only after
+  PR #153 merges. Read the final SHA before investigating two **unverified
+  source-inspection questions**, which are not established defects: enclosing
+  parameters may need to invalidate a same-named module constant before nested
+  closures are collected; and a skip helper's side effects before it reads the
+  child marker may defeat the guard proof. Do not execute a hostile helper
+  mutant. Consolidate only reproduced findings in the next independent review
+  before starting another fix cycle.
+- Then continue [issue #139](https://github.com/Adam-S-Daniel/skills-evals/issues/139)
+  under its existing receipt hold.
 
 ### InstructionsLoaded receipts: _agent-guidance PR #124
 
@@ -103,21 +141,43 @@ treat this handoff as an additional fix-round authorization.
 ### Local continuation pointers
 
 Persistent session artifacts are under the local workspace's
-`.evals-resume-20260915/`, including `START_HERE.md`, verifier
-logs, review reports, and a usage audit. Temporary `/tmp` artifacts disappeared
-at the previous interruption; keep new logs in persistent workspace storage.
+`.evals-resume-20260915/`, including `CURRENT_SESSION.md`, briefs, verifier
+logs, review reports and the allowance decision. These local files have no
+public links. Temporary `/tmp` artifacts are not continuation records; keep new
+evidence in the persistent workspace storage.
+
+Inactive disarmed review archives from the PR #153 round-one code review and
+the interrupted PR #124 base/head review were removed after their evidence was
+preserved. The PR #153 cleanup was initially rejected by automatic review;
+after all 389 files were proved identical to immutable archives, the repository
+was confirmed clean and the profile directories empty, ordinary escalation
+approved it and deletion succeeded. No real source worktree was removed or
+changed. Both source workers released clean trees with zero test descendants;
+no cleanup blocker remains.
 
 - Candidate worktree: `skills-evals/.claude/worktrees/codex-reconcile-evals-20260915`,
   local branch `codex/reconcile-evals-20260915`.
-- Original-head verification worktree: `skills-evals/.claude/worktrees/codex-resume-evals-20260914`.
+- Issue #152 worktree: `skills-evals/.claude/worktrees/codex-suite-fork-152-20260915`,
+  local branch `codex/suite-fork-152-20260915`.
 - Handoff worktree: `skills-evals/.claude/worktrees/codex-handoff-evals-20260915`,
   branch `codex/handoff-evals-20260915`.
 - Receipt source worktree: `_agent-guidance/.claude/worktrees/codex-resume-receipts-20260914`.
 
-Next: read the final reports and current PR heads; finish PR #153's required
-reviews, address their findings in a fresh worker, and repeat only verification
-affected by changes. The first real proposal dispatch still follows a reviewed
-merge. Then continue with #152 and #139, respecting the receipt-review hold.
+Portable resume sequence (Codex or Claude):
+
+1. Read this §0A and `/home/passp/repos/.evals-resume-20260915/CURRENT_SESSION.md`;
+   confirm the three worktrees above are clean and their branch heads match
+   this checkpoint.
+2. From the PR #153 candidate worktree, run the generated multi-arm full suite
+   in the already specified isolated archive environment, then perform the
+   bounded final adversarial confirmation. Do not start another broad review
+   unless new evidence creates a concern.
+3. Read current PR #153 CI/check conclusions and `main`; merge only after every
+   required condition above is green. Verify the merge commit, close PR #129,
+   then dispatch and verify the first live proposal run.
+4. Rebase or merge current `main` into the issue #152 branch, run only affected
+   verification, obtain its first independent review, and open its PR. Continue
+   #139 afterward. Leave PR #124 and both fixture lanes stopped.
 
 ## 0. Session of 2026-09-13 (superseded where § 0A differs)
 
