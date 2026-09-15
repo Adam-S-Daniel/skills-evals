@@ -217,9 +217,8 @@ class TestIssue97(unittest.TestCase):
 
     def _run_suite(self, env_extra: dict | None = None
                    ) -> subprocess.CompletedProcess:
-        """The ONE function in this repository allowed to name the runner at a
-        spawn (test/run_tests.py::_spawn_suite is the other; the pin there
-        holds the membership exact), and it stands down itself.
+        """A reviewed suite spawner that stands down itself. The runner
+        verifies every member of its sanctioned sink inventory.
 
         S-B-a-2. Round 2 guarded the one test that forked; round 3 pinned two
         file globs; round 4 measured three helper locations those globs never
@@ -240,7 +239,9 @@ class TestIssue97(unittest.TestCase):
             raise unittest.SkipTest(reason)
         # The caller may add a throwaway-memory path, but may never clear the
         # marker that makes a recursively launched suite stand down.
-        env = dict(os.environ, **(env_extra or {}), **{CHILD_ENV: "1"})
+        env = dict(os.environ)
+        env.update(env_extra or {})
+        env[CHILD_ENV] = "1"
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
