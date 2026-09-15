@@ -1277,10 +1277,9 @@ def _clean_catalogue_seen(previous, warn, now: datetime) -> list[dict]:
     cannot buy itself unlimited immunity from the age check.
 
     A malformed entry is skipped, not fatal — same treatment as
-    `_clean_previous_arms`, and for the same reason: this is read off a
-    public branch (`eval-results`), which the module docstring already
-    calls untrusted, and every id from it ends up published again in
-    this run's own `catalogue_seen` output. So is an entry whose
+    `_clean_previous_arms`, because this is committed roster history: an
+    old or hand-edited entry should not stop the next observation from
+    publishing a corrected `catalogue_seen` output. So is an entry whose
     `last_seen` PARSES but cannot then be converted to a UTC date (S1,
     #129 review round 9) — counted separately, because which of the two
     happened is the useful half of the message, and skipped the same way.

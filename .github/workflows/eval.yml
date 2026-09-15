@@ -583,7 +583,7 @@ jobs:
               echo "**The roster was not refreshed this run.** ${reason:-unknown failure}"
               echo
               echo "No roster is published and no proposal is made; the eval below"
-              echo "ran on the committed evals/roster.yml, as it always does."
+              echo "will run on the committed evals/roster.yml, as it always does."
             } >> "$GITHUB_STEP_SUMMARY"
             emit_roster_warnings "$work/roster.err"
           fi
@@ -731,12 +731,19 @@ jobs:
               raise SystemExit("tracker listing was not a complete paginated response")
           rows = [row for page in pages for row in page]
           for row in rows:
-              if not isinstance(row, dict) or not isinstance(row.get("number"), int):
+              if (not isinstance(row, dict)
+                      or not isinstance(row.get("number"), int)
+                      or isinstance(row.get("number"), bool)
+                      or row["number"] <= 0):
                   raise SystemExit("tracker listing contained a malformed issue")
               user = row.get("user")
-              if not isinstance(user, dict) or not isinstance(user.get("login"), str) or not isinstance(user.get("type"), str):
+              if (not isinstance(user, dict)
+                      or not isinstance(user.get("login"), str)
+                      or not user["login"].strip()
+                      or not isinstance(user.get("type"), str)
+                      or not user["type"].strip()):
                   raise SystemExit("tracker listing contained a malformed issue")
-              if not isinstance(row.get("body"), (str, type(None))):
+              if "body" not in row or not isinstance(row["body"], (str, type(None))):
                   raise SystemExit("tracker listing contained a malformed issue")
           hits = [row for row in rows
                   if "pull_request" not in row
@@ -771,18 +778,19 @@ jobs:
           # rendered file's provenance so a merged proposal says which
           # untrusted document shaped it.
           census_commit=$(git rev-parse origin/eval-results 2>/dev/null) || census_commit="none"
-          python3 scripts/render_roster_yaml.py \
-            --roster "$computed" \
-            --out "$RUNNER_TEMP/proposed-roster.yml" \
-            --run-id "$RUN_ID" \
-            --eval-results-commit "$census_commit"
-
           # A computed roster may legitimately have no non-arm judge when
           # every available model is seated. Preserve that observation in the
           # published eval result, but do not publish a branch a reviewer
           # cannot merge under the committed-roster contract.
-          admission="$RUNNER_TEMP/proposal-admission.txt"
-          if ! python3 - "$RUNNER_TEMP/proposed-roster.yml" > "$admission" <<'PY'
+          rejection=""
+          if ! python3 scripts/render_roster_yaml.py \
+            --roster "$computed" \
+            --out "$RUNNER_TEMP/proposed-roster.yml" \
+            --run-id "$RUN_ID" \
+            --eval-results-commit "$census_commit" \
+            > "$RUNNER_TEMP/proposal-render.err" 2>&1; then
+            rejection="Rendering was rejected because the computed proposal could not be rendered safely."
+          elif ! python3 - "$RUNNER_TEMP/proposed-roster.yml" > "$RUNNER_TEMP/proposal-admission.err" 2>&1 <<'PY'
           import sys
 
           import yaml
@@ -797,15 +805,17 @@ jobs:
               raise SystemExit(1)
           PY
           then
+            rejection="Admission was rejected because the rendered proposal does not meet the committed-roster contract."
+          fi
+          if [ -n "$rejection" ]; then
             body="$RUNNER_TEMP/proposal-body.md"
             {
               printf '%s\n\n' "$marker"
-              echo "The weekly run computed a roster difference, but its rendered file does not meet the committed-roster contract."
+              echo "The weekly run computed a roster difference, but it was rejected before proposal publication."
               echo
               echo "**Needs review before publication.** No proposal branch or compare link was updated. The paid eval ran on the committed \`evals/roster.yml\`; its results will still be published normally."
               echo
-              echo "The rendered file was blocked for:"
-              cat "$admission"
+              echo "$rejection"
               echo
               cat "$RUNNER_TEMP/roster-inputs/summary.md"
             } > "$body"

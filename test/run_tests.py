@@ -28423,10 +28423,48 @@ elif 'worktree' in args and 'remove' in args:
                 mutations = [call for call in calls if call[:2] == ["gh", "issue"]]
                 if expected is None:
                     self.assertEqual(mutations, [])
+                    self.assertFalse(any(call[0] == "git" and "push" in call
+                                         for call in calls), calls)
                 else:
                     self.assertTrue(any(call[:4] == expected for call in mutations), calls)
                 self.assertTrue(any(call[:3] == ["gh", "api", "--paginate"]
                                     for call in calls), calls)
+
+        # A successful listing proves absence only when every row carries the
+        # fields needed to identify a tracker. Supported identities are
+        # positive integer issue numbers and nonblank string login/type fields,
+        # with a present string or JSON-null body. Do not normalize malformed
+        # values into bot ownership.
+        malformed = [
+            ("empty owner login", {**bot, "user": {"login": "", "type": "Bot"}}),
+            ("whitespace owner login", {**bot, "user": {"login": "  ", "type": "Bot"}}),
+            ("empty owner type", {**bot, "user": {"login": "github-actions[bot]", "type": ""}}),
+            ("whitespace owner type", {**bot, "user": {"login": "github-actions[bot]", "type": "  "}}),
+            ("true issue number", {**bot, "number": True}),
+            ("false issue number", {**bot, "number": False}),
+            ("zero issue number", {**bot, "number": 0}),
+            ("negative issue number", {**bot, "number": -1}),
+            ("string issue number", {**bot, "number": "17"}),
+            ("missing issue number", {key: value for key, value in bot.items() if key != "number"}),
+            ("missing body", {key: value for key, value in bot.items() if key != "body"}),
+            ("wrong body type", {**bot, "body": {}}),
+            ("missing owner type", {**bot, "user": {"login": "github-actions[bot]"}}),
+        ]
+        for label, row in malformed:
+            for status in ("same", "differs"):
+                with self.subTest(case=label, status=status):
+                    run, calls, _body = self._run_proposal_step(status, [[row]])
+                    self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                    self.assertEqual([call for call in calls if call[:2] == ["gh", "issue"]], [])
+                    self.assertFalse(any(call[0] == "git" and "push" in call
+                                         for call in calls), calls)
+
+        # JSON null is an explicit empty body, so it is valid evidence that no
+        # bot-owned marker exists and a differing proposal can open one.
+        null_body = {**bot, "number": 19, "body": None}
+        run, calls, _body = self._run_proposal_step("differs", [[null_body]])
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
 
     def test_proposal_step_blocks_invalid_rendering_without_a_branch_update(self):
         marker = "<!-- skills-evals:roster-proposal -->"
@@ -28466,6 +28504,25 @@ elif 'worktree' in args and 'remove' in args:
                 self.assertIn("Model roster: proposal needs review", blocked_edit)
                 self.assertIn("Needs review before publication", body)
                 self.assertNotIn("compare/main...roster/proposal", body)
+
+        # The ordinary generator refuses an empty arms list upstream. These
+        # deliberately corrupted artifacts prove that renderer rejection uses
+        # the same nonfatal admission path, including a scalar arm that would
+        # otherwise raise during rendering.
+        for label, arms in (("empty arms", []), ("scalar arm", ["bad"])):
+            with self.subTest(shape=label):
+                invalid = copy.deepcopy(valid)
+                invalid["arms"] = arms
+                run, calls, body = self._run_proposal_step(
+                    "differs", [[bot]], computed=invalid)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertFalse(any(call[0] == "git" and "push" in call
+                                     for call in calls), calls)
+                self.assertTrue(any(call[:4] == ["gh", "issue", "edit", "17"]
+                                    for call in calls), calls)
+                self.assertIn("Needs review before publication", body)
+                self.assertIn("Rendering was rejected", body)
+                self.assertNotIn("Traceback", body)
 
     def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
         # A percentage with no counts behind it is unfalsifiable from the
