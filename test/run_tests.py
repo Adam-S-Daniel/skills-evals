@@ -28319,7 +28319,8 @@ class TestIssue147(unittest.TestCase):
                              (rejected.stdout + rejected.stderr)[-4000:])
 
     def _run_proposal_step(self, status, pages, *, computed=None,
-                           listing_error=False):
+                           listing_error=False, run_results=False,
+                           results_push_error=False):
         """Run eval.yml's real proposal shell with only recording shims."""
         document = yaml.safe_load(
             (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
@@ -28362,6 +28363,9 @@ with open(os.environ['PROPOSAL_CALLS'], 'a', encoding='utf-8') as handle:
     handle.write(json.dumps(['git', *args]) + '\\n')
 if 'rev-parse' in args:
     print('a' * 40)
+elif ('push' in args and 'eval-results' in args
+      and os.environ.get('PROPOSAL_RESULTS_PUSH_ERROR') == '1'):
+    raise SystemExit(1)
 elif 'worktree' in args and 'add' in args:
     worktree = pathlib.Path(args[args.index('--detach') + 1])
     shutil.copytree(pathlib.Path(os.environ['PROPOSAL_SOURCE']) / 'evals',
@@ -28387,13 +28391,30 @@ elif 'worktree' in args and 'remove' in args:
                    "SERVER_URL": "https://example.com", "GITHUB_TOKEN": "synthetic",
                    "GH_TOKEN": "synthetic", "PROPOSAL_CALLS": str(calls_path),
                    "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(REPO_ROOT),
-                   "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0"}
+                   "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0",
+                   "PROPOSAL_RESULTS_PUSH_ERROR": "1" if results_push_error else "0",
+                   "GITHUB_STEP_SUMMARY": str(temp / "summary")}
             run = subprocess.run(["/bin/bash", "-c", script], cwd=REPO_ROOT,
                                  env=env, capture_output=True, text=True, timeout=60)
+            results_run = None
+            created_results = False
+            if run_results and run.returncode == 0:
+                results_dir = REPO_ROOT / "results"
+                if not results_dir.exists():
+                    results_dir.mkdir()
+                    created_results = True
+                results_script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+                                      if step.get("name") == "Build the badge over the run window, commit, and push")
+                try:
+                    results_run = subprocess.run(["/bin/bash", "-c", results_script], cwd=REPO_ROOT,
+                                                 env=env, capture_output=True, text=True, timeout=60)
+                finally:
+                    if created_results:
+                        results_dir.rmdir()
             calls = [json.loads(line) for line in calls_path.read_text(
                 encoding="utf-8").splitlines()] if calls_path.exists() else []
             body = temp.joinpath("proposal-body.md")
-            return run, calls, body.read_text(encoding="utf-8") if body.exists() else ""
+            return run, calls, body.read_text(encoding="utf-8") if body.exists() else "", results_run
 
     def test_proposal_step_uses_only_a_complete_bot_owned_tracker(self):
         marker = "<!-- skills-evals:roster-proposal -->"
@@ -28417,7 +28438,7 @@ elif 'worktree' in args and 'remove' in args:
         ]
         for label, status, pages, listing_error, expected in rows:
             with self.subTest(case=label):
-                run, calls, _body = self._run_proposal_step(
+                run, calls, _body, _results = self._run_proposal_step(
                     status, pages, listing_error=listing_error)
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 mutations = [call for call in calls if call[:2] == ["gh", "issue"]]
@@ -28453,7 +28474,7 @@ elif 'worktree' in args and 'remove' in args:
         for label, row in malformed:
             for status in ("same", "differs"):
                 with self.subTest(case=label, status=status):
-                    run, calls, _body = self._run_proposal_step(status, [[row]])
+                    run, calls, _body, _results = self._run_proposal_step(status, [[row]])
                     self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                     self.assertEqual([call for call in calls if call[:2] == ["gh", "issue"]], [])
                     self.assertFalse(any(call[0] == "git" and "push" in call
@@ -28462,7 +28483,7 @@ elif 'worktree' in args and 'remove' in args:
         # JSON null is an explicit empty body, so it is valid evidence that no
         # bot-owned marker exists and a differing proposal can open one.
         null_body = {**bot, "number": 19, "body": None}
-        run, calls, _body = self._run_proposal_step("differs", [[null_body]])
+        run, calls, _body, _results = self._run_proposal_step("differs", [[null_body]])
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
 
@@ -28471,7 +28492,7 @@ elif 'worktree' in args and 'remove' in args:
         bot = {"number": 17, "body": marker,
                "user": {"login": "github-actions[bot]", "type": "Bot"}}
         valid = self._ordinary_computed_roster(multi_arm=True)
-        run, calls, _body = self._run_proposal_step("differs", [[]], computed=valid)
+        run, calls, _body, _results = self._run_proposal_step("differs", [[]], computed=valid)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
         self.assertTrue(any(call[:2] == ["git", "-C"] and "push" in call
                             for call in calls), calls)
@@ -28493,7 +28514,7 @@ elif 'worktree' in args and 'remove' in args:
         for label, invalid in (("mature all-arm catalogue", mature),
                                ("duplicate history", duplicate_history)):
             with self.subTest(shape=label):
-                run, calls, body = self._run_proposal_step(
+                run, calls, body, _results = self._run_proposal_step(
                     "differs", [[bot]], computed=invalid)
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 self.assertFalse(any(call[0] == "git" and "push" in call
@@ -28513,7 +28534,7 @@ elif 'worktree' in args and 'remove' in args:
             with self.subTest(shape=label):
                 invalid = copy.deepcopy(valid)
                 invalid["arms"] = arms
-                run, calls, body = self._run_proposal_step(
+                run, calls, body, _results = self._run_proposal_step(
                     "differs", [[bot]], computed=invalid)
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 self.assertFalse(any(call[0] == "git" and "push" in call
@@ -28524,23 +28545,8 @@ elif 'worktree' in args and 'remove' in args:
                 self.assertIn("Rendering was rejected", body)
                 self.assertNotIn("Traceback", body)
 
-    def test_rejected_proposals_leave_results_publication_reachable(self):
-        """Both rejection kinds return success from the actual proposal shell.
-
-        Actions runs the following results step only after a successful prior
-        step.  The recording proposal helper above extracts that shell from
-        YAML; this check also reads the following production shell and pins its
-        eval-results push as the downstream effect that remains reachable.
-        """
-        document = yaml.safe_load(
-            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
-                encoding="utf-8"))
-        steps = document["jobs"]["eval"]["steps"]
-        proposal_index = next(i for i, step in enumerate(steps)
-                              if step.get("name") == "Propose a roster change")
-        results = steps[proposal_index + 1]
-        self.assertEqual(results.get("name"), "Build the badge over the run window, commit, and push")
-        self.assertIn("push origin eval-results", results["run"])
+    def test_rejected_proposals_publish_results_and_results_push_stays_fatal(self):
+        """Execute both YAML-extracted shells with inert git/gh shims."""
         marker = "<!-- skills-evals:roster-proposal -->"
         bot = {"number": 17, "body": marker,
                "user": {"login": "github-actions[bot]", "type": "Bot"}}
@@ -28548,16 +28554,30 @@ elif 'worktree' in args and 'remove' in args:
         renderable["catalogue_seen"].append(copy.deepcopy(renderable["catalogue_seen"][0]))
         corrupted = copy.deepcopy(self._ordinary_computed_roster(multi_arm=True))
         corrupted["arms"] = []
-        for label, candidate, reason in (
-                ("renderable admission rejection", renderable, "Admission was rejected"),
-                ("renderer rejection", corrupted, "Rendering was rejected")):
+        valid = self._ordinary_computed_roster(multi_arm=True)
+        for label, candidate, reason, proposal_push in (
+                ("valid proposal", valid, None, True),
+                ("renderable admission rejection", renderable, "Admission was rejected", False),
+                ("renderer rejection", corrupted, "Rendering was rejected", False)):
             with self.subTest(shape=label):
-                run, calls, body = self._run_proposal_step(
-                    "differs", [[bot]], computed=candidate)
+                run, calls, body, results_run = self._run_proposal_step(
+                    "differs", [[bot]], computed=candidate, run_results=True)
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-                self.assertFalse(any(call[0] == "git" and "push" in call
-                                     for call in calls), calls)
-                self.assertIn(reason, body)
+                self.assertIsNotNone(results_run)
+                self.assertEqual(results_run.returncode, 0, results_run.stdout + results_run.stderr)
+                pushes = [call for call in calls if call[0] == "git" and "push" in call]
+                self.assertEqual(any("roster/proposal" in call for call in pushes), proposal_push, calls)
+                self.assertTrue(any("eval-results" in call for call in pushes), calls)
+                if reason:
+                    self.assertIn(reason, body)
+
+        run, _calls, _body, results_run = self._run_proposal_step(
+            "differs", [[bot]], computed=corrupted, run_results=True,
+            results_push_error=True)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIsNotNone(results_run)
+        self.assertNotEqual(results_run.returncode, 0,
+                            results_run.stdout + results_run.stderr)
 
     def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
         # A percentage with no counts behind it is unfalsifiable from the
