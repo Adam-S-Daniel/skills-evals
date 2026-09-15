@@ -62,10 +62,12 @@ on:
   # github.event_name: a manual run lands in its own group, so it can neither
   # cancel the scheduled run nor be cancelled by it. Two dispatches on one ref
   # do share a group and the older is cancelled — the cheap-iteration half of
-  # that same rule — and a cancelled run here cannot deadlock a merge, because
-  # repo-settings' fleet.yml gives this repo no required_status_checks
-  # override and so leaves it on the fleet default `[]` (parsed 2026-08-20):
-  # nothing this workflow publishes is a required context.
+  # that same rule — and nothing this workflow publishes is a required
+  # context — the repo's required check is ci.yml's `test` (cms-platform#437)
+  # — and it must stay that way while this workflow keeps a
+  # `cancel-in-progress` group, `timeout-minutes` walls and matrix context
+  # names; the Dependabot sweep still waits for these jobs, so a cancelled
+  # run stalls a Dependabot PR with a named skip rather than merging over it.
   workflow_dispatch:
     inputs:
       dry_run:
