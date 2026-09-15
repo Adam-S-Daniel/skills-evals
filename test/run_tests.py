@@ -28524,6 +28524,41 @@ elif 'worktree' in args and 'remove' in args:
                 self.assertIn("Rendering was rejected", body)
                 self.assertNotIn("Traceback", body)
 
+    def test_rejected_proposals_leave_results_publication_reachable(self):
+        """Both rejection kinds return success from the actual proposal shell.
+
+        Actions runs the following results step only after a successful prior
+        step.  The recording proposal helper above extracts that shell from
+        YAML; this check also reads the following production shell and pins its
+        eval-results push as the downstream effect that remains reachable.
+        """
+        document = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        steps = document["jobs"]["eval"]["steps"]
+        proposal_index = next(i for i, step in enumerate(steps)
+                              if step.get("name") == "Propose a roster change")
+        results = steps[proposal_index + 1]
+        self.assertEqual(results.get("name"), "Build the badge over the run window, commit, and push")
+        self.assertIn("push origin eval-results", results["run"])
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        renderable = self._ordinary_computed_roster(multi_arm=True)
+        renderable["catalogue_seen"].append(copy.deepcopy(renderable["catalogue_seen"][0]))
+        corrupted = copy.deepcopy(self._ordinary_computed_roster(multi_arm=True))
+        corrupted["arms"] = []
+        for label, candidate, reason in (
+                ("renderable admission rejection", renderable, "Admission was rejected"),
+                ("renderer rejection", corrupted, "Rendering was rejected")):
+            with self.subTest(shape=label):
+                run, calls, body = self._run_proposal_step(
+                    "differs", [[bot]], computed=candidate)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertFalse(any(call[0] == "git" and "push" in call
+                                     for call in calls), calls)
+                self.assertIn(reason, body)
+
     def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
         # A percentage with no counts behind it is unfalsifiable from the
         # outside: 100.0% of two turns and 100.0% of nine thousand are the
