@@ -86,41 +86,38 @@ the committed file matches.
 Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
 workstation.
 
-### Issue #152: merged with main, in PR #163, fix round 2 in flight
+### Issue #152: PR #163, two-strikes fired, fix round 3 (1 of 3) in flight
 
-A local worker merged `origin/main` `cddb224` into the branch as
+The branch was merged with `origin/main` `cddb224` as
 [`fa9c788`](https://github.com/Adam-S-Daniel/skills-evals/commit/fa9c78830e2c940e5332d53912aa122915b38172)
-(one whitespace-only conflict at the tail of `test/run_tests.py`; no
-production file conflicted). Full suite **1457 / 2 skipped, exit 0**,
-propagation **164 / 1 skipped**, focused 12 and 24, `TestIssue147` 40; the
-count reconciles set-for-set (1446 on `cddb224` + the 11 `TestIssue152`
-methods). Pushed and opened as
-[PR #163](https://github.com/Adam-S-Daniel/skills-evals/pull/163); CI
-`test`, `gate` and all five propagation arms success on `fa9c788`.
+(whitespace-only conflict) and opened as
+[PR #163](https://github.com/Adam-S-Daniel/skills-evals/pull/163). Rounds so
+far, each with an independent local reviewer on a read-only archive:
 
-The independent round-2 review
-([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157))
-closed all seven round-1 findings and confirmed the merge, but is **NOT
-CLEAN** on six new should-fixes and three nits, no blocker:
+| Head | Review | Result |
+|---|---|---|
+| `fa9c788` | round 2 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157)) | all seven round-1 findings closed, merge clean; NOT CLEAN on six new should-fixes (uncollected module/class/lambda spawns, helper side effects before the marker read, enclosing-parameter shadowing, `os.system` strings, `sp = subprocess` aliases) |
+| [`4fefa14`](https://github.com/Adam-S-Daniel/skills-evals/commit/4fefa14faab2d42398fc247ec1fae758a4c13bed) (fix round 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763979563)) | round 3 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764206754)) | all six closed; **NOT CLEAN on two repeats** returning through the remedy: the sink body's pre-read rule is weaker than the helper's (alias, method call or `setUp` popping the marker keeps `guard_verified`), and `shell` via `**kwargs` exonerates a string command |
 
-1. spawns outside any function body (module level, class body, decorator
-   expressions) are never collected;
-2. spawns inside a `lambda` are invisible;
-3. a stand-down helper is verified even when side effects precede its marker
-   read (§ 0A inspection question (b), now **verified**);
-4. a nested closure inherits a module constant that an enclosing parameter
-   shadows (§ 0A inspection question (a), now **verified**);
-5. `os.system` command strings are modelled as an external executable path;
-6. `sp = subprocess` assignment aliases are not spawn surfaces.
+Full suite on `4fefa14`: **1464 / 2 skipped, exit 0**; propagation **164 / 1**;
+focused 31 and 40; CI `test`, `gate` and all five propagation arms success;
+mergeable, CLEAN. Both § 0A inspection questions were verified as real
+defects in round 2 and closed in fix round 2.
 
-Fix round 2 (first of the three per-PR rounds under decision 2; nothing
-recurred from round 1, so two-strikes does not apply) is running as a local
-worker in `.claude/worktrees/codex-suite-fork-152-20260915` from a clean
-`fa9c788`. It pushes nothing. When it releases a clean commit with red/green
-regressions and the isolated-archive verifiers, the parent pushes, a round-3
-review decides, and on CLEAN the PR merges with a merge commit on the expected
-head. Evidence directories: `review152-round2/` and `fix152-round2/` under
-`.evals-resume-20260915/`.
+**Two-strikes fired at round 3** (same defect, same severity, through the
+brief's own remedy). Under Adam's decision 2 the PR has three further fix
+rounds. **Fix round 3 is the first of the three**, running as a local worker
+in `.claude/worktrees/codex-suite-fork-152-20260915` from a clean `4fefa14`;
+its brief states the invariants at the sink (the sink body and every fixture
+or decorator on the path are held to the helper's inert-before-read rule,
+with calls into parsed scopes resolved transitively and unresolvable callees
+treated as writes; any process-start call whose argument shape is
+unresolvable is classified by command text, fail closed). When it releases,
+the parent pushes, a round-4 review decides; a NOT CLEAN with a repeat after
+the third budget round parks the PR for Adam. Evidence directories under
+`.evals-resume-20260915/`: `review152-round2/`, `fix152-round2/`,
+`review152-round3/` (probes and logs; the reviewer's verdict text is the PR
+comment), `fix152-round3/`.
 
 ### Everything else
 
