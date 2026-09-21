@@ -23,6 +23,7 @@ import builtins
 import os
 import random
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -29305,7 +29306,11 @@ SUITE_RUNNER_MODULE = SUITE_RUNNER_NAME[:-len(".py")]
 # straight past the old pin.
 SPAWN_ATTRS = ("run", "Popen", "call", "check_call", "check_output")
 OS_SPAWN_PREFIXES = ("spawn", "exec")
-OS_SPAWN_NAMES = ("system", "posix_spawn", "posix_spawnp")
+OS_SPAWN_NAMES = ("system", "popen", "posix_spawn", "posix_spawnp")
+# Every way a dict can be written through, so that a statement which
+# clears $SKILLS_EVALS_SUITE_CHILD before it is read is never inert.
+ENVIRON_MUTATORS = ("pop", "popitem", "update", "clear", "setdefault",
+                    "__setitem__", "__delitem__")
 
 
 class SuiteScanError(RuntimeError):
@@ -29331,7 +29336,16 @@ def _static_value(node, bindings):
     if isinstance(node, ast.Name):
         return bindings.get(node.id, _UNKNOWN)
     if isinstance(node, (ast.List, ast.Tuple)):
-        values = [_static_value(item, bindings) for item in node.elts]
+        values = []
+        for item in node.elts:
+            if isinstance(item, ast.Starred):
+                # `[*base, target]` with a known `base` keeps the interpreter
+                # in argv[0]. An unknown unpack stays ONE unknown element, so
+                # no position that used to fail closed stops doing so.
+                spliced = _static_value(item.value, bindings)
+                values.extend(spliced if isinstance(spliced, tuple) else [_UNKNOWN])
+                continue
+            values.append(_static_value(item, bindings))
         # Preserve a known interpreter before an unknown target.  Collapsing
         # the whole argv to unknown would accidentally classify it as an
         # unknown *external* command instead of fail-closing Python.
@@ -29379,13 +29393,82 @@ def _static_value(node, bindings):
             return _static_value(node.args[0], bindings)
         if isinstance(node.func, ast.Attribute) and node.func.attr == "resolve" and not node.args:
             return _static_value(node.func.value, bindings)
+        if (isinstance(node.func, ast.Attribute) and node.func.attr == "which"
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "shutil" and len(node.args) == 1):
+            # A statically named interpreter IS knowable. Leaving
+            # `shutil.which("python3")` unknown demoted argv[0] to an unknown
+            # EXTERNAL command, which exonerates the whole call.
+            found = _static_value(node.args[0], bindings)
+            return found if isinstance(found, str) else _UNKNOWN
     return _UNKNOWN
 
 
+def _enclosing_evaluated(node):
+    """The parts of a definition that run where the definition APPEARS.
+
+    A decorator, a default, a base class and a return annotation are
+    evaluated in the enclosing scope, not in the body they belong to. A
+    spawn written in one was walked by neither scope and so could never be
+    flagged.
+    """
+    yield from getattr(node, "decorator_list", [])
+    yield from getattr(node, "bases", [])
+    for keyword in getattr(node, "keywords", []):
+        yield keyword.value
+    args = getattr(node, "args", None)
+    if args is not None:
+        yield from [d for d in args.defaults if d is not None]
+        yield from [d for d in args.kw_defaults if d is not None]
+    if getattr(node, "returns", None) is not None:
+        yield node.returns
+
+
+def _parameter_names(node):
+    """Every formal parameter name (defaults excluded: those are expressions
+    evaluated outside). A parameter shadows a same-named outer binding for
+    this scope AND for every scope nested inside it."""
+    args = getattr(node, "args", None)
+    if args is None:
+        return ()
+    return tuple(arg.arg for arg in
+                 [*args.posonlyargs, *args.args, *args.kwonlyargs,
+                  args.vararg, args.kwarg] if arg is not None)
+
+
+MODULE_SCOPE = "<module>"
+CLASS_SCOPE = "<class body>"
+
+
+def _synthetic_scope(name, body, at, args=None):
+    """A scope the language executes and no `def` names.
+
+    Module level, a class body and a `lambda` each run statements the
+    collector attributed to no function, so a fork written in one was
+    inventoried by nothing at all. Each becomes a scope whose identity is
+    BRACKETED and therefore unspellable by a `def`: it can never match a
+    sanctioned inventory entry, so the live assertion is red for it.
+    """
+    node = ast.FunctionDef(
+        name=name,
+        args=args if args is not None else ast.arguments(
+            posonlyargs=[], args=[], vararg=None, kwonlyargs=[],
+            kw_defaults=[], kwarg=None, defaults=[]),
+        body=list(body) or [ast.Pass()],
+        decorator_list=[], returns=None, type_comment=None)
+    node.type_params = []
+    node.lineno = getattr(at, "lineno", 1)
+    node.col_offset = getattr(at, "col_offset", 0)
+    return node
+
+
 def _scope_walk(node):
-    """Walk a statement, stopping at nested lexical scopes."""
+    """Walk a statement, stopping at nested lexical scopes — but not at the
+    parts of a nested definition the enclosing scope evaluates."""
     yield node
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        for child in _enclosing_evaluated(node):
+            yield from _scope_walk(child)
         return
     for child in ast.iter_child_nodes(node):
         yield from _scope_walk(child)
@@ -29513,11 +29596,23 @@ class _SuiteForkScan:
         self._resolve_bindings()
         self._walk_functions()
 
+    @staticmethod
+    def _os_family(attr) -> bool:
+        return attr in OS_SPAWN_NAMES or attr.startswith(OS_SPAWN_PREFIXES)
+
     def _resolve_imports(self) -> None:
-        """`import subprocess as sp` and `from subprocess import run as r`
-        are ordinary Python, and both were invisible to the old pin."""
+        """`import subprocess as sp`, `from subprocess import run as r` and
+        `sp = subprocess` are all ordinary Python. The old pin saw none of
+        them; the import-only version of this method still missed the last,
+        so `sp = subprocess` followed by `sp.run(...)` was not a spawn at
+        all, and the literal-runner fallback inside that branch never ran
+        either."""
         self.module_aliases = {"subprocess"}
+        self.os_aliases = {"os"}
         self.bare_spawners = set()
+        # A bare name that IS an os spawn function, and WHICH one: the argv
+        # layout of `os.execv` is not the layout of `subprocess.run`.
+        self.bare_os_kind = {}
         # `import run_tests [as rt]` and `from run_tests import main [as m]`:
         # the in-process spellings. `run_tests.main()` and
         # `multiprocessing.Process(target=run_tests.main)` never touch
@@ -29528,6 +29623,8 @@ class _SuiteForkScan:
                 for alias in node.names:
                     if alias.name == "subprocess":
                         self.module_aliases.add(alias.asname or alias.name)
+                    if alias.name == "os":
+                        self.os_aliases.add(alias.asname or alias.name)
                     if alias.name == SUITE_RUNNER_MODULE:
                         self.runner_modules.add(alias.asname or alias.name)
             elif (isinstance(node, ast.ImportFrom)
@@ -29535,11 +29632,52 @@ class _SuiteForkScan:
                 for alias in node.names:
                     if alias.name in SPAWN_ATTRS:
                         self.bare_spawners.add(alias.asname or alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module == "os":
+                for alias in node.names:
+                    if self._os_family(alias.name):
+                        bound = alias.asname or alias.name
+                        self.bare_spawners.add(bound)
+                        self.bare_os_kind[bound] = alias.name
             elif (isinstance(node, ast.ImportFrom)
                   and node.module == SUITE_RUNNER_MODULE):
                 for alias in node.names:
                     if alias.name == "main":
                         self.runner_mains.add(alias.asname or alias.name)
+
+        # `sp = subprocess`, `sp2 = sp`, `go = subprocess.run`, `launch =
+        # os.execv`. Taken to a fixed point over every assignment in the
+        # module, deliberately over-approximating: a name rebound later stays
+        # a spawn surface, which can only flag MORE, never less.
+        assignments = [node for node in ast.walk(self.tree)
+                       if isinstance(node, ast.Assign)]
+        changed = True
+        while changed:
+            before = (len(self.module_aliases), len(self.os_aliases),
+                      len(self.bare_spawners))
+            for node in assignments:
+                value = node.value
+                for target in node.targets:
+                    if not isinstance(target, ast.Name):
+                        continue
+                    if isinstance(value, ast.Name):
+                        if value.id in self.module_aliases:
+                            self.module_aliases.add(target.id)
+                        if value.id in self.os_aliases:
+                            self.os_aliases.add(target.id)
+                        if value.id in self.bare_spawners:
+                            self.bare_spawners.add(target.id)
+                            if value.id in self.bare_os_kind:
+                                self.bare_os_kind[target.id] = self.bare_os_kind[value.id]
+                    elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name):
+                        if (value.value.id in self.module_aliases
+                                and value.attr in SPAWN_ATTRS):
+                            self.bare_spawners.add(target.id)
+                        if (value.value.id in self.os_aliases
+                                and self._os_family(value.attr)):
+                            self.bare_spawners.add(target.id)
+                            self.bare_os_kind[target.id] = value.attr
+            changed = before != (len(self.module_aliases), len(self.os_aliases),
+                                 len(self.bare_spawners))
 
     def _resolve_bindings(self) -> None:
         """Bound values used by the no-execution target classifier."""
@@ -29578,9 +29716,7 @@ class _SuiteForkScan:
             if (func.value.id in self.module_aliases
                     and func.attr in SPAWN_ATTRS):
                 return True
-            if func.value.id == "os" and (
-                    func.attr in OS_SPAWN_NAMES
-                    or func.attr.startswith(OS_SPAWN_PREFIXES)):
+            if func.value.id in self.os_aliases and self._os_family(func.attr):
                 return True
         return isinstance(func, ast.Name) and func.id in self.bare_spawners
 
@@ -29605,14 +29741,63 @@ class _SuiteForkScan:
         target = argv[index]
         return target if isinstance(target, str) else _UNKNOWN
 
+    @staticmethod
+    def _joined_argv(node, bindings):
+        """`shlex.join([...])` and a string `.join([...])` keep their list."""
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "join" and len(node.args) == 1
+                and not node.keywords):
+            return None
+        receiver = node.func.value
+        if not ((isinstance(receiver, ast.Constant) and isinstance(receiver.value, str))
+                or (isinstance(receiver, ast.Name) and receiver.id == "shlex")):
+            return None
+        value = _static_value(node.args[0], bindings)
+        return value if isinstance(value, tuple) else (_PYTHON, _UNKNOWN)
+
+    def _shell_argv(self, node, bindings):
+        """Classify a string COMMAND LINE by its text, and fail closed.
+
+        `os.system`, `os.popen` and `shell=True` take a command line, not a
+        program path. Handing the whole line to the executable classifier
+        resolved it to unknown and exonerated the call as an unknown
+        EXTERNAL command, so a command line naming the real interpreter ran
+        the suite with the pin green. A line this parser cannot read is
+        unknown PYTHON instead, which is flagged.
+        """
+        if node is not None:
+            joined = self._joined_argv(node, bindings)
+            if joined is not None:
+                return joined
+            command = _static_value(node, bindings)
+            if isinstance(command, tuple) and command:
+                command = command[0]
+            if isinstance(command, str):
+                try:
+                    return tuple(shlex.split(command))
+                except ValueError:
+                    return (_PYTHON, _UNKNOWN)
+        return (_PYTHON, _UNKNOWN)
+
     def _spawn_argv(self, call, bindings):
         def arg(index, keyword):
             node = call.args[index] if len(call.args) > index else next(
                 (k.value for k in call.keywords if k.arg == keyword), None)
             return _static_value(node, bindings)
+
+        def node_at(index, *keywords):
+            if len(call.args) > index:
+                return call.args[index]
+            return next((k.value for k in call.keywords if k.arg in keywords), None)
+        name = None
         if (isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
-                and call.func.value.id == "os"):
+                and call.func.value.id in self.os_aliases):
             name = call.func.attr
+        elif isinstance(call.func, ast.Name):
+            name = self.bare_os_kind.get(call.func.id)
+        if name is not None:
+            if name in ("system", "popen"):
+                return self._shell_argv(node_at(0, "command", "cmd"), bindings)
             offset = 1 if name.startswith("spawn") else 0
             executable = arg(offset, "file" if name in ("execlp", "execlpe", "execvp", "execvpe",
                 "spawnlp", "spawnlpe", "spawnvp", "spawnvpe") else "path")
@@ -29625,6 +29810,9 @@ class _SuiteForkScan:
             if self._python_executable(executable):
                 return (_PYTHON, *argv[1:]) if isinstance(argv, tuple) and argv else (_PYTHON, _UNKNOWN)
             return _UNKNOWN
+        shell = next((k.value for k in call.keywords if k.arg == "shell"), None)
+        if shell is not None and not (isinstance(shell, ast.Constant) and not shell.value):
+            return self._shell_argv(node_at(0, "args"), bindings)
         return arg(0, "args")
 
     def _potential_suite_spawn(self, call, bindings) -> bool:
@@ -29674,26 +29862,65 @@ class _SuiteForkScan:
         return False
 
     def _walk_functions(self) -> None:
-        def collect(node, prefix="", inherited=None):
+        def record(identity, node, inherited):
+            logical = identity
+            while identity in self.scopes:
+                identity += f"@{node.lineno}"
+            self.definitions.setdefault(logical, []).append(identity)
+            self.functions.append((identity, node))
+            self.scopes[identity] = dict(inherited)
+            return identity
+
+        def collect(node, prefix="", inherited=None, owner=MODULE_SCOPE):
             inherited = dict(self.bindings if inherited is None else inherited)
             for child in ast.iter_child_nodes(node):
-                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    identity = prefix + child.name
-                    if not isinstance(child, ast.ClassDef):
-                        logical = identity
-                        if identity in self.scopes:
-                            identity += f"@{child.lineno}"
-                        self.definitions.setdefault(logical, []).append(identity)
-                        self.functions.append((identity, child))
-                        self.scopes[identity] = dict(inherited)
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                      ast.ClassDef, ast.Lambda)):
+                    if isinstance(child, ast.Lambda):
+                        # A lambda is a scope `_scope_walk` stops at and that
+                        # `collect` recorded as nothing, so its body was
+                        # walked by neither: `go = lambda: subprocess.run(
+                        # [sys.executable, target])` was invisible.
+                        label = f"<lambda@{child.lineno}>"
+                        identity = record(prefix + label, _synthetic_scope(
+                            label,
+                            [ast.copy_location(ast.Expr(value=child.body), child.body)],
+                            child, args=child.args), inherited)
+                        self.lambda_owner[identity] = owner
+                        body = []
+                    else:
+                        identity = prefix + child.name
+                        if not isinstance(child, ast.ClassDef):
+                            identity = record(identity, child, inherited)
+                        body = child.body
                     local = dict(inherited)
-                    for stmt in child.body:
+                    # A parameter of THIS scope shadows a same-named module
+                    # constant for every scope nested inside it, so the
+                    # snapshot handed down must forget it. Without this, an
+                    # inner function read the module's `target = "other.py"`
+                    # through an enclosing `def outer(target)` and passed.
+                    for name in _parameter_names(child):
+                        local[name] = _UNKNOWN
+                    for stmt in body:
                         _bind_statement(stmt, local)
-                    collect(child, identity + ".", local)
+                    nested_owner = identity
+                    if isinstance(child, ast.ClassDef):
+                        nested_owner = record(
+                            identity + "." + CLASS_SCOPE,
+                            _synthetic_scope(CLASS_SCOPE, child.body, child),
+                            inherited)
+                    collect(child, identity + ".", local, nested_owner)
                 else:
-                    collect(child, prefix, inherited)
+                    collect(child, prefix, inherited, owner)
 
         self.functions, self.scopes, self.definitions = [], {}, {}
+        self.lambda_owner = {}
+        # Module level RUNS: `loader.discover` imports every discovered test
+        # module, so a fork written beside the imports forks the suite at
+        # collection time. It belonged to no function and so to no scope.
+        record(MODULE_SCOPE,
+               _synthetic_scope(MODULE_SCOPE, self.tree.body, self.tree),
+               {"__file__": "__file__"})
         collect(self.tree)
         self.lineno = {name: fn.lineno for name, fn in self.functions}
         self.function_nodes = dict(self.functions)
@@ -29767,6 +29994,16 @@ class _SuiteForkScan:
         for name in self.direct:
             if self.runner_arg_callees[name] & {n for n, yes in self.spawns_any.items() if yes}:
                 self.direct[name] = True
+        # A lambda is CONSTRUCTED by the scope that writes it, and that scope
+        # is the name a reviewer needs, so a forking lambda flags its writer
+        # too. Transitive, for a lambda written inside a lambda.
+        changed = True
+        while changed:
+            changed = False
+            for lam, owner in self.lambda_owner.items():
+                if self.direct.get(lam) and owner in self.direct and not self.direct[owner]:
+                    self.direct[owner] = True
+                    changed = True
 
     def _function_bindings(self, identity, fn):
         bindings = dict(self.scopes[identity])
@@ -29835,6 +30072,44 @@ class _SuiteForkScan:
                 return False
         return False
 
+    def _mutates_environment(self, node, bindings) -> bool:
+        """A write to `os.environ` ITSELF, in any of its spellings."""
+        if isinstance(node, ast.Call):
+            return (isinstance(node.func, ast.Attribute)
+                    and node.func.attr in ENVIRON_MUTATORS
+                    and self._os_environ(node.func.value, bindings))
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            return self._os_environ(node.value, bindings)
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            return (node.attr == "environ" and isinstance(node.value, ast.Name)
+                    and bindings.get(node.value.id) is _OS)
+        return False
+
+    def _environment_write(self, stmt, bindings) -> bool:
+        return any(self._mutates_environment(node, bindings)
+                   for node in _scope_walk(stmt))
+
+    def _inert_before_marker(self, stmt, bindings) -> bool:
+        """Nothing that can reach the environment or the marker may run
+        before the marker is read.
+
+        A helper whose first line is `os.environ.pop(MARKER, None)` reads a
+        marker that is never there, so every caller of it spawns
+        unconditionally — while the proof stayed granted, because the old
+        rule rejected only a direct spawn written inside the helper.
+        """
+        if isinstance(stmt, ast.Expr):
+            # A docstring, and nothing else that merely evaluates.
+            return isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str)
+        if not isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+            return False
+        for node in _scope_walk(stmt):
+            if self._mutates_environment(node, bindings):
+                return False
+            if isinstance(node, ast.Call) and not self._guard_condition(node, bindings):
+                return False
+        return True
+
     def _standdown_helper(self, identity, call):
         callee = self._callee(identity, call)
         fn = self.function_nodes.get(callee)
@@ -29844,9 +30119,7 @@ class _SuiteForkScan:
         for stmt in fn.body:
             if isinstance(stmt, ast.If) and self._guard_condition(stmt.test, bindings):
                 return self._effective_skip(stmt.body)
-            if not isinstance(stmt, (ast.Expr, ast.Assign)):
-                return False
-            if any(isinstance(n, ast.Call) and self._is_spawn(n) for n in _scope_walk(stmt)):
+            if not self._inert_before_marker(stmt, bindings):
                 return False
             _bind_statement(stmt, bindings)
         return False
@@ -29899,6 +30172,13 @@ class _SuiteForkScan:
                 at = index if outer_index is None else outer_index
                 if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     continue
+                if not guarded and self._environment_write(stmt, bindings):
+                    # The stand-down helper rule, at the sink: a marker
+                    # cleared before it is read makes the read answer "not a
+                    # child" every time, so the spawn is unconditional.
+                    errors.append(
+                        f"{identity}:{getattr(stmt, 'lineno', 0)}: environment "
+                        "written before the child marker is read")
                 if isinstance(stmt, ast.If):
                     if self._guard_condition(stmt.test, bindings) and self._effective_skip(stmt.body):
                         guarded = True
@@ -30295,10 +30575,21 @@ class TestTheRunnerItself(unittest.TestCase):
 
         The invariant is enforced at the subprocess sink, not at its callers.
         Every reviewed inventory member reads $SKILLS_EVALS_SUITE_CHILD before
-        spawning and writes it authoritatively for the child. Everything else
-        — a new forking test or importable helper — is red here with its file
-        and line and must gain the same verified guard or a provable other
-        program target.
+        spawning and writes it authoritatively for the child.
+
+        What this CLAIMS: every `subprocess`/`os` process start and every
+        string command line — written in a function, a lambda, a class body,
+        a module body, a decorator, a default or a comprehension, reached
+        through an import alias or an alias bound by assignment — is
+        inventoried, and one whose Python target is unknown or names the
+        runner is red here with its file and line. It must then gain the
+        same verified guard or a provable other-program target.
+
+        What this deliberately does NOT claim, and does not implement: a
+        handoff through `functools.partial`, `runpy.run_path` or
+        `importlib.import_module(...)`. Those construct the callable or the
+        module indirectly; this parser proves invocation CONSTRUCTION only,
+        and says so rather than covering the gap with a promise.
 
         Measured on f9115ce, each in its own throwaway copy and each with the
         two round-3 pins GREEN: `test/r4forkhelper.py`, `harness/r4harnessfork.py`
@@ -30647,6 +30938,15 @@ sys.path.insert(0, str(REPO_ROOT / 'fourth'))
         path.write_text(source, encoding="utf-8")
         return _SuiteForkScan(path, self.CHILD)
 
+    @staticmethod
+    def _flagged(scan):
+        """The live inventory predicate, restricted to one parsed file."""
+        spawners = {name for name, spawns in scan.spawns_any.items() if spawns}
+        return {identity: scan.lineno[identity]
+                for identity, _ in scan.functions
+                if scan.direct[identity]
+                or (scan.runner_arg_callees[identity] & spawners)}
+
     def test_roots_follow_real_sys_path_insertions_including_a_fourth_tree(self):
         root, runner = self._repo()
         roots = _suite_scan_roots(root, runner)
@@ -30837,7 +31137,8 @@ class B:
             scan = scans[rel]
             self.assertTrue(scan.direct[identity])
             self.assertTrue(scan.guard_verified[identity], scan.guard_errors[identity])
-            kinds = ['empty marker', 'remove stand-down', 'fresh env', 'late guard', 'late override']
+            kinds = ['empty marker', 'remove stand-down', 'fresh env', 'late guard',
+                     'late override', 'marker cleared before the stand-down']
             if identity == 'TestIssue97._run_suite':
                 kinds.append('before caller overrides')
             # Keep the actual helper, its lexical constants/imports and
@@ -30892,6 +31193,33 @@ class B:
                                                 and stmt.value.func.attr == 'skipTest'):
                                             value[index] = ast.Pass()
                                             mutations.append(stmt)
+                elif kind == 'marker cleared before the stand-down':
+                    # Round-2 Q(b) against the ACTUAL bodies: ONE line that
+                    # reaches os.environ before the marker is read disarms
+                    # the sink, and when it is written in a shared helper it
+                    # disarms every caller of that helper. Parsed only.
+                    clearing = ast.parse(
+                        'os.environ.pop(' + repr(self.CHILD) + ', None)').body[0]
+                    guard_bindings = scan._function_bindings(identity, fn)
+                    scopes = [fn]
+                    for n in ast.walk(fn):
+                        if isinstance(n, ast.Call) and scan._standdown_helper(identity, n):
+                            scopes.append(function(tree.body, scan._callee(identity, n).split('.')))
+                    for scope in scopes:
+                        for node in ast.walk(scope):
+                            for field, value in ast.iter_fields(node):
+                                if not isinstance(value, list):
+                                    continue
+                                for stmt in list(value):
+                                    is_guard = (isinstance(stmt, ast.If) and
+                                                scan._guard_condition(stmt.test, guard_bindings))
+                                    is_helper = (isinstance(stmt, ast.Expr)
+                                                 and isinstance(stmt.value, ast.Call)
+                                                 and scan._standdown_helper(identity, stmt.value))
+                                    if is_guard or is_helper:
+                                        value.insert(value.index(stmt), copy.deepcopy(clearing))
+                                        mutations.append(stmt)
+                                        break
                 elif kind in ('late guard', 'late override'):
                     if kind == 'late guard':
                         for node in ast.walk(fn):
@@ -30964,6 +31292,313 @@ class B:
         self.assertTrue(scan.guard_verified[identity], scan.guard_errors[identity])
         self.assertLess(scan.first_marker_read[identity], scan.first_spawn[identity])
         self.assertEqual(scan.marker_writes[identity], 1)
+
+    def test_a_spawn_outside_any_function_body_is_collected_and_flagged(self):
+        """Round-2 should-fix 1. `collect` recorded FunctionDef nodes only,
+        so a fork at module level, in a class body, in a decorator, in a
+        default or in a comprehension belonged to no scope and could not be
+        flagged by anything. The module-level shape is the planted
+        `test/issues/test_issue_zz_r5_module_level.py`: `loader.discover`
+        imports that file, so it forks the suite at collection time.
+        """
+        head = ("import subprocess, sys\n"
+                "from pathlib import Path\n"
+                "RUNNER = str(Path('test') / 'run_tests.py')\n")
+        shapes = {
+            'module level':
+                'subprocess.run([sys.executable, RUNNER])\n',
+            'class body':
+                'class Fixture:\n'
+                ' RESULT = subprocess.Popen([sys.executable, RUNNER])\n',
+            'decorator expression':
+                'def wrap(x): return x\n'
+                'class Fixture:\n'
+                ' @wrap(subprocess.run([sys.executable, RUNNER]))\n'
+                ' def probe(self): pass\n',
+            'default argument':
+                'def probe(done=subprocess.run([sys.executable, RUNNER])): pass\n',
+            'comprehension':
+                'RESULTS = [subprocess.run([sys.executable, t]) for t in TARGETS]\n',
+        }
+        sanctioned = {name for _, name in TestTheRunnerItself.SUITE_SPAWNERS}
+        for label, body in shapes.items():
+            with self.subTest(shape=label):
+                scan = self._scan_source(head + body)
+                flagged = self._flagged(scan)
+                self.assertTrue(
+                    flagged, f"a {label} spawn was collected by nothing, so "
+                    "no assertion anywhere could see it")
+                self.assertTrue(
+                    any('<' in identity for identity in flagged),
+                    "the scope must be one no def can name, so it can never "
+                    f"match a sanctioned entry: {sorted(flagged)}")
+                for identity in flagged:
+                    self.assertNotIn(identity, sanctioned)
+        quiet = self._scan_source(head + "OTHER = subprocess.run("
+                                  "[sys.executable, 'scripts/make_badge.py'])\n")
+        self.assertFalse(self._flagged(quiet),
+                         "a module-level spawn of a known other program is "
+                         "still not a suite fork")
+
+    def test_a_spawn_inside_a_lambda_is_a_scope_the_scanner_walks(self):
+        """Round-2 should-fix 2. `_scope_walk` stops at `ast.Lambda` and
+        `collect` never recorded one, so a lambda body was walked by
+        neither."""
+        head = "import subprocess, sys\nRUNNER = 'run_tests.py'\n"
+        shapes = {
+            'assigned lambda':
+                'def probe(target):\n'
+                ' go = lambda: subprocess.run([sys.executable, target])\n'
+                ' return go()\n',
+            'lambda passed as an argument':
+                'def probe(target):\n'
+                ' return later(lambda: subprocess.run([sys.executable, target]))\n',
+            'lambda in a default':
+                'def probe(go=lambda: subprocess.run([sys.executable, RUNNER])):\n'
+                ' return go()\n',
+            'module-level lambda':
+                'GO = lambda: subprocess.run([sys.executable, RUNNER])\n',
+        }
+        for label, body in shapes.items():
+            with self.subTest(shape=label):
+                flagged = self._flagged(self._scan_source(head + body))
+                self.assertTrue(flagged, label)
+                self.assertTrue(
+                    any('<lambda@' in identity for identity in flagged),
+                    f"the lambda must carry a qualified identity: {sorted(flagged)}")
+        quiet = self._scan_source(
+            head + 'def probe():\n'
+            " go = lambda: subprocess.run([sys.executable, 'other.py'])\n"
+            ' return go()\n')
+        self.assertFalse(self._flagged(quiet))
+
+    def test_a_side_effect_before_the_marker_read_is_not_a_stand_down_proof(self):
+        """Round-2 should-fix 3 (recorded inspection question (b)). The old
+        rule accepted every Expr and Assign before the helper's marker-
+        conditioned `if`, rejecting only a direct spawn — so one line that
+        cleared the marker left the proof granted for every caller."""
+        def helper_source(head):
+            return ("import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    " def _skip_in_child(self):\n"
+                    + head +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    " def sink(self, target):\n"
+                    "  self._skip_in_child()\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n"
+                    " def other(self, target):\n"
+                    "  self._skip_in_child()\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.Popen([sys.executable, target], env=env)\n")
+
+        def inline_source(head):
+            return ("import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    " def sink(self, target):\n"
+                    + head +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n")
+
+        callers = ('Guard.sink', 'Guard.other')
+        for label, head in (('nothing at all', ''),
+                            ('a docstring', "  'stand down in the child'\n"),
+                            ('an inert binding', '  reason = CHILD\n')):
+            clean = self._scan_source(helper_source(head))
+            for caller in callers:
+                with self.subTest(control=label, caller=caller):
+                    self.assertTrue(clean.guard_verified[caller],
+                                    clean.guard_errors[caller])
+        poisons = {
+            'pops the marker': '  os.environ.pop(CHILD, None)\n',
+            'deletes the marker': '  del os.environ[CHILD]\n',
+            'blanks the marker': "  os.environ[CHILD] = ''\n",
+            'updates the environment': '  os.environ.update(extra)\n',
+            'clears the environment': '  os.environ.clear()\n',
+            'setdefaults the marker': "  os.environ.setdefault(CHILD, '')\n",
+            'calls something unproven': '  prepare()\n',
+            'binds through a call': '  reason = prepare()\n',
+            'evaluates an unknown expression': '  extra[CHILD]\n',
+        }
+        for label, head in poisons.items():
+            with self.subTest(helper=label):
+                changed = self._scan_source(helper_source(head))
+                for caller in callers:
+                    self.assertFalse(
+                        changed.guard_verified[caller],
+                        f"{caller} keeps a guard proof although its shared "
+                        f"stand-down helper {label} before reading it")
+                    self.assertTrue(changed.guard_errors[caller])
+        # The same rule inside the sink's own body, before its own read.
+        self.assertTrue(self._scan_source(inline_source('')).guard_verified['Guard.sink'])
+        for label, head in poisons.items():
+            if not head.lstrip().startswith(('os.environ', 'del os.environ')):
+                continue
+            with self.subTest(sink=label):
+                changed = self._scan_source(inline_source(head))
+                self.assertFalse(changed.guard_verified['Guard.sink'])
+                self.assertTrue(changed.guard_errors['Guard.sink'])
+
+    def test_an_enclosing_parameter_shadows_a_module_constant_for_nested_scopes(self):
+        """Round-2 should-fix 4 (recorded inspection question (a)). A nested
+        scope seeded `local = dict(inherited)` and the enclosing function's
+        own formal parameters were never invalidated, so an inner function
+        read the module constant its caller's parameter shadows."""
+        scan = self._scan_source("""import subprocess, sys
+target = 'other.py'
+def outer(target):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def keyword_only(*, target='other.py'):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def star_args(*target):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def star_kwargs(**target):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def through_a_lambda(target):
+ return lambda: subprocess.run([sys.executable, target])
+def deep(target):
+ def middle():
+  def inner():
+   subprocess.run([sys.executable, target])
+  inner()
+ middle()
+def untouched():
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+""")
+        for name in ('outer.inner', 'keyword_only.inner', 'star_args.inner',
+                     'star_kwargs.inner', 'deep.middle.inner'):
+            with self.subTest(name=name):
+                self.assertTrue(scan.direct[name],
+                                f"{name} read a module constant that an "
+                                "enclosing parameter shadows at runtime")
+        self.assertTrue(
+            any(name.startswith('through_a_lambda.<lambda@') and flagged
+                for name, flagged in scan.direct.items()),
+            sorted(scan.direct))
+        self.assertFalse(
+            scan.direct['untouched.inner'],
+            "a nested scope with nothing shadowing it must still resolve the "
+            "module constant, or this rule would flag everything")
+
+    def test_string_command_sinks_are_classified_by_their_command_text(self):
+        """Round-2 should-fix 5. `os.system` takes a command LINE; handing it
+        to the executable classifier resolved it to unknown and exonerated it
+        as an unknown EXTERNAL command."""
+        head = 'import os, shlex, subprocess, sys\n'
+        unknown_python = {
+            'os.system f-string': 'def probe(target): os.system(f"{sys.executable} {target}")',
+            'os.system concatenation': 'def probe(target): os.system("python3 " + target)',
+            'os.system shlex.join': 'def probe(target): os.system(shlex.join([sys.executable, target]))',
+            'os.system str.join': 'def probe(target): os.system(" ".join([sys.executable, target]))',
+            'os.system unreadable line': 'def probe(command): os.system(command)',
+            'os.popen': 'def probe(target): os.popen(shlex.join([sys.executable, target]))',
+            'shell=True unreadable line': 'def probe(command): subprocess.run(command, shell=True)',
+            'shell=True concatenation': 'def probe(target): subprocess.run("python3 " + target, shell=True)',
+            'os.system names the runner': 'def probe(): os.system("python3 test/run_tests.py")',
+        }
+        for label, source in unknown_python.items():
+            with self.subTest(shape=label):
+                self.assertTrue(self._scan_source(head + source + '\n').direct['probe'],
+                                label)
+        external = {
+            'plain external command': 'def probe(): os.system("git status --short")',
+            'external popen': 'def probe(): os.popen("jq --version")',
+            'known other program': 'def probe(): os.system(shlex.join([sys.executable, "other.py"]))',
+            'known other program literal': 'def probe(): os.system("python3 other.py")',
+            'external shell string': 'def probe(): subprocess.run("git status", shell=True)',
+            'explicit shell=False': 'def probe(target): subprocess.run(["git", target], shell=False)',
+        }
+        for label, source in external.items():
+            with self.subTest(external=label):
+                self.assertFalse(self._scan_source(head + source + '\n').direct['probe'],
+                                 label)
+
+    def test_module_aliases_bound_by_assignment_are_spawn_surfaces(self):
+        """Round-2 should-fix 6. `_resolve_imports` collected aliases from
+        `Import`/`ImportFrom` only, so `sp = subprocess` followed by
+        `sp.run(...)` failed `_is_spawn` and was not a spawn at all."""
+        head = 'import os, subprocess, sys\n'
+        shapes = {
+            'module alias by assignment':
+                'sp = subprocess\ndef probe(target): sp.run([sys.executable, target])',
+            'chained module alias':
+                'sp = subprocess\nsp2 = sp\n'
+                'def probe(target): sp2.Popen([sys.executable, target])',
+            'spawn function bound by assignment':
+                'go = subprocess.run\ndef probe(target): go([sys.executable, target])',
+            'spawn function imported as':
+                'from subprocess import run as r\n'
+                'def probe(target): r([sys.executable, target])',
+            'module alias by import':
+                'import subprocess as sp\ndef probe(target): sp.run([sys.executable, target])',
+            'os alias by import':
+                'import os as o\n'
+                'def probe(target): o.execv(sys.executable, [sys.executable, target])',
+            'os alias by assignment':
+                'o = os\ndef probe(target): o.system(f"{sys.executable} {target}")',
+            'os function bound by assignment':
+                'launch = os.execv\n'
+                'def probe(target): launch(sys.executable, [sys.executable, target])',
+            'os function imported from':
+                'from os import system\n'
+                'def probe(target): system(f"{sys.executable} {target}")',
+        }
+        for label, source in shapes.items():
+            with self.subTest(alias=label):
+                self.assertTrue(self._scan_source(head + source + '\n').direct['probe'],
+                                label)
+        quiet = {
+            'known other program through an alias':
+                'sp = subprocess\ndef probe(): sp.run([sys.executable, "other.py"])',
+            'external command through an alias':
+                'sp = subprocess\ndef probe(target): sp.run(["git", target])',
+        }
+        for label, source in quiet.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source + '\n').direct['probe'],
+                                 label)
+
+    def test_a_known_interpreter_survives_an_unpack_and_shutil_which(self):
+        """Round-2 nit 7. A `Starred` element resolved to unknown, so argv[0]
+        was unknown and the call became an unknown EXTERNAL command rather
+        than failing closed on its target."""
+        head = 'import shutil, subprocess, sys\n'
+        for label, source in {
+                'leading star-unpack':
+                    'def probe(target):\n base = [sys.executable]\n'
+                    ' subprocess.run([*base, target])\n',
+                'shutil.which names the interpreter':
+                    'def probe(target): subprocess.run([shutil.which("python3"), target])\n',
+        }.items():
+            with self.subTest(shape=label):
+                self.assertTrue(self._scan_source(head + source).direct['probe'], label)
+        for label, source in {
+                'shutil.which names another program':
+                    'def probe(target): subprocess.run([shutil.which("git"), target])\n',
+                'unpack of a known interpreter and a known target':
+                    'def probe(rest):\n base = [sys.executable, "other.py"]\n'
+                    ' subprocess.run([*base, *rest])\n',
+        }.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source).direct['probe'], label)
 
 
 if __name__ == "__main__":
