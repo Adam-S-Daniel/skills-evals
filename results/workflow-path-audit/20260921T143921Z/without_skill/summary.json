@@ -1,0 +1,91 @@
+{
+  "skill": "workflow-path-audit",
+  "arm": "without_skill",
+  "timestamp": "20260921T143921Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.32469624999999996,
+    "num_turns": 10,
+    "duration_ms": 104743,
+    "usage": {
+      "input_tokens": 20,
+      "cache_creation_input_tokens": 20347,
+      "cache_read_input_tokens": 356000,
+      "output_tokens": 9395,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 20347
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "docs-change-routes-correctly",
+      "passed": false,
+      "detail": "changing docs/guide.md: .github/workflows/tests.yml: expected triggered, would be skipped"
+    },
+    {
+      "id": "source-change-routes-correctly",
+      "passed": true,
+      "detail": "changing src/index.js routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "lockfile-change-routes-to-installers",
+      "passed": true,
+      "detail": "changing package-lock.json routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "prose-change-runs-nothing-but-the-required-check",
+      "passed": false,
+      "detail": "changing README.md, LICENSE: .github/workflows/tests.yml: expected triggered, would be skipped"
+    },
+    {
+      "id": "required-check-always-fires-and-gates-internally",
+      "passed": false,
+      "detail": ".github/workflows/tests-skip.yml: `on.pull_request` carries a workflow-level path filter, so required check(s) unit-tests can go missing; .github/workflows/tests-skip.yml: `on.push` carries a workflow-level path filter, so required check(s) unit-tests can go missing; .github/workflows/tests-skip.yml: no early-skip gate \u2014 nothing computes a salience output that an `if:` gates the real work on; .github/workflows/tests.yml: `on.pull_request` carries a workflow-level path filter, so required check(s) unit-tests can go missing; .github/workflows/tests.yml: `on.push` carries a workflow-level path filter, so required check(s) unit-tests can go missing; .github/workflows/tests.yml: no early-skip gate \u2014 nothing computes a salience output that an `if:` gates the real work on"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "event-only-workflows-unfiltered",
+      "passed": true,
+      "detail": "event-only workflows carry no path filters (.github/workflows/nightly-sweep.yml, .github/workflows/triage.yml)"
+    },
+    {
+      "id": "ruleset-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/rulesets/main.json)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 3,
+        "rationale": "Every pull_request/push workflow got a deliberate trigger decision, but the required `unit-tests` check was handled with exactly the disqualified two-workflow same-check-name pattern (plus a workflow-level path filter on tests.yml), which the rubric caps at 4 and which lets a trivial skip-pass mask a real failure on mixed changesets."
+      },
+      {
+        "name": "Salience",
+        "score": 8,
+        "rationale": "Each workflow's path list closely matches the files its own steps consume (deploy's src/package/deploy.sh, docs-site's docs/mkdocs, tests' src/test/package), plus the workflow file itself, rather than a catch-all or a copied sibling list."
+      },
+      {
+        "name": "Restraint",
+        "score": 5,
+        "rationale": "It correctly left the schedule-only and issue-driven workflows and the branch-protection ruleset untouched, but it introduced a new tests-skip.yml file the audit did not call for as a flawed workaround for the required check."
+      }
+    ],
+    "overall": 4.9
+  }
+}
