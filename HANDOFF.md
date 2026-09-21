@@ -36,49 +36,55 @@ on 2026-09-21, from a Claude Code session on the Windows laptop driving the
 WSL clone (`/home/passp/repos/skills-evals`; the Windows clone
 `D:\repos\adam-s-daniel\skills-evals` has no Python and is used for `gh` only).
 
-### PR #153: verification complete, merge waiting on Adam
+### PR #153: merged; first live proposal run verified
 
-Head unchanged at
-[`efb48b8`](https://github.com/Adam-S-Daniel/skills-evals/commit/efb48b8849ffec0996348908aed80bf10994a3d7).
-Both items deferred under the allowance stop are done and recorded in the
+Adam authorized merges, releases and workflow dispatch in chat at about
+14:35 UTC on 2026-09-21 and said he would be away for at least three hours.
+[PR #153](https://github.com/Adam-S-Daniel/skills-evals/pull/153) merged at
+14:37 UTC as merge commit
+[`cddb224`](https://github.com/Adam-S-Daniel/skills-evals/commit/cddb224c464719d1a26212802b986ae31e3e941c)
+(`--match-head-commit efb48b8`; parents `47bb7a9` and `efb48b8`; head and
+merge both verified ancestors of `origin/main`). On the merge:
+[CI](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35613393147)
+and [Propagation](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35613393109)
+success. The deferred final verification that preceded the merge is in the
 [2026-09-21 checkpoint comment](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5762059943):
+generated multi-arm roster full suite **1446 / 2 skipped, exit 0**,
+propagation **164 / 1 skipped**, sentinel run **1446 / 2 skipped** with one
+nit filed as [#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161).
+The merge and live-run record is the
+[next comment](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5762476957).
 
-- Full suite with the generated valid multi-arm roster (5 arms, distinct
-  judge, preflight an arm; the only pre-run delta `evals/roster.yml`):
-  **1446 tests, 2 skipped, exit 0**; propagation **164, 1 skipped, exit 0**;
-  195-entry tracked manifest identical before and after.
-- Bounded adversarial confirmation of the test-isolation repair, with
-  sentinels planted in the checkout, both siblings, a foreign directory and
-  the throwaway home: **1446 tests, 2 skipped, exit 0**; everything
-  byte-identical except the checkout's untracked `roster/latest.json`, which
-  the five `#147` regression rows deliberately plant and `rmtree` (documented
-  in the test, present since the first candidate). Ruled a nit and filed as
-  [#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161); not a
-  merge blocker.
-- Current check runs on `efb48b8` all `success` or skipped; combined status
-  pending over zero statuses; `mergeable: MERGEABLE`, merge state `CLEAN`;
-  `git merge-tree` against `main` `47bb7a9` clean; the six commits `main`
-  gained since the PR base touch no PR path. Today's scheduled
-  [real eval on `main`](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35606278423)
-  succeeded before this session started.
-- **The merge was refused by the session's permission classifier** ("merge
-  without review"), and was not retried or worked around. The command to
-  run, from any checkout with `gh`:
-  `gh pr merge 153 --merge --match-head-commit efb48b8849ffec0996348908aed80bf10994a3d7`,
-  then `git fetch origin main` and
-  `git merge-base --is-ancestor efb48b8849ffec0996348908aed80bf10994a3d7 origin/main`.
-  After that: close [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
-  as superseded (its last comment already says so), then
-  `gh workflow run eval.yml --ref main` (default fixture
-  `evals/workflow-path-audit`) and verify the run's "Propose a roster change"
-  step: the tracking issue with marker `<!-- skills-evals:roster-proposal -->`
-  and, for a valid proposal, the `roster/proposal` branch and compare link.
-  Neither exists yet.
+[PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) is
+superseded; GitHub marked it merged through `cddb224` because its head is
+#153's base ([note](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5762312946)).
+
+**First real proposal run:**
+[run 35613563071](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35613563071),
+`workflow_dispatch` on `main` with the default fixture, every step success.
+The eval ran on the committed roster; exhibit and badge published to
+`eval-results` `9b6f3b5` (`previous_state: compared`, `proposal.status:
+differs`, 16 changes, nothing retired); a valid proposal was pushed as one bot
+commit [`c10df5d`](https://github.com/Adam-S-Daniel/skills-evals/commit/c10df5d333f86e3a65ea0fb807122f2f97fceea3)
+on `roster/proposal` (parent `cddb224`, only `evals/roster.yml`); tracking
+issue [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162)
+carries the reasons and the compare link.
+
+**Open decision for Adam, not blocking:** #162 proposes four arms
+(`claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5`,
+`claude-fable-5-1`) and judge `claude-fable-5`, every seat by the
+newest-per-tier fallback because **no usage census has ever been published**
+(`usage/latest.json` is absent on `eval-results`; the census is step 6 of the
+Tier-3 account-store Routine in `evals/propagation/ROUTINE.md` and needs a
+transcript-bearing machine). It was not merged: it would multiply the paid
+weekly run and raise the judge tier on no usage evidence, which is the human
+call ADR 0001 reserves. Two ways forward: publish the census first so the next
+Monday run proposes from usage, or open and merge a PR from `roster/proposal`
+as is. The weekly run keeps proposing (and re-pushing `roster/proposal`) until
+the committed file matches.
 
 Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
-workstation (driver, logs, exit codes, manifests, generated roster,
-`REPORT.md`). Scratch archives were verified remote-free and deleted; the
-source worktree manifest is unchanged and no test descendants remain.
+workstation.
 
 ### Issue #152 after the merge
 
