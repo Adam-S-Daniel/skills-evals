@@ -217,9 +217,8 @@ class TestIssue97(unittest.TestCase):
 
     def _run_suite(self, env_extra: dict | None = None
                    ) -> subprocess.CompletedProcess:
-        """The ONE function in this repository allowed to name the runner at a
-        spawn (test/run_tests.py::_spawn_suite is the other; the pin there
-        holds the membership exact), and it stands down itself.
+        """A reviewed suite spawner that stands down itself. The runner
+        verifies every member of its sanctioned sink inventory.
 
         S-B-a-2. Round 2 guarded the one test that forked; round 3 pinned two
         file globs; round 4 measured three helper locations those globs never
@@ -238,7 +237,11 @@ class TestIssue97(unittest.TestCase):
                       "re-fork the suite from inside itself")
             print(reason)
             raise unittest.SkipTest(reason)
-        env = dict(os.environ, **{CHILD_ENV: "1"}, **(env_extra or {}))
+        # The caller may add a throwaway-memory path, but may never clear the
+        # marker that makes a recursively launched suite stand down.
+        env = dict(os.environ)
+        env.update(env_extra or {})
+        env[CHILD_ENV] = "1"
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
@@ -3017,8 +3020,11 @@ class TestIssue97(unittest.TestCase):
         return tmp / "harness" / "run_eval.py"
 
     def _run_copy(self, runner: Path, argv_tail) -> tuple[int, str]:
+        if os.environ.get(CHILD_ENV):
+            raise unittest.SkipTest("child suite run — guarded copied harness")
         cmd = [sys.executable, str(runner), *[str(a) for a in argv_tail]]
         env = dict(os.environ, CLAUDE_BIN=str(FAKE_CLAUDE))
+        env[CHILD_ENV] = "1"
         try:
             proc = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
                                   capture_output=True, text=True,
