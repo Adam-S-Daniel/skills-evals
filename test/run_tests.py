@@ -28904,20 +28904,49 @@ elif 'worktree' in args and 'remove' in args:
     #       "the attack no longer works" and "the attack no longer reaches
     #       a decision" are different claims and only the second is true.
     #
+    # THE PLANT GOES IN A THROWAWAY CHECKOUT, NOT THE OPERATOR'S (#161).
     # `roster/` is gitignored (it is published on `eval-results` and
-    # untracked on `main`), which is what makes writing the plant into the
-    # real checkout safe; every row removes it again in `addCleanup`,
-    # including on failure.
+    # untracked on `main`), which used to be read as licence to write the
+    # plant at the real `<repo>/roster/latest.json` and `shutil.rmtree`
+    # `<repo>/roster` in `addCleanup` — so a run of this suite in a
+    # checkout that had the published roster beside it deleted that
+    # directory and whatever else was in it. Measured on 2026-09-21: an
+    # otherwise byte-identical tree with one path removed. Each row gets
+    # its own temporary checkout instead, and the RESOLVER'S OWN ANCHOR is
+    # pointed at it for the row, so the plant still lands where `424eebf`
+    # looked — `<root>/roster/latest.json`, relative to the root the
+    # resolver reads — and nothing outside a temporary directory is
+    # written or removed.
 
-    _PUBLISHED = REPO_ROOT / "roster" / "latest.json"
+    def _plant_published_roster(self, document) -> Path:
+        """Write `document` where the published roster lands IN A THROWAWAY
+        checkout, and return the path it landed at.
 
-    def _plant_published_roster(self, document) -> None:
-        """Write `document` where the published roster lands, and take it
-        away again however this test ends."""
-        self._PUBLISHED.parent.mkdir(parents=True, exist_ok=True)
-        self.addCleanup(shutil.rmtree, self._PUBLISHED.parent,
-                        ignore_errors=True)
-        self._PUBLISHED.write_text(json.dumps(document), encoding="utf-8")
+        `run_eval.TRUSTED_ROSTER` is `<root>/evals/roster.yml`, and
+        `_resolve_roster` reads it at call time, so rebinding it for the
+        duration of the row moves the resolver's whole notion of the
+        checkout — including the sibling `<root>/roster/latest.json` the
+        old default named — without touching the operator's. The copy is
+        the committed file byte for byte, so selection still answers from
+        the document a real run answers from.
+        """
+        self.assertEqual(
+            run_eval.TRUSTED_ROSTER.parent.parent, REPO_ROOT,
+            "the resolver's anchor is this checkout's root, which is what "
+            "makes moving the anchor move the old default with it")
+        root = Path(tempfile.mkdtemp(prefix="issue147-checkout-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        trusted = root / "evals" / "roster.yml"
+        trusted.parent.mkdir(parents=True)
+        shutil.copyfile(self.ROSTER, trusted)
+        self.assertEqual(trusted.read_bytes(), self.ROSTER.read_bytes())
+        anchored = mock.patch.object(run_eval, "TRUSTED_ROSTER", trusted)
+        anchored.start()
+        self.addCleanup(anchored.stop)
+        published = root / "roster" / "latest.json"
+        published.parent.mkdir(parents=True)
+        published.write_text(json.dumps(document), encoding="utf-8")
+        return published
 
     def _running_set(self):
         """(agent, judge) as a real run resolves them — no flag, no
@@ -28935,15 +28964,20 @@ elif 'worktree' in args and 'remove' in args:
         planted where the published roster lands, and the running set must
         be the committed one regardless."""
         committed = self._committed()
-        self._plant_published_roster(published)
+        planted = self._plant_published_roster(published)
         agent, judge_model = self._running_set()
         self.assertEqual(agent, committed["arms"][0]["id"])
         self.assertEqual(judge_model, committed["judge"]["id"])
         # And the plant really was where the old default looked, or the
         # row proves nothing.
-        self.assertTrue(self._PUBLISHED.is_file())
+        self.assertTrue(planted.is_file())
+        self.assertEqual(
+            planted,
+            run_eval.TRUSTED_ROSTER.parent.parent / "roster" / "latest.json",
+            "the plant must sit at the path `424eebf` defaulted to, "
+            "relative to the root the resolver itself reads")
         self.assertNotEqual(
-            run_eval._resolve_roster(None), self._PUBLISHED,
+            run_eval._resolve_roster(None), planted,
             "selection must not resolve to the published roster")
 
     #: A live catalogue with a NEWER model beside the victim, so there is
@@ -29132,6 +29166,64 @@ elif 'worktree' in args and 'remove' in args:
         self._assert_running_set_is_committed(removed)
         self.assertIn("carries 100.0%", self._reason(removed, self._VICTIM))
         self.assertEqual(removed["proposal"]["status"], "differs")
+
+    # --- the invariant the five rows above are held to (#161) ------------
+
+    def test_the_plant_helper_writes_nothing_into_the_operators_checkout(self):
+        """[#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161).
+        The five rows share ONE helper, and it used to plant the hostile
+        roster at the real `<repo>/roster/latest.json` and remove
+        `<repo>/roster` in `addCleanup`, so running this suite in a
+        checkout that had the published roster beside it deleted that
+        directory — the operator's file, not the suite's. Measured on
+        2026-09-21 in the isolated verification archive: an otherwise
+        byte-identical tree with `roster/latest.json` removed.
+
+        The fixture is a DISPOSABLE CHECKOUT holding a seeded
+        `roster/latest.json` and a sibling file, with the anchor the old
+        helper read pointed straight at it. Every byte of it must survive
+        the helper and its cleanups: the suite writes and removes inside
+        its own temporary directories and nowhere else.
+        """
+        checkout = Path(tempfile.mkdtemp(prefix="issue161-checkout-"))
+        self.addCleanup(shutil.rmtree, checkout, ignore_errors=True)
+        (checkout / "evals").mkdir()
+        shutil.copyfile(self.ROSTER, checkout / "evals" / "roster.yml")
+        (checkout / "roster").mkdir()
+        seeded = {
+            checkout / "roster" / "latest.json":
+                b'{"arms": [{"id": "seeded-by-the-operator"}]}\n',
+            checkout / "roster" / "other.txt":
+                b"a sibling file this suite does not own\n",
+        }
+        for path, payload in seeded.items():
+            path.write_bytes(payload)
+
+        def snapshot():
+            return {path.relative_to(checkout).as_posix(): path.read_bytes()
+                    for path in sorted(checkout.rglob("*")) if path.is_file()}
+
+        before = snapshot()
+        row = TestIssue147("test_row5_the_open_cell_cannot_reach_the_running_set")
+        # `create=True`: the constant the old helper read is gone, and the
+        # claim is precisely that pointing it at a checkout cannot make the
+        # helper write there.
+        with mock.patch.object(TestIssue147, "_PUBLISHED",
+                               checkout / "roster" / "latest.json",
+                               create=True):
+            row._plant_published_roster(
+                {"arms": [{"id": self._GHOST, "reason": "planted"}]})
+            row.doCleanups()
+
+        for path, payload in seeded.items():
+            self.assertTrue(path.is_file(),
+                            f"roster/{path.name} was REMOVED from a checkout "
+                            "this suite does not own")
+            self.assertEqual(path.read_bytes(), payload,
+                             f"roster/{path.name} was rewritten in a checkout "
+                             "this suite does not own")
+        self.assertEqual(snapshot(), before,
+                         "the helper changed a checkout it does not own")
 
     def test_no_row_above_can_be_applied_without_a_human(self):
         """The claim every row leans on, asserted once at the workflow:
