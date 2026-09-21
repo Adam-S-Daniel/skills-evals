@@ -86,16 +86,41 @@ the committed file matches.
 Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
 workstation.
 
-### Issue #152 after the merge
+### Issue #152: merged with main, in PR #163, fix round 2 in flight
 
-Unchanged at
-[`d6021b6`](https://github.com/Adam-S-Daniel/skills-evals/commit/d6021b648724ac10aafa699c7b99b58d3e29d053).
-Measured today: `git merge-tree` of the branch against `main` `47bb7a9` is
-clean, but against PR #153's head it **conflicts in `test/run_tests.py`**, so
-merging `main` into the branch after #153 lands is a conflict resolution in
-the test module, to be done by a worker in its worktree (never a rebase),
-followed by affected verification and the first independent review before a
-PR is opened. The two unverified inspection questions in § 0A still apply.
+A local worker merged `origin/main` `cddb224` into the branch as
+[`fa9c788`](https://github.com/Adam-S-Daniel/skills-evals/commit/fa9c78830e2c940e5332d53912aa122915b38172)
+(one whitespace-only conflict at the tail of `test/run_tests.py`; no
+production file conflicted). Full suite **1457 / 2 skipped, exit 0**,
+propagation **164 / 1 skipped**, focused 12 and 24, `TestIssue147` 40; the
+count reconciles set-for-set (1446 on `cddb224` + the 11 `TestIssue152`
+methods). Pushed and opened as
+[PR #163](https://github.com/Adam-S-Daniel/skills-evals/pull/163); CI
+`test`, `gate` and all five propagation arms success on `fa9c788`.
+
+The independent round-2 review
+([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157))
+closed all seven round-1 findings and confirmed the merge, but is **NOT
+CLEAN** on six new should-fixes and three nits, no blocker:
+
+1. spawns outside any function body (module level, class body, decorator
+   expressions) are never collected;
+2. spawns inside a `lambda` are invisible;
+3. a stand-down helper is verified even when side effects precede its marker
+   read (§ 0A inspection question (b), now **verified**);
+4. a nested closure inherits a module constant that an enclosing parameter
+   shadows (§ 0A inspection question (a), now **verified**);
+5. `os.system` command strings are modelled as an external executable path;
+6. `sp = subprocess` assignment aliases are not spawn surfaces.
+
+Fix round 2 (first of the three per-PR rounds under decision 2; nothing
+recurred from round 1, so two-strikes does not apply) is running as a local
+worker in `.claude/worktrees/codex-suite-fork-152-20260915` from a clean
+`fa9c788`. It pushes nothing. When it releases a clean commit with red/green
+regressions and the isolated-archive verifiers, the parent pushes, a round-3
+review decides, and on CLEAN the PR merges with a merge commit on the expected
+head. Evidence directories: `review152-round2/` and `fix152-round2/` under
+`.evals-resume-20260915/`.
 
 ### Everything else
 
