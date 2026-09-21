@@ -86,39 +86,59 @@ the committed file matches.
 Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
 workstation.
 
-### Issue #152: PR #163, two-strikes fired, fix round 4 (budget round 2 of 3) in flight
+### Issue #152: merged as PR #163 (`47ca1e6`) after five review rounds
 
 The branch was merged with `origin/main` `cddb224` as
 [`fa9c788`](https://github.com/Adam-S-Daniel/skills-evals/commit/fa9c78830e2c940e5332d53912aa122915b38172)
 (whitespace-only conflict) and opened as
-[PR #163](https://github.com/Adam-S-Daniel/skills-evals/pull/163). Rounds so
-far, each with an independent local reviewer on a read-only archive:
+[PR #163](https://github.com/Adam-S-Daniel/skills-evals/pull/163). Each
+round had a fresh independent local reviewer on a read-only archive with
+parse-only probes; each fix round was a local worker in the branch worktree,
+pushed by the parent after release.
 
 | Head | Review | Result |
 |---|---|---|
-| `fa9c788` | round 2 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157)) | all seven round-1 findings closed, merge clean; NOT CLEAN on six new should-fixes (uncollected module/class/lambda spawns, helper side effects before the marker read, enclosing-parameter shadowing, `os.system` strings, `sp = subprocess` aliases) |
-| [`4fefa14`](https://github.com/Adam-S-Daniel/skills-evals/commit/4fefa14faab2d42398fc247ec1fae758a4c13bed) (fix round 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763979563)) | round 3 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764206754)) | all six closed; **NOT CLEAN on two repeats** returning through the remedy: the sink body's pre-read rule is weaker than the helper's (alias, method call or `setUp` popping the marker keeps `guard_verified`), and `shell` via `**kwargs` exonerates a string command |
-| [`a823fd8`](https://github.com/Adam-S-Daniel/skills-evals/commit/a823fd8891379c1421c37f36d7adc0e68a33e767) (fix round 3 = budget round 1 of 3, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764946603); same tree as the worker's `8c16d1b`) | round 4 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5765213187)) | both round-3 should-fixes closed, both declared scope bounds accepted; **NOT CLEAN on one repeat**: `from os import environ` and `__import__("os")` are not bound to the environment sentinel, re-opening the fixture/decorator write routes under those spellings; two nits (lexically matched pure-call names; `Popen` subclasses unnamed) |
+| `fa9c788` | round 2 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157)) | all seven round-1 findings closed, merge clean; NOT CLEAN on six new should-fixes |
+| [`4fefa14`](https://github.com/Adam-S-Daniel/skills-evals/commit/4fefa14faab2d42398fc247ec1fae758a4c13bed) (fix round 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763979563)) | round 3 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764206754)) | six closed; NOT CLEAN on two **repeats** (sink preamble weaker than the helper rule; `shell` via `**kwargs`); **two-strikes fired**, decision 2 budget of three opened |
+| [`a823fd8`](https://github.com/Adam-S-Daniel/skills-evals/commit/a823fd8891379c1421c37f36d7adc0e68a33e767) (fix round 3 = budget 1, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764946603)) | round 4 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5765213187)) | both closed, both declared scope bounds accepted; NOT CLEAN on one repeat (`from os import environ` not bound to the sentinel) |
+| [`9bdcb95`](https://github.com/Adam-S-Daniel/skills-evals/commit/9bdcb954127739930f819223778cb50db125e472) (fix round 4 = budget 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5765974517)) | round 5 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5766272464)) | **CLEAN**: 0 blockers, 0 should-fix, 3 nits, none a repeat |
 
-Full suite on `4fefa14`: **1464 / 2 skipped, exit 0**; propagation **164 / 1**;
-focused 31 and 40; CI `test`, `gate` and all five propagation arms success;
-mergeable, CLEAN. Both § 0A inspection questions were verified as real
-defects in round 2 and closed in fix round 2.
+Final head `9bdcb95`: full suite **1474 / 2 skipped, exit 0**, propagation
+**164 / 1 skipped**, focused 41 and 40, CI `test`, `gate` and all five
+propagation arms success. Merged at 19:28 UTC with
+`gh pr merge --merge --match-head-commit 9bdcb95…` as merge commit
+[`47ca1e6`](https://github.com/Adam-S-Daniel/skills-evals/commit/47ca1e69dfb6f5819d62b29773efd23369ff1599)
+(parents `cddb224`, `9bdcb95`; both verified ancestors of `origin/main`).
+Post-merge [CI](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35645037775)
+and [Propagation](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35645037758)
+on `47ca1e6` success. Issue #152 closed by the merge. The third budget round
+was not needed. Both § 0A inspection questions were verified as real defects
+in round 2 and closed in fix round 2.
 
-**Two-strikes fired at round 3** (same defect, same severity, through the
-brief's own remedy). Under Adam's decision 2 the PR has three further fix
-rounds. Fix round 3 (`a823fd8`, budget round 1) closed its items and full suite is **1469 / 2 skipped, exit 0** with green CI; **fix round 4 (budget round 2 of 3) is running** as a local worker, bounded to the import-spelling binding resolver, unshadowed pure-call names and `Popen` subclasses. A round-5 review decides; a NOT CLEAN with a repeat there leaves exactly one budget round before the PR parks for Adam. It was launched as a local worker
-in `.claude/worktrees/codex-suite-fork-152-20260915` from a clean `4fefa14`;
-its brief states the invariants at the sink (the sink body and every fixture
-or decorator on the path are held to the helper's inert-before-read rule,
-with calls into parsed scopes resolved transitively and unresolvable callees
-treated as writes; any process-start call whose argument shape is
-unresolvable is classified by command text, fail closed). When it releases,
-the parent pushes, a round-4 review decides; a NOT CLEAN with a repeat after
-the third budget round parks the PR for Adam. Evidence directories under
-`.evals-resume-20260915/`: `review152-round2/`, `fix152-round2/`,
-`review152-round3/` (probes and logs; the verdict text is the PR comment),
-`fix152-round3/`, `review152-round4/`, `fix152-round4/`.
+What the scanner now holds and does not hold is in the docstring of
+`test_every_suite_forking_test_in_this_repo_stands_down_in_a_child` in
+`test/run_tests.py` on `main`. Documented out of scope: `functools.partial`,
+`runpy.run_path` and `importlib.import_module` handoffs, an unparsed callee
+not handed the environment mapping, an unresolvable argv name with no
+shell/spread/string shape, an unparsed base class.
+
+Follow-ups filed, both test-only, neither a regression:
+[#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161) (the
+`#147` regression rows remove a pre-existing `roster/` in the checkout) and
+[#164](https://github.com/Adam-S-Daniel/skills-evals/issues/164) (round-5
+nits: unresolved mapping receivers and bound-method aliases in fixtures,
+compound statements walked against pre-statement bindings, the docstring's
+fixture claim). A single local worker was dispatched for both on a new
+branch `claude/skills-evals-161-164` from `47ca1e6` (worktree
+`.claude/worktrees/claude-161-164`); if this session ends before it lands,
+its state is in `.evals-resume-20260915/fix161-164/` and the branch is
+unpushed until reviewed.
+
+Evidence directories under `.evals-resume-20260915/`:
+`resume-20260921-i152-merge/`, `review152-round2/`, `fix152-round2/`,
+`review152-round3/` (probes; verdict text is the PR comment),
+`fix152-round3/`, `review152-round4/`, `fix152-round4/`,
+`review152-round5/`, `fix161-164/`.
 
 ### Everything else
 
