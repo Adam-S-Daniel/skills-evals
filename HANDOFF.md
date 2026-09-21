@@ -28,6 +28,75 @@ reconstructed from memory.
   status blockquote at the top of its body and a "Review rounds" record with
   each round's findings, fix-round session links and verified counts.
 
+## 0B. Session of 2026-09-21 — RESUME HERE
+
+This section supersedes § 0A where the two differ. Adam asked to proceed from
+the [September 15 checkpoint](https://github.com/Adam-S-Daniel/skills-evals/pull/157#issuecomment-5685103205)
+on 2026-09-21, from a Claude Code session on the Windows laptop driving the
+WSL clone (`/home/passp/repos/skills-evals`; the Windows clone
+`D:\repos\adam-s-daniel\skills-evals` has no Python and is used for `gh` only).
+
+### PR #153: verification complete, merge waiting on Adam
+
+Head unchanged at
+[`efb48b8`](https://github.com/Adam-S-Daniel/skills-evals/commit/efb48b8849ffec0996348908aed80bf10994a3d7).
+Both items deferred under the allowance stop are done and recorded in the
+[2026-09-21 checkpoint comment](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5762059943):
+
+- Full suite with the generated valid multi-arm roster (5 arms, distinct
+  judge, preflight an arm; the only pre-run delta `evals/roster.yml`):
+  **1446 tests, 2 skipped, exit 0**; propagation **164, 1 skipped, exit 0**;
+  195-entry tracked manifest identical before and after.
+- Bounded adversarial confirmation of the test-isolation repair, with
+  sentinels planted in the checkout, both siblings, a foreign directory and
+  the throwaway home: **1446 tests, 2 skipped, exit 0**; everything
+  byte-identical except the checkout's untracked `roster/latest.json`, which
+  the five `#147` regression rows deliberately plant and `rmtree` (documented
+  in the test, present since the first candidate). Ruled a nit and filed as
+  [#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161); not a
+  merge blocker.
+- Current check runs on `efb48b8` all `success` or skipped; combined status
+  pending over zero statuses; `mergeable: MERGEABLE`, merge state `CLEAN`;
+  `git merge-tree` against `main` `47bb7a9` clean; the six commits `main`
+  gained since the PR base touch no PR path. Today's scheduled
+  [real eval on `main`](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35606278423)
+  succeeded before this session started.
+- **The merge was refused by the session's permission classifier** ("merge
+  without review"), and was not retried or worked around. The command to
+  run, from any checkout with `gh`:
+  `gh pr merge 153 --merge --match-head-commit efb48b8849ffec0996348908aed80bf10994a3d7`,
+  then `git fetch origin main` and
+  `git merge-base --is-ancestor efb48b8849ffec0996348908aed80bf10994a3d7 origin/main`.
+  After that: close [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
+  as superseded (its last comment already says so), then
+  `gh workflow run eval.yml --ref main` (default fixture
+  `evals/workflow-path-audit`) and verify the run's "Propose a roster change"
+  step: the tracking issue with marker `<!-- skills-evals:roster-proposal -->`
+  and, for a valid proposal, the `roster/proposal` branch and compare link.
+  Neither exists yet.
+
+Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
+workstation (driver, logs, exit codes, manifests, generated roster,
+`REPORT.md`). Scratch archives were verified remote-free and deleted; the
+source worktree manifest is unchanged and no test descendants remain.
+
+### Issue #152 after the merge
+
+Unchanged at
+[`d6021b6`](https://github.com/Adam-S-Daniel/skills-evals/commit/d6021b648724ac10aafa699c7b99b58d3e29d053).
+Measured today: `git merge-tree` of the branch against `main` `47bb7a9` is
+clean, but against PR #153's head it **conflicts in `test/run_tests.py`**, so
+merging `main` into the branch after #153 lands is a conflict resolution in
+the test module, to be done by a worker in its worktree (never a rebase),
+followed by affected verification and the first independent review before a
+PR is opened. The two unverified inspection questions in § 0A still apply.
+
+### Everything else
+
+PR #124 in `_agent-guidance`, both fixture lanes, and the #139 receipt hold
+are exactly as § 0A records them. The scheduled Monday eval on `main` keeps
+running on the committed roster regardless of #153.
+
 ## 0A. Session of 2026-09-15 — RESUME HERE
 
 This section supersedes the September 13 state below. Adam stopped this
