@@ -29311,6 +29311,11 @@ OS_SPAWN_NAMES = ("system", "popen", "posix_spawn", "posix_spawnp")
 # clears $SKILLS_EVALS_SUITE_CHILD before it is read is never inert.
 ENVIRON_MUTATORS = ("pop", "popitem", "update", "clear", "setdefault",
                     "__setitem__", "__delitem__")
+# Everything unittest runs around a test without the test spelling a call:
+# a marker cleared in any of them is never there for any sink in the class.
+FIXTURE_METHODS = ("setUp", "setUpClass", "tearDown", "tearDownClass",
+                   "asyncSetUp", "asyncTearDown")
+MODULE_FIXTURES = ("setUpModule", "tearDownModule")
 
 
 class SuiteScanError(RuntimeError):
@@ -29321,6 +29326,15 @@ _UNKNOWN = object()
 _PYTHON = object()
 _SYS = object()
 _OS = object()
+# `os.environ` ITSELF. `_e = os.environ` is not a copy, so `_e.pop(MARKER,
+# None)` clears exactly the mapping the guard reads — the route round 3
+# measured walking past the round-2 rule on the real `_spawn_suite` body.
+_ENVIRON = object()
+# Values parked on an attribute rather than on a bare name: `self.PY =
+# sys.executable` written anywhere in a class, and `C.PY = sys.executable`
+# read from outside the class body that binds it.
+ATTRIBUTE_BINDING = "@self."
+CLASS_BINDING = "@class."
 
 
 def _static_value(node, bindings):
@@ -29359,7 +29373,7 @@ def _static_value(node, bindings):
                 if value.format_spec is not None or value.conversion != -1:
                     return _UNKNOWN
                 resolved = _static_value(value.value, bindings)
-                if resolved is _UNKNOWN or resolved is _PYTHON:
+                if resolved is _UNKNOWN or resolved is _PYTHON or resolved is _ENVIRON:
                     return _UNKNOWN
                 parts.append(str(resolved))
             else:
@@ -29367,17 +29381,28 @@ def _static_value(node, bindings):
         return "".join(parts)
     if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Div)):
         left, right = _static_value(node.left, bindings), _static_value(node.right, bindings)
-        if left is _UNKNOWN or right is _UNKNOWN or left is _PYTHON or right is _PYTHON:
+        if (left is _UNKNOWN or right is _UNKNOWN or left is _PYTHON or right is _PYTHON
+                or left is _ENVIRON or right is _ENVIRON):
             return _UNKNOWN
         if isinstance(node.op, ast.Add) and isinstance(left, tuple) and isinstance(right, tuple):
             return left + right
         return str(left) + ("/" if isinstance(node.op, ast.Div) else "") + str(right)
     if isinstance(node, ast.Attribute):
-        if (isinstance(node.value, ast.Name) and bindings.get(node.value.id) is _SYS
-                and node.attr == "executable"):
-            return _PYTHON
+        if isinstance(node.value, ast.Name):
+            if bindings.get(node.value.id) is _SYS and node.attr == "executable":
+                return _PYTHON
+            if bindings.get(node.value.id) is _OS and node.attr == "environ":
+                return _ENVIRON
+            # An interpreter parked on an attribute is the same interpreter:
+            # `class C: PY = sys.executable` read as `C.PY`, and a
+            # `self.PY = sys.executable` written in any method of the class.
+            key = ((ATTRIBUTE_BINDING + node.attr)
+                   if node.value.id in ("self", "cls")
+                   else (CLASS_BINDING + node.value.id + "." + node.attr))
+            if key in bindings:
+                return bindings[key]
         value = _static_value(node.value, bindings)
-        if node.attr == "parent" and value not in (_UNKNOWN, _PYTHON):
+        if node.attr == "parent" and value not in (_UNKNOWN, _PYTHON, _ENVIRON):
             return str(value) + "/.."
         return _UNKNOWN
     if isinstance(node, ast.ListComp) and len(node.generators) == 1:
@@ -29508,10 +29533,38 @@ def _bind_statement(node, bindings):
             bindings[name] = _UNKNOWN
 
 
+def _class_attribute_bindings(tree, bindings) -> None:
+    """`C.PY` read from OUTSIDE the class body that binds it.
+
+    A class body already binds its own names for its own methods; nothing
+    bound them for a reader that spells the owner, so `[C.PY, target]`
+    resolved argv[0] to unknown and the call was exonerated as an unknown
+    EXTERNAL command instead of failing closed on its target.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        local = dict(bindings)
+        for stmt in node.body:
+            _bind_statement(stmt, local)
+        for stmt in node.body:
+            if isinstance(stmt, ast.Assign):
+                targets = stmt.targets
+            elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+                targets = [stmt.target]
+            else:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    bindings[CLASS_BINDING + node.name + "." + target.id] = local.get(
+                        target.id, _UNKNOWN)
+
+
 def _module_bindings(tree):
     bindings = {"__file__": "__file__"}
     for node in tree.body:
         _bind_statement(node, bindings)
+    _class_attribute_bindings(tree, bindings)
     return bindings
 
 
@@ -29789,6 +29842,11 @@ class _SuiteForkScan:
             if len(call.args) > index:
                 return call.args[index]
             return next((k.value for k in call.keywords if k.arg in keywords), None)
+        # An argument shape this parser cannot read is not an absence of
+        # one: round 3 measured `**OPTS` carrying `{"shell": True}` walking
+        # straight past an `is not None` test on the `shell` keyword.
+        unreadable_shape = (any(k.arg is None for k in call.keywords)
+                            or any(isinstance(a, ast.Starred) for a in call.args))
         name = None
         if (isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
                 and call.func.value.id in self.os_aliases):
@@ -29796,6 +29854,8 @@ class _SuiteForkScan:
         elif isinstance(call.func, ast.Name):
             name = self.bare_os_kind.get(call.func.id)
         if name is not None:
+            if unreadable_shape:
+                return (_PYTHON, _UNKNOWN)
             if name in ("system", "popen"):
                 return self._shell_argv(node_at(0, "command", "cmd"), bindings)
             offset = 1 if name.startswith("spawn") else 0
@@ -29810,10 +29870,52 @@ class _SuiteForkScan:
             if self._python_executable(executable):
                 return (_PYTHON, *argv[1:]) if isinstance(argv, tuple) and argv else (_PYTHON, _UNKNOWN)
             return _UNKNOWN
+        args_node = node_at(0, "args")
+        value = _static_value(args_node, bindings) if args_node is not None else _UNKNOWN
         shell = next((k.value for k in call.keywords if k.arg == "shell"), None)
-        if shell is not None and not (isinstance(shell, ast.Constant) and not shell.value):
-            return self._shell_argv(node_at(0, "args"), bindings)
-        return arg(0, "args")
+        if shell is None:
+            state = "unreadable" if unreadable_shape else "absent"
+        elif isinstance(shell, ast.Constant):
+            state = "off" if not shell.value else "on"
+        else:
+            state = "unreadable"
+        if state in ("on", "unreadable") and not isinstance(value, tuple):
+            # A command LINE, or a shape this parser cannot read: classified
+            # by its text and failing closed, never exonerated as "not a
+            # Python spawn". A list argv is not a command line, so a `**kw`
+            # call with a known other program stays quiet.
+            return self._shell_argv(args_node, bindings)
+        if state == "absent" and self._string_shaped(args_node, bindings):
+            return self._shell_argv(args_node, bindings)
+        if state == "off" and isinstance(value, str):
+            # `shell=False` takes a program PATH, but a path this parser can
+            # read is still readable: a text that starts with an interpreter
+            # token is an interpreter.
+            try:
+                return tuple(shlex.split(value))
+            except ValueError:
+                return (_PYTHON, _UNKNOWN)
+        return value
+
+    def _string_shaped(self, node, bindings) -> bool:
+        """An expression that IS a command line rather than an argv list: a
+        literal, an f-string, a concatenation or %-format of one, a
+        `.format`/`.join`, or a name resolved to a string."""
+        if node is None:
+            return False
+        if isinstance(node, ast.JoinedStr):
+            return True
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+            return (self._string_shaped(node.left, bindings)
+                    or self._string_shaped(node.right, bindings))
+        if isinstance(node, ast.Call):
+            if self._joined_argv(node, bindings) is not None:
+                return True
+            return (isinstance(node.func, ast.Attribute) and node.func.attr == "format"
+                    and self._string_shaped(node.func.value, bindings))
+        return isinstance(_static_value(node, bindings), str)
 
     def _potential_suite_spawn(self, call, bindings) -> bool:
         if not self._is_spawn(call):
@@ -29903,6 +30005,24 @@ class _SuiteForkScan:
                         local[name] = _UNKNOWN
                     for stmt in body:
                         _bind_statement(stmt, local)
+                    if isinstance(child, ast.ClassDef):
+                        self.class_nodes[identity] = child
+                        # `self.PY = sys.executable` written in `setUp` is the
+                        # same interpreter every method of the class reads,
+                        # and two different writes are no binding at all.
+                        for sub in ast.walk(child):
+                            if not isinstance(sub, ast.Assign):
+                                continue
+                            for target in sub.targets:
+                                if not (isinstance(target, ast.Attribute)
+                                        and isinstance(target.value, ast.Name)
+                                        and target.value.id in ("self", "cls")):
+                                    continue
+                                key = ATTRIBUTE_BINDING + target.attr
+                                bound = _static_value(sub.value, local)
+                                if key in local and local[key] is not bound:
+                                    bound = _UNKNOWN
+                                local[key] = bound
                     nested_owner = identity
                     if isinstance(child, ast.ClassDef):
                         nested_owner = record(
@@ -29914,7 +30034,7 @@ class _SuiteForkScan:
                     collect(child, prefix, inherited, owner)
 
         self.functions, self.scopes, self.definitions = [], {}, {}
-        self.lambda_owner = {}
+        self.lambda_owner, self.class_nodes = {}, {}
         # Module level RUNS: `loader.discover` imports every discovered test
         # module, so a fork written beside the imports forks the suite at
         # collection time. It belonged to no function and so to no scope.
@@ -29954,6 +30074,10 @@ class _SuiteForkScan:
             if not changed:
                 break
 
+        # Which parsed scopes change the environment, before any sink is
+        # asked to prove that nothing did so before its marker read.
+        self._resolve_environment_writers()
+        self._fixture_errors = {}
         self.spawns_any, self.direct, self.callees = {}, {}, {}
         self.runner_arg_callees, self.first_spawn = {}, {}
         self.first_marker_read, self.writes_marker, self.marker_writes = {}, {}, {}
@@ -29985,6 +30109,12 @@ class _SuiteForkScan:
             self.runner_arg_callees[identity] = runner_calls
             self.first_spawn[identity] = min(spawns) if spawns else None
             errors, guard_at, marked = self._verify_guard(identity, fn)
+            if spawns:
+                # Everything the language runs before this sink that the sink
+                # does not write itself: module and class fixtures, the
+                # cleanup callbacks its class registers, and the decorators
+                # on the sink and on its class.
+                errors = errors + self._pre_sink_environment_errors(identity)
             self.guard_errors[identity] = errors
             self.guard_verified[identity] = bool(spawns) and not errors
             self.first_marker_read[identity] = guard_at
@@ -30015,8 +30145,16 @@ class _SuiteForkScan:
         return bindings
 
     def _callee(self, identity, call):
-        if isinstance(call.func, ast.Name):
-            name = call.func.id
+        return self._referenced_scope(identity, call.func)
+
+    def _referenced_scope(self, identity, node):
+        """The scope a name denotes, whether it is CALLED or merely handed on.
+
+        `self.addCleanup(self._disarm)` runs `_disarm` between the tests of
+        its class without a call ever being spelled at the registration site.
+        """
+        if isinstance(node, ast.Name):
+            name = node.id
             # Resolve nested definitions before enclosing lexical scopes.
             parts = identity.split(".")
             for size in range(len(parts), -1, -1):
@@ -30024,10 +30162,18 @@ class _SuiteForkScan:
                 if candidate in self.function_nodes:
                     return candidate
             return name
-        if (isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
-                and call.func.value.id in ("self", "cls")):
-            return identity.rpartition(".")[0] + "." + call.func.attr
+        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id in ("self", "cls")):
+            return identity.rpartition(".")[0] + "." + node.attr
         return None
+
+    def _scope_variants(self, scope):
+        """Every parsed definition a resolved name can reach, or nothing."""
+        if scope is None:
+            return []
+        if scope in self.definitions:
+            return self.definitions[scope]
+        return [scope] if scope in self.function_nodes else []
 
     def _marker_key(self, node, bindings):
         if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in ("self", "cls"):
@@ -30036,8 +30182,21 @@ class _SuiteForkScan:
 
     @staticmethod
     def _os_environ(node, bindings):
-        return (isinstance(node, ast.Attribute) and node.attr == "environ"
-                and isinstance(node.value, ast.Name) and bindings.get(node.value.id) is _OS)
+        """`os.environ`, through any alias of `os`, and any NAME bound to the
+        mapping itself.
+
+        `_e = os.environ` is not a copy: `_e.pop(MARKER, None)` clears the
+        same mapping the guard reads, which round 3 measured walking past the
+        round-2 rule on the real `_spawn_suite` body.
+        """
+        if isinstance(node, ast.Name):
+            return bindings.get(node.id) is _ENVIRON
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+            if node.attr == "environ" and bindings.get(node.value.id) is _OS:
+                return True
+            if node.value.id in ("self", "cls"):
+                return bindings.get(ATTRIBUTE_BINDING + node.attr) is _ENVIRON
+        return False
 
     def _guard_condition(self, node, bindings):
         return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
@@ -30085,9 +30244,107 @@ class _SuiteForkScan:
                     and bindings.get(node.value.id) is _OS)
         return False
 
-    def _environment_write(self, stmt, bindings) -> bool:
-        return any(self._mutates_environment(node, bindings)
-                   for node in _scope_walk(stmt))
+    def _environment_write(self, stmt, bindings, identity=None) -> bool:
+        """A write to the environment, directly or through a call followed.
+
+        Round 3 measured both routes past the round-2 rule on the real
+        `_spawn_suite` body: `_e = os.environ; _e.pop(MARKER, None)`, and an
+        ordinary `self._disarm()` whose body does the popping. Passing an
+        `identity` follows calls; omitting it is the syntax-only question.
+        """
+        for node in _scope_walk(stmt):
+            if self._mutates_environment(node, bindings):
+                return True
+            if identity is None or not isinstance(node, ast.Call):
+                continue
+            variants = self._scope_variants(self._callee(identity, node))
+            if variants:
+                if any(target in self.environment_writers for target in variants):
+                    return True
+            elif self._environment_escapes(node, bindings):
+                return True
+        return False
+
+    def _environment_escapes(self, call, bindings) -> bool:
+        """`os.environ`, an alias of it, or `os` itself handed to a callee
+        this parser cannot read.
+
+        The mapping is mutable, so an unparsed callee that receives it can
+        clear the marker; `mock.patch.dict(os.environ, ...)` is exactly that
+        shape. `dict(os.environ)` is the supported COPY and is not an escape.
+        Nested calls are skipped because every caller of this predicate
+        visits every call node in its own right.
+        """
+        if isinstance(call.func, ast.Name) and call.func.id == "dict":
+            return False
+        for value in [*call.args, *(keyword.value for keyword in call.keywords)]:
+            stack = [value]
+            while stack:
+                node = stack.pop()
+                if isinstance(node, ast.Call):
+                    continue
+                if self._os_environ(node, bindings):
+                    return True
+                if isinstance(node, ast.Name) and bindings.get(node.id) is _OS:
+                    return True
+                stack.extend(ast.iter_child_nodes(node))
+        return False
+
+    def _resolve_environment_writers(self) -> None:
+        """Which parsed scopes change the environment, following calls.
+
+        A monotone fixed point over the same-module/class call graph, so
+        `sink -> a -> b -> os.environ.pop(...)` is the sink's write too, and
+        a cycle can only fail to ADD a member. Bounded by what the parser can
+        read: a callee outside the scanned module counts only when the
+        mapping itself escapes into it, because this repository's own
+        `test/issues/test_issue_97.py::setUpModule` legitimately reaches
+        `hashlib.md5(path.read_bytes())` and counting every unparsed callee
+        would make the sanctioned inventory unprovable rather than safe.
+        """
+        direct, edges = set(), {}
+        for identity, fn in self.functions:
+            bindings = self._function_bindings(identity, fn)
+            reached, writes = set(), False
+            for stmt in fn.body:
+                for node in _scope_walk(stmt):
+                    if self._mutates_environment(node, bindings):
+                        writes = True
+                    if not isinstance(node, ast.Call):
+                        continue
+                    variants = self._scope_variants(self._callee(identity, node))
+                    if variants:
+                        reached.update(variants)
+                    elif self._environment_escapes(node, bindings):
+                        writes = True
+                _bind_statement(stmt, bindings)
+            edges[identity] = reached
+            if writes:
+                direct.add(identity)
+        self.environment_writers = direct
+        changed = True
+        while changed:
+            changed = False
+            for identity, reached in edges.items():
+                if (identity not in self.environment_writers
+                        and reached & self.environment_writers):
+                    self.environment_writers.add(identity)
+                    changed = True
+
+    @staticmethod
+    def _pure_value_call(call) -> bool:
+        """The calls the target classifier already models exactly, and no
+        others: admitting these is what lets a sink NORMALISE its argv
+        before it reads the marker without weakening the rule."""
+        func = call.func
+        if isinstance(func, ast.Name):
+            return func.id in ("str", "Path")
+        if isinstance(func, ast.Attribute):
+            if func.attr == "resolve" and not call.args:
+                return True
+            return (func.attr == "which" and isinstance(func.value, ast.Name)
+                    and func.value.id == "shutil")
+        return False
 
     def _inert_before_marker(self, stmt, bindings) -> bool:
         """Nothing that can reach the environment or the marker may run
@@ -30095,20 +30352,37 @@ class _SuiteForkScan:
 
         A helper whose first line is `os.environ.pop(MARKER, None)` reads a
         marker that is never there, so every caller of it spawns
-        unconditionally — while the proof stayed granted, because the old
-        rule rejected only a direct spawn written inside the helper.
+        unconditionally — while the proof stayed granted, because the round-1
+        rule rejected only a direct spawn written inside the helper. Round 3
+        closed the rest of the routes: ALIASING the mapping is not a copy, so
+        `_e = os.environ` is itself a loss of proof, and so is any attribute
+        reached through `os`. A call is a loss unless it is one of the forms
+        the target classifier already models exactly AND the whole value
+        resolves — which is what `rendered = [str(a) for a in argv]` is, and
+        what `reason = prepare()` is not.
         """
         if isinstance(stmt, ast.Expr):
             # A docstring, and nothing else that merely evaluates.
             return isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str)
         if not isinstance(stmt, (ast.Assign, ast.AnnAssign)):
             return False
+        calls = []
         for node in _scope_walk(stmt):
             if self._mutates_environment(node, bindings):
                 return False
-            if isinstance(node, ast.Call) and not self._guard_condition(node, bindings):
+            if self._os_environ(node, bindings):
                 return False
-        return True
+            if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                    and bindings.get(node.value.id) is _OS):
+                return False
+            if isinstance(node, ast.Call):
+                calls.append(node)
+        if not calls:
+            return True
+        if not all(self._pure_value_call(call) for call in calls):
+            return False
+        return (stmt.value is not None
+                and _static_value(stmt.value, bindings) is not _UNKNOWN)
 
     def _standdown_helper(self, identity, call):
         callee = self._callee(identity, call)
@@ -30123,6 +30397,164 @@ class _SuiteForkScan:
                 return False
             _bind_statement(stmt, bindings)
         return False
+
+    def _establishes_standdown(self, identity, stmt, bindings) -> bool:
+        """The statement that IS the stand-down, or the single normalization
+        branch this parser proves and that CONTAINS it. Everything else
+        before the marker read is held to `_inert_before_marker`."""
+        if isinstance(stmt, ast.If):
+            if self._guard_condition(stmt.test, bindings) and self._effective_skip(stmt.body):
+                return True
+            return self._python_branch(stmt.test, bindings)
+        return (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+                and self._standdown_helper(identity, stmt.value))
+
+    def _fault_before_marker(self, identity, stmt, bindings):
+        """Why this statement costs the sink its proof, or None."""
+        line = getattr(stmt, "lineno", 0)
+        if self._environment_write(stmt, bindings, identity):
+            return (f"{identity}:{line}: environment written before the child "
+                    "marker is read")
+        if not self._inert_before_marker(stmt, bindings):
+            return (f"{identity}:{line}: a statement that is not provably inert "
+                    "runs before the child marker is read")
+        return None
+
+    def _referenced_class(self, prefix, base):
+        if isinstance(base, ast.Name):
+            for candidate in ((prefix + "." + base.id) if prefix else base.id, base.id):
+                if candidate in self.class_nodes:
+                    return candidate
+        return None
+
+    def _class_chain(self, owner):
+        """The owning class and every parsed base of it. An unparsed base is
+        not followed and is not claimed; `unittest.TestCase`'s own fixtures
+        do nothing."""
+        chain, queue = [], [owner]
+        while queue:
+            name = queue.pop(0)
+            if name in chain or name not in self.class_nodes:
+                continue
+            chain.append(name)
+            prefix = name.rpartition(".")[0]
+            for base in self.class_nodes[name].bases:
+                resolved = self._referenced_class(prefix, base)
+                if resolved is not None:
+                    queue.append(resolved)
+        return chain
+
+    @staticmethod
+    def _dotted_name(node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if not isinstance(node, ast.Name):
+            return None
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+
+    @staticmethod
+    def _pure_decorator(dotted) -> bool:
+        """The standard decorators that provably run no code of their own.
+        Everything else is fail closed, because a decorator runs at class
+        body time and one that clears the marker disarms every sink it
+        wraps."""
+        if not dotted:
+            return False
+        parts = dotted.split(".")
+        if parts[0] in ("staticmethod", "classmethod", "property", "abstractmethod"):
+            return len(parts) == 1
+        if parts[-1] == "wraps" and parts[0] in ("wraps", "functools"):
+            return True
+        if (parts[0] == "unittest" and len(parts) > 1
+                and (parts[1].startswith("skip") or parts[1] == "expectedFailure")):
+            return True
+        if len(parts) == 1 and (parts[0].startswith("skip") or parts[0] == "expectedFailure"):
+            return True
+        # `mock.patch`, `mock.patch.object`, `unittest.mock.patch`, a bare
+        # `patch`. `patch.dict(os.environ, ...)` never reaches here: the
+        # mapping escapes into it, which is a write.
+        return "patch" in parts and parts[0] in ("mock", "unittest", "patch")
+
+    def _decorator_writes(self, identity, decorator) -> bool:
+        bindings = self.scopes.get(identity, self.bindings)
+        if isinstance(decorator, ast.Call) and self._environment_escapes(decorator, bindings):
+            return True
+        node = decorator.func if isinstance(decorator, ast.Call) else decorator
+        variants = self._scope_variants(self._referenced_scope(identity, node))
+        if variants:
+            return any(target in self.environment_writers for target in variants)
+        return not self._pure_decorator(self._dotted_name(node))
+
+    def _cleanup_writes(self, identity, call, bindings) -> bool:
+        if call.args and isinstance(call.args[0], ast.Lambda):
+            if self._environment_write(call.args[0].body, bindings, identity):
+                return True
+        elif call.args:
+            variants = self._scope_variants(self._referenced_scope(identity, call.args[0]))
+            if any(target in self.environment_writers for target in variants):
+                return True
+        # `self.addCleanup(os.environ.pop, MARKER, None)` hands the mapping's
+        # own bound method to unittest, which calls it between the tests.
+        return self._environment_escapes(call, bindings)
+
+    def _class_environment_errors(self, cls):
+        """Fixtures, cleanup callbacks and decorators of ONE class."""
+        if cls in self._fixture_errors:
+            return self._fixture_errors[cls]
+        self._fixture_errors[cls] = errors = []
+        node = self.class_nodes[cls]
+        for item in node.body:
+            if (isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and item.name in FIXTURE_METHODS
+                    and cls + "." + item.name in self.environment_writers):
+                errors.append(f"{cls}.{item.name}:{item.lineno}: a fixture of this "
+                              "class writes the environment, so every sink in it "
+                              "reads a child marker that is never there")
+        for decorator in node.decorator_list:
+            if self._decorator_writes(cls + "." + CLASS_SCOPE, decorator):
+                errors.append(f"{cls}:{decorator.lineno}: a decorator on this class "
+                              "is not provably free of environment writes")
+        prefix = cls + "."
+        for member, fn in self.functions:
+            if not member.startswith(prefix):
+                continue
+            bindings = self._function_bindings(member, fn)
+            for stmt in fn.body:
+                for sub in _scope_walk(stmt):
+                    if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
+                            and sub.func.attr == "addCleanup"
+                            and self._cleanup_writes(member, sub, bindings)):
+                        errors.append(f"{member}:{sub.lineno}: a cleanup callback "
+                                      "this class registers writes the environment "
+                                      "between its tests")
+                _bind_statement(stmt, bindings)
+        return errors
+
+    def _pre_sink_environment_errors(self, identity):
+        """Statements the language runs before this sink that the sink does
+        not write itself.
+
+        A marker cleared in `setUp`, in a cleanup callback or in a decorator
+        is read by every sink in the class as "not a child", so the spawn is
+        unconditional and no amount of care inside the sink body can see it.
+        """
+        errors = []
+        for name in MODULE_FIXTURES:
+            if name in self.environment_writers:
+                errors.append(f"{identity}:{self.lineno[name]}: {name}() writes the "
+                              "environment before any sink in this module reads "
+                              "the child marker")
+        for cls in self._class_chain(identity.rpartition(".")[0]):
+            errors.extend(self._class_environment_errors(cls))
+        fn = self.function_nodes.get(identity)
+        for decorator in getattr(fn, "decorator_list", []):
+            if self._decorator_writes(identity, decorator):
+                errors.append(f"{identity}:{decorator.lineno}: a decorator on this "
+                              "sink is not provably free of environment writes")
+        return errors
 
     def _marked_env(self, node, bindings, envs):
         if isinstance(node, ast.Name):
@@ -30172,13 +30604,16 @@ class _SuiteForkScan:
                 at = index if outer_index is None else outer_index
                 if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                     continue
-                if not guarded and self._environment_write(stmt, bindings):
-                    # The stand-down helper rule, at the sink: a marker
+                if not guarded and not self._establishes_standdown(identity, stmt, bindings):
+                    # The stand-down helper rule, AT THE SINK: a marker
                     # cleared before it is read makes the read answer "not a
-                    # child" every time, so the spawn is unconditional.
-                    errors.append(
-                        f"{identity}:{getattr(stmt, 'lineno', 0)}: environment "
-                        "written before the child marker is read")
+                    # child" every time, so the spawn is unconditional — and
+                    # the clearing need not be written here, nor be a write
+                    # at all. Anything this parser cannot prove inert costs
+                    # the proof.
+                    fault = self._fault_before_marker(identity, stmt, bindings)
+                    if fault is not None:
+                        errors.append(fault)
                 if isinstance(stmt, ast.If):
                     if self._guard_condition(stmt.test, bindings) and self._effective_skip(stmt.body):
                         guarded = True
@@ -30577,19 +31012,46 @@ class TestTheRunnerItself(unittest.TestCase):
         Every reviewed inventory member reads $SKILLS_EVALS_SUITE_CHILD before
         spawning and writes it authoritatively for the child.
 
-        What this CLAIMS: every `subprocess`/`os` process start and every
-        string command line — written in a function, a lambda, a class body,
-        a module body, a decorator, a default or a comprehension, reached
-        through an import alias or an alias bound by assignment — is
-        inventoried, and one whose Python target is unknown or names the
-        runner is red here with its file and line. It must then gain the
-        same verified guard or a provable other-program target.
+        What this CLAIMS about DISCOVERY: every `subprocess`/`os` process
+        start and every string command line — written in a function, a
+        lambda, a class body, a module body, a decorator, a default or a
+        comprehension, reached through an import alias or an alias bound by
+        assignment — is inventoried, and a call whose argument shape cannot
+        be read in full is classified fail closed rather than exonerated as
+        "not a Python spawn": an unreadable `shell`, a `**kwargs` spread, a
+        `*args` spread and a string command line all reach the
+        interpreter-token classifier, and an interpreter parked on a class or
+        instance attribute is still the interpreter. A member whose Python
+        target is unknown or names the runner is red here with its file and
+        line, and must then gain the same verified guard or a provable
+        other-program target.
 
-        What this deliberately does NOT claim, and does not implement: a
-        handoff through `functools.partial`, `runpy.run_path` or
-        `importlib.import_module(...)`. Those construct the callable or the
-        module indirectly; this parser proves invocation CONSTRUCTION only,
-        and says so rather than covering the gap with a promise.
+        What a VERIFIED guard CLAIMS: between the first statement of the sink
+        and the marker read that guards it, nothing runs but a docstring, an
+        assignment whose value this parser resolves completely through the
+        calls it already models (`str`, `Path`, `.resolve()`,
+        `shutil.which`), and the one proven argv-normalisation branch. An
+        alias of `os.environ`, any attribute reached through `os`, and any
+        other call — including one that resolves to a scope clearing the
+        marker two or three hops away — costs the proof. The same rule holds
+        for the stand-down helper's own body, and a write in
+        `setUp`/`setUpClass`/`tearDown`/`tearDownClass`/`setUpModule`/
+        `tearDownModule`, in a cleanup callback the sink's class registers,
+        or in a decorator on the sink or on its class costs every sink in
+        that class its proof.
+
+        What this deliberately does NOT claim, and does not implement:
+        `functools.partial`, `runpy.run_path` and `importlib.import_module`
+        handoffs are OUT OF SCOPE — they construct the callable or the module
+        indirectly and this parser proves invocation CONSTRUCTION only. The
+        environment analysis is bounded by what it parses: a callee outside
+        the scanned module counts as a write only when the mapping itself is
+        handed to it, because this repository's own `setUpModule` reaches
+        `hashlib.md5(path.read_bytes())`. A `subprocess` call whose argv is a
+        name this parser cannot resolve, with no `shell`, no spread and no
+        string shape, stays an unknown EXTERNAL command. An unparsed base
+        class contributes no fixtures. Each of these is named here rather
+        than covered with a promise.
 
         Measured on f9115ce, each in its own throwaway copy and each with the
         two round-3 pins GREEN: `test/r4forkhelper.py`, `harness/r4harnessfork.py`
@@ -31139,6 +31601,26 @@ class B:
             self.assertTrue(scan.guard_verified[identity], scan.guard_errors[identity])
             kinds = ['empty marker', 'remove stand-down', 'fresh env', 'late guard',
                      'late override', 'marker cleared before the stand-down']
+            # Round 3, against these same ACTUAL bodies: the sink's own
+            # preamble. An ALIAS of the mapping, an ordinary method call that
+            # pops it, the same write two calls deep, and a callee this
+            # parser cannot read at all each left the proof granted while the
+            # spawn became unconditional.
+            marker = repr(self.CHILD)
+            preamble = {
+                'the mapping aliased and cleared before the stand-down':
+                    ('', '_e = os.environ\n_e.pop(' + marker + ', None)\n'),
+                'a method call clears the marker before the stand-down':
+                    ('def _disarm(self):\n    os.environ.pop(' + marker + ', None)\n',
+                     'self._disarm()\n'),
+                'the marker is cleared two calls below the stand-down':
+                    ('def _disarm_outer(self):\n    self._disarm_inner()\n'
+                     'def _disarm_inner(self):\n    os.environ.pop(' + marker + ', None)\n',
+                     'self._disarm_outer()\n'),
+                'an unresolvable callee runs before the stand-down':
+                    ('', 'disarm_from_somewhere_else()\n'),
+            }
+            kinds.extend(preamble)
             if identity == 'TestIssue97._run_suite':
                 kinds.append('before caller overrides')
             # Keep the actual helper, its lexical constants/imports and
@@ -31220,6 +31702,34 @@ class B:
                                         value.insert(value.index(stmt), copy.deepcopy(clearing))
                                         mutations.append(stmt)
                                         break
+                elif kind in preamble:
+                    extra_defs, inserted = preamble[kind]
+                    guard_bindings = scan._function_bindings(identity, fn)
+                    if extra_defs:
+                        function(tree.body, names[:-1]).body.extend(
+                            ast.parse(extra_defs).body)
+                    added = ast.parse(inserted).body
+                    placed = False
+                    for node in ast.walk(fn):
+                        for field, value in ast.iter_fields(node):
+                            if placed or not isinstance(value, list):
+                                continue
+                            for stmt in list(value):
+                                is_guard = (isinstance(stmt, ast.If) and
+                                            scan._guard_condition(stmt.test, guard_bindings))
+                                is_helper = (isinstance(stmt, ast.Expr)
+                                             and isinstance(stmt.value, ast.Call)
+                                             and scan._standdown_helper(identity, stmt.value))
+                                if not (is_guard or is_helper):
+                                    continue
+                                at = value.index(stmt)
+                                for offset, extra in enumerate(added):
+                                    value.insert(at + offset, copy.deepcopy(extra))
+                                mutations.append(stmt)
+                                placed = True
+                                break
+                        if placed:
+                            break
                 elif kind in ('late guard', 'late override'):
                     if kind == 'late guard':
                         for node in ast.walk(fn):
@@ -31446,6 +31956,279 @@ class B:
                 changed = self._scan_source(inline_source(head))
                 self.assertFalse(changed.guard_verified['Guard.sink'])
                 self.assertTrue(changed.guard_errors['Guard.sink'])
+
+    def test_the_sink_body_is_held_to_the_stand_down_helper_rule(self):
+        """Round-3 should-fix 1 (round-2 should-fix 3, returned). The sink's
+        own body before its stand-down was checked for a DIRECT `os.environ`
+        write and nothing else, so an ALIAS of the mapping, an ordinary
+        method call that pops it, the same write two calls down, and a callee
+        this parser cannot read at all each left the proof granted while the
+        spawn became unconditional. The rule is now the helper's rule: a
+        docstring, and an assignment whose value this parser resolves
+        completely through the calls it already models."""
+        def source(head, extra=''):
+            return ("import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    + extra +
+                    " def sink(self, target):\n"
+                    + head +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n")
+
+        clean = self._scan_source(source(''))
+        self.assertTrue(clean.guard_verified['Guard.sink'],
+                        clean.guard_errors['Guard.sink'])
+        for label, head in (
+                ('a docstring', "  'stand down in the child'\n"),
+                ('a call-free binding', '  reason = CHILD\n'),
+                ('an argv normalisation this parser resolves',
+                 '  rendered = [str(a) for a in [sys.executable, target]]\n')):
+            with self.subTest(control=label):
+                kept = self._scan_source(source(head))
+                self.assertTrue(kept.guard_verified['Guard.sink'],
+                                kept.guard_errors['Guard.sink'])
+        extra = (" def _disarm(self):\n"
+                 "  os.environ.pop(CHILD, None)\n"
+                 " def _outer(self):\n"
+                 "  self._inner()\n"
+                 " def _inner(self):\n"
+                 "  os.environ.pop(CHILD, None)\n")
+        poisons = {
+            'aliases the mapping': '  _e = os.environ\n',
+            'pops the marker through an alias':
+                '  _e = os.environ\n  _e.pop(CHILD, None)\n',
+            'reaches os for anything at all':
+                '  home = os.path.expanduser("~")\n',
+            'calls a method of its own class that pops': '  self._disarm()\n',
+            'reaches the write two calls down': '  self._outer()\n',
+            'calls a callee this parser cannot read': '  disarm_elsewhere()\n',
+            'binds through a call this parser cannot read':
+                '  reason = prepare()\n',
+            'branches before the read': '  if target:\n   pass\n',
+            'hands the mapping to an unreadable callee':
+                '  patch_it(os.environ)\n',
+        }
+        for label, head in poisons.items():
+            with self.subTest(sink=label):
+                changed = self._scan_source(source(head, extra))
+                self.assertFalse(
+                    changed.guard_verified['Guard.sink'],
+                    f"the sink keeps a guard proof although it {label} before "
+                    "reading the child marker")
+                self.assertTrue(changed.guard_errors['Guard.sink'])
+
+    def test_fixtures_cleanups_and_decorators_are_pre_sink_statements(self):
+        """Round-3 should-fix 1, the half no sink body can see. unittest runs
+        `setUp`, the cleanup callbacks a class registers and every decorator
+        before the sink body starts, so a marker cleared in one of them is
+        never there for ANY sink in that class, however careful the sink is.
+        """
+        head = ("import os, shutil, subprocess, sys, tempfile, unittest\n"
+                "from unittest import mock\n"
+                "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n")
+        sink = (" def sink(self, target):\n"
+                "  if os.environ.get(CHILD):\n"
+                "   raise unittest.SkipTest('child')\n"
+                "  env = dict(os.environ)\n"
+                "  env[CHILD] = '1'\n"
+                "  subprocess.run([sys.executable, target], env=env)\n")
+
+        def klass(body='', module='', decorator=''):
+            return (head + module + decorator
+                    + "class Guard(unittest.TestCase):\n" + body + sink)
+
+        base = self._scan_source(klass())
+        self.assertTrue(base.guard_verified['Guard.sink'],
+                        base.guard_errors['Guard.sink'])
+        kept = {
+            'a setUp that does unrelated work':
+                (' def setUp(self):\n  self.tmp = tempfile.mkdtemp()\n', '', ''),
+            'a cleanup that removes a directory':
+                (' def setUp(self):\n'
+                 '  self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)\n',
+                 '', ''),
+            'a module fixture that only READS the marker':
+                ('', 'SEEN = None\n'
+                     'def setUpModule():\n'
+                     ' global SEEN\n'
+                     ' SEEN = os.environ.get(CHILD)\n', ''),
+            'a standard skip decorator on the class':
+                ('', '', '@unittest.skipIf(False, "never")\n'),
+        }
+        for label, (body, module, decorator) in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(klass(body, module, decorator))
+                self.assertTrue(scan.guard_verified['Guard.sink'],
+                                scan.guard_errors['Guard.sink'])
+        lost = {
+            'setUp pops the marker':
+                (' def setUp(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'tearDown pops the marker':
+                (' def tearDown(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUpClass pops the marker':
+                (' @classmethod\n def setUpClass(cls):\n'
+                 '  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUp reaches the write two calls down':
+                (' def setUp(self):\n  self._prepare()\n'
+                 ' def _prepare(self):\n  self._disarm()\n'
+                 ' def _disarm(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUp hands the mapping to a callee this parser cannot read':
+                (' def setUp(self):\n'
+                 '  mock.patch.dict(os.environ, {}, clear=True).start()\n', '', ''),
+            'a cleanup callback pops the marker':
+                (' def setUp(self):\n'
+                 '  self.addCleanup(os.environ.pop, CHILD, None)\n', '', ''),
+            'a cleanup lambda pops the marker':
+                (' def setUp(self):\n'
+                 '  self.addCleanup(lambda: os.environ.pop(CHILD, None))\n', '', ''),
+            'a cleanup method reference pops the marker':
+                (' def setUp(self):\n  self.addCleanup(self._disarm)\n'
+                 ' def _disarm(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUpModule pops the marker':
+                ('', 'def setUpModule():\n os.environ.pop(CHILD, None)\n', ''),
+            'a class decorator patches the environment':
+                ('', '', '@mock.patch.dict(os.environ, {}, clear=True)\n'),
+            'a class decorator this parser cannot read':
+                ('', '', '@whatever_this_is\n'),
+        }
+        for label, (body, module, decorator) in lost.items():
+            with self.subTest(fixture=label):
+                scan = self._scan_source(klass(body, module, decorator))
+                self.assertFalse(
+                    scan.guard_verified['Guard.sink'],
+                    f"every sink in the class keeps its proof although {label}")
+                self.assertTrue(scan.guard_errors['Guard.sink'])
+        inherited = self._scan_source(
+            head + "class Base:\n def setUp(self):\n"
+            "  os.environ.pop(CHILD, None)\n"
+            "class Guard(Base, unittest.TestCase):\n" + sink)
+        self.assertFalse(inherited.guard_verified['Guard.sink'],
+                         "a base class this parser CAN read contributes its "
+                         "fixtures to every sink of the subclass")
+        decorated = self._scan_source(
+            head + "class Guard(unittest.TestCase):\n"
+            " @mock.patch.dict(os.environ, {})\n" + sink)
+        self.assertFalse(decorated.guard_verified['Guard.sink'])
+        allowed = self._scan_source(
+            head + "class Guard(unittest.TestCase):\n"
+            " @unittest.skipIf(False, 'never')\n" + sink)
+        self.assertTrue(allowed.guard_verified['Guard.sink'],
+                        allowed.guard_errors['Guard.sink'])
+
+    def test_unreadable_spawn_shapes_are_classified_fail_closed(self):
+        """Round-3 should-fix 2 (round-2 should-fix 5, returned). `shell` was
+        read only as a literal keyword AT the call, so a `**kwargs` spread
+        carrying it walked past the test and the string command line it
+        guarded went to the executable classifier, which resolved it to
+        unknown and exonerated the call as an unknown EXTERNAL command."""
+        head = ('import os, subprocess, sys\n'
+                'from pathlib import Path\n'
+                'OTHER = "other.py"\n')
+        flagged = {
+            'shell arrives through **kwargs':
+                'def probe(target, **kw):\n'
+                ' subprocess.run(f"{sys.executable} {target}", **kw)\n',
+            '**kwargs spread of a dict literal holding shell':
+                'OPTS = {"shell": True}\n'
+                'def probe(target):\n'
+                ' subprocess.run(f"{sys.executable} {target}", **OPTS)\n',
+            '**kwargs on Popen with a string command':
+                'def probe(target, **kw):\n'
+                ' subprocess.Popen(f"{sys.executable} {target}", **kw)\n',
+            'a list argv still fails closed under **kwargs':
+                'def probe(target, **kw):\n'
+                ' subprocess.run([sys.executable, target], **kw)\n',
+            'a string command with no shell keyword at all':
+                'def probe(target):\n'
+                ' subprocess.run(f"{sys.executable} {target}")\n',
+            'a concatenated command line with no shell keyword':
+                'def probe(target):\n'
+                ' subprocess.run(sys.executable + " " + target)\n',
+            'argv spread through *args':
+                'def probe(parts):\n subprocess.run(*parts)\n',
+            'an os spawn whose whole shape arrives through **kwargs':
+                'def probe(**kw):\n os.system(**kw)\n',
+            'a readable shell=False program path naming the runner':
+                'def probe():\n'
+                ' subprocess.run("python3 test/run_tests.py", shell=False)\n',
+        }
+        for label, source in flagged.items():
+            with self.subTest(shape=label):
+                self.assertTrue(self._scan_source(head + source).direct['probe'],
+                                label)
+        quiet = {
+            'a known other program under **kwargs':
+                'def probe(**kw):\n'
+                ' subprocess.run([sys.executable, OTHER], **kw)\n',
+            'a known other program as a shell=False program path':
+                'def probe():\n subprocess.run("python3 other.py", shell=False)\n',
+            'an unreadable program path under shell=False':
+                'def probe(target):\n'
+                ' subprocess.run(sys.executable + " " + target, shell=False)\n',
+            'an external program under **kwargs':
+                'def probe(target, **kw):\n'
+                ' subprocess.run(["git", target], **kw)\n',
+            'an argv name with no shell, no spread and no string shape':
+                'def probe(cmd):\n subprocess.run(cmd, capture_output=True)\n',
+        }
+        for label, source in quiet.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source).direct['probe'],
+                                 label)
+
+    def test_an_interpreter_bound_to_an_attribute_is_still_the_interpreter(self):
+        """Round-3 nit 3. A class body binds its names for its own methods
+        only and an instance attribute was bound nowhere, so `C.PY` and
+        `self.PY` resolved argv[0] to unknown and the call was exonerated as
+        an unknown EXTERNAL command rather than failing closed."""
+        head = 'import subprocess, sys, unittest\n'
+        klass = self._scan_source(
+            head + 'class C:\n PY = sys.executable\n'
+            'def probe(target): subprocess.run([C.PY, target])\n')
+        self.assertTrue(klass.direct['probe'],
+                        'a class attribute read from outside the class body')
+        instance = self._scan_source(
+            head + 'class C(unittest.TestCase):\n'
+            ' def setUp(self):\n  self.PY = sys.executable\n'
+            ' def probe(self, target):\n  subprocess.run([self.PY, target])\n')
+        self.assertTrue(instance.direct['C.probe'],
+                        'an instance attribute written in a fixture')
+        module = self._scan_source(
+            head + 'PY = sys.executable\n'
+            'def probe(target): subprocess.run([PY, target])\n')
+        self.assertTrue(module.direct['probe'], 'the module-level control')
+        external = self._scan_source(
+            head + 'class C:\n PY = "git"\n TARGET = "other.py"\n'
+            'def probe(): subprocess.run([C.PY, C.TARGET])\n')
+        self.assertFalse(external.direct['probe'])
+        other = self._scan_source(
+            head + 'class C:\n PY = sys.executable\n TARGET = "other.py"\n'
+            'def probe(): subprocess.run([C.PY, C.TARGET])\n')
+        self.assertFalse(other.direct['probe'],
+                         'a class attribute must resolve BOTH ways, or the '
+                         'rule would only ever add flags')
+
+    def test_the_sanctioned_sinks_survive_the_strengthened_pre_sink_rule(self):
+        """The positive control for the two rules above, on the REAL tree:
+        nothing but a docstring, an argv normalisation this parser resolves
+        and the proven Python branch runs before any sanctioned sink's marker
+        read, and no fixture, cleanup callback or decorator of their classes
+        or modules writes the environment."""
+        scans = TestTheRunnerItself._scan_the_forkable_tree()
+        for rel, identity in TestTheRunnerItself.SUITE_SPAWNERS:
+            scan = scans[rel]
+            with self.subTest(sink=f"{rel}::{identity}"):
+                self.assertTrue(scan.guard_verified[identity],
+                                scan.guard_errors[identity])
+                self.assertEqual(scan._pre_sink_environment_errors(identity), [])
+                self.assertNotIn(
+                    identity, scan.environment_writers,
+                    "a sanctioned sink that writes the environment itself "
+                    "would disarm every other sink of its class")
 
     def test_an_enclosing_parameter_shadows_a_module_constant_for_nested_scopes(self):
         """Round-2 should-fix 4 (recorded inspection question (a)). A nested
