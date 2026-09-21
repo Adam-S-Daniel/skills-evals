@@ -3,3 +3,11 @@ results/**/transcripts/
 results/**/*.jsonl
 __pycache__/
 *.pyc
+
+# Published on the `eval-results` branch, untracked on main — same asymmetry
+# as results/. A local run leaves these behind; they must never ride into a
+# main-branch PR. eval.yml and the census Routine publish them with an
+# explicit `git add -f` on the eval-results branch, which is what makes the
+# asymmetry work rather than silently dropping them.
+roster/
+usage/

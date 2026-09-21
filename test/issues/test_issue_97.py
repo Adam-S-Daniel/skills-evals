@@ -3042,7 +3042,13 @@ class TestIssue97(unittest.TestCase):
         (eval_dir / "seed").mkdir(parents=True, exist_ok=True)
         (eval_dir / "seed" / "placeholder.txt").write_text("x\n",
                                                            encoding="utf-8")
-        fixture = {"skill": "some-skill", "prompt": "do the thing"}
+        # Pin the agent model so this test's standalone harness copy reaches
+        # run_agent's timeout sink. Since #147, an unpinned skill fixture reads
+        # the trusted evals/roster.yml; _harness_copy intentionally carries
+        # harness/ alone, so leaving this unpinned would stop at model
+        # selection and never exercise the sink this helper exists to test.
+        fixture = {"skill": "some-skill", "prompt": "do the thing",
+                   "model": "fixture-model"}
         fixture.update(overrides)
         (eval_dir / "fixture.yaml").write_text(
             yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
