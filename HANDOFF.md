@@ -86,7 +86,7 @@ the committed file matches.
 Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
 workstation.
 
-### Issue #152: PR #163, two-strikes fired, fix round 3 (1 of 3) in flight
+### Issue #152: PR #163, two-strikes fired, fix round 4 (budget round 2 of 3) in flight
 
 The branch was merged with `origin/main` `cddb224` as
 [`fa9c788`](https://github.com/Adam-S-Daniel/skills-evals/commit/fa9c78830e2c940e5332d53912aa122915b38172)
@@ -98,6 +98,7 @@ far, each with an independent local reviewer on a read-only archive:
 |---|---|---|
 | `fa9c788` | round 2 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157)) | all seven round-1 findings closed, merge clean; NOT CLEAN on six new should-fixes (uncollected module/class/lambda spawns, helper side effects before the marker read, enclosing-parameter shadowing, `os.system` strings, `sp = subprocess` aliases) |
 | [`4fefa14`](https://github.com/Adam-S-Daniel/skills-evals/commit/4fefa14faab2d42398fc247ec1fae758a4c13bed) (fix round 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763979563)) | round 3 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764206754)) | all six closed; **NOT CLEAN on two repeats** returning through the remedy: the sink body's pre-read rule is weaker than the helper's (alias, method call or `setUp` popping the marker keeps `guard_verified`), and `shell` via `**kwargs` exonerates a string command |
+| [`a823fd8`](https://github.com/Adam-S-Daniel/skills-evals/commit/a823fd8891379c1421c37f36d7adc0e68a33e767) (fix round 3 = budget round 1 of 3, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764946603); same tree as the worker's `8c16d1b`) | round 4 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5765213187)) | both round-3 should-fixes closed, both declared scope bounds accepted; **NOT CLEAN on one repeat**: `from os import environ` and `__import__("os")` are not bound to the environment sentinel, re-opening the fixture/decorator write routes under those spellings; two nits (lexically matched pure-call names; `Popen` subclasses unnamed) |
 
 Full suite on `4fefa14`: **1464 / 2 skipped, exit 0**; propagation **164 / 1**;
 focused 31 and 40; CI `test`, `gate` and all five propagation arms success;
@@ -106,7 +107,7 @@ defects in round 2 and closed in fix round 2.
 
 **Two-strikes fired at round 3** (same defect, same severity, through the
 brief's own remedy). Under Adam's decision 2 the PR has three further fix
-rounds. **Fix round 3 is the first of the three**, running as a local worker
+rounds. Fix round 3 (`a823fd8`, budget round 1) closed its items and full suite is **1469 / 2 skipped, exit 0** with green CI; **fix round 4 (budget round 2 of 3) is running** as a local worker, bounded to the import-spelling binding resolver, unshadowed pure-call names and `Popen` subclasses. A round-5 review decides; a NOT CLEAN with a repeat there leaves exactly one budget round before the PR parks for Adam. It was launched as a local worker
 in `.claude/worktrees/codex-suite-fork-152-20260915` from a clean `4fefa14`;
 its brief states the invariants at the sink (the sink body and every fixture
 or decorator on the path are held to the helper's inert-before-read rule,
@@ -116,8 +117,8 @@ unresolvable is classified by command text, fail closed). When it releases,
 the parent pushes, a round-4 review decides; a NOT CLEAN with a repeat after
 the third budget round parks the PR for Adam. Evidence directories under
 `.evals-resume-20260915/`: `review152-round2/`, `fix152-round2/`,
-`review152-round3/` (probes and logs; the reviewer's verdict text is the PR
-comment), `fix152-round3/`.
+`review152-round3/` (probes and logs; the verdict text is the PR comment),
+`fix152-round3/`, `review152-round4/`, `fix152-round4/`.
 
 ### Everything else
 
