@@ -35,6 +35,12 @@ the [September 15 checkpoint](https://github.com/Adam-S-Daniel/skills-evals/pull
 on 2026-09-21, from a Claude Code session on the Windows laptop driving the
 WSL clone (`/home/passp/repos/skills-evals`; the Windows clone
 `D:\repos\adam-s-daniel\skills-evals` has no Python and is used for `gh` only).
+At about 14:35 UTC Adam authorized merges, releases, consumer bumps and manual
+workflow dispatch for the session, required all workers to be local (no cloud
+sessions), and later asked to tie off at about 20% of weekly usage. The
+session tied off at about 21:00 UTC with the weekly meter at **6%** and three
+merges landed (see the tie-off subsection). **Resume when Adam requests it;
+the only open decision is his ([#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162)).**
 
 ### PR #153: merged; first live proposal run verified
 
@@ -122,23 +128,62 @@ What the scanner now holds and does not hold is in the docstring of
 not handed the environment mapping, an unresolvable argv name with no
 shell/spread/string shape, an unparsed base class.
 
-Follow-ups filed, both test-only, neither a regression:
-[#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161) (the
-`#147` regression rows remove a pre-existing `roster/` in the checkout) and
+Follow-ups [#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161)
+(the `#147` rows removed a pre-existing `roster/` in the checkout) and
 [#164](https://github.com/Adam-S-Daniel/skills-evals/issues/164) (round-5
-nits: unresolved mapping receivers and bound-method aliases in fixtures,
-compound statements walked against pre-statement bindings, the docstring's
-fixture claim). A single local worker was dispatched for both on a new
-branch `claude/skills-evals-161-164` from `47ca1e6` (worktree
-`.claude/worktrees/claude-161-164`); if this session ends before it lands,
-its state is in `.evals-resume-20260915/fix161-164/` and the branch is
-unpushed until reviewed.
+nits) were fixed by one local worker on `claude/skills-evals-161-164` and
+**merged as [PR #165](https://github.com/Adam-S-Daniel/skills-evals/pull/165)**,
+merge commit [`3515904`](https://github.com/Adam-S-Daniel/skills-evals/commit/3515904050cac78b0b233080c7de0cc1c0945be9)
+(head `8cca426`; independent review CLEAN with five nits,
+[record](https://github.com/Adam-S-Daniel/skills-evals/pull/165#issuecomment-5767254812);
+full suite **1478 / 2 skipped, exit 0**; the #161 sentinel check that failed
+on the morning's verification now passes with four planted operator files
+byte-identical). Post-merge
+[CI](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35652910486)
+and [Propagation](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35652916645)
+success. The residual nits are
+[#166](https://github.com/Adam-S-Daniel/skills-evals/issues/166) (a stronger
+kill in the `#147` rows against a literal resolver revert; header-introduced
+bindings in the bound walk; the environment-method sentinel under unmodelled
+binding spellings), none blocking, all with zero live occurrences.
 
 Evidence directories under `.evals-resume-20260915/`:
 `resume-20260921-i152-merge/`, `review152-round2/`, `fix152-round2/`,
 `review152-round3/` (probes; verdict text is the PR comment),
 `fix152-round3/`, `review152-round4/`, `fix152-round4/`,
-`review152-round5/`, `fix161-164/`.
+`review152-round5/`, `fix161-164/`, `review165/`.
+
+### Tie-off state at the end of 2026-09-21
+
+`main` is [`3515904`](https://github.com/Adam-S-Daniel/skills-evals/commit/3515904050cac78b0b233080c7de0cc1c0945be9)
+with CI and Propagation green. Three merges today, each with a merge commit on
+the expected head and ancestry verified: PR #153 `cddb224`, PR #163
+`47ca1e6`, PR #165 `3515904`. Issues closed today: #152, #161, #164; opened:
+#162 (by the workflow), #166. The
+[status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
+body's current-state header was rewritten to this state and every step is a
+linked comment there.
+
+- **Waiting on Adam, not blocking anything:** #162, the first roster proposal
+  (four arms plus a Fable judge by newest-per-tier fallback, no census
+  published). Publish the census first (Routine step 6 on a machine with
+  transcripts) or open and merge a PR from `roster/proposal`. The Monday run
+  keeps proposing until the committed file matches.
+- **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
+  spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
+- **Optional next work if Adam reopens:** #166 (nits, test-only). Nothing
+  else in scope.
+- All workers and reviewers ran locally through the Agent tool in
+  `git archive` scratch exports with `env -i` and throwaway profiles; each
+  released clean with zero test children and deleted its scratch. Local
+  worktrees left in place under `.claude/worktrees/`:
+  `codex-suite-fork-152-20260915` (clean at `9bdcb95`, merged),
+  `claude-161-164` (clean at `8cca426`, merged),
+  `codex-reconcile-evals-20260915` (clean at `efb48b8`, merged),
+  `codex-handoff-evals-20260915` (this branch). They can be removed with
+  `git worktree remove` when convenient; none holds unpublished work.
+- Usage: weekly all-models 6%, weekly Fable 3% at tie-off (session-side
+  reading of the account window).
 
 ### Everything else
 
