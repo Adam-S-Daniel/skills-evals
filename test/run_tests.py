@@ -29433,6 +29433,14 @@ _ENVIRON = object()
 # `_mutates_environment` off the sanctioned `env = dict(os.environ);
 # env[MARKER] = "1"` shape that every reviewed sink in this repository uses.
 _COPY = object()
+# A BOUND MARKER-CLEARING METHOD of the mapping: `f = os.environ.pop` parked
+# on a name, then `f(MARKER, None)`. That call's `func` is a bare NAME, so no
+# attribute rule below looks at it, and the mapping appears in no argument
+# either — the bound method carries it. Round 5 measured three spellings of it
+# keeping a sink's proof. Resolving the member is what gives the rules
+# something to fail closed ON: this sentinel is treated as strictly worse than
+# a binding the parser merely lost, everywhere `_UNKNOWN` is (`_lost_binding`).
+_ENVIRON_METHOD = object()
 # `pathlib.Path`, the `shutil` module, the `importlib` module, and the import
 # FUNCTION (`__import__` / `importlib.import_module`). Round 4 measured the
 # pure-call admission matching `str`/`Path`/`shutil` by SPELLING, so a module
@@ -29443,7 +29451,7 @@ _SHUTIL = object()
 _IMPORTLIB = object()
 _IMPORTER = object()
 _SENTINELS = (_UNKNOWN, _PYTHON, _SYS, _OS, _ENVIRON, _COPY, _PATH, _SHUTIL,
-              _IMPORTLIB, _IMPORTER)
+              _IMPORTLIB, _IMPORTER, _ENVIRON_METHOD)
 
 # THE binding table. Every spelling that names one of these modules, or one
 # of their members, resolves HERE — in `_bind_statement` and `_static_value`
@@ -29462,6 +29470,11 @@ _FROM_IMPORT_SENTINELS = {("os", "environ"): _ENVIRON,
                           ("sys", "executable"): _PYTHON,
                           ("importlib", "import_module"): _IMPORTER,
                           ("pathlib", "Path"): _PATH}
+# Every member of the mapping that can leave the marker unset, resolved
+# through the SAME table rather than left unknown, so a name bound to one is
+# a binding this parser read rather than one it lost.
+_MEMBER_SENTINELS.update({(_ENVIRON, attr): _ENVIRON_METHOD
+                          for attr in ENVIRON_MUTATORS})
 # The builtins this value parser models exactly. A name IS the builtin only
 # while nothing in scope has rebound it, which is what `name not in bindings`
 # means here: `_bind_statement` records every write it can read, and records
@@ -29493,6 +29506,18 @@ def _member_of(value, attr):
 def _unshadowed(name, bindings) -> bool:
     """This name still denotes the builtin it spells."""
     return name in _MODELLED_BUILTINS and name not in bindings
+
+
+def _lost_binding(value) -> bool:
+    """A resolved value this parser cannot vouch for as anything but the
+    mapping the guard reads.
+
+    `_UNKNOWN` is a binding it lost. `_ENVIRON_METHOD` is one it READ, and
+    that is strictly worse: a bound marker-clearing method of the mapping
+    itself. Every rule that fails closed on the first fails closed on the
+    second, so resolving the member can never cost a shape its flag.
+    """
+    return value is _UNKNOWN or value is _ENVIRON_METHOD
 # Values parked on an attribute rather than on a bare name: `self.PY =
 # sys.executable` written anywhere in a class, and `C.PY = sys.executable`
 # read from outside the class body that binds it.
@@ -29541,7 +29566,8 @@ def _static_value(node, bindings):
                 if value.format_spec is not None or value.conversion != -1:
                     return _UNKNOWN
                 resolved = _static_value(value.value, bindings)
-                if resolved is _UNKNOWN or resolved is _PYTHON or resolved is _ENVIRON:
+                if (_lost_binding(resolved) or resolved is _PYTHON
+                        or resolved is _ENVIRON):
                     return _UNKNOWN
                 parts.append(str(resolved))
             else:
@@ -29717,6 +29743,48 @@ def _scope_walk(node):
         return
     for child in ast.iter_child_nodes(node):
         yield from _scope_walk(child)
+
+
+def _bound_scope_walk(stmt, bindings):
+    """`_scope_walk`, pairing every node with the bindings that hold WHERE
+    IT RUNS rather than where its statement begins.
+
+    A caller that walks a statement and only then binds it judges everything
+    INSIDE a compound statement against the bindings that held BEFORE the
+    statement. Round 5 measured the consequence: `env = dict(os.environ)`
+    followed by `if c: env = os.environ; env.pop(MARKER, None)` read `env` as
+    the copy, and the write disappeared — as it did for the `for`-body, the
+    `with`-body and the `try`-body spellings, and for a plain resolved string
+    in place of the copy, so the shadow was never about `_COPY` at all.
+
+    Each block gets its OWN copy of the bindings and each statement in it
+    binds before the next is walked, so a rebind is seen from the statement
+    after it. The caller's dictionary is never written to: what a block binds
+    is not knowable after the block, which is exactly what the caller's own
+    `_bind_statement` on the compound statement records by invalidating every
+    name it assigns. Node for node this yields what `_scope_walk` yields.
+    """
+    yield stmt, bindings
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                         ast.Lambda)):
+        for child in _enclosing_evaluated(stmt):
+            yield from _bound_scope_walk(child, bindings)
+        return
+    blocks = [block for block in
+              (getattr(stmt, field, None)
+               for field in ("body", "orelse", "finalbody"))
+              if isinstance(block, list)]
+    within = {id(node) for block in blocks for node in block}
+    for child in ast.iter_child_nodes(stmt):
+        # The header runs where the statement does: an `if` test, a `for`
+        # iterable, a `with` item, an `except` clause.
+        if id(child) not in within:
+            yield from _bound_scope_walk(child, bindings)
+    for block in blocks:
+        local = dict(bindings)
+        for node in block:
+            yield from _bound_scope_walk(node, local)
+            _bind_statement(node, local)
 
 
 def _assigned_names(node):
@@ -30482,24 +30550,28 @@ class _SuiteForkScan:
 
     @staticmethod
     def _unresolved_mapping(node, bindings) -> bool:
-        """A bare name, or a `self`/`cls` attribute, whose binding this
-        parser lost entirely.
+        """A receiver whose value this parser cannot vouch for — HOWEVER it
+        is spelled.
+
+        The hole round 5 measured was in the SHAPE of the receiver, not in
+        its value: the rule fired only for a bare name or a `self`/`cls`
+        attribute, so a chain whose owner is a call or a subscript this
+        parser cannot read — `importlib.import_module('o' + 's').environ`,
+        `globals()['os'].environ`, `sys.modules['os'].environ` — was not a
+        receiver at all, and a fixture that popped the marker through one
+        kept the sink's proof. What a receiver is spelled as decides
+        nothing; what it RESOLVES to decides everything.
 
         Not any expression: a receiver the parser CAN read is judged by what
         it reads, and `dict(...)`, `{...}` and `<mapping>.copy()` read as a
         fresh mapping rather than as the one the guard reads.
         """
-        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
-            if node.value.id not in ("self", "cls"):
-                return False
-        elif not isinstance(node, ast.Name):
-            return False
-        return _static_value(node, bindings) is _UNKNOWN
+        return _lost_binding(_static_value(node, bindings))
 
     def _marker_or_unreadable(self, key, bindings) -> bool:
         """The key of a mapping write that could be the marker."""
         return (key is None or self._marker_key(key, bindings)
-                or _static_value(key, bindings) is _UNKNOWN)
+                or _lost_binding(_static_value(key, bindings)))
 
     def _leaves_the_marker(self, node, bindings) -> bool:
         """A merged mapping this parser reads in full that can neither unset
@@ -30512,7 +30584,7 @@ class _SuiteForkScan:
             return False
         for key in node.keys:
             if (key is None or self._marker_key(key, bindings)
-                    or _static_value(key, bindings) is _UNKNOWN):
+                    or _lost_binding(_static_value(key, bindings))):
                 return False
         return True
 
@@ -30573,9 +30645,19 @@ class _SuiteForkScan:
         `env = dict(os.environ); env[MARKER] = "1"` shape is untouched by
         (3), and why an authoritative `X[MARKER] = "1"` is not a disarming
         write. `X.setdefault(...)` cannot remove a key and is not one either.
+
+        (4) A BOUND METHOD OF THE MAPPING, called through the name it was
+        parked on. `f = os.environ.pop` then `f(MARKER, None)` clears
+        exactly the mapping the guard reads, but the call's `func` is a bare
+        NAME, so (1) never looks at it, and the mapping appears in no
+        argument, so the escape rule never sees it either. The binding table
+        resolves every marker-clearing member to `_ENVIRON_METHOD`, and
+        calling one is the write the same member spelled out in full is.
         """
         if isinstance(node, ast.Call):
             func = node.func
+            if _static_value(func, bindings) is _ENVIRON_METHOD:
+                return True
             if not isinstance(func, ast.Attribute):
                 return False
             if (func.attr in OS_ENVIRONMENT_CALLS
@@ -30627,9 +30709,14 @@ class _SuiteForkScan:
         `_spawn_suite` body: `_e = os.environ; _e.pop(MARKER, None)`, and an
         ordinary `self._disarm()` whose body does the popping. Passing an
         `identity` follows calls; omitting it is the syntax-only question.
+
+        `_bound_scope_walk` rather than `_scope_walk`: a rebind written
+        inside an `if`/`for`/`with`/`try` body is in force for the rest of
+        that body, and round 5 measured three shapes exonerated because it
+        was not (N2).
         """
-        for node in _scope_walk(stmt):
-            if self._mutates_environment(node, bindings):
+        for node, scoped in _bound_scope_walk(stmt, bindings):
+            if self._mutates_environment(node, scoped):
                 return True
             if identity is None or not isinstance(node, ast.Call):
                 continue
@@ -30637,7 +30724,7 @@ class _SuiteForkScan:
             if variants:
                 if any(target in self.environment_writers for target in variants):
                     return True
-            elif self._environment_escapes(node, bindings):
+            elif self._environment_escapes(node, scoped):
                 return True
         return False
 
@@ -30653,7 +30740,7 @@ class _SuiteForkScan:
         """
         if isinstance(call.func, ast.Name) and call.func.id == "dict":
             return False
-        if _static_value(call, bindings) is not _UNKNOWN:
+        if not _lost_binding(_static_value(call, bindings)):
             # A call this parser MODELS is not an unparsed callee.
             # `getattr(os, "environ")` and `vars(os)["environ"]` ARE the
             # mapping and are judged as the mapping by every rule above;
@@ -30668,8 +30755,13 @@ class _SuiteForkScan:
                 # `getattr(os, "environ")` handed to an unparsed callee is
                 # `os.environ` handed to it. Only an unresolved call is
                 # skipped, because every caller of this predicate visits
-                # every call node in its own right.
-                if _static_value(node, bindings) in (_ENVIRON, _OS):
+                # every call node in its own right. A BOUND METHOD of the
+                # mapping is the mapping too: `self.addCleanup(f, MARKER,
+                # None)` after `f = os.environ.pop` hands unittest a
+                # callable that clears the marker between the tests of the
+                # class (round 5, N1).
+                if _static_value(node, bindings) in (_ENVIRON, _OS,
+                                                     _ENVIRON_METHOD):
                     return True
                 if isinstance(node, ast.Call):
                     continue
@@ -30693,15 +30785,21 @@ class _SuiteForkScan:
             bindings = self._function_bindings(identity, fn)
             reached, writes = set(), False
             for stmt in fn.body:
-                for node in _scope_walk(stmt):
-                    if self._mutates_environment(node, bindings):
+                # `_bound_scope_walk` binds a block's own statements as it
+                # descends, so a rebind inside an `if`/`for`/`with`/`try`
+                # body governs the rest of that body; `_bind_statement`
+                # below still invalidates every name the whole compound
+                # statement assigns, because nothing it bound is knowable
+                # after it (round 5, N2).
+                for node, scoped in _bound_scope_walk(stmt, bindings):
+                    if self._mutates_environment(node, scoped):
                         writes = True
                     if not isinstance(node, ast.Call):
                         continue
                     variants = self._scope_variants(self._callee(identity, node))
                     if variants:
                         reached.update(variants)
-                    elif self._environment_escapes(node, bindings):
+                    elif self._environment_escapes(node, scoped):
                         writes = True
                 _bind_statement(stmt, bindings)
             edges[identity] = reached
@@ -30739,7 +30837,7 @@ class _SuiteForkScan:
             return func.id == "Path" and bindings.get("Path") is _PATH
         if isinstance(func, ast.Attribute):
             if func.attr == "resolve" and not call.args:
-                return _static_value(func.value, bindings) is not _UNKNOWN
+                return not _lost_binding(_static_value(func.value, bindings))
             return (func.attr == "which" and isinstance(func.value, ast.Name)
                     and bindings.get(func.value.id) is _SHUTIL)
         return False
@@ -30779,7 +30877,7 @@ class _SuiteForkScan:
         if not all(self._pure_value_call(call, bindings) for call in calls):
             return False
         return (stmt.value is not None
-                and _static_value(stmt.value, bindings) is not _UNKNOWN)
+                and not _lost_binding(_static_value(stmt.value, bindings)))
 
     def _standdown_helper(self, identity, call):
         callee = self._callee(identity, call)
@@ -31436,11 +31534,24 @@ class TestTheRunnerItself(unittest.TestCase):
         alias of `os.environ`, any attribute reached through `os`, and any
         other call — including one that resolves to a scope clearing the
         marker two or three hops away — costs the proof. The same rule holds
-        for the stand-down helper's own body, and a write in
+        for the stand-down helper's own body.
+
+        What a FIXTURE claim covers, exactly: a write this parser READS in
         `setUp`/`setUpClass`/`tearDown`/`tearDownClass`/`setUpModule`/
         `tearDownModule`, in a cleanup callback the sink's class registers,
         or in a decorator on the sink or on its class costs every sink in
-        that class its proof.
+        that class its proof. "Reads" is the whole rule below — every
+        spelling of the mapping the binding table resolves, `putenv` /
+        `unsetenv`, the mapping handed to a callee this parser cannot read,
+        a receiver whose value it cannot read AT ALL however that receiver
+        is spelled (a bare name, a `self`/`cls` attribute, or a chain on a
+        call or a subscript such as `sys.modules['os'].environ`), a bound
+        marker-clearing method of the mapping parked on a name and then
+        called or registered as a cleanup, and a rebind made INSIDE an
+        `if`/`for`/`while`/`with`/`try` body for the rest of that body. It
+        does not cover a fixture that reaches the marker only through code
+        this parser never sees: that bound, and the one loop-carried shape
+        it leaves, are named below rather than promised away.
 
         What "the environment mapping" MEANS here: ONE binding table
         (`_MODULE_SENTINELS` / `_MEMBER_SENTINELS` / `_FROM_IMPORT_SENTINELS`)
@@ -31477,7 +31588,17 @@ class TestTheRunnerItself(unittest.TestCase):
         write only when the mapping itself is handed to it, because this
         repository's own `setUpModule` reaches
         `hashlib.md5(path.read_bytes())`; a sibling-module helper that clears
-        the marker without receiving the mapping is not detectable here. A
+        the marker without receiving the mapping is not detectable here, and
+        neither is `exec`/`eval` of a source string that names the mapping,
+        which is the same bound wearing a different face — in a SINK
+        PREAMBLE both lose the proof, because nothing there may run at all,
+        but in a FIXTURE they do not. A name whose value CHANGES BETWEEN
+        ITERATIONS of a loop is read with the value it has on entry to the
+        body: statements inside a block bind for the rest of that block, but
+        the body is not re-read with what its last statement left behind, so
+        `for ...: env.pop(MARKER); env = os.environ` is read with the
+        `env` that held before the loop. (After the block ends, a name the
+        block assigned is unknown rather than trusted, which fails closed.) A
         `subprocess` call whose argv is a name this parser cannot resolve,
         with no `shell`, no spread and no string shape, stays an unknown
         EXTERNAL command — measured cost of closing it: 32 of the 148 spawn
@@ -32790,15 +32911,31 @@ class B:
                  "path.environ"),
                 ("import os.path as _p", "import os\nimport os.path as _p\n",
                  "_p.environ")):
+            # A pop of a key this parser CAN read and that is not the
+            # marker. If either spelling bound the `os` module, the mapping
+            # rule would fire on `<name>.environ` whatever the key was, so
+            # this row still measures exactly what it always measured — and
+            # it no longer leans on the receiver being unreachable, because
+            # a receiver this parser cannot read IS a write when the key
+            # could be the marker (#164, N1; the row below).
             with self.subTest(not_the_module=label):
                 scan = self._scan_source(self._mapping_source(
                     imports, "",
                     body="    def setUp(self):\n"
-                         "        %s.pop(self.CHILD, None)\n\n" % mapping))
+                         "        %s.pop('OTHER_VARIABLE', None)\n\n" % mapping))
                 self.assertTrue(
                     scan.guard_verified["Guard.sink"],
-                    f"{label} does not bind the `os` module, and a rule that "
-                    "thought it did would flag on a name it cannot read")
+                    f"{label} does not bind the `os` module; if it did, the "
+                    "mapping rule would fire here on any key at all")
+            with self.subTest(not_the_module=label, fail_closed=True):
+                scan = self._scan_source(self._mapping_source(
+                    imports, "",
+                    body="    def setUp(self):\n"
+                         "        %s.pop(self.CHILD, None)\n\n" % mapping))
+                self.assertFalse(
+                    scan.guard_verified["Guard.sink"],
+                    f"{label} is a receiver this parser cannot read, and the "
+                    "marker popped through one is a write")
 
     def test_putenv_unsetenv_and_merge_spellings_are_environment_writes(self):
         """A child inherits what `putenv` wrote, not only what the mapping
@@ -32905,6 +33042,239 @@ class B:
                     body="    def setUp(self):\n" + statements + "\n"))
                 self.assertTrue(scan.guard_verified["Guard.sink"],
                                 scan.guard_errors["Guard.sink"])
+
+    def test_a_receiver_this_parser_cannot_read_is_the_mapping(self):
+        """Round-5 nit 1(a). The fail-closed rule asked what the receiver was
+        SPELLED as before asking what it resolved to: only a bare name or a
+        `self`/`cls` attribute could be an unreadable mapping, so a chain
+        whose owner is a call or a subscript walked straight past it, with
+        the marker popped in `setUp` and the sink's proof still granted.
+        Every one of these resolves to nothing this parser can read, and the
+        marker is popped through it.
+        """
+        head = "import os\nimport importlib\n"
+        lost = {
+            "import_module of a computed name, direct chain":
+                "        importlib.import_module('o' + 's')"
+                ".environ.pop(self.CHILD, None)\n",
+            "import_module of a computed name, through a name":
+                "        os2 = importlib.import_module('o' + 's')\n"
+                "        os2.environ.pop(self.CHILD, None)\n",
+            "globals()[...], direct chain":
+                "        globals()['os'].environ.pop(self.CHILD, None)\n",
+            "globals()[...], through a name":
+                "        g = globals()['os']\n"
+                "        g.environ.pop(self.CHILD, None)\n",
+            "sys.modules[...], direct chain":
+                "        sys.modules['os'].environ.pop(self.CHILD, None)\n",
+            "sys.modules[...], through a name":
+                "        m = sys.modules['os']\n"
+                "        m.environ.pop(self.CHILD, None)\n",
+            "an unreadable chain cleared outright":
+                "        sys.modules['os'].environ.clear()\n",
+            "an unreadable chain deleted from":
+                "        del globals()['os'].environ[self.CHILD]\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(fail_closed=label):
+                scan = self._scan_source(self._mapping_source(
+                    head, "", body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "an unreadable chain popped by a key that is not the marker":
+                "        sys.modules['os'].environ.pop('OTHER', None)\n",
+            "an unreadable chain written authoritatively":
+                "        globals()['os'].environ[self.CHILD] = '1'\n",
+            "a readable copy popped":
+                "        env = dict(os.environ)\n"
+                "        env.pop(self.CHILD, None)\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    head, "", body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+
+    def test_a_bound_method_of_the_mapping_is_the_mapping(self):
+        """Round-5 nit 1(b). `f = os.environ.pop` parks a bound method of the
+        mapping on a name; `f(MARKER, None)` then clears exactly the mapping
+        the guard reads through a call whose `func` is a bare NAME, with the
+        mapping in no argument — so neither the mapping rule nor the escape
+        rule saw it, and `self.addCleanup(f, ...)` handed unittest the same
+        callable to run between the tests of the class. (The direct
+        `self.addCleanup(os.environ.pop, ...)` was already caught: it was
+        specifically the intermediate binding that lost it.)
+        """
+        lost = {
+            "pop through the name it was parked on":
+                "        f = os.environ.pop\n"
+                "        f(self.CHILD, None)\n",
+            "clear through the name it was parked on":
+                "        f = os.environ.clear\n        f()\n",
+            "popitem through the name it was parked on":
+                "        f = os.environ.popitem\n        f()\n",
+            "a second hop":
+                "        f = os.environ.pop\n        g = f\n"
+                "        g(self.CHILD, None)\n",
+            "registered as a cleanup":
+                "        f = os.environ.pop\n"
+                "        self.addCleanup(f, self.CHILD, None)\n",
+            "registered as a cleanup, clear":
+                "        f = os.environ.clear\n"
+                "        self.addCleanup(f)\n",
+            "an aliased spelling of the mapping":
+                "        f = environ.pop\n        f(self.CHILD, None)\n",
+            "used as a mapping rather than called":
+                "        f = os.environ.pop\n        del f[self.CHILD]\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(bound_method=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\nfrom os import environ\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "a member that cannot remove or blank a key":
+                "        f = os.environ.get\n        self.seen = f(self.CHILD)\n",
+            "a copy's own bound method":
+                "        env = dict(os.environ)\n        f = env.pop\n"
+                "        f(self.CHILD, None)\n",
+            "a bound method of a copy registered as a cleanup":
+                "        env = os.environ.copy()\n"
+                "        self.addCleanup(env.clear)\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+
+    def test_a_rebind_inside_a_block_governs_the_rest_of_that_block(self):
+        """Round-5 nit 2. Every node of a compound statement used to be
+        judged against the bindings that held BEFORE the statement, because
+        the walk ran before the statement was bound. One resolved
+        statement-level binding therefore shadowed a rebind to the real
+        mapping made inside an `if`/`for`/`with`/`try` body — and it was
+        never about `_COPY`: a plain string did it too. `dict(os.environ)`
+        is this repository's own idiom, which is what makes the shape worth
+        pinning.
+
+        The controls hold the other direction: a rebind at statement level
+        is still caught, a first binding inside a block is still caught, a
+        conditional rebind is not trusted after the block ends, and a
+        genuine copy — bound before the block or inside it — is still
+        verified, because a write through a copy can never clear the marker
+        the guard reads.
+        """
+        lost = {
+            "a copy shadowing an `if`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a resolved string shadowing an `if`-body rebind":
+                "        env = 'x'\n"
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a `for`-body rebind":
+                "        env = {}\n"
+                "        for _ in range(1):\n"
+                "            env = os.environ\n"
+                "            del env[self.CHILD]\n",
+            "a `with`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        with self.lock:\n"
+                "            env = os.environ\n"
+                "            env.clear()\n",
+            "a `try`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        try:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n"
+                "        except KeyError:\n"
+                "            pass\n",
+            "an `except`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        try:\n"
+                "            pass\n"
+                "        except KeyError:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "an `else`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            pass\n"
+                "        else:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a nested block":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            for _ in range(1):\n"
+                "                env = os.environ\n"
+                "                env.pop(self.CHILD, None)\n",
+            "a bound method parked inside a block":
+                "        f = None\n"
+                "        if self.c:\n"
+                "            f = os.environ.pop\n"
+                "            f(self.CHILD, None)\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(shadowed=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "a copy bound before the block and popped inside it":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a copy bound inside the block and popped inside it":
+                "        if self.c:\n"
+                "            env = dict(os.environ)\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a copy rebound inside the block":
+                "        env = os.environ.copy()\n"
+                "        for _ in range(1):\n"
+                "            env = dict(os.environ)\n"
+                "            env.clear()\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+        still_lost = {
+            "a rebind at statement level":
+                "        env = dict(os.environ)\n"
+                "        env = os.environ\n"
+                "        env.pop(self.CHILD, None)\n",
+            "a first binding inside the block":
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a conditional rebind is not trusted after the block":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "        env.pop(self.CHILD, None)\n",
+        }
+        for label, statements in still_lost.items():
+            with self.subTest(unchanged=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
 
     def test_a_subclass_of_subprocess_popen_is_a_spawn_surface(self):
         """Round-4 nit 2. `class MyPopen(subprocess.Popen)` starts a process
