@@ -16,6 +16,38 @@ and a frozen `now`, and returns the roster dict — no network, no clock, no
 environment. The one network call in the whole feature lives in
 `scripts/refresh_models.py`, which produces this module's `models_doc`.
 
+WHO IS AN ARM (Adam's decision, 2026-09-22). Two rules, and the second one
+is subordinate to the first:
+
+  1. USAGE SEATS. Every available model at or above the policy's entry bar
+     (`arm_enter_usage_pct` of rankable, attributable census turns over
+     `arm_enter_window_weeks`) is an arm, with its share in its reason.
+  2. NEWEST PER QUALIFYING TIER. In a tier that rule 1 already seated
+     someone in, the newest available model past the cooling-off is ALSO
+     an arm if it is not one already — and its reason says so in words,
+     naming the qualifying share it rides on. A TIER NO MODEL OF WHICH
+     CLEARS THE ENTRY BAR GETS NO ARM FROM THIS RULE, however new its
+     newest model is; that model is listed under `excluded` with that
+     reason. This is what the rule used to be — newest per tier, across
+     every tier — and why the arm set shrank: a tier the fleet does not
+     measurably use was being measured anyway.
+
+  THE NO-CENSUS FALLBACK IS UNTOUCHED, and it is not an exception so much
+  as the same sentence read at its limit: with no usable usage there is no
+  usage-qualified tier, and a roster must not be empty. So whenever the
+  enter window carries no usable evidence — any of `_census_verdict`'s
+  eight verdicts, or a fresh census whose enter window alone fails one of
+  the ranked-usage floors — rule 2 reverts to NEWEST PER TIER ACROSS ALL
+  TIERS, with the existing "no fresh census (…)" reasons naming which of
+  the eight it was. Restricting it there would seat nobody.
+
+  A usable census that simply names no model at the entry bar is neither
+  of those cases: it is evidence, and what it is evidence of is that no
+  tier qualifies. The only seats left are previous arms held over the exit
+  bar, and if there are none `main()` refuses to publish a roster with no
+  arms (rc 3) and the committed roster stands — which is the honest
+  outcome, not a hole.
+
 Inputs
   models_doc   {"fetched_at": ..., "models": [{id, created_at, ...}, ...]} —
                availability, straight from GET /v1/models. Trusted for
@@ -1782,6 +1814,41 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     for model in available:  # sorted weakest-first, oldest-first within a rung
         newest_by_rung[rung_of(model["id"], rungs)] = model["id"]
 
+    # --- which models, and so which TIERS, qualify on usage ---------------
+    # Computed in a pass of its own because the newest-per-tier rule below
+    # is no longer a fact about one model: since Adam's 2026-09-22 decision
+    # it only seats the newest model of a tier that ALREADY HAS a
+    # usage-qualified arm, so the second pass has to know the answer for
+    # every model in the tier before it can decide about any of them. The
+    # shares are computed once here and reused, not recomputed per model.
+    #
+    # `enter_share` is populated only when `enter_usable`: with no usable
+    # enter-window evidence no model can clear the entry bar, so there is
+    # no usage-qualified tier to restrict anything to — see the fallback
+    # note on the newest branch below.
+    enter_share: dict[str, float] = {}
+    if enter_usable:
+        for model in available:
+            enter_share[model["id"]] = usage_share(
+                counts, model["id"], enter_weeks, rungs, aliases,
+                api_ids=api_ids, previous_arms=previous_arms,
+                catalogue_seen=catalogue_seen)
+    #: rung -> (id, share) of the tier's LARGEST usage-qualified share. The
+    #: newest model this tier seats "rides on" that share and names it, so
+    #: a reader of the reason can check the one number the seat rests on.
+    #: `available` is iterated in its own sorted order and the comparison is
+    #: strict, so a tie is broken by that order rather than by dict order.
+    qualifying_by_rung: dict[int, tuple[str, float]] = {}
+    for model in available:
+        model_id = model["id"]
+        share = enter_share.get(model_id)
+        if share is None or share < policy["arm_enter_usage_pct"]:
+            continue
+        rung = rung_of(model_id, rungs)
+        best = qualifying_by_rung.get(rung)
+        if best is None or share > best[1]:
+            qualifying_by_rung[rung] = (model_id, share)
+
     # --- who is an arm, and why ------------------------------------------
     arms: list[dict] = []
     excluded: list[dict] = []
@@ -1794,12 +1861,11 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         age_days = (now - created).days if created else None
         is_newest = newest_by_rung.get(rung) == model_id
         old_enough = age_days is not None and age_days >= policy["cooling_off_days"]
+        qualifier = qualifying_by_rung.get(rung)
 
         reason = None
         if enter_usable:
-            share = usage_share(counts, model_id, enter_weeks, rungs, aliases,
-                               api_ids=api_ids, previous_arms=previous_arms,
-                               catalogue_seen=catalogue_seen)
+            share = enter_share[model_id]
             if share >= policy["arm_enter_usage_pct"]:
                 reason = (f"carries {_format_share(share, policy['arm_enter_usage_pct'])}% "
                           f"of rankable census usage over the last "
@@ -1808,8 +1874,39 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         if reason is None and is_newest and old_enough:
             newest_words = (f"newest model in the {label} tier, {age_days} days old "
                             f"(past the {policy['cooling_off_days']}-day cooling-off)")
-            reason = (newest_words if usable
-                      else f"{stale_note}; fell back to newest per tier — {newest_words}")
+            if not enter_usable:
+                # THE FALLBACK, UNCHANGED (and the reason the restriction
+                # below is not stated unconditionally): with no usable
+                # enter-window usage there is no usage-qualified tier at
+                # all, so restricting the rule to those tiers would seat
+                # nobody and publish an empty roster. Every tier's newest
+                # takes a seat, exactly as before, and says which of
+                # `_census_verdict`'s eight ways of having no evidence it
+                # was — except where `usable` held and only the enter
+                # window's own floor failed, which has no `stale_note` of
+                # its own to quote.
+                reason = (newest_words if usable
+                          else f"{stale_note}; fell back to newest per tier — "
+                               f"{newest_words}")
+            elif qualifier is not None:
+                # THE RULE ADAM DECIDED ON 2026-09-22. The newest model in
+                # a tier is an arm only where the tier is one the fleet
+                # demonstrably uses — that is, where some model in it
+                # already cleared the entry bar. It rides on that model's
+                # share, so the reason names the share and the model it
+                # belongs to; a percentage with no owner would be
+                # unreadable next to the seat's own 0-ish usage.
+                qualifying_id, qualifying_share = qualifier
+                reason = (f"{newest_words}, in a tier that qualifies by usage: "
+                          f"`{qualifying_id}` carries "
+                          f"{_format_share(qualifying_share, policy['arm_enter_usage_pct'])}% "
+                          f"of rankable census usage over the last "
+                          f"{policy['arm_enter_window_weeks']} weeks (at or above "
+                          f"the {policy['arm_enter_usage_pct']}% entry bar)")
+            # else: no seat. A tier no model of which carries
+            # `arm_enter_usage_pct` of the fleet's usage gets no arm from
+            # this rule, however new its newest model is. The `excluded`
+            # entry below says so.
         if reason is None and model_id in previous_arms:
             if not usable:
                 # Staleness is not evidence of disuse. Retiring a previous arm
@@ -1890,6 +1987,20 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 f"excluded from the arm set: newest in the {label} tier but only "
                 f"{age_days} days old, inside the {policy['cooling_off_days']}-day "
                 f"cooling-off")})
+        elif is_newest and enter_usable and qualifier is None:
+            # The newest model of a tier the fleet does not demonstrably
+            # use. Said out loud rather than left as an absence: a seat
+            # the old rule granted and this one does not is exactly the
+            # kind of change a reader of the proposal needs a sentence
+            # for, and "every entry carries its reason in words" (property
+            # 2, DESIGN.md) is what the roster is for.
+            excluded.append({"id": model_id, "reason": (
+                f"excluded from the arm set: newest in the {label} tier, but no "
+                f"model in that tier carries {policy['arm_enter_usage_pct']}% of "
+                f"rankable census usage over the last "
+                f"{policy['arm_enter_window_weeks']} weeks, so the tier qualifies "
+                f"by usage for no seat and the newest-per-tier rule does not seat "
+                f"it")})
 
     for snapshot_id in sorted(snapshots):
         excluded.append({"id": snapshot_id, "reason": (

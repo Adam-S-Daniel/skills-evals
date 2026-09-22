@@ -4739,13 +4739,20 @@ class TestIssue67(unittest.TestCase):
         result = self._compute()
 
         self.assertEqual(sorted(self._arm_ids(result)),
-                         ["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"])
+                         ["claude-opus-5", "claude-sonnet-5"])
         # Usage-qualified arms say so, in words, with the share.
         self.assertIn("64.5%", self._reason(result, "claude-sonnet-5"))
         self.assertIn("4 weeks", self._reason(result, "claude-sonnet-5"))
-        # haiku is under the 10% bar and rides in on newest-in-tier instead.
-        self.assertIn("newest", self._reason(result, "claude-haiku-4-5"))
-        self.assertIn("haiku", self._reason(result, "claude-haiku-4-5"))
+        # haiku is under the 10% bar, and since 2026-09-22 being newest in
+        # its tier no longer rescues it: no haiku model clears the bar, so
+        # the tier qualifies for nothing and seats nobody. It used to ride
+        # in here on newest-in-tier, which is the seat that rule lost.
+        # TestNewestPerQualifyingTier is where that rule lives.
+        self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
+        haiku = next(e["reason"] for e in result["excluded"]
+                     if e["id"] == "claude-haiku-4-5")
+        self.assertIn("newest in the haiku tier", haiku)
+        self.assertIn("no model in that tier carries 10%", haiku)
 
         # One tier above the strongest arm (opus) is fable, and the only fable
         # model available is not an arm — so it is the judge.
@@ -4870,7 +4877,9 @@ class TestIssue67(unittest.TestCase):
                     "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
         result = self._compute(previous=previous)
         added = {a["id"]: a["reason"] for a in result["added_since_last"]}
-        self.assertEqual(sorted(added), ["claude-haiku-4-5", "claude-opus-5"])
+        # `claude-haiku-4-5` used to be added here too, on newest-in-tier;
+        # its tier carries 3.2% and so qualifies for nothing (2026-09-22).
+        self.assertEqual(sorted(added), ["claude-opus-5"])
         self.assertTrue(all(added.values()), "every entry carries its reason")
 
     def test_first_run_has_no_previous_roster_and_reports_nothing_retired(self):
@@ -10120,10 +10129,18 @@ class TestIssue67Review5(unittest.TestCase):
 
         for arm in result["arms"]:
             self.assertNotIn("carries 97", arm["reason"], arm)
-        self.assertIn("claude-sonnet-5", self._arm_ids(result))
-        reason = self._reason(result, "claude-sonnet-5")
-        self.assertIn("newest", reason)
-        self.assertNotIn("carries", reason)
+        # THE MEASURED CONSEQUENCE, and since 2026-09-22 it is a sharper
+        # one than the reason text was: at its real 1.96% share
+        # `claude-sonnet-5` clears nothing, so no sonnet clears the entry
+        # bar, so the sonnet tier qualifies for no seat and its newest
+        # model takes none. On a946c9b the collapsed denominator put it at
+        # 97.09% — over the bar — and it is an ARM there, so the
+        # membership assertion below is red on the bug on its own.
+        self.assertNotIn("claude-sonnet-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-sonnet-5")
+        self.assertIn("newest in the sonnet tier", reason)
+        self.assertIn("no model in that tier carries 10%", reason)
 
         # Reproduces `compute_roster`'s OWN widened alias-map formula (not
         # a hand-picked ids list) only to pin the exact measured share and
@@ -10151,8 +10168,8 @@ class TestIssue67Review5(unittest.TestCase):
         # line to `alias_map(api_ids + list(counts))` (dropping
         # `previous_arms`/`catalogue_seen` from the ids fed to
         # `alias_map`) turns every assertion above red again — the
-        # denominator collapses back to 103 and `claude-sonnet-5` reads
-        # "carries 97.09%" instead of the newest-in-tier reason.
+        # denominator collapses back to 103 and `claude-sonnet-5` becomes
+        # an arm reading "carries 97.09%".
 
     def test_catalogue_seen_round_trips_through_the_published_roster(self):
         """`catalogue_seen` is the union of api ids seen this run and
@@ -10483,9 +10500,14 @@ class TestIssue67Review6(unittest.TestCase):
         previous = {"arms": [{"id": self.DATED, "reason": "was an arm"}],
                     "catalogue_seen": []}
         result = self._compute(models=models, census=census, previous=previous)
-        reason = self._reason(result, "claude-haiku-4-5")
-        self.assertIn("newest", reason)
-        self.assertNotIn("carries", reason)
+        # The 500 turns ARE in the denominator, so haiku's own 25 are
+        # 4.76% of it — under the entry bar, and since 2026-09-22 under
+        # the bar is the end of it: no haiku model qualifies, so the tier
+        # seats nobody and its newest model is excluded with that reason.
+        self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-haiku-4-5")
+        self.assertIn("no model in that tier carries 10%", reason)
         self.assertNotIn(self.UNDATED, self._seen_ids(result))
         self.assertNotIn(self.DATED, self._seen_ids(result))
         # Mutation check (manual): deleting `candidate in
@@ -10493,9 +10515,9 @@ class TestIssue67Review6(unittest.TestCase):
         # the 500 turns unattributable, shrinking the denominator to
         # haiku's own 25 turns (still above min_ranked_turns, so the
         # census still reads as usable rather than merely falling back)
-        # and inflating its share to a false 100% — its reason becomes
-        # "carries 100.0%..." instead of the newest-in-tier one, turning
-        # both assertions above red.
+        # and inflating its share to a false 100% — which puts it over the
+        # entry bar and makes it an arm reading "carries 100.0%...",
+        # turning both assertions above red.
 
     def test_route_catalogue_seen(self):
         """Both the dated and undated spellings have left the Models API
@@ -10511,15 +10533,19 @@ class TestIssue67Review6(unittest.TestCase):
         census = TestIssue67._census_doc(counts=counts)
         previous = {"arms": [], "catalogue_seen": [self.UNDATED]}
         result = self._compute(models=models, census=census, previous=previous)
-        reason = self._reason(result, "claude-haiku-4-5")
-        self.assertIn("newest", reason)
-        self.assertNotIn("carries", reason)
+        # As in the row above: the 500 turns counted, so haiku's 25 are
+        # 4.76%, under the entry bar, and since 2026-09-22 a tier no model
+        # of which clears the bar seats nobody at all.
+        self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-haiku-4-5")
+        self.assertIn("no model in that tier carries 10%", reason)
         # Mutation check (manual): deleting `candidate in catalogue_seen
         # or folded in catalogue_seen` makes the 500 turns unattributable
         # (neither of the other two routes names the dated id or its
-        # fold), shrinking the denominator to haiku's own 5 turns and
-        # inflating its share to a false 100% — turning both assertions
-        # above red.
+        # fold), shrinking the denominator to haiku's own 25 turns and
+        # inflating its share to a false 100% — which seats it as an arm
+        # reading "carries 100.0%", turning both assertions above red.
 
     def test_catalogue_seen_is_always_a_superset_of_this_runs_api_ids(self):
         """`catalogue_seen = set(api_ids) | previous.catalogue_seen`
@@ -24550,21 +24576,24 @@ class TestIssue67Review7(unittest.TestCase):
         turns. Evicted from history by 500 low-sorting plants, its turns
         leave the denominator and `claude-sonnet-5` is published as
         carrying 100.0% of census usage where it really carries 9.09%
-        — under the 10% entry bar, so it rides in on newest-in-tier
-        instead and says so."""
+        — under the 10% entry bar, and since 2026-09-22 nothing else can
+        seat it: no sonnet clears the bar, so the tier qualifies for no
+        seat and its newest model is excluded with that reason."""
         census = TestIssue67._census_doc(counts={
             self.RETIRED_REAL: {self.W[0]: 8000},
             "claude-sonnet-5": {self.W[0]: 800}})
         result = self._compute(models=self._capped_history_models(),
                                census=census,
                                previous=self._capped_history_previous())
-        reason = self._reason(result, "claude-sonnet-5")
-        self.assertNotIn("carries", reason)
-        self.assertIn("newest", reason)
+        self.assertNotIn("claude-sonnet-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-sonnet-5")
+        self.assertIn("newest in the sonnet tier", reason)
+        self.assertIn("no model in that tier carries 10%", reason)
         self.assertIn(self.RETIRED_REAL, self._seen_ids(result))
         # Mutation check (manual): reverting to `sorted(...)` by id evicts
-        # `claude-sonnet-4-9`, and claude-sonnet-5's reason becomes
-        # "carries 100.0% of rankable census usage ..." — red.
+        # `claude-sonnet-4-9`, and claude-sonnet-5 reads a false 100.0% —
+        # over the entry bar, so it becomes an arm — red.
 
     # --- S1: four of round 6's own catalogue_seen defences had no
     # regression floor — each could be deleted with the whole suite still
@@ -25372,9 +25401,17 @@ class TestIssue67Review8(unittest.TestCase):
         being unnamed — it is residue — while the live model beside it is
         tier 1, so every clause that decides which of the two the cap
         keeps shows up in the published sentence."""
+        # `claude-sonnet-5` is a previous arm here so that this row still
+        # goes THROUGH `main()` after 2026-09-22: at its true 9.09% no
+        # sonnet clears the ENTRY bar, so the tier qualifies for no seat
+        # and the newest-in-tier rule no longer rescues it; the EXIT bar
+        # is 2%, and being held over it is what keeps the roster
+        # non-empty and publishable. The sentence measured is the same
+        # one, with the same share in it.
         previous = {"arms": [{"id": i, "reason": "filler"}
                              for i in self.ARM_FILLERS] +
-                            [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"},
+                             {"id": "claude-sonnet-5", "reason": "was an arm"}]}
         census = TestIssue67._census_doc(counts={
             f"{self.A3_DEPARTED}-20250101": {self.W[0]: 8000},
             "claude-sonnet-5": {self.W[0]: 800}})
@@ -25385,7 +25422,11 @@ class TestIssue67Review8(unittest.TestCase):
         self.assertEqual(rc, 0)
         reason = self._reason(published, "claude-sonnet-5")
         self.assertNotIn("carries", reason)
-        self.assertIn("newest", reason)
+        self.assertIn("held over from the previous roster", reason)
+        # `_format_share` renders the shortest form that still round-trips
+        # against the bar it is being compared to, and this is the 2% exit
+        # bar rather than the 10% entry one — so 9.1%, not 9.09%.
+        self.assertIn("9.1%", reason)
 
     # RETIRED: `test_a_dated_arm_gets_no_relevance_from_its_own_spelling`.
     #
@@ -25583,7 +25624,15 @@ class TestIssue67Review8(unittest.TestCase):
     def test_the_last_share_rung_is_the_shortest_round_tripping_rendering(self):
         """Measured through `main()`: the brief's own case, 19,999,999 of
         1,000,000,000 exit-window turns."""
-        previous = {"arms": [{"id": self.F4_ARM, "reason": "was an arm"}],
+        # `F4_FILLERS[0]` is a previous arm purely to keep the run
+        # publishable after 2026-09-22: this census's largest ENTRY-window
+        # share is a filler's 8.0%, so no tier qualifies and the
+        # newest-in-tier rule seats nobody, while the filler's 8.0% of the
+        # EXIT window is comfortably over the 2% hold-over bar. It shares
+        # no id, tier or count with `F4_ARM`, whose 19,999,999-of-
+        # 1,000,000,000 retirement share is the subject and is unmoved.
+        previous = {"arms": [{"id": self.F4_ARM, "reason": "was an arm"},
+                             {"id": self.F4_FILLERS[0], "reason": "was an arm"}],
                     "catalogue_seen": [{"id": i, "last_seen": self._days_ago(2)}
                                        for i in self.F4_FILLERS]}
         with tempfile.TemporaryDirectory() as tmp:
@@ -26972,8 +27021,13 @@ class TestIssue67Review11(unittest.TestCase):
 
         RED on 1fa9d3a. `generated_at` is the only field that legitimately
         moves between runs, so it is dropped before comparing."""
+        # `SILENT_LIVE` joins the previous arms so the run still publishes
+        # after 2026-09-22: at its true 9.09% no sonnet clears the entry
+        # bar, so its tier seats nobody on newest-in-tier any more, and it
+        # is the hold-over over the 2% exit bar that keeps the roster
+        # non-empty. Nothing about the ORDER this row measures moves.
         arms = ([f"0arm-{i:04d}" for i in range(500)]
-                + [self.SILENT_VICTIM, "claude-haiku-4-5"])
+                + [self.SILENT_VICTIM, "claude-haiku-4-5", self.SILENT_LIVE])
         census = TestIssue67._census_doc(counts={
             self.SILENT_VICTIM: {self.W[0]: 8000},
             self.SILENT_LIVE: {self.W[0]: 800}})
@@ -33536,6 +33590,334 @@ def untouched():
             with self.subTest(quiet=label):
                 self.assertFalse(self._scan_source(head + source).direct['probe'], label)
 
+
+class TestNewestPerQualifyingTier(unittest.TestCase):
+    """The newest-per-tier rule is restricted to tiers that qualify on
+    usage (Adam's decision, 2026-09-22).
+
+    THE RULE IN ONE SENTENCE: every model at or above the entry bar is an
+    arm, and in a tier that already holds such an arm the newest available
+    model past the cooling-off is one too — everywhere else the newest
+    model in a tier is nobody's arm.
+
+    WHY IT CHANGED. The rule used to read "newest in its tier", across
+    every rung of the ladder. On the census published 2026-09-22 that
+    seated the newest haiku and the newest fable beside the two models the
+    fleet actually runs, because being newest in a tier was enough on its
+    own: a four-arm roster measuring two tiers carrying 6.3% and 3.0% of
+    the fleet's turns between them, at four arms' worth of spend per
+    fixture. The shares below are that census's, rounded as it measured
+    them.
+
+    Every model id here is FIXTURE data, like every other id in this file;
+    `test_no_model_ids_are_hardcoded_outside_fixtures` is what keeps them
+    out of the policy code.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    _model = staticmethod(TestIssue67._model)
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    #: The 2026-09-22 census's own enter-window numerators: 2475 + 2465 +
+    #: 346 + 164 = 5450 rankable, attributable turns, which is where
+    #: 45.4 / 45.2 / 6.3 / 3.0 come from. Two tiers clear the 10% entry
+    #: bar; two do not.
+    TURNS = {"claude-sonnet-5": 2475, "claude-opus-5": 2465,
+             "claude-haiku-4-5": 346, "claude-fable-5-1": 164}
+
+    @classmethod
+    def _catalogue(cls, extra=None, drop=()):
+        """One current model per tier, plus a superseded sonnet and opus.
+        EVERY model here is past the 7-day cooling-off, so nothing in
+        these rows is excluded by age unless the row says so."""
+        models = [
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
+            cls._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            cls._model("claude-fable-5", "2026-03-01T00:00:00Z"),
+            cls._model("claude-fable-5-1", "2026-05-01T00:00:00Z"),
+        ]
+        models = [m for m in models if m["id"] not in drop]
+        models += list(extra or [])
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    @classmethod
+    def _census(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        if counts is None:
+            counts = {i: {cls.W[0]: n} for i, n in cls.TURNS.items()}
+        return {"generated_at": generated_at, "weeks": list(cls.W),
+                "counts": counts}
+
+    @classmethod
+    def _compute(cls, models=None, census=None, previous=None):
+        return roster.compute_roster(
+            models_doc=models if models is not None else cls._catalogue(),
+            census_doc=census if census is not None else cls._census(),
+            policy=cls._policy(), previous=previous, now=cls.NOW)
+
+    @staticmethod
+    def _excluded(result, model_id):
+        return next((e["reason"] for e in result["excluded"]
+                     if e["id"] == model_id), None)
+
+    @staticmethod
+    def _days_before(now, days):
+        return (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # --- the worked examples ---------------------------------------------
+
+    def test_todays_census_and_catalogue_seat_exactly_the_two_used_tiers(self):
+        """WORKED EXAMPLE 1. sonnet-5 45.4%, opus-5 45.2%, haiku 6.3%,
+        fable-5-1 3.0% against a 10% entry bar: two arms, not four.
+
+        RED before the change, where the newest haiku and the newest
+        fable took seats of their own on being newest."""
+        result = self._compute()
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        self.assertIn("45.4%", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("45.2%", self._reason(result, "claude-opus-5"))
+
+        # The two tiers that did NOT qualify say so, in words, where the
+        # newest model of each used to carry an arm's reason instead.
+        for model_id, tier in (("claude-haiku-4-5", "haiku"),
+                               ("claude-fable-5-1", "fable/mythos")):
+            reason = self._excluded(result, model_id)
+            self.assertIsNotNone(reason, f"{model_id} is neither seated nor "
+                                         f"explained")
+            self.assertIn(f"newest in the {tier} tier", reason)
+            self.assertIn("no model in that tier carries 10%", reason)
+
+    def test_a_newer_opus_is_seated_because_the_opus_tier_qualifies(self):
+        """WORKED EXAMPLE 2. Ship an opus 5.1 past the cooling-off and
+        the same census seats three arms: the opus tier qualifies on
+        opus-5's 45.2%, so its newest model comes in beside it."""
+        newer = self._model("claude-opus-5-1", self._days_before(self.NOW, 30))
+        result = self._compute(models=self._catalogue(extra=[newer]))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-opus-5-1",
+                          "claude-sonnet-5"])
+        reason = self._reason(result, "claude-opus-5-1")
+        self.assertIn("newest model in the opus tier", reason)
+        self.assertIn("30 days old", reason)
+        # IN WORDS, and naming the share it rides on: the seat rests on a
+        # number that is not its own, so the number and its owner are both
+        # in the sentence a reviewer reads.
+        self.assertIn("in a tier that qualifies by usage", reason)
+        self.assertIn("`claude-opus-5` carries 45.2%", reason)
+        self.assertIn("10% entry bar", reason)
+        # opus-5 keeps its own seat on its own share, not on this one.
+        self.assertIn("carries 45.2%", self._reason(result, "claude-opus-5"))
+        self.assertNotIn("qualifies by usage",
+                         self._reason(result, "claude-opus-5"))
+
+    def test_a_newer_haiku_or_fable_changes_nothing(self):
+        """WORKED EXAMPLE 3. The newest model in the catalogue, in a tier
+        no model of which clears the entry bar, is not an arm — which is
+        the whole of what changed."""
+        newer = [self._model("claude-haiku-5", self._days_before(self.NOW, 40)),
+                 self._model("claude-fable-6", self._days_before(self.NOW, 20))]
+        result = self._compute(models=self._catalogue(extra=newer))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        for model_id in ("claude-haiku-5", "claude-fable-6"):
+            reason = self._excluded(result, model_id)
+            self.assertIsNotNone(reason)
+            self.assertIn("no model in that tier carries 10%", reason)
+        # ...and the models they superseded are not seated either: being
+        # newest was the only claim either tier ever had.
+        for model_id in ("claude-haiku-4-5", "claude-fable-5-1"):
+            self.assertNotIn(model_id, self._arm_ids(result))
+
+    def test_a_newer_sonnet_inside_the_cooling_off_is_not_seated_yet(self):
+        """WORKED EXAMPLE 4. The sonnet tier DOES qualify, so the rule
+        reaches its newest model — and the cooling-off still holds it
+        back. The two gates are independent and both apply."""
+        fresh = self._model("claude-sonnet-6", self._days_before(self.NOW, 3))
+        result = self._compute(models=self._catalogue(extra=[fresh]))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        reason = self._excluded(result, "claude-sonnet-6")
+        self.assertIn("inside the 7-day cooling-off", reason)
+        self.assertNotIn("no model in that tier carries", reason)
+
+    def test_the_same_newer_sonnet_is_seated_once_it_clears_the_cooling_off(self):
+        """The companion to the row above: nothing but the age moved, and
+        the sonnet tier's own 45.4% is what lets the rule reach it at
+        all."""
+        cooled = self._model("claude-sonnet-6", self._days_before(self.NOW, 8))
+        result = self._compute(models=self._catalogue(extra=[cooled]))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5",
+                          "claude-sonnet-6"])
+        reason = self._reason(result, "claude-sonnet-6")
+        self.assertIn("newest model in the sonnet tier", reason)
+        self.assertIn("in a tier that qualifies by usage", reason)
+        self.assertIn("`claude-sonnet-5` carries 45.4%", reason)
+
+    def test_the_judge_and_preflight_seats_are_unchanged_by_the_restriction(self):
+        """Restricting the ARMS must not move the other two seats: the
+        judge is still the strongest available non-arm and the preflight
+        still the cheapest safely-invocable model in the lowest tier.
+        Both now have MORE non-arms to choose from, and neither rule
+        reads the arm set for anything but exclusion."""
+        result = self._compute()
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertFalse(result["judge"]["is_arm"])
+        self.assertIn("tier above", result["judge"]["reason"])
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cheapest", result["preflight"]["reason"])
+
+    # --- the fallback, which is NOT restricted ---------------------------
+
+    def test_no_usable_census_still_falls_back_across_every_tier(self):
+        """INVARIANT: with no usable usage there is no usage-qualified
+        tier, and a roster must not be empty — so the newest-per-tier
+        fallback keeps every tier, exactly as it was, and every arm's
+        reason still names which of `_census_verdict`'s eight verdicts it
+        was.
+
+        Restricting the rule here would seat nobody at all, which is why
+        the restriction is written against `enter_usable` rather than
+        stated unconditionally."""
+        future = self._census(generated_at="2026-09-30T00:00:00Z")
+        stale = self._census(generated_at="2026-08-01T00:00:00Z")  # 34 days
+        empty = self._census(counts={})
+        unranked = self._census(counts={"other": {self.W[0]: 9000}})
+        thin = self._census(counts={"claude-sonnet-5": {self.W[0]: 3}})
+        cases = {
+            "absent": None,
+            "future-dated": future,
+            "stale": stale,
+            "empty over the window": empty,
+            "nothing rankable": unranked,
+            "under the ranked-turn floor": thin,
+        }
+        for label, census in cases.items():
+            with self.subTest(case=label):
+                result = roster.compute_roster(
+                    models_doc=self._catalogue(), census_doc=census,
+                    policy=self._policy(), previous=None, now=self.NOW)
+                # Newest per tier, ACROSS ALL FOUR TIERS.
+                self.assertEqual(sorted(self._arm_ids(result)),
+                                 ["claude-fable-5-1", "claude-haiku-4-5",
+                                  "claude-opus-5", "claude-sonnet-5"])
+                for arm in result["arms"]:
+                    self.assertIn("fell back to newest per tier",
+                                  arm["reason"])
+                    self.assertNotIn("qualifies by usage", arm["reason"])
+
+    def test_an_enter_window_under_the_floor_falls_back_the_same_way(self):
+        """The ninth case, and it is not one of the eight: the census is
+        fresh and the UNION window clears both ranked-usage floors, while
+        the four-week ENTER window on its own does not. No share can be
+        measured there, so no tier can qualify, so the fallback is the
+        same one — with the plain newest-in-tier reason, because there is
+        no staleness note to quote."""
+        counts = {"claude-sonnet-5": {w: 500 for w in self.W[4:]},
+                  "claude-opus-5": {w: 500 for w in self.W[4:]},
+                  "claude-haiku-4-5": {self.W[0]: 3}}
+        result = self._compute(census=self._census(counts=counts))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-fable-5-1", "claude-haiku-4-5",
+                          "claude-opus-5", "claude-sonnet-5"])
+        for arm in result["arms"]:
+            self.assertIn("newest model in the", arm["reason"])
+            self.assertNotIn("qualifies by usage", arm["reason"])
+            self.assertNotIn("fell back", arm["reason"])
+
+    def test_a_usable_census_at_no_models_entry_bar_seats_no_newest(self):
+        """The sharp edge of the rule, pinned so nobody softens it back
+        into an all-tiers fallback by accident: eleven models each
+        carrying 9.09% is EVIDENCE, and what it is evidence of is that no
+        tier qualifies. The only arms left would be previous ones held
+        over the exit bar; with none, `compute_roster` returns an empty
+        arm set and `main()` refuses to publish it (rc 3), leaving the
+        committed roster standing."""
+        ids = ([f"claude-haiku-9-{i}" for i in range(3)]
+               + [f"claude-sonnet-9-{i}" for i in range(3)]
+               + [f"claude-opus-9-{i}" for i in range(3)]
+               + [f"claude-fable-9-{i}" for i in range(2)])
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(i, "2026-01-01T00:00:00Z") for i in ids]}
+        census = self._census(counts={i: {self.W[0]: 1000} for i in ids})
+        result = self._compute(models=models, census=census)
+        self.assertEqual(result["arms"], [])
+        for model_id in ("claude-haiku-9-2", "claude-sonnet-9-2",
+                         "claude-opus-9-2", "claude-fable-9-1"):
+            self.assertIn("no model in that tier carries 10%",
+                          self._excluded(result, model_id) or "")
+
+    def test_a_previous_arm_is_still_held_over_by_the_exit_bar(self):
+        """The restriction is on the ENTRY side only. A previous arm in a
+        tier that no longer qualifies keeps its seat until it measurably
+        falls under the exit bar — "no evidence is not evidence" cuts
+        both ways, and this rule proposes no retirement of its own."""
+        previous = {"arms": [{"id": "claude-haiku-4-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        self.assertIn("claude-haiku-4-5", self._arm_ids(result))
+        reason = self._reason(result, "claude-haiku-4-5")
+        self.assertIn("held over from the previous roster", reason)
+        self.assertIn("6.3%", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    # --- the proposal surface carries the new reasons --------------------
+
+    def test_the_rendered_proposal_and_summary_carry_the_new_reason(self):
+        """The seat's words have to survive every rendering a reviewer
+        actually reads: the step-summary table, and the bytes of the
+        proposed `evals/roster.yml` itself."""
+        newer = self._model("claude-opus-5-1", self._days_before(self.NOW, 30))
+        previous = {"schema": 1,
+                    "arms": [{"id": "claude-sonnet-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": "",
+                              "is_arm": False},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""},
+                    "catalogue_seen": [],
+                    "provenance": {"seeded": "by hand", "from": "the fixtures"},
+                    "generated_at": "2026-09-01T00:00:00Z"}
+        result = self._compute(models=self._catalogue(extra=[newer]),
+                               previous=previous)
+        self.assertEqual(result["proposal"]["status"], "differs")
+
+        summary = roster.render_summary(result)
+        self.assertIn("in a tier that qualifies by usage", summary)
+        self.assertIn("no model in that tier carries 10%", summary)
+
+        rendered = render_roster_yaml.render(result, "1234567890", "abc1234")
+        document = yaml.safe_load(rendered)
+        self.assertEqual([a["id"] for a in document["arms"]],
+                         [a["id"] for a in result["arms"]])
+        opus_5_1 = next(a for a in document["arms"]
+                        if a["id"] == "claude-opus-5-1")
+        self.assertIn("in a tier that qualifies by usage", opus_5_1["reason"])
+        self.assertIn("`claude-opus-5` carries 45.2%", opus_5_1["reason"])
+        self.assertEqual(roster.committed_roster_problems(document), [])
+
+    def test_added_since_last_and_previous_state_are_unchanged(self):
+        """`previous_state`/`added_since_last`/`retired_since_last`
+        semantics are untouched by the rule: they still compare the
+        computed arm set against the committed one, whatever seated it."""
+        previous = {"arms": [{"id": "claude-sonnet-5", "reason": "was an arm"},
+                             {"id": "claude-fable-5-1", "reason": "was an arm"}],
+                    "judge": {"id": "claude-opus-4-8", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        self.assertEqual(result["previous_state"], "compared")
+        self.assertTrue(result["compared_to_previous"])
+        self.assertEqual([a["id"] for a in result["added_since_last"]],
+                         ["claude-opus-5"])
+        # fable-5-1 carries 3.0%, over the 2% exit bar, so it is HELD —
+        # the restriction retires nothing on its own.
+        self.assertIn("claude-fable-5-1", self._arm_ids(result))
+        self.assertEqual(result["retired_since_last"], [])
 
 if __name__ == "__main__":
     raise SystemExit(main())

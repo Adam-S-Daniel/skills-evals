@@ -69,10 +69,38 @@ tiers:
 arm_enter_usage_pct: 10
 arm_enter_window_weeks: 4
 
-# ...or if it is the newest model in its tier AND has been out at least this
-# long. The cooling-off is the fleet's standing convention for new versions:
-# day-one models move, and a roster that chases them re-baselines the eval
-# every week.
+# ...or if it is the newest model IN A TIER THAT ALREADY QUALIFIES ON THAT
+# USAGE BAR, and has been out at least this long. The cooling-off is the
+# fleet's standing convention for new versions: day-one models move, and a
+# roster that chases them re-baselines the eval every week.
+#
+# "IN A TIER THAT ALREADY QUALIFIES" is Adam's decision of 2026-09-22, and it
+# is the whole of the second rule's scope. The rule used to read "newest in
+# its tier" full stop, across every tier on the ladder, which seated the
+# newest haiku and the newest fable on a census showing the fleet ran 6.3%
+# and 3.0% of its turns on them — two arms of a four-arm roster measuring
+# tiers nobody uses, at four arms' worth of spend. A tier now earns its
+# newest-model seat by having some model of its own at or above
+# `arm_enter_usage_pct`: on the 2026-09-22 census (sonnet-5 45.4%, opus-5
+# 45.2%, haiku 6.3%, fable-5-1 3.0%) that is the sonnet and opus tiers, both
+# of whose newest models are already the qualifying ones, so the roster is
+# the two usage seats and nothing else. Ship an opus 5.1 and the opus tier —
+# which qualifies — seats it beside opus-5 on the next run, three arms; ship
+# a newer haiku or fable and nothing changes, because those tiers qualify for
+# nothing. NO KNOB WAS ADDED FOR THIS: the rule reads the entry bar above and
+# has no threshold of its own.
+#
+# WITH NO USABLE USAGE THE RULE REVERTS TO NEWEST PER TIER ACROSS ALL TIERS,
+# and that is deliberate rather than an omission. No usable census means no
+# qualifying tier, so a restricted rule would seat nobody and publish an
+# empty roster; the eight verdicts `_census_verdict` distinguishes (see
+# `census_max_age_days` below) therefore keep the fallback they always had,
+# and every arm's reason still names which of the eight it was. The same
+# holds when the census is fresh overall but the ENTER window's own ranked
+# total is under one of the floors below — there is no share to qualify a
+# tier with. A usable census that simply names no model at the entry bar is a
+# different thing: that is evidence, and it says no tier qualifies, so the
+# only arms are previous ones held over the exit bar.
 cooling_off_days: 7
 
 # An arm keeps its seat until it falls under this share for the whole trailing
@@ -204,6 +232,6 @@ min_ranked_share: 0.01
 # future effect; it does not undo a retirement the plant already caused —
 # by the time it expires the model is no longer an arm, so the exit bar no
 # longer applies to it and a trickle of real usage never re-seats it. It
-# returns by clearing the ENTRY bar, by being the newest in its tier, or
-# by hand.
+# returns by clearing the ENTRY bar, by being the newest in a tier that
+# some model of its own clears the ENTRY bar in, or by hand.
 catalogue_seen_max_age_days: 180
