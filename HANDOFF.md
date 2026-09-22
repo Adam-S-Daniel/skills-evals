@@ -194,6 +194,14 @@ linked comment there.
   roster; after it, a fixture run costs roughly $10–14 instead of $1.71
   (four arms, judge at twice Opus prices). Full accounting: the
   [board comment](https://github.com/Adam-S-Daniel/skills-evals/issues/126#issuecomment-5777021600).
+  **Superseded the same day.** Adam then narrowed the rule that produced
+  that proposal: the newest model in a tier is seated only where that tier
+  already has a model over the usage bar, so haiku and fable-5-1 lose their
+  seats and the next run proposes **two** arms, sonnet-5 and opus-5, at
+  roughly $5–7 a fixture run. Do not open the PR from `c4a8bea` — it still
+  renders the four-arm file; let the next run recompute `roster/proposal`
+  first. See `docs/how-it-works.md` § 2 and § 7, and the README and
+  DESIGN.md roster sections.
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
 - **Planned next steps, in order** (full list with cost ranges in
