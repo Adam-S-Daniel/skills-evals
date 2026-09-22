@@ -4,7 +4,7 @@
 systematic-evals effort (skills and fleet guidance, six epics across five
 repositories), where it stands, what is parked and why, and how to pick it up.
 It was written by the orchestrator session when Adam paused the programme on
-2026-09-08 (decision 9 below) and **last updated on 2026-09-13** (see § 0; the 2026-09-08 state after #129's
+2026-09-08 (decision 9 below) and **last updated on 2026-09-15** (see § 0A; § 0 preserves the September 13 session, and the 2026-09-08 state after #129's
 round 14, decision 11, follows it): #131 and #130 merged in the parked-PR wave, #129 ran a
 fourteenth review round, was NOT CLEAN on both halves again, and is now answered
 — revert round 14's ITEM 2, then redesign the roster's denominator around a
@@ -28,7 +28,385 @@ reconstructed from memory.
   status blockquote at the top of its body and a "Review rounds" record with
   each round's findings, fix-round session links and verified counts.
 
-## 0. Session of 2026-09-13 — RESUME HERE (supersedes § 7 where they differ)
+## 0B. Session of 2026-09-21 — RESUME HERE
+
+This section supersedes § 0A where the two differ. Adam asked to proceed from
+the [September 15 checkpoint](https://github.com/Adam-S-Daniel/skills-evals/pull/157#issuecomment-5685103205)
+on 2026-09-21, from a Claude Code session on the Windows laptop driving the
+WSL clone (`/home/passp/repos/skills-evals`; the Windows clone
+`D:\repos\adam-s-daniel\skills-evals` has no Python and is used for `gh` only).
+At about 14:35 UTC Adam authorized merges, releases, consumer bumps and manual
+workflow dispatch for the session, required all workers to be local (no cloud
+sessions), and later asked to tie off at about 20% of weekly usage. The
+session tied off at about 21:00 UTC with the weekly meter at **6%** and three
+merges landed (see the tie-off subsection). **Resume when Adam requests it;
+the only open decision is his ([#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162)).**
+
+### PR #153: merged; first live proposal run verified
+
+Adam authorized merges, releases and workflow dispatch in chat at about
+14:35 UTC on 2026-09-21 and said he would be away for at least three hours.
+[PR #153](https://github.com/Adam-S-Daniel/skills-evals/pull/153) merged at
+14:37 UTC as merge commit
+[`cddb224`](https://github.com/Adam-S-Daniel/skills-evals/commit/cddb224c464719d1a26212802b986ae31e3e941c)
+(`--match-head-commit efb48b8`; parents `47bb7a9` and `efb48b8`; head and
+merge both verified ancestors of `origin/main`). On the merge:
+[CI](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35613393147)
+and [Propagation](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35613393109)
+success. The deferred final verification that preceded the merge is in the
+[2026-09-21 checkpoint comment](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5762059943):
+generated multi-arm roster full suite **1446 / 2 skipped, exit 0**,
+propagation **164 / 1 skipped**, sentinel run **1446 / 2 skipped** with one
+nit filed as [#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161).
+The merge and live-run record is the
+[next comment](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5762476957).
+
+[PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129) is
+superseded; GitHub marked it merged through `cddb224` because its head is
+#153's base ([note](https://github.com/Adam-S-Daniel/skills-evals/pull/129#issuecomment-5762312946)).
+
+**First real proposal run:**
+[run 35613563071](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35613563071),
+`workflow_dispatch` on `main` with the default fixture, every step success.
+The eval ran on the committed roster; exhibit and badge published to
+`eval-results` `9b6f3b5` (`previous_state: compared`, `proposal.status:
+differs`, 16 changes, nothing retired); a valid proposal was pushed as one bot
+commit [`c10df5d`](https://github.com/Adam-S-Daniel/skills-evals/commit/c10df5d333f86e3a65ea0fb807122f2f97fceea3)
+on `roster/proposal` (parent `cddb224`, only `evals/roster.yml`); tracking
+issue [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162)
+carries the reasons and the compare link.
+
+**Open decision for Adam, not blocking:** #162 proposes four arms
+(`claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5`,
+`claude-fable-5-1`) and judge `claude-fable-5`, every seat by the
+newest-per-tier fallback because **no usage census has ever been published**
+(`usage/latest.json` is absent on `eval-results`; the census is step 6 of the
+Tier-3 account-store Routine in `evals/propagation/ROUTINE.md` and needs a
+transcript-bearing machine). It was not merged: it would multiply the paid
+weekly run and raise the judge tier on no usage evidence, which is the human
+call ADR 0001 reserves. Two ways forward: publish the census first so the next
+Monday run proposes from usage, or open and merge a PR from `roster/proposal`
+as is. The weekly run keeps proposing (and re-pushing `roster/proposal`) until
+the committed file matches.
+
+Local evidence: `.evals-resume-20260915/resume-20260921-final153/` on the WSL
+workstation.
+
+### Issue #152: merged as PR #163 (`47ca1e6`) after five review rounds
+
+The branch was merged with `origin/main` `cddb224` as
+[`fa9c788`](https://github.com/Adam-S-Daniel/skills-evals/commit/fa9c78830e2c940e5332d53912aa122915b38172)
+(whitespace-only conflict) and opened as
+[PR #163](https://github.com/Adam-S-Daniel/skills-evals/pull/163). Each
+round had a fresh independent local reviewer on a read-only archive with
+parse-only probes; each fix round was a local worker in the branch worktree,
+pushed by the parent after release.
+
+| Head | Review | Result |
+|---|---|---|
+| `fa9c788` | round 2 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763359157)) | all seven round-1 findings closed, merge clean; NOT CLEAN on six new should-fixes |
+| [`4fefa14`](https://github.com/Adam-S-Daniel/skills-evals/commit/4fefa14faab2d42398fc247ec1fae758a4c13bed) (fix round 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5763979563)) | round 3 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764206754)) | six closed; NOT CLEAN on two **repeats** (sink preamble weaker than the helper rule; `shell` via `**kwargs`); **two-strikes fired**, decision 2 budget of three opened |
+| [`a823fd8`](https://github.com/Adam-S-Daniel/skills-evals/commit/a823fd8891379c1421c37f36d7adc0e68a33e767) (fix round 3 = budget 1, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5764946603)) | round 4 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5765213187)) | both closed, both declared scope bounds accepted; NOT CLEAN on one repeat (`from os import environ` not bound to the sentinel) |
+| [`9bdcb95`](https://github.com/Adam-S-Daniel/skills-evals/commit/9bdcb954127739930f819223778cb50db125e472) (fix round 4 = budget 2, [record](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5765974517)) | round 5 ([verdict](https://github.com/Adam-S-Daniel/skills-evals/pull/163#issuecomment-5766272464)) | **CLEAN**: 0 blockers, 0 should-fix, 3 nits, none a repeat |
+
+Final head `9bdcb95`: full suite **1474 / 2 skipped, exit 0**, propagation
+**164 / 1 skipped**, focused 41 and 40, CI `test`, `gate` and all five
+propagation arms success. Merged at 19:28 UTC with
+`gh pr merge --merge --match-head-commit 9bdcb95…` as merge commit
+[`47ca1e6`](https://github.com/Adam-S-Daniel/skills-evals/commit/47ca1e69dfb6f5819d62b29773efd23369ff1599)
+(parents `cddb224`, `9bdcb95`; both verified ancestors of `origin/main`).
+Post-merge [CI](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35645037775)
+and [Propagation](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35645037758)
+on `47ca1e6` success. Issue #152 closed by the merge. The third budget round
+was not needed. Both § 0A inspection questions were verified as real defects
+in round 2 and closed in fix round 2.
+
+What the scanner now holds and does not hold is in the docstring of
+`test_every_suite_forking_test_in_this_repo_stands_down_in_a_child` in
+`test/run_tests.py` on `main`. Documented out of scope: `functools.partial`,
+`runpy.run_path` and `importlib.import_module` handoffs, an unparsed callee
+not handed the environment mapping, an unresolvable argv name with no
+shell/spread/string shape, an unparsed base class.
+
+Follow-ups [#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161)
+(the `#147` rows removed a pre-existing `roster/` in the checkout) and
+[#164](https://github.com/Adam-S-Daniel/skills-evals/issues/164) (round-5
+nits) were fixed by one local worker on `claude/skills-evals-161-164` and
+**merged as [PR #165](https://github.com/Adam-S-Daniel/skills-evals/pull/165)**,
+merge commit [`3515904`](https://github.com/Adam-S-Daniel/skills-evals/commit/3515904050cac78b0b233080c7de0cc1c0945be9)
+(head `8cca426`; independent review CLEAN with five nits,
+[record](https://github.com/Adam-S-Daniel/skills-evals/pull/165#issuecomment-5767254812);
+full suite **1478 / 2 skipped, exit 0**; the #161 sentinel check that failed
+on the morning's verification now passes with four planted operator files
+byte-identical). Post-merge
+[CI](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35652910486)
+and [Propagation](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35652916645)
+success. The residual nits are
+[#166](https://github.com/Adam-S-Daniel/skills-evals/issues/166) (a stronger
+kill in the `#147` rows against a literal resolver revert; header-introduced
+bindings in the bound walk; the environment-method sentinel under unmodelled
+binding spellings), none blocking, all with zero live occurrences.
+
+Evidence directories under `.evals-resume-20260915/`:
+`resume-20260921-i152-merge/`, `review152-round2/`, `fix152-round2/`,
+`review152-round3/` (probes; verdict text is the PR comment),
+`fix152-round3/`, `review152-round4/`, `fix152-round4/`,
+`review152-round5/`, `fix161-164/`, `review165/`.
+
+### Tie-off state at the end of 2026-09-21
+
+`main` is [`46f5246`](https://github.com/Adam-S-Daniel/skills-evals/commit/46f5246423daa2b9d588b8ba29e861f7113698e0)
+at the end of 2026-09-22. Merges across 2026-09-21/22, each with a merge
+commit on the expected head and ancestry verified: PR #153 `cddb224`,
+PR #163 `47ca1e6`, PR #165 `3515904`, PR #157 `fd18f9b` (this handoff and
+`docs/how-it-works.md`), PR #167 `46f5246` (the usage-qualified-tier rule).
+The plain-English guide with results locations, fixture descriptions,
+remaining steps and cost ranges is [`docs/how-it-works.md`](docs/how-it-works.md);
+the results branch README carries a per-fixture table and a pointer to it. Issues closed today: #152, #161, #164; opened:
+#162 (by the workflow), #166. The
+[status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
+body's current-state header was rewritten to this state and every step is a
+linked comment there.
+
+- **#162, the first roster proposal:** Adam chose to publish the census
+  first. `usage/latest.json` is now on `eval-results` at
+  [`47adc70`](https://github.com/Adam-S-Daniel/skills-evals/commit/47adc7003fb5c469071751c5368413dfdafdae44)
+  (Routine step 6 on the WSL workstation, default transcript root; 6 model
+  ids plus `other`, 8 ISO weeks, counts only; the Windows-side transcripts,
+  four project directories, were not included). The next `eval.yml` run,
+  Monday 07:00 UTC or a manual dispatch, proposes from usage and updates
+  #162 and `roster/proposal`. The current fallback proposal was not merged.
+  Adam then asked for a manual dispatch: [run 35730106365](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35730106365)
+  on `main` `3515904` succeeded in 6 min 24 s wall clock. **Cost, from the
+  org's API usage export for 2026-09-22 (workspace `skills-evals-ci`, the
+  only run that day): $1.71** — Sonnet 5 arms $0.89 (output $0.31, cache
+  read $0.30, cache write $0.28), Opus 4.8 judge $0.78 (cache write $0.59,
+  output $0.18, cache read $0.01), Haiku 4.5 preflight $0.04. Real runs bill
+  the API org through the WIF-minted bearer, not the weekly allowance; the
+  one-point tick observed on the meter was this session's own tracking.
+  Results 8/8 vs 8/8 objective, judge 9.2 vs 8.9, badge still green
+  over the 5-run window. The census was read and
+  [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162) now
+  carries the **usage-based proposal** (`roster/proposal` `c4a8bea`): sonnet-5
+  45.4% and opus-5 45.2% of rankable usage seated by share; haiku and
+  fable-5-1 seated by the newest-per-tier rule at 6.3% and 3.0%; judge
+  fable-5. **Adam reviewed and approved #162 on 2026-09-22** (in chat, with
+  the instruction to record it, not act on it yet). The remaining action is
+  the human one ADR 0001 reserves: open a PR from `roster/proposal`
+  (`c4a8bea`, only `evals/roster.yml`), let CI run, merge with a merge
+  commit. Until then the Monday run keeps proposing and runs on the one-arm
+  roster; after it, a fixture run costs roughly $10–14 instead of $1.71
+  (four arms, judge at twice Opus prices). Full accounting: the
+  [board comment](https://github.com/Adam-S-Daniel/skills-evals/issues/126#issuecomment-5777021600).
+  **Later on 2026-09-22 Adam changed the rule:** the newest-per-tier seat
+  applies only to tiers that already qualify by usage. Implemented and
+  **merged as [PR #167](https://github.com/Adam-S-Daniel/skills-evals/pull/167)**,
+  merge commit [`46f5246`](https://github.com/Adam-S-Daniel/skills-evals/commit/46f5246423daa2b9d588b8ba29e861f7113698e0)
+  (independent review CLEAN with four nits, filed as
+  [#168](https://github.com/Adam-S-Daniel/skills-evals/issues/168); full
+  suite 1490 / 2 skipped). Under it today's census yields **two arms**,
+  `claude-sonnet-5` and `claude-opus-5`, and the unchanged judge rule now
+  picks **`claude-fable-5-1`** (it is no longer an arm; same tier and price
+  as fable-5). The four-arm proposal Adam approved earlier is superseded:
+  do not open a PR from `c4a8bea`. The next `eval.yml` run (Monday 07:00
+  UTC or a dispatch) recreates `roster/proposal` under the new rule and
+  updates #162; a PR from that head, CI, and a merge commit is then the
+  remaining human step. Expected run cost after that merge: about $5–7
+  per fixture run (two arms, fable-tier judge).
+  **Superseded the same day.** Adam then narrowed the rule that produced
+  that proposal: the newest model in a tier is seated only where that tier
+  already has a model over the usage bar, so haiku and fable-5-1 lose their
+  seats and the next run proposes **two** arms, sonnet-5 and opus-5, at
+  roughly $5–7 a fixture run. Do not open the PR from `c4a8bea` — it still
+  renders the four-arm file; let the next run recompute `roster/proposal`
+  first. See `docs/how-it-works.md` § 2 and § 7, and the README and
+  DESIGN.md roster sections.
+- **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
+  spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
+- **Planned next steps, in order** (full list with cost ranges in
+  [`docs/how-it-works.md`](docs/how-it-works.md) § 7): (1) ~~move the judge
+  calls in `eval.yml` to the Batch API~~ — **deferred by Adam on 2026-09-22**:
+  not implemented for now; revisit its projected cost-effectiveness after a
+  few weeks (around 2026-10-13) against the two-arm roster's real judge
+  spend, tracked in [#170](https://github.com/Adam-S-Daniel/skills-evals/issues/170); (2) the owed real N=3 runs for the merged fixtures, held by
+  decision 8; (3) #166 nits; then the harness lane #139, #66, #64, #68/#99,
+  #69/#121, #70, #71/#122, #65/#98, explorer and docs. Roughly 60–120 points
+  of allowance in total at 2026-09-21 local rates.
+- All workers and reviewers ran locally through the Agent tool in
+  `git archive` scratch exports with `env -i` and throwaway profiles; each
+  released clean with zero test children and deleted its scratch. Local
+  worktrees left in place under `.claude/worktrees/`:
+  `codex-suite-fork-152-20260915` (clean at `9bdcb95`, merged),
+  `claude-161-164` (clean at `8cca426`, merged),
+  `codex-reconcile-evals-20260915` (clean at `efb48b8`, merged),
+  `codex-handoff-evals-20260915` (this branch), `eval-results` (clean at
+  `47adc70`, the census publication). They can be removed with
+  `git worktree remove` when convenient; none holds unpublished work.
+- Usage: weekly all-models 6%, weekly Fable 3% at tie-off (session-side
+  reading of the account window).
+
+### Everything else
+
+PR #124 in `_agent-guidance`, both fixture lanes, and the #139 receipt hold
+are exactly as § 0A records them. The scheduled Monday eval on `main` keeps
+running on the committed roster regardless of #153.
+
+## 0A. Session of 2026-09-15 — RESUME HERE
+
+This section supersedes the September 13 state below. Adam stopped this
+continuation at a clean checkpoint after the account-wide weekly meter rose
+from 22% at 15:49 UTC to 58% at 17:22 UTC. The remaining PR #153 merge and
+first-live-run milestone was estimated to cost another 6–10 percentage points,
+above his 5-point ceiling; completing and documenting this checkpoint was
+estimated at 2–3 points. Likely resume next week in either Codex or Claude. Do not
+launch another session automatically; resume when Adam requests it. Do not
+repeat completed broad review without a new concern.
+
+### Roster redesign: PR #153
+
+[PR #153](https://github.com/Adam-S-Daniel/skills-evals/pull/153), branch
+`claude/skills-evals-147`, is pushed, fetched, exact-SHA verified and clean at
+`efb48b8849ffec0996348908aed80bf10994a3d7`. Its source worktree is
+`skills-evals/.claude/worktrees/codex-reconcile-evals-20260915`, local branch
+`codex/reconcile-evals-20260915`. All source and test-isolation fixes are done;
+the worker released the clean tree with zero children. The
+[latest public checkpoint](https://github.com/Adam-S-Daniel/skills-evals/pull/153#issuecomment-5684654811)
+records the preceding round-three state and its single test-helper finding.
+
+- The final test-only repair confines the proposal and results shell fixture
+  to a disposable workspace. Its independent red/green proof reproduced the
+  old caller-byte overwrite and confirmed the fixed helper preserves badge,
+  roster and results bytes. Focused `TestIssue147` verification is **40 tests,
+  exit 0**.
+- The final code review is **CLEAN**, contingent on accepting the separate
+  exact-head full verification. It found no new should-fix and did not repeat
+  unchanged production review.
+- Exact-head baseline: **1,446 tests, 2 skipped, exit 0** in 354.554 seconds;
+  propagation: **164 tests, 1 skipped, exit 0** in 2.470 seconds. All archive
+  manifests matched before and after at
+  `ca4bb2ab1f09b6b0028738d83dc14f982478073320db6e23f001a1ceda83a434`;
+  source manifests likewise matched at
+  `22f0b114f83a1b612c5fe7a229d172cd0bffe1370950f347c4da6580d0be5e2b`.
+  The local report is `final153-verification/REPORT.md`. Fixture parity from
+  the earlier candidate remains 13 common skill fixtures and 98 checks per
+  revision; it was not rerun because this final delta changes only the
+  isolated test helper.
+- The full generated multi-arm roster run and a bounded final adversarial
+  confirmation of test isolation were deliberately deferred under the
+  allowance stop. Earlier production adversarial coverage passed 11 tests
+  plus 2 review checks; the previous NOT CLEAN verdict concerned only the now
+  fixed test helper. Do not treat that earlier evidence as the missing final
+  confirmation.
+- No merge or live proposal dispatch occurred. Before merging, run the
+  generated full suite and bounded adversarial confirmation, verify current
+  PR CI plus legacy and `main` status surfaces, and accept the exact-head
+  baseline and propagation evidence. Merge with a merge commit using the
+  expected PR head, then verify the actual merge commit and its ancestry on
+  `main`. Close [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
+  as superseded, then dispatch and verify the first real proposal run.
+
+### Suite-fork guard: issue #152
+
+[Issue #152](https://github.com/Adam-S-Daniel/skills-evals/issues/152) is
+pushed, fetched and exact-SHA verified at
+`d6021b648724ac10aafa699c7b99b58d3e29d053` on branch
+`codex/suite-fork-152-20260915` in
+`skills-evals/.claude/worktrees/codex-suite-fork-152-20260915`. The first
+published implementation, `d0b492148e946704aa0165720a1c28ef4b9fb841`, had a
+NOT CLEAN review with seven findings, preserved in the
+[public review checkpoint](https://github.com/Adam-S-Daniel/skills-evals/issues/152#issuecomment-5684502689).
+The follow-up repairs the AST inventory, Python-target classification,
+source-order binding, fail-closed guard proof and environment-marker precedence.
+Its known inventory is 19 Python files, 42 explicit Python subprocess sites and
+one generic sink; five suite-forking helpers are both discovered and verified.
+
+- Final baseline: **1,195 tests, 2 skipped, exit 0**; propagation: **164
+  tests, 1 skipped, exit 0**; focused checks: **21 tests, exit 0**. The repair
+  also passed 26 actual-body mutation assertions, while three external mutants
+  each failed their two-test runner with exit 1 as required. All 566-file
+  manifests matched before and after. The local report is
+  `fix152-round1/REPORT.md`.
+- No fresh independent review or PR exists for the repaired candidate, and it
+  has not been integrated with PR #153 or `main`. Resume those steps only after
+  PR #153 merges. Read the final SHA before investigating two **unverified
+  source-inspection questions**, which are not established defects: enclosing
+  parameters may need to invalidate a same-named module constant before nested
+  closures are collected; and a skip helper's side effects before it reads the
+  child marker may defeat the guard proof. Do not execute a hostile helper
+  mutant. Consolidate only reproduced findings in the next independent review
+  before starting another fix cycle.
+- Then continue [issue #139](https://github.com/Adam-S-Daniel/skills-evals/issues/139)
+  under its existing receipt hold.
+
+### InstructionsLoaded receipts: _agent-guidance PR #124
+
+[_agent-guidance PR #124](https://github.com/Adam-S-Daniel/_agent-guidance/pull/124)
+remains at `6e4d3b2`. Round 5 is **not clean**: the code reviewer reproduced a
+fallback race that overwrites a newer unread receipt, and the claimed bounded
+receipt read is followed by an unbounded reread that can still block if the
+file changes type. Both independently prompted reviewers produced consistent
+synthetic receipt measurements; the adversarial worker was then stopped by an
+automated security filter before completing its review report. Its partial
+measurements survive, but are not a completed review.
+
+The code review's full suite reports **1,797 passed, 0 failed, exit 0**. The
+old root-run count was 1,790: seven existing permission assertions run only
+for a non-root user and all seven passed here, resolving the difference.
+All three separate gates pass. The source branch was not changed, and it
+also conflicts with current `main`.
+
+The [round 5 checkpoint report](https://github.com/Adam-S-Daniel/_agent-guidance/pull/124#issuecomment-5683345936)
+preserves both findings, their reproduction results, and verification limits.
+
+This was the review after the last previously authorized fix round. Follow the
+existing decision process before starting another fix round; do not silently
+treat this handoff as an additional fix-round authorization.
+
+### Local continuation pointers
+
+Persistent session artifacts are under the local workspace's
+`.evals-resume-20260915/`, including `CURRENT_SESSION.md`, briefs, verifier
+logs, review reports and the allowance decision. These local files have no
+public links. Temporary `/tmp` artifacts are not continuation records; keep new
+evidence in the persistent workspace storage.
+
+Inactive disarmed review archives from the PR #153 round-one code review and
+the interrupted PR #124 base/head review were removed after their evidence was
+preserved. The PR #153 cleanup was initially rejected by automatic review;
+after all 389 files were proved identical to immutable archives, the repository
+was confirmed clean and the profile directories empty, ordinary escalation
+approved it and deletion succeeded. No real source worktree was removed or
+changed. Both source workers released clean trees with zero test descendants;
+no cleanup blocker remains.
+
+- Candidate worktree: `skills-evals/.claude/worktrees/codex-reconcile-evals-20260915`,
+  local branch `codex/reconcile-evals-20260915`.
+- Issue #152 worktree: `skills-evals/.claude/worktrees/codex-suite-fork-152-20260915`,
+  local branch `codex/suite-fork-152-20260915`.
+- Handoff worktree: `skills-evals/.claude/worktrees/codex-handoff-evals-20260915`,
+  branch `codex/handoff-evals-20260915`.
+- Receipt source worktree: `_agent-guidance/.claude/worktrees/codex-resume-receipts-20260914`.
+
+Portable resume sequence (Codex or Claude):
+
+1. Read this Git-backed §0A and the
+   [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
+   If available, also read the local
+   `/home/passp/repos/.evals-resume-20260915/CURRENT_SESSION.md`. Fetch the
+   named remote refs and create dedicated worktrees when the listed local
+   paths do not exist; then confirm their heads match this checkpoint.
+2. From the PR #153 candidate worktree, run the generated multi-arm full suite
+   in the already specified isolated archive environment, then perform the
+   bounded final adversarial confirmation. Do not start another broad review
+   unless new evidence creates a concern.
+3. Read current PR #153 CI/check conclusions and `main`; merge only after every
+   required condition above is green. Verify the merge commit, close PR #129,
+   then dispatch and verify the first live proposal run.
+4. Merge current `main` into the issue #152 branch, run only affected
+   verification, obtain its first independent review, and open its PR.
+   Continue #139 afterward. Leave PR #124 and both fixture lanes stopped.
+
+## 0. Session of 2026-09-13 (superseded where § 0A differs)
 
 Orchestrator session `session_01V1or9W61binLi5mFQXyKKR` (Fable 5.1), started
 13:58 UTC under Adam's instruction to use the remaining weekly allowance
@@ -150,7 +528,7 @@ NOT survive; the branches do.
 3. Verifiers: skills-evals `python3 test/run_tests.py` (exit 0; counts above)
    and `python3 test/test_propagation.py` (164); _agent-guidance
    `./test/run-tests.sh` plus the three gates.
-4. Next commands, in order: 
+4. Next commands, in order:
    - **#153 (#147):** Rule 19 on `6136234` against `main`; then round 1, code
      + adversarial (one-way-door: `eval.yml`), hollowness vs `79b1ebe`; CLEAN
      → merge with a merge commit → close #129 as superseded → the first real
@@ -309,7 +687,21 @@ reopen epic #62 or #96.** Nothing else in either lane was dispatched, and the
 real N=3 runs owed for the now-eight merged skill fixtures are still not
 pursued. #81 and #84 stay OPEN as "merged hermetic; real run stopped".
 
-#### #129's state, precisely (this is where a resuming session starts)
+#### #129's state, precisely (superseded — see the note below)
+
+> **SUPERSEDED by #147, on branch `claude/skills-evals-147`.** ADR 0001
+> moves the roster the harness runs on into `evals/roster.yml`, committed
+> on `main`, and turns `harness/roster.py`'s output into a proposal. All
+> five defects below are closed, not by a fifteenth local check but by the
+> inputs they ride on no longer reaching a decision; every one carries a
+> regression row in `TestIssue147` that is RED on `424eebf`. The sections
+> below are kept as the RECORD of how #129 got to where it stopped, so
+> read them in the past tense: the mechanisms they name — the anchored
+> denominator and its veto, the fold-relation question the ageing rule
+> asked, both ageing exemptions, both length caps, the carry ceiling and
+> the tiering — are all deleted. `docs/decisions/0001-roster-trusted-on
+> -main.md` names each of them by identifier; nothing else in the tree
+> does.
 
 Branch `claude/skills-evals-67` at **`424eebf`**, pushed, **suite green — 1321
 tests exit 0, 2 skipped**, run by the orchestrator in the real worktree with
@@ -387,17 +779,19 @@ census key carrying a family word restores the plant's immunity. It raises the
 attack from one line to two; it does not close it. Do not re-derive this.
 
 **BLOCKERS 2 and 3 are survivals, measured byte-identical on both heads.**
-(2) `is_needed_hop` asks whether a chain needs an id in *this* run's census, but
+(2) the fold-relation question the ageing rule asked was about *this* run's
+census, but
 eviction is permanent and a kept hop's `last_seen` is never refreshed — so one
 quiet window ages the bridge out for good and the next busy window retires a live
 arm carrying a true 23.9% at 0.1%, rc 0, empty stderr, permanently, with **no
 hostile input at all** (run 2's `previous.json` is run 1's own output).
 Reproduced at bridge ages 181/200/365/400 days; the 179-day control does not
-fire. (3) = round 13's BLOCKER C, untouched: `is_needed_hop` walks *forward* from
+fire. (3) = round 13's BLOCKER C, untouched: that question walked *forward* from
 census keys, so it covers an entry that is a **hop** and not one that is the fold
 **source** — the documented B1'/round-10 shape, a model observed under a DATED id
 whose census usage is recorded under the UNDATED alias. `tier()` misses it (raw
-identity), `is_needed_hop` misses it (wrong direction). One `last_seen` date, and
+identity), the fold-relation question missed it (wrong direction). One
+`last_seen` date, and
 9,500 real turns leave the denominator permanently: a hold-over becomes a seat at
 `carries 100.0%` on a true 5.0%. No planter needed — the date is what this
 harness itself wrote.
@@ -411,7 +805,8 @@ this exact failure once, as round 12's should-fix 1, in the same function. Also
 `:2917-2920`, `:844` (`_format_share`'s "no caller can reach" clause, falsified
 by round 14's own new call site) and `test/run_tests.py:28502`. And the
 anchor-tolerance veto is structurally blind to the **deletion** direction —
-removing entries shrinks `previous_only` toward zero — which nothing in the `#:`
+removing entries shrinks the previous-roster-only denominator toward zero —
+which nothing in the `#:`
 block says.
 
 **Why fourteen rounds have not closed this, in one sentence.** *Every surviving

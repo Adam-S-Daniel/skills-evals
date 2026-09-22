@@ -287,6 +287,13 @@ class LockAndDigestTests(unittest.TestCase):
         # Binds this third copy of the algorithm to agentskills' own. Skipped
         # where no registry is checked out; propagation.yml runs this suite
         # WITH one, and the live plugin arm is the same binding by other means.
+        # The child marker is read FIRST, before any other statement of this
+        # sink. A stand-down that runs after other work is only as good as
+        # that work's promise never to touch $SKILLS_EVALS_SUITE_CHILD, and
+        # test/run_tests.py's scanner no longer takes that promise from
+        # anything it cannot read.
+        if os.environ.get("SKILLS_EVALS_SUITE_CHILD"):
+            raise unittest.SkipTest("child suite run — guarded lock generator")
         registry = run_propagation.resolve_registry(None)
         generator = registry / "scripts" / "generate_skills_lock.py"
         if not generator.is_file():
@@ -295,8 +302,10 @@ class LockAndDigestTests(unittest.TestCase):
         self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         skill = write_skill(root / "s", "s", "desc",
                             extra={"scripts/x.py": "print(1)\n"})
+        env = dict(os.environ)
+        env["SKILLS_EVALS_SUITE_CHILD"] = "1"
         proc = subprocess.run([sys.executable, str(generator), "--digest", str(skill)],
-                              capture_output=True, text=True, timeout=60)
+                              capture_output=True, text=True, timeout=60, env=env)
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn(arms.digest_skill_dir(skill), proc.stdout)
 

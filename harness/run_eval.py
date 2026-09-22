@@ -3,8 +3,12 @@
 
 Usage:
     python3 harness/run_eval.py evals/<skill> --arm objective-only
-    python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...] [--no-judge]
+    python3 harness/run_eval.py evals/<skill> --arm both [--registry NAME=PATH ...]
+        [--roster PATH] [--no-judge]
     python3 harness/run_eval.py evals/guidance/<id> --arm both [--guidance PATH]
+
+For a skill fixture, the model precedence is `--model` > the fixture's
+`model:` > the committed roster > error.
 
 `--arm objective-only` scores a workspace as-is (no agent invocation) — the
 pristine seed should FAIL the fixture's checks; a correctly reworked copy
@@ -418,8 +422,8 @@ def resolve_registries(cli_values: list[str] | None, env_value: str | None,
         else:
             path = (base_dir / ".." / name).resolve()
             source = "sibling default"
-        resolved[name] = {"path": path, "layout": entry["layout"], "url": entry["url"],
-                          "source": source}
+        resolved[name] = {"name": name, "path": path, "layout": entry["layout"],
+                          "url": entry["url"], "source": source}
     return resolved
 
 
@@ -438,8 +442,8 @@ def _validate_registry_paths(registries: dict[str, dict]) -> None:
             continue
         if not entry["path"].is_dir():
             raise ValueError(
-                f"registry {name!r} ({entry['source']}) resolves to "
-                f"{entry['path']}, which is not a directory")
+                f"registry {name!r} ({entry['source']}) does not resolve "
+                f"to a directory")
 
 
 def registry_for_url(registries: dict[str, dict], url: str) -> dict:
@@ -486,6 +490,182 @@ def _validate_skill_name(skill: str) -> None:
         raise ValueError(
             f"invalid skill name {skill!r}: must be a single non-empty path "
             "segment with no path or glob metacharacters")
+
+
+#: THE TRUSTED ROSTER (ADR 0001, #147). `main` is ruleset-protected and
+#: pull-request-only, so an arm, the judge, the preflight model or a
+#: `catalogue_seen` entry cannot appear here or vanish from here without a
+#: reviewed commit — which is the one property the published
+#: `roster/latest.json` on `eval-results` never had.
+TRUSTED_ROSTER = Path(__file__).resolve().parent.parent / "evals" / "roster.yml"
+
+
+def _resolve_roster(cli_value: Path | None) -> Path:
+    """Model roster: --roster, else $EVAL_ROSTER, else the COMMITTED file.
+
+    THE DEFAULT USED TO BE `roster/latest.json`, materialised by CI from the
+    `eval-results` branch and pointed at by `$EVAL_ROSTER` — a branch other
+    jobs on other machines write to, which the design treats as untrusted
+    input. That made one line on that branch decide which models every
+    unpinned fixture ran against, and fourteen review rounds on PR #129
+    could not make a local check over it safe (issue #147). The roster the
+    harness RUNS ON is `evals/roster.yml` now; `roster/latest.json` is an
+    exhibit for the explorer and is read by no decision.
+
+    `--roster` and `$EVAL_ROSTER` stay as overrides for tests and local runs
+    (ADR 0001, decision 1). Neither is set by `eval.yml` any more.
+
+    Whether a missing roster is an error depends on the fixture — see
+    select_models(): it is for an unpinned one, and it is not for a pinned one.
+    """
+    if cli_value:
+        return Path(cli_value).expanduser()
+    env = os.environ.get("EVAL_ROSTER")
+    if env:
+        return Path(env).expanduser()
+    return TRUSTED_ROSTER
+
+
+def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
+    """(roster, problem). Never raises, and never returns a half-shaped roster.
+
+    YAML AND JSON, DECIDED BY CONTENT AND NOT BY EXTENSION (#147). The
+    trusted roster is YAML, because a human edits it in a reviewed pull
+    request and YAML is what every other hand-edited file in this repo is;
+    a `--roster` pointing at a published `roster/latest.json` is still JSON.
+    JSON is a subset of YAML 1.2, so `yaml.safe_load` reads both and there
+    is no extension sniff to get wrong — a file named `.json` holding YAML,
+    or the reverse, reads the same either way.
+
+    The NEVER-RAISES, NEVER-HALF-SHAPED CONTRACT IS UNCHANGED, and it is
+    what this function is for. Every one of these shapes was reachable and
+    three of them crashed with an AttributeError three frames down: a
+    top-level list, `arms` as a list of strings, `judge` as a string, a
+    truncated file, an empty file. A named problem is the whole difference
+    between a run that says what is wrong and a stack trace in a CI log.
+    The problem names the same three cases it always did — absent/empty,
+    unreadable, not a mapping — so nothing downstream has to learn a new
+    vocabulary for a parser change.
+    """
+    if roster_path is None:
+        return None, "no roster path was resolved"
+    path = Path(roster_path)
+    # The basename, not the full path (see select_models' own messages,
+    # round 2 item 15): this problem string flows unchanged into
+    # select_models' return value, which the caller writes into
+    # summary.json — and eval.yml commits that file to the public
+    # eval-results branch.
+    if not path.is_file() or path.stat().st_size == 0:
+        return None, f"no model roster at {path.name}"
+    try:
+        with open(path, encoding="utf-8") as f:
+            document = yaml.safe_load(f)
+    # `yaml.YAMLError` covers a truncated or otherwise unparseable
+    # document (it is `ScannerError`/`ParserError`'s base), and the JSON
+    # errors stay named beside it because `json` is still in this module's
+    # vocabulary and a caller reading the message wants the class that
+    # fired, not a category. `RecursionError` is here for the same reason
+    # roster.read_json has it: a deeply nested document exhausts the
+    # parser's stack rather than failing to parse, and used to escape as a
+    # traceback carrying the runner's absolute paths.
+    except (yaml.YAMLError, json.JSONDecodeError, OSError, UnicodeDecodeError,
+            ValueError, RecursionError) as exc:
+        return None, f"model roster at {path.name} is unreadable ({type(exc).__name__})"
+    if not isinstance(document, dict):
+        return None, f"model roster at {path.name} is not a mapping"
+    return document, None
+
+
+def roster_models(roster: dict | None) -> tuple[list[str], str | None, bool, int]:
+    """(arm ids, judge id, judge-is-also-an-arm, skipped) out of a roster document.
+
+    Anything the wrong shape is dropped here rather than trusted downstream.
+    `judge.is_arm` is the roster's own flag; membership in `arms` is the fact
+    behind it, and an older roster carrying no flag must not read as consent.
+
+    `skipped` counts `arms` entries dropped for being the wrong shape (not a
+    dict with a string `id`). It matters because dropping them silently once
+    let the judge-is-arm check pass against an EMPTIED set: a malformed
+    `arms` list (e.g. raw strings instead of `{id, reason}` objects) parsed
+    to `arm_ids == []`, so `judge_id in arm_ids` was always False even when
+    the roster's own (unparsed) entries plainly named that judge as an arm.
+    """
+    entries = roster.get("arms") if isinstance(roster, dict) else None
+    arm_ids = []
+    skipped = 0
+    if isinstance(entries, list):
+        for a in entries:
+            if isinstance(a, dict) and isinstance(a.get("id"), str) and a["id"]:
+                arm_ids.append(a["id"])
+            else:
+                skipped += 1
+    judge_entry = roster.get("judge") if isinstance(roster, dict) else None
+    judge_id = judge_entry.get("id") if isinstance(judge_entry, dict) else None
+    if not isinstance(judge_id, str) or not judge_id:
+        judge_id = None
+    flagged = bool(isinstance(judge_entry, dict) and judge_entry.get("is_arm"))
+    return (arm_ids, judge_id,
+           flagged or (judge_id is not None and judge_id in arm_ids), skipped)
+
+
+def select_models(fixture: dict, args: argparse.Namespace) -> tuple:
+    """(agent model, judge model, error) for this run.
+
+    Precedence: `--model` > the fixture's pin > the roster > nothing runs.
+
+    FAIL CLOSED. The runner used to fall through to the CLI's own default
+    model whenever the fixture pinned nothing and the roster was absent,
+    empty, truncated or the wrong shape — which publishes a badge for a model
+    nobody chose and makes every week-over-week comparison a comparison
+    against a different model. An unpinned fixture with no usable roster is a
+    runner-level error naming the path it looked for, and it leaves through
+    the normal exit-2 path. A fixture that pins BOTH `model:` and
+    `judge.model:` never needs the roster and is unaffected: it still runs
+    with no roster at all. Pinning only one still reads the roster for the
+    other.
+
+    The roster's arms are ordered cheapest tier first, so `arms[0]` is the
+    WEAKEST model in the set. That is deliberate for a single-arm run — a
+    floor effect is as signal-free as a ceiling effect, and the matrix runner
+    that will run every arm is where the per-fixture calibration belongs. A
+    fixture that needs a specific one keeps its pin.
+    """
+    pinned_agent = args.model or fixture.get("model")
+    pinned_judge = (fixture.get("judge") or {}).get("model")
+    needs_agent = not pinned_agent
+    needs_judge = not pinned_judge and not getattr(args, "no_judge", False)
+    if not needs_agent and not needs_judge:
+        return pinned_agent, pinned_judge, None
+
+    path = _resolve_roster(getattr(args, "roster", None))
+    roster, problem = read_roster(path)
+    if problem:
+        missing = [w for need, w in ((needs_agent, "model"),
+                                     (needs_judge, "judge model")) if need]
+        return None, None, f"{problem}, and this fixture pins no {' or '.join(missing)}"
+    arm_ids, judge_id, judge_is_arm, skipped = roster_models(roster)
+    raw_arms = roster.get("arms") if isinstance(roster, dict) else None
+    if isinstance(raw_arms, list) and raw_arms and not arm_ids:
+        # Non-empty `arms` that parses to zero usable ids is a broken
+        # roster, not "no arms configured" — and it is unsafe to trust for
+        # ANYTHING this roster names (including the judge), regardless of
+        # whether this particular run even needed an arm from it.
+        return None, None, (f"the model roster at {path.name} lists "
+                            f"{len(raw_arms)} arm entry/entries but none has "
+                            f"a usable string `id` (skipped {skipped}); this "
+                            f"roster cannot be trusted for a model pick")
+    if needs_agent and not arm_ids:
+        return None, None, (f"the model roster at {path.name} names no usable "
+                            f"arm, and this fixture pins no model")
+    if needs_judge and not judge_id:
+        return None, None, (f"the model roster at {path.name} names no usable "
+                            f"judge, and this fixture pins no judge model")
+    if needs_judge and judge_is_arm:
+        return None, None, (f"the model roster at {path.name} names a judge "
+                            f"that is also an arm; a model must not grade its "
+                            f"own run. Pin `judge.model:` in the fixture to "
+                            f"override")
+    return (pinned_agent or arm_ids[0]), (pinned_judge or judge_id), None
 
 
 _VAR_RE = re.compile(r"\$(\w+)|\$\{([^}]*)\}")
@@ -766,9 +946,15 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         skill_md_glob = _skill_md_glob(layout, skill)
         matches = sorted(p.parent for p in registry.glob(skill_md_glob) if p.is_file())
         if not matches:
-            pattern = registry / skill_md_glob
+            # The registry's NAME (arm_config's own, when _run_arm resolved
+            # it — falling back to the checkout dir's basename otherwise)
+            # plus the RELATIVE glob, never the resolved absolute path: this
+            # detail reaches summary.json, which eval.yml commits to the
+            # public eval-results branch (item 6, #129 review round 4 — the
+            # same treatment select_models' own roster-path messages use).
+            registry_label = arm.get("registry_name") or registry.name
             return {"error": "skill_not_found",
-                    "detail": f"no SKILL.md matched {pattern}"}
+                    "detail": f"no SKILL.md matched {registry_label}/{skill_md_glob}"}
         skill_src = matches[0]
         skill_dest = workspace / ".claude" / "skills" / skill
         try:
@@ -778,9 +964,16 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # NotADirectoryError (a seed shipping .claude/skills itself as a
             # regular FILE, so os.makedirs can't create skill_dest under it)
             # both land here — both are a seed/workspace layout problem, not
-            # something to raise out of run_agent's "nothing is raised" contract.
+            # something to raise out of run_agent's "nothing is raised"
+            # contract, but "already exists" is only true of the first one
+            # (N1, #129 review round 6) — a generic wording that names the
+            # exception type covers both honestly. The skill name, not
+            # `skill_dest`'s absolute workspace path — this detail reaches
+            # summary.json, which eval.yml commits to the public
+            # eval-results branch.
             return {"error": "skill_install_failed",
-                    "detail": f"{skill_dest} already exists in the seed: {exc}"}
+                    "detail": f"could not install {skill}/ into the seed "
+                              f"workspace ({type(exc).__name__})"}
 
     # `setting_sources` and `env_override` are the guidance subject's two
     # seams (#97): guidance is delivered into USER memory by the fleet hook,
@@ -1154,8 +1347,32 @@ def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[
 
 
 def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dict],
-            args: argparse.Namespace, timestamp: str) -> dict:
-    """Materialize a workspace, invoke the agent, score it, write results, clean up."""
+            args: argparse.Namespace, timestamp: str,
+            selection: tuple | None = None) -> dict:
+    """Materialize a workspace, invoke the agent, score it, write results, clean up.
+
+    `selection` is `select_models()`'s answer, resolved ONCE by main() and
+    passed in: the roster is one file describing one run, and re-reading it per
+    arm let two arms of the same run disagree if it changed underneath them.
+    A selection error is checked and recorded FIRST, before any workspace is
+    materialized (mkdtemp/copytree/git init) — a run this arm will never make
+    is not worth building one only to shutil.rmtree it straight back out.
+    """
+    agent_model, roster_judge_model, selection_error = (
+        selection if selection is not None else select_models(fixture, args))
+    if selection_error:
+        # A runner-level error, recorded on the arm exactly like an agent
+        # failure, so it leaves through main()'s existing exit-2 path instead
+        # of running the agent on a model nobody chose. Checked BEFORE
+        # materializing anything: a workspace this run will never use (no
+        # agent is ever invoked) is not worth an mkdtemp + copytree + a git
+        # init/add/commit only to shutil.rmtree it two lines later.
+        error = {"type": "model-selection", "detail": selection_error}
+        _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
+                       error, None, None, None, None)
+        return {"arm": arm_name, "error": error, "agent": None,
+                "objective_checks": None, "judge": None}
+
     # run_setup (inside materialize_workspace, before the bookkeeping commit)
     # can fail — a fixture's `setup:` script (e.g. disarm-inherited-reach's)
     # builds real git repositories in the workspace and then deletes its own
@@ -1181,7 +1398,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
 
         arm_config = {
             "name": arm_name,
-            "model": args.model or fixture.get("model"),
+            "model": agent_model,
             "timeout": args.timeout or fixture.get("timeout_s", 600),
             "env": fixture.get("env"),
         }
@@ -1219,15 +1436,20 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                     registry_error = {"error": "unknown_registry", "detail": str(exc)}
                 else:
                     if not entry["path"].is_dir():
+                        # The registry's NAME and layout, not its resolved
+                        # absolute path — this detail reaches summary.json,
+                        # which eval.yml commits to the public eval-results
+                        # branch (item 6, #129 review round 4).
                         registry_error = {
                             "error": "registry_not_found",
-                            "detail": f"registry {fixture['registry']!r} resolves "
-                                      f"to {entry['path']}, which is not a "
-                                      "directory"}
+                            "detail": f"registry {entry['name']!r} has no "
+                                      f"local checkout for layout "
+                                      f"{entry['layout']!r}"}
                     else:
                         arm_config["skill"] = fixture["skill"]
                         arm_config["registry"] = entry["path"]
                         arm_config["layout"] = entry["layout"]
+                        arm_config["registry_name"] = entry["name"]
 
         result = registry_error if registry_error is not None else run_agent(
             workspace, fixture["prompt"], arm_config)
@@ -1272,7 +1494,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                 try:
                     judge_result = judge.score(
                         fixture["judge_rubric"], result.get("transcript") or "", diff,
-                        model=judge_cfg.get("model"),
+                        model=roster_judge_model,
                         timeout=judge_cfg.get("timeout_s", 120),
                         weights=judge_cfg.get("weights"),
                     )
@@ -1921,6 +2143,9 @@ def main() -> int:
                              "to this repo for any name still unresolved")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
+    parser.add_argument("--roster", type=Path, default=None,
+                        help="override the committed evals/roster.yml model "
+                             "roster (tests and deliberate local runs only)")
     parser.add_argument("--no-judge", action="store_true", help="skip judge scoring")
     parser.add_argument("--timeout", type=int, default=None,
                         help="override the fixture's agent timeout (seconds); "
@@ -2166,7 +2391,10 @@ def main() -> int:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
     try:
-        arm_summaries = [_run_arm(name, fixture, seed, registries, args, timestamp)
+        # Resolved once: one trusted-roster read, one model choice, both arms.
+        selection = select_models(fixture, args)
+        arm_summaries = [_run_arm(name, fixture, seed, registries, args,
+                                  timestamp, selection)
                          for name in arm_names]
     except guidance.GuidanceError as exc:
         # Every subprocess sink `_run_arm` can reach — run_setup, run_agent,

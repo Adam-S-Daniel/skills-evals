@@ -428,6 +428,177 @@ this account and has grown a run-a-script grader; until then this harness
 stays the system of record. If `results/` is ever restructured, mirror its
 report schema to keep a future migration cheap.
 
+## Model roster (2026-09-04, #67; redesigned 2026-09-13, #147)
+
+The harness's model choices were literals: an arm pinned in each fixture, a
+judge beside it, a preflight model in `eval.yml`. Nothing in the repo noticed
+when a model shipped or retired, and the first symptom would have been a run
+against a model that no longer exists.
+
+**The roster the harness RUNS ON is `evals/roster.yml`, committed on `main`.**
+That is [ADR 0001](docs/decisions/0001-roster-trusted-on-main.md), and it is
+the whole shape of the feature: `main` is ruleset-protected and pull-request
+only, so an arm, the judge, the preflight model or a `catalogue_seen` entry
+cannot appear there or vanish from there without a reviewed commit.
+`run_eval.select_models` reads that file and nothing else for the roster rung
+of its precedence (`--model` > the fixture's own pin > `evals/roster.yml` >
+error).
+
+**`harness/roster.py` computes a PROPOSAL, not the running set.** It is still
+**a pure function over files** — already-parsed documents and a frozen `now`
+in, a roster dict out; no network, no clock, no environment — which is what
+makes the whole policy testable at the granularity of one threshold. The
+single network call in the feature is `scripts/refresh_models.py`; the usage
+side is `scripts/model_usage_census.py`, which runs on a durable machine (a CI
+runner has no transcripts) as a best-effort passenger on the Tier-3
+account-store Routine. Its output carries a `proposal` block —
+`{status: "same"|"differs", changes: [...]}` — computed against the committed
+file, with every seat change carrying its numerator, its denominator and the
+share they make, in words.
+
+**What each store is trusted for**, stated once because the previous design's
+defects all came from leaving it unstated:
+
+| Store | Trusted for | Written by |
+| --- | --- | --- |
+| `evals/roster.yml` (on `main`) | the running set, and the observation history (`catalogue_seen`) | a human, through a reviewed pull request |
+| the Models API response | availability, within the run that fetched it | Anthropic |
+| `usage/latest.json` (on `eval-results`) | **nothing.** It can shape a proposal and nothing else | a job on another machine |
+| `roster/latest.json` (on `eval-results`) | nothing. An exhibit for the explorer, read by no decision | this workflow |
+
+**The proposal flow.** When the computed roster differs from the committed one,
+`eval.yml` renders it with `scripts/render_roster_yaml.py` and admits the
+rendered file against the committed-roster contract. A valid proposal is pushed
+as one commit on the bot-owned branch `roster/proposal` (recreated from `main`
+every run — never a shared branch), with one tracking issue carrying the
+rendered summary and compare link. An invalid proposal instead leaves the
+branch and compare link untouched and creates or updates a “needs review”
+tracking issue with its admission failures. The paid eval result is still
+published from the committed roster. A human opens the pull request for a valid
+proposal and merges it after CI. That is the fleet's sanctioned bot-write path;
+nothing in CI writes `evals/roster.yml`. When the computed roster matches, the
+tracking issue is closed.
+
+**Who is an arm (2026-09-22, Adam's decision).** Two rules, the second
+subordinate to the first. **(1) Usage seats:** every available model at or
+above `arm_enter_usage_pct` of rankable, attributable census turns over
+`arm_enter_window_weeks` is an arm, with its share in its reason. **(2)
+Newest per QUALIFYING tier:** in a tier rule 1 already seated somebody in,
+the newest available model past the cooling-off is an arm too, and its reason
+says so in words, naming the qualifying share it rides on. A tier no model of
+which clears the entry bar gets no arm from rule 2, however new its newest
+model is; that model is listed under `excluded` saying exactly that.
+
+Rule 2 used to read "newest in its tier" across every tier on the ladder.
+That seated the newest haiku and the newest fable on a census showing the
+fleet ran 6.3% and 3.0% of its turns on them — a four-arm roster, at four
+arms' worth of spend per fixture, two of whose arms measured tiers nobody
+uses. The ladder decides *capability order*; it was never evidence that a
+tier is worth measuring, and the census already is.
+
+**The no-census fallback is deliberately NOT restricted.** With no usable
+usage there is no usage-qualified tier at all, and a roster must not be
+empty — so wherever the enter window carries no usable evidence (any of
+`_census_verdict`'s eight verdicts, or a fresh census whose enter window
+alone fails one of the ranked-usage floors) rule 2 reverts to newest per tier
+across every tier, with the existing degradation reasons. A usable census
+that simply names no model at the entry bar is a different thing: that is
+evidence, and it says no tier qualifies, so the only seats are previous arms
+held over the exit bar — and with none, `main()` refuses to publish a roster
+with no arms (rc 3) and the committed one stands. Rule 2 added no threshold
+of its own: it reads rule 1's entry bar, and every number stays in
+`evals/roster-policy.yml`.
+
+Five properties are load-bearing and should survive any rework:
+
+1. **No model id in the machinery.** Tier comes from the family word in a
+   model's own id, matched against a ladder in `evals/roster-policy.yml`. A
+   model that ships after this was written needs no edit anywhere.
+   `evals/roster.yml` is the one DATA file admitted to that guard, for the
+   same reason a fixture's own `model:` pin is.
+2. **Every entry carries its reason in words**, and every degradation says
+   which degradation it was — absent census, stale census, future-dated
+   census, census present but empty over the window. A roster that falls back
+   silently is indistinguishable from one that did not need to. A proposed
+   change carries, in addition, the numerator and denominator its share was
+   taken over: a percentage with no counts behind it is unfalsifiable from
+   the outside.
+3. **No evidence is not evidence.** Nothing proposes retiring an arm except
+   leaving the Models API or measurably falling under the exit bar. A missing
+   or stale census proposes nothing.
+4. **Two previous-roster states, not three.** The published `previous_state`
+   is `compared` or `none` (nothing to compare against). The third,
+   `unavailable`, is gone: a committed roster that is present and unreadable
+   is a defect in this repository rather than a fact about an unprotected
+   branch, so `compute_roster` raises `TrustedRosterUnreadable`, `main()`
+   exits 5, and nothing is published at all.
+5. **A since-retired model counts by catalogue HISTORY, not id shape.** The
+   roster carries `catalogue_seen`: every model id the Models API has been
+   observed to list, with the date it was last seen. A model that has left
+   the API but that this harness has actually observed before still counts in
+   the usage denominator — real work that happened does not stop counting
+   just because the model is gone. An earlier approach inferred this from the
+   id's SHAPE instead; that was withdrawn because shape cannot distinguish a
+   since-retired real model from a plausibly-named proxy alias, and it missed
+   the pre-#67 legacy id shape entirely.
+
+   An entry's `last_seen` is refreshed to today whenever the Models API
+   actually returns that id, and the entry is dropped once `last_seen` is
+   older than `catalogue_seen_max_age_days`. **That is the only way an entry
+   leaves.** Both the exemptions that used to sit beside it, and both length
+   caps, are deleted — see below.
+
+   **Ageing out is not a repair.** It ends a plant's future effect, but it
+   does not undo a retirement the plant already caused: a model whose
+   measured share fabricated usage pushed under the exit bar is proposed
+   for retirement, and once that proposal is merged the model is no longer
+   a previous arm, so the exit bar no longer applies to it and a dozen
+   turns a week never re-seats it. It returns by clearing the ENTRY bar, by
+   being the newest in a tier that some model of ITS OWN clears the entry
+   bar in, or by hand.
+
+   **Migration.** `evals/roster.yml` was seeded by hand with an empty
+   `catalogue_seen`, because the only history that existed lived on
+   `eval-results` and that branch is not trusted to supply one. So the first
+   run after ADR 0001 landed behaves exactly like a genuine first run — the
+   same migration `catalogue_seen`'s own introduction made — and a model
+   retired before this harness observes it directly is unattributable until
+   a run sees it.
+
+**What was deleted, and why it is named here rather than left beside the
+redesign.** Every one of these existed to approximate a trusted history over
+an untrusted `previous.json`, and each is deleted with the measurement that
+shows it now decides nothing (ADR 0001, decision 4):
+
+- **The anchored denominator, the retirement veto keyed on it, and the
+  count-only notice beside it.** They measured how much of a window's
+  denominator rested on the previous roster; with that roster reviewed and
+  committed, the fraction measures how much of the usage belongs to models
+  this repository has a merged record of, and a veto on it refuses precisely
+  the honest case.
+- **The fold-relation question the ageing rule asked, and BOTH ageing
+  exemptions.** They existed to disbelieve a `last_seen` date, which a
+  trusted record does not need.
+- **Both 500-entry length caps, the 10,000-entry carry ceiling, the tiering
+  they evicted by, and `_clean_previous_arms`' never-evict clause and
+  two-list return.** They bounded an unbounded public input; that input is
+  bounded by review now, and every remaining effect was on honest data.
+
+ADR 0001's decision 4 names each of them by identifier. Nothing else in the
+tree does, deliberately: a name that no longer resolves is a name a reader
+will go looking for.
+
+**What stays**, and it is the shorter list: schema validation of every
+untrusted field with a named one-line skip, the census freshness window and
+its degradation reasons, the `judge.is_arm` refusal (now also a lint over the
+committed file, run by `ci.yml`), and a SIZE BOUND on the census document —
+`CENSUS_MAX_KEYS` and `CENSUS_MAX_BYTES` — so the one input still written by
+another machine cannot exhaust the runner.
+
+Thresholds, and the reasoning behind the numbers, belong in an ADR —
+[#73](https://github.com/Adam-S-Daniel/skills-evals/issues/73). See the
+README's "Model roster" section for the precedence rule and the census's
+public-output contract.
 ## Guidance subject (2026-09-05, skills-evals#97)
 
 **What it measures.** A skill is loaded when it is invoked; a guidance section

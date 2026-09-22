@@ -21,7 +21,9 @@ import json
 import math
 import builtins
 import os
+import random
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -29,9 +31,12 @@ import tempfile
 import textwrap
 import unicodedata
 import unittest
-import yaml
+import urllib.error
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 TEST_DIR = Path(__file__).resolve().parent
 REPO_ROOT = TEST_DIR.parent
@@ -51,11 +56,16 @@ POST_FAILURE_COMMENT_DIR = REPO_ROOT / "evals" / "post-failure-comment"
 RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
 
 sys.path.insert(0, str(HARNESS_DIR))
+import roster  # noqa: E402
 import run_eval  # noqa: E402
+import timeweeks  # noqa: E402
 from scorers import invisibles, judge, objective, wrapping  # noqa: E402
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import make_badge  # noqa: E402
+import model_usage_census  # noqa: E402
+import refresh_models  # noqa: E402
+import render_roster_yaml  # noqa: E402
 
 
 class WithSkillInstallTests(unittest.TestCase):
@@ -165,10 +175,30 @@ class WithSkillInstallTests(unittest.TestCase):
             result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertIn("does-not-exist", result["detail"])
-            self.assertIn(str(FAKE_REGISTRY), result["detail"])
+            # Item 6 (#129 review round 4): the registry's basename, not its
+            # full absolute path — this detail reaches summary.json, which
+            # eval.yml commits to the public eval-results branch.
+            self.assertIn(FAKE_REGISTRY.name, result["detail"])
+            self.assertNotIn(str(FAKE_REGISTRY), result["detail"])
             # Names the plugins/*/skills/<skill> glob pattern that was searched.
             self.assertIn("skills", result["detail"])
             self.assertIn("plugins", result["detail"])
+
+    def test_missing_skill_detail_does_not_leak_the_registry_absolute_path(self):
+        """A registry checkout can live anywhere on the runner's disk —
+        this proves the leak is closed for a path shape that does not
+        happen to be the repo's own committed fixture path."""
+        with tempfile.TemporaryDirectory() as tmp:
+            registry = Path(tmp) / "some-private-runner-directory-name"
+            registry.mkdir()
+            workspace = Path(tmp) / "ws"
+            workspace.mkdir()
+            arm = {"name": "with_skill", "skill": "does-not-exist",
+                  "registry": registry, "timeout": 30}
+            result = run_eval.run_agent(workspace, "audit the workflows", arm)
+            self.assertIn("error", result)
+            self.assertIn(registry.name, result["detail"])
+            self.assertNotIn(str(registry), result["detail"])
 
 
 class RunAgentModesTests(unittest.TestCase):
@@ -4052,17 +4082,47 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "bypassPermissions — pull_request/pull_request_target must never "
             "be added, per the header's first rule")
 
-    def test_permissions_are_exactly_contents_write_and_id_token_write(self):
-        # "Single job, so contents:write is the whole workflow's privilege
-        # set" — the header's own claim. A widened `permissions:` block
-        # (an added scope, or contents: write turning into admin) would slip
+    def test_permissions_are_exactly_the_three_the_header_names(self):
+        # "Single job, so this block is the whole workflow's privilege set"
+        # — the header's own claim. A widened `permissions:` block (an
+        # added scope, or contents: write turning into admin) would slip
         # past every other test in this class.
+        #
+        # `issues: write` IS #147's ONE ADDITION and is pinned as such:
+        # the roster proposal step upserts one tracking issue and closes it
+        # again. The set is asserted for EQUALITY, so a fourth scope reds
+        # this row whatever it is, and the two assertions below say
+        # separately that the two pre-existing scopes are unchanged — so a
+        # future widening cannot be smuggled in by rewriting the expected
+        # dict wholesale.
         doc = self._doc()
         self.assertEqual(
-            doc.get("permissions"), {"contents": "write", "id-token": "write"},
+            doc.get("permissions"),
+            {"contents": "write", "id-token": "write", "issues": "write"},
             "eval.yml's permissions must be exactly {contents: write, "
-            "id-token: write} — the header states this is the workflow's "
-            "whole privilege set")
+            "id-token: write, issues: write} — the header states this is "
+            "the workflow's whole privilege set, and `issues: write` is the "
+            "only scope #147 added")
+        self.assertEqual(doc["permissions"]["contents"], "write")
+        self.assertEqual(doc["permissions"]["id-token"], "write")
+
+    def test_the_proposal_step_carries_no_expression_in_its_run_block(self):
+        # The general rule is asserted over every step by
+        # `test_no_expression_interpolation_in_any_run_block`; this row
+        # names the #147 step specifically, because it is the one that
+        # holds a write credential AND reads run-scoped values (the run
+        # id, the repository, the server URL). Those arrive through `env:`
+        # and are read as shell variables.
+        step = next(s for s in self._steps()
+                    if (s.get("name") or "") == "Propose a roster change")
+        self.assertNotIn("${{", step["run"])
+        self.assertEqual(
+            sorted(step.get("env") or {}),
+            ["GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID", "SERVER_URL"],
+            "every run-scoped value the proposal step reads arrives through "
+            "env:, and the write credential is step-local")
+        for name in ("RUN_ID", "REPO", "SERVER_URL"):
+            self.assertIn(f"${name}", step["run"])
 
     def test_no_workflow_or_job_level_env(self):
         # The header requires GITHUB_TOKEN (and the exchanged bearer token)
@@ -5071,6 +5131,2327 @@ class CanaryTests(unittest.TestCase):
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
 
+class TestIssue67(unittest.TestCase):
+    """Model roster: availability + usage -> arms/judge/preflight (#67).
+
+    Every model id below is TEST FIXTURE data. The policy code under test
+    carries none: tiers are inferred from the id's family word, and the family
+    words themselves live in evals/roster-policy.yml. `test_no_model_ids_are
+    _hardcoded_outside_fixtures` is the guard that keeps it that way.
+
+    `NOW` is frozen so the ISO-week windows and the 7-day cooling-off are
+    decidable rather than wall-clock-dependent — the harness-wide "hermetic,
+    always" rule (DESIGN.md) applies to time as much as to network.
+    """
+
+    NOW = datetime(2026, 9, 4, 12, 0, 0, tzinfo=timezone.utc)
+    # 2026-09-04 is ISO week 36; the four- and eight-week windows below run
+    # back from it. Spelled out rather than computed, so a bug in the
+    # implementation's own week arithmetic cannot hide inside the fixture.
+    W = ["2026-W36", "2026-W35", "2026-W34", "2026-W33",
+         "2026-W32", "2026-W31", "2026-W30", "2026-W29"]
+
+    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+    # --- fixture builders -------------------------------------------------
+
+    @staticmethod
+    def _model(model_id, created, *, max_input=1_000_000, max_output=128_000):
+        return {"id": model_id, "display_name": model_id, "created_at": created,
+                "max_input_tokens": max_input, "max_tokens": max_output,
+                "capabilities": {"thinking": {"supported": True}}}
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        """A canned GET /v1/models payload spanning all four tiers.
+
+        claude-fable-5-1 is deliberately 3 days old: it is the newest model in
+        its tier but inside the cooling-off window, so it is NOT an arm — which
+        is what leaves a tier above the strongest arm for the judge to come
+        from.
+        """
+        models = [
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
+            cls._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            cls._model("claude-fable-5-1", "2026-09-01T00:00:00Z"),
+        ]
+        models = [m for m in models if m["id"] not in drop]
+        models += list(extra or [])
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        if counts is None:
+            counts = {
+                # last four weeks: 400 / 620 = 64.5%
+                "claude-sonnet-5": {w: 100 for w in cls.W[:4]},
+                # last four weeks: 200 / 620 = 32.3%
+                "claude-opus-5": {w: 50 for w in cls.W[:4]},
+                # last four weeks: 20 / 620 = 3.2% — under the 10% entry bar
+                "claude-haiku-4-5": {w: 5 for w in cls.W[:4]},
+                # all outside the four-week window
+                "claude-sonnet-4-6": {cls.W[7]: 100},
+            }
+        return {"generated_at": generated_at, "weeks": cls.W, "counts": counts}
+
+    @classmethod
+    def _policy(cls):
+        return roster.load_policy(cls.POLICY)
+
+    #: distinguishes "use the default fixture" from "there is no census at all",
+    #: which None cannot do here — the absence IS one of the cases under test.
+    DEFAULT = object()
+
+    @classmethod
+    def _compute(cls, models=DEFAULT, census=DEFAULT, previous=None):
+        return roster.compute_roster(
+            models_doc=cls._models_doc() if models is cls.DEFAULT else models,
+            census_doc=cls._census_doc() if census is cls.DEFAULT else census,
+            policy=cls._policy(), previous=previous, now=cls.NOW)
+
+    @staticmethod
+    def _arm_ids(result):
+        return [a["id"] for a in result["arms"]]
+
+    @staticmethod
+    def _reason(result, model_id):
+        return next(a["reason"] for a in result["arms"] if a["id"] == model_id)
+
+    # --- policy: the headline case ---------------------------------------
+
+    def test_canned_models_and_census_give_the_expected_roster(self):
+        result = self._compute()
+
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        # Usage-qualified arms say so, in words, with the share.
+        self.assertIn("64.5%", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("4 weeks", self._reason(result, "claude-sonnet-5"))
+        # haiku is under the 10% bar, and since 2026-09-22 being newest in
+        # its tier no longer rescues it: no haiku model clears the bar, so
+        # the tier qualifies for nothing and seats nobody. It used to ride
+        # in here on newest-in-tier, which is the seat that rule lost.
+        # TestNewestPerQualifyingTier is where that rule lives.
+        self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
+        haiku = next(e["reason"] for e in result["excluded"]
+                     if e["id"] == "claude-haiku-4-5")
+        self.assertIn("newest in the haiku tier", haiku)
+        self.assertIn("no model in that tier carries 10%", haiku)
+
+        # One tier above the strongest arm (opus) is fable, and the only fable
+        # model available is not an arm — so it is the judge.
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertIn("tier above", result["judge"]["reason"])
+
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cheapest", result["preflight"]["reason"])
+
+        self.assertEqual(result["source"]["models_api_at"], "2026-09-04T11:00:00Z")
+        self.assertEqual(result["source"]["census_at"], "2026-09-04T06:00:00Z")
+        self.assertIsNone(result["source"]["admin_report_at"])
+        self.assertIn("generated_at", result)
+
+    def test_judge_is_never_an_arm_model(self):
+        # Strip the fable tier: the strongest arm is then opus-5 with nothing
+        # above it, so the judge falls back to the strongest AVAILABLE model —
+        # which must still not be one of the arms.
+        result = self._compute(models=self._models_doc(drop={"claude-fable-5-1"}))
+        self.assertNotIn(result["judge"]["id"], self._arm_ids(result))
+        self.assertEqual(result["judge"]["id"], "claude-opus-4-8")
+        self.assertIn("strongest available", result["judge"]["reason"])
+
+    def test_judge_falls_back_when_every_available_model_is_an_arm(self):
+        """The first real run's state: no census published yet, so the arm set
+        is newest-per-tier — which on a one-current-model-per-tier catalogue is
+        every model there is. A null judge would be a hole in the published
+        roster, so the strongest available model is named and the reason says
+        plainly that it is also an arm."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            self._model("claude-fable-5-1", "2026-05-01T00:00:00Z"),
+        ]}
+        result = self._compute(models=models, census=None)
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-fable-5-1", "claude-haiku-4-5",
+                          "claude-opus-5", "claude-sonnet-5"])
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertIn("every available model is currently an arm",
+                      result["judge"]["reason"])
+
+    def test_preflight_is_the_cheapest_available_model(self):
+        # Drop the whole haiku tier and the cheapest becomes the newest sonnet.
+        result = self._compute(models=self._models_doc(drop={"claude-haiku-4-5"}))
+        self.assertEqual(result["preflight"]["id"], "claude-sonnet-5")
+
+    # --- the 7-day cooling-off -------------------------------------------
+
+    def test_seven_day_rule_excludes_a_model_created_yesterday(self):
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(
+            extra=[self._model("claude-sonnet-6", yesterday)])
+        result = self._compute(models=models)
+        self.assertNotIn("claude-sonnet-6", self._arm_ids(result),
+                         "a model one day old is inside the fleet's 7-day "
+                         "cooling-off and must not enter the arm set on the "
+                         "newest-in-tier rule")
+        # ... and the tier's previous newest keeps the seat.
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+
+    def test_a_brand_new_model_still_enters_on_usage(self):
+        # The cooling-off gates the newest-in-tier rule only. A model the fleet
+        # is demonstrably already using is an arm on the usage rule regardless
+        # of age — otherwise the roster would refuse to measure what is in use.
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(extra=[self._model("claude-sonnet-6", yesterday)])
+        census = self._census_doc(counts={
+            "claude-sonnet-6": {self.W[0]: 300},
+            "claude-sonnet-5": {w: 100 for w in self.W[:4]},
+        })
+        result = self._compute(models=models, census=census)
+        self.assertIn("claude-sonnet-6", self._arm_ids(result))
+        self.assertIn("usage", self._reason(result, "claude-sonnet-6"))
+
+    # --- leaving the arm set ---------------------------------------------
+
+    def test_model_missing_from_the_api_is_retired_even_with_high_usage(self):
+        previous = {"arms": [{"id": "claude-opus-4-7", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = self._census_doc(counts={
+            "claude-opus-4-7": {w: 400 for w in self.W},   # ~66% of everything
+            "claude-sonnet-5": {w: 200 for w in self.W},
+        })
+        result = self._compute(census=census, previous=previous)
+
+        self.assertNotIn("claude-opus-4-7", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-7", retired)
+        self.assertIn("Models API", retired["claude-opus-4-7"])
+
+    def test_a_previous_arm_is_held_over_until_it_is_under_two_percent(self):
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"},
+                             {"id": "claude-opus-4-8", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = self._census_doc(counts={
+            "claude-sonnet-5": {w: 100 for w in self.W},           # 800
+            # 40/week over 8 weeks = 320/1128 ≈ 28% of the 8-week window but
+            # only 160/560 of the 4-week one... keep it simple: sonnet-4-6 sits
+            # above 2% over 8 weeks, opus-4-8 below it.
+            "claude-sonnet-4-6": {w: 10 for w in self.W},          # 80
+            "claude-opus-4-8": {self.W[7]: 2},                     # 2
+        })
+        result = self._compute(census=census, previous=previous)
+
+        arms = self._arm_ids(result)
+        self.assertIn("claude-sonnet-4-6", arms,
+                      "a previous arm above the 2% exit bar over 8 weeks stays")
+        self.assertIn("held over", self._reason(result, "claude-sonnet-4-6"))
+        self.assertNotIn("claude-opus-4-8", arms)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("2", retired["claude-opus-4-8"])
+        self.assertIn("8 weeks", retired["claude-opus-4-8"])
+
+    def test_added_since_last_names_the_new_arms_with_their_reason(self):
+        previous = {"arms": [{"id": "claude-sonnet-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        added = {a["id"]: a["reason"] for a in result["added_since_last"]}
+        # `claude-haiku-4-5` used to be added here too, on newest-in-tier;
+        # its tier carries 3.2% and so qualifies for nothing (2026-09-22).
+        self.assertEqual(sorted(added), ["claude-opus-5"])
+        self.assertTrue(all(added.values()), "every entry carries its reason")
+
+    def test_first_run_has_no_previous_roster_and_reports_nothing_retired(self):
+        result = self._compute(previous=None)
+        self.assertEqual(result["retired_since_last"], [])
+        # Everything is new, but with no previous roster there is no "since
+        # last" to speak of — an empty added list, not the whole arm set.
+        self.assertEqual(result["added_since_last"], [])
+
+    # --- the census fallback ---------------------------------------------
+
+    def test_absent_census_falls_back_to_newest_per_tier_and_says_so(self):
+        result = self._compute(census=None)
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-haiku-4-5", "claude-opus-5", "claude-sonnet-5"])
+        for arm in result["arms"]:
+            self.assertIn("no fresh census", arm["reason"].lower())
+        self.assertIsNone(result["source"]["census_at"])
+
+    def test_stale_census_falls_back_the_same_way(self):
+        stale = self._census_doc(generated_at="2026-08-01T00:00:00Z")  # 34 days
+        result = self._compute(census=stale)
+        for arm in result["arms"]:
+            self.assertIn("no fresh census", arm["reason"].lower())
+        # The usage-only arm set would have been different, which is the whole
+        # point of saying so in the file rather than publishing it silently.
+        self.assertIn("claude-haiku-4-5", self._arm_ids(result))
+
+    def test_a_census_inside_the_freshness_window_is_used(self):
+        fresh = self._census_doc(generated_at="2026-08-25T00:00:00Z")  # 10 days
+        result = self._compute(census=fresh)
+        self.assertNotIn("no fresh census", self._reason(result, "claude-sonnet-5").lower())
+
+    # --- the census parser, and its privacy guard ------------------------
+
+    def test_census_emits_only_model_week_counts_and_leaks_nothing(self):
+        """MANDATORY (#67 guardrail): the census output is public data on a
+        public branch. A fixture transcript carrying a project path and prose
+        must yield neither — in its VALUES or in its KEYS.
+
+        The hostile `message.model` values below are the review round's
+        addition (B1): that field is whatever the routing layer wrote, and it
+        was being copied verbatim into a top-level key. TestIssue67Review
+        takes each of them apart individually; here they ride along in the one
+        test nobody is allowed to delete.
+        """
+        secret_path = "/home/example/repos/private-client-work"
+        secret_text = "the merger closes on Tuesday"
+        account_arn = ("arn:aws:bedrock:us-east-1:123456789012:"
+                       "application-inference-profile/abcd1234")
+        gcp_path = ("projects/example-gcp-project/locations/us-east5/"
+                    "publishers/anthropic/models/claude-opus-5")
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-home-example-repos-private-client-work"
+            projects.mkdir(parents=True)
+            hostile = [
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+                 "message": {"role": "assistant", "model": value}}
+                for value in (account_arn, gcp_path, secret_path, secret_text,
+                              {"id": "claude-opus-5"}, ["claude-opus-5"], 7)
+            ]
+            entries = [
+                {"type": "user", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"role": "user", "content": secret_text}},
+                {"type": "assistant", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-09-03T10:00:01Z",
+                 "message": {"role": "assistant", "model": "claude-opus-5",
+                             "content": [{"type": "text", "text": secret_text}]}},
+                {"type": "assistant", "cwd": secret_path,
+                 "sessionId": "11111111-2222-4333-8444-555555555555",
+                 "timestamp": "2026-08-27T09:00:00Z",
+                 "message": {"role": "assistant", "model": "claude-haiku-4-5",
+                             "content": [{"type": "text", "text": secret_text}]}},
+            ]
+            entries += hostile
+            path = projects / "session.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\n",
+                            encoding="utf-8")
+            # Explicit mtime: the census skips transcripts last written before
+            # the window, so a wall-clock mtime would make this test's verdict
+            # depend on the year the suite runs in.
+            stamp = self.NOW.timestamp()
+            os.utime(path, (stamp, stamp))
+
+            counts = model_usage_census.census_counts(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1},
+                                      "claude-haiku-4-5": {"2026-W35": 1},
+                                      model_usage_census.OTHER_KEY: {"2026-W36": 7}})
+
+            document = model_usage_census.build_document(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            blob = json.dumps(document)
+            for key in document["counts"]:
+                self.assertTrue(
+                    model_usage_census.MODEL_ID_RE.match(key)
+                    or key == model_usage_census.OTHER_KEY,
+                    f"census published {key!r} as a key on a public branch")
+            self.assertNotIn(secret_path, blob)
+            self.assertNotIn(secret_text, blob)
+            self.assertNotIn("123456789012", blob)
+            self.assertNotIn("example-gcp-project", blob)
+            self.assertNotIn("private-client-work", blob)
+            self.assertNotIn("session.jsonl", blob)
+            self.assertNotIn("11111111-2222-4333-8444-555555555555", blob)
+            # Keys are exactly the published contract — nothing else rides along.
+            self.assertEqual(sorted(document), ["counts", "generated_at", "weeks"])
+
+    def test_census_ignores_entries_outside_the_window_and_without_a_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects" / "-tmp-x"
+            projects.mkdir(parents=True)
+            entries = [
+                # 12 weeks back — outside an 8-week window.
+                {"type": "assistant", "timestamp": "2026-06-12T10:00:00Z",
+                 "message": {"model": "claude-opus-4-8"}},
+                # assistant entry with no model at all
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"role": "assistant"}},
+                # a summary/system line the loader must not count
+                {"type": "summary", "timestamp": "2026-09-03T10:00:00Z",
+                 "message": {"model": "claude-opus-5"}},
+            ]
+            path = projects / "s.jsonl"
+            path.write_text("\n".join(json.dumps(e) for e in entries) + "\nnot json\n",
+                            encoding="utf-8")
+            stamp = self.NOW.timestamp()
+            os.utime(path, (stamp, stamp))
+            counts = model_usage_census.census_counts(
+                Path(tmp) / "projects", now=self.NOW, weeks=8)
+            self.assertEqual(counts, {})
+
+    # --- availability refresh --------------------------------------------
+
+    def test_refresh_models_normalizes_the_models_api_payload(self):
+        page = {"data": [
+            {"id": "claude-opus-5", "display_name": "Claude Opus 5",
+             "created_at": "2026-04-01T00:00:00Z", "max_input_tokens": 1000000,
+             "max_tokens": 128000, "capabilities": {"thinking": {"supported": True}},
+             "type": "model"},
+            {"id": "some-other-vendor-model", "display_name": "Other",
+             "created_at": "2026-04-01T00:00:00Z", "max_input_tokens": 1,
+             "max_tokens": 1, "capabilities": {}, "type": "model"},
+        ], "has_more": False}
+        doc = refresh_models.build_models_document(
+            lambda url, headers: page, now=self.NOW)
+        self.assertEqual([m["id"] for m in doc["models"]], ["claude-opus-5"],
+                         "only Claude models are written to the roster input")
+        model = doc["models"][0]
+        for field in ("max_input_tokens", "max_tokens", "capabilities", "created_at"):
+            self.assertIn(field, model)
+        self.assertEqual(doc["fetched_at"], "2026-09-04T12:00:00Z")
+
+    def test_admin_report_fails_soft_with_a_notice_naming_the_secret(self):
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("ANTHROPIC_ADMIN_KEY", None)
+            report, notice = refresh_models.fetch_admin_usage_report(
+                now=self.NOW, fetch=None)
+        self.assertIsNone(report)
+        self.assertTrue(notice.startswith("::notice::"), notice)
+        self.assertIn("ANTHROPIC_ADMIN_KEY", notice)
+
+    # --- consumption by the runner ---------------------------------------
+
+    def _fixture_dir(self, tmp, pinned):
+        eval_dir = Path(tmp) / "evals" / "a-skill"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+        fixture = {"skill": "a-skill", "prompt": "do the thing",
+                   "judge_rubric": "grade it", "arms": {"without_skill": {"install": "none"}}}
+        if pinned:
+            fixture["model"] = "claude-sonnet-4-6"
+            fixture["judge"] = {"model": "claude-opus-4-6"}
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def _roster_file(self, tmp):
+        path = Path(tmp) / "roster" / "latest.json"
+        path.parent.mkdir(parents=True)
+        path.write_text(json.dumps(self._compute()), encoding="utf-8")
+        return path
+
+    def _capture_models(self, eval_dir, roster_path, want="models"):
+        """Run one arm with the agent and judge stubbed, returning the models
+        the runner actually chose."""
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm):
+            seen["agent"] = arm.get("model")
+            return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        def fake_score(rubric, transcript, diff, model=None, **kwargs):
+            seen["judge"] = model
+            return {"dimensions": [], "overall": 1.0}
+
+        args = argparse.Namespace(
+            model=None, timeout=30, no_judge=False,
+            results_dir=Path(tempfile.mkdtemp()), roster=roster_path)
+        self.addCleanup(shutil.rmtree, args.results_dir, ignore_errors=True)
+        fixture = run_eval.load_fixture(eval_dir)
+        with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+             mock.patch.object(run_eval.judge, "score", fake_score):
+            summary = run_eval._run_arm(
+                "without_skill", fixture, eval_dir / "seed",
+                Path("/nonexistent-registry"), args, "20260904T120000Z")
+        return summary if want == "summary" else seen
+
+    def test_runner_takes_the_roster_when_the_fixture_has_no_model(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            seen = self._capture_models(eval_dir, self._roster_file(tmp))
+        expected = self._compute()
+        self.assertEqual(seen["agent"], expected["arms"][0]["id"])
+        self.assertEqual(seen["judge"], expected["judge"]["id"])
+
+    def test_runner_takes_the_fixture_pin_when_it_has_one(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            seen = self._capture_models(eval_dir, self._roster_file(tmp))
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6")
+        self.assertEqual(seen["judge"], "claude-opus-4-6")
+
+    def test_runner_survives_a_missing_roster(self):
+        """It no longer falls through to the CLI default: an unpinned fixture
+        with no usable roster is a RUNNER-level error naming the path it
+        looked for (the exit-2 path), while a pinned fixture is unaffected and
+        still runs with no roster at all. TestIssue67Review covers both sides
+        in detail; this is the regression floor for the change of contract."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            missing = Path(tmp) / "nope.json"
+            summary = self._capture_models(eval_dir, missing, want="summary")
+        self.assertIsNotNone(summary["error"])
+        # The roster's basename, not its full absolute path (item 5, #129
+        # review round 3) — this detail reaches summary.json, which
+        # eval.yml commits to the public eval-results branch.
+        self.assertIn(missing.name, summary["error"]["detail"])
+        self.assertNotIn(str(missing), summary["error"]["detail"])
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            seen = self._capture_models(eval_dir, Path(tmp) / "nope.json")
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6",
+                         "a pinned fixture still runs with no roster at all")
+
+    # --- policy file + the no-hardcoded-ids guard ------------------------
+
+    def test_policy_file_carries_the_thresholds_and_the_adr_placeholder(self):
+        raw = self.POLICY.read_text(encoding="utf-8")
+        policy = self._policy()
+        self.assertEqual(policy["cooling_off_days"], 7)
+        self.assertEqual(policy["arm_enter_usage_pct"], 10)
+        self.assertEqual(policy["arm_enter_window_weeks"], 4)
+        self.assertEqual(policy["arm_exit_usage_pct"], 2)
+        self.assertEqual(policy["arm_exit_window_weeks"], 8)
+        self.assertEqual(policy["census_max_age_days"], 14)
+        self.assertEqual(policy["min_ranked_turns"], 20)
+        self.assertEqual(policy["min_ranked_share"], 0.01)
+        self.assertEqual(roster.tier_rungs(policy),
+                         [["haiku"], ["sonnet"], ["opus"], ["fable", "mythos"]],
+                         "a rung may name peers that rank identically")
+        self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
+                                  "sub-issue until the ADR itself exists")
+        roster.validate_policy(policy)  # the real policy file must validate
+
+    #: Anything a maintainer marks with this on the SAME LINE is allowed to
+    #: carry a model id, and each file gets at most one. The marker is the
+    #: whole of the exemption: an unmarked literal is a bug by definition.
+    FALLBACK_MARKER = "ROSTER FALLBACK"
+
+    def _model_id_pattern(self):
+        """The shape of a model id, with the family words taken FROM THE
+        POLICY rather than restated here.
+
+        A literal alternation drifts the moment a rung is added — the guard
+        would then stop looking for the very family that was just introduced,
+        and go on passing. Deriving it means a new rung is covered the day it
+        lands.
+
+        The trailing group is `-<anything lowercase>`, repeated: it catches
+        `claude-opus-4-8`, the older `claude-3-opus-20240229` (hence the
+        optional numeric segment BEFORE the family word) and the alias shapes
+        like `claude-opus-latest` — all of which the previous
+        `-(family)-[0-9]` pattern walked straight past.
+        """
+        families = "|".join(re.escape(w) for w in roster.tier_words(self._policy()))
+        return re.compile(rf"claude-(?:[0-9]+-)?(?:{families})(?:-[0-9a-z.]+)+")
+
+    def test_no_model_ids_are_hardcoded_outside_fixtures(self):
+        # Fixtures may pin a model; the roster machinery may not, or the whole
+        # point of computing the roster from the API is lost the first time a
+        # model retires. eval.yml and run_eval.py are in scope because that is
+        # where the two surviving literals were: the preflight's hardcoded
+        # `--model`, and the runner's fall-through to the CLI default.
+        pattern = self._model_id_pattern()
+        # Self-check: the pattern must actually match the shapes it claims to.
+        for shape in ("claude-opus-4-8", "claude-3-opus-20240229",
+                      "claude-opus-latest", "claude-mythos-5-1"):
+            self.assertRegex(shape, pattern, "the guard's own pattern is inert")
+        # `evals/roster.yml` is DELIBERATELY ABSENT from this list and is
+        # asserted on separately below: it is the committed roster the
+        # harness runs on (ADR 0001), so the ids in it are DATA — exactly
+        # as a fixture's own `model:` pin is data — rather than machinery
+        # that stops working the day a model retires. Every other file
+        # here is machinery and may not name one.
+        for rel in ("harness/roster.py", "harness/timeweeks.py",
+                    "harness/run_eval.py", "scripts/refresh_models.py",
+                    "scripts/model_usage_census.py", "evals/roster-policy.yml",
+                    ".github/workflows/eval.yml"):
+            text = (REPO_ROOT / rel).read_text(encoding="utf-8")
+            offenders = [line for line in text.splitlines()
+                         if pattern.search(line)
+                         and self.FALLBACK_MARKER not in line]
+            self.assertEqual(offenders, [], f"{rel} hardcodes a model id")
+            marked = [line for line in text.splitlines()
+                      if self.FALLBACK_MARKER in line and pattern.search(line)]
+            self.assertLessEqual(len(marked), 1,
+                                 f"{rel} carries more than one marked fallback "
+                                 f"literal; there is only ever one")
+        # The ONE data file admitted, named here so the admission is a
+        # decision in the test rather than an omission from the list
+        # above. It really does carry ids, and that is the point of it.
+        roster_yml = (REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8")
+        self.assertTrue(
+            pattern.search(roster_yml),
+            "evals/roster.yml is admitted to this guard as a DATA file "
+            "carrying model ids; if it no longer carries any, the "
+            "admission is stale and should be reconsidered rather than "
+            "left standing")
+
+    # --- eval.yml -----------------------------------------------------------
+
+    def _eval_workflow(self):
+        path = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+        return path.read_text(encoding="utf-8"), yaml.safe_load(
+            path.read_text(encoding="utf-8"))
+
+    def test_eval_workflow_refreshes_the_roster_before_running_the_eval(self):
+        _, doc = self._eval_workflow()
+        steps = doc["jobs"]["eval"]["steps"]
+        names = [s.get("name", "") for s in steps]
+        refresh = next(i for i, n in enumerate(names) if "roster" in n.lower())
+        run = next(i for i, n in enumerate(names) if n.startswith("Run the eval"))
+        self.assertLess(refresh, run,
+                        "the roster has to exist before the eval reads it")
+        script = steps[refresh]["run"]
+        self.assertIn("GITHUB_STEP_SUMMARY", script,
+                      "#67: the computed roster is called out in the job summary")
+        self.assertIn("roster.py", script)
+        self.assertIn("refresh_models.py", script)
+
+    def test_eval_workflow_commits_the_roster(self):
+        _, doc = self._eval_workflow()
+        commit = next(s for s in doc["jobs"]["eval"]["steps"]
+                      if "git checkout -B eval-results" in (s.get("run") or ""))
+        self.assertIn("roster", commit["run"],
+                      "roster/ is published on eval-results alongside the badge")
+
+    def test_eval_workflow_keeps_its_security_posture(self):
+        raw, doc = self._eval_workflow()
+        triggers = doc.get("on", doc.get(True))
+        self.assertEqual(sorted(triggers), ["schedule", "workflow_dispatch"],
+                         "eval.yml holds a credential and runs the agent under "
+                         "bypassPermissions — no pull_request trigger, ever")
+        # `issues: write` is #147's one addition, for the roster-proposal
+        # tracking issue. Asserted for EQUALITY here too, so a fourth
+        # scope reds this row as well as its sibling in
+        # EvalWorkflowSecurityHeaderTests — the duplication is deliberate
+        # and predates #147: this is the test nobody may delete.
+        self.assertEqual(doc["permissions"],
+                         {"contents": "write", "id-token": "write",
+                          "issues": "write"})
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            self.assertNotIn("${{", script,
+                             f"step {step.get('name')!r} interpolates into a "
+                             "run: block; read inputs from $GITHUB_EVENT_PATH")
+            uses = step.get("uses")
+            if uses:
+                self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
+                                 "every uses: is a bare 40-hex SHA, no comment")
+        self.assertNotIn("ANTHROPIC_API_KEY", raw,
+                         "auth is WIF-derived; no stored key shape is added")
+        # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
+        # `uses: owner/repo@<sha> # v4` sailed through the parsed check above
+        # (mutation-proven). Re-assert it on the raw text, where the comment
+        # still exists. TestIssue67Review carries the same rule; the
+        # duplication is deliberate — this is the test nobody may delete.
+        for line in raw.splitlines():
+            if re.match(r"^\s*(?:-\s+)?uses:", line):
+                self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
+                                 "a `uses:` pin carries a trailing comment")
+        for step in doc["jobs"]["eval"]["steps"]:
+            if (step.get("uses") or "").startswith("actions/checkout@"):
+                self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                              False, f"checkout step {step.get('name')!r} keeps a "
+                                     "GitHub credential on the runner")
+        self.assertEqual(doc["concurrency"],
+                         {"group": "real-eval", "cancel-in-progress": False},
+                         "the badge commit races itself without this lane")
+
+
+class TestIssue67Review(unittest.TestCase):
+    """Review-round fixes on top of #67's roster feature (PR #129, round 1).
+
+    A SIBLING of TestIssue67, not a subclass: it reuses that class's canned
+    documents (they are classmethods for exactly this reason) so the two are
+    testing one model of the policy, but its own tests run once, not twice.
+
+    Same hermetic rules: frozen `now`, no network, no real `claude`, and
+    `example`-shaped stand-ins for anything that would name a real account,
+    project or path.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        return TestIssue67._models_doc(extra=extra, drop=drop)
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        return TestIssue67._census_doc(counts=counts, generated_at=generated_at)
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    # --- shared fixture helpers ------------------------------------------
+
+    @staticmethod
+    def _write_transcript(path: Path, entries: list, mtime: datetime) -> Path:
+        """A JSONL transcript with an EXPLICIT mtime.
+
+        The census skips transcripts whose mtime falls before the window
+        (N6), so a fixture that relied on the wall clock for its mtime would
+        pass or fail depending on the year the suite is run in. Setting it
+        explicitly keeps the hermetic-time rule intact.
+        """
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("\n".join(json.dumps(e) for e in entries) + "\n",
+                        encoding="utf-8")
+        stamp = mtime.timestamp()
+        os.utime(path, (stamp, stamp))
+        return path
+
+    def _assistant(self, model, when, **extra):
+        entry = {"type": "assistant", "timestamp": when,
+                 "message": {"role": "assistant", "model": model}}
+        entry["message"].update(extra.pop("message_extra", {}))
+        entry.update(extra)
+        return entry
+
+    # --- B1: the census publishes model-id-shaped keys, or `other` -------
+
+    #: The values a real transcript can carry in `message.model` that are NOT
+    #: model ids. Every one of these was found in a real routing setup; each
+    #: would have been copied verbatim into a key of a file on a public
+    #: branch. `example`-shaped stand-ins only — no real account or project.
+    HOSTILE_MODELS = {
+        "bedrock_arn": ("arn:aws:bedrock:us-east-1:123456789012:"
+                        "application-inference-profile/abcd1234"),
+        "vertex_path": ("projects/example-gcp-project/locations/us-east5/"
+                        "publishers/anthropic/models/claude-opus-5"),
+        "fs_path": "/home/example/repos/example-private-client/model.json",
+        "prose": "the model I used for the merger memo",
+        # These four ARE lowercase-and-dashes — the exact shape `MODEL_ID_RE`
+        # accepts — so a regex weakened in one specific way lets each one
+        # straight through as its own published key:
+        "dashed_no_family_word": "claude-home-user-secret-client-northrop-merger",
+        "dashed_too_long": "claude-" + "x" * 80,
+        # only the length-40 cap keeps this one out — it carries a real
+        # family word (`opus`) and every dash-token is well under the
+        # per-token 20-char sub-cap, so widening the overall cap (e.g. to
+        # 2000) is the ONLY thing that would admit it.
+        "dashed_long_with_family_word": ("claude-" +
+                                         "-".join(["pad12345678"] * 4) + "-opus"),
+        # only the `claude` prefix requirement keeps this one out — it is
+        # otherwise a well-formed, short, family-word-bearing id shape.
+        "family_word_without_claude_prefix": "internal-proxy-opus-route",
+        # `$`, unlike `\Z`, matches just before a trailing newline — item 6
+        # (#129 review round 3): an otherwise honest id with a trailing
+        # newline used to be published as its own (distinct, newline-
+        # carrying) key rather than falling to `other`.
+        "trailing_newline": "claude-opus-5\n",
+    }
+
+    #: The only key this test's transcript can honestly earn — an
+    #: independent oracle, not `MODEL_ID_RE` checking itself. Item 7 (#129
+    #: review round 2): the old assertion just re-ran the production regex
+    #: against its own output, so a mutation weakening the regex (dropping
+    #: the anchor, widening the length cap) stayed green — every hostile
+    #: value it let through still "matched MODEL_ID_RE" by definition.
+    GOOD_KEYS = {"claude-opus-5"}
+
+    def test_census_publishes_only_model_id_shaped_keys(self):
+        """B1: `message.model` is attacker-adjacent data — it is whatever the
+        routing layer wrote — and it became a top-level KEY of a public file."""
+        values = list(self.HOSTILE_MODELS.values()) + [
+            {"id": "claude-opus-5", "provider": "example"},   # a dict
+            ["claude-opus-5"],                                 # a list
+            7,                                                 # an int
+            "claude-opus-5",                                   # the honest case
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-home-example-x" / "s.jsonl",
+                [self._assistant(v, "2026-09-03T10:00:00Z") for v in values],
+                mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+
+        for key in counts:
+            with self.subTest(key=key):
+                self.assertTrue(
+                    key in self.GOOD_KEYS or key == model_usage_census.OTHER_KEY,
+                    f"census published {key!r} as a key on a public branch")
+        non_conforming = len(values) - 1  # every value but the one honest id
+        self.assertEqual(counts[model_usage_census.OTHER_KEY]["2026-W36"],
+                         non_conforming)
+        self.assertEqual(counts["claude-opus-5"]["2026-W36"], 1)
+
+    def test_census_never_stringifies_a_non_string_model(self):
+        """`str(some_dict)` is `repr()` — it publishes every value inside."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-home-example-x" / "s.jsonl",
+                [self._assistant({"id": "claude-opus-5", "api_key": "sk-ant-example"},
+                                 "2026-09-03T10:00:00Z")],
+                mtime=self.NOW)
+            document = model_usage_census.build_document(projects, now=self.NOW, weeks=8)
+        blob = json.dumps(document)
+        self.assertNotIn("sk-ant-example", blob)
+        self.assertNotIn("api_key", blob)
+        self.assertEqual(list(document["counts"]), [model_usage_census.OTHER_KEY])
+
+    def test_census_main_prints_nothing_from_under_the_projects_tree(self):
+        """The status line is the other public surface: CI logs are public."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            out = Path(tmp) / "published" / "usage.json"
+            self._write_transcript(
+                projects / "-home-example-repos-private-client-work" / "s.jsonl",
+                [self._assistant(v, "2026-09-03T10:00:00Z")
+                 for v in self.HOSTILE_MODELS.values()],
+                mtime=self.NOW)
+            argv = ["model_usage_census.py", "--projects", str(projects),
+                    "--out", str(out), "--weeks", "8"]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = model_usage_census.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(rc, 0, printed)
+            self.assertNotIn(str(projects), printed)
+            self.assertNotIn("private-client-work", printed)
+            for value in self.HOSTILE_MODELS.values():
+                self.assertNotIn(value, printed)
+            published = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(list(published["counts"]), [model_usage_census.OTHER_KEY])
+
+    # --- S5: one count per API turn, not per JSONL entry -----------------
+
+    def test_census_counts_one_turn_per_message_id(self):
+        """A thinking block, a text block and two tool calls arrive as four
+        assistant entries sharing one `message.id`. Counting entries inflated
+        the numbers the 10%/2% bars are decided on (measured 2.5x)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            entries = [self._assistant("claude-opus-5", "2026-09-03T10:00:0%dZ" % i,
+                                       message_extra={"id": "msg_01AAA"})
+                       for i in range(4)]
+            entries.append(self._assistant("claude-opus-5", "2026-09-03T11:00:00Z",
+                                           message_extra={"id": "msg_01BBB"}))
+            self._write_transcript(projects / "-x" / "s.jsonl", entries, mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    def test_census_falls_back_to_request_id_then_counts_the_entry(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            entries = [
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:00Z",
+                 "requestId": "req_1", "message": {"model": "claude-opus-5"}},
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:01Z",
+                 "requestId": "req_1", "message": {"model": "claude-opus-5"}},
+                # No id and no requestId: nothing to dedupe on, so it counts.
+                {"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+                 "message": {"model": "claude-opus-5"}},
+            ]
+            self._write_transcript(projects / "-x" / "s.jsonl", entries, mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    def test_dedupe_is_per_transcript_not_global(self):
+        """Two sessions can legitimately carry the same message id only if one
+        is a resumed copy of the other; across unrelated transcripts, ids are
+        distinct. Deduping globally would silently drop real turns."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            for name in ("a.jsonl", "b.jsonl"):
+                self._write_transcript(
+                    projects / "-x" / name,
+                    [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z",
+                                     message_extra={"id": "msg_01SAME"})],
+                    mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 2}})
+
+    # --- N6: transcripts older than the window are not parsed ------------
+
+    def test_census_skips_transcripts_last_written_before_the_window(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            self._write_transcript(
+                projects / "-x" / "old.jsonl",
+                [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z")],
+                mtime=self.NOW - timedelta(days=365))
+            self._write_transcript(
+                projects / "-x" / "new.jsonl",
+                [self._assistant("claude-sonnet-5", "2026-09-03T10:00:00Z")],
+                mtime=self.NOW)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-sonnet-5": {"2026-W36": 1}})
+
+    # --- N1: one week-arithmetic implementation, not two -----------------
+
+    def test_roster_and_census_share_one_week_implementation(self):
+        self.assertIs(roster.iso_week, timeweeks.iso_week)
+        self.assertIs(model_usage_census.iso_week, timeweeks.iso_week)
+        self.assertIs(roster.window_weeks, timeweeks.window_weeks)
+        self.assertIs(model_usage_census.window_weeks, timeweeks.window_weeks)
+        self.assertIs(roster.parse_ts, timeweeks.parse_ts)
+    # --- S1: an empty census is not usage evidence -----------------------
+
+    def _empty_census(self, **kwargs):
+        return self._census_doc(counts={}, **kwargs)
+
+    def test_a_fresh_but_empty_census_is_not_treated_as_usage_evidence(self):
+        """Nobody ran anything, or the publisher wrote a census of nothing —
+        either way there is no evidence, and every arm was reading as though
+        it had been chosen on usage."""
+        result = self._compute(census=self._empty_census())
+        self.assertTrue(result["arms"], "the fallback still names an arm set")
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("census published but empty over the window",
+                              arm["reason"])
+        self.assertEqual(result["source"]["census_at"], "2026-09-04T06:00:00Z",
+                         "the census WAS published; its provenance is recorded")
+
+    def test_a_census_with_no_weeks_inside_the_window_is_not_evidence(self):
+        outside = {"claude-sonnet-5": {"2026-W02": 500}}
+        result = self._compute(census=self._census_doc(counts=outside))
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("census published but empty over the window",
+                              arm["reason"])
+
+    # --- S2: staleness is not evidence of retirement ---------------------
+
+    STALE = "2026-08-14T00:00:00Z"  # 21 days before NOW, past the 14-day window
+
+    def test_a_stale_census_holds_previous_arms_still_in_the_api(self):
+        """Measured: a previous arm at 33% usage dropped because the census
+        was 21 days old. A stale census says nothing about usage — including
+        nothing that would justify retiring anything."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(census=self._census_doc(generated_at=self.STALE),
+                               previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        held = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no fresh census", held)
+        self.assertIn("no evidence to retire it", held)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_a_stale_census_still_retires_a_model_that_left_the_api(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(
+            models=self._models_doc(drop=("claude-opus-4-8",)),
+            census=self._census_doc(generated_at=self.STALE), previous=previous)
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
+        self.assertIn("no longer returned by the Models API",
+                      result["retired_since_last"][0]["reason"])
+
+    def test_an_empty_census_holds_previous_arms_the_same_way(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        result = self._compute(census=self._empty_census(), previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertIn("no evidence to retire it",
+                      self._reason(result, "claude-opus-4-8"))
+
+    # --- S16: a future census timestamp is not fresh ---------------------
+
+    def test_a_census_generated_in_the_future_is_not_fresh(self):
+        ahead = self._census_doc(generated_at="2026-10-01T00:00:00Z")
+        result = self._compute(census=ahead)
+        for arm in result["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("in the future", arm["reason"])
+        self.assertIsNone(result["source"]["census_at"])
+
+    # --- S6: the ladder places mythos, and names what it cannot place ----
+
+    def test_mythos_ranks_as_a_peer_of_fable(self):
+        rungs = roster.tier_rungs(self._policy())
+        self.assertEqual(roster.rung_of("claude-mythos-5-1", rungs),
+                         roster.rung_of("claude-fable-5-1", rungs))
+        self.assertIsNotNone(roster.rung_of("claude-mythos-5-1", rungs))
+
+    def test_an_unranked_claude_model_is_named_with_its_reason(self):
+        extra = [TestIssue67._model("claude-zephyr-1", "2026-01-01T00:00:00Z")]
+        result = self._compute(models=self._models_doc(extra=extra))
+        self.assertEqual([u["id"] for u in result["unranked"]], ["claude-zephyr-1"])
+        self.assertIn("ladder", result["unranked"][0]["reason"])
+        self.assertNotIn("claude-zephyr-1", self._arm_ids(result))
+
+    def test_unranked_usage_is_excluded_from_the_share_denominator(self):
+        """Measured: 60/week of sonnet computed at 5.7% — under the 10% entry
+        bar — against 1000/week of usage on a model the ladder never placed."""
+        counts = {"claude-sonnet-5": {w: 60 for w in self.W[:4]},
+                  "claude-zephyr-1": {w: 1000 for w in self.W[:4]}}
+        result = self._compute(census=self._census_doc(counts=counts))
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertIn("100.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
+
+    # --- S7: what was excluded from the arm set, and why -----------------
+
+    def test_a_model_with_no_created_at_is_excluded_and_says_which(self):
+        broken = TestIssue67._model("claude-fable-9", None)
+        result = self._compute(models=self._models_doc(
+            extra=[broken], drop=("claude-fable-5-1",)))
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-9")
+        self.assertIn("created_at", entry["reason"])
+        self.assertIn("absent", entry["reason"])
+        self.assertNotIn("days old", entry["reason"],
+                         "'created_at absent' is not 'too new'")
+
+    def test_a_model_inside_the_cooling_off_is_excluded_and_says_so(self):
+        result = self._compute()
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-5-1")
+        self.assertIn("cooling-off", entry["reason"])
+        self.assertIn("3 days old", entry["reason"])
+
+    def test_an_unparseable_created_at_reads_as_absent_not_as_new(self):
+        broken = TestIssue67._model("claude-fable-9", "last Tuesday")
+        result = self._compute(models=self._models_doc(
+            extra=[broken], drop=("claude-fable-5-1",)))
+        entry = next(e for e in result["excluded"] if e["id"] == "claude-fable-9")
+        self.assertIn("unparseable", entry["reason"])
+
+    def test_an_empty_arm_set_is_fatal_and_publishes_nothing(self):
+        """An all-inside-cooling-off tier used to yield `arms: []` and exit 0
+        — a roster with no arms is not a roster, it is a silent no-op run."""
+        # `roster.main()` is called with no `now=` override below, so it reads
+        # the REAL wall clock. A hard-coded `created_at` (was
+        # "2026-09-02T00:00:00Z") drifted outside the policy's 7-day
+        # cooling-off window and went red on 2026-09-10 with no code change —
+        # the model had simply aged past cooling-off. `days=1` is always
+        # inside any positive `cooling_off_days`, so build the timestamp
+        # relative to "now" instead of pinning a calendar date.
+        now = datetime.now(timezone.utc)
+        one_day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        fresh_only = {"fetched_at": fetched_at, "models": [
+            TestIssue67._model("claude-haiku-9", one_day_ago)]}
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(fresh_only), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertNotEqual(rc, 0)
+            self.assertFalse(out.exists(), "nothing is written when there are no arms")
+            self.assertIn("no arms", (stdout.getvalue() + stderr.getvalue()).lower())
+
+    # --- S8: an alias and its dated snapshot are one model ---------------
+
+    SNAPSHOT = "claude-sonnet-5-20260201"
+
+    def _with_snapshot(self):
+        return self._models_doc(
+            extra=[TestIssue67._model(self.SNAPSHOT, "2026-02-01T00:00:00Z")])
+
+    def test_a_dated_snapshot_takes_no_second_arm_seat(self):
+        result = self._compute(models=self._with_snapshot())
+        self.assertIn("claude-sonnet-5", self._arm_ids(result))
+        self.assertNotIn(self.SNAPSHOT, self._arm_ids(result))
+        entry = next(e for e in result["excluded"] if e["id"] == self.SNAPSHOT)
+        self.assertIn("claude-sonnet-5", entry["reason"])
+        self.assertIn("snapshot", entry["reason"])
+
+    def test_a_dated_id_whose_alias_is_absent_stands_on_its_own(self):
+        """Only collapse onto an alias that actually exists — otherwise a
+        catalogue that publishes ONLY dated ids would have no arms at all."""
+        models = self._models_doc(drop=("claude-sonnet-5",),
+                                  extra=[TestIssue67._model(self.SNAPSHOT,
+                                                            "2026-02-01T00:00:00Z")])
+        result = self._compute(models=models)
+        self.assertIn(self.SNAPSHOT, self._arm_ids(result))
+
+    def test_snapshot_usage_counts_towards_its_alias(self):
+        counts = {self.SNAPSHOT: {w: 100 for w in self.W[:4]},
+                  "claude-haiku-4-5": {w: 100 for w in self.W[:4]}}
+        result = self._compute(models=self._with_snapshot(),
+                               census=self._census_doc(counts=counts))
+        self.assertIn("50.0% of rankable census usage", self._reason(result, "claude-sonnet-5"))
+
+    def test_version_components_sort_numerically_not_lexicographically(self):
+        """`claude-x-4-10` supersedes `claude-x-4-9`; a string sort says the
+        opposite, and the tie-break decides which model is 'newest in tier'."""
+        same_day = "2026-03-01T00:00:00Z"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-sonnet-4-9", same_day),
+            TestIssue67._model("claude-sonnet-4-10", same_day)]}
+        rungs = roster.tier_rungs(self._policy())
+        ordered = sorted(models["models"], key=lambda m: roster._rank(m, rungs))
+        self.assertEqual([m["id"] for m in ordered],
+                         ["claude-sonnet-4-9", "claude-sonnet-4-10"])
+
+    # --- S10: the judge says, in a field, whether it is also an arm ------
+
+    def test_judge_carries_a_machine_readable_is_arm_flag(self):
+        result = self._compute()
+        self.assertIs(result["judge"]["is_arm"], False)
+        self.assertNotIn(result["judge"]["id"], self._arm_ids(result))
+
+    def test_judge_is_arm_is_true_when_every_model_is_an_arm(self):
+        one_per_tier = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            TestIssue67._model("claude-sonnet-5", "2026-02-01T00:00:00Z")]}
+        result = self._compute(models=one_per_tier, census=None)
+        self.assertIs(result["judge"]["is_arm"], True)
+        self.assertIn(result["judge"]["id"], self._arm_ids(result))
+
+    # --- S12: the three documents come off a public branch ---------------
+
+    def _warned(self, **kwargs):
+        """compute_roster with the warnings collected instead of printed."""
+        notes: list[str] = []
+        kwargs.setdefault("models_doc", self._models_doc())
+        kwargs.setdefault("census_doc", self._census_doc())
+        kwargs.setdefault("policy", self._policy())
+        kwargs.setdefault("previous", None)
+        kwargs.setdefault("now", self.NOW)
+        result = roster.compute_roster(warn=notes.append, **kwargs)
+        return result, notes
+
+    def test_a_model_entry_without_a_string_id_is_skipped_and_named(self):
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            {"display_name": "no id at all", "created_at": "2026-01-01T00:00:00Z"},
+            {"id": 5, "created_at": "2026-01-01T00:00:00Z"},
+            TestIssue67._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            TestIssue67._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            "not even a dict",
+        ]}
+        result, notes = self._warned(models_doc=models)
+        self.assertEqual(self._arm_ids(result), ["claude-sonnet-5", "claude-opus-5"])
+        self.assertTrue(notes)
+        for note in notes:
+            with self.subTest(note=note):
+                self.assertNotIn("\n", note, "one line, never a traceback")
+                self.assertIn("models", note)
+
+    def test_census_counts_that_are_not_actual_ints_are_dropped_not_coerced(self):
+        """A census cell must be an actual `int` — not a numeral STRING, not
+        `None`. (N2, #129 review round 5: `_clean_counts` used to run every
+        cell through Python's `int()`, which coerces far more than a real
+        JSON number ever needs — see `_clean_counts`'s own comment.) Every
+        one of these weeks is dropped, and the run does not crash."""
+        counts = {"claude-sonnet-5": {w: "100" for w in self.W[:4]},
+                  "claude-opus-5": {w: None for w in self.W[:4]},
+                  "claude-haiku-4-5": "not a mapping at all"}
+        result, notes = self._warned(census_doc=self._census_doc(counts=counts))
+        # Every cell is dropped, so the census reads as empty over the
+        # window and every arm falls back to newest-per-tier — NOT to a
+        # coerced "100.0%" usage share.
+        reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("fell back to newest per tier", reason)
+        self.assertNotIn("100.0%", reason)
+        self.assertTrue(any("census" in n for n in notes), notes)
+        for note in notes:
+            self.assertNotIn("\n", note)
+
+    def test_previous_arms_that_are_not_dicts_with_an_id_are_ignored(self):
+        previous = {"arms": ["claude-opus-4-8", {"reason": "no id"}, 7,
+                             {"id": "claude-opus-4-8"}]}
+        result, notes = self._warned(previous=previous)
+        self.assertTrue(any("previous" in n for n in notes), notes)
+        # The one well-formed entry is still honoured.
+        self.assertEqual([r["id"] for r in result["retired_since_last"]],
+                         ["claude-opus-4-8"])
+
+    def test_a_wrong_shaped_previous_document_does_not_raise(self):
+        for previous in ({"arms": "claude-opus-5"}, {"arms": None}, {}):
+            with self.subTest(previous=previous):
+                result, _ = self._warned(previous=previous)
+                self.assertEqual(result["retired_since_last"], [])
+
+    # --- N5: an unranked previous arm is not "gone from the API" ---------
+
+    def test_an_unranked_previous_arm_is_retired_for_the_right_reason(self):
+        extra = [TestIssue67._model("claude-zephyr-1", "2026-01-01T00:00:00Z")]
+        previous = {"arms": [{"id": "claude-zephyr-1", "reason": "was an arm"}]}
+        result = self._compute(models=self._models_doc(extra=extra),
+                               previous=previous)
+        why = next(r["reason"] for r in result["retired_since_last"]
+                   if r["id"] == "claude-zephyr-1")
+        self.assertNotIn("no longer returned by the Models API", why)
+        self.assertIn("ladder", why)
+
+    # --- S9: the summary never claims "no change" it cannot know ---------
+
+    def test_summary_says_there_was_no_previous_roster_on_a_first_run(self):
+        text = roster.render_summary(self._compute(previous=None))
+        self.assertIn("no previous roster to compare against", text)
+        self.assertNotIn("No change to the arm set", text)
+
+    def test_summary_says_no_change_only_when_it_compared_something(self):
+        previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
+        text = roster.render_summary(self._compute(previous=previous))
+        self.assertIn("No change to the arm set", text)
+    # --- S13: a half-read catalogue is refused, loudly and without a body ---
+
+    def test_a_models_api_that_never_stops_paging_is_refused(self):
+        """The file says it refuses a half-read API because a partial read is
+        indistinguishable from a retirement. It then read 20 pages and wrote
+        whatever it had."""
+        pages = iter(range(10_000))
+
+        def endless(url, headers):
+            n = next(pages)
+            return {"data": [{"id": f"claude-sonnet-{n}", "created_at":
+                              "2026-01-01T00:00:00Z"}],
+                    "has_more": True, "last_id": f"claude-sonnet-{n}"}
+
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(endless, now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_a_catalogue_that_ends_within_the_bound_is_written(self):
+        pages = [
+            {"data": [{"id": "claude-sonnet-5", "created_at": "2026-02-01T00:00:00Z"}],
+             "has_more": True, "last_id": "claude-sonnet-5"},
+            {"data": [{"id": "claude-opus-5", "created_at": "2026-04-01T00:00:00Z"}],
+             "has_more": False},
+        ]
+        served = iter(pages)
+        doc = refresh_models.build_models_document(
+            lambda url, headers: next(served), now=self.NOW)
+        self.assertEqual([m["id"] for m in doc["models"]],
+                         ["claude-opus-5", "claude-sonnet-5"])
+
+    def _refresh_main(self, exc):
+        """main() with the network call replaced by a raise. (rc, printed)."""
+        def boom(url, headers, timeout=30):
+            raise exc
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "models.json"
+            argv = ["refresh_models.py", "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(refresh_models, "http_json", boom), \
+                 mock.patch.object(refresh_models, "_auth_headers", lambda: {}), \
+                 mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = refresh_models.main()
+            wrote = out.exists()
+        return rc, stdout.getvalue() + stderr.getvalue(), wrote
+
+    def test_a_timeout_is_caught_and_named_by_its_class(self):
+        """TimeoutError is an OSError, not a URLError — it used to escape the
+        except clause entirely and exit through a traceback."""
+        rc, printed, wrote = self._refresh_main(TimeoutError("timed out"))
+        self.assertEqual(rc, 1)
+        self.assertIn("TimeoutError", printed)
+        self.assertFalse(wrote)
+
+    def test_a_decoding_error_is_caught_and_named_by_its_class(self):
+        exc = UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        rc, printed, _ = self._refresh_main(exc)
+        self.assertEqual(rc, 1)
+        self.assertIn("UnicodeDecodeError", printed)
+        self.assertNotIn("invalid start byte", printed)
+
+    def test_an_http_error_reports_the_status_code_and_no_response_body(self):
+        body = "the account example-org is over its quota"
+        exc = urllib.error.HTTPError(
+            "https://example.com/v1/models", 429, "Too Many Requests", {},
+            io.BytesIO(body.encode()))
+        rc, printed, _ = self._refresh_main(exc)
+        self.assertEqual(rc, 1)
+        self.assertIn("429", printed)
+        self.assertNotIn(body, printed)
+        self.assertNotIn("example-org", printed)
+
+    def test_a_missing_credential_still_says_which_variable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "models.json"
+            argv = ["refresh_models.py", "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.dict(os.environ, {}, clear=False):
+                os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+                os.environ.pop("ANTHROPIC_API_KEY", None)
+                with mock.patch.object(sys, "argv", argv), \
+                     contextlib.redirect_stdout(stdout), \
+                     contextlib.redirect_stderr(stderr):
+                    rc = refresh_models.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(rc, 1)
+        self.assertIn("ANTHROPIC_AUTH_TOKEN", printed)
+    # --- S11 / S10: the runner fails closed on an unusable roster --------
+
+    def _fixture_dir(self, tmp, pinned, pin_judge=None):
+        eval_dir = Path(tmp) / "evals" / "a-skill"
+        (eval_dir / "seed").mkdir(parents=True)
+        (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+        fixture = {"skill": "a-skill", "prompt": "do the thing",
+                   "registry": "https://github.com/Adam-S-Daniel/agentskills",
+                   "judge_rubric": "grade it",
+                   "arms": {"without_skill": {"install": "none"}}}
+        if pinned:
+            fixture["model"] = "claude-sonnet-4-6"
+        if pinned or pin_judge:
+            fixture["judge"] = {"model": pin_judge or "claude-opus-4-6"}
+        (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
+        return eval_dir
+
+    def _roster_file(self, tmp, document=None, name="latest.json"):
+        path = Path(tmp) / "roster" / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(document, str):
+            path.write_text(document, encoding="utf-8")
+        else:
+            path.write_text(json.dumps(document if document is not None
+                                       else self._compute()), encoding="utf-8")
+        return path
+
+    def _run_one_arm(self, eval_dir, roster_path):
+        """One arm with the agent and judge stubbed. Returns the arm summary."""
+        seen = {}
+
+        def fake_run_agent(workspace, prompt, arm):
+            seen["agent"] = arm.get("model")
+            return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                    "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+        def fake_score(rubric, transcript, diff, model=None, **kwargs):
+            seen["judge"] = model
+            return {"dimensions": [], "overall": 1.0}
+
+        args = argparse.Namespace(
+            model=None, timeout=30, no_judge=False,
+            results_dir=Path(tempfile.mkdtemp()), roster=roster_path)
+        self.addCleanup(shutil.rmtree, args.results_dir, ignore_errors=True)
+        fixture = run_eval.load_fixture(eval_dir)
+        with mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+             mock.patch.object(run_eval.judge, "score", fake_score):
+            summary = run_eval._run_arm("without_skill", fixture, eval_dir / "seed",
+                                        Path("/nonexistent-registry"), args,
+                                        "20260904T120000Z")
+        return summary, seen
+
+    def test_an_unpinned_fixture_with_no_roster_is_a_runner_level_error(self):
+        """Silently falling back to the CLI's default model published a badge
+        for a model nobody chose, and made every week-over-week comparison a
+        comparison against a different model."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            missing = Path(tmp) / "roster" / "nope.json"
+            summary, seen = self._run_one_arm(eval_dir, missing)
+        self.assertIsNotNone(summary["error"], "no pin and no roster must not run")
+        # The roster's basename, not its full absolute path (item 5, #129
+        # review round 3): this detail flows into summary.json, which
+        # eval.yml commits to the public eval-results branch.
+        self.assertIn(missing.name, summary["error"]["detail"],
+                      "the error names the roster path it looked for")
+        self.assertNotIn(str(missing), summary["error"]["detail"],
+                         "the roster's absolute path must not reach a "
+                         "public summary.json")
+        self.assertNotIn("agent", seen, "the agent is never invoked")
+
+    def test_a_pinned_fixture_runs_with_no_roster_at_all(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=True)
+            summary, seen = self._run_one_arm(eval_dir, Path(tmp) / "nope.json")
+        self.assertIsNone(summary["error"])
+        self.assertEqual(seen["agent"], "claude-sonnet-4-6")
+        self.assertEqual(seen["judge"], "claude-opus-4-6")
+
+    WRONG_SHAPES = {
+        "top level list": '[{"id": "claude-opus-5"}]',
+        "arms as strings": '{"arms": ["claude-opus-5"], "judge": {"id": "claude-fable-5-1"}}',
+        "judge as a string": '{"arms": [{"id": "claude-opus-5"}], "judge": "claude-fable-5-1"}',
+        "arms not a list": '{"arms": "claude-opus-5", "judge": {"id": "claude-fable-5-1"}}',
+        "empty arms": '{"arms": [], "judge": {"id": "claude-fable-5-1"}}',
+        "truncated": '{"arms": [{"id": "claude-opus-5"}',
+        "empty file": "",
+    }
+
+    def test_a_wrong_shaped_roster_is_a_named_error_not_an_attributeerror(self):
+        for label, raw in self.WRONG_SHAPES.items():
+            with self.subTest(shape=label), tempfile.TemporaryDirectory() as tmp:
+                eval_dir = self._fixture_dir(tmp, pinned=False)
+                path = self._roster_file(tmp, raw)
+                summary, seen = self._run_one_arm(eval_dir, path)
+                self.assertIsNotNone(summary["error"])
+                # The roster's basename, not its full absolute path (item
+                # 15, #129 review round 2; item 5, round 3): a selection
+                # error naming the roster's ABSOLUTE path lands in
+                # summary.json, which eval.yml commits to the public
+                # eval-results branch. assertIn(path.name, ...) alone has
+                # no teeth here — path.name is a substring of the full
+                # path too — so the absolute path's absence is asserted
+                # explicitly.
+                self.assertIn(path.name, summary["error"]["detail"])
+                self.assertNotIn(str(path), summary["error"]["detail"])
+                self.assertNotIn("agent", seen)
+
+    def test_the_runner_refuses_a_roster_judge_that_is_also_an_arm(self):
+        """The roster says so in a field precisely so the runner can refuse:
+        a model grading its own run is not a judgement."""
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y", "is_arm": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            summary, seen = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNotNone(summary["error"])
+        self.assertIn("judge", summary["error"]["detail"].lower())
+        self.assertNotIn("agent", seen)
+
+    def test_a_fixture_that_pins_its_judge_may_still_use_a_judge_is_arm_roster(self):
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y", "is_arm": True}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False, pin_judge="claude-fable-5-1")
+            summary, seen = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNone(summary["error"])
+        self.assertEqual(seen["agent"], "claude-opus-5")
+        self.assertEqual(seen["judge"], "claude-fable-5-1")
+
+    def test_a_judge_that_merely_appears_in_arms_is_refused_too(self):
+        """`is_arm` absent (an older roster) is not permission — membership in
+        `arms` is the fact, and the flag is the shortcut."""
+        document = {"arms": [{"id": "claude-opus-5", "reason": "x"}],
+                    "judge": {"id": "claude-opus-5", "reason": "y"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            summary, _ = self._run_one_arm(eval_dir, self._roster_file(tmp, document))
+        self.assertIsNotNone(summary["error"])
+
+    # --- N3: the roster is read once a run, not once an arm --------------
+
+    def test_the_roster_is_read_once_per_run_not_once_per_arm(self):
+        reads = []
+        real = run_eval.read_roster
+
+        def counting(path):
+            reads.append(path)
+            return real(path)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = self._fixture_dir(tmp, pinned=False)
+            path = self._roster_file(tmp)
+            results = Path(tmp) / "results"
+            argv = ["run_eval.py", str(eval_dir), "--arm", "both",
+                    "--roster", str(path), "--results-dir", str(results),
+                    "--registry", f"agentskills={tmp}"]
+
+            def fake_run_agent(workspace, prompt, arm):
+                return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
+                        "num_turns": 1, "duration_ms": 1, "raw": {}}
+
+            with mock.patch.object(run_eval, "read_roster", counting), \
+                 mock.patch.object(run_eval, "run_agent", fake_run_agent), \
+                 mock.patch.object(run_eval.judge, "score",
+                                   lambda *a, **k: {"dimensions": [], "overall": 1.0}), \
+                 mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(io.StringIO()):
+                rc = run_eval.main()
+        self.assertEqual(rc, 0)
+        self.assertEqual(len(reads), 1, f"read {len(reads)} times for 2 arms")
+    # --- S3 / S4 / S9 / S15: the roster step in eval.yml ------------------
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    def test_the_roster_is_refreshed_before_the_preflight_that_consumes_it(self):
+        names = [s.get("name", "") for s in self._steps()]
+        roster_at = next(i for i, n in enumerate(names) if "roster" in n.lower())
+        preflight_at = next(i for i, n in enumerate(names) if "preflight" in n.lower())
+        self.assertLess(roster_at, preflight_at,
+                        "the preflight takes its model from the roster, so the "
+                        "roster has to exist first")
+
+    def test_the_preflight_takes_its_model_from_the_roster(self):
+        script = self._step_named("preflight")["run"]
+        # THE COMMITTED ROSTER, not the computed one (#147, ADR 0001). The
+        # property this row exists for — `preflight` is computed and
+        # consumed by something, rather than by nothing while the step
+        # hardcodes a model of its own — is unchanged; WHICH roster it
+        # consumes is what moved, and it moved because the computed one is
+        # a proposal partly derived from an untrusted census.
+        self.assertIn("evals/roster.yml", script,
+                      "`preflight` was computed and consumed by nothing")
+        self.assertIn('"preflight"', script, "it reads the preflight entry")
+        self.assertIn('--model "$model"', script,
+                      "the model is a variable the roster fills in, not a literal")
+        # Exactly one model id in the whole file, and it carries the marker.
+        raw = self.WORKFLOW.read_text(encoding="utf-8")
+        pattern = TestIssue67._model_id_pattern(TestIssue67())
+        literals = [ln for ln in raw.splitlines() if pattern.search(ln)]
+        self.assertEqual(len(literals), 1, literals)
+        self.assertIn("ROSTER FALLBACK", literals[0])
+
+    # --- the roster step, actually executed -------------------------------
+
+    def _run_roster_step(self, *, refresh_rc=0, git_shim=None,
+                         roster_fail_stderr=None, roster_success_stderr=None):
+        """Run eval.yml's roster step for real, against stubs.
+
+        Hermetic: the two python scripts it calls are replaced by stubs, `git`
+        by an optional shim, and there is no network and no credential. What is
+        under test is the STEP — its failure handling — not the scripts.
+
+        `roster_fail_stderr`, if given, makes the roster.py stub write that
+        exact text to stderr and exit 1 (instead of succeeding) — for
+        exercising the step's own reason-extraction and step-summary logic
+        against a controlled roster.err. `roster_success_stderr`, if given
+        (and `roster_fail_stderr` is not), makes the stub write that text to
+        stderr but still SUCCEED (exit 0, write --out) — a stale/unreadable
+        census or skipped bad rows can print `roster: ` warnings and still
+        let the run succeed overall.
+
+        SHARED with TestIssue67Review3 (assigned there rather than
+        duplicated — see this file's per-review-round class convention:
+        TestIssue67Review2 does the same). Same step, same stub shape; kept
+        as one definition so a future change to the step's fixture only
+        needs to happen once.
+        """
+        script = self._step_named("roster")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "scripts").mkdir()
+        (tmp / "harness").mkdir()
+        (tmp / "evals").mkdir()
+        (tmp / "evals" / "roster-policy.yml").write_text("tiers: []\n", encoding="utf-8")
+        stub_args = ("import sys, json, argparse\n"
+                     "p = argparse.ArgumentParser()\n"
+                     "for f in ('--models','--policy','--census',"
+                     "'--admin-report','--previous','--out'):\n"
+                     "    p.add_argument(f)\n"
+                     "a = p.parse_args()\n")
+        (tmp / "scripts" / "refresh_models.py").write_text(
+            stub_args + (
+                "print('Models API read failed: HTTP 503', file=sys.stderr)\n"
+                "sys.exit(1)\n" if refresh_rc else
+                "open(a.out, 'w').write(json.dumps({'models': []}))\n"
+                "open(a.admin_report, 'w').write('{}')\n"),
+            encoding="utf-8")
+        if roster_fail_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_fail_stderr!r})\n"
+                           f"sys.exit(1)\n")
+        elif roster_success_stderr is not None:
+            roster_stub = (stub_args +
+                           f"sys.stderr.write({roster_success_stderr!r})\n"
+                           "open(a.out, 'w').write('{}')\n"
+                           "print('### Model roster')\n")
+        else:
+            roster_stub = (stub_args + "open(a.out, 'w').write('{}')\n"
+                                       "print('### Model roster')\n")
+        (tmp / "harness" / "roster.py").write_text(roster_stub, encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=tmp, check=True)
+        # A real (empty) bare "origin" — actions/checkout always configures
+        # one in production, and item 2's fix makes the step's behavior
+        # depend on whether `origin` is genuinely reachable vs. genuinely
+        # missing the branch. An unconfigured origin used to read the same
+        # as "reachable, branch absent" purely by accident of both failing
+        # the same commands; that coincidence is gone now that ls-remote's
+        # own exit status is checked, so the fixture needs a real remote to
+        # stay a genuine first-run case without a git_shim.
+        bare_origin = tmp / "origin.git"
+        subprocess.run(["git", "init", "-q", "--bare", str(bare_origin)], check=True)
+        subprocess.run(["git", "remote", "add", "origin", str(bare_origin)],
+                       cwd=tmp, check=True)
+
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        env = dict(os.environ)
+        env.update({"RUNNER_TEMP": str(runner),
+                    "GITHUB_ENV": str(tmp / "github_env"),
+                    "GITHUB_STEP_SUMMARY": str(tmp / "summary.md")})
+        (tmp / "github_env").write_text("", encoding="utf-8")
+        (tmp / "summary.md").write_text("", encoding="utf-8")
+        if git_shim:
+            bindir = tmp / "bin"
+            bindir.mkdir()
+            shim = bindir / "git"
+            shim.write_text(git_shim.replace("{GIT}", shutil.which("git")),
+                            encoding="utf-8")
+            shim.chmod(0o755)
+            env["PATH"] = f"{bindir}:{env['PATH']}"
+        # Actions runs a `run:` block as `bash -e {file}`, not `bash -c`
+        # (its default shell is `bash --noprofile --norc -eo pipefail {0}`)
+        # — a command that fails outside an if/&&/||/! context aborts the
+        # whole step there. `bash -c` without `-e` let a step that would
+        # actually die partway through read as fully successful here.
+        script_file = tmp / "roster_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=120)
+        return {
+            "rc": proc.returncode,
+            "out": proc.stdout + proc.stderr,
+            "roster": runner / "roster" / "latest.json",
+            "env": (tmp / "github_env").read_text(encoding="utf-8"),
+            "summary": (tmp / "summary.md").read_text(encoding="utf-8"),
+        }
+
+    def test_the_roster_step_publishes_a_roster_on_the_happy_path(self):
+        got = self._run_roster_step()
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertTrue(got["roster"].is_file(), got["out"])
+        # NO `EVAL_ROSTER=` LINE ANY MORE (#147): the step used to point
+        # the eval's model selection at the roster it had just computed
+        # from an untrusted census. Selection reads the committed
+        # `evals/roster.yml` now and the step exports nothing.
+        self.assertNotIn("EVAL_ROSTER", got["env"])
+        self.assertIn("Model roster", got["summary"])
+
+    def test_a_models_api_failure_does_not_fail_the_eval(self):
+        """S4: the roster step sits ahead of the eval and the badge, neither of
+        which ever depended on it. A Models API blip must not kill both."""
+        got = self._run_roster_step(refresh_rc=1)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists(),
+                         "no roster is published — never a partial one")
+        # The happy-path row is where the `EVAL_ROSTER` absence is
+        # asserted now (#147) — here it would be vacuous, since the step
+        # exports nothing on either path.
+        self.assertIn("not refreshed", got["summary"].lower())
+
+    #: `fetch` fails, `ls-remote` says the branch is there — a transient
+    #: network failure, not a first run. Anything else goes to the real git.
+    GIT_SHIM_FETCH_FAILS = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
+    ls-remote) printf 'deadbeef\\trefs/heads/eval-results\\n'; exit 0 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    #: `fetch` fails and the branch does not exist either — a genuine first run.
+    GIT_SHIM_FIRST_RUN = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) exit 128 ;;
+    ls-remote) exit 0 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    def test_a_failed_fetch_is_not_read_as_a_first_run(self):
+        """S9: `git fetch || true` conflated a transient failure with a first
+        run, and the roster then asserted 'no fresh census (none published)'."""
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_FETCH_FAILS)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists())
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+
+    def test_a_genuine_first_run_still_computes_a_roster(self):
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_FIRST_RUN)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertTrue(got["roster"].is_file(), got["out"])
+
+    def test_the_admin_usage_report_is_written_outside_the_published_directory(self):
+        """S15: it went into the very directory the commit step copies from."""
+        script = self._step_named("roster")["run"]
+        self.assertNotIn('roster/admin-usage.json', script)
+        self.assertIn('"$RUNNER_TEMP/admin-usage.json"', script)
+        got = self._run_roster_step()
+        published = got["roster"].parent
+        self.assertEqual(sorted(p.name for p in published.iterdir()),
+                         ["latest.json"],
+                         "only the roster itself lives in the copied directory")
+
+    # --- S14: the security header's rules, checked where they live -------
+
+    def test_every_uses_line_is_bare_in_the_RAW_file(self):
+        """The parsed-YAML check cannot see this: yaml.safe_load strips the
+        comment, so `uses: owner/repo@<sha> # v4` passed it (mutation-proven).
+        A trailing version comment is a LEXICAL property of the file, and a
+        regex over the raw text is the right tool for a lexical property."""
+        bare = re.compile(r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$")
+        raw = self.WORKFLOW.read_text(encoding="utf-8")
+        lines = [ln for ln in raw.splitlines() if re.match(r"^\s*(?:-\s+)?uses:", ln)]
+        self.assertTrue(lines, "no `uses:` lines found — the check is inert")
+        for line in lines:
+            with self.subTest(line=line.strip()):
+                self.assertRegex(line, bare,
+                                 "every `uses:` is a bare 40-hex SHA with no "
+                                 "trailing version/date comment")
+
+    def test_every_checkout_disables_persist_credentials(self):
+        checkouts = [s for s in self._steps()
+                     if (s.get("uses") or "").startswith("actions/checkout@")]
+        self.assertTrue(checkouts)
+        for step in checkouts:
+            with self.subTest(step=step.get("name")):
+                self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                              False)
+
+    def test_the_concurrency_group_is_still_there(self):
+        """Nothing in this round adds or changes it — that is the assertion.
+        The badge commit races itself without it."""
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        self.assertEqual(doc["concurrency"],
+                         {"group": "real-eval", "cancel-in-progress": False})
+
+    def test_no_run_block_interpolates_an_actions_expression(self):
+        for step in self._steps():
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("${{", step.get("run") or "")
+
+
+class TestIssue67Review2(unittest.TestCase):
+    """Review-round-2 fixes on top of #67's roster feature (PR #129, round 2).
+
+    A SIBLING of TestIssue67 and TestIssue67Review — same reasons: reuse the
+    canned documents, run its own tests once. Same hermetic rules apply.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _models_doc(cls, extra=None, drop=()):
+        return TestIssue67._models_doc(extra=extra, drop=drop)
+
+    @classmethod
+    def _census_doc(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        return TestIssue67._census_doc(counts=counts, generated_at=generated_at)
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    #: The roster step, actually executed against stubs — same harness as
+    #: TestIssue67Review, reused rather than duplicated.
+    _run_roster_step = TestIssue67Review._run_roster_step
+    _roster_file = TestIssue67Review._roster_file
+    _write_transcript = staticmethod(TestIssue67Review._write_transcript)
+    _assistant = TestIssue67Review._assistant
+
+    # --- item 1: usage_share's denominator excludes `other`/unranked, and
+    #             _census_verdict must agree, not read RAW counts -----------
+
+    def test_census_entirely_unrankable_is_held_not_read_as_usable(self):
+        """A census whose in-window usage is entirely `other` (e.g. every
+        turn routed through Bedrock/Vertex/a proxy) has raw usage but a ZERO
+        ranked denominator. `usage_share` already excludes `other` from that
+        denominator; `_census_verdict` used to check raw counts instead, so
+        it called this census usable and let previous arms fall under the
+        exit bar at 0.0% — retiring them on no measurable evidence, exactly
+        the failure the stale-census hold-over path exists to prevent."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {model_usage_census.OTHER_KEY:
+                  {w: 500 for w in self.W[:4]}}
+        result = self._compute(census=self._census_doc(counts=counts),
+                               previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result),
+                      "an unrankable-only census is not evidence to retire "
+                      "a previous arm")
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("no usage this policy can rank", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_census_verdict_distinguishes_unranked_only_from_truly_empty(self):
+        """The existing 'empty over the window' message is for a census that
+        recorded NOTHING; a census that recorded usage none of which the
+        ladder can rank is a different fact and gets its own words."""
+        raw_total, ranked_total = roster._in_window_totals(
+            {model_usage_census.OTHER_KEY: {self.W[0]: 500}},
+            set(self.W[:4]), roster.tier_rungs(self._policy()))
+        self.assertEqual(raw_total, 500)
+        self.assertEqual(ranked_total, 0)
+        _, note, code = roster._census_verdict(
+            self._census_doc(counts={model_usage_census.OTHER_KEY:
+                                     {self.W[0]: 500}}),
+            raw_total, ranked_total, self._policy(), self.NOW)
+        self.assertEqual(code, "unranked")
+        self.assertIn("no usage this policy can rank", note)
+
+        empty_raw, empty_ranked = roster._in_window_totals(
+            {}, set(self.W[:4]), roster.tier_rungs(self._policy()))
+        _, empty_note, empty_code = roster._census_verdict(
+            self._census_doc(counts={}), empty_raw, empty_ranked,
+            self._policy(), self.NOW)
+        self.assertEqual(empty_code, "empty")
+        self.assertIn("empty over the window", empty_note)
+
+    # --- item 2: `git ls-remote | grep -q` discards ls-remote's own exit
+    #             status under `pipefail` -----------------------------------
+
+    #: Both `fetch` AND `ls-remote` fail — a correlated outage (DNS, proxy,
+    #: GitHub down), not a first run. `grep -q` on ls-remote's empty stdout
+    #: exits 1 (no match); under `pipefail` that becomes the PIPELINE's exit
+    #: status, discarding ls-remote's own 128 — so `if ... | grep -q ...`
+    #: reads false and the step falls through as though the branch never
+    #: existed.
+    GIT_SHIM_BOTH_FAIL = '''#!/usr/bin/env bash
+for a in "$@"; do
+  case "$a" in
+    fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
+    ls-remote) echo "fatal: unable to access origin" >&2; exit 128 ;;
+  esac
+done
+exec {GIT} "$@"
+'''
+
+    def test_a_correlated_outage_is_not_read_as_a_first_run(self):
+        got = self._run_roster_step(git_shim=self.GIT_SHIM_BOTH_FAIL)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertFalse(got["roster"].exists(),
+                         "no roster is published on a correlated outage")
+        self.assertNotIn("EVAL_ROSTER=", got["env"])
+
+    # --- item 3: `has_more: true` must never exit the paging loop via a
+    #             plain `break` — every such exit is a truncated catalogue --
+
+    def test_a_stuck_cursor_is_refused_not_silently_truncated(self):
+        """`has_more: true` with the SAME `last_id` every page — exactly what
+        MAX_PAGES exists to catch. The `next_after == after` break used to
+        fire after the SECOND identical page, exiting with rc 0 long before
+        MAX_PAGES and defeating the bound entirely."""
+        page = {"data": [{"id": "claude-sonnet-5",
+                          "created_at": "2026-01-01T00:00:00Z"}],
+                "has_more": True, "last_id": "claude-sonnet-5"}
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(lambda url, headers: page,
+                                                  now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_has_more_with_no_usable_cursor_is_refused(self):
+        """`has_more: true`, no `last_id`, and no entry in `data` carries an
+        `id` either — there is nothing to page from, but the old code read
+        that as "done" rather than "cannot continue"."""
+        page = {"data": [{"created_at": "2026-01-01T00:00:00Z"}],
+                "has_more": True}
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(lambda url, headers: page,
+                                                  now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    def test_an_empty_page_that_still_claims_more_is_refused(self):
+        """A real page, then `{"data": [], "has_more": true}` — the API says
+        there is more, but the empty page carries no cursor to reach it.
+        `not entries` used to break the loop silently regardless of
+        `has_more`, publishing everything read so far as the whole
+        catalogue."""
+        pages = iter([
+            {"data": [{"id": "claude-sonnet-5",
+                      "created_at": "2026-01-01T00:00:00Z"}],
+             "has_more": True, "last_id": "claude-sonnet-5"},
+            {"data": [], "has_more": True},
+        ])
+        with self.assertRaises(RuntimeError) as caught:
+            refresh_models.build_models_document(
+                lambda url, headers: next(pages), now=self.NOW)
+        self.assertIn("truncated", str(caught.exception).lower())
+
+    # --- item 4a: the preflight pick applies the cooling-off, not just
+    #              "newest in the lowest rung" ----------------------------
+
+    def test_preflight_prefers_a_model_past_cooling_off_over_a_newer_one_inside_it(self):
+        """A day-old cheapest-tier model is exactly the kind an old or
+        narrowly-scoped bearer may not yet be entitled to invoke — and the
+        preflight step this feeds is FATAL to the whole job. When an older,
+        already-cooled-off model exists in the same (cheapest) tier, that is
+        the one to canary with, not the newest arrival."""
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = self._models_doc(extra=[TestIssue67._model("claude-haiku-5", yesterday)])
+        result = self._compute(models=models)
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cooling-off", result["preflight"]["reason"])
+
+    def test_preflight_falls_back_to_newest_when_nothing_in_tier_has_cooled_off(self):
+        """The tier's only model is brand new — there is nothing older to
+        prefer, so the newest (still within cooling-off) is the only pick,
+        and the reason says so rather than silently pretending otherwise."""
+        yesterday = (self.NOW - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            TestIssue67._model("claude-haiku-9", yesterday),
+            TestIssue67._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+        result = self._compute(models=models, census=None)
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-9")
+        self.assertIn("within the", result["preflight"]["reason"])
+        self.assertIn("cooling-off", result["preflight"]["reason"])
+
+    # --- item 4b: eval.yml retries the preflight once with the fallback --
+
+    def _run_preflight_step(self, *, roster_doc, claude_shim):
+        """Run eval.yml's WIF auth preflight step for real, against a fake
+        `claude` on PATH. No network, no real credential."""
+        script = self._step_named("preflight")["run"]
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        runner = tmp / "runner"
+        runner.mkdir()
+        (runner / "anthropic-bearer").write_text("not-a-real-token", encoding="utf-8")
+        # THE COMMITTED ROSTER, in the step's own working directory
+        # (#147). It used to be `$RUNNER_TEMP/roster/latest.json` — this
+        # run's own proposal — so a census plant chose which model the job
+        # canaried its bearer against.
+        if roster_doc is not None:
+            (tmp / "evals").mkdir()
+            (tmp / "evals" / "roster.yml").write_text(
+                yaml.safe_dump(roster_doc), encoding="utf-8")
+        bindir = tmp / "bin"
+        bindir.mkdir()
+        fake = bindir / "claude"
+        fake.write_text(claude_shim, encoding="utf-8")
+        fake.chmod(0o755)
+        env = dict(os.environ)
+        env["RUNNER_TEMP"] = str(runner)
+        env["PATH"] = f"{bindir}:{env['PATH']}"
+        script_file = tmp / "preflight_step.sh"
+        script_file.write_text(script, encoding="utf-8")
+        proc = subprocess.run(["bash", "-e", str(script_file)], cwd=tmp, env=env,
+                              capture_output=True, text=True, timeout=60)
+        return {"rc": proc.returncode, "out": proc.stdout + proc.stderr}
+
+    #: Fails when invoked with `--model claude-opus-5` (the roster's pick),
+    #: succeeds on anything else (the ROSTER FALLBACK literal).
+    CLAUDE_SHIM_FAILS_ON_ROSTER_MODEL = '''#!/usr/bin/env bash
+model=""
+prev=""
+for a in "$@"; do
+  if [ "$prev" = "--model" ]; then model="$a"; fi
+  prev="$a"
+done
+if [ "$model" = "claude-opus-5" ]; then
+  echo "not entitled to invoke claude-opus-5" >&2
+  exit 1
+fi
+echo '{"result":"ok"}'
+exit 0
+'''
+
+    CLAUDE_SHIM_ALWAYS_FAILS = '''#!/usr/bin/env bash
+echo "nope" >&2
+exit 1
+'''
+
+    def test_preflight_retries_once_with_the_fallback_on_failure(self):
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(
+            roster_doc=roster, claude_shim=self.CLAUDE_SHIM_FAILS_ON_ROSTER_MODEL)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertIn("claude-opus-5", got["out"])
+        self.assertIn("preflight model: claude-opus-5", got["out"])
+        self.assertIn("preflight model: claude-haiku-4-5", got["out"],
+                      "retried with the fallback")
+
+    def test_preflight_fails_the_job_when_the_fallback_also_fails(self):
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(
+            roster_doc=roster, claude_shim=self.CLAUDE_SHIM_ALWAYS_FAILS)
+        self.assertNotEqual(got["rc"], 0)
+
+    def test_preflight_does_not_retry_when_the_roster_model_already_succeeds(self):
+        always_ok = '''#!/usr/bin/env bash
+echo '{"result":"ok"}'
+exit 0
+'''
+        roster = {"preflight": {"id": "claude-opus-5", "reason": "x"}}
+        got = self._run_preflight_step(roster_doc=roster, claude_shim=always_ok)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertNotIn("::warning::", got["out"])
+        self.assertEqual(got["out"].count("preflight model:"), 1,
+                         "no retry when the first attempt already succeeded")
+
+    # --- item 5: `_clean_counts` misses OverflowError, non-finite floats,
+    #             and negative counts ---------------------------------------
+
+    def test_clean_counts_rejects_infinite_and_nan_cells(self):
+        """`int(float('inf'))` raises OverflowError, which `except
+        (TypeError, ValueError)` does not catch — a census cell of `1e400`
+        (JSON overflows it to inf) or the literal `Infinity` used to exit by
+        an uncaught traceback instead of being skipped as a bad cell."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": float("inf"),
+                               "2026-W35": float("-inf"),
+                               "2026-W34": float("nan"),
+                               "2026-W33": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W33": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_main_does_not_crash_on_a_non_finite_census_count(self):
+        """End-to-end: Python's `json` module accepts the bare `Infinity`
+        literal by default (it is what `1e400` also decodes to). This used
+        to reach `int()` unguarded and exit by traceback; eval.yml's
+        extractor then printed the traceback's first line as the reason."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            census.write_text(
+                '{"generated_at": "2026-09-04T06:00:00Z", "weeks": %s, '
+                '"counts": {"claude-sonnet-5": {"2026-W36": Infinity}}}'
+                % json.dumps(self.W), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--census", str(census), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+        self.assertEqual(rc, 0, printed)
+        self.assertNotIn("Traceback", printed)
+
+    def test_negative_counts_are_rejected_as_bad_cells(self):
+        """A `-99` cell was accepted at face value — `int(-99)` does not
+        raise — and fed straight into usage_share's totals, once producing
+        a nonsensical 'carries 10000.0% of census usage'."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": -99, "2026-W35": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W35": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_a_cancelling_pair_does_not_net_to_a_smaller_share(self):
+        """A `+100`/`-100` pair on the same model used to sum straight into
+        usage_share's totals and net to zero usage — including a zero
+        DENOMINATOR when that pair was the census's only entry, which the
+        old `_census_verdict` (checking raw, un-rejected counts) read as
+        usable."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {self.W[0]: 100, self.W[1]: -100},
+             "claude-sonnet-5": {w: 100 for w in self.W[:4]}}, notes.append)
+        rungs = roster.tier_rungs(self._policy())
+        share = roster.usage_share(cleaned, "claude-opus-5", self.W[:4], rungs)
+        self.assertEqual(share, 20.0,
+                         "the -100 cell is rejected, not summed: opus-5 "
+                         "keeps its 100 turns against a 500-turn ranked total")
+
+    # --- item 6: an unreadable (present, but corrupt) census must not read
+    #             the same as "none published" ----------------------------
+
+    def test_main_reports_census_unreadable_and_it_reaches_the_arm_reasons(self):
+        """`read_json` already distinguishes absent from present-but-
+        unreadable; main() printed the distinction to stderr and then threw
+        it away, passing `census_doc=None` either way — so a census
+        truncated mid-write said 'no fresh census (none published)', a
+        different (and wrong) fact."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(self._models_doc()), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            census.write_text('{"generated_at": "2026-09-04T06:00:00Z", "wee',
+                              encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--census", str(census), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            printed = stdout.getvalue() + stderr.getvalue()
+            self.assertEqual(rc, 0, printed)
+            self.assertIn("unreadable", printed.lower())
+            published = json.loads(out.read_text(encoding="utf-8"))
+        self.assertTrue(published["arms"])
+        for arm in published["arms"]:
+            with self.subTest(arm=arm["id"]):
+                self.assertIn("unreadable", arm["reason"].lower())
+                self.assertNotIn("none published", arm["reason"].lower())
+
+    def test_census_verdict_code_distinguishes_unreadable_from_absent(self):
+        _, note, code = roster._census_verdict(
+            None, 0, 0, self._policy(), self.NOW,
+            census_problem="latest.json is present but unreadable (JSONDecodeError)")
+        self.assertEqual(code, "unreadable")
+        self.assertIn("JSONDecodeError", note)
+        _, _, absent_code = roster._census_verdict(None, 0, 0, self._policy(), self.NOW)
+        self.assertEqual(absent_code, "absent")
+
+    # --- item 8: roster_models() drops malformed arm entries silently, and
+    #             the judge-is-arm refusal was checked against an emptied set
+
+    def test_roster_models_returns_a_skipped_count(self):
+        arm_ids, judge_id, judge_is_arm, skipped = run_eval.roster_models(
+            {"arms": [{"id": "claude-opus-5", "reason": "x"}, "not-a-dict",
+                      {"reason": "no id"}],
+             "judge": {"id": "claude-fable-5-1"}})
+        self.assertEqual(arm_ids, ["claude-opus-5"])
+        self.assertEqual(judge_id, "claude-fable-5-1")
+        self.assertFalse(judge_is_arm)
+        self.assertEqual(skipped, 2)
+
+    def test_a_roster_whose_arms_all_fail_to_parse_is_a_selection_error_even_when_the_agent_is_pinned(self):
+        """A fixture pinning `model:` but not `judge.model:` still reads the
+        roster (for the judge) — and `{"arms": ["claude-opus-5"], "judge":
+        {"id": "claude-opus-5", "is_arm": false}}` used to be ACCEPTED: the
+        raw string arm entry is dropped silently, arm_ids comes back empty,
+        and the judge-is-arm check (`judge_id in arm_ids`) is then checked
+        against that emptied set — even though the roster's own arms list
+        plainly names this exact judge id. A roster whose `arms` list is
+        non-empty but yields zero usable ids cannot be trusted, regardless
+        of whether this run even needed an arm from it."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "evals" / "a-skill"
+            (eval_dir / "seed").mkdir(parents=True)
+            (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+            fixture = {"skill": "a-skill", "prompt": "do the thing",
+                      "judge_rubric": "grade it", "model": "claude-sonnet-4-6",
+                      "arms": {"without_skill": {"install": "none"}}}
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture),
+                                                    encoding="utf-8")
+            document = {"arms": ["claude-opus-5"],
+                       "judge": {"id": "claude-opus-5", "is_arm": False}}
+            roster_path = self._roster_file(tmp, document)
+            loaded_fixture = run_eval.load_fixture(eval_dir)
+            args = argparse.Namespace(model=None, roster=roster_path, no_judge=False)
+            agent, judge_model, error = run_eval.select_models(loaded_fixture, args)
+        self.assertIsNotNone(error)
+        self.assertIn(roster_path.name, error)
+
+    # --- item 10: `compared_to_previous` collapses "unreadable previous"
+    #              into "first run" — publish a third state -------------
+
+    def test_previous_state_distinguishes_none_from_compared(self):
+        first_run = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=None, now=self.NOW)
+        self.assertEqual(first_run["previous_state"], "none")
+        self.assertFalse(first_run["compared_to_previous"])
+
+        previous = {"arms": [{"id": i} for i in self._arm_ids(self._compute())]}
+        compared = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census_doc(),
+            policy=self._policy(), previous=previous, now=self.NOW)
+        self.assertEqual(compared["previous_state"], "compared")
+        self.assertTrue(compared["compared_to_previous"])
+
+    # --- item 11: a fixture pinning neither model nor judge is told only
+    #              about the model pin -------------------------------------
+
+    def test_a_fixture_pinning_neither_model_nor_judge_is_told_about_both(self):
+        fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
+        args = argparse.Namespace(model=None,
+                                  roster=Path("/nonexistent/roster.json"),
+                                  no_judge=False)
+        agent, judge_model, error = run_eval.select_models(fixture, args)
+        self.assertIsNotNone(error)
+        self.assertIn("model", error)
+        self.assertIn("judge model", error)
+
+    # --- item 12: the fixture's own precedence comment still says the old,
+    #              fall-through-to-CLI-default contract -------------------
+
+    def test_workflow_path_audit_fixture_describes_the_fail_closed_precedence(self):
+        text = (REPO_ROOT / "evals" / "workflow-path-audit" / "fixture.yaml").read_text(
+            encoding="utf-8")
+        self.assertNotIn("the CLI's own default", text,
+                         "select_models() fails closed; nothing falls through "
+                         "to a CLI default any more")
+
+    # --- item 13: model_usage_census.py's docstring overstates what `other`
+    #              buys — usage_share drops it from BOTH sides -----------
+
+    def test_census_docstring_does_not_overstate_the_other_bucket_contract(self):
+        text = (REPO_ROOT / "scripts" / "model_usage_census.py").read_text(
+            encoding="utf-8")
+        self.assertNotIn("the totals the roster divides by stay truthful", text,
+                         "usage_share excludes `other` (and any unranked id) "
+                         "from what it divides by entirely — routing its "
+                         "counts under `other` keeps this script's own turn "
+                         "count honest, it does not feed the roster's share "
+                         "math at all")
+
+    # --- item 14: _run_arm materialized the workspace before checking
+    #              whether the run can even proceed ------------------------
+
+    def test_run_arm_checks_selection_error_before_materializing_the_workspace(self):
+        """A model-selection error means the agent never runs; mkdtemp +
+        copytree + a git init/add/commit for a workspace that gets
+        `shutil.rmtree`'d one line later was pure waste on every unpinned
+        fixture that hits a missing or broken roster."""
+        with tempfile.TemporaryDirectory() as tmp:
+            eval_dir = Path(tmp) / "evals" / "a-skill"
+            (eval_dir / "seed").mkdir(parents=True)
+            (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
+            fixture_doc = {"skill": "a-skill", "prompt": "do the thing",
+                           "judge_rubric": "grade it",
+                           "arms": {"without_skill": {"install": "none"}}}
+            (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture_doc),
+                                                    encoding="utf-8")
+            fixture = run_eval.load_fixture(eval_dir)
+            results_dir = Path(tempfile.mkdtemp())
+            self.addCleanup(shutil.rmtree, results_dir, ignore_errors=True)
+            args = argparse.Namespace(model=None, timeout=30, no_judge=False,
+                                      results_dir=results_dir,
+                                      roster=Path(tmp) / "nope.json")
+            with mock.patch.object(run_eval.tempfile, "mkdtemp") as fake_mkdtemp:
+                summary = run_eval._run_arm(
+                    "without_skill", fixture, eval_dir / "seed",
+                    Path("/nonexistent-registry"), args, "20260904T120000Z")
+        self.assertIsNotNone(summary["error"])
+        fake_mkdtemp.assert_not_called()
+
+    # --- item 16: select_models' docstring says a pinned fixture never
+    #              needs the roster — true only when it pins BOTH ----------
+
+    def test_select_models_docstring_says_a_fixture_must_pin_both_to_skip_the_roster(self):
+        doc = run_eval.select_models.__doc__
+        self.assertNotIn("A PINNED fixture never needs the roster", doc,
+                         "a fixture pinning only `model:` (not `judge.model:`) "
+                         "still reads the roster for the judge")
+        self.assertIn("both", doc.lower())
+
+    # --- item 17: seen_turns resets per transcript, so the SAME file
+    #              reachable twice in the walk (a symlink, a hard-linked
+    #              copy) double-counts every turn in it -------------------
+
+    def test_a_duplicate_or_symlinked_transcript_is_not_double_counted(self):
+        """The same underlying file reachable via two paths must count once.
+        This is deliberately NOT the same thing test_dedupe_is_per_transcript
+        _not_global guards: that test has two genuinely DIFFERENT files
+        (different inodes) that happen to share a message id, and both must
+        still count — dedup here is by FILE IDENTITY, never by turn id
+        across distinct files."""
+        with tempfile.TemporaryDirectory() as tmp:
+            projects = Path(tmp) / "projects"
+            original = self._write_transcript(
+                projects / "-x" / "a.jsonl",
+                [self._assistant("claude-opus-5", "2026-09-03T10:00:00Z",
+                                 message_extra={"id": "msg_01ONLY"})],
+                mtime=self.NOW)
+            duplicate = projects / "-x" / "b.jsonl"
+            os.link(original, duplicate)
+            counts = model_usage_census.census_counts(projects, now=self.NOW, weeks=8)
+        self.assertEqual(counts, {"claude-opus-5": {"2026-W36": 1}})
+
+    # --- item 19: eval.yml's two reason extractors disagree (tail vs head),
+    #              and grep -v '^roster: ' discards the diagnosis itself ---
+
+    def test_roster_failure_reason_is_the_last_line_not_the_traceback_header(self):
+        """`head -n 1` on roster.err — even filtered through `grep -v
+        '^roster: '` — picks 'Traceback (most recent call last):' on an
+        uncaught exception: the single least useful line a traceback has.
+        The last line is the exception message."""
+        stderr = ("roster: census.json is present but unreadable (JSONDecodeError)\n"
+                  "Traceback (most recent call last):\n"
+                  '  File "harness/roster.py", line 1, in <module>\n'
+                  "ValueError: something roster.py did not expect\n")
+        got = self._run_roster_step(roster_fail_stderr=stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("::warning::", got["out"])
+        self.assertIn("ValueError: something roster.py did not expect",
+                      got["out"])
+        self.assertNotIn("Traceback (most recent call last):",
+                         [ln for ln in got["out"].splitlines()
+                          if ln.startswith("::warning::")][0])
+
+    def test_roster_warnings_are_carried_into_the_step_summary(self):
+        """The `roster: `-prefixed warn() lines used to be filtered OUT of
+        the reason candidates and never appeared anywhere but the raw job
+        log — the step summary (the UI surface most people actually read)
+        never showed the diagnosis at all on a failure."""
+        stderr = ("roster: census.json is present but unreadable (JSONDecodeError)\n"
+                  "refusing to publish a roster with no arms: every ranked "
+                  "model is excluded\n")
+        got = self._run_roster_step(roster_fail_stderr=stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("census.json is present but unreadable", got["summary"])
+
+    # --- item 20: _version_key uses isdigit(), which int() does not agree
+    #              with for every character isdigit() accepts ------------
+
+    def test_version_key_does_not_crash_on_a_non_ascii_digit_token(self):
+        """`'²'.isdigit()` (superscript two) is True, but
+        `int('²')` raises ValueError — `isdigit()` and `int()` do not
+        agree on what counts as a digit."""
+        result = roster._version_key("claude-sonnet-²")
+        self.assertEqual(result, ((0, 0, "claude"), (0, 0, "sonnet"),
+                                  (0, 0, "²")))
+
+    # --- item 21: roster.py imports window_start but never uses it, hidden
+    #              behind a line-wide `# noqa: F401` -----------------------
+
+    def test_roster_does_not_import_the_unused_window_start(self):
+        """`iso_week` is legitimately unused BY roster.py's own logic — it is
+        re-exported so `test_roster_and_census_share_one_week_implementation`
+        can check identity with timeweeks.iso_week — but `window_start` has
+        no such reason and roster.py never calls it at all."""
+        self.assertFalse(hasattr(roster, "window_start"),
+                         "window_start is dead weight in roster.py's import")
+        self.assertTrue(hasattr(roster, "iso_week"),
+                        "iso_week stays: it is deliberately re-exported")
+
+    # --- item 22: roster-policy.yml's comment says a model's tier is "the
+    #              first word to appear in its id" — rung_of returns the
+    #              LOWEST matching rung, not positional order -------------
+
+    def test_roster_policy_comment_matches_rung_of_lowest_rung_behavior(self):
+        text = self.POLICY.read_text(encoding="utf-8")
+        self.assertNotIn("the first of these words to appear", text,
+                         "rung_of() returns the WEAKEST matching rung, "
+                         "walking the ladder top-down — not the first word "
+                         "to appear positionally in the id")
+        # And the code the comment describes actually does that:
+        rungs = roster.tier_rungs(self._policy())
+        self.assertEqual(roster.rung_of("claude-opus-haiku-5", rungs),
+                         roster.rung_of("claude-haiku-5", rungs),
+                         "an id carrying both an opus and a haiku token "
+                         "ranks by the weaker rung, regardless of which "
+                         "word appears first in the id string")
+
+
 class Issue84Fixture:
     """Shared surface for the cms-stuck-pr-triage tests.
 
@@ -5232,9 +7613,16 @@ class Issue84Fixture:
         env["FAKE_CLAUDE_MODE"] = "agent_and_judge"
         with tempfile.TemporaryDirectory() as results:
             return subprocess.run(
+                # `--model` pinned: select_models() (#67) fails closed with
+                # a runner-level error when a fixture pins no model and no
+                # roster is on disk, which every checkout of this test is.
+                # `--no-judge` already means no roster read is needed for
+                # the judge; the pin here is what this mini fixture is
+                # about — PATH, not model choice — actually reaching
+                # assert_stand_ins_on_path.
                 [sys.executable, str(HARNESS_DIR / "run_eval.py"), str(eval_dir),
-                 "--arm", "without_skill", "--no-judge", "--timeout", "30",
-                 "--results-dir", results],
+                 "--arm", "without_skill", "--no-judge", "--model", "claude-sonnet-4-6",
+                 "--timeout", "30", "--results-dir", results],
                 capture_output=True, text=True, env=env, cwd=str(REPO_ROOT))
 
     def _triage_reads(self, ws: Path) -> None:
@@ -6442,6 +8830,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
         self.assertEqual((self.STUCK_DIR / "seed" / "bin" / "gh").resolve(),
                          self.FAKE_GH.resolve())
 
+
 class TestIssue63(unittest.TestCase):
     """Issue #63: resolve the with_skill arm's skill dir against any registry
     layout named in harness/registries.yml, not just agentskills'
@@ -6730,6 +9119,7 @@ class TestIssue63(unittest.TestCase):
                     (seed_dir / "placeholder.txt").write_text(
                         "x\n", encoding="utf-8")
                     fixture = {"skill": "some-skill", "registry": bad,
+                              "model": "claude-haiku-4-5",
                               "prompt": "do the thing"}
                     import yaml
                     (eval_dir / "fixture.yaml").write_text(
@@ -6853,8 +9243,13 @@ class TestIssue63Review(unittest.TestCase):
             run_eval._validate_registry_paths(registries)
         msg = str(ctx.exception)
         self.assertIn("cms-platform", msg)
-        self.assertIn("does-not-exist-anywhere", msg)
         self.assertIn("--registry flag", msg)
+        # The resolved absolute PATH must not reach the message (item 6,
+        # #129 review round 4's treatment of this same class of detail,
+        # applied here too — N6, round 5): only the registry's name and
+        # override source.
+        self.assertNotIn(str(bad_path), msg)
+        self.assertNotIn("does-not-exist-anywhere", msg)
 
     def test_unoverridden_sibling_default_is_not_eagerly_validated(self):
         # agentskills-private has no sibling checkout in this environment and
@@ -7031,7 +9426,8 @@ class TestIssue63Review(unittest.TestCase):
             seed = Path(tmp) / "seed"
             seed.mkdir()
             (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
-            fixture = {"skill": "some-skill", "prompt": "do the thing"}
+            fixture = {"skill": "some-skill", "model": "claude-haiku-4-5",
+                      "prompt": "do the thing"}
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
@@ -7055,6 +9451,7 @@ class TestIssue63Review(unittest.TestCase):
             fixture = {
                 "skill": "unreachable-skill",
                 "registry": "https://github.com/example/not-a-registry",
+                "model": "claude-haiku-4-5",
                 "prompt": "do the thing",
             }
             import yaml
@@ -7286,7 +9683,8 @@ class TestIssue63Round2(unittest.TestCase):
             seed = Path(tmp) / "seed"
             seed.mkdir()
             (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
-            fixture = {"skill": "some-skill", "registry": None, "prompt": "do the thing"}
+            fixture = {"skill": "some-skill", "registry": None,
+                      "model": "claude-haiku-4-5", "prompt": "do the thing"}
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
@@ -7378,6 +9776,7 @@ class TestIssue63Round2(unittest.TestCase):
             fixture = {
                 "skill": "some-skill",
                 "registry": "https://example.com/scratch-registry",
+                "model": "claude-haiku-4-5",
                 "prompt": "do the thing",
             }
             import yaml
@@ -7400,12 +9799,13 @@ class TestIssue63Round2(unittest.TestCase):
             with_skill_summary = json.loads(
                 (run_dir / "with_skill" / "summary.json").read_text(encoding="utf-8"))
             self.assertEqual(with_skill_summary["error"]["type"], "registry_not_found")
-            # base_dir = harness_dir.parent = skills_evals_root, so the
-            # sibling default is (skills_evals_root / ".." / name).resolve()
-            # = tmp_root / "scratch-registry" — inside the disposable tmp
-            # root, never beside the real skills-evals checkout.
+            # Item 6 (#129 review round 4): the registry's NAME and layout,
+            # not its resolved absolute path — this detail reaches
+            # summary.json, which eval.yml commits to the public
+            # eval-results branch.
             expected_path = str((tmp_root / "scratch-registry").resolve())
-            self.assertIn(expected_path, with_skill_summary["error"]["detail"])
+            self.assertIn("scratch-registry", with_skill_summary["error"]["detail"])
+            self.assertNotIn(expected_path, with_skill_summary["error"]["detail"])
 
             without_skill_summary = json.loads(
                 (run_dir / "without_skill" / "summary.json").read_text(encoding="utf-8"))
@@ -7439,6 +9839,16 @@ class TestIssue63Round2(unittest.TestCase):
                 result = run_eval.run_agent(workspace, "audit the workflows", arm)
             self.assertIn("error", result)
             self.assertEqual(result["error"], "skill_install_failed")
+            # The skill name, not the destination's absolute workspace path
+            # (S5, #129 review round 5) — this detail reaches summary.json,
+            # which eval.yml commits to the public eval-results branch.
+            # Generic wording (N1, #129 review round 6): "already exists"
+            # would be false for the NotADirectoryError case below, which
+            # shares this same message.
+            self.assertIn("could not install some-skill/ into the seed workspace",
+                          result["detail"])
+            self.assertIn("FileExistsError", result["detail"])
+            self.assertNotIn(str(workspace), result["detail"])
 
             # Case 2: a seed shipping `.claude/skills` itself as a regular
             # FILE (not a directory) — os.makedirs (inside shutil.copytree)
@@ -7454,6 +9864,14 @@ class TestIssue63Round2(unittest.TestCase):
                 result2 = run_eval.run_agent(workspace2, "audit the workflows", arm)
             self.assertIn("error", result2)
             self.assertEqual(result2["error"], "skill_install_failed")
+            # N1 (#129 review round 6): "already exists" is FALSE for this
+            # case — `.claude/skills` is a file, not an existing directory
+            # — so the detail must not claim it.
+            self.assertIn("could not install some-skill/ into the seed workspace",
+                          result2["detail"])
+            self.assertNotIn("already exists", result2["detail"])
+            self.assertIn("NotADirectoryError", result2["detail"])
+            self.assertNotIn(str(workspace2), result2["detail"])
 
     # --- N4: a repeated --registry NAME= for the same name must raise, not
     # silently last-win ---
@@ -7478,6 +9896,1496 @@ class TestIssue63Round2(unittest.TestCase):
         proc = subprocess.run(cmd, capture_output=True, text=True, cwd=str(REPO_ROOT))
         self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         self.assertIn("not-a-real-registry", proc.stdout + proc.stderr)
+
+
+class TestIssue67Review3(unittest.TestCase):
+    """Round 3 fixes for #67, one test per fix. See run_tests.py's
+    class-per-review-round convention (TestIssue67Review, TestIssue67Review2)."""
+
+    WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+    # --- shared with TestIssue67Review: same step, same stub shape, one
+    # definition (item 9, #129 review round 4 — this file's existing
+    # per-review-round class convention already does this for
+    # TestIssue67Review2; a duplicate copy here just drifted from it once).
+    # NOT class inheritance: inheriting TestIssue67Review's TestCase would
+    # re-collect and re-run its whole test suite here too.
+
+    def _steps(self):
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        return doc["jobs"]["eval"]["steps"]
+
+    def _step_named(self, needle):
+        return next(s for s in self._steps()
+                    if needle.lower() in (s.get("name") or "").lower())
+
+    _run_roster_step = TestIssue67Review._run_roster_step
+
+    # --- item 2: the roster-failure reason extractor must prefer the
+    # no-arms headline over an indented per-model detail line ------------
+
+    def test_roster_failure_reason_prefers_the_no_arms_headline_over_a_model_detail_line(self):
+        """roster.py's fatal "refusing to publish a roster with no arms" path
+        prints the headline FIRST, then one indented "  <id>: <reason>" line
+        per excluded/unranked model — production-shaped, built by actually
+        running roster.py on a no-arms input (every ranked model inside the
+        cooling-off), not hand-written. The old `tail -n 1` extractor picked
+        the LAST line — a model's detail, not the headline — and the comment
+        claimed otherwise.
+        """
+        # `roster.py` is invoked as a real subprocess below with no frozen
+        # `now`, so it reads the REAL wall clock. A hard-coded `created_at`
+        # (was "2026-09-02T00:00:00Z") drifted outside the policy's 7-day
+        # cooling-off window and went red on 2026-09-10 with no code change —
+        # the model had simply aged past cooling-off. `days=1` is always
+        # inside any positive `cooling_off_days`, so build the timestamp
+        # relative to "now" instead of pinning a calendar date.
+        now = datetime.now(timezone.utc)
+        one_day_ago = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        fetched_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps({
+                "fetched_at": fetched_at,
+                "models": [TestIssue67._model("claude-haiku-9",
+                                              one_day_ago)],
+            }), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            proc = subprocess.run(
+                [sys.executable, str(HARNESS_DIR / "roster.py"),
+                 "--models", str(models), "--policy", str(self.POLICY),
+                 "--out", str(out)],
+                capture_output=True, text=True)
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("refusing to publish a roster with no arms", proc.stderr)
+        self.assertTrue(
+            any(ln.startswith("  ") for ln in proc.stderr.splitlines()),
+            "fixture must carry at least one indented per-model detail line "
+            "— the production shape the old extractor got wrong")
+
+        got = self._run_roster_step(roster_fail_stderr=proc.stderr)
+        self.assertEqual(got["rc"], 0, got["out"])
+        warning_line = next(ln for ln in got["out"].splitlines()
+                            if ln.startswith("::warning::"))
+        self.assertIn("refusing to publish a roster with no arms", warning_line)
+        self.assertNotIn("claude-haiku-9:", warning_line,
+                         "the per-model detail line leaked into the warning "
+                         "instead of the headline")
+        self.assertIn("refusing to publish a roster with no arms",
+                      got["summary"])
+
+    # --- item 7: the roster-warnings <details> block must render on the
+    # success path too, not only on failure -----------------------------
+
+    def test_roster_warnings_reach_the_step_summary_on_the_success_path_too(self):
+        """A stale/unreadable census or skipped bad rows can print
+        `roster: `-prefixed warnings and still let the roster refresh
+        succeed overall. The <details> block used to render only in the
+        failure branch, so these warnings reached the raw job log but
+        never the step summary on a run that otherwise succeeded.
+        """
+        got = self._run_roster_step(
+            roster_success_stderr="roster: census.json is present but "
+                                  "unreadable (JSONDecodeError)\n")
+        self.assertEqual(got["rc"], 0, got["out"])
+        self.assertIn("roster warnings", got["summary"])
+        self.assertIn("census.json is present but unreadable", got["summary"])
+
+    # --- item 3: a proxy alias carrying a family word (`claude-sonnet-
+    # proxy-route`) is `rung_of()`-ranked but not a catalogue model or a
+    # previous arm — its usage must not count as "usage this policy can
+    # rank" ------------------------------------------------------------
+
+    def test_proxy_alias_census_holds_previous_arms_not_credits_them(self):
+        """A census whose in-window usage is entirely a proxy alias that
+        merely carries a family word (not a real catalogue id, measured
+        end to end through the real census) used to be read as usable
+        evidence — rung_of() ranks it — crediting its usage to nobody's
+        numerator while still inflating every real arm's denominator, and
+        letting an otherwise-unattributable census retire a previous arm at
+        0.0%. This is the same failure round 2 closed for an entirely-
+        `other` census (test_census_entirely_unrankable_is_held_not_read_as
+        _usable), by a second route.
+        """
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-proxy-route":
+                  {w: 500 for w in TestIssue67.W[:4]}}
+        result = TestIssue67._compute(
+            census=TestIssue67._census_doc(counts=counts), previous=previous)
+        self.assertIn("claude-opus-4-8", TestIssue67._arm_ids(result),
+                      "a census with no attributable usage is not evidence "
+                      "to retire a previous arm")
+        reason = TestIssue67._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("no usage this policy can rank", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_real_id_census_still_computes_shares(self):
+        """The new attribution filter changes nothing when every census key
+        really is a catalogue id — the ordinary case must not regress."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {TestIssue67.W[0]: 250},
+             "claude-sonnet-5": {TestIssue67.W[0]: 250}}, lambda _m: None)
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+    def test_mixed_census_computes_share_against_real_ids_only(self):
+        """One real id at 60 turns and one alias at 1000 turns: the real
+        id's share is computed against real ids only — the alias's usage
+        must not inflate the denominator."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {TestIssue67.W[0]: 60},
+             "claude-sonnet-proxy-route": {TestIssue67.W[0]: 1000}},
+            lambda _m: None)
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5"}, previous_arms=set())
+        self.assertEqual(share, 100.0,
+                         "the alias's 1000 turns must not inflate the "
+                         "denominator for a real id's share")
+
+    # --- item 4: _clean_counts bounds a cell above zero, and usage_share
+    # stays safe even when a huge value gets past it anyway -------------
+
+    def test_clean_counts_rejects_a_cell_above_the_weekly_turn_ceiling(self):
+        """A week cannot hold more turns than roster.MAX_WEEKLY_TURNS. A
+        cell of `1e308` (a huge but finite float) or a several-hundred-
+        digit JSON integer both pass a bare `int()` cleanly — Python ints
+        are arbitrary precision — and used to ride straight into
+        usage_share's arithmetic."""
+        notes = []
+        huge_int = int("9" * 400)
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": 1e308, "2026-W35": huge_int,
+                               "2026-W34": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_usage_share_does_not_overflow_on_a_huge_count(self):
+        """usage_share is called directly by other tests on hand-built
+        counts that bypass _clean_counts's own upper bound, so it must stay
+        safe on its own: `100.0 * mine` converts a huge `mine` to a float
+        BEFORE dividing, which either overflows to `inf` (a `1e308`-sized
+        int, published as "carries inf% of census usage") or raises
+        OverflowError outright (a several-hundred-digit int)."""
+        rungs = roster.tier_rungs(TestIssue67._policy())
+        huge = int(1e308)
+        cleaned = {"claude-opus-5": {TestIssue67.W[0]: huge},
+                  "claude-sonnet-5": {TestIssue67.W[0]: huge}}
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+        way_huge = int("9" * 400)
+        cleaned = {"claude-opus-5": {TestIssue67.W[0]: way_huge},
+                  "claude-sonnet-5": {TestIssue67.W[0]: way_huge}}
+        share = roster.usage_share(
+            cleaned, "claude-opus-5", TestIssue67.W[:1], rungs,
+            api_ids={"claude-opus-5", "claude-sonnet-5"}, previous_arms=set())
+        self.assertEqual(share, 50.0)
+
+    # --- item 1: model_usage_census.py must not need PyYAML just to import
+    # or to fail an argument, only to actually build a census ---
+
+    def test_missing_pyyaml_is_a_named_exit_2_not_a_traceback(self):
+        """model_usage_census.py used to `import roster` (for `tier_words`)
+        and build MODEL_ID_RE at IMPORT TIME, so a machine with no PyYAML
+        installed died with a bare ImportError before argparse ever ran —
+        before even `--help` worked. The roster import is now lazy
+        (`_require_model_id_re()`), and main() turns a missing PyYAML into
+        one named line on stderr and exit 2, never a traceback.
+        """
+        import model_usage_census
+        saved = {name: sys.modules.get(name) for name in ("yaml", "roster")}
+        saved_re = model_usage_census.MODEL_ID_RE
+        for name in ("yaml", "roster"):
+            sys.modules.pop(name, None)
+        sys.modules["yaml"] = None  # the standard "this module is not installed" shim
+        model_usage_census.MODEL_ID_RE = None  # force a fresh (failing) resolve
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out = Path(tmp) / "usage.json"
+                argv = ["model_usage_census.py", "--out", str(out)]
+                err = io.StringIO()
+                with mock.patch.object(sys, "argv", argv), \
+                     contextlib.redirect_stderr(err), \
+                     contextlib.redirect_stdout(io.StringIO()):
+                    rc = model_usage_census.main()
+                self.assertFalse(out.exists())
+        finally:
+            for name, mod in saved.items():
+                if mod is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = mod
+            model_usage_census.MODEL_ID_RE = saved_re
+        self.assertEqual(rc, 2)
+        self.assertIn(model_usage_census.PYYAML_MISSING_MESSAGE, err.getvalue())
+        self.assertNotIn("Traceback", err.getvalue())
+
+
+class TestIssue67Review4(unittest.TestCase):
+    """Round 4 fixes for #67, one test per fix. See run_tests.py's
+    class-per-review-round convention (TestIssue67Review, TestIssue67Review2,
+    TestIssue67Review3) — a SIBLING of TestIssue67, reusing its canned
+    documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- item 1: `_is_attributable` must attribute a candidate whose RAW
+    # (unfolded) spelling is itself an api id, or whose folded spelling
+    # matches an api id folded through the SAME alias map — not only a
+    # candidate whose folded spelling is a bare (unfolded) api id. -------
+
+    def test_dated_only_catalogue_with_usage_under_the_undated_alias_is_attributed(self):
+        """(a) The Models API publishes only the dated snapshot id; the
+        census recorded most usage under that exact id but a handful of
+        turns under the bare (undated) alias — a shape roster-policy.yml
+        and alias_map's own docstring call legitimate. The OLD
+        `_is_attributable` folded the DATED candidate onto its undated
+        alias and found neither spelling in `api_ids` (the alias itself
+        is not a catalogue id), so all 2000 of its turns read as
+        unattributable and the census read as CENSUS_UNRANKED. Measured
+        against fc5de5c the same input gave 100% for this model; this is
+        the regression floor.
+        """
+        models_solo = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-06-01T00:00:00Z"),
+        ]}
+        counts_solo = {"claude-sonnet-4-9-20260101": {w: 500 for w in self.W[:4]},
+                       "claude-sonnet-4-9": {self.W[0]: 4}}
+
+        rungs = roster.tier_rungs(self._policy())
+        cleaned = roster._clean_counts(counts_solo, lambda _m: None)
+        aliases = roster.alias_map(["claude-sonnet-4-9-20260101"] + list(cleaned))
+        raw_total, ranked_total = roster._in_window_totals(
+            cleaned, set(self.W[:4]), rungs, aliases=aliases,
+            api_ids={"claude-sonnet-4-9-20260101"}, previous_arms=set())
+        self.assertEqual(raw_total, 2004)
+        self.assertEqual(ranked_total, 2004,
+                         "the dated id's own 2000 turns must count as "
+                         "ranked, attributable usage")
+
+        # A second, ordinary model in the mix (its own id published and
+        # attributed with no aliasing involved at all) is what turns the
+        # dated model's own combined 2004 turns into a measured SHARE
+        # rather than the trivial 100% of a one-model universe.
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-06-01T00:00:00Z"),
+            self._model("claude-haiku-4-9", "2026-06-01T00:00:00Z"),
+        ]}
+        counts = dict(counts_solo, **{"claude-haiku-4-9": {self.W[0]: 4}})
+        census = TestIssue67._census_doc(counts=counts)
+
+        result = self._compute(models=models, census=census, previous=None)
+        self.assertIn("claude-sonnet-4-9-20260101", self._arm_ids(result))
+        reason = self._reason(result, "claude-sonnet-4-9-20260101")
+        self.assertIn("99.8%", reason)
+        self.assertNotIn("no fresh census", reason.lower())
+
+    def test_mixed_dated_and_undated_ids_do_not_give_a_false_100_percent(self):
+        """(b) A mixed catalogue: one family published dated-only while its
+        census usage is recorded under the undated alias (the same shape as
+        (a)), alongside a second family whose census key matches its api id
+        exactly. Under the old code the first family's usage was excluded
+        (unattributable) while the second's was not, so the second family's
+        tiny usage read as ALL the rankable census."""
+        rungs = roster.tier_rungs(self._policy())
+        counts_raw = {"claude-sonnet-4-9": {self.W[0]: 100000},
+                      "claude-haiku-4-9-20251001": {self.W[0]: 5}}
+        cleaned = roster._clean_counts(counts_raw, lambda _m: None)
+        api_ids = {"claude-sonnet-4-9-20260101", "claude-haiku-4-9-20251001"}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-haiku-4-9-20251001", self.W[:1], rungs,
+            aliases, api_ids=api_ids, previous_arms=set())
+        self.assertLess(share, 1.0,
+                        "sonnet's 100000 turns under its undated alias must "
+                        "count toward the denominator; haiku's 5 turns must "
+                        "not read as the entire rankable census")
+
+    def test_a_heavily_used_dated_previous_arm_is_not_retired_at_zero_percent(self):
+        """(b), continued: end to end through compute_roster. A previous
+        arm published only under a dated id, whose census usage is
+        recorded under its undated alias, carries real usage and must not
+        be retired at a false 0.0% — nor should it lose its seat to a
+        newer same-tier model it is genuinely outperforming."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-9-20260101", "2026-01-01T00:00:00Z"),
+            self._model("claude-sonnet-4-10-20260201", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-9-20251001", "2025-10-01T00:00:00Z"),
+        ]}
+        counts = {"claude-sonnet-4-9": {self.W[0]: 100000},
+                  "claude-haiku-4-9-20251001": {self.W[0]: 5}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-9-20260101",
+                              "reason": "was an arm"}]}
+        result = self._compute(models=models, census=census, previous=previous)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertNotIn("claude-sonnet-4-9-20260101", retired,
+                         f"a model carrying ~100000 turns under its own "
+                         f"alias must not be retired: {retired}")
+        # S3 (#129 review round 5): this test passed even before item 1's
+        # fix existed, rescued by the `min_ranked_turns` floor's "no
+        # evidence to retire it" bailout rather than by a genuine usage
+        # measurement — the floor's own reason names "floor", never
+        # "rankable census usage". Pin the ARM's actual reason so a
+        # regression that breaks the real attribution path but leaves the
+        # floor rescuing it by coincidence still shows red here.
+        reason = self._reason(result, "claude-sonnet-4-9-20260101")
+        self.assertIn("rankable census usage", reason)
+        self.assertNotIn("floor", reason)
+
+    def test_proxy_and_implausible_aliases_stay_unattributable(self):
+        """Every shape a proxy/routing layer — or a plausible-looking fake
+        version that was never a real catalogue id — can carry: `rung_of()`
+        ranks all of these (a recognised family word is present), yet none
+        is a real catalogue id or a previous arm under any spelling, and
+        none was ever in `catalogue_seen` either (it is built only from
+        real Models API responses). Regression floor for round 3's
+        proxy-alias fix, and for round 5's withdrawal of the canonical-
+        shape route: the last three entries are exactly the three holes
+        that route shipped with (see `_is_attributable`'s docstring) —
+        a Unicode decimal digit in the version segment, a plausible but
+        entirely invented version number, and a region-suffixed alias.
+        (Consolidates what were two near-duplicate tests, N7 — one for a
+        bare `api_ids`/`previous_arms` and one adding `previous_arms`; both
+        asserted the identical `ranked_total == 0` outcome.)
+        """
+        rungs = roster.tier_rungs(self._policy())
+        for alias in ("proxy-router-claude-sonnet-4-5", "claude-sonnet-proxy-route",
+                      "claude-sonnet-9-9", "claude-opus-٤", "claude-opus-4-eu"):
+            cleaned = roster._clean_counts(
+                {alias: {self.W[0]: 500}}, lambda _m: None)
+            api_ids = {"claude-opus-4-8"}
+            previous_arms = {"claude-opus-4-8"}
+            aliases = roster.alias_map(list(api_ids) + list(cleaned))
+            raw_total, ranked_total = roster._in_window_totals(
+                cleaned, set(self.W[:1]), rungs, aliases=aliases,
+                api_ids=api_ids, previous_arms=previous_arms)
+            self.assertEqual(ranked_total, 0, alias)
+
+    # --- item 1 (design decision, #129 review round 5): a since-retired
+    # real model id must still count in the usage denominator — attribution
+    # by catalogue HISTORY (`catalogue_seen`), not id SHAPE. A proxy alias
+    # must not gain a seat just because it carries a family word. ---------
+
+    def test_a_since_retired_real_model_still_counts_via_catalogue_seen(self):
+        """`claude-opus-4-8` leaves the Models API and was never a previous
+        arm. Its 1000-turns/week usage is real work that happened, and
+        DESIGN.md's own property says it belongs in the denominator. Round
+        4 attributed it by id SHAPE (`_canonical_id_re`, withdrawn in round
+        5 for the reasons in `_is_attributable`'s docstring); the
+        replacement is catalogue HISTORY — a previous run's published
+        roster recorded seeing `claude-opus-4-8` in the Models API, so it
+        rides in `catalogue_seen` this run even with no census usage of its
+        own and no seat. Without either mechanism, item 1 alone still
+        excludes it (neither a bare/folded api id nor a previous arm),
+        starving the denominator down to `claude-sonnet-4-6`'s own usage
+        and inflating its measured share from ~5.66% (correctly below the
+        10% entry bar) to a false 100%, seating it as a paid arm on no real
+        evidence.
+        """
+        rungs = roster.tier_rungs(self._policy())
+        counts = {"claude-sonnet-4-6": {w: 60 for w in self.W},
+                  "claude-opus-4-8": {w: 1000 for w in self.W}}
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        api_ids = {"claude-sonnet-4-6"}  # opus-4-8 dropped from the catalogue
+        catalogue_seen = {"claude-sonnet-4-6", "claude-opus-4-8"}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
+            api_ids=api_ids, previous_arms=set(), catalogue_seen=catalogue_seen)
+        self.assertAlmostEqual(share, 100 * 240 / 4240, places=6)
+        self.assertLess(share, 10.0,
+                        "below the 10% entry bar — opus-4-8's usage must "
+                        "still be in the denominator")
+
+        # End to end: `claude-sonnet-5` (the DEFAULT fixture's newer sonnet)
+        # stays in the catalogue so `claude-sonnet-4-6` is NOT the newest in
+        # its tier — its only possible route to a seat is the usage share
+        # above, which must legitimately fail, so the assertion below is
+        # unconditional (N5, #129 review round 5 — the round 4 version of
+        # this test only checked the reason's wording IF the model ended up
+        # seated, which a regression could dodge simply by also breaking
+        # the newest-in-tier fallback in a way that happened to keep this
+        # model out of `arms`).
+        models = TestIssue67._models_doc(drop={"claude-opus-4-8"})
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": ["claude-opus-4-8"]}
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "opus-4-8's usage must count in the denominator, "
+                         "keeping sonnet-4-6's share below the entry bar "
+                         "rather than seating it at a false 100%")
+
+    # --- item 3: CENSUS_UNRANKED's published reason must name the
+    # unattributable cause too, not only "the tier ladder cannot place" ---
+
+    def test_census_unranked_reason_names_the_unattributable_cause_too(self):
+        """For a census whose only in-window usage is a proxy alias, the
+        ladder DID place it (`rung_of` ranks it) — `_is_attributable`
+        excludes it, a different fact entirely. The old CENSUS_UNRANKED
+        wording named only `other` and 'an id the tier ladder cannot
+        place', which is false for this case and does not name the real
+        cause."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-proxy-route": {w: 500 for w in self.W[:4]}}
+        result = self._compute(census=TestIssue67._census_doc(counts=counts),
+                               previous=previous)
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("neither the Models API nor the previous roster "
+                      "attributes", reason)
+
+    # --- item 4 (nit): every share-percentage reason must say "of
+    # rankable census usage" — the denominator is ranked, attributable
+    # usage, not literally everything the census recorded -----------------
+
+    def test_share_reasons_say_rankable_census_usage_not_census_usage(self):
+        result = self._compute()
+        entry_reason = self._reason(result, "claude-sonnet-5")
+        self.assertIn("of rankable census usage", entry_reason)
+        self.assertNotIn("% of census usage", entry_reason)
+
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"},
+                             {"id": "claude-opus-4-8", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {w: 100 for w in self.W},
+            "claude-sonnet-4-6": {w: 10 for w in self.W},
+            "claude-opus-4-8": {self.W[7]: 2},
+        })
+        result2 = self._compute(census=census, previous=previous)
+        held_reason = self._reason(result2, "claude-sonnet-4-6")
+        self.assertIn("of rankable census usage", held_reason)
+        self.assertNotIn("% of census usage", held_reason)
+
+        retired = {r["id"]: r["reason"] for r in result2["retired_since_last"]}
+        self.assertIn("rankable census usage", retired["claude-opus-4-8"])
+
+    def test_a_tiny_ranked_count_dominated_by_other_does_not_retire_a_previous_arm(self):
+        """Item 4 (nit): the census can hold a handful of genuinely-ranked,
+        attributable turns swamped by literally everything else being
+        `other` (a fleet almost entirely routed through Bedrock/Vertex, say,
+        with one stray direct-API turn). `ranked_total > 0` alone used to
+        read as CENSUS_FRESH; below the `min_ranked_turns` floor it must
+        fall back the same way an entirely-unranked census does, so a
+        previous arm with no counted usage of its own is held, not retired
+        at a false 0.0%.
+        """
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"other": {w: 100000 for w in self.W},
+                  "claude-haiku-4-5": {self.W[0]: 1}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    # --- item 5 (nit): a previous roster's `arms` ids must be shape-checked,
+    # not merely typed-checked — render_summary interpolates them verbatim
+    # into Markdown that eval.yml `tee`s to stdout, where GitHub parses
+    # `::` workflow commands. ----------------------------------------------
+
+    def test_previous_arm_ids_are_shape_checked_before_they_reach_the_summary(self):
+        """`_clean_previous_arms` validated the SHAPE of the `arms` entry (a
+        dict with a non-empty string `id`) but not the id's CONTENT. An id
+        carrying a newline and an `::error::` line reached the published
+        roster's `retired_since_last` (no current model matches it, and it
+        is not in api_ids either) and, from there, render_summary's
+        Markdown verbatim — which eval.yml prints to stdout.
+        """
+        hostile_id = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [{"id": hostile_id, "reason": "was an arm"}]}
+        result = self._compute(previous=previous)
+        retired_ids = [r["id"] for r in result["retired_since_last"]]
+        self.assertNotIn(hostile_id, retired_ids)
+        summary = roster.render_summary(result)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile_id, summary)
+
+    # --- item 7 (nit): _clean_counts must reject JSON booleans, and its
+    # bad-cell warning must cover more than "not a number" -----------------
+
+    def test_clean_counts_rejects_json_booleans(self):
+        """`bool` is an `int` subclass in Python — `int(True)` is `1`,
+        `int(False)` is `0` — so a census cell holding the JSON literal
+        `true`/`false` silently coerced into a real count instead of being
+        rejected as the wrong shape."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": True, "2026-W35": False,
+                               "2026-W34": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W34": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    def test_clean_counts_bad_cell_warning_covers_more_than_not_a_number(self):
+        """The bad-cell warning said "not a number", but a negative count
+        and a count above MAX_WEEKLY_TURNS both ARE numbers — they are
+        rejected for being out of range, not for failing to parse as a
+        number at all. "not a usable count" covers every rejection reason
+        (non-numeric, boolean, negative, out of range) accurately."""
+        notes = []
+        roster._clean_counts({"claude-opus-5": {"2026-W36": -5}}, notes.append)
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+        self.assertFalse(any("not a number" in n for n in notes), notes)
+
+    # --- item 10: model_usage_census.py's lazy PyYAML import has a test for
+    # main()'s own `--out` guard, but not for `--help` — the case the
+    # laziness exists to fix in the first place ---------------------------
+
+    def test_census_help_succeeds_with_pyyaml_unimportable(self):
+        """`_require_model_id_re()` is called only when actually building a
+        census; `--help` is handled by argparse inside `parser.parse_args()`
+        and exits before that call is ever reached. A machine with no
+        PyYAML installed at all must still get `--help` — this is the case
+        the lazy import exists to fix, and it had no test of its own."""
+        saved = {name: sys.modules.get(name) for name in ("yaml", "roster")}
+        saved_re = model_usage_census.MODEL_ID_RE
+        for name in ("yaml", "roster"):
+            sys.modules.pop(name, None)
+        sys.modules["yaml"] = None
+        model_usage_census.MODEL_ID_RE = None
+        try:
+            argv = ["model_usage_census.py", "--help"]
+            out = io.StringIO()
+            err = io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(out), \
+                 contextlib.redirect_stderr(err):
+                with self.assertRaises(SystemExit) as ctx:
+                    model_usage_census.main()
+        finally:
+            for name, mod in saved.items():
+                if mod is None:
+                    sys.modules.pop(name, None)
+                else:
+                    sys.modules[name] = mod
+            model_usage_census.MODEL_ID_RE = saved_re
+        self.assertEqual(ctx.exception.code, 0)
+        self.assertIn("usage:", out.getvalue().lower())
+        self.assertNotIn("Traceback", err.getvalue())
+
+
+class TestIssue67Review5(unittest.TestCase):
+    """Round 5 fixes for #67 (PR #129 review round 5), one test per item.
+    See run_tests.py's class-per-review-round convention (TestIssue67Review,
+    TestIssue67Review2, TestIssue67Review3, TestIssue67Review4) — a SIBLING
+    of TestIssue67, reusing its canned documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- design decision: catalogue_seen replaces _canonical_id_re -------
+
+    def test_legacy_shaped_previously_seen_model_is_attributed_via_catalogue_seen(self):
+        """A pre-#67 legacy-shaped id (family word AFTER a leading numeric
+        segment, e.g. a `claude-3-...` id) that has since left the Models
+        API is attributable when this harness's own history says it was
+        once in the catalogue — `catalogue_seen`, not id SHAPE. The
+        withdrawn `_canonical_id_re` never matched this shape at all (its
+        pattern required the family word immediately after `claude-`), so
+        this legacy model would have been starved out of the denominator
+        even under round 4's code; `catalogue_seen` fixes it a different
+        way — by evidence, not shape.
+        """
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+            self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
+        ]}
+        legacy_id = "claude-3-opus-20240229"
+        previous = {"arms": [], "catalogue_seen": [legacy_id]}
+        counts = {legacy_id: {w: 112 for w in self.W[:4]},
+                  "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "sonnet-4-6 is not newest (sonnet-5-0 is) and its "
+                         "real ~9.68% share must not seat it")
+
+        rungs = roster.tier_rungs(self._policy())
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        api_ids = {m["id"] for m in models["models"]}
+        aliases = roster.alias_map(list(api_ids) + list(cleaned))
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-4-6", self.W[:4], rungs, aliases,
+            api_ids=api_ids, previous_arms=set(),
+            catalogue_seen={legacy_id} | api_ids)
+        self.assertAlmostEqual(share, 100 * 48 / 496, places=2)
+        self.assertAlmostEqual(share, 9.68, places=2)
+
+        # Mutation check (manual, not automated): deleting the
+        # `catalogue_seen` clause from `_is_attributable` drops the legacy
+        # id's 448 turns from the denominator, leaving sonnet-4-6 at a
+        # false 48/48 = 100.0% and seating it — turning the `assertNotIn`
+        # above red.
+
+    def test_legacy_shaped_model_with_no_catalogue_history_documents_the_first_run_caveat(self):
+        """Same scenario, but `catalogue_seen` starts EMPTY — the
+        documented first-run caveat: with no history yet, a model retired
+        before this harness's first run is unattributable, and its usage
+        silently drops from the denominator. This is expected, current
+        behavior, not a bug — see `_is_attributable`'s docstring and
+        DESIGN.md's roster properties."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+            self._model("claude-opus-4-2", "2026-01-01T00:00:00Z"),
+        ]}
+        legacy_id = "claude-3-opus-20240229"
+        previous = {"arms": [], "catalogue_seen": []}
+        counts = {legacy_id: {w: 112 for w in self.W[:4]},
+                  "claude-sonnet-4-6": {w: 12 for w in self.W[:4]}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertIn("claude-sonnet-4-6", self._arm_ids(result))
+        self.assertIn("100.0%", self._reason(result, "claude-sonnet-4-6"))
+
+    def test_previous_arm_alias_usage_counts_via_widened_alias_map(self):
+        """B1 (#129 review round 6): a previous arm published under a
+        DATED id that has since left the Models API, whose real usage the
+        census records under its UNDATED alias, must still count in the
+        denominator. `aliases = alias_map(api_ids + list(counts))` never
+        saw the dated id at all — it is neither an api id nor a census
+        key, only its undated alias is (and only that alias is in
+        `counts`) — so `alias_map` had no dated/undated PAIR to fold at
+        all, and `previous_arms_folded` (built by running `previous_arms`
+        through that same, blind `aliases` map) stayed identical to
+        `previous_arms`, never matching the undated candidate. Measured
+        through `compute_roster` on a946c9b: `claude-sonnet-5` reads
+        "carries 97.1% of rankable census usage" off a denominator of 103
+        instead of the real 5103. (The previous round's test built its own
+        alias map with `previous_arms` already added to the ids list,
+        which is exactly this fix — so it exercised the fixed formula
+        without ever calling the buggy `compute_roster` code path, and
+        passed on the buggy commit too.)
+        """
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+        counts = {
+            "claude-sonnet-4-9": {self.W[0]: 5000},  # previous arm's usage, undated alias
+            "claude-sonnet-5": {self.W[0]: 100},
+            "claude-haiku-4-5": {self.W[0]: 3},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-9-20260101",
+                              "reason": "was an arm"}]}
+        result = self._compute(models=models, census=census, previous=previous)
+
+        for arm in result["arms"]:
+            self.assertNotIn("carries 97", arm["reason"], arm)
+        # THE MEASURED CONSEQUENCE, and since 2026-09-22 it is a sharper
+        # one than the reason text was: at its real 1.96% share
+        # `claude-sonnet-5` clears nothing, so no sonnet clears the entry
+        # bar, so the sonnet tier qualifies for no seat and its newest
+        # model takes none. On a946c9b the collapsed denominator put it at
+        # 97.09% — over the bar — and it is an ARM there, so the
+        # membership assertion below is red on the bug on its own.
+        self.assertNotIn("claude-sonnet-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-sonnet-5")
+        self.assertIn("newest in the sonnet tier", reason)
+        self.assertIn("no model in that tier carries 10%", reason)
+
+        # Reproduces `compute_roster`'s OWN widened alias-map formula (not
+        # a hand-picked ids list) only to pin the exact measured share and
+        # totals the reason text above implies.
+        rungs = roster.tier_rungs(self._policy())
+        api_ids = {m["id"] for m in models["models"]}
+        cleaned = roster._clean_counts(counts, lambda _m: None)
+        previous_arms = {"claude-sonnet-4-9-20260101"}
+        catalogue_seen = set(api_ids)
+        aliases = roster.alias_map(
+            list(api_ids) + list(cleaned) + list(previous_arms) + list(catalogue_seen))
+        raw_total, ranked_total = roster._in_window_totals(
+            cleaned, set(self.W[:1]), rungs, aliases=aliases,
+            api_ids=api_ids, previous_arms=previous_arms,
+            catalogue_seen=catalogue_seen)
+        self.assertEqual(raw_total, 5103)
+        self.assertEqual(ranked_total, 5103)
+        share = roster.usage_share(
+            cleaned, "claude-sonnet-5", self.W[:1], rungs, aliases,
+            api_ids=api_ids, previous_arms=previous_arms,
+            catalogue_seen=catalogue_seen)
+        self.assertGreater(share, 1.9)
+        self.assertLess(share, 2.0)
+        # Mutation check (manual): reverting `compute_roster`'s `aliases`
+        # line to `alias_map(api_ids + list(counts))` (dropping
+        # `previous_arms`/`catalogue_seen` from the ids fed to
+        # `alias_map`) turns every assertion above red again — the
+        # denominator collapses back to 103 and `claude-sonnet-5` becomes
+        # an arm reading "carries 97.09%".
+
+    def test_catalogue_seen_round_trips_through_the_published_roster(self):
+        """`catalogue_seen` is the union of api ids seen this run and
+        whatever the previous roster already accumulated, sorted and
+        deduplicated, and it is shape-checked before being read back —
+        the same `_clean_previous_arms`-style treatment as `arms`,
+        including the count-only warning on a hostile entry."""
+        models = TestIssue67._models_doc()
+        result = self._compute(models=models, previous=None)
+        api_ids = {m["id"] for m in models["models"]}
+        seen_ids = [e["id"] for e in result["catalogue_seen"]]
+        self.assertEqual(set(seen_ids), api_ids)
+        self.assertEqual(seen_ids, sorted(seen_ids))
+        for entry in result["catalogue_seen"]:
+            self.assertIn("last_seen", entry)
+
+        hostile = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [], "catalogue_seen": result["catalogue_seen"] +
+                   [hostile, 123, None]}
+        warnings = []
+        roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertTrue(
+            any("catalogue_seen" in w and "skipped" in w for w in warnings),
+            warnings)
+        for w in warnings:
+            self.assertNotIn(hostile, w)
+
+        result2 = self._compute(models=models, previous=previous)
+        # `catalogue_seen` itself never reaches render_summary's Markdown
+        # (N2, #129 review round 6) — its safety property is the round
+        # trip above (published, read back, re-published), not a summary
+        # check, which would pass here whether or not the hostile entry
+        # were sanitized.
+        self.assertNotIn(hostile, [e["id"] for e in result2["catalogue_seen"]])
+
+    # --- S1: the min_ranked_turns floor must apply PER WINDOW, not only
+    # over the 8-week union -------------------------------------------------
+
+    def test_min_ranked_turns_floor_applies_to_the_enter_window_on_its_own(self):
+        """30 ranked turns in weeks 5-8 (outside the 4-week enter window)
+        clear the union floor, while the enter window itself carries a
+        single turn — that one turn used to compute a 100.0% entry share
+        and seat `claude-sonnet-4-6` (not the newest in its tier; the
+        DEFAULT fixture's `claude-sonnet-5` is), on evidence of a single
+        turn.
+        """
+        counts = {
+            "claude-sonnet-4-6": {self.W[0]: 1},                     # enter window: 1 turn
+            "claude-opus-5": {w: 6 for w in self.W[4:8]},             # weeks 5-8: 24 turns
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=None)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "one turn inside a 4-turn-total enter window must "
+                         "not clear the 20-turn floor just because weeks "
+                         "5-8 do")
+        # Mutation check (manual): gating the entry share check on the
+        # union's `usable` alone (reverting `enter_usable` back to
+        # `usable`) seats claude-sonnet-4-6 at "100.0%" here — red.
+
+    # --- S2: an absolute floor alone is not enough; a RELATIVE guard too ---
+
+    def test_min_ranked_share_holds_a_previous_arm_at_the_absolute_floor(self):
+        """`other` dominates the window (100000 turns/week for 8 weeks) with
+        exactly `min_ranked_turns` (20) genuinely ranked turns on a
+        DIFFERENT model — the absolute floor alone reads this as usable
+        evidence and retires `claude-opus-4-8` (no counted usage of its
+        own) at a literal 0.0% against 800,020 raw turns. The relative
+        floor (`min_ranked_share`) must hold it instead."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"other": {w: 100000 for w in self.W},
+                  "claude-haiku-4-5": {self.W[0]: 20}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_min_ranked_share_does_not_hold_a_genuinely_ranked_census(self):
+        """A census that is genuinely ranked over a meaningful share of the
+        raw window total must not be held back by the new relative guard —
+        retirement proceeds normally."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-5": {w: 100 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        self.assertNotIn("claude-opus-4-8", self._arm_ids(result))
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("exit bar", retired["claude-opus-4-8"])
+
+    # --- S4: a models.json entry's id must be shape-checked too -----------
+
+    def test_malformed_model_id_in_the_models_document_is_dropped_with_a_warning(self):
+        """A models.json entry carrying a hostile id (a newline and an
+        `::error::` line) must not reach `unranked`/`excluded` — and from
+        there render_summary's Markdown, which eval.yml prints to stdout
+        — or `catalogue_seen` (checked separately below: `catalogue_seen`
+        never itself reaches render_summary's Markdown, so a summary
+        check would not exercise its own sanitization — N2, #129 review
+        round 6)."""
+        hostile = "claude-opus-4\n::error::pwned::"
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model(hostile, "2026-01-01T00:00:00Z"),
+        ]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=None, now=self.NOW, warn=warnings.append)
+        self.assertTrue(any("malformed model-id-shaped" in w for w in warnings), warnings)
+        self.assertNotIn(hostile, [e["id"] for e in result["catalogue_seen"]])
+        for entries in (result["arms"], result["unranked"], result["excluded"]):
+            self.assertNotIn(hostile, [e["id"] for e in entries])
+        summary = roster.render_summary(result)
+        self.assertNotIn("::error::", summary)
+        self.assertNotIn(hostile, summary)
+
+    # --- S6: the `\Z` anchor in PREVIOUS_ARM_ID_RE, pinned ------------------
+
+    def test_previous_arm_id_re_rejects_a_trailing_newline(self):
+        """`$` also matches just before a trailing newline; `\\Z` does not.
+        Reverting the anchor to `$` would let `claude-opus-4\\n` through as
+        a "well-formed" id."""
+        self.assertIsNone(roster.PREVIOUS_ARM_ID_RE.match("claude-opus-4\n"))
+        self.assertIsNotNone(roster.PREVIOUS_ARM_ID_RE.match("claude-opus-4"))
+
+    # --- N1: a rounded share must not contradict its own bar ---------------
+
+    def test_retirement_reason_uses_two_decimals_when_one_would_touch_the_bar(self):
+        """A previous arm at a true 1.96% exit-window share rounds to
+        "2.0%" at one decimal — "below the 2% exit bar (2.0%)" reads as
+        self-contradictory. Two decimals only when the tie actually
+        happens."""
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-opus-4-8": {self.W[0]: 98},
+                  "claude-sonnet-5": {self.W[0]: 4902}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+        self.assertIn("claude-opus-4-8", retired)
+        self.assertIn("1.96%", retired["claude-opus-4-8"])
+        self.assertNotIn("2.0%", retired["claude-opus-4-8"])
+
+    def test_retirement_reason_escalates_past_two_decimals_when_needed(self):
+        """S2 (#129 review round 6): two decimals is not always enough to
+        stop touching the bar (1.9999% still rounds to "2.00%" at two
+        decimals), and a genuinely tiny nonzero share (0.04%, 0.004%)
+        must not render as the misleading "0.0%" — about a model that
+        DID carry turns, not one with none. `_format_share` escalates
+        through 1/2/3/4/6 decimals until the text differs from the bar
+        and, for a nonzero value, does not read as "0.0...0"."""
+        cases = [
+            (1999, 98001, "1.999%", "2.0%"),
+            (19999, 980001, "1.9999%", "2.00%"),
+            (4, 9996, "0.04%", "0.0%"),
+            (40, 999960, "0.004%", "0.00%"),
+        ]
+        for opus, sonnet, expect, forbid in cases:
+            with self.subTest(opus=opus, sonnet=sonnet):
+                previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+                counts = {"claude-opus-4-8": {self.W[0]: opus},
+                         "claude-sonnet-5": {self.W[0]: sonnet}}
+                census = TestIssue67._census_doc(counts=counts)
+                result = self._compute(census=census, previous=previous)
+                retired = {r["id"]: r["reason"] for r in result["retired_since_last"]}
+                self.assertIn("claude-opus-4-8", retired)
+                self.assertIn(expect, retired["claude-opus-4-8"])
+                self.assertNotIn(forbid, retired["claude-opus-4-8"])
+        # Mutation check (manual): reverting `_format_share` to stop after
+        # two decimals renders 1.9999% as "2.00%" (touches the bar) and
+        # 0.004% as "0.00%" (reads as no usage) — turning the
+        # corresponding subTest red.
+
+    def test_at_or_above_reasons_are_not_escalated(self):
+        """A model at EXACTLY its bar in the "at or above" direction is
+        not self-contradictory ("carries 10.0% ... at or above the 10%
+        entry bar" is correct at a true 10.0%) — `_format_share` must not
+        escalate past one decimal there."""
+        self.assertEqual(roster._format_share(10.0, 10), "10.0")
+        self.assertEqual(roster._format_share(2.0, 2), "2.0")
+
+    # --- N2: _clean_counts must require an actual int, not a coercible
+    # string/float --------------------------------------------------------
+
+    def test_clean_counts_requires_actual_ints_not_coercible_strings_or_floats(self):
+        """`1.9` (a float) silently truncated to `1`; `"5"` (a JSON string)
+        parsed as `5`; `"5_0"` parsed as `50` (Python's `int()` honors the
+        digit-group underscore numeric-literal syntax inside a string);
+        `"٥"` (an Arabic-Indic digit) parsed as `5` (`int()` accepts
+        non-ASCII Unicode decimal digits). None of these is a value
+        `json.load` ever hands back for a JSON number."""
+        notes = []
+        cleaned = roster._clean_counts(
+            {"claude-opus-5": {"2026-W36": 1.9, "2026-W35": "5",
+                               "2026-W34": "5_0", "2026-W33": "٥",
+                               "2026-W32": 50}}, notes.append)
+        self.assertEqual(cleaned, {"claude-opus-5": {"2026-W32": 50}})
+        self.assertTrue(any("not a usable count" in n for n in notes), notes)
+
+    # --- N4: min_ranked_turns/min_ranked_share validated with the other
+    # thresholds -------------------------------------------------------------
+
+    def test_roster_policy_is_the_single_source_of_thresholds(self):
+        base = dict(self._policy())
+        for key in ("min_ranked_turns", "min_ranked_share", "cooling_off_days",
+                   "arm_enter_usage_pct", "arm_exit_window_weeks"):
+            for bad, label in ((None, "missing"), ("20", "string"),
+                              (-5, "negative"), (None, "None")):
+                policy = dict(base)
+                if label == "missing":
+                    del policy[key]
+                else:
+                    policy[key] = bad
+                with self.subTest(key=key, bad=label):
+                    with self.assertRaises(ValueError) as ctx:
+                        roster.validate_policy(policy)
+                    self.assertIn(key, str(ctx.exception))
+        # min_ranked_share also has an upper bound: a share above 1 (100%)
+        # is not a fraction.
+        policy = dict(base)
+        policy["min_ranked_share"] = 1.5
+        with self.assertRaises(ValueError) as ctx:
+            roster.validate_policy(policy)
+        self.assertIn("min_ranked_share", str(ctx.exception))
+        # The real policy file must itself validate cleanly.
+        roster.validate_policy(base)
+
+    def test_validate_policy_requires_a_well_formed_tiers_ladder(self):
+        """N6 (#129 review round 6): `validate_policy` checked numeric
+        thresholds only — a policy missing `tiers` (or with a malformed
+        one) sailed through and KeyErrored deep inside `tier_rungs`
+        instead of failing loudly, by name, at the same point every other
+        bad threshold does."""
+        base = dict(self._policy())
+        for bad, label in (
+            (None, "missing"), ([], "empty list"), ("sonnet", "not a list"),
+            ([""], "empty string rung"), ([[]], "empty peer list"),
+            ([["sonnet", 5]], "non-string peer"), ([123], "non-string rung"),
+        ):
+            policy = dict(base)
+            if label == "missing":
+                del policy["tiers"]
+            else:
+                policy["tiers"] = bad
+            with self.subTest(bad=label):
+                with self.assertRaises(ValueError) as ctx:
+                    roster.validate_policy(policy)
+                self.assertIn("tiers", str(ctx.exception))
+        # The real policy file's tiers must validate cleanly.
+        roster.validate_policy(base)
+        # Mutation check (manual): removing the `tiers` check from
+        # `validate_policy` turns every subTest above red — `tiers`
+        # sails through unvalidated and `tier_rungs` KeyErrors instead
+        # (for the "missing" case) or misbehaves silently.
+
+
+class TestIssue67Review6(unittest.TestCase):
+    """Round 6 fixes for #67 (PR #129 review round 6), one test per fix.
+    See run_tests.py's class-per-review-round convention — a SIBLING of
+    TestIssue67, reusing its canned documents rather than subclassing."""
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None):
+        return TestIssue67._compute(models=models, census=census, previous=previous)
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    # --- B2: `_is_attributable` has exactly three routes left after round
+    # 6 dropped `candidate in api_ids`/`folded in api_ids` and the plain
+    # `candidate in previous_arms`/`folded in previous_arms` clauses as
+    # provably dead. One isolated regression floor per surviving route,
+    # all built on the same legacy-shaped dated/undated pair, and each
+    # scenario's previous roster's `catalogue_seen` deliberately excludes
+    # the id under test so the OTHER routes cannot rescue it by accident.
+
+    DATED = "claude-3-5-sonnet-20241022"
+    UNDATED = "claude-3-5-sonnet"
+
+    def test_route_folded_in_api_ids_folded(self):
+        """The catalogue publishes ONLY the dated snapshot id; the census
+        records its usage under the bare undated alias. Neither
+        `previous_arms` nor `catalogue_seen` names either spelling — the
+        only possible route is `folded in api_ids_folded`."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                 "models": [self._model(self.DATED, "2026-01-01T00:00:00Z")]}
+        counts = {self.UNDATED: {self.W[0]: 500}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": []}
+        result = self._compute(models=models, census=census, previous=previous)
+        reason = self._reason(result, self.DATED)
+        self.assertIn("carries", reason)
+        self.assertIn("100.0%", reason)
+        self.assertNotIn(self.UNDATED, self._seen_ids(result))
+        # Mutation check (manual): deleting `folded in (api_ids_folded or
+        # ())` from `_is_attributable` makes the 500 turns under
+        # `claude-3-5-sonnet` unattributable (neither remaining route
+        # names it), so the window carries zero rankable usage and
+        # `claude-3-5-sonnet-20241022` falls back to "no fresh census
+        # ...; fell back to newest per tier" — turning both assertions
+        # above red.
+
+    def test_route_previous_arms_folded(self):
+        """A previous arm published under the dated id, since retired
+        from the Models API; the census records its usage under the bare
+        undated alias. `catalogue_seen` names neither spelling — the only
+        possible route is `previous_arms_folded`."""
+        models = TestIssue67._models_doc(drop={
+            "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+            "claude-opus-5", "claude-fable-5-1"})  # haiku only
+        counts = {self.UNDATED: {self.W[0]: 500},
+                 "claude-haiku-4-5": {self.W[0]: 25}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": self.DATED, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        result = self._compute(models=models, census=census, previous=previous)
+        # The 500 turns ARE in the denominator, so haiku's own 25 are
+        # 4.76% of it — under the entry bar, and since 2026-09-22 under
+        # the bar is the end of it: no haiku model qualifies, so the tier
+        # seats nobody and its newest model is excluded with that reason.
+        self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-haiku-4-5")
+        self.assertIn("no model in that tier carries 10%", reason)
+        self.assertNotIn(self.UNDATED, self._seen_ids(result))
+        self.assertNotIn(self.DATED, self._seen_ids(result))
+        # Mutation check (manual): deleting `candidate in
+        # previous_arms_folded or folded in previous_arms_folded` makes
+        # the 500 turns unattributable, shrinking the denominator to
+        # haiku's own 25 turns (still above min_ranked_turns, so the
+        # census still reads as usable rather than merely falling back)
+        # and inflating its share to a false 100% — which puts it over the
+        # entry bar and makes it an arm reading "carries 100.0%...",
+        # turning both assertions above red.
+
+    def test_route_catalogue_seen(self):
+        """Both the dated and undated spellings have left the Models API
+        and neither was ever a previous arm; only the UNDATED spelling
+        was ever recorded in `catalogue_seen` history. Usage is recorded
+        under the DATED spelling, so only the FOLDED form matches
+        `catalogue_seen` — the only possible route."""
+        models = TestIssue67._models_doc(drop={
+            "claude-sonnet-4-6", "claude-sonnet-5", "claude-opus-4-8",
+            "claude-opus-5", "claude-fable-5-1"})  # haiku only
+        counts = {self.DATED: {self.W[0]: 500},
+                 "claude-haiku-4-5": {self.W[0]: 25}}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [], "catalogue_seen": [self.UNDATED]}
+        result = self._compute(models=models, census=census, previous=previous)
+        # As in the row above: the 500 turns counted, so haiku's 25 are
+        # 4.76%, under the entry bar, and since 2026-09-22 a tier no model
+        # of which clears the bar seats nobody at all.
+        self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-haiku-4-5")
+        self.assertIn("no model in that tier carries 10%", reason)
+        # Mutation check (manual): deleting `candidate in catalogue_seen
+        # or folded in catalogue_seen` makes the 500 turns unattributable
+        # (neither of the other two routes names the dated id or its
+        # fold), shrinking the denominator to haiku's own 25 turns and
+        # inflating its share to a false 100% — which seats it as an arm
+        # reading "carries 100.0%", turning both assertions above red.
+
+    def test_catalogue_seen_is_always_a_superset_of_this_runs_api_ids(self):
+        """`catalogue_seen = set(api_ids) | previous.catalogue_seen`
+        (compute_roster) — every id this run's Models API returned is in
+        `catalogue_seen` by construction, which is also why a bare
+        `candidate in api_ids`/`folded in api_ids` check added nothing
+        `catalogue_seen` didn't already cover."""
+        models = TestIssue67._models_doc()
+        result = self._compute(models=models, previous=None)
+        api_ids = {m["id"] for m in models["models"]}
+        self.assertLessEqual(api_ids, self._seen_ids(result))
+
+    def test_two_dead_clauses_stay_deleted(self):
+        """Regression floor for the deletion itself, not just for the
+        routes that remain: `_is_attributable`'s EXECUTABLE body (the
+        `return` statement, not its prose docstring, which names the
+        deleted clauses on purpose to explain why they're gone) must not
+        contain the bare, unfolded `candidate in api_ids`/`candidate in
+        previous_arms` checks — both provably subsumed by their `_folded`
+        siblings.
+
+        THE SIGNATURE IS PART OF THE FLOOR (nit 2, #129 review round 12).
+        The body check alone let the three parameters those clauses were
+        the only readers of — `candidate`, `previous_arms` and
+        `catalogue_seen` — sit unread through four rounds, which is what
+        makes writing a deleted check back a one-line change nothing
+        notices. `api_ids` stays, as the `None` sentinel."""
+        import inspect
+        src = inspect.getsource(roster._is_attributable)
+        body = src.rsplit('"""', 1)[-1]
+        self.assertNotIn("candidate in api_ids", body)
+        self.assertNotIn("candidate in previous_arms or", body)
+        parameters = list(
+            inspect.signature(roster._is_attributable).parameters)
+        self.assertEqual(parameters,
+                         ["folded", "api_ids", "api_ids_folded",
+                          "previous_arms_folded", "catalogue_seen_folded"],
+                         "a parameter with no reader is a deleted clause "
+                         "with somewhere to come back to")
+
+    # --- S1: the relative min_ranked_share floor must apply PER WINDOW,
+    # not only over the 8-week union -----------------------------------
+
+    def test_min_ranked_share_floor_applies_to_the_enter_window_on_its_own(self):
+        """`other` dominates weeks 1-4 (the enter window) while a real
+        model's usage sits in weeks 5-8 (inside the union, outside the
+        enter window) — together they clear the UNION's relative floor
+        (100,025 of 4,100,025), but the enter window's OWN 25 ranked
+        turns against 4,000,025 raw ones fail its own relative floor.
+        Before this fix, only the ABSOLUTE per-window floor existed
+        (round 5), and 25 >= 20 cleared it — computing a false 100.0%
+        entry share for `claude-sonnet-4-6`, which is not the newest in
+        its tier (`claude-sonnet-5` is, in the DEFAULT fixture)."""
+        counts = {
+            "other": {w: 1_000_000 for w in self.W[:4]},
+            "claude-sonnet-4-6": {self.W[0]: 25},
+            "claude-opus-5": {w: 25_000 for w in self.W[4:8]},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=None)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "25 ranked turns against 4,000,025 raw ones in "
+                         "the enter window must not clear the relative "
+                         "floor just because weeks 5-8 do")
+        # Mutation check (manual): dropping the
+        # `enter_ranked_total >= policy["min_ranked_share"] *
+        # enter_raw_total` clause from `enter_usable` (reverting to the
+        # absolute-only check) seats claude-sonnet-4-6 at "carries
+        # 100.0%" here — red.
+
+    # --- N5 / S1: the exit-side per-window gate is unreachable under the
+    # SHIPPED policy (arm_exit_window_weeks >= arm_enter_window_weeks
+    # makes the exit window the union); a test-only policy with a
+    # shorter exit window makes it reachable and pins both branches of
+    # the widened floor note. ------------------------------------------
+
+    @staticmethod
+    def _short_exit_policy():
+        policy = dict(TestIssue67Review6._policy())
+        policy["arm_exit_window_weeks"] = 2
+        return policy
+
+    def test_exit_side_floor_note_names_the_absolute_floor(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {"claude-sonnet-5": {self.W[2]: 30, self.W[3]: 30}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=census,
+            policy=self._short_exit_policy(), previous=previous, now=self.NOW)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("0 turn(s)", reason)
+        self.assertIn("turn floor", reason)
+        self.assertNotIn("relative floor", reason)
+
+    def test_exit_side_floor_note_names_the_relative_floor(self):
+        previous = {"arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}]}
+        counts = {
+            "other": {self.W[0]: 1500, self.W[1]: 1500},
+            "claude-opus-4-8": {self.W[0]: 13, self.W[1]: 12},
+            "claude-sonnet-5": {self.W[2]: 250, self.W[3]: 250},
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        result = roster.compute_roster(
+            models_doc=TestIssue67._models_doc(), census_doc=census,
+            policy=self._short_exit_policy(), previous=previous, now=self.NOW)
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        reason = self._reason(result, "claude-opus-4-8")
+        self.assertIn("no evidence to retire it", reason)
+        self.assertIn("relative floor for this window", reason)
+        self.assertNotIn("turn floor", reason)
+        # Mutation check (manual, both tests above): reverting
+        # `exit_usable` to its pre-S1 absolute-only definition, or
+        # deleting the `elif not exit_usable:` branch outright, turns
+        # these red — the first because the relative-cause test's 25
+        # exit-window turns clear the absolute floor alone (`exit_usable`
+        # would read True, giving opus-4-8 a "held over ... still X%"
+        # reason via the usage_share branch instead), the second because
+        # opus-4-8 would fall through to the "below the exit bar" branch
+        # and be retired instead of held.
+
+    # --- S3: catalogue_seen needs an age, a cap, and a migration path for
+    # the bare-string shape it used to publish ---------------------------
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    def test_catalogue_seen_migrates_the_bare_string_shape(self):
+        """The shape `catalogue_seen` used to publish (a bare list of id
+        strings) must still be READABLE for one migration run: no crash,
+        no shape warning, and the ids come through into this run's
+        (now dict-shaped) output."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": ["claude-opus-4-7"]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertIn("claude-opus-4-7", self._seen_ids(result))
+        for entry in result["catalogue_seen"]:
+            self.assertIn("id", entry)
+            self.assertIn("last_seen", entry)
+        self.assertFalse(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+
+    def test_catalogue_seen_entry_ages_out_once_the_census_stops_naming_it(self):
+        """S3 (#129 review round 6): a valid-shaped id planted directly in
+        `catalogue_seen` with a stale `last_seen` — never actually
+        returned by the Models API, so nothing ever refreshes it — drops
+        out of `catalogue_seen` on its own, so reverting the plant on the
+        branch is not necessary. Before S3, `catalogue_seen` had no age at
+        all: the plant stayed attributable forever, and its fabricated
+        usage diluted a real held-over arm's measured share from 100% to a
+        false 0.1%, retiring it on no real evidence.
+
+        ROUND 12 QUALIFIED THE PROPERTY AND #147 UNQUALIFIED IT AGAIN,
+        which is why this row is back to the one thing it was written to
+        say. Round 12 stopped ageing from dropping an entry THIS RUN'S
+        CENSUS STILL NAMES, because `last_seen` was written by whoever
+        wrote `previous.json` on an unprotected branch and a back-dated
+        date could drop a real model's turns out of the denominator. The
+        history is `evals/roster.yml` now, committed on `main`, so an old
+        `last_seen` has one reading left — that nothing has observed the
+        model in that long — and the exemption existed to disbelieve the
+        other one (ADR 0001, decision 4).
+
+        SO THE SELF-HEALING IS KEYED ON THE DATE ALONE AGAIN, and that is
+        stronger than round 12's version rather than weaker: a planter who
+        forges the CENSUS as well no longer keeps the plant alive, because
+        the census does not get a vote on what this harness has observed.
+        Both rows below age the plant out; they differ only in what the
+        census says, which is what makes the pair a measurement of the
+        date rule rather than of the census.
+
+        AND THE DILUTION THE FORGED CENSUS WAS FOR NO LONGER HAPPENS
+        EITHER, measured rather than argued. Once the planted history
+        entry ages out, the 95,904 turns the census records under that id
+        are attributable to nothing — not live, not a previous arm, not in
+        `catalogue_seen` — so they never enter the denominator at all.
+        What the run says about the real arm in row 1 is the relative
+        floor, verbatim: "census published but only 48 of 48000 raw turns
+        over the window are rankable, attributable usage (0.1% — under the
+        1% relative floor), too little to be evidence of anything, so
+        there is no evidence to retire it". That is a defence the previous
+        design also had; naming WHICH defence is doing the work is the
+        point of asserting it here rather than asserting only the seat.
+        """
+        stale = (self.NOW - timedelta(days=181)).strftime("%Y-%m-%d")
+        previous = {
+            "arms": [{"id": "claude-opus-4-8", "reason": "was an arm"}],
+            "catalogue_seen": [{"id": "claude-sonnet-9-9", "last_seen": stale}],
+        }
+        # opus-4-8's own 96 turns alone are 100% of the rankable window;
+        # with the plant credited too (95904 more, under a different
+        # model) they dilute to exactly 96/96000 = 0.1%.
+        counts = {"claude-sonnet-9-9": {w: 11988 for w in self.W},
+                 "claude-opus-4-8": {w: 12 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(census=census, previous=previous)
+        # ROW 1 — the census names the plant and it ages out ANYWAY: the
+        # census is not a vote on what this harness has observed. Its
+        # forged turns are then attributable to nothing, so they never
+        # reach the denominator and the real arm is held over by the
+        # relative floor.
+        self.assertNotIn("claude-sonnet-9-9", self._seen_ids(result),
+                         "a forged census must not keep a planted history "
+                         "entry alive past the policy window")
+        self.assertIn("claude-opus-4-8", self._arm_ids(result))
+        self.assertIn("under the 1% relative floor",
+                      self._reason(result, "claude-opus-4-8"),
+                      "name the defence that is doing the work")
+        self.assertNotIn("claude-opus-4-8",
+                         {r["id"] for r in result["retired_since_last"]})
+        # ROW 2 — the census stops naming the plant, and it ages out on
+        # its own with nothing reverted. This is S3's property in the form
+        # #147 leaves it in: the same outcome as row 1, reached without
+        # the forged census.
+        quiet = TestIssue67._census_doc(
+            counts={"claude-opus-4-8": {w: 12 for w in self.W}})
+        healed = self._compute(census=quiet, previous=previous)
+        self.assertNotIn("claude-sonnet-9-9", self._seen_ids(healed),
+                         "a plant never returned by the Models API and no "
+                         "longer named by the census, aged past the policy "
+                         "window, must not survive into this run's "
+                         "catalogue_seen")
+        self.assertIn("claude-opus-4-8", self._arm_ids(healed))
+        # Mutation check (run): skipping the age-eviction step in
+        # `_update_catalogue_seen` (treat every previously-seen id as
+        # kept regardless of `last_seen`) keeps `claude-sonnet-9-9` in
+        # BOTH rows — both `assertNotIn`s go red.
+
+    def test_real_since_retired_model_stays_attributable_within_the_age_window(self):
+        """The normal case S3 must not break: an id genuinely seen
+        recently (well within `catalogue_seen_max_age_days`) stays
+        attributable, dict-shaped `last_seen` and all."""
+        recent = (self.NOW - timedelta(days=10)).strftime("%Y-%m-%d")
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-01-01T00:00:00Z"),
+            self._model("claude-sonnet-5-0", "2026-06-01T00:00:00Z"),
+        ]}
+        previous = {"arms": [],
+                   "catalogue_seen": [{"id": "claude-opus-4-8", "last_seen": recent}]}
+        counts = {"claude-opus-4-8": {w: 1000 for w in self.W},
+                 "claude-sonnet-4-6": {w: 60 for w in self.W}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertNotIn("claude-sonnet-4-6", self._arm_ids(result),
+                         "claude-opus-4-8's usage must still count in the "
+                         "denominator, keeping sonnet-4-6's share below "
+                         "the entry bar")
+        self.assertIn("claude-opus-4-8", self._seen_ids(result))
+
+    def test_three_chained_runs_drop_the_plant_after_its_age(self):
+        """The plant is republished by the harness as its own output on
+        every later run — reverting it on the branch does not remove it
+        — until it ages out on its own. Simulates three chained runs,
+        each feeding the previous run's own `catalogue_seen` output
+        forward, `now` advancing between them; the plant is never
+        returned by the Models API in any of the three runs, so nothing
+        ever refreshes it."""
+        models = TestIssue67._models_doc(drop={"claude-opus-4-8"})
+        plant = "claude-sonnet-9-9"
+        previous = {"arms": [], "catalogue_seen": [plant]}  # migrates: last_seen = run 1's date
+        now = self.NOW
+        for run in range(3):
+            result = roster.compute_roster(
+                models_doc=models, census_doc=None, policy=self._policy(),
+                previous=previous, now=now)
+            if run < 2:
+                self.assertIn(plant, self._seen_ids(result),
+                             f"run {run}: still within the age window")
+            previous = result
+            now = now + timedelta(days=100)  # 3 runs span 200 days > 180-day policy
+        self.assertNotIn(plant, self._seen_ids(result),
+                         "the plant must not survive past its age even "
+                         "though every run kept republishing it forward")
+
+    # --- N3: `_clean_previous_arms` dedup must be O(1)-membership and
+    # cap its accepted list the same way catalogue_seen does -------------
+
+    # --- N7: the policy's own relative-floor percentage must not round
+    # to "0%" via `:.0f` -------------------------------------------------
+
+    def test_census_unranked_relative_floor_reason_does_not_round_the_bar_to_zero(self):
+        """`f"{100 * policy['min_ranked_share']:.0f}%"` rendered a 0.5%
+        policy floor as "0%" — self-contradictory next to a measured
+        share that IS under 0.5% but reads as "under the 0% floor".
+        `:g` for the policy bar, and the S2 escalating formatter for the
+        measured share."""
+        policy = dict(self._policy())
+        policy["min_ranked_share"] = 0.005
+        _, note, code = roster._census_verdict(
+            {"generated_at": self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ")},
+            raw_total=100000, ranked_total=499, policy=policy, now=self.NOW)
+        self.assertEqual(code, roster.CENSUS_UNRANKED)
+        self.assertIn("0.5% relative", note)
+        self.assertNotIn("0% relative", note)
+        self.assertIn("0.499%", note)
+        # Mutation check (manual): reverting the bar's format spec to
+        # `:.0f` renders "0% relative floor" — red.
+
+    # --- N8: source.census_at must publish the PARSED timestamp,
+    # re-rendered, not the raw string ------------------------------------
+
+    def test_census_at_publishes_the_parsed_timestamp_not_the_raw_string(self):
+        """`parse_ts` strips a census `generated_at` before comparing it
+        against `now`, but `source.census_at` used to publish the RAW
+        string verbatim — a trailing newline or `\\r` would reach
+        `latest.json`, summary.md, and eval.yml's stdout as a literal
+        control character."""
+        census = TestIssue67._census_doc(generated_at="2026-09-03T00:00:00Z\n")
+        result = self._compute(census=census, previous=None)
+        self.assertEqual(result["source"]["census_at"], "2026-09-03T00:00:00Z")
+        summary = roster.render_summary(result)
+        self.assertNotIn("\n\n·", summary)
+        self.assertNotIn("Z\n`", summary)
+        # Mutation check (manual): reverting `census_at_published` to
+        # `(census_doc or {}).get("generated_at")` (the raw string)
+        # republishes the trailing newline — the assertEqual above
+        # turns red.
+
+    # --- N9: SNAPSHOT_SUFFIX must anchor at the true end of string -------
+
+    def test_snapshot_suffix_rejects_a_trailing_control_character(self):
+        """`$` matches just before a trailing newline as well as at the
+        true end of string; `\\Z` does not."""
+        self.assertIsNone(roster.SNAPSHOT_SUFFIX.match("claude-sonnet-4-5-20260101\n"))
+        match = roster.SNAPSHOT_SUFFIX.match("claude-sonnet-4-5-20260101")
+        self.assertIsNotNone(match)
+        self.assertEqual(match.group("base"), "claude-sonnet-4-5")
+
+    def test_snapshot_suffix_anchor_end_to_end_through_compute_roster(self):
+        """A census key `claude-sonnet-4-5-20260101\\n` folded onto
+        `claude-sonnet-4-5` under the old `$`-anchored regex, inflating
+        its measured share from a real 50.0% to a false ~99.9%."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-5", "2026-01-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        counts = {"claude-sonnet-4-5-20260101\n": {self.W[0]: 9800},
+                 "claude-sonnet-4-5": {self.W[0]: 100},
+                 "claude-haiku-4-5": {self.W[0]: 100}}
+        census = TestIssue67._census_doc(counts=counts)
+        result = self._compute(models=models, census=census, previous=None)
+        reason = self._reason(result, "claude-sonnet-4-5")
+        self.assertIn("50.0%", reason)
+        self.assertNotIn("99.0%", reason)
+        # Mutation check (manual): reverting the anchor to `$` folds the
+        # malformed key onto claude-sonnet-4-5 again, changing the
+        # reason to "carries 99.0%" — turning both assertions red.
 
 
 class TestIssue81(unittest.TestCase):
@@ -11364,9 +15272,20 @@ class TestIssue81(unittest.TestCase):
         # which is not what is wrong with it — the runner drives absolute.
         # Both sides casefold, so the refusal is about the instrument
         # rather than about the shift key.
+        #
+        # Both the agent and the judge model are pinned here: this run goes
+        # through select_models() (#67), which fails closed with a
+        # runner-level error when a fixture pins no model and no roster is
+        # on disk. `--no-judge` would dodge that gate too, but it also
+        # short-circuits the judge_mode_unsupported check this test exists
+        # to exercise (that check only runs `and not args.no_judge`) — so
+        # the judge model is pinned on the fixture instead, and the judge
+        # actually runs.
         with tempfile.TemporaryDirectory() as tmp:
-            eval_dir = self._planted_fixture(Path(tmp), judge={"mode": "Absolute"})
-            proc, _ = self._run_eval_on(eval_dir, "--arm", "without_skill")
+            eval_dir = self._planted_fixture(
+                Path(tmp), judge={"mode": "Absolute", "model": "claude-opus-4-6"})
+            proc, _ = self._run_eval_on(eval_dir, "--model", "claude-sonnet-4-6",
+                                        "--arm", "without_skill")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertNotIn("judge_mode_unsupported", proc.stdout)
         # And judge.score() reads it the same way, so the two cannot
@@ -14003,8 +17922,16 @@ class SetupHookTests(unittest.TestCase):
             seed = Path(tmp) / "seed"
             seed.mkdir()
             (seed / "placeholder.txt").write_text("x\n", encoding="utf-8")
+            # `model:` pinned, and it is not incidental: #129's roster-aware
+            # `select_models` FAILS CLOSED, so an unpinned fixture with no
+            # roster is a model-selection error raised BEFORE any workspace
+            # is materialized — which would short-circuit this test ahead of
+            # the `setup:` it exists to exercise. Pinning the model (with
+            # `no_judge=True` below) makes `select_models` return without
+            # reading a roster at all, leaving `setup:` the only thing this
+            # test can fail on.
             fixture = {"skill": "some-skill", "prompt": "do the thing",
-                      "setup": "exit 7"}
+                      "model": "pinned-test-model", "setup": "exit 7"}
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results", no_judge=True)
@@ -16695,6 +20622,7 @@ class TestIssue85(unittest.TestCase):
                                msg="the fixture's own weights no longer intend 6.80")
         self.assertAlmostEqual(judge._weighted_overall(dimensions, weights),
                                expected, places=6)
+
 
 class TestIssue86(unittest.TestCase):
     """Issue #86: the post-failure-comment eval fixture, and the two new
@@ -20211,7 +24139,23 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
                 env.pop(key, None)
             else:
                 env[key] = value
-        return subprocess.run([str(a) for a in argv], cwd=str(cwd or ws),
+        return self._guarded_invoke(argv, cwd=cwd or ws, env=env)
+
+    def _guarded_invoke(self, argv, *, cwd, env, stdin=None):
+        """Keep a Python-shaped fixture invocation bounded at its real sink.
+
+        Non-Python commands retain their ordinary subprocess behaviour. A
+        child suite skips before process creation.  For a Python command, the
+        marker is written after the supplied environment has been assembled,
+        so an override cannot turn a child back into a parent.
+        """
+        rendered = [str(a) for a in argv]
+        if rendered and Path(rendered[0]).name.startswith("python"):
+            if os.environ.get("SKILLS_EVALS_SUITE_CHILD"):
+                raise unittest.SkipTest("child suite run — guarded Python sink")
+            env = dict(env)
+            env["SKILLS_EVALS_SUITE_CHILD"] = "1"
+        return subprocess.run(rendered, cwd=str(cwd), stdin=stdin,
                               capture_output=True, text=True, env=env)
 
     def _logs_under(self, *roots: Path) -> list[str]:
@@ -20395,10 +24339,9 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         ws = self._arm_ws()
         before = self._log(ws)
         with open(ws / "bin" / "gh", "rb") as handle:
-            proc = subprocess.run([sys.executable, "-", "pr", "close", "421"],
-                                  cwd=str(ws), stdin=handle,
-                                  capture_output=True, text=True,
-                                  env=self._arm_env(ws))
+            proc = self._guarded_invoke(
+                [sys.executable, "-", "pr", "close", "421"], cwd=ws,
+                stdin=handle, env=self._arm_env(ws))
         self._refusal(proc)
         self.assertEqual(self._log(ws), before)
 
@@ -20836,6 +24779,3490 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
         gh = self.FAKE_GH.read_text(encoding="utf-8")
         self.assertIn("Nothing settable is read to decide it", gh)
 
+class TestIssue67Review7(unittest.TestCase):
+    """Round 7 fixes for #67 (PR #129 review round 7), one test per fix.
+
+    A SIBLING of TestIssue67, reusing its canned documents rather than
+    subclassing — run_tests.py's class-per-review-round convention. Every
+    model id below is TEST FIXTURE data; the policy code under test carries
+    none (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None, warn=None, policy=None):
+        """`compute_roster` — the production entry point — with the canned
+        documents. `warn` defaults to a sink so a test that is not about
+        warnings does not print to the suite's stderr."""
+        return roster.compute_roster(
+            models_doc=(TestIssue67._models_doc() if models is TestIssue67.DEFAULT
+                        else models),
+            census_doc=(TestIssue67._census_doc() if census is TestIssue67.DEFAULT
+                        else census),
+            policy=policy or cls._policy(), previous=previous, now=cls.NOW,
+            warn=warn if warn is not None else (lambda _m: None))
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    # --- B1: an id the Models API returns THIS run is never re-targeted by
+    # the WIDE usage alias map ------------------------------------------
+    #
+    # Round 6's B1 widened that map to
+    # `alias_map(api_ids + counts + previous_arms + catalogue_seen)` and
+    # `usage_share` used it for the MODEL's own target as well as for census
+    # keys. When the catalogue lists TWO dated snapshots of one base and the
+    # bare alias is present only in the previous roster (its `arms` or its
+    # `catalogue_seen`), both snapshots folded onto that bare alias, each
+    # one's numerator collected the other's turns, and both were published
+    # "carries 100.0%". The fix: a live catalogue id's target comes from
+    # `seat_aliases` (the catalogue-only map), so two ids the seat map keeps
+    # distinct always keep distinct numerators.
+
+    SNAP_OLD = "claude-opus-5-20260101"
+    SNAP_NEW = "claude-opus-5-20260601"
+    SNAP_BASE = "claude-opus-5"
+
+    @classmethod
+    def _two_snapshot_models(cls):
+        """A catalogue listing TWO dated snapshots of one base and no bare
+        alias of it at all, beside two ordinary models."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.SNAP_OLD, "2026-01-01T00:00:00Z"),
+            cls._model(cls.SNAP_NEW, "2026-06-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _two_snapshot_census(cls, old=40, new=4000):
+        """Usage recorded under each snapshot's OWN id: 40 turns for the
+        older, 4000 for the newer, 4040 in the enter window all told."""
+        return TestIssue67._census_doc(counts={
+            cls.SNAP_OLD: {cls.W[0]: old}, cls.SNAP_NEW: {cls.W[0]: new}})
+
+    def _assert_snapshots_are_not_both_at_100(self, result):
+        self.assertIn(self.SNAP_NEW, self._arm_ids(result))
+        self.assertIn("99.0%", self._reason(result, self.SNAP_NEW))
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result),
+                         "a snapshot carrying 40 of 4040 enter-window turns "
+                         "(0.99%) must not be seated")
+        for arm in result["arms"]:
+            self.assertNotIn("100.0%", arm["reason"], arm)
+
+    def test_two_live_snapshots_keep_distinct_numerators_via_previous_arms(self):
+        """The bare alias is present only in `previous.arms`."""
+        previous = {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self._assert_snapshots_are_not_both_at_100(result)
+        # Mutation check (manual): restoring the single wide-map target
+        # (`aliases = alias_map(api_ids + list(counts) + previous_arms +
+        # list(catalogue_seen))`, used for the model's own target too)
+        # folds BOTH snapshots onto `claude-opus-5` and publishes both at
+        # "carries 100.0%" — red.
+
+    def test_two_live_snapshots_keep_distinct_numerators_via_catalogue_seen(self):
+        """The bare alias is present only in `previous.catalogue_seen` —
+        which is where run 1 puts it, by design, whenever the catalogue
+        listed it once."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self._assert_snapshots_are_not_both_at_100(result)
+        # Mutation check (manual): as above — red.
+
+    def test_the_organic_two_run_chain_keeps_numerators_distinct(self):
+        """No hostile input anywhere: run 1's catalogue lists the bare
+        alias (so run 1 records it in `catalogue_seen` by design), and run 2
+        — fed run 1's OWN published roster as `previous` — sees the bare
+        alias replaced by two dated snapshots."""
+        run1_models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(self.SNAP_BASE, "2026-01-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+        first = self._compute(
+            models=run1_models,
+            census=TestIssue67._census_doc(counts={self.SNAP_BASE: {self.W[0]: 4040}}),
+            previous=None)
+        self.assertIn(self.SNAP_BASE, self._seen_ids(first))
+
+        second = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=first)
+        self._assert_snapshots_are_not_both_at_100(second)
+        # Mutation check (manual): as above — red.
+
+    def test_a_previous_arm_with_no_census_turns_is_retired_at_zero(self):
+        """The older snapshot is a previous arm with LITERALLY no turns of
+        its own; the bare alias sits in history. It must be retired at
+        0.0%, not kept on the newer snapshot's turns."""
+        census = TestIssue67._census_doc(counts={
+            self.SNAP_NEW: {self.W[0]: 4000},
+            "claude-sonnet-5": {self.W[0]: 40}})
+        previous = {"arms": [{"id": self.SNAP_OLD, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=census, previous=previous)
+        self.assertNotIn(self.SNAP_OLD, self._arm_ids(result))
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == self.SNAP_OLD)
+        self.assertIn("exit bar", entry["reason"])
+        self.assertIn("0.0%", entry["reason"])
+        # Mutation check (manual): as above — the wide map gives SNAP_OLD
+        # the newer snapshot's 4000 turns, seats it at "carries 100.0%",
+        # and `retired_since_last` is empty — `next(...)` raises
+        # StopIteration and the test errors.
+
+    def test_the_two_snapshot_roster_still_offers_a_non_arm_judge(self):
+        """The extra seat consumed the last non-arm model, so the judge
+        became an arm and `run_eval.select_models` refused every unpinned
+        fixture. Driven through the runner's own entry point, on a roster
+        `compute_roster` actually produced."""
+        previous = {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}
+        result = self._compute(models=self._two_snapshot_models(),
+                               census=self._two_snapshot_census(),
+                               previous=previous)
+        self.assertFalse(result["judge"]["is_arm"], result["judge"])
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.json"
+            path.write_text(json.dumps(result), encoding="utf-8")
+            fixture = {"skill": "a-skill", "prompt": "x", "judge_rubric": "y"}
+            args = argparse.Namespace(model=None, roster=path, no_judge=False)
+            agent, judge_model, error = run_eval.select_models(fixture, args)
+        self.assertIsNone(error, error)
+        self.assertNotEqual(agent, judge_model)
+        # Mutation check (manual): as above — both snapshots are seated,
+        # nothing available is left un-seated except the models already
+        # taken, `judge.is_arm` is True, and select_models returns "names a
+        # judge that is also an arm".
+
+    # The invariant itself, over a few catalogues: two ids the SEAT map
+    # keeps distinct never collect the same census turns. Observed through
+    # `compute_roster` with a test-only 0% entry bar, which makes every
+    # available model publish its measured share in words — disjoint
+    # numerators over one denominator can never sum past 100%.
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    _SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    def test_usage_numerators_are_disjoint_across_distinct_seat_ids(self):
+        catalogues = [
+            # two dated snapshots of one base, the bare alias only in history
+            (self._two_snapshot_models(), self._two_snapshot_census(),
+             {"arms": [{"id": self.SNAP_BASE, "reason": "was an arm"}]}),
+            # ... and with the bare alias as a census key as well
+            (self._two_snapshot_models(),
+             TestIssue67._census_doc(counts={
+                 self.SNAP_OLD: {self.W[0]: 40},
+                 self.SNAP_NEW: {self.W[0]: 4000},
+                 self.SNAP_BASE: {self.W[0]: 1000}}),
+             {"arms": [], "catalogue_seen": [
+                 {"id": self.SNAP_BASE, "last_seen": self._days_ago(3)}]}),
+            # a base that IS live beside one of its snapshots (one model,
+            # one seat, one share — the seat map collapses them)
+            ({"fetched_at": "2026-09-04T11:00:00Z", "models": [
+                self._model(self.SNAP_BASE, "2026-01-01T00:00:00Z"),
+                self._model(self.SNAP_NEW, "2026-06-01T00:00:00Z"),
+                self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z")]},
+             self._two_snapshot_census(), None),
+            # the ordinary catalogue, with the ordinary census
+            (TestIssue67._models_doc(), TestIssue67._census_doc(), None),
+        ]
+        for index, (models, census, previous) in enumerate(catalogues):
+            with self.subTest(catalogue=index):
+                result = self._compute(models=models, census=census,
+                                       previous=previous,
+                                       policy=self._zero_bar_policy())
+                shares = [float(m.group(1))
+                          for m in (self._SHARE_RE.search(a["reason"])
+                                    for a in result["arms"]) if m]
+                self.assertTrue(shares, result["arms"])
+                # One decimal place per share, so allow half a unit of
+                # last-digit rounding per arm and nothing more.
+                self.assertLessEqual(sum(shares), 100.0 + 0.05 * len(shares),
+                                     f"{shares} sum past one denominator")
+        # Mutation check (manual): restoring the single wide-map target
+        # makes catalogue 0's two snapshots report 100.0% each — 200.0% of
+        # one denominator — red.
+
+    # --- S2: the `catalogue_seen` cap evicts the OLDEST entry, not the
+    # lowest-sorting id ---------------------------------------------------
+    #
+    # `historical = sorted(...)` then `kept = live + historical[:room]`
+    # evicted by ALPHABETICAL id, and `PREVIOUS_ARM_ID_RE` allows a leading
+    # digit — so 500 low-sorting valid-shaped ids pushed a real
+    # since-retired model out of history, took its turns out of the
+    # denominator, and published a false 100.0% share for an unrelated
+    # model. Age is the property the field is about; the cap now agrees
+    # with it.
+
+    CAP_PLANTS = [f"0plant-{i:03d}" for i in range(500)]
+    RETIRED_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _capped_history_previous(cls):
+        """500 low-sorting plants, all within the age window, beside ONE
+        real since-retired model seen a day ago. 501 historical entries
+        against a 500-entry cap: exactly one thing has to go."""
+        stale = cls._days_ago(100)
+        return {"arms": [], "catalogue_seen":
+                [{"id": i, "last_seen": stale} for i in cls.CAP_PLANTS] +
+                [{"id": cls.RETIRED_REAL, "last_seen": cls._days_ago(1)}]}
+
+    @classmethod
+    def _b1_style_census(cls):
+        """The census that names the real since-retired entry and the live
+        model beside it — 8000 of the window's 8800 rankable turns are the
+        retired one's, a true 9.09% for the live one."""
+        return TestIssue67._census_doc(counts={
+            cls.RETIRED_REAL: {cls.W[0]: 8000},
+            "claude-sonnet-5": {cls.W[0]: 800}})
+
+    @classmethod
+    def _capped_history_models(cls):
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        # Mutation check (manual): reverting the historical order to a
+        # plain `sorted(...)` by id — `_no_relevance_order` in place of
+        # `relevant.rank` — drops `claude-sonnet-4-9` (the single
+        # alphabetically-last entry) instead of a plant: red.
+
+    def test_an_alphabetically_evicted_history_entry_falsifies_a_published_share(self):
+        """The measured consequence, through `compute_roster`: the real
+        since-retired model carries 8000 of the window's 8800 rankable
+        turns. Evicted from history by 500 low-sorting plants, its turns
+        leave the denominator and `claude-sonnet-5` is published as
+        carrying 100.0% of census usage where it really carries 9.09%
+        — under the 10% entry bar, and since 2026-09-22 nothing else can
+        seat it: no sonnet clears the bar, so the tier qualifies for no
+        seat and its newest model is excluded with that reason."""
+        census = TestIssue67._census_doc(counts={
+            self.RETIRED_REAL: {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        result = self._compute(models=self._capped_history_models(),
+                               census=census,
+                               previous=self._capped_history_previous())
+        self.assertNotIn("claude-sonnet-5", self._arm_ids(result))
+        reason = next(e["reason"] for e in result["excluded"]
+                      if e["id"] == "claude-sonnet-5")
+        self.assertIn("newest in the sonnet tier", reason)
+        self.assertIn("no model in that tier carries 10%", reason)
+        self.assertIn(self.RETIRED_REAL, self._seen_ids(result))
+        # Mutation check (manual): reverting to `sorted(...)` by id evicts
+        # `claude-sonnet-4-9`, and claude-sonnet-5 reads a false 100.0% —
+        # over the entry bar, so it becomes an arm — red.
+
+    # --- S1: four of round 6's own catalogue_seen defences had no
+    # regression floor — each could be deleted with the whole suite still
+    # green. One test per defence, each red under the named mutation.
+    # (These are floors for code that is already correct, so unlike every
+    # other item in this round they are green before the change as well as
+    # after it: the mutation is what they exist to catch.)
+
+    HOSTILE_SEEN_ID = "claude-sonnet-4-5\n::error::pwned::"
+
+    def _chain(self, previous, models, runs=3, step=100):
+        """`compute_roster` fed its own published roster, `now` advancing
+        `step` days per run — how `catalogue_seen` actually round-trips."""
+        now = self.NOW
+        results = []
+        for _ in range(runs):
+            previous = roster.compute_roster(
+                models_doc=models, census_doc=None, policy=self._policy(),
+                previous=previous, now=now, warn=lambda _m: None)
+            results.append(previous)
+            now = now + timedelta(days=step)
+        return results
+
+    def test_a_future_dated_last_seen_is_clamped_and_still_ages_out(self):
+        """A `last_seen` in the future is clamped to today on read. Without
+        the clamp, `now - seen_at` is negative forever and the plant is
+        immortal: it can never age out, and it goes on being republished by
+        this harness as its own output on every later run."""
+        plant = "claude-sonnet-9-9"
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "9999-12-31"}]}
+        runs = self._chain(previous, models)
+        self.assertIn(plant, self._seen_ids(runs[0]),
+                      "the clamp keeps the entry for one age window, it does "
+                      "not drop it on sight")
+        self.assertNotIn(plant, self._seen_ids(runs[-1]),
+                         "200 days on, a plant the Models API never returned "
+                         "must be gone")
+        # Mutation check (manual): replacing the clamp
+        # (`today if parsed > now else entry["last_seen"]`) with
+        # `entry["last_seen"]` keeps `9999-12-31` verbatim, so the age
+        # check never fires and the plant survives every run — red.
+
+    def test_an_unparseable_last_seen_is_skipped_not_kept_forever(self):
+        """An entry whose `last_seen` does not parse is dropped on read,
+        with a count-only warning. Kept instead, it would read as
+        `parse_ts(...) or now` — today, every run, forever."""
+        plant = "claude-sonnet-9-9"
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "garbage"}]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertNotIn(plant, self._seen_ids(result))
+        self.assertTrue(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+        for w in warnings:
+            self.assertNotIn("garbage", w, "the warning names counts only")
+        # Mutation check (manual): dropping the `if parsed is None: ...
+        # continue` skip and guarding the comparison instead
+        # (`today if (parsed and parsed > now) else entry["last_seen"]`)
+        # stores `"garbage"`, which `_update_catalogue_seen` then reads as
+        # `parse_ts(...) or now` — today — so the plant never ages out and
+        # is republished forever: the first assertion goes red.
+
+    def test_a_hostile_id_in_the_dict_shape_is_skipped_too(self):
+        """The bare-string shape was shape-checked and the `{id, last_seen}`
+        shape was as well, but only the bare string had a test. An id
+        carrying a newline and a `::` workflow command reaches
+        `catalogue_seen`, which is published verbatim to the public
+        `eval-results` branch and read back next run."""
+        models = TestIssue67._models_doc()
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.HOSTILE_SEEN_ID, "last_seen": self._days_ago(1)}]}
+        warnings = []
+        result = roster.compute_roster(
+            models_doc=models, census_doc=None, policy=self._policy(),
+            previous=previous, now=self.NOW, warn=warnings.append)
+        self.assertNotIn(self.HOSTILE_SEEN_ID, self._seen_ids(result))
+        for entry in result["catalogue_seen"]:
+            self.assertNotIn("::", entry["id"])
+            self.assertNotIn("\n", entry["id"])
+        self.assertTrue(
+            [w for w in warnings if "catalogue_seen" in w and "skipped" in w],
+            warnings)
+        for w in warnings:
+            self.assertNotIn("pwned", w, "the warning names counts only")
+        # Mutation check (manual): dropping
+        # `and PREVIOUS_ARM_ID_RE.match(entry["id"])` from the dict branch
+        # of `_clean_catalogue_seen` republishes the hostile id into
+        # `catalogue_seen` — red.
+        # Mutation check (manual): dropping the live/historical split
+        # (`kept = <survivors, newest first, id ascending>[:CAP]`) fills
+        # all 500 slots with `a0000-...` plants — every api id is evicted
+        # and the superset assertion goes red.
+
+    # --- N1: `catalogue_seen[].last_seen` is republished NORMALIZED ------
+
+    def test_a_last_seen_with_control_characters_is_republished_normalized(self):
+        """`parse_ts` strips a `last_seen` before comparing it against
+        `now`, but the entry was stored — and republished to the public
+        branch — as the raw string it came in as, so a `\\r\\n` around a
+        date landed in `roster/latest.json` verbatim. The same fix
+        `source.census_at` already had (N8, round 6)."""
+        plant = "claude-sonnet-9-9"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "\r\n2026-09-01T00:00:00Z\r\n"}]}
+        result = self._compute(models=TestIssue67._models_doc(), census=None,
+                               previous=previous)
+        entry = next(e for e in result["catalogue_seen"] if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-01")
+        for e in result["catalogue_seen"]:
+            self.assertNotIn("\r", e["last_seen"])
+            self.assertNotIn("\n", e["last_seen"])
+        # Mutation check (manual): storing `entry["last_seen"]` instead of
+        # `parsed.strftime("%Y-%m-%d")` republishes the raw string — red.
+
+    # --- N2: `source.census_at` is converted to UTC before it is rendered
+
+    def test_census_at_is_converted_to_utc_before_it_is_rendered(self):
+        """`strftime("...Z")` on an offset-aware timestamp published the
+        LOCAL wall clock with a `Z` on the end — five hours wrong here, and
+        canonical-looking, which is worse than obviously wrong."""
+        census = TestIssue67._census_doc(generated_at="2026-09-03T00:00:00+05:00")
+        result = self._compute(census=census, previous=None)
+        self.assertEqual(result["source"]["census_at"], "2026-09-02T19:00:00Z")
+        # Mutation check (manual): dropping the
+        # `.astimezone(timezone.utc)` publishes "2026-09-03T00:00:00Z" —
+        # red.
+
+    # --- N3: `_format_share`'s last-resort fallback is checked too -------
+
+    def test_the_share_fallback_is_checked_against_the_bar_as_well(self):
+        """`_format_share` escalated 1, 2, 3, 4, 6 decimals against the
+        bar and then returned `:.6g` UNCHECKED. A share of 1.99999975%
+        renders as "2" there, so the reason read "below the 2% exit bar
+        (2% of rankable census usage)" — a sentence that contradicts
+        itself. Measured through `compute_roster`: 7,999,999 of
+        400,000,000 exit-window turns."""
+        counts = {
+            "claude-sonnet-4-6": dict(
+                [(w, 1_000_000) for w in self.W[:7]] + [(self.W[7], 999_999)]),
+            "claude-sonnet-5": {w: 10_000_000 for w in self.W},
+            "claude-opus-5": {w: 10_000_000 for w in self.W},
+            "claude-opus-4-8": {w: 10_000_000 for w in self.W},
+            "claude-haiku-4-5": {w: 10_000_000 for w in self.W},
+            "claude-fable-5-1": dict(
+                [(w, 9_000_000) for w in self.W[:7]] + [(self.W[7], 9_000_001)]),
+        }
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        result = self._compute(census=census, previous=previous)
+        entry = next(r for r in result["retired_since_last"]
+                     if r["id"] == "claude-sonnet-4-6")
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertNotIn("(2% of", entry["reason"],
+                         "the rendered share must not equal the bar it is "
+                         "said to be below")
+        self.assertIn("1.99999975", entry["reason"])
+        # Mutation check (manual): returning `f"{value:.6g}"` unchecked
+        # renders "2%" against the 2% bar — red.
+
+    # --- N4: a RecursionError from json.load is a named one-liner -------
+
+    def test_a_deeply_nested_previous_roster_is_named_not_traced(self):
+        """`read_json` caught `(json.JSONDecodeError, OSError,
+        UnicodeDecodeError)`; a deeply nested document raises
+        `RecursionError` instead, which escaped as a traceback carrying
+        the runner's absolute paths where the module docstring promises a
+        one-line named message. Driven through `main()`, with files on
+        disk.
+
+        THE VERDICT MOVED IN #147 AND THE PROPERTY DID NOT. The previous
+        roster is the COMMITTED `evals/roster.yml` now, so a
+        present-but-unreadable one is a repo defect rather than a fact
+        about an unprotected branch: it is fatal (rc 5) and nothing is
+        published, where it used to be a warning the run carried on past.
+        What this row is about — NAMED, one line, no traceback, no
+        absolute path — is unchanged, and it is now asserted on the fatal
+        path instead of the warning one. `read_trusted_roster` carries
+        the same `RecursionError` catch `read_json` does, for the same
+        reason."""
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(TestIssue67._models_doc()),
+                              encoding="utf-8")
+            previous = Path(tmp) / "previous.json"
+            previous.write_text("[" * 100_000 + "]" * 100_000, encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(self.POLICY), "--previous", str(previous),
+                    "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            err = stderr.getvalue()
+            self.assertEqual(rc, 5, stdout.getvalue() + err)
+            self.assertIn("previous.json is present but unreadable", err)
+            self.assertIn("RecursionError", err)
+            self.assertNotIn("Traceback", err)
+            self.assertNotIn(tmp, err, "no absolute path reaches the log")
+            self.assertFalse(out.exists(),
+                             "nothing is published on the fatal path")
+        # Mutation check (manual): narrowing the `except` back to
+        # `(json.JSONDecodeError, OSError, UnicodeDecodeError)` lets the
+        # RecursionError propagate out of `main()` — the test errors.
+
+    # --- N5-N8: four claims the code does not make good on ---------------
+
+    ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
+
+    def test_the_migration_docstring_does_not_promise_a_one_run_window(self):
+        """`_clean_catalogue_seen` said the bare-string shape is accepted
+        "for ONE migration run". Nothing enforces that and nothing needs
+        to — what is true is that the shape is accepted on read and always
+        republished in the `{id, last_seen}` shape."""
+        doc = roster._clean_catalogue_seen.__doc__
+        self.assertNotIn("for ONE migration run", doc)
+        self.assertIn("republish", doc.lower())
+
+    def test_the_ageing_docs_say_a_retirement_is_not_undone(self):
+        """A planted `catalogue_seen` entry ages out — but a retirement its
+        fabricated usage already caused is not undone: the retired model is
+        no longer a previous arm, so a trickle of real usage never
+        re-seats it. Property 5 has to say so; ageing out reads as a full
+        repair otherwise."""
+        design = (REPO_ROOT / "DESIGN.md").read_text(encoding="utf-8")
+        marker = design.split("## Model roster")[1].split("## Out of scope")[0]
+        self.assertIn("does not undo a retirement", marker)
+        self.assertIn("does not undo a retirement",
+                      roster._update_catalogue_seen.__doc__)
+
+    def test_the_module_docstring_forbids_the_environment_and_stray_stdout(self):
+        """eval.yml's roster step exports the Models API bearer for
+        `refresh_models.py` and runs this module in the SAME shell, so the
+        credential IS in this process's environment; the step's stdout goes
+        to the job summary and the public log. Neither fact is visible from
+        inside this file, so the rule it implies has to be written down."""
+        doc = roster.__doc__
+        self.assertIn("never read the environment", doc)
+        self.assertIn("render_summary", doc)
+        self.assertNotIn("os.environ", self.ROSTER_SRC.read_text(encoding="utf-8")
+                         .split('"""', 2)[2],
+                         "roster.py reads the environment outside its docstring")
+
+
+class TestIssue67Review8(unittest.TestCase):
+    """Round 8 fixes for #67 (PR #129 review round 8 and its adversarial
+    pass), one test per fix.
+
+    A SIBLING of TestIssue67, reusing its canned documents rather than
+    subclassing — run_tests.py's class-per-review-round convention. Every
+    model id below is TEST FIXTURE data; the policy code under test carries
+    none (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard),
+    and the family words the random scenarios build ids out of are read
+    from the policy ladder rather than restated here.
+
+    Every scenario is driven through `compute_roster` or through `main()`
+    with files on disk, the way eval.yml invokes it. `main()` reads the
+    wall clock, so `_run_main` freezes it: the ISO-week windows, the
+    census freshness window and the cooling-off are all undecidable
+    against a moving `now`, and DESIGN.md's "hermetic, always" rule
+    applies to time as much as to network.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    class _FrozenNow(datetime):
+        """`datetime` with `now()` pinned, patched over `roster.datetime`
+        for the duration of a `main()` call. `timeweeks.parse_ts` keeps its
+        own real `datetime`, so parsing stays exactly what production
+        does."""
+
+        @classmethod
+        def now(cls, tz=None):
+            return TestIssue67.NOW
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _compute(cls, models=TestIssue67.DEFAULT, census=TestIssue67.DEFAULT,
+                 previous=None, warn=None, policy=None):
+        return roster.compute_roster(
+            models_doc=(TestIssue67._models_doc() if models is TestIssue67.DEFAULT
+                        else models),
+            census_doc=(TestIssue67._census_doc() if census is TestIssue67.DEFAULT
+                        else census),
+            policy=policy or cls._policy(), previous=previous, now=cls.NOW,
+            warn=warn if warn is not None else (lambda _m: None))
+
+    @classmethod
+    def _run_main(cls, tmp, models, census=None, previous=None):
+        """`roster.main()` — eval.yml's own entry point — over files on
+        disk, with `now` frozen. Returns (rc, published, stdout, stderr);
+        `published` is None when main() refused to write a roster."""
+        tmp = Path(tmp)
+        models_path = tmp / "models.json"
+        models_path.write_text(json.dumps(models), encoding="utf-8")
+        out = tmp / "roster" / "latest.json"
+        argv = ["roster.py", "--models", str(models_path), "--policy",
+                str(cls.POLICY), "--out", str(out)]
+        if census is not None:
+            census_path = tmp / "census.json"
+            census_path.write_text(json.dumps(census), encoding="utf-8")
+            argv += ["--census", str(census_path)]
+        if previous is not None:
+            previous_path = tmp / "previous.json"
+            previous_path.write_text(json.dumps(previous), encoding="utf-8")
+            argv += ["--previous", str(previous_path)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(roster, "datetime", cls._FrozenNow), \
+             contextlib.redirect_stdout(stdout), \
+             contextlib.redirect_stderr(stderr):
+            rc = roster.main()
+        published = (json.loads(out.read_text(encoding="utf-8"))
+                     if out.is_file() else None)
+        return rc, published, stdout.getvalue(), stderr.getvalue()
+
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _model = staticmethod(TestIssue67._model)
+
+    @staticmethod
+    def _seen_ids(result):
+        return {e["id"] for e in result["catalogue_seen"]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    _SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        """The shipped policy with a 0% entry bar, so EVERY available model
+        publishes its measured share in words — the only way to read the
+        numerators off the roster the production code actually produces."""
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    # --- A1: the usage alias map is COMPOSED, so a census key two hops
+    # from a live model is credited rather than orphaned ------------------
+    #
+    # Round 7's B1 fix left three rules that each map ONE hop: rule (2)
+    # folds a non-live dated id onto its bare alias when that alias is
+    # anywhere in `counts + previous_arms + catalogue_seen`, and rule (3)
+    # folds a bare alias that is not itself in the catalogue onward onto
+    # the newest live snapshot of it. Every consumer applies the map
+    # exactly ONCE, so a key needing both hops landed on the bare alias:
+    # in `catalogue_seen`, therefore attributable and inside the
+    # denominator, and equal to no live model's target, therefore inside
+    # nobody's numerator.
+
+    HOP_BASE = "claude-haiku-4"
+    HOP_OLD = "claude-haiku-4-20250101"
+    HOP_LIVE = "claude-haiku-4-20260601"
+    HOP_NEXT = "claude-haiku-5"
+
+    @classmethod
+    def _hop_run1_models(cls):
+        """Run 1's catalogue: the bare alias is live, so run 1 records it
+        in `catalogue_seen` BY DESIGN."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.HOP_BASE, "2025-06-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _hop_run2_models(cls):
+        """Run 2's catalogue: the bare alias is gone, replaced by a dated
+        snapshot of it (roster-policy.yml's own documented shape), and a
+        newer model has shipped in the same tier — so the snapshot can only
+        be seated on measured usage, never on newest-in-tier."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.HOP_LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls.HOP_NEXT, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _hop_census(cls):
+        """The family's work recorded under the OLDER dated spelling — the
+        one that has left the API — beside 300 turns of a live model:
+        5000 of 5300 rankable turns, 94.3%."""
+        return TestIssue67._census_doc(counts={
+            cls.HOP_OLD: {cls.W[0]: 5000},
+            "claude-sonnet-5": {cls.W[0]: 300}})
+
+    def test_the_organic_chain_credits_a_two_hop_census_key(self):
+        """No hostile input anywhere, and both runs through `main()` with
+        files on disk: run 1's catalogue lists the bare alias, run 2's
+        lists a dated snapshot of it beside a newer model, and the census
+        records the family's work under an older dated spelling. The live
+        snapshot must carry those 5000 turns."""
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, _ = self._run_main(first, self._hop_run1_models())
+            self.assertEqual(rc, 0)
+            self.assertIn(self.HOP_BASE, self._seen_ids(run1))
+
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._hop_run2_models(), census=self._hop_census(),
+                previous=run1)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.HOP_LIVE, self._arm_ids(run2),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, two hops away")
+        self.assertIn("94.3%", self._reason(run2, self.HOP_LIVE))
+        # Mutation check (manual): deleting the composition step at the end
+        # of `_usage_alias_map` leaves the census key folded onto the bare
+        # alias, which is in `catalogue_seen` — attributable, in the
+        # denominator, in nobody's numerator — and the live snapshot is not
+        # seated at all: red.
+
+    def test_a_two_hop_previous_arm_is_kept_not_retired_at_zero(self):
+        """The same shape with the snapshot ALREADY an arm: it must be held
+        on its own 94.3%, not retired at a false 0.0% while 5000 of its
+        family's turns sit inside that very denominator."""
+        previous = {"arms": [{"id": self.HOP_LIVE, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.HOP_BASE, "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._hop_run2_models(), census=self._hop_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.HOP_LIVE, self._arm_ids(published))
+        self.assertIn("94.3%", self._reason(published, self.HOP_LIVE))
+        self.assertEqual(
+            [r for r in published["retired_since_last"]
+             if r["id"] == self.HOP_LIVE], [],
+            "a model carrying 94.3% of the window must not be retired")
+        # Mutation check (manual): deleting the composition step retires it
+        # with "below the 2% exit bar ... (0.0% of rankable census usage)"
+        # — red.
+
+    # The invariants, over random catalogues. `_random_scenario` decides
+    # the id each census key's turns BELONG to from the shape it builds,
+    # never from the code under test.
+
+    _SHAPES = ("bare-live", "dated-only-live", "retired")
+
+    @classmethod
+    def _random_scenario(cls, rng):
+        """(models_doc, census_doc, previous, owner) for one random
+        catalogue.
+
+        Three family shapes, which between them cover every route the
+        usage alias map has: a bare alias that IS in the catalogue (it
+        holds the seat and every spelling of the family folds onto it);
+        a catalogue that publishes only DATED snapshots of a family (the
+        newest live snapshot claims the bare alias, and every other
+        spelling folds there — this is the shape the two-hop defect lives
+        in); and a family with no live model at all (its turns are
+        attributable through `catalogue_seen` and belong to nobody's
+        numerator, which is what round 6's B1 fix intends).
+
+        `owner` maps each id to the id whose numerator must collect its
+        census turns. Family words come from the policy ladder.
+        """
+        words = roster.tier_words(cls._policy())
+        models = []
+        counts = {}
+        history = []
+        owner = {}
+        for index in range(rng.randint(2, 4)):
+            base = f"claude-{rng.choice(words)}-{rng.randint(3, 9)}-{index}"
+            snaps = [(f"{base}-2026{month:02d}01",
+                      f"2026-{month:02d}-01T00:00:00Z") for month in (1, 4, 6)]
+            family = [base] + [sid for sid, _ in snaps]
+            # Family 0 is always live, so every scenario has a catalogue
+            # this policy can seat something out of.
+            shape = "bare-live" if index == 0 else rng.choice(cls._SHAPES)
+            if shape == "bare-live":
+                models.append(cls._model(base, "2025-06-01T00:00:00Z"))
+                models += [cls._model(sid, created) for sid, created in snaps
+                           if rng.random() < 0.4]
+                owner.update({i: base for i in family})
+            elif shape == "dated-only-live":
+                live = snaps[:rng.randint(1, 3)]
+                models += [cls._model(sid, created) for sid, created in live]
+                owner.update({i: live[-1][0] for i in family})
+                owner.update({sid: sid for sid, _ in live})
+                history.append(base)
+            else:
+                owner.update({i: base for i in family})
+                history.append(base)
+            for key in [i for i in family if rng.random() < 0.6] or [base]:
+                counts[key] = {cls.W[0]: rng.randrange(1, 40) * 100}
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": i, "last_seen": cls._days_ago(rng.randint(1, 60))}
+            for i in history]}
+        return ({"fetched_at": "2026-09-04T11:00:00Z", "models": models},
+                TestIssue67._census_doc(counts=counts), previous, owner)
+
+    def test_the_usage_alias_map_is_idempotent_over_random_catalogues(self):
+        """Invariants (i) and (ii) of `_usage_alias_map`. Called directly,
+        because they are properties OF the map rather than of any one
+        roster: folding a key twice must give what folding it once gives
+        (every consumer applies the map exactly once), and a value must be
+        a live catalogue id or an id no live id claims — a value that is
+        both non-live and claimed is a census key stranded one hop short
+        of the model whose work it is."""
+        rng = random.Random(670801)
+        rungs = roster.tier_rungs(self._policy())
+        two_hop = 0
+        for index in range(60):
+            models, census, previous, _ = self._random_scenario(rng)
+            api_ids = [m["id"] for m in models["models"]]
+            seat = roster.alias_map(api_ids)
+            live_order = [m["id"] for m
+                          in sorted((m for m in models["models"]
+                                     if m["id"] not in seat),
+                                    key=lambda m: roster._rank(m, rungs))]
+            other = (list(census["counts"])
+                     + [e["id"] for e in previous["catalogue_seen"]])
+            mapping = roster._usage_alias_map(api_ids, other, seat, live_order)
+            live = set(api_ids)
+            claimed_bases = set()
+            for model_id in live:
+                match = roster.SNAPSHOT_SUFFIX.match(model_id)
+                if match and match.group("base") not in live:
+                    claimed_bases.add(match.group("base"))
+            with self.subTest(scenario=index):
+                for key, target in mapping.items():
+                    self.assertEqual(
+                        mapping.get(target, target), target,
+                        f"{key} needs two hops to reach {mapping.get(target)}")
+                    self.assertTrue(
+                        target in live or target not in claimed_bases,
+                        f"{key} lands on {target}, which a live id claims")
+            # Self-check: count the keys that NEED two hops — a non-live
+            # dated id whose bare base a live snapshot claims. Counted off
+            # the key's own shape, not off where the map sends it, so the
+            # count is the same before and after the fix.
+            for key in mapping:
+                match = roster.SNAPSHOT_SUFFIX.match(key)
+                if (key not in live and match
+                        and match.group("base") in claimed_bases):
+                    two_hop += 1
+        self.assertGreater(two_hop, 0,
+                           "no scenario exercised a two-hop key: the "
+                           "property has no teeth on this seed")
+        # Mutation check (manual): deleting the composition step at the end
+        # of `_usage_alias_map` leaves `<base>-YYYYMMDD -> <base>` beside
+        # `<base> -> <newest live snapshot>` — red on both assertions.
+
+    def test_the_numerators_partition_the_denominator_over_random_catalogues(self):
+        """Invariant (iii), through `compute_roster` with a 0% entry bar so
+        every available model publishes its measured share: each
+        attributable ranked census key is credited to exactly ONE model, so
+        every published share equals the turns that key-set actually holds,
+        and the shares sum to 100% less only the turns of families no live
+        model claims.
+
+        Round 7's property test asserts `sum(shares) <= 100`, which cannot
+        see turns lost from every numerator at once."""
+        rng = random.Random(670802)
+        checked = 0
+        for index in range(60):
+            models, census, previous, owner = self._random_scenario(rng)
+            counts = census["counts"]
+            total = sum(sum(w.values()) for w in counts.values())
+            expected: dict[str, int] = {}
+            for key, by_week in counts.items():
+                expected[owner[key]] = (expected.get(owner[key], 0)
+                                        + sum(by_week.values()))
+            result = self._compute(models=models, census=census,
+                                   previous=previous,
+                                   policy=self._zero_bar_policy())
+            arm_ids = {a["id"] for a in result["arms"]}
+            shares = []
+            with self.subTest(scenario=index):
+                for arm in result["arms"]:
+                    match = self._SHARE_RE.search(arm["reason"])
+                    self.assertTrue(match, arm)
+                    published = float(match.group(1))
+                    shares.append(published)
+                    self.assertAlmostEqual(
+                        published, 100 * expected.get(arm["id"], 0) / total,
+                        delta=0.051, msg=f"{arm['id']} in {counts}")
+                unclaimed = sum(turns for model_id, turns in expected.items()
+                                if model_id not in arm_ids)
+                self.assertAlmostEqual(
+                    sum(shares), 100 * (total - unclaimed) / total,
+                    delta=0.051 * len(shares),
+                    msg=f"turns lost from every numerator: {counts}")
+            checked += 1
+        self.assertEqual(checked, 60)
+        # Mutation check (manual): deleting the composition step strands a
+        # two-hop key's turns in the denominator and in no numerator, so
+        # the claiming snapshot's published share falls short — red.
+        # Restoring round 7's single wide map instead makes two live
+        # snapshots collect each other's turns and the shares sum past
+        # 100% — also red.
+
+    # --- A2: `catalogue_seen[].last_seen` is republished as a date this
+    # module can read back ------------------------------------------------
+    #
+    # Round 7's N1 fix re-renders the PARSED timestamp with
+    # `strftime("%Y-%m-%d")`, which does not zero-pad a year below 1000 on
+    # this platform: `0001-01-01` published as `1-01-01`, which `parse_ts`
+    # cannot read. `_update_catalogue_seen` then gave the unparseable value
+    # the benefit of the doubt (`parse_ts(last_seen) or now`) and aged the
+    # entry as if it had been seen TODAY — so an entry that used to be
+    # dropped as older than the 180-day window survived it, the public
+    # branch carried a date this module cannot parse, and 500 such plants
+    # sorted as the newest history there is.
+
+    YEAR_ONE_PLANT = "claude-sonnet-9-9"
+    A2_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _two_model_catalogue(cls):
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+
+    def test_a_year_one_last_seen_ages_out_instead_of_reading_as_today(self):
+        """Through `main()` with files on disk: a `last_seen` of
+        `0001-01-01` is two thousand years older than the window, so
+        nothing of it may reach the published roster — and least of all a
+        `1-01-01` this module's own `parse_ts` refuses."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": self.YEAR_ONE_PLANT, "last_seen": "0001-01-01"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            text = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0)
+        self.assertNotIn(self.YEAR_ONE_PLANT, self._seen_ids(published),
+                         "an entry older than the window is dropped, not "
+                         "aged as if it had been seen today")
+        self.assertNotIn("1-01-01", text,
+                         "the published date must be one `parse_ts` reads")
+        # Mutation check (manual): reverting the rendering to
+        # `parsed.strftime("%Y-%m-%d")` publishes `1-01-01`, which
+        # `parse_ts` refuses, so `_update_catalogue_seen` reads it as today
+        # and republishes the plant — red on both assertions.
+
+    def test_five_hundred_year_one_plants_do_not_evict_real_history(self):
+        """The measured consequence: 500 plants dated `0001-01-01` read as
+        the newest history there is and filled the cap, evicting the one
+        genuinely since-retired id seen a day ago."""
+        plants = [f"0plant-{i:03d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": "0001-01-01"} for i in plants] +
+                    [{"id": self.A2_REAL, "last_seen": self._days_ago(1)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        seen = self._seen_ids(published)
+        self.assertTrue(self.A2_REAL in seen,
+                        "a real id seen yesterday must outlive 500 entries "
+                        "dated in the year 1")
+        self.assertEqual(sorted(seen - {self.A2_REAL}),
+                         sorted(m["id"] for m
+                                in self._two_model_catalogue()["models"]),
+                         "every year-1 plant is older than the window")
+        # Mutation check (manual): as above — the plants read as today,
+        # survive the age check, sort ahead of the real id and take all 500
+        # slots: red.
+
+    def test_every_published_last_seen_round_trips_through_parse_ts(self):
+        """The property behind both tests above, over the shapes a public
+        branch can actually deliver: whatever `catalogue_seen` publishes,
+        this module's own `parse_ts` must read back to the same date. A
+        date this harness writes and cannot re-read is one that silently
+        stops ageing."""
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": "claude-opus-3-1", "last_seen": self._days_ago(2)},
+            {"id": "claude-opus-3-2", "last_seen": "\r\n2026-09-01T00:00:00Z\r\n"},
+            {"id": "claude-opus-3-3", "last_seen": "2026-09-01T23:00:00-08:00"},
+            {"id": "claude-opus-3-4", "last_seen": "9999-12-31"},
+            {"id": "claude-opus-3-5", "last_seen": "0001-01-01"},
+        ]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertTrue(published["catalogue_seen"])
+        for entry in published["catalogue_seen"]:
+            with self.subTest(entry=entry["id"]):
+                parsed = timeweeks.parse_ts(entry["last_seen"])
+                self.assertIsNotNone(parsed, entry)
+                self.assertEqual(
+                    parsed.astimezone(timezone.utc).date().isoformat(),
+                    entry["last_seen"], entry)
+        # Mutation check (manual): reverting to `strftime("%Y-%m-%d")`
+        # publishes `1-01-01` for the year-1 entry, which `parse_ts`
+        # returns None for — red.
+
+    # --- F1: the `catalogue_seen` cap's ORDER is decided by data the
+    # previous roster does not control ------------------------------------
+    #
+    # THE INVARIANT: an entry the census names outlives any number of
+    # entries the census does not name, whatever their dates or ids.
+    # Round 7's S2 made the cap evict the oldest `last_seen` first — but
+    # the planter CONTROLS `last_seen`: a future value clamps to today,
+    # and every bare string migrates stamped today. So 498 entries dated
+    # today, or 500 bare strings, still evicted the one genuinely
+    # since-retired id, still took its 8000 turns out of the denominator,
+    # and still published "carries 100.0%" for a model whose true share is
+    # 800 of 8800 — 9.09%. The plants below sort AFTER the real id, so
+    # nothing but the date is doing the eviction.
+
+    F1_PLANTS = [f"zplant-{i:03d}" for i in range(500)]
+    F1_REAL = "claude-sonnet-4-9"
+
+    @classmethod
+    def _f1_census(cls):
+        """The real since-retired model carries 8000 of the window's 8800
+        rankable turns; the live model carries 800 — 9.09%, under the 10%
+        entry bar, so it rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.F1_REAL: {cls.W[0]: 8000},
+            "claude-sonnet-5": {cls.W[0]: 800}})
+        # Mutation check (manual): dropping the relevance sort (leaving the
+        # age-only order round 7 shipped) evicts `claude-sonnet-4-9`, takes
+        # its 8000 turns out of the denominator, and publishes
+        # "carries 100.0% of rankable census usage" for a model whose true
+        # share is 9.09% — red.
+        # Mutation check (manual): as above — red.
+
+    # --- A3: regression floors for the defences round 7 introduced -------
+    #
+    # A REPEAT of round 7's own should-fix ("four of S3's defences have no
+    # regression floor"), on this round's defences. Six mutations left the
+    # suite at 411 green while changing behaviour; five are pinned below.
+    # Each of those names its mutation, is red under it, and green
+    # otherwise.
+    #
+    # The sixth — the cap sort's `or now`, replaced by `_LAST_SEEN_FLOOR`
+    # under A2 — is an EQUIVALENT MUTANT: unreachable because
+    # `_clean_catalogue_seen` re-renders every date through `_as_date`
+    # before the cap ever runs, so nothing arriving there fails to parse.
+    # Restoring `or now` leaves the whole suite green,
+    # `test_five_hundred_year_one_plants_do_not_evict_real_history`
+    # included (measured, #129 review round 9 — round 8's comment here
+    # claimed that test pinned it, and it does not). Nothing pins it and
+    # nothing can; roster.py's own comment over the sort says so
+    # correctly, and calls the branch a floor rather than a live one. Do
+    # not invent a test for an unreachable branch.
+
+    ARM_FILLERS = [f"0arm-{i:03d}" for i in range(500)]
+    A3_DEPARTED = "claude-sonnet-4-9"
+
+    def test_the_newest_live_snapshot_claims_the_bare_alias_not_the_oldest(self):
+        """MUTATION: iterating `live_order` in reverse in rule (3) of
+        `_usage_alias_map`. The brief for round 7's B1 says the NEWER
+        snapshot carries the usage; nothing asserted WHICH one did, and
+        reversing the iteration seats the older one on the same turns with
+        the whole suite still green."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-opus-5-20260101", "2026-01-01T00:00:00Z"),
+            self._model("claude-opus-5-20260601", "2026-06-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts={
+            "claude-opus-5": {self.W[0]: 4000},
+            "claude-sonnet-5": {self.W[0]: 300}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(tmp, models, census=census)
+        self.assertEqual(rc, 0)
+        self.assertIn("claude-opus-5-20260601", self._arm_ids(published))
+        self.assertIn("93.0%", self._reason(published, "claude-opus-5-20260601"),
+                      "the NEWEST live snapshot claims the bare alias")
+        self.assertNotIn("claude-opus-5-20260101", self._arm_ids(published),
+                         "the older snapshot has no turns of its own")
+
+    def test_a_departed_arm_named_by_a_dated_census_key_survives_the_cap(self):
+        """A departed arm whose census key is a DATED spelling of it. Its
+        8000 turns are in the usage denominator only while it is carried;
+        capped out, they leave, and the live model beside it is published
+        as carrying 100.0% of census usage where it really carries 9.09%.
+
+        MUTATIONS (run, re-measured for round 11's continuation — the
+        `named_bases = set()` route this row used to name was round 9's
+        and is long gone). This is the densest row in the file: it is RED
+        under dropping the residue from EITHER cap, under filling either
+        cap from the residue by id order, under dropping EITHER tier-1
+        route, and under restoring round 8's `SNAPSHOT_SUFFIX` spelling
+        route. It is dense because the arm is relevant through nothing but
+        being unnamed — it is residue — while the live model beside it is
+        tier 1, so every clause that decides which of the two the cap
+        keeps shows up in the published sentence."""
+        # `claude-sonnet-5` is a previous arm here so that this row still
+        # goes THROUGH `main()` after 2026-09-22: at its true 9.09% no
+        # sonnet clears the ENTRY bar, so the tier qualifies for no seat
+        # and the newest-in-tier rule no longer rescues it; the EXIT bar
+        # is 2%, and being held over it is what keeps the roster
+        # non-empty and publishable. The sentence measured is the same
+        # one, with the same share in it.
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"},
+                             {"id": "claude-sonnet-5", "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            f"{self.A3_DEPARTED}-20250101": {self.W[0]: 8000},
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertNotIn("carries", reason)
+        self.assertIn("held over from the previous roster", reason)
+        # `_format_share` renders the shortest form that still round-trips
+        # against the bar it is being compared to, and this is the 2% exit
+        # bar rather than the 10% entry one — so 9.1%, not 9.09%.
+        self.assertIn("9.1%", reason)
+
+    # RETIRED: `test_a_dated_arm_gets_no_relevance_from_its_own_spelling`.
+    #
+    # It pinned round 9's COST — a departed arm spelled `<census key>-YYYY
+    # MMDD` got no relevance from its own spelling, so past the cap it
+    # shared the fate F3 records for a departed arm with no census turns
+    # at all, and the live model beside it published "carries 100.0%" for
+    # a true 9.09%. Round 9 called that cost a canary and asked for it to
+    # go red the moment a predicate over the entry's own spelling came
+    # back.
+    #
+    # B1' (#129 review round 10) removes the cost instead. Nothing about
+    # the arm's SPELLING makes it relevant now either — what does is that
+    # neither the live catalogue nor the census names it, so it is tier-3
+    # residue and no cap evicts it (round 10 reached the same outcome
+    # through a rationed tier-2 slot, deleted in round 11's continuation;
+    # both the tiering and the caps are gone with #147). The canary's own
+    # scenario is now
+    # TestIssue67Review10::test_a_dated_arm_whose_census_key_is_undated
+    # _survives_five_hundred_fillers, asserting the opposite outcome, and
+    # the spelling route it guarded against is still red under
+    # TestIssue67Review9's rows A-C.
+
+    def test_a_live_previous_arm_survives_the_cap_and_is_held_over(self):
+        """MUTATION: dropping `api_ids=api_ids` from the
+        `_clean_previous_arms` call site. A previous arm the catalogue
+        still lists, with no census to measure it against, is relevant
+        only through `api_ids`; capped out by 500 fillers it stops being a
+        previous arm at all, loses its "no evidence to retire it" hold-over
+        — staleness is not evidence of disuse — and is retired instead."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-haiku-4-5", "2025-10-01T00:00:00Z"),
+        ]}
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": "claude-sonnet-4-6", "reason": "was an arm"}]}
+        # A census the cap can order by but the POLICY cannot rank: every
+        # turn is on an id carrying no family word from the ladder, so the
+        # census names something (the cap fires — A, #129 review round 10,
+        # or a census with no in-window usage would stop it evicting at
+        # all) while `ranked_total` stays 0, which is what leaves the arm
+        # with no evidence to retire it.
+        census = TestIssue67._census_doc(counts={
+            "some-routing-proxy": {self.W[0]: 5000}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(tmp, models, census=census,
+                                                 previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn("claude-sonnet-4-6", self._arm_ids(published))
+        self.assertIn("no evidence to retire it",
+                      self._reason(published, "claude-sonnet-4-6"))
+
+    # --- F3: the retirement report is computed BEFORE the cap ------------
+    #
+    # Round 7's S3 made the previous-arms cap keep an arm the run can say
+    # something about — one the catalogue lists, or one the census names —
+    # ahead of filler. A real departed arm with ZERO census turns is
+    # neither, so 500 fillers still capped it out and `retired_since_last`
+    # — the line the job summary leads with — still lost the only
+    # retirement that happened. S3's own test avoided the case by giving
+    # the arm 8,000 turns. Nothing in the data tells a filler apart from a
+    # real id here, so ordering cannot fix it: the report is computed from
+    # the uncapped, shape-validated list instead, and the cap now governs
+    # only what is carried forward for attribution.
+
+    def test_a_departed_arm_with_no_census_turns_is_still_reported_retired(self):
+        """500 fillers, one real departed arm, and a census that names
+        neither — so nothing but the cap decides whether the retirement is
+        reported at all."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.ARM_FILLERS] +
+                            [{"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            "claude-sonnet-5": {self.W[0]: 800}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, out, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        retired = {r["id"]: r["reason"] for r in published["retired_since_last"]}
+        self.assertTrue(self.A3_DEPARTED in retired,
+                        "the one arm that really left the Models API must be "
+                        "reported whether or not the census names it")
+        self.assertIn("no longer returned", retired[self.A3_DEPARTED])
+        self.assertIn(f"retired `{self.A3_DEPARTED}`", out,
+                      "and it reaches the rendered summary")
+        # Mutation check (manual): computing the report from the capped
+        # list again drops it — 500 filler retirements and not the real
+        # one: red.
+
+    def test_the_report_names_counts_only_for_a_hostile_previous_arm(self):
+        """Uncapping the report does not widen what reaches the public
+        branch: an id carrying a newline and a `::` workflow command is
+        still dropped by the shape check, still counted rather than
+        quoted, and still never reaches `retired_since_last` or the
+        Markdown eval.yml prints to stdout."""
+        hostile = "claude-sonnet-4-5\n::error::pwned::"
+        previous = {"arms": [{"id": hostile, "reason": "was an arm"},
+                             {"id": self.A3_DEPARTED, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, out, err = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+            text = (Path(tmp) / "roster" / "latest.json").read_text(
+                encoding="utf-8")
+        self.assertEqual(rc, 0)
+        retired = [r["id"] for r in published["retired_since_last"]]
+        self.assertEqual(retired, [self.A3_DEPARTED])
+        for published_text in (text, out, err):
+            self.assertNotIn("pwned", published_text)
+            self.assertNotIn("::error::", published_text)
+        self.assertTrue([line for line in err.splitlines()
+                         if "`arms` entry/entries" in line], err)
+
+    # --- F2: `catalogue_seen[].last_seen` is converted to UTC before it
+    # is rendered ---------------------------------------------------------
+    #
+    # `parse_ts` keeps whatever offset the entry carried, so re-rendering
+    # it with `strftime("%Y-%m-%d")` published the LOCAL date: a day early
+    # west of UTC, a day late east of it. The sibling `source.census_at`
+    # rendering already converts (N2, round 7); this one did not, and a
+    # date that is off by one ages out a day early or a day late.
+
+    def test_a_last_seen_west_of_utc_is_not_published_a_day_early(self):
+        """`2026-09-01T23:00:00-08:00` is `2026-09-02` in UTC."""
+        plant = "claude-opus-3-1"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "2026-09-01T23:00:00-08:00"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(e for e in published["catalogue_seen"]
+                     if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-02")
+        # Mutation check (manual): dropping the `.astimezone(timezone.utc)`
+        # from `_as_date` publishes "2026-09-01" — red.
+
+    def test_a_last_seen_east_of_utc_is_not_published_a_day_late(self):
+        """`2026-09-02T01:00:00+05:00` is `2026-09-01` in UTC."""
+        plant = "claude-opus-3-2"
+        previous = {"arms": [], "catalogue_seen": [
+            {"id": plant, "last_seen": "2026-09-02T01:00:00+05:00"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(e for e in published["catalogue_seen"]
+                     if e["id"] == plant)
+        self.assertEqual(entry["last_seen"], "2026-09-01")
+        # Mutation check (manual): as above — publishes "2026-09-02", red.
+
+    # --- F4: `_format_share`'s last rung is `repr`, not `:.17g` ----------
+    #
+    # Seventeen significant digits round-trips any float, but it is not
+    # the SHORTEST rendering that does: `:.17g` of a share of 1.9999999
+    # is "1.9999998999999999", which is both unreadable and wrong-looking
+    # about a number the reason is quoting exactly. `repr` gives
+    # "1.9999999" and satisfies `float(text) != bar` just as reliably.
+
+    F4_ARM = "claude-sonnet-4-6"
+    F4_FILLERS = [f"claude-opus-9-{i}" for i in range(13)]
+
+    @classmethod
+    def _f4_catalogue(cls):
+        """The default catalogue plus the thirteen fillers, so the huge
+        denominator below is one THIS RUN'S MODELS API accounts for.
+
+        It used to leave them out, and the fillers reached the denominator
+        through `catalogue_seen` alone. That is exactly the shape round
+        12's BLOCKER 1 defends against — a retirement whose denominator
+        the previous roster supplies — so with the anchored check in place
+        the retirement this row is about was refused and there was no
+        `retired_since_last` entry left to read a rendering off. The
+        rendering is the subject here, not the attribution, so the
+        fixture moves rather than the rule: same census, same
+        19,999,999-of-1,000,000,000 share, denominator now anchored."""
+        return TestIssue67._models_doc(
+            extra=[cls._model(i, "2026-01-01T00:00:00Z")
+                   for i in cls.F4_FILLERS])
+
+    @classmethod
+    def _f4_census(cls):
+        """19,999,999 of 1,000,000,000 exit-window turns — a share of
+        exactly 1.9999999%, just under the 2% exit bar."""
+        counts = {cls.F4_ARM: dict(
+            [(w, 2_499_999) for w in cls.W[:7]] + [(cls.W[7], 2_500_006)])}
+        for filler in cls.F4_FILLERS[:12]:
+            counts[filler] = {w: 10_000_000 for w in cls.W}
+        counts[cls.F4_FILLERS[12]] = dict(
+            [(w, 2_500_000) for w in cls.W[:7]] + [(cls.W[7], 2_500_001)])
+        return TestIssue67._census_doc(counts=counts)
+
+    def test_the_last_share_rung_is_the_shortest_round_tripping_rendering(self):
+        """Measured through `main()`: the brief's own case, 19,999,999 of
+        1,000,000,000 exit-window turns."""
+        # `F4_FILLERS[0]` is a previous arm purely to keep the run
+        # publishable after 2026-09-22: this census's largest ENTRY-window
+        # share is a filler's 8.0%, so no tier qualifies and the
+        # newest-in-tier rule seats nobody, while the filler's 8.0% of the
+        # EXIT window is comfortably over the 2% hold-over bar. It shares
+        # no id, tier or count with `F4_ARM`, whose 19,999,999-of-
+        # 1,000,000,000 retirement share is the subject and is unmoved.
+        previous = {"arms": [{"id": self.F4_ARM, "reason": "was an arm"},
+                             {"id": self.F4_FILLERS[0], "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(2)}
+                                       for i in self.F4_FILLERS]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._f4_catalogue(), census=self._f4_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(r for r in published["retired_since_last"]
+                     if r["id"] == self.F4_ARM)
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertIn("(1.9999999% of", entry["reason"])
+        self.assertNotIn("1.9999998999999999", entry["reason"])
+        # Mutation check (manual): restoring `:.17g` as the last rung
+        # renders "1.9999998999999999%" — red. Restoring round 7's
+        # UNCHECKED `:.6g` renders "2%" against the 2% bar, which
+        # TestIssue67Review7's own N3 test still catches.
+
+
+class TestIssue67Review9(unittest.TestCase):
+    """Round 9 fixes for #67 (PR #129 review round 9), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review8, reusing their canned
+    documents rather than subclassing — run_tests.py's class-per-review-round
+    convention. Every model id below is TEST FIXTURE data; the policy code
+    under test carries none (`test_no_model_ids_are_hardcoded_outside_fixtures`
+    is the guard), and the family words the random scenarios build ids out of
+    are read from the policy ladder rather than restated here.
+
+    Every scenario is driven through `compute_roster` or through `main()`
+    with files on disk, the way eval.yml invokes it. `main()` reads the wall
+    clock, so `_run_main` freezes it: the ISO-week windows, the census
+    freshness window and the cooling-off are all undecidable against a
+    moving `now`, and DESIGN.md's "hermetic, always" rule applies to time as
+    much as to network.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+
+    @classmethod
+    def _policy(cls):
+        return TestIssue67._policy()
+
+    @classmethod
+    def _zero_bar_policy(cls):
+        """The shipped policy with a 0% entry bar, so EVERY available model
+        publishes its measured share in words — the only way to read the
+        numerators off the roster the production code actually produces."""
+        policy = dict(cls._policy())
+        policy["arm_enter_usage_pct"] = 0
+        return policy
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    @classmethod
+    def _run_main(cls, tmp, models, census=None, previous=None, policy=None):
+        """`roster.main()` — eval.yml's own entry point — over files on
+        disk, with `now` frozen. `policy`, when given, is written out as a
+        real policy FILE and passed with `--policy`, so a test-only bar
+        still travels the production path. Returns (rc, published, stdout,
+        stderr); `published` is None when main() refused to write."""
+        tmp = Path(tmp)
+        models_path = tmp / "models.json"
+        models_path.write_text(json.dumps(models), encoding="utf-8")
+        policy_path = cls.POLICY
+        if policy is not None:
+            policy_path = tmp / "policy.yml"
+            policy_path.write_text(yaml.safe_dump(policy), encoding="utf-8")
+        out = tmp / "roster" / "latest.json"
+        argv = ["roster.py", "--models", str(models_path), "--policy",
+                str(policy_path), "--out", str(out)]
+        if census is not None:
+            census_path = tmp / "census.json"
+            census_path.write_text(json.dumps(census), encoding="utf-8")
+            argv += ["--census", str(census_path)]
+        if previous is not None:
+            previous_path = tmp / "previous.json"
+            previous_path.write_text(json.dumps(previous), encoding="utf-8")
+            argv += ["--previous", str(previous_path)]
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch.object(roster, "datetime", cls._FrozenNow), \
+             contextlib.redirect_stdout(stdout), \
+             contextlib.redirect_stderr(stderr):
+            rc = roster.main()
+        published = (json.loads(out.read_text(encoding="utf-8"))
+                     if out.is_file() else None)
+        return rc, published, stdout.getvalue(), stderr.getvalue()
+
+    # --- B1: relevance is EXACT MEMBERSHIP in data the previous roster
+    # does not write ------------------------------------------------------
+    #
+    # THE INVARIANT: an entry that neither the live catalogue nor the census
+    # names, under any spelling, never outranks one that either names.
+    #
+    # Round 8's `_census_relevance` decided "the census names this" by
+    # SPELLING: `SNAPSHOT_SUFFIX` wants eight DIGITS, not a date, and
+    # `PREVIOUS_ARM_ID_RE` accepts the result — so anyone who can write
+    # `previous.json` and knows ONE census key (every live model id is one,
+    # and `usage/latest.json` and `roster/latest.json` are both public on
+    # `eval-results`) mints five hundred ids the predicate calls
+    # census-named. Round 6 keyed the cap on the id, round 7 on `last_seen`,
+    # round 8 on a predicate over the id — each on something the planter
+    # writes. The rows below are the three spellings that reached it.
+
+    B1_REAL = "claude-sonnet-4-9"
+    B1_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _b1_census(cls):
+        """The real since-retired model carries 8000 of the window's 8800
+        rankable turns; the live model carries 800 — a true 9.09%."""
+        return TestIssue67._census_doc(counts={
+            cls.B1_REAL: {cls.W[0]: 8000},
+            cls.B1_LIVE: {cls.W[0]: 800}})
+        # Mutation check (manual): restoring `_census_relevance`'s
+        # `SNAPSHOT_SUFFIX` route calls every plant census-named, so they
+        # tie with the real entry on relevance and win on `last_seen` —
+        # the real id is evicted, its 8000 turns leave the denominator and
+        # the live model is published "carries 100.0%": red.
+        # Mutation check (manual): as above — red.
+        # Mutation check (manual): as above — red.
+        # Mutation check (manual): as above — run 1 evicts the real entry,
+        # run 2 reads run 1's own output back and publishes "carries
+        # 100.0%" a second time: red.
+
+    # The SAME predicate governs the previous-arms cap, so one mutation
+    # cannot quietly change only one of the two.
+
+    B1_ARM_PLANTS = [f"claude-haiku-4-5-{i:08d}" for i in range(500)]
+
+    def test_the_previous_arms_cap_keeps_the_arm_the_census_names(self):
+        """500 plants spelled as dated versions of a LIVE catalogue id —
+        census-named under the old predicate, and sorting ahead of the real
+        departed arm by id — against one departed arm the census names
+        outright. 8000 of the window's 9000 rankable turns are that arm's;
+        capping it out takes them off the denominator and publishes the
+        live model at 80.0% for a true 8.9%."""
+        previous = {"arms": [{"id": i, "reason": "filler"}
+                             for i in self.B1_ARM_PLANTS] +
+                            [{"id": self.B1_REAL, "reason": "was an arm"}]}
+        census = TestIssue67._census_doc(counts={
+            self.B1_REAL: {self.W[0]: 8000},
+            self.B1_LIVE: {self.W[0]: 800},
+            "claude-haiku-4-5": {self.W[0]: 200}})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        reason = self._reason(published, self.B1_LIVE)
+        self.assertIn("carries 8.9%", reason, "800 of 9000 rankable turns")
+        self.assertNotIn("80.0%", reason)
+        # Mutation check (manual): restoring the `SNAPSHOT_SUFFIX` route
+        # makes all 501 arms relevant, the plants win the id tie-break,
+        # the real arm is capped out of `carried_arms`, its 8000 turns stop
+        # being attributable and the reason reads "carries 80.0%" — red.
+
+    # --- B1, the other direction: the alias-map route must SURVIVE -------
+    #
+    # Relevance is exact membership in the live catalogue, in the census
+    # keys, or in what the PRODUCTION alias map — built from those two and
+    # nothing else — relates them to. That last route is not decoration:
+    # it is what keeps A1's organic two-run chain working once the cap
+    # actually fires.
+
+    C_BASE = "claude-haiku-4"
+    C_OLD = "claude-haiku-4-20250101"
+    C_LIVE = "claude-haiku-4-20260601"
+    C_NEXT = "claude-haiku-5"
+
+    @classmethod
+    def _c_models(cls):
+        """Run 2's catalogue in A1's chain: the bare alias has gone,
+        replaced by a dated snapshot of it (roster-policy.yml's own
+        documented shape), with a newer model beside it in the same tier so
+        the snapshot can only be seated on measured usage."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls.C_LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls.C_NEXT, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+
+    @classmethod
+    def _c_census(cls):
+        """5000 of the window's 5300 rankable turns recorded under the
+        OLDER dated spelling, which has left the API; 300 on a live model.
+        The live snapshot also carries a row of its own, OUTSIDE the
+        window — enough for the production alias map to relate the bare
+        alias to a census key, not enough to move a share."""
+        return TestIssue67._census_doc(counts={
+            cls.C_OLD: {cls.W[0]: 5000},
+            cls.C_LIVE: {"2026-W20": 700},
+            "claude-sonnet-5": {cls.W[0]: 300}})
+
+    def test_a_bare_alias_a_live_snapshot_claims_survives_the_cap(self):
+        """A1's chain with the cap firing: the bare alias sits in
+        `catalogue_seen` (run 1's catalogue listed it, BY DESIGN), it is
+        neither a live id nor a census key, and it is the only thing that
+        folds the older dated census key onto the live snapshot. 500 plants
+        dated today must not evict it, and the snapshot must still be
+        seated on its own 94.3%."""
+        plants = [f"zplant-{i:03d}" for i in range(500)]
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in plants] +
+                    [{"id": self.C_BASE, "last_seen": self._days_ago(100)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._c_models(), census=self._c_census(),
+                previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertTrue(self.C_BASE in self._seen_ids(published),
+                        "the bare alias the live snapshot claims is named "
+                        "by the catalogue through the production alias map")
+        self.assertIn(self.C_LIVE, self._arm_ids(published),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, two hops away")
+        self.assertIn("94.3%", self._reason(published, self.C_LIVE))
+        # Mutation check (run), RE-MEASURED for round 11's continuation.
+        # Two routes this note has named are now gone: round 9's (c2) (the
+        # production map landing the ENTRY on a census key), deleted in
+        # round 10 as provably implied by the others, and TIER 2, deleted
+        # in this continuation because the tier-3 residue rule subsumes it.
+        # What is red here now is DROPPING THE RESIDUE from the history cap
+        # (`kept = live + named[:room]`): the bare alias is no census key
+        # and no live id, so the residue carry is the only thing that keeps
+        # it, the older dated census key stops folding, its 5000 turns
+        # leave every numerator and the live snapshot is not seated at all.
+        # NOT red here, and measured rather than assumed: evicting the
+        # residue by ID ORDER instead, because round 8 spelled these plants
+        # `zplant-NNN` so the bare alias sorts ahead of all 500 of them —
+        # which is exactly why an id-order floor has to be a row whose
+        # plants sort FIRST, and TestIssue67Review10's row A is that row.
+
+    # The property behind all of the above, over random catalogues,
+    # censuses and plant sets. `_plant_scenario` decides which entries are
+    # NAMED from the catalogue and census it just built, never by asking
+    # the code under test, and draws every plant from ids that are neither
+    # a live id nor a census key.
+
+    _PLANT_SHAPES = ("bare-live", "dated-only-live", "retired", "dated-retired",
+                     "dated-key-and-bridge")
+
+    _PROP_SHARE_RE = re.compile(r"carries ([0-9.]+)% of rankable")
+        # Mutation check (RUN, not reasoned about), re-measured for round
+        # 11's continuation against this generator alone. The mechanisms
+        # earlier notes here named — `tier2 = {}`, either `_links`
+        # mutation, `_base`'s `-DDDDDDDD` strip — no longer exist: all of
+        # them were deleted once the tier-3 residue rule was shown to
+        # subsume them, and a note naming a mutation of deleted code is
+        # exactly the drift F-1 exists to stop.
+        #
+        # STILL RED over this generator, each measured on its own:
+        #   * dropping the residue from the arms cap (`carried = named`);
+        #   * dropping it from the history cap (`kept = live+named[:room]`);
+        #   * filling either cap from the residue by id order.
+        # GREEN over this generator, and red elsewhere in the suite rather
+        # than nowhere: dropping either tier-1 route, and restoring round
+        # 8's `SNAPSHOT_SUFFIX` spelling route — this generator draws every
+        # plant from ids that are neither a live id nor a census key, so
+        # they are residue whatever `rank` says about the tiers, and the
+        # rows that separate the tiers are TestIssue67Review10's.
+
+
+    # --- S1: a `last_seen` this module cannot convert to UTC is skipped,
+    # not raised ----------------------------------------------------------
+    #
+    # Introduced by round 8's A2/F2 fix. `_as_date` converts to UTC before
+    # rendering — `parse_ts` keeps whatever offset the entry carried — and
+    # converting a year-1 timestamp with a POSITIVE offset lands before
+    # `datetime.min`, which raises `OverflowError`. Measured through
+    # `main()`: rc 1, a ten-line traceback carrying the runner's absolute
+    # paths, and NO roster published, where the module docstring promises
+    # "a one-line named message, never a traceback" about every untrusted
+    # input. Round 7's N4 guard wraps the JSON load and cannot reach this.
+    # eval.yml turns the non-zero rc into a `::warning::` and the eval runs
+    # on the fixture pins — so one planted entry disables the feature until
+    # `eval-results` is edited by hand.
+
+    S1_PLANT = "claude-opus-4-1"
+    S1_CRASHING = ("0001-01-01T00:00:00+05:00", "0001-01-01T00:00:00+00:01",
+                   "0001-01-01T00:00:00+14:00")
+    S1_SURVIVING = ("0001-01-01", "0001-01-01T00:00:00-05:00",
+                    "0001-01-01T00:00:01+00:00", "9999-12-31")
+
+    def test_an_unconvertible_last_seen_is_named_not_traced(self):
+        """Through `main()` with files on disk: each of the three stamps
+        that used to raise must leave rc 0, a published roster, no
+        traceback, and exactly one count-only warning that quotes no
+        value."""
+        for stamp in self.S1_CRASHING:
+            previous = {"arms": [], "catalogue_seen": [
+                {"id": self.S1_PLANT, "last_seen": stamp}]}
+            with self.subTest(last_seen=stamp):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, out, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 0, out + err)
+                self.assertIsNotNone(published, "no roster was published")
+                self.assertNotIn(self.S1_PLANT, self._seen_ids(published))
+                self.assertNotIn("Traceback", err)
+                warnings = [line for line in err.splitlines()
+                            if line.startswith("roster: ")]
+                self.assertEqual(len(warnings), 1, err)
+                self.assertNotIn(stamp, err, "the warning names no value")
+                self.assertNotIn("0001", err)
+                self.assertIn("1 `catalogue_seen` entry/entries", warnings[0])
+
+    def test_the_neighbouring_year_one_stamps_are_unchanged(self):
+        """The stamps either side of the crash — naive, a NEGATIVE offset
+        (which lands after `datetime.min`), one second past midnight, and
+        the year-9999 end (clamped by `parsed > now`) — never raised and
+        must still behave exactly as they did: the year-1 ones age out of
+        the 180-day window, the year-9999 one is clamped to today."""
+        for stamp in self.S1_SURVIVING:
+            previous = {"arms": [], "catalogue_seen": [
+                {"id": self.S1_PLANT, "last_seen": stamp}]}
+            with self.subTest(last_seen=stamp):
+                with tempfile.TemporaryDirectory() as tmp:
+                    rc, published, out, err = self._run_main(
+                        tmp, self._two_model_catalogue(), previous=previous)
+                self.assertEqual(rc, 0, out + err)
+                self.assertNotIn("Traceback", err)
+                if stamp.startswith("9999"):
+                    entry = next(e for e in published["catalogue_seen"]
+                                 if e["id"] == self.S1_PLANT)
+                    self.assertEqual(entry["last_seen"], self._days_ago(0))
+                else:
+                    self.assertNotIn(self.S1_PLANT,
+                                     self._seen_ids(published),
+                                     "two thousand years is past the window")
+        # Mutation check (manual): removing the
+        # `except (OverflowError, ValueError, OSError)` around the
+        # conversion in `_clean_catalogue_seen` turns
+        # `test_an_unconvertible_last_seen_is_named_not_traced` red — the
+        # OverflowError escapes `main()` and the test errors out — while
+        # leaving this one green, which is the pair's whole point.
+
+    # --- S2(a): a regression FLOOR for the alias map's composition -------
+    #
+    # `_usage_alias_map` follows each chain to its end with a `while`, and
+    # round 8's A1 tests pin TWO hops. Nothing pinned more than two: the
+    # mutation `while` -> `if` left the whole suite green while changing
+    # behaviour. This is that floor, and it is a floor rather than a
+    # red-first fix — the code is already right.
+
+    S2_KEY = "claude-haiku-4-20250101-20260101"
+    S2_MID = "claude-haiku-4-20250101"
+    S2_BASE = "claude-haiku-4"
+    S2_LIVE = "claude-haiku-4-20260601"
+    S2_NEXT = "claude-haiku-5"
+
+    def test_a_three_hop_census_key_still_reaches_the_live_snapshot(self):
+        """MUTATION: `while` -> `if` in `_usage_alias_map`'s composition
+        step. Three hops, each supplied by a different input, the way a
+        real chain accumulates: the census key is a dated spelling of a
+        `catalogue_seen` entry, that entry is a dated spelling of a
+        previous arm, and that arm is the bare alias the live snapshot
+        claims. Every consumer folds exactly once, so a chain the map
+        stops following early lands its turns on an id that is
+        attributable (it is in `catalogue_seen`) and in nobody's
+        numerator: the denominator keeps them and the model whose work
+        they are is not seated at all."""
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(self.S2_LIVE, "2026-06-01T00:00:00Z"),
+            self._model(self.S2_NEXT, "2026-07-01T00:00:00Z"),
+            self._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            self._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+        ]}
+        census = TestIssue67._census_doc(counts={
+            self.S2_KEY: {self.W[0]: 5000},
+            "claude-sonnet-5": {self.W[0]: 300}})
+        previous = {"arms": [{"id": self.S2_BASE, "reason": "was an arm"}],
+                    "catalogue_seen": [
+                        {"id": self.S2_MID, "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous)
+        self.assertEqual(rc, 0)
+        self.assertIn(self.S2_LIVE, self._arm_ids(published),
+                      "5000 of the window's 5300 rankable turns are this "
+                      "model's, three hops away")
+        self.assertIn("94.3%", self._reason(published, self.S2_LIVE))
+        # And the map really did need all three hops: the two ids in the
+        # middle of the chain hold no seat of their own.
+        self.assertNotIn(self.S2_MID, self._arm_ids(published))
+        self.assertNotIn(self.S2_BASE, self._arm_ids(published))
+
+    # --- S2(b): a regression floor for the previous-arms CAP itself ------
+    #
+    # The cap could be removed outright with the suite green: the mutation
+    # `return ids, carried` -> `return ids, ids` left all 605 tests
+    # passing, `test_the_cap_still_bounds_what_is_carried_forward`
+    # included — that test reads the UNCAPPED list (`retired_since_last`
+    # is 600 long, the warning names 100 dropped) and both survive the
+    # mutation untouched. What the cap actually decides is who is CARRIED
+    # FORWARD for attribution, so the floor has to be a scenario where the
+    # cap's own eviction moves the denominator.
+
+    S2B_ARMS = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
+    S2B_BIG = "claude-sonnet-4-9"
+    S2B_DATED = "claude-sonnet-4-9-20250101"
+        # Mutation check (run, on the head that deleted tier 2): with the
+        # cap removed the lowest-turn tier-1 arm is carried, the 900,000
+        # turns it bridges are attributable, the census reads as usable
+        # and the reason is a bare "newest model in the sonnet tier, ...
+        # days old" with no census-quality sentence at all — red on all
+        # three assertions.
+
+    # --- N3: no published reason carries scientific notation -------------
+    #
+    # Pre-existing, and identical on both of this branch's earlier heads.
+    # `_format_share`'s `6g` and `repr` rungs render a very small share in
+    # SCIENTIFIC notation, so a reason read "below the 2% exit bar
+    # (1e-09% of rankable census usage)". THE INVARIANT: no published
+    # reason carries scientific notation; a share too small for the fixed
+    # rungs renders as a fixed-point FLOOR that can never read as equal to
+    # the bar.
+
+    #: In the catalogue, so the retirement reaches the EXIT-BAR branch and
+    #: quotes a share at all — a departed id retires with "no longer
+    #: returned by the Models API" and never renders one.
+    N3_ARM = "claude-sonnet-4-6"
+    N3_BULK = ("claude-sonnet-5", "claude-opus-5", "claude-opus-4-8")
+    #: Scientific notation, and only that — the floor rendering the fix
+    #: introduces is prose ("under 0.000001") and carries a bare `e` of
+    #: its own, so a plain "no letter e" check would reject the fix.
+    _EXPONENT = re.compile(r"[0-9][eE][-+]?[0-9]")
+
+    def test_a_vanishing_share_renders_as_a_floor_not_in_scientific_notation(self):
+        """Measured through `main()` with files on disk: one turn against
+        240,000,000 over the exit window is a share of 4.1666e-07%, which
+        every fixed rung rounds to zero and `6g` used to render as
+        `4.16667e-07`."""
+        counts = {i: {w: 10_000_000 for w in self.W} for i in self.N3_BULK}
+        counts[self.N3_ARM] = {self.W[0]: 1}
+        census = TestIssue67._census_doc(counts=counts)
+        previous = {"arms": [{"id": self.N3_ARM, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, TestIssue67._models_doc(), census=census,
+                previous=previous)
+        self.assertEqual(rc, 0)
+        entry = next(r for r in published["retired_since_last"]
+                     if r["id"] == self.N3_ARM)
+        self.assertIn("below the 2% exit bar", entry["reason"])
+        self.assertIsNone(self._EXPONENT.search(entry["reason"]),
+                          "no published reason carries scientific notation")
+        self.assertIn("under 0.000001%", entry["reason"])
+        # Mutation check (manual): restoring the `6g`/`repr` rungs without
+        # the floor renders "(4.16667e-07% of rankable census usage)" —
+        # red.
+
+    def test_the_smallest_shares_render_without_scientific_notation(self):
+        """The values from the finding, straight at `_format_share`: a
+        share that is nonzero but far below any fixed rendering must still
+        say something a reader can weigh against a bar, and must not say
+        it in scientific notation."""
+        for value in (1e-9, 1e-300, 4.94e-324, 5e-7):
+            with self.subTest(value=value):
+                text = roster._format_share(value, 2, under=True)
+                self.assertIsNone(self._EXPONENT.search(text), text)
+                self.assertEqual(text, "under 0.000001")
+
+    def test_no_rendering_equals_its_bar_or_uses_scientific_notation(self):
+        """The F4 property, swept over bars in BOTH directions: whatever
+        the bar, a rendering never reads as equal to it in the "below"
+        direction, never reads as "0" about a nonzero share, and never
+        carries an exponent."""
+        bars = (0, 0.5, 1, 2, 10, 100)
+        values = (0.0, 4.94e-324, 1e-300, 1e-9, 1e-6, 0.004, 0.04, 1.96,
+                  1.9999, 1.99999975, 1.9999999, 2.0, 9.09, 10.0, 64.5,
+                  99.9999999, 100.0)
+        for bar in bars:
+            for value in values:
+                with self.subTest(bar=bar, value=value):
+                    for under in (False, True):
+                        text = roster._format_share(value, bar, under=under)
+                        self.assertIsNone(self._EXPONENT.search(text), text)
+                        try:
+                            parsed = float(text)
+                        except ValueError:
+                            # The floor rung is not a number at all, so it
+                            # cannot read as equal to any bar.
+                            self.assertTrue(under and 0 < value < 1e-6, text)
+                            continue
+                        if under and value < bar:
+                            self.assertNotEqual(parsed, bar, text)
+                            if value > 0:
+                                self.assertNotEqual(parsed, 0.0, text)
+
+
+
+class TestIssue67Review10(unittest.TestCase):
+    """Round 10 fixes for #67 (PR #129 review round 10), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review9, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST FIXTURE
+    data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every scenario is driven through `main()` with files on disk, the way
+    eval.yml invokes it, or through `compute_roster`. `main()` reads the
+    wall clock, so `_run_main` freezes it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _zero_bar_policy = TestIssue67Review9._zero_bar_policy
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- B1': attribution reads the FOLD SET, not the entry that produced
+    # it ------------------------------------------------------------------
+    #
+    # THE INVARIANT: every census key with in-window turns that any entry
+    # folds onto keeps at least one entry that folds onto it, every id the
+    # usage alias map needs as a hop from such a key to the numerator that
+    # collects its turns survives the caps, and an entry that neither the
+    # live catalogue nor the census needs, under any spelling, never
+    # outranks one that either does. (The middle clause is round 11's; the
+    # rows below predate it and are unchanged by it.)
+    #
+    # Round 9 keyed the caps on the live catalogue and the census at last,
+    # but read the relation in ONE direction only: census key -> base,
+    # never entry -> census key. So a DATED departed arm whose usage the
+    # census records under its UNDATED alias — the shape roster-policy.yml
+    # has documented since round 6 — was relevant to nothing, and 500
+    # filler arms evicted it exactly the way 500 low-sorting ids used to.
+    # Its turns left the usage denominator and the live model beside it
+    # was published "carries 100.0%" for a true 33.3%.
+    #
+    # Restoring round 8's spelling route would re-open round 9's blocker,
+    # so the fix is neither direction of the old predicate: what tells the
+    # real arm from 500 plants is not how either is SPELLED but what the
+    # two documents a planter does not write actually NAME. The census
+    # key `<alias>` is attributable only through an entry that folds onto
+    # it, and an entry neither document names is carried rather than
+    # ranked, so the plants cannot take the real arm's place.
+
+    B1P_BASE = "claude-haiku-4"
+    B1P_DATED = "claude-haiku-4-20250101"
+    B1P_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _b1p_census(cls):
+        """The departed arm's usage is recorded under its UNDATED alias:
+        8000 turns on `claude-haiku-4`, 4000 on the live model — a true
+        33.3% for the live one."""
+        return TestIssue67._census_doc(counts={
+            cls.B1P_BASE: {cls.W[0]: 8000},
+            cls.B1P_LIVE: {cls.W[0]: 4000}})
+
+    def _b1p_run(self, fillers):
+        previous = {"arms": [{"id": i, "reason": "filler"} for i in fillers]
+                            + [{"id": self.B1P_DATED, "reason": "was an arm"}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=self._b1p_census(),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return self._reason(published, self.B1P_LIVE)
+
+    def _assert_the_true_share(self, reason):
+        # `assertIn` on the share alone: a failure would otherwise dump
+        # 500 filler ids into the log along with the whole roster.
+        self.assertIn("carries 33.3%", reason,
+                      "4000 of 12000 rankable turns is 33.3%")
+        self.assertNotIn("100.0%", reason)
+
+    def test_the_control_publishes_the_true_share(self):
+        """Control row: no fillers, so no cap fires and the departed arm
+        is carried whatever the order is. 4000 of 12000 rankable turns."""
+        self._assert_the_true_share(self._b1p_run([]))
+
+    def test_a_dated_arm_whose_census_key_is_undated_survives_the_cap(self):
+        """Row A, the blocker itself: 500 `0filler-NNNN` arms, which sort
+        BEFORE the real one, against a departed arm the census names only
+        through its undated alias. The arm is no census key and no live
+        catalogue id, so no tier-1 route reaches it; what keeps it is that
+        neither document names it, which makes it tier-3 residue, and no
+        cap evicts from the residue."""
+        self._assert_the_true_share(
+            self._b1p_run([f"0filler-{i:04d}" for i in range(500)]))
+        # Mutation check (RUN), re-measured for round 11's continuation.
+        # outright. It is GREEN under either tier-1 route and under
+        # restoring round 8's spelling route, because every entry in it is
+        # residue either way. The tier-2 slot this row used to name was
+        # deleted in that continuation; the residue carry does its work
+        # and does it without a cap slot to ration.
+
+    def test_high_sorting_fillers_do_not_evict_it_either(self):
+        """Row B: the same 500 fillers spelled to sort AFTER the real arm.
+        The id order alone would spare it here, which is exactly why row A
+        needs a companion — this row stayed green through the whole
+        defect and says nothing about the fix on its own."""
+        self._assert_the_true_share(
+            self._b1p_run([f"zfiller-{i:04d}" for i in range(500)]))
+
+    def test_a_plant_in_the_fold_group_keeps_the_key_attributable(self):
+        """Row D: 500 plants spelled `claude-haiku-4-000000NN`, all in the
+        census key's fold group and all sorting BEFORE the real arm.
+        Nothing moves — the published share is still the true one.
+
+        WHY it does not move changed in round 11's continuation, and the
+        row is kept because the attack is the same either way. Round 10
+        let the smallest plant win the census key's one tier-2 slot, so
+        the real arm WAS capped out and the key stayed attributable
+        through the plant instead. There is no slot now: the plants and
+        the arm are all entries neither document names, so all 501 are
+        residue and all 501 are carried. The row is RED under dropping the
+        residue from either cap, which is the property it now measures —
+        that a planter cannot cost the key its attributability, whether or
+        not the planter also takes the real arm's place."""
+        self._assert_the_true_share(
+            self._b1p_run([f"{self.B1P_BASE}-{i:08d}" for i in range(500)]))
+
+    def test_under_the_cap_nothing_is_evicted_at_all(self):
+        """Row E: 498 fillers plus the arm is 499 entries against a
+        500-entry cap, so the cap never fires and the order is not
+        consulted. The row exists to show the defect was the CAP's, not
+        the attribution machinery's."""
+        self._assert_the_true_share(
+            self._b1p_run([f"0filler-{i:04d}" for i in range(498)]))
+
+    # The two scenarios round 10's reviewer found by re-running round 8's
+    # own 3,000-scenario generator with both caps forced (500 filler arms
+    # and 500 filler history entries per scenario). Six scenarios differed
+    # from the pre-round-9 head; 11 published shares came out HIGHER than
+    # the truth, none lower. These are the two worst, restated as fixtures
+    # with round numbers so the true share is readable off the counts.
+
+    def _fuzz_run(self, api, counts, arm, watch):
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in api]}
+        census = TestIssue67._census_doc(counts={
+            key: {self.W[0]: turns} for key, turns in counts.items()})
+        previous = {"arms": [{"id": f"0filler-{i:04d}", "reason": "filler"}
+                             for i in range(500)]
+                            + [{"id": arm, "reason": "was an arm"}],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous,
+                policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return self._reason(published, watch)
+
+    def test_the_first_fuzz_scenario_publishes_its_true_share(self):
+        """A one-model catalogue, the departed arm a dated spelling of a
+        census key in a tier the catalogue no longer carries at all."""
+        reason = self._fuzz_run(
+            api=["claude-haiku-5"],
+            counts={"claude-haiku-5": 2990, "claude-fable-5": 7010},
+            arm="claude-fable-5-20250101", watch="claude-haiku-5")
+        self.assertIn("carries 29.9%", reason, "2990 of 10000 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+    def test_the_second_fuzz_scenario_publishes_its_true_share(self):
+        """A catalogue that publishes a DATED id beside a bare one, and a
+        departed arm dated in the future relative to the census key it
+        folds onto — neither of which changes the answer."""
+        reason = self._fuzz_run(
+            api=["claude-fable-4-20250101", "claude-sonnet-4"],
+            counts={"claude-sonnet-4": 493, "claude-opus-5": 507},
+            arm="claude-opus-5-20260601", watch="claude-sonnet-4")
+        self.assertIn("carries 49.3%", reason, "493 of 1000 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+    # --- the ordering inside a tier --------------------------------------
+
+    def test_a_tier_is_ordered_by_census_turns_not_by_last_seen(self):
+        """MUTATION: ordering a tier by `last_seen` first. 501 entries the
+        census names, so every one of them is tier 1 and only the order
+        within the tier decides who the cap drops. The entry carrying
+        almost all of the window's turns is dated OLDEST, so a
+        `last_seen`-first order drops exactly it — and with it 900,000 of
+        the window's 901,500 turns, leaving the census unrankable and the
+        roster on its newest-per-tier fallback."""
+        small = [f"claude-sonnet-3-{i:03d}" for i in range(500)]
+        big = "claude-sonnet-4-9"
+        counts = {i: {self.W[0]: 3} for i in small}
+        counts[big] = {self.W[0]: 900_000}
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(0)} for i in small]
+                    + [{"id": big, "last_seen": self._days_ago(120)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous, policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        self.assertIn(big, self._seen_ids(published),
+                      "the census's own turn count orders a tier, and this "
+                      "entry carries 900,000 of the window's 901,500")
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 0.0%", reason,
+                      "claude-sonnet-5 has no turns of its own; the "
+                      "denominator is the other 901,500")
+        # Mutation check (manual): sorting a tier by `last_seen` descending
+        # ahead of the turns — `(tier, survivors[i], -turns, i)` — drops
+        # the 120-day-old entry, its 900,000 turns leave the denominator,
+        # the census reads as unrankable and claude-sonnet-5's reason is
+        # the newest-per-tier fallback with no share in it at all: red.
+
+    # --- A: a census that names nothing gives the caps no order to evict
+    # by, so they do not evict ---------------------------------------------
+    #
+    # PRE-EXISTING on 5d1f00a, and reachable without a hostile census at
+    # all: eval.yml materializes `census.json` with `git show ... || true`,
+    # which leaves an EMPTY file behind before the census job has ever run.
+    # With no census the tiers are all empty, and what was left to order by
+    # was `last_seen` and the id — both written by whoever writes
+    # `previous.json`. Measured through `main()` twice over: 500
+    # `0plant-NNNN` entries dated today evicted the 8,000-turn
+    # `claude-sonnet-4-9` in run 1, and run 2 — reading run 1's own
+    # published roster back, with a perfectly healthy census — published
+    # `claude-sonnet-5 carries 100.0%` for a true 9.09%. Eviction is
+    # PERMANENT, so that is not a transient wrong answer.
+
+    A_VICTIM = "claude-sonnet-4-9"
+    A_LIVE = "claude-sonnet-5"
+    A_PLANTS = [f"0plant-{i:04d}" for i in range(500)]
+
+    @classmethod
+    def _a_healthy_census(cls):
+        """8000 of the window's 8800 rankable turns are the victim's — a
+        true 9.09% for the live model, under the 10% entry bar, so it
+        rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.A_VICTIM: {cls.W[0]: 8000},
+            cls.A_LIVE: {cls.W[0]: 800}})
+
+    @classmethod
+    def _a_previous(cls):
+        return {"arms": [], "catalogue_seen":
+                [{"id": i, "last_seen": cls._days_ago(0)} for i in cls.A_PLANTS]
+                + [{"id": cls.A_VICTIM, "last_seen": cls._days_ago(4)}]}
+
+    #: The four shapes a census can take that name NOTHING for this window.
+    #: `None` is `--census` omitted altogether, which is also what an empty
+    #: file left by `git show ... || true` reduces to (`read_json` returns
+    #: no document for a zero-length file).
+    @classmethod
+    def _a_silent_censuses(cls):
+        padded = {i: {"2020-W01": 1000} for i in cls.A_PLANTS}
+        padded.update({f"0pad-{i:04d}": {"2020-W01": 1000} for i in range(100)})
+        return (
+            ("absent", None),
+            ("counts: {}", TestIssue67._census_doc(counts={})),
+            ("counts: [] (wrong type)",
+             {"generated_at": "2026-09-04T06:00:00Z", "weeks": cls.W,
+              "counts": []}),
+            ("600 keys, every turn out of window",
+             TestIssue67._census_doc(counts=padded)),
+        )
+
+    def _a_two_runs(self, census):
+        """Run 1 with `census`, run 2 from run 1's own roster with a
+        healthy one — how `catalogue_seen` actually round-trips."""
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, err = self._run_main(
+                first, self._two_model_catalogue(), census=census,
+                previous=self._a_previous())
+            self.assertEqual(rc, 0)
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._two_model_catalogue(),
+                census=self._a_healthy_census(), previous=run1)
+        self.assertEqual(rc, 0)
+        return run1, run2, err
+        # Mutation check (manual), RESTATED for round 11: the
+        # `census_is_silent` branch this note named no longer exists —
+        # it was a test on the whole census FILE, and one in-window turn
+        # under any key at all re-armed the eviction
+        # (`TestIssue67Review11::test_one_in_window_turn_does_not_re_arm
+        # _the_eviction` is that measurement). The mutation that is red on
+        # all four rows now is filling either cap from the tier-3 residue
+        # by id order — the pre-round-11 `sorted(ids, key=order)[:CAP]`.
+        # (Ordering a tier by `last_seen` first still cannot be measured
+        # HERE: with no census to name anything, the order is never
+        # reached at all. That mutation is red under
+        # `test_a_tier_is_ordered_by_census_turns_not_by_last_seen`, which
+        # is the same defence measured where it can fire.)
+
+    # --- F-1: the invariant sentence is PINNED, in both files ------------
+    #
+    # It was written in `evals/roster-policy.yml` and over the
+    # `catalogue_seen` cap, and nothing asserted either: deleting one copy,
+    # or both, left the whole suite green. Prose that no test reads is
+    # prose that drifts from the code the next time the code moves — which
+    # is how the policy came to describe a `last_seen` order the code had
+    # already stopped implementing.
+
+    #: The invariant, VERBATIM as it appears in all five places, in the
+    #: normalised form below (a YAML comment, a Python comment and three
+    #: docstrings wrap it differently; none of them may say anything
+    #: different).
+    INVARIANT = (
+        "every census key with in-window turns that any entry folds onto "
+        "keeps at least one entry that folds onto it — unless the census "
+        "names more entries than a cap can rank, in which case the "
+        "lowest-turn of them go, never a live catalogue id — every id the "
+        "usage alias map needs as a hop from such a key to the numerator "
+        "that collects its turns survives the caps and the ageing "
+        "window, and an entry that neither the live catalogue nor the "
+        "census needs, under any spelling, never outranks one that "
+        "either does")
+
+    ROSTER_SRC = REPO_ROOT / "harness" / "roster.py"
+
+    @staticmethod
+    def _normalised(text):
+        """Comment markers stripped, every run of whitespace collapsed,
+        lowercased — so a sentence wrapped one way in a YAML comment,
+        another way in an indented Python comment and a third way in a
+        docstring is the same string. Lowercased because the cap's own
+        comment shouts it."""
+        return " ".join(" ".join(line.strip().lstrip("#").strip()
+                                 for line in text.splitlines()).split()).lower()
+        # Mutation check (run): deleting the sentence from
+        # evals/roster-policy.yml turns the first assertion red; deleting
+        # ANY ONE of the four copies in roster.py turns the count
+        # assertion red, and the three docstring copies each turn their
+        # own subTest red as well.
+
+    # --- F-2: every clause of the relevance machinery has a NAMED mutation
+    # that turns the suite red --------------------------------------------
+    #
+    # A REPEAT of the family round 7 (S3), round 8 (A3) and round 9 (S2)
+    # each caught: a defence with no regression floor. Round 9's `_relevance`
+    # carried a route (c2) that was provably implied by the other three (0
+    # fires in 6,000,000 evaluations) while its docstring, roster-policy.yml
+    # and a test comment all called it load-bearing; it is deleted. The rule
+    # for what remains is that every clause is dropped, one at a time, and
+    # the suite has to go red. The four below are the clauses that had no
+    # floor when this round started.
+
+    _F2_PLANTS = [f"0plant-{i:04d}" for i in range(500)]
+
+    def _f2_run(self, models, counts, seen):
+        previous = {"arms": [], "catalogue_seen":
+                    [{"id": i, "last_seen": self._days_ago(3)} for i in seen]}
+        census = TestIssue67._census_doc(counts={
+            key: {self.W[0]: turns} for key, turns in counts.items()})
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, _ = self._run_main(
+                tmp, models, census=census, previous=previous,
+                policy=self._zero_bar_policy())
+        self.assertEqual(rc, 0)
+        return published
+
+    #: 497 census keys, which with two live catalogue ids fill tier 1 to
+    #: 499 of the cap's 500 — one short, so anything else the cap has to
+    #: RANK costs a census-named entry its place, and anything it carries
+    #: as residue costs nothing. One turn each, so the shares below stay
+    #: readable off the counts.
+    _F2_FILLER_KEYS = [f"claude-opus-3-{i:03d}" for i in range(497)]
+
+    def test_the_cap_ranks_only_what_the_census_names_and_carries_the_rest(self):
+        """Renamed in round 11's continuation from
+        `test_a_census_key_gets_exactly_one_slot_however_many_fold_onto_it`,
+        because the slot it was named for no longer exists. The scenario is
+        unchanged and it is the tightest one in the file: 497 entries the
+        census names outright, plus two live catalogue ids, fill tier 1 to
+        499 of the cap's 500. Three dated spellings of one census key —
+        none of them a census key itself — and 500 plants make up the rest.
+
+        WHAT IT MEASURES is the whole of the round-11 rule at its own
+        boundary. Every one of the 503 unnamed entries is residue, so all
+        of them are carried and NONE of them costs a census-named entry
+        its place; ranking any of them would overflow the cap by three and
+        drop entries the census does name. Red under dropping the residue
+        from either cap and under filling either cap from the residue by
+        id order; red, too, if the residue stops being a tier of its own."""
+        published = self._f2_run(
+            self._two_model_catalogue(),
+            dict({k: 1 for k in self._F2_FILLER_KEYS},
+                 **{"claude-sonnet-4-9": 8000, "claude-sonnet-5": 800}),
+            ["claude-sonnet-4-9-20250101", "claude-sonnet-4-9-20250102",
+             "claude-sonnet-4-9-20250103"]
+            + self._F2_FILLER_KEYS + self._F2_PLANTS)
+        seen = self._seen_ids(published)
+        for spelling in ("claude-sonnet-4-9-20250101",
+                         "claude-sonnet-4-9-20250102",
+                         "claude-sonnet-4-9-20250103"):
+            self.assertIn(spelling, seen,
+                          "an entry the census does not name is residue "
+                          "and is carried; ranking it would cost an entry "
+                          "the census DOES name its place")
+        self.assertEqual(len([k for k in self._F2_FILLER_KEYS if k in seen]),
+                         497, "every entry the census names outright is kept")
+        # 800 of 8000 + 800 + 497 rankable turns.
+        self.assertIn("carries 8.6%",
+                      self._reason(published, "claude-sonnet-5"))
+
+    # RETIRED: `test_a_census_key_a_tier_one_entry_already_reaches_spends
+    # _no_slot`.
+    #
+    # It pinned round 10's `covered` guard by asserting the WRONG
+    # outcome. The scenario is a dated census key that is itself the
+    # history entry, with the bare alias beside it: the guard reads the
+    # group as covered, spends no tier-2 slot, and the bare alias goes to
+    # tier 3 behind 500 plants and is evicted — which the test asserted as
+    # correct, on the reasoning that "the key is already reachable".
+    #
+    # It is not. The bare alias is the ONLY hop `_usage_alias_map` has
+    # from `<alias>-YYYYMMDD` to the live snapshot that holds the seat —
+    # `alias_map` creates that hop only when `<alias>` is one of the ids
+    # handed in, and the ids handed in are exactly what this cap trims. So
+    # evicting it is what breaks the chain: measured through `main()`, a
+    # live model carrying a true 57.1% published with no usage seat at
+    # all, a three-hop chain published `carries 100.0%` for a true 5.66%,
+    # and — with a newer model in the tier to deny it the newest-in-tier
+    # fallback — a model carrying 57.1% was RETIRED at 0.0%.
+    #
+    # B (#129 review round 11) made every link of that chain tier 1 in
+    # its own right, so the bare alias survives and the assertion above is
+    # false by design. That round's continuation then deleted BOTH the
+    # `covered` guard and the explicit chain route, because the tier-3
+    # residue rule subsumes them: the bare alias is an entry neither
+    # document names, so no cap evicts it and nothing has to notice that
+    # it is a link. The scenario is TestIssue67Review11's rows 1-4.
+
+    # RETIRED: `test_the_fold_follows_the_alias_map_not_one_suffix_strip`.
+    #
+    # It pinned the tiering's own `fold` — "the production alias map applied to
+    # `_base(model_id)`" — against the mutation of returning `_base` alone,
+    # using an entry with TWO `-DDDDDDDD` suffixes so that one strip
+    # stopped a hop short of the census key. Round 11's continuation
+    # deleted `fold` and `_base` with it: `rank` was their only caller, and
+    # once the tier-3 residue is carried whole, an entry that joins no
+    # census key's group is simply carried rather than evicted, so which
+    # group it would have joined decides nothing.
+    #
+    # The property it stood for — that the alias relation is followed to
+    # its END and not one hop — is unaffected and keeps both its floors,
+    # neither of which went through `fold`:
+    # TestIssue67Review9::test_a_three_hop_census_key_still_reaches_the
+    # _live_snapshot over `_usage_alias_map` itself, and
+    # TestIssue67Review11's rows 3 and 3A through `main()`.
+
+    def test_a_dated_history_entry_credits_its_undated_census_key(self):
+        """MUTATION: matching `catalogue_seen` RAW instead of through the
+        alias map. `api_ids` and `previous_arms` were both folded and the
+        history set was not, so a since-retired model this harness observed
+        under a DATED id credited nothing to the undated alias the census
+        records its usage under — 8000 of the window's 8800 turns off the
+        denominator, and `claude-sonnet-5` published at 100.0% for a true
+        9.09%. No plants are needed: one entry and one census key reach it.
+
+        It is also what makes the caps' invariant mean the same thing in
+        both lists. An entry that folds onto a census key keeps that key
+        attributable — which was true of `arms` and, until this, false of
+        `catalogue_seen`."""
+        published = self._f2_run(
+            self._two_model_catalogue(),
+            {"claude-sonnet-4-9": 8000, "claude-sonnet-5": 800},
+            ["claude-sonnet-4-9-20250101"])
+        reason = self._reason(published, "claude-sonnet-5")
+        self.assertIn("carries 9.1%", reason, "800 of 8800 rankable turns")
+        self.assertNotIn("100.0%", reason)
+
+
+class TestIssue67Review11(unittest.TestCase):
+    """Round 11 fixes for #67 (PR #129 review round 11), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review10, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST FIXTURE
+    data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every row is driven through `main()` with files on disk, the way
+    eval.yml invokes it. `main()` reads the wall clock, so `_run_main`
+    freezes it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _zero_bar_policy = TestIssue67Review9._zero_bar_policy
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- B: a link of the alias chain must survive the caps -------------
+    #
+    # THE DEFECT, as round 11 found it. Decision 4 (round 10) spent no
+    # rationed tier-2 slot on a fold group a tier-1 entry already
+    # "covered", and the tiering's `fold` decided "covers" with an
+    # UNCONDITIONAL suffix strip. The map attribution actually uses,
+    # `_usage_alias_map` over `alias_map`, creates the hop `X-DDDDDDDD ->
+    # X` only when `X` is itself one of the ids handed in — and the ids
+    # handed in are exactly the two lists the caps trim. So when a DATED
+    # census key was itself a tier-1 entry, its group read as covered, no
+    # slot was spent, and the bare alias `X` — the only hop from that key
+    # to the live snapshot's numerator — fell to tier 3 behind every
+    # filler and was evicted. The chain broke, and round 10's claim that
+    # "route (c1) is subsumed by tier 2" was false in exactly that case.
+    #
+    # THE FIX, as it now stands. Round 11 answered this by making every
+    # link of the chain tier 1 in its own right; its continuation deleted
+    # that route, and tier 2 and the `covered` guard with it, because the
+    # tier-3 residue rule landed in the same round and subsumes all of it.
+    # The bare alias is an entry NEITHER the live catalogue nor the census
+    # names, so it is residue, so no cap can evict it — and nothing has to
+    # recognise that it is a link for that to hold. The rows are unchanged
+    # and were red on `1fa9d3a` before either fix; they measure the
+    # published outcome, not the mechanism that reaches it.
+    #
+    # The rows below are the reproduction, each through `main()` with
+    # files on disk. Rows 1A, 2A, 2B, 3A, 4A and both retirement rows are
+    # RED on 1fa9d3a; the control rows are green there and on both
+    # reference trees, which is what makes the A rows a differential
+    # rather than an assertion about nothing.
+
+    FILLERS = [f"0filler-{i:04d}" for i in range(500)]
+    PLANTS = [f"0plant-{i:04d}" for i in range(500)]
+
+    #: The catalogue shape roster-policy.yml documents and this repository
+    #: has never otherwise exercised end to end: the API publishes ONLY a
+    #: dated snapshot of the sonnet model, so the bare alias exists in no
+    #: document but the previous roster.
+    SNAPSHOT = "claude-sonnet-5-20261231"
+    BRIDGE = "claude-sonnet-5"
+    KEY = "claude-sonnet-5-20260601"
+    DATED_ONLY_API = ["claude-fable-4", "claude-haiku-5", SNAPSHOT]
+    #: 4153 of 7278 rankable turns is 57.1%, over the 10% entry bar.
+    DATED_ONLY_COUNTS = {"claude-haiku-5": 3125, KEY: 4153}
+
+    @classmethod
+    def _catalogue(cls, ids):
+        """One created_at for every id, so the capability order inside a
+        tier is decided by `_version_key` alone and the fixture says what
+        it means."""
+        return {"fetched_at": "2026-09-04T11:00:00Z",
+                "models": [cls._model(i, "2026-02-01T00:00:00Z") for i in ids]}
+
+    @classmethod
+    def _census(cls, counts):
+        return TestIssue67._census_doc(
+            counts={key: {cls.W[0]: n} for key, n in counts.items()})
+
+    def _row(self, api, counts, arms=(), seen=(), policy=None):
+        models_doc = self._catalogue(api)
+        census_doc = self._census(counts)
+        previous = {"arms": [{"id": i, "reason": "was an arm"} for i in arms],
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(3)}
+                                       for i in seen]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, models_doc, census=self._census(counts),
+                previous=previous, policy=policy)
+        self.assertEqual(rc, 0, err)
+        # B-4 on EVERY row, not as a test of its own: it is a property of
+        # each run, and a row that publishes the right share while a cap
+        # has moved a census key's numerator is a row that got the right
+        # answer for a reason the next change can take away.
+        self.assert_fold_and_alias_map_agree(
+            models_doc, census_doc, policy or self._policy(), previous,
+            self.NOW, published["catalogue_seen"], self)
+        return published
+
+    # --- B-4: the caps must not move a census key's numerator -----------
+    #
+    # THE DEFECT, as round 11 found it. There were then TWO fold relations
+    # and the docstrings described them as one. The tiering's `fold` stripped
+    # a dated suffix UNCONDITIONALLY and then asked the production map;
+    # `alias_map` — which is what attribution reads — strips it only when
+    # the bare base is one of the ids handed in, and the ids handed in are
+    # the two lists the caps trim. The caps are what pulled them apart: on
+    # 1fa9d3a's failing run `fold("claude-sonnet-5-20260601")` was
+    # `claude-sonnet-5-20261231` while the alias map still sent that key
+    # to itself, and 57.1% of the window landed in no numerator at all.
+    #
+    # That second relation went in round 11's continuation and the tiering
+    # itself in #147, so there is one
+    # relation and the floor is stated over it directly: for every
+    # in-window census key, the usage alias map sends it to the same id
+    # after the caps as before. See `assert_fold_and_alias_map_agree`,
+    # which carries what that restatement was measured to be worth.
+
+    @staticmethod
+    def _fold_context(models_doc, census_doc, policy, previous, now):
+        """(count_turns, aliases, catalogue_seen_entries) —
+        `compute_roster`'s own derivation, rebuilt.
+
+        A MIRROR, which is a thing that has to be kept honest: every
+        caller asserts the `catalogue_seen` this returns equals the one
+        the run actually published, so a drift between this and the
+        function it mirrors turns the rows red rather than quietly
+        reporting about a run that never happened."""
+        rungs = roster.tier_rungs(policy)
+        entries = roster._clean_models(models_doc, lambda _m: None)
+        api_ids = [m["id"] for m in entries]
+        ranked = [m for m in entries
+                  if roster.rung_of(m["id"], rungs) is not None]
+        seat_aliases = roster.alias_map(api_ids)
+        available = [m for m in ranked if m["id"] not in seat_aliases]
+        available.sort(key=lambda m: roster._rank(m, rungs))
+        live_order = [m["id"] for m in available]
+        counts = roster._clean_counts((census_doc or {}).get("counts"),
+                                      lambda _m: None)
+        window = (set(roster.window_weeks(now, policy["arm_enter_window_weeks"]))
+                  | set(roster.window_weeks(now, policy["arm_exit_window_weeks"])))
+        count_turns = {}
+        for key, by_week in counts.items():
+            in_window = sum(n for week, n in by_week.items() if week in window)
+            if in_window > 0:
+                count_turns[key] = in_window
+        relevant = roster._relevance(api_ids, count_turns)
+        carried = roster._clean_previous_arms(
+            previous, lambda _m: None, relevant=relevant)[1]
+        seen_entries = roster._update_catalogue_seen(
+            api_ids, roster._clean_catalogue_seen(previous, lambda _m: None, now),
+            now, policy, lambda _m: None, relevant=relevant)
+        aliases = roster._usage_alias_map(
+            api_ids, list(counts) + carried + [e["id"] for e in seen_entries],
+            seat_aliases, live_order)
+        return count_turns, aliases, seen_entries
+
+    @classmethod
+    def _key_targets(cls, models_doc, census_doc, policy, previous, now):
+        turns, aliases, seen_entries = cls._fold_context(
+            models_doc, census_doc, policy, previous, now)
+        return {k: aliases.get(k, k) for k in turns}, seen_entries
+
+    def _seat(self, published, model_id):
+        """The published sentence about `model_id`: its arm reason, its
+        retirement reason, or the fact that it has no seat at all.
+
+        Returned as a SENTENCE so every assertion below can be `assertIn`
+        on that sentence rather than on the roster — a failure otherwise
+        dumps 500 filler ids into the log."""
+        for arm in published["arms"]:
+            if arm["id"] == model_id:
+                return arm["reason"]
+        for entry in published["retired_since_last"]:
+            if entry["id"] == model_id:
+                return "RETIRED: " + entry["reason"]
+        return "<no usage seat>"
+
+    def _assert_carries(self, published, model_id, share):
+        sentence = self._seat(published, model_id)
+        self.assertIn(f"carries {share}%", sentence)
+        self.assertNotIn("100.0%", sentence.replace(f"{share}%", ""))
+
+    # ROW 1 — the bridge is a previous ARM.
+
+    # ROW 2 — the bridge is a `catalogue_seen` history entry, and the
+    # eviction is PERMANENT: the next run reads this run's own output.
+
+    HISTORY_BRIDGE = [BRIDGE, KEY]
+
+    # ROWS 3 and 4 — the chains roster-policy.yml documents, whose every
+    # hop the caps have to keep at once. Row 3 is three hops (census key
+    # -> dated history entry -> bare alias -> live snapshot), row 4 two.
+
+    THREE_HOP_API = ["claude-haiku-4-20260601", "claude-haiku-5",
+                     "claude-sonnet-5"]
+    #: 5000 of 5300 rankable turns is 94.3% for the live haiku snapshot;
+    #: the remaining 300 is 5.66% for the live sonnet, under the 10%
+    #: entry bar, so it rides in on newest-in-tier and says so.
+    THREE_HOP_COUNTS = {"claude-haiku-4-20250101-20260101": 5000,
+                        "claude-sonnet-5": 300}
+    THREE_HOP_SEEN = ["claude-haiku-4", "claude-haiku-4-20250101"]
+
+    def _assert_the_three_hop_chain(self, published):
+        self._assert_carries(published, "claude-haiku-4-20260601", "94.3")
+        sonnet = self._seat(published, "claude-sonnet-5")
+        self.assertIn("newest model in the sonnet tier", sonnet)
+        self.assertNotIn("carries", sonnet)
+
+    TWO_HOP_COUNTS = {"claude-haiku-4-20250101": 5000, "claude-sonnet-5": 300}
+    TWO_HOP_SEEN = ["claude-haiku-4-20250101", "claude-haiku-4"]
+
+    # THE RETIREMENT ROWS — the same break with a NEWER model in the
+    # victim's tier, so the newest-in-tier fallback cannot catch it. A
+    # previous arm that loses its share is measured against the exit bar
+    # instead, and published RETIRED at 0.0%.
+
+    RETIRE_API = [SNAPSHOT, "claude-sonnet-7", "claude-haiku-5"]
+
+    def _assert_not_retired(self, published):
+        sentence = self._seat(published, self.SNAPSHOT)
+        self.assertNotIn("RETIRED", sentence,
+                         "a model carrying 57.1% of the window is not "
+                         "below a 2% exit bar")
+        self.assertIn("carries 57.1%", sentence)
+
+    # --- D-7: two clauses that were RIGHT and had no floor ---------------
+    #
+    # Round 11's continuation re-ran the whole mutation table over the
+    # reduced mechanism and found three GREEN rows. One was a genuinely
+    # dead type check and was deleted. The other two are these: code that
+    # DOES decide a published roster, with no test that noticed. A green
+    # row is not by itself evidence that a clause is dead — it is evidence
+    # that nothing measures it, and telling those apart takes a scenario,
+    # not an argument.
+
+    _LIVE_ARMS = [f"claude-sonnet-5-{i:06d}" for i in range(502)]
+
+    # RETIRED: `test_a_covered_group_spends_no_tier_two_slot`.
+    #
+    # It was the `covered` guard's own floor, and `covered` is gone with
+    # the tier it guarded. The mutation it named — `covered = set()` in
+    # the tiering's ranking — has nothing left to change: round 11's
+    # continuation deleted tier 2, `covered`, `by_group` and `_links`
+    # outright, because the tier-3 residue rule landed beside them and
+    # subsumes all of it. An id neither the live catalogue nor the census
+    # names can no longer be evicted at all; an id either of them names is
+    # tier 1 without help; and a bridge between them is one or the other.
+    # Ten mutations of that machinery left the whole suite green, which is
+    # F-2's own rule for deleting it rather than keeping it as
+    # belt-and-braces.
+    #
+    # It is retired rather than re-pointed because its scenario now has no
+    # question in it. It asserted that a fold-group member the chain does
+    # not need spends no slot and so costs no census-named entry its
+    # place: with no slots left to spend, that is true of every entry the
+    # census does not name, unconditionally, and
+    # `test_a_census_that_names_only_the_victim_carries_the_plants_too`
+    # and TestIssue67Review11's census-silent rows are where it is
+    # measured. What its scenario DID uniquely pin — that a census key
+    # whose group needs no bridge still reaches its numerator past the cap
+    # — is TestIssue67Review11's rows 1-4 and their B-4 floor.
+
+    # --- `census_is_silent` was a FILE-level test; one in-window turn
+    # re-armed the whole eviction -----------------------------------------
+    #
+    # Round 10's A stopped both caps evicting when the census named
+    # NOTHING — `not self._turns`, a property of the whole file. One
+    # census key carrying one turn made it false, and then every entry the
+    # census does not name was tier 3 in plain id order, which is round
+    # 6's defect verbatim: `0plant-NNNN` sorts before every `claude-` id,
+    # the real entry goes, and eviction is PERMANENT because the next run
+    # reads this run's own output back.
+    #
+    # The key doing the re-arming need not be anything at all: an
+    # unrelated live id, a router alias nothing can rank or seat, a
+    # planted id, a 4,000-character junk string, or the one surviving
+    # neighbour of a malformed cell. And the planter can write the census
+    # as well as the roster — eval.yml materialises `census.json` and
+    # `previous.json` from the same `eval-results` branch.
+    #
+    # PRE-EXISTING on 5d1f00a and 5712522 as well as on 1fa9d3a. The fix
+    # is to generalise from "the census names nothing" to "the census
+    # names nothing about THESE entries", independent of how many keys it
+    # carries — a rule keyed on the census's SIZE is the same defect one
+    # step over, since a hostile census can carry any number of one-turn
+    # keys.
+
+    SILENT_VICTIM = "claude-sonnet-4-9"
+    SILENT_LIVE = "claude-sonnet-5"
+
+    @classmethod
+    def _silent_healthy_census(cls):
+        """8000 of the window's 8800 rankable turns are the victim's — a
+        true 9.09% for the live model, under the 10% entry bar, so it
+        rides in on newest-in-tier and says so."""
+        return TestIssue67._census_doc(counts={
+            cls.SILENT_VICTIM: {cls.W[0]: 8000},
+            cls.SILENT_LIVE: {cls.W[0]: 800}})
+
+    def _silent_two_runs(self, census, previous=None):
+        """Run 1 with `census`, run 2 from run 1's own published roster
+        with a healthy one — how `catalogue_seen` actually round-trips,
+        and the only way a permanent eviction is visible."""
+        previous = previous or {
+            "arms": [],
+            "catalogue_seen":
+                [{"id": i, "last_seen": self._days_ago(0)} for i in self.PLANTS]
+                + [{"id": self.SILENT_VICTIM, "last_seen": self._days_ago(4)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            first = Path(tmp) / "run1"
+            first.mkdir()
+            rc, run1, _, err = self._run_main(
+                first, self._two_model_catalogue(), census=census,
+                previous=previous)
+            self.assertEqual(rc, 0, err)
+            second = Path(tmp) / "run2"
+            second.mkdir()
+            rc, run2, _, _ = self._run_main(
+                second, self._two_model_catalogue(),
+                census=self._silent_healthy_census(), previous=run1)
+            self.assertEqual(rc, 0)
+        return run1, run2, err
+
+    def _assert_the_victim_survived_both_runs(self, run1, run2, err):
+        self.assertIn(self.SILENT_VICTIM, self._seen_ids(run1),
+                      "nothing the census says nothing about may be "
+                      "evicted by an order the previous roster writes")
+        reason = self._reason(run2, self.SILENT_LIVE)
+        self.assertIn("newest model in the sonnet tier", reason)
+        self.assertNotIn("100.0%", reason)
+        warnings = [line for line in err.splitlines()
+                    if line.startswith("roster: ")]
+        uncapped = [w for w in warnings if "uncapped" in w]
+        self.assertEqual(len(uncapped), 1, warnings)
+        for w in warnings:
+            for value in ("0plant-499", self.SILENT_VICTIM, "0pad-0099"):
+                self.assertNotIn(value, w, "the warning names counts only")
+
+    @classmethod
+    def _one_turn_censuses(cls):
+        """Eight censuses that say nothing about the victim, seven of them
+        carrying exactly enough in-window usage to make round 10's
+        file-level `census_is_silent` false. Rows 2 onward are RED on
+        1fa9d3a, 5712522 and 5d1f00a alike."""
+        padded = {f"0pad-{i:04d}": {"2020-W01": 1000} for i in range(600)}
+        padded[cls.SILENT_LIVE] = {cls.W[0]: 1}
+        return (
+            ("0 counts: {}", TestIssue67._census_doc(counts={})),
+            ("2 one live id, one turn",
+             TestIssue67._census_doc(counts={cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("3 a router alias, one turn",
+             TestIssue67._census_doc(counts={"some-router-alias": {cls.W[0]: 1}})),
+            ("4 600 out-of-window keys plus one in-window turn",
+             TestIssue67._census_doc(counts=padded)),
+            ("5 one turn under a planted id",
+             TestIssue67._census_doc(counts={cls.PLANTS[0]: {cls.W[0]: 1}})),
+            ("6 a 4000-character junk key, five turns",
+             TestIssue67._census_doc(counts={"z" * 4000: {cls.W[0]: 5},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7 the victim's only cell is negative",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: -5},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7b the victim's only cell is a float",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: 8000.5},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7c the victim's only cell is a boolean",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: True},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+            ("7d the victim's only cell is NaN",
+             TestIssue67._census_doc(counts={cls.SILENT_VICTIM: {cls.W[0]: float("nan")},
+                                             cls.SILENT_LIVE: {cls.W[0]: 1}})),
+        )
+        # Mutation check (manual): filling the cap from the tier-3 residue
+        # by id order — the pre-round-11 `sorted(ids, key=order)[:CAP]` —
+        # is red on every row but 0.
+
+    # --- N-1: the published roster is a function of the INPUTS, not of
+    # the order an untrusted input arrived in ------------------------------
+
+    def test_the_published_roster_is_identical_across_shuffles(self):
+        """`retired_since_last` was published in the previous roster's own
+        insertion order — the one part of the roster whoever writes
+        `eval-results` decided. Six shuffles of `previous["arms"]` gave
+        seven distinct `roster/latest.json` digests, differing in nothing
+        but that list's order, and `render_summary` prints retirements in
+        it: a planter chose whether the one real retirement led the step
+        summary or sat on line 501 of it.
+
+        RED on 1fa9d3a. `generated_at` is the only field that legitimately
+        moves between runs, so it is dropped before comparing."""
+        # `SILENT_LIVE` joins the previous arms so the run still publishes
+        # after 2026-09-22: at its true 9.09% no sonnet clears the entry
+        # bar, so its tier seats nobody on newest-in-tier any more, and it
+        # is the hold-over over the 2% exit bar that keeps the roster
+        # non-empty. Nothing about the ORDER this row measures moves.
+        arms = ([f"0arm-{i:04d}" for i in range(500)]
+                + [self.SILENT_VICTIM, "claude-haiku-4-5", self.SILENT_LIVE])
+        census = TestIssue67._census_doc(counts={
+            self.SILENT_VICTIM: {self.W[0]: 8000},
+            self.SILENT_LIVE: {self.W[0]: 800}})
+        rng = random.Random(671101)
+        digests = set()
+        for _ in range(6):
+            shuffled = list(arms)
+            rng.shuffle(shuffled)
+            previous = {"arms": [{"id": i, "reason": "was an arm"}
+                                 for i in shuffled],
+                        "catalogue_seen": []}
+            with tempfile.TemporaryDirectory() as tmp:
+                rc, published, _, err = self._run_main(
+                    tmp, self._two_model_catalogue(), census=census,
+                    previous=previous)
+            self.assertEqual(rc, 0, err)
+            published.pop("generated_at")
+            digests.add(hashlib.sha256(
+                json.dumps(published, sort_keys=False).encode()).hexdigest())
+        self.assertEqual(len(digests), 1,
+                         "six shuffles of one untrusted list published "
+                         f"{len(digests)} distinct rosters")
+        # And the retirement the run actually has to report is in there,
+        # wherever the input put it.
+        with tempfile.TemporaryDirectory() as tmp:
+            _, published, _, _ = self._run_main(
+                tmp, self._two_model_catalogue(), census=census,
+                previous={"arms": [{"id": i, "reason": "was an arm"}
+                                   for i in arms], "catalogue_seen": []})
+        retired = [e["id"] for e in published["retired_since_last"]]
+        self.assertEqual(retired, sorted(retired))
+        self.assertIn(self.SILENT_VICTIM, retired)
+
+    # --- N-2: the ceiling bounds the RESIDUE, not the carried list -------
+
+    def test_a_catalogue_past_the_ceiling_still_publishes(self):
+        """The cap never evicts a live id, and round 11's ceiling must not
+        do by the back door what the cap is forbidden to do: bounding the
+        CARRIED list made a catalogue larger than the ceiling refuse to
+        publish outright, for a reason that has nothing to do with an
+        untrusted input. Measured on 1fa9d3a: 10,003 live ids, rc 4 and no
+        roster. The ceiling bounds the tier-3 residue instead.
+
+        The catalogue here is 10,000 bare ids plus three dated snapshots
+        of the first three, which the seat map collapses — so the roster
+        seats 10,000 models and records 10,003 in `catalogue_seen`, which
+        stays a superset of `api_ids` as `usage_share` requires."""
+        ids = [f"claude-sonnet-{i}-1" for i in range(10_000)]
+        ids += [f"claude-sonnet-{i}-1-20260101" for i in range(3)]
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(i, "2026-02-01T00:00:00Z")
+                             for i in ids]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, models, previous={"arms": [], "catalogue_seen": []})
+        self.assertEqual(rc, 0, err[:400])
+        self.assertEqual(len(published["catalogue_seen"]), 10_003)
+        self.assertLessEqual(set(ids), self._seen_ids(published),
+                             "`catalogue_seen` stays a superset of `api_ids`")
+
+
+class TestIssue67Review12(unittest.TestCase):
+    """Round 12 fixes for #67 (PR #129 review round 12), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review11, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST
+    FIXTURE data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    Every row is driven through `main()` with files on disk, the way
+    eval.yml invokes it. `main()` reads the wall clock, so `_run_main`
+    freezes it.
+
+    WHAT THIS ROUND IS ABOUT, in one line: five rounds hardened the CAP
+    ORDER against `previous.json` and nobody hardened the ATTRIBUTABLE
+    DENOMINATOR beside it, which reads the same file and is the shorter
+    path to the same outcome. See `_ATTACK_TABLE` below for the class
+    floors, which are the point rather than a supplement to it.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _two_model_catalogue = TestIssue67Review8._two_model_catalogue
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    # --- SHOULD-FIX 1: `_clean_previous_arms` never evicts a live id ----
+    #
+    # `_update_catalogue_seen` has kept this run's own `api_ids` outside
+    # its cap since round 6 (`room = max(0, CAP - len(live))`);
+    # `_clean_previous_arms` did not, and a load-bearing comment in
+    # `compute_roster`'s retirement branch asserted from round 8 to round
+    # 11 that it did. Being TIER 1 is not being carried. The 502-live-id
+    # row is `TestIssue67Review11::test_the_arms_cap_ranks_live_previous
+    # _arms_but_never_evicts_one`, flipped to the new expectation; the two
+    # rows below are the halves that test had not reached.
+
+    _DATED = "claude-sonnet-5-20260601"
+
+    def test_the_cap_holds_a_live_arm_whose_turns_are_under_a_dated_alias(self):
+        """The planter-reachable half of SHOULD-FIX 1, which needs no
+        502-model Models API answer at all: 501 in-window census keys,
+        every one of them also named in `arms`.
+
+        The victim is LIVE and a previous arm, and the census records its
+        usage under a dated alias of its own id, so its own id carries
+        ZERO turns and sorts `(1, 0, id)` — last inside tier 1, the first
+        thing the cap takes. Its 500 turns are 5.0% of the 9,519 rankable
+        in-window turns, comfortably over the 2% exit bar.
+
+        RED on `7ef5780`, where the published sentence contradicts its own
+        parenthesis: `RETIRED: below the 2% exit bar for the last 8 weeks
+        (5.0% of rankable census usage)`. Measured there at 501 and 600
+        keys; 499 keys is green on both trees, which is what makes this a
+        differential rather than an assertion about nothing."""
+        victim = "claude-sonnet-5"
+        keys = [f"claude-haiku-4-k{i:04d}" for i in range(501)]
+        counts = {self._DATED: {self.W[0]: 500}}
+        counts.update({k: {self.W[0]: 18} for k in keys})
+        census = TestIssue67._census_doc(counts=counts)
+        models = {"fetched_at": "2026-09-04T11:00:00Z",
+                  "models": [self._model(victim, "2026-02-01T00:00:00Z"),
+                             self._model("claude-sonnet-7",
+                                         "2026-03-01T00:00:00Z")]}
+        previous = {"arms": [{"id": i, "reason": "was an arm"}
+                             for i in [victim] + keys],
+                    "catalogue_seen": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, models, census=census, previous=previous)
+        self.assertEqual(rc, 0, err)
+        self.assertIn(victim, self._arm_ids(published),
+                      "a live previous arm carrying 5.0% of the window "
+                      "must not be evicted by 501 census keys the planter "
+                      "chose to name in `arms`")
+        self.assertNotIn(victim,
+                         {t["id"] for t in published["retired_since_last"]})
+
+    # --- BLOCKER 2: `last_seen` decides the DENOMINATOR, and the previous
+    # roster writes it ---------------------------------------------------
+    #
+    # `_update_catalogue_seen` refreshes every LIVE id's `last_seen` to
+    # today, so a live id is safe. A since-retired REAL model's date is
+    # whatever `previous.json` says, and once it is older than
+    # `catalogue_seen_max_age_days` the entry was dropped — taking its
+    # attributability, and so its census turns, out of the denominator
+    # every share is divided by. This one has no precondition on the
+    # census at all: it needs only what `catalogue_seen` exists to hold.
+
+    _VICTIM = "claude-sonnet-5"
+    _DEPARTED = "claude-opus-4-9"
+
+    @classmethod
+    def _two_sonnets(cls):
+        """A catalogue with a NEWER sonnet beside the victim, so the victim
+        is not newest in its tier and there is no newest-per-tier fallback
+        to rescue a share the denominator got wrong."""
+        return {"fetched_at": "2026-09-04T11:00:00Z",
+                "models": [cls._model(cls._VICTIM, "2026-02-01T00:00:00Z"),
+                           cls._model("claude-sonnet-7",
+                                      "2026-03-01T00:00:00Z")]}
+
+    def _ageing_row(self, last_seen, *, departed_in_census=True):
+        counts = {self._VICTIM: {self.W[0]: 500}}
+        if departed_in_census:
+            counts[self._DEPARTED] = {self.W[0]: 9500}
+        previous = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._DEPARTED,
+                                        "last_seen": last_seen}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    # --- BLOCKER 1: one entry naming an id the census already names
+    # enlarges the attributable denominator ------------------------------
+    #
+    # `_is_attributable`'s other two routes are membership tests against
+    # `previous.json`. A ranked census key the harness cannot otherwise
+    # credit — a routing or proxy alias carrying a family word, the shape
+    # TestIssue67Review3 exists for — is excluded from the denominator;
+    # naming it ONCE puts it back, and every real arm's share divides by
+    # it. `:7869` kept that alias OUT of `arms`, which is the whole
+    # attack; `:8837` exercised the route in its legitimate direction.
+    # Neither asked what an untrusted input can make the route DO.
+
+    _GHOST = "claude-opus-4-1-proxy-eu"
+
+    def _denominator_row(self, *, arms_extra=(), seen_extra=()):
+        """The victim is LIVE, a previous arm, and carries 100% of what
+        this run's live catalogue can account for. The ghost is a ranked
+        census key nothing can credit — no catalogue id, no fold of one —
+        carrying 80x the victim's turns."""
+        counts = {self._VICTIM: {w: 625 for w in self.W},
+                  self._GHOST: {w: 50_000 for w in self.W}}
+        previous = {"arms": ([{"id": self._VICTIM, "reason": "was an arm"}]
+                             + [{"id": i, "reason": "was an arm"}
+                                for i in arms_extra]),
+                    "catalogue_seen": [{"id": i, "last_seen": self._days_ago(1)}
+                                       for i in seen_extra]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    # --- SHOULD-FIX 3: a floor for the CLASS, not for the rows that were
+    # measured ------------------------------------------------------------
+    #
+    # THE DEFECT THIS EXISTS TO STOP REPEATING. Round 7 (S3), round 8
+    # (A3), round 9 (S2), round 10 (F-1/F-2), round 11 (should-fix 2) and
+    # round 12 (both blockers) are one defect in six costumes: a defence
+    # written to the rows that were measured rather than to the class.
+    # Every floor for the attribution machinery — `:7869`, `:8837`,
+    # `:8388`, `:9072` — is a scenario in which the previous roster is
+    # HONEST. A mutation row proves a clause is LOAD-BEARING; it cannot
+    # prove it is BOUNDED, and no row asked the adversarial question.
+    #
+    # THE RULE THIS TABLE APPLIES. For EVERY input the caps and
+    # `_is_attributable` read from `previous.json`, in BOTH directions,
+    # one row of the form "a control run, versus the same run with one
+    # hostile entry or one hostile field value". The inputs are enumerated
+    # from the code rather than from the attacks that happen to be known:
+    # `_clean_previous_arms` reads `previous["arms"]` and `entry["id"]`;
+    # `_clean_catalogue_seen` reads `previous["catalogue_seen"]`,
+    # `entry["id"]` and `entry["last_seen"]`; nothing else in the file is
+    # read at all. That is FOUR inputs — `arms[].id`,
+    # `catalogue_seen[].id`, `catalogue_seen[].last_seen`, and the ENTRY
+    # COUNT of either list, which is what puts a cap or the ceiling into
+    # play — and every one of them gets a row in each direction below.
+    #
+    # WHAT "UNCHANGED" MEANS PER ROW, and why it is not one thing.
+    # `reason` rows assert the victim's published sentence is BYTE-
+    # IDENTICAL to the control's. `seat` rows assert the weaker property:
+    # the victim keeps its seat and is not retired, while its published
+    # reason may change. The ADD direction is the `seat` one, and that is
+    # a deliberate limit rather than an oversight — SEATING reads the wide
+    # denominator on purpose (round 6's B1: a departed arm's real turns
+    # deflating a false 100% to the truth, which is why the route may not
+    # be deleted), so an added entry CAN move a published share. What
+    # round 12 bounds is what the move may DO: it may no longer retire a
+    # live arm, which is the permanent, unrecoverable half.
+    # `TestIssue67Review12::test_the_one_cell_this_cannot_cover` states
+    # the cell that stays open and why no rule can close it.
+    #
+    # ONE INSTANTIATION WAS NOT THE CLASS, and round 13 is where that was
+    # measured rather than argued. Every row below used to run against a
+    # single victim: a live model whose census key IS its own id. All
+    # three of round 12's remedies are keyed on RAW IDENTITY — is this id
+    # a live catalogue id, is this id an in-window census key — while the
+    # mechanism they guard, ATTRIBUTION, is keyed on the FOLD RELATION,
+    # and against a raw-id victim the two questions have the same answer.
+    # Give the victim the fold shape this repository's own
+    # `TestIssue67Review9::test_a_three_hop_census_key_still_reaches_the
+    # _live_snapshot` fixture builds and two of the ten rows go red on
+    # round 12's shipped code: a live arm carrying 94.3% of the window
+    # published `RETIRED ... (1.2%)`, rc 0, permanently, from one added
+    # `arms` line.
+    #
+    # SO THE SHAPE OF THE VICTIM IS PART OF THE ENUMERATION NOW. The
+    # table below runs every row under BOTH shapes with the same
+    # assertions. The four inputs were enumerated from the code; the two
+    # shapes are enumerated from how attribution can REACH a model at all
+    # — directly, or through a chain of folds — and there is no third,
+    # because `_usage_alias_map` is a function into at most one id per
+    # key and a chain of length zero is the raw-id case.
+
+    _DEPARTED_REAL = "claude-opus-4-9"
+    _FILLERS = [f"0filler-{i:04d}" for i in range(501)]
+
+    #: THE FOLD-REACHED VICTIM. One hop per input, exactly as
+    #: `TestIssue67Review9` builds it: census key -> `catalogue_seen`
+    #: entry -> previous arm -> live snapshot. The victim is
+    #: `_FOLD_LIVE`; it holds a seat of its own because the bare alias
+    #: `claude-sonnet-5` is NOT in the catalogue, so `seat_aliases` does
+    #: not collapse it.
+    _FOLD_LIVE = "claude-sonnet-5-20260601"
+    _FOLD_ARM = "claude-sonnet-5"
+    _FOLD_SEEN = "claude-sonnet-5-20250101"
+    _FOLD_KEY = "claude-sonnet-5-20250101-20260101"
+
+    _VICTIM_SHAPES = ("raw-id", "fold-reached")
+
+    @classmethod
+    def _victim_shape(cls, shape):
+        """(victim id, the census key its turns arrive under, the chain's
+        `arms` hops, the chain's `catalogue_seen` hops, the catalogue).
+
+        RAW-ID is the shape every row ran under until round 13: the
+        victim's census key is its own id and no `previous.json` entry
+        stands between the two. FOLD-REACHED puts three hops in between,
+        one from each place a hop can come from."""
+        if shape == "raw-id":
+            return (cls._VICTIM, cls._VICTIM, (), (), cls._two_sonnets())
+        return (cls._FOLD_LIVE, cls._FOLD_KEY, (cls._FOLD_ARM,),
+                (cls._FOLD_SEEN,),
+                {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+                    cls._model(cls._FOLD_LIVE, "2026-02-01T00:00:00Z"),
+                    cls._model("claude-sonnet-7", "2026-03-01T00:00:00Z")]})
+
+    @classmethod
+    def _class_census(cls, victim_key=None):
+        """VICTIM 500 turns, a real since-retired model 9,500, and a
+        ranked key nothing can credit at 400,000. The victim's TRUE share
+        is 500/10,000 = 5.0%: over the 2% exit bar, under the 10% entry
+        bar, so it is held over and the exit bar is what decides it.
+
+        `victim_key` is where the victim's 500 turns are recorded — its
+        own id in the raw-id shape, the head of the fold chain in the
+        other. The numbers are identical in both, which is what makes the
+        two instantiations comparable."""
+        return TestIssue67._census_doc(counts={
+            (victim_key or cls._VICTIM): {cls.W[0]: 500},
+            cls._DEPARTED_REAL: {cls.W[0]: 9_500},
+            cls._GHOST: {cls.W[0]: 400_000}})
+
+    @classmethod
+    def _prev(cls, arms, seen):
+        return {"arms": [{"id": i, "reason": "was an arm"} for i in arms],
+                "catalogue_seen": [e if isinstance(e, dict)
+                                   else {"id": e,
+                                         "last_seen": cls._days_ago(1)}
+                                   for e in seen]}
+
+    def _class_run(self, previous, catalogue=None, victim_key=None):
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, catalogue or self._two_sonnets(),
+                census=self._class_census(victim_key), previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+        # RED-FIRST, per row and per shape, through `main()`. On
+        # `7ef5780`, in the RAW-ID shape: rows 1, 2 and 3 fail — round
+        # 12's two blockers. Rows 4-10 are green there, because rounds
+        # 6-11 closed the CAP-ORDER half of the same class and this table
+        # is the statement that the DENOMINATOR half is closed too.
+        #
+        # On `87f2031` — round 12's shipped code, with the raw-id shape
+        # green on every row — the FOLD-REACHED shape fails rows 1, 2 and
+        # 11. Rows 1 and 2 are round 13's BLOCKER A: the anchored
+        # measurement reads 0.000% for a victim reached through a chain,
+        # because the anchored map cannot follow a hop that lives in
+        # `previous.json`, so round 12's `anchored_held >= exit bar`
+        # conjunct was FALSE and blocked its own veto — a live arm
+        # carrying 94.3% of its window published `RETIRED ... (1.2%)`.
+        # Row 11 is BLOCKER B. That is what "one instantiation was not
+        # the class" cost, measured.
+        #
+        # Every one of the eleven carries the mutation that turns it red
+        # in its own tuple above, and every one of those mutations was
+        # APPLIED AND RUN rather than reasoned about: ten distinct
+        # mutations (rows 1 and 2 share one), each patched into
+        # `harness/roster.py`, each run against this table, each restored
+        # and the file's checksum checked back to the unmutated one. Ten
+        # of ten went red; an eleventh run with no mutation at all was
+        # green, which is what makes the other ten mean anything. Row 11
+        # was the one surprise and its tuple records it: the mutation it
+        # was first written with left it green, because this input trips
+        # both round-13 refusals independently.
+
+    # --- SHOULD-FIX 2: clause 1 of the invariant, qualified ------------
+    #
+    # The sentence was stated flat in all five copies and is FALSE in the
+    # overflow regime. `evals/roster-policy.yml` carried the caveat
+    # forty-five lines below the sentence, in the one copy four of the
+    # five readers never see: F-1 pins the sentence, nothing pinned the
+    # caveat next to it. The qualifier is now a clause OF the sentence, so
+    # F-1's pin covers it, and the row below is what stops the qualifier
+    # from being decoration.
+
+    _C1_KEY = "claude-opus-4"
+    _C1_BRIDGE = "claude-opus-4-20250101"
+
+    def _clause_one_row(self, fillers, *, key_turns=900, filler_week=0):
+        """A census key carrying `key_turns` in-window turns whose ONLY
+        entry is itself a one-turn census key, against `fillers` one-turn
+        keys that sort ahead of it and are named in `arms` too.
+
+        `filler_week` is where the one-turn keys' usage sits, and it is
+        what decides how big the resulting error is (#129 review round
+        13, ITEM 6). Tier 1 is decided over the 8-week UNION, but the
+        published entry share is divided by the 4-WEEK ENTER WINDOW, so
+        putting the fillers' turns at `W[4]` — inside the union, outside
+        the enter window — fills tier 1 without diluting the share the
+        eviction then distorts."""
+        keys = [f"0key-haiku-4-{i:04d}" for i in range(fillers)]
+        counts = {self._VICTIM: {self.W[0]: 100},
+                  self._C1_KEY: {self.W[0]: key_turns},
+                  self._C1_BRIDGE: {self.W[filler_week]: 1}}
+        counts.update({k: {self.W[filler_week]: 1} for k in keys})
+        previous = self._prev([self._VICTIM, self._C1_BRIDGE] + keys, [])
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._two_sonnets(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return self._reason(published, self._VICTIM)
+
+    # --- the code half's should-fix: three passages asserted a safety
+    # property `eval.yml` contradicts ------------------------------------
+
+    def test_no_passage_claims_the_census_is_out_of_a_planters_reach(self):
+        """`_relevance.__doc__` said "a planter cannot add a census key"
+        twice and `evals/roster-policy.yml` said "a planter writes neither
+        document". `eval.yml` takes `previous.json` from
+        `origin/eval-results:roster/latest.json` and `census.json` from
+        `origin/eval-results:usage/latest.json` — the same branch, so one
+        write grants both.
+
+        It changed no published roster, and that is exactly why it was
+        worth fixing: these two passages are what the NEXT round reads to
+        decide whether a rule is needed, and both asserted a premise the
+        workflow falsifies. Round 12 found both of its blockers one module
+        over, in the machinery this prose had declared safe.
+
+        RED on `7ef5780`, where all three sentences are present.
+
+        THE PREMISE NARROWED IN #147 AND THE ROW SURVIVES IT. The previous
+        roster is the committed `evals/roster.yml` now and is not taken
+        off `eval-results` at all, so "one write grants both" is no longer
+        true — but the CENSUS still comes off that branch, and it is the
+        census these sentences were wrong about. The workflow half is
+        measured rather than quoted, in both directions: the census IS
+        read from `eval-results`, and the roster is NOT.
+        """
+        workflow = (REPO_ROOT / ".github" / "workflows"
+                    / "eval.yml").read_text(encoding="utf-8")
+        self.assertIn("git show origin/eval-results:usage/latest.json",
+                      workflow,
+                      "the premise this test is about has changed")
+        self.assertNotIn("git show origin/eval-results:roster/latest.json",
+                         workflow,
+                         "the previous roster is the committed file now "
+                         "(#147); nothing may materialise it from the "
+                         "untrusted branch")
+        policy = TestIssue67Review10.POLICY.read_text(encoding="utf-8")
+        source = TestIssue67Review10.ROSTER_SRC.read_text(encoding="utf-8")
+        for text, name in ((policy, "evals/roster-policy.yml"),
+                           (source, "harness/roster.py")):
+            normalised = TestIssue67Review10._normalised(text)
+            with self.subTest(file=name):
+                for claim in ("a planter cannot add a census key",
+                              "a planter writes neither document"):
+                    if claim in normalised:
+                        # Allowed only where the text is recording the
+                        # claim as FALSE, which is what round 12 replaced
+                        # it with.
+                        self.assertIn("that is false", normalised,
+                                      f"{name} still asserts {claim!r}")
+                self.assertIn("eval.yml", normalised,
+                              f"{name} must name where both documents "
+                              f"come from")
+
+    # --- the round-12 nits ---------------------------------------------
+
+    @staticmethod
+    def _prose(path):
+        """Comment markers stripped, whitespace collapsed, lowercased —
+        `TestIssue67Review10._normalised` with `#:` handled as well as
+        `#`. The invariant sentence lives in docstrings and plain `#`
+        comments, so that one never met a `#:` line; a constant's
+        Sphinx-style block does, and `lstrip("#")` leaves the colon
+        behind in the middle of a sentence."""
+        return " ".join(" ".join(line.strip().lstrip("#:").strip()
+                                 for line in path.read_text(
+                                     encoding="utf-8").splitlines()).split()
+                        ).lower()
+
+
+class TestIssue67Review13(unittest.TestCase):
+    """Round 13 fixes for #67 (PR #129 review round 13), one test per fix.
+
+    A SIBLING of TestIssue67 and TestIssue67Review12, reusing their canned
+    documents rather than subclassing — run_tests.py's
+    class-per-review-round convention. Every model id below is TEST
+    FIXTURE data; the policy code under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard).
+
+    WHAT THIS ROUND IS ABOUT, in one line: every remedy round 12 shipped
+    is keyed on RAW IDENTITY — is this id a live catalogue id, is this id
+    an in-window census key — while the mechanism they guard,
+    ATTRIBUTION, is keyed on the FOLD RELATION. Give the victim the fold
+    shape `TestIssue67Review9::test_a_three_hop_census_key_still_reaches
+    _the_live_snapshot` builds and all three go inert, which is why
+    `TestIssue67Review12::test_every_previous_json_input_has_a_control
+    _versus_hostile_floor` now runs its whole table under BOTH victim
+    shapes.
+
+    THE FOLD CHAIN used below, one hop per input, is that fixture's:
+    census key -> `catalogue_seen` entry -> previous arm -> live
+    snapshot. Nothing in it is hostile; it is what an ordinary catalogue
+    that renames its snapshots produces on its own.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    POLICY = TestIssue67.POLICY
+
+    _FrozenNow = TestIssue67Review8._FrozenNow
+    _model = staticmethod(TestIssue67._model)
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+    _seen_ids = staticmethod(TestIssue67Review8._seen_ids)
+    _days_ago = TestIssue67Review9._days_ago
+    _run_main = TestIssue67Review9._run_main
+
+    #: The park comment's own chain, verbatim. `_KEY` is the only census
+    #: key the victim's turns arrive under; `_SEEN` and `_ARM` are the two
+    #: hops, one supplied by each of `previous.json`'s two lists; `_LIVE`
+    #: is the victim, a live catalogue id AND a previous arm.
+    _KEY = "claude-haiku-4-20250101-20260101"
+    _SEEN = "claude-haiku-4-20250101"
+    _ARM = "claude-haiku-4"
+    _LIVE = "claude-haiku-4-20260601"
+    _NEWER = "claude-haiku-5"
+    #: A ranked census key nothing can credit — no catalogue id, no fold
+    #: of one. `TestIssue67Review12._GHOST`, reused deliberately: it is
+    #: the same primitive, and the point of this round is that the same
+    #: primitive reaches further than round 12 measured.
+    _GHOST = TestIssue67Review12._GHOST
+
+    @classmethod
+    def _catalogue(cls):
+        """`_LIVE` with a NEWER haiku beside it, so the victim is not
+        newest in its tier and there is no newest-per-tier fallback to
+        rescue a share the denominator got wrong."""
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            cls._model(cls._LIVE, "2026-06-01T00:00:00Z"),
+            cls._model(cls._NEWER, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+
+
+    def _park_row(self, *, planted):
+        counts = {self._KEY: {self.W[0]: 5_000},
+                  "claude-sonnet-5": {self.W[0]: 300}}
+        arms = [{"id": self._ARM, "reason": "was an arm"},
+                {"id": self._LIVE, "reason": "was an arm"}]
+        if planted:
+            counts[self._GHOST] = {self.W[0]: 400_000}
+            arms.append({"id": self._GHOST, "reason": "was an arm"})
+        previous = {"arms": arms,
+                    "catalogue_seen": [{"id": self._SEEN,
+                                        "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    # --- BLOCKER B: one deletion from `catalogue_seen` retires a live arm
+    # at a numerator of zero ---------------------------------------------
+    #
+    # The entry that bridges a live arm's OWN census key onto it is a
+    # single line of a file the design treats as untrusted. Break it and
+    # every one of that arm's turns leaves its numerator while the
+    # denominator keeps the rest of the window, so the arm measures
+    # exactly 0.0% and is published `RETIRED ... (0.0%)`, rc 0, empty
+    # stderr, permanently.
+    #
+    # THE RULE THAT CLOSED THIS IS REVERTED, AND THE TABLE BELOW IS KEPT
+    # AS THE PINNED SURVIVAL. `0db198a` refused to retire a live
+    # catalogue id on a numerator of exactly zero, stated over the
+    # OBSERVABLE because the cause is undetectable in principle:
+    # `previous.json` is the harness's only record, so "was never an
+    # arm" and "the record was tampered with" are the same input. Round
+    # 14 measured what that refusal cost — a planted `arms` line naming
+    # an unused live model can then NEVER retire, `judge.is_arm` goes
+    # true, and `run_eval.select_models` refuses every unpinned fixture
+    # permanently — so the commit is reverted and the defect goes back to
+    # being a survival. Both readings of a zero are one untrusted line
+    # away from each other; separating them needs the trusted history
+    # designed under
+    # https://github.com/Adam-S-Daniel/skills-evals/issues/147.
+
+    _ZERO_LIVE = "claude-haiku-4-20260601"
+    _ZERO_SEEN = "claude-haiku-4-20250101"
+    _ZERO_ARM = "claude-haiku-4"
+    _ZERO_KEY = "claude-haiku-4-20250101-20260101"
+
+    #: Sentinels for the three rows that are not "one entry replaced by
+    #: another value" at all — they act on the FIELD rather than on a line
+    #: of it, and a list of entries cannot express them.
+    _WHOLE_FIELD_IS_A_DICT = object()
+    _SAME_ID_TWICE = object()
+    _FIELD_ABSENT = object()
+
+    def _zero_row(self, entry):
+        """`entry` is what the bridging `catalogue_seen` line is replaced
+        with — None removes the line, and the three sentinels above
+        replace the whole field. The victim carries 3,000 of the window's
+        5,000 rankable turns, a true 60.0%."""
+        counts = {self._ZERO_KEY: {self.W[0]: 3_000},
+                  "claude-sonnet-5": {self.W[0]: 2_000}}
+        if entry is self._WHOLE_FIELD_IS_A_DICT:
+            seen = {self._ZERO_SEEN: self._days_ago(3)}
+        elif entry is self._SAME_ID_TWICE:
+            seen = [{"id": self._ZERO_SEEN, "last_seen": self._days_ago(3)},
+                    {"id": self._ZERO_SEEN, "last_seen": self._days_ago(400)}]
+        elif entry is None:
+            seen = []
+        else:
+            seen = [entry]
+        previous = {"arms": [{"id": self._ZERO_ARM, "reason": "was an arm"},
+                             {"id": self._ZERO_LIVE, "reason": "was an arm"}]}
+        if entry is not self._FIELD_ABSENT:
+            previous["catalogue_seen"] = seen
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        return published, err
+
+    def test_a_zero_numerator_is_measured_not_rendered(self):
+        """A share that RENDERS as "0.0" is not a zero numerator, and the
+        two must not be confused by whatever decides a retirement.
+
+        THE ROW OUTLIVES THE RULE IT WAS WRITTEN AGAINST. It was
+        `0db198a`'s proof that `held == 0.0` was an exact test rather
+        than a rounding one; that branch is reverted (see this section's
+        header and
+        https://github.com/Adam-S-Daniel/skills-evals/issues/147), and
+        what the row measures now is the surviving half: a victim
+        carrying ONE of the window's 100,001 rankable turns — 0.001% — is
+        RETIRED under the exit bar, and the published sentence renders it
+        at the escalated precision `_format_share` exists for rather than
+        flattening it to "0.0".
+
+        It is kept because any future rule that reads a zero has to read
+        the MEASUREMENT and not the rendering, and this is where that
+        distinction is pinned."""
+        counts = {self._ZERO_KEY: {self.W[0]: 1},
+                  "claude-sonnet-5": {self.W[0]: 100_000}}
+        previous = {"arms": [{"id": self._ZERO_ARM, "reason": "was an arm"},
+                             {"id": self._ZERO_LIVE, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._ZERO_SEEN,
+                                        "last_seen": self._days_ago(3)}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._catalogue(),
+                census=TestIssue67._census_doc(counts=counts),
+                previous=previous)
+        self.assertEqual(rc, 0, err)
+        retired = {t["id"]: t["reason"]
+                   for t in published["retired_since_last"]}
+        self.assertIn(self._ZERO_LIVE, retired,
+                      "a nonzero numerator under the exit bar still "
+                      "retires: the refusal is about zero, not about "
+                      "small")
+        self.assertIn("0.001%", retired[self._ZERO_LIVE])
+
+    # REMOVED WITH THE REVERT OF `0db198a`:
+    # `test_what_a_zero_numerator_hold_over_costs_and_what_still_removes
+    # _it`. It measured the COST of that commit's zero-numerator
+    # hold-over — a live model that genuinely stops being used is held
+    # over rather than retired, and only leaving the Models API removes
+    # it. With the rule reverted there is no such cost: a genuinely
+    # unused live arm retires on the exit bar again, which is the
+    # pre-`0db198a` behaviour, so the row asserted a hold-over that no
+    # longer happens and had no subject left. It is named here rather
+    # than deleted silently; `git show 0db198a` carries its body. See
+    # https://github.com/Adam-S-Daniel/skills-evals/issues/147.
+
+
+
+    # --- ITEM 3: the ageing loop asked the RAW-IDENTITY question --------
+    #
+    # `_update_catalogue_seen`'s ageing rule held an entry past the
+    # window on `relevant.tier(model_id) < 3`, which is `1 if (id in
+    # count_turns or id in api_ids) else 3` — the id's OWN spelling in
+    # one of the two documents. A BRIDGE is neither: it is not a live
+    # catalogue id and not itself an in-window census key, it is an id
+    # the usage alias map walks THROUGH on the way from a census key to
+    # the numerator that collects its turns. So it is tier 3, the caps
+    # carry it whole as residue, and ageing killed it. That asymmetry is
+    # the hole.
+
+    _HOP_LIVE = "claude-haiku-4"              # live, previous arm, victim
+    _HOP_BRIDGE = "claude-haiku-4-20250101"   # the bridge: neither document's
+    _HOP_KEY = "claude-haiku-4-20250101-20260101"
+
+    @classmethod
+    def _hop_catalogue(cls, *, with_bridge):
+        models = [cls._model(cls._HOP_LIVE, "2025-06-01T00:00:00Z"),
+                  cls._model("claude-haiku-5", "2026-07-01T00:00:00Z"),
+                  cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+                  cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]
+        if with_bridge:
+            models.insert(1, cls._model(cls._HOP_BRIDGE,
+                                        "2025-01-01T00:00:00Z"))
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    @classmethod
+    def _hop_census(cls):
+        return TestIssue67._census_doc(counts={
+            cls._HOP_KEY: {cls.W[0]: 3_000},
+            "claude-sonnet-5": {cls.W[0]: 2_000}})
+
+    def _hop_row(self, last_seen, *, want_err=False):
+        previous = {"arms": [{"id": self._HOP_LIVE, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._HOP_BRIDGE,
+                                        "last_seen": last_seen}]}
+        with tempfile.TemporaryDirectory() as tmp:
+            rc, published, _, err = self._run_main(
+                tmp, self._hop_catalogue(with_bridge=False),
+                census=self._hop_census(), previous=previous)
+        self.assertEqual(rc, 0, err)
+        return (published, err) if want_err else published
+
+
+    # --- two sources invented against the finished rules ---------------
+    #
+    # Neither shape appears in round 13's findings or in the brief that
+    # scoped this round's work. They exist to test whether the two rules
+    # above generalise past the sources that were already known to reach
+    # them, which is what a check AT THE SINK is supposed to buy and what
+    # an enumeration of sources never does. Both were applied and run on
+    # `87f2031` first, and both are RED there.
+
+
+    # --- the nonzero half of the cell, which no rule ever closed -------
+
+    _OPEN_LIVE = "claude-sonnet-5-20260601"
+    _OPEN_ARM = "claude-sonnet-5"
+    _OPEN_SEEN = "claude-sonnet-5-20250101"
+    _OPEN_KEY = "claude-sonnet-5-20250101-20260101"
+    _OPEN_OTHER = "claude-haiku-4-5"
+
+
 class TestIssue143(unittest.TestCase):
     """`_read_matched` must not let an unreadable regular file crash the
     scorer with an uncaught `PermissionError`/`OSError` — it should be
@@ -21004,6 +28431,1361 @@ class TestIssue144(unittest.TestCase):
             shutil.rmtree(ctx.exception.workspace, ignore_errors=True)
 
 
+class TestIssue147(unittest.TestCase):
+    """[#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147) — the
+    roster the harness RUNS ON is a file committed on `main`, and a computed
+    roster is only a proposal. ADR 0001.
+
+    This first group is the LINT over the committed file. It is the only
+    check that stands between a hand-edited `evals/roster.yml` and a run:
+    `main` is ruleset-protected, so nothing can write this file without a
+    reviewed commit, but a reviewer can still merge a malformed one, and a
+    malformed roster is the one input `run_eval.select_models` may not
+    fail soft on. Every assertion below is mutation-proven in
+    `test_every_lint_clause_has_a_mutation_that_reds_it`.
+
+    Every model id in this class is TEST FIXTURE data or is read from the
+    committed data file; the machinery under test carries none
+    (`test_no_model_ids_are_hardcoded_outside_fixtures` is the guard, and
+    it admits `evals/roster.yml` by name as data).
+    """
+
+    ROSTER = REPO_ROOT / "evals" / "roster.yml"
+
+    @classmethod
+    def _committed(cls) -> dict:
+        return yaml.safe_load(cls.ROSTER.read_text(encoding="utf-8"))
+
+    # --- the lint -------------------------------------------------------
+
+    @staticmethod
+    def _lint(document) -> list[str]:
+        """Every problem with a committed roster document, named. Empty
+        means the file is usable.
+
+        A list rather than a raise: a reviewer reading a failed CI run
+        wants every defect at once, not the first one.
+        """
+        return roster.committed_roster_problems(document)
+
+    def test_the_committed_roster_parses_and_passes_every_lint_clause(self):
+        self.assertTrue(self.ROSTER.is_file(),
+                        "evals/roster.yml is the roster the harness runs on "
+                        "(ADR 0001); it is committed, not computed")
+        self.assertEqual(self._lint(self._committed()), [])
+
+    def _assert_roster_provenance(self, document):
+        # A hand-seeded file with no account of where its values came from
+        # is indistinguishable from one somebody guessed.
+        provenance = document.get("provenance")
+        self.assertIsInstance(provenance, dict)
+        for key in ("seeded", "from"):
+            self.assertIsInstance(provenance.get(key), str)
+            self.assertTrue(provenance[key].strip())
+        self.assertIsInstance(document.get("generated_at"), str)
+
+    def test_the_committed_roster_records_its_own_provenance(self):
+        self._assert_roster_provenance(self._committed())
+
+    def test_every_lint_clause_has_a_mutation_that_reds_it(self):
+        """A lint whose clauses cannot be made to fire is a green light
+        wired to nothing. Each row mutates a THROWAWAY copy of the
+        committed document and asserts the named clause fires.
+        """
+        good = self._committed()
+
+        def mutate(**changes):
+            copied = copy.deepcopy(good)
+            copied.update(changes)
+            return copied
+
+        rows = [
+            ("schema", mutate(schema=2), "`schema`"),
+            ("arms empty", mutate(arms=[]), "`arms`"),
+            ("arms not a list", mutate(arms="claude-sonnet-5"), "`arms`"),
+            ("arm id missing", mutate(arms=[{"reason": "x"}]), "`arms[0]`"),
+            ("arm id blank", mutate(arms=[{"id": "", "reason": "x"}]), "`arms[0]`"),
+            ("judge id missing", mutate(judge={"is_arm": False}), "`judge`"),
+            ("preflight id missing", mutate(preflight={}), "`preflight`"),
+            ("judge.is_arm true",
+             mutate(judge={**good["judge"], "is_arm": True}), "`judge.is_arm`"),
+            ("judge.is_arm absent",
+             mutate(judge={"id": good["judge"]["id"], "reason": "x"}), "`judge.is_arm`"),
+            ("judge is an arm",
+             mutate(judge={"id": good["arms"][0]["id"], "reason": "x",
+                           "is_arm": False}), "also an arm"),
+            ("catalogue_seen not a list",
+             mutate(catalogue_seen={}), "`catalogue_seen`"),
+            ("catalogue_seen entry shape",
+             mutate(catalogue_seen=["claude-opus-4-8"]), "catalogue_seen[0]"),
+            ("catalogue_seen bad date",
+             mutate(catalogue_seen=[{"id": "claude-opus-4-8",
+                                     "last_seen": "yesterday"}]), "ISO"),
+            ("duplicate ids",
+             mutate(arms=[{"id": "claude-sonnet-5", "reason": "a"},
+                          {"id": "claude-sonnet-5", "reason": "b"}]),
+             "more than once in `arms`"),
+            ("provenance missing", mutate(provenance=None), "`provenance`"),
+            ("provenance source blank",
+             mutate(provenance={**good["provenance"], "from": ""}),
+             "`provenance.from`"),
+            ("generated time missing", mutate(generated_at=None), "`generated_at`"),
+            ("not a mapping", ["claude-sonnet-5"], "not a mapping"),
+        ]
+        for name, document, needle in rows:
+            with self.subTest(mutation=name):
+                problems = self._lint(document)
+                self.assertTrue(
+                    any(needle in p for p in problems),
+                    f"mutation {name!r} produced {problems!r}, which does not "
+                    f"name {needle!r} — the clause is inert")
+        # The negative control: the unmutated document must still be clean,
+        # or every row above passes for the wrong reason.
+        self.assertEqual(self._lint(good), [])
+    # --- item 2: selection reads the committed file, and only it ---------
+
+    def test_the_default_roster_path_is_the_committed_file(self):
+        # `roster/latest.json` is published to `eval-results` and is an
+        # EXHIBIT — read by the explorer, by no decision (ADR 0001,
+        # decision 3). The default rung of the precedence has to name the
+        # trusted file instead, or a checkout with a stray `roster/`
+        # directory in it selects from an untrusted document.
+        with mock.patch.dict(os.environ, {}, clear=True):
+            resolved = run_eval._resolve_roster(None)
+        self.assertEqual(resolved, REPO_ROOT / "evals" / "roster.yml")
+
+    def test_the_overrides_still_outrank_the_committed_file(self):
+        # `--roster` and `$EVAL_ROSTER` survive for tests and local runs
+        # (ADR 0001, decision 1). Precedence: flag, then environment, then
+        # the committed file.
+        with mock.patch.dict(os.environ, {"EVAL_ROSTER": "/tmp/env.yml"}, clear=True):
+            self.assertEqual(run_eval._resolve_roster(Path("/tmp/flag.yml")),
+                             Path("/tmp/flag.yml"))
+            self.assertEqual(run_eval._resolve_roster(None), Path("/tmp/env.yml"))
+
+    def test_read_roster_parses_the_committed_yaml(self):
+        # The trusted file is YAML, because a human edits it in a reviewed
+        # pull request and YAML is what every other hand-edited file in
+        # this repo is. `read_roster` used to be JSON-only.
+        document, problem = run_eval.read_roster(self.ROSTER)
+        self.assertIsNone(problem)
+        self.assertEqual(document["arms"][0]["id"], self._committed()["arms"][0]["id"])
+
+    def test_read_roster_still_parses_json_by_content(self):
+        # JSON is a subset of YAML 1.2, so ONE parser serves both and the
+        # reader never has to decide by file extension — which is what a
+        # `--roster` pointing at a published `roster/latest.json` (a local
+        # run, a test) still hands it.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "latest.json"
+            path.write_text(json.dumps({"arms": [{"id": "claude-sonnet-5"}],
+                                        "judge": {"id": "claude-opus-4-8"}}),
+                            encoding="utf-8")
+            document, problem = run_eval.read_roster(path)
+            self.assertIsNone(problem)
+            self.assertEqual(document["arms"][0]["id"], "claude-sonnet-5")
+
+    def test_read_roster_keeps_its_never_raises_never_half_shaped_contract(self):
+        # Every row here was reachable and three of them used to crash
+        # three frames down. The contract is the whole difference between
+        # a run that says what is wrong and a stack trace in a CI log, and
+        # the parser change must not quietly drop it.
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = [
+                ("absent", None, "no model roster at"),
+                ("empty", "", "no model roster at"),
+                ("a top-level list", "- claude-sonnet-5", "is not a"),
+                ("a bare scalar", "claude-sonnet-5", "is not a"),
+                ("unparseable", "arms: [\n", "is unreadable"),
+            ]
+            for name, body, needle in rows:
+                with self.subTest(row=name):
+                    path = Path(tmp) / f"{abs(hash(name))}.yml"
+                    if body is not None:
+                        path.write_text(body, encoding="utf-8")
+                    document, problem = run_eval.read_roster(path)
+                    self.assertIsNone(document)
+                    self.assertIn(needle, problem)
+                    # The BASENAME only: this string flows into
+                    # summary.json, which eval.yml commits to a public
+                    # branch.
+                    self.assertNotIn(str(Path(tmp)), problem)
+
+    def test_select_models_reads_the_committed_roster_end_to_end(self):
+        args = argparse.Namespace(model=None, roster=None, no_judge=False)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            agent, judge_model, error = run_eval.select_models({}, args)
+        self.assertIsNone(error)
+        committed = self._committed()
+        self.assertEqual(agent, committed["arms"][0]["id"])
+        self.assertEqual(judge_model, committed["judge"]["id"])
+
+    def test_the_precedence_above_the_roster_is_unchanged(self):
+        committed = self._committed()
+        rows = [
+            ("--model wins over everything",
+             argparse.Namespace(model="claude-opus-4-8", roster=None, no_judge=True),
+             {}, "claude-opus-4-8"),
+            ("the fixture pin wins over the roster",
+             argparse.Namespace(model=None, roster=None, no_judge=True),
+             {"model": "claude-haiku-4-5"}, "claude-haiku-4-5"),
+            ("the roster is the last rung",
+             argparse.Namespace(model=None, roster=None, no_judge=True),
+             {}, committed["arms"][0]["id"]),
+        ]
+        for name, args, fixture, expected in rows:
+            with self.subTest(row=name), mock.patch.dict(os.environ, {}, clear=True):
+                agent, _, error = run_eval.select_models(fixture, args)
+                self.assertIsNone(error)
+                self.assertEqual(agent, expected)
+
+    def test_eval_yml_no_longer_points_selection_at_eval_results(self):
+        # THE WHOLE OF #147's FIRST DEFECT CLASS, asserted at the workflow.
+        # While `$EVAL_ROSTER` named a file materialised from
+        # `origin/eval-results`, one line on that branch chose the models
+        # every unpinned fixture ran against.
+        #
+        # Asserted over the PARSED steps, not over the raw file: the
+        # header comment says out loud that nothing here sets
+        # `$EVAL_ROSTER`, and a raw grep for the name would red-fail on
+        # the sentence that documents the rule — the same defect the
+        # platform's "a lint that forbids a token must not read comments"
+        # rule names.
+        doc = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            code = "\n".join(line for line in script.splitlines()
+                              if not line.lstrip().startswith("#"))
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn(
+                    "EVAL_ROSTER", code,
+                    "eval.yml must not point selection at anything off "
+                    "eval-results; the committed evals/roster.yml is the "
+                    "roster the harness runs on (ADR 0001)")
+                self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
+                self.assertNotIn(
+                    "roster/latest.json > ", code,
+                    "the previous roster is the committed file now, not a "
+                    "copy materialised from the untrusted branch")
+        self.assertNotIn("EVAL_ROSTER", (doc.get("env") or {}))
+
+    def test_eval_yml_preflight_reads_the_committed_file(self):
+        doc = yaml.safe_load(
+            (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        step = next(s for s in doc["jobs"]["eval"]["steps"]
+                    if "preflight" in (s.get("name") or "").lower())
+        self.assertIn("evals/roster.yml", step["run"],
+                      "the preflight model comes from the trusted file too — "
+                      "it used to be read out of the published roster")
+    # --- item 3: the computed roster is a PROPOSAL -----------------------
+
+    #: A canned live catalogue and census, deliberately independent of
+    #: TestIssue67's: this class is about the PROPOSAL, and reusing a
+    #: fixture built for the seating policy would make a change to that
+    #: policy read as a change here.
+    NOW = datetime(2026, 9, 13, 12, 0, tzinfo=timezone.utc)
+
+    @classmethod
+    def _policy(cls):
+        return roster.load_policy(REPO_ROOT / "evals" / "roster-policy.yml")
+
+    @staticmethod
+    def _model(model_id, created="2026-01-01T00:00:00Z"):
+        return {"id": model_id, "created_at": created}
+
+    @classmethod
+    def _models(cls, *ids):
+        return {"fetched_at": "2026-09-13T11:00:00Z",
+                "models": [cls._model(i) for i in ids]}
+
+    @classmethod
+    def _census(cls, counts, weeks_back=1):
+        generated = (cls.NOW - timedelta(days=weeks_back)).strftime(
+            "%Y-%m-%dT%H:%M:%SZ")
+        return {"generated_at": generated, "counts": counts}
+
+    @classmethod
+    def _week(cls, back=1):
+        return timeweeks.iso_week(cls.NOW - timedelta(weeks=back))
+
+    @classmethod
+    def _compute(cls, models=None, census=None, previous=None, warn=None,
+                 **kwargs):
+        return roster.compute_roster(
+            models_doc=models if models is not None
+            else cls._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8"),
+            census_doc=census, policy=cls._policy(), previous=previous,
+            now=cls.NOW, warn=warn or (lambda _m: None), **kwargs)
+
+    def test_the_computed_roster_carries_a_proposal(self):
+        result = self._compute(previous=self._committed())
+        self.assertIn("proposal", result)
+        self.assertIn(result["proposal"]["status"], ("same", "differs"))
+        self.assertIsInstance(result["proposal"]["changes"], list)
+        for change in result["proposal"]["changes"]:
+            self.assertEqual(sorted(change),
+                             ["field", "from", "kind", "reason", "to"])
+            self.assertIn(change["kind"], ("seat", "catalogue_seen"))
+            self.assertTrue(change["reason"].strip(),
+                            "a change nobody can explain is one nobody will "
+                            "override when it is wrong")
+
+    def _steady_state(self):
+        """A fixed policy fixture whose quiet run proposes nothing.
+
+        This must not mirror `evals/roster.yml`: that file is deliberately
+        mutable, and a valid future multi-arm proposal must still pass this
+        class without rewriting its synthetic Models API response.
+        """
+        arm = "claude-sonnet-5"
+        fresh = (self.NOW - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            self._model("claude-haiku-4-5", fresh),
+            self._model(arm, "2026-01-01T00:00:00Z"),
+            self._model("claude-opus-4-8", fresh)]}
+        previous = {
+            "schema": 1,
+            "arms": [{"id": arm, "reason": "synthetic steady arm"}],
+            "judge": {"id": "claude-opus-4-8", "reason": "synthetic judge",
+                      "is_arm": False},
+            "preflight": {"id": "claude-haiku-4-5",
+                          "reason": "synthetic preflight"},
+            "catalogue_seen": [
+            {"id": i, "last_seen": self.NOW.date().isoformat()}
+            for i in ("claude-haiku-4-5", arm, "claude-opus-4-8")]}
+        return models, self._census({arm: {self._week(): 400}}), previous
+
+    def test_a_proposal_that_changes_nothing_says_same(self):
+        # The catalogue is exactly the committed roster's three seats and
+        # the census names the committed arm alone, so there is nothing to
+        # move. `same` is what closes the tracking issue.
+        models, census, previous = self._steady_state()
+        result = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(result["proposal"]["status"], "same",
+                         result["proposal"]["changes"])
+        self.assertEqual([a["id"] for a in result["arms"]],
+                         [a["id"] for a in previous["arms"]])
+        self.assertFalse(result["judge"]["is_arm"])
+
+    def test_fresh_catalogue_observations_are_proposed_and_survive_a_merge(self):
+        """A reviewed refresh resets the 180-day clock after a quiet week."""
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=179)).date().isoformat()
+        observed = self._compute(models=models, census=census, previous=previous)
+        refreshes = [change for change in observed["proposal"]["changes"]
+                     if change["field"] == "catalogue_seen.last_seen"]
+        self.assertEqual(observed["proposal"]["status"], "differs")
+        self.assertEqual(len(refreshes), len(previous["catalogue_seen"]))
+        merged = yaml.safe_load(render_roster_yaml.render(observed, "1", "a"))
+        departed = {**models, "models": [model for model in models["models"]
+                                            if model["id"] != "claude-sonnet-5"]}
+        later = roster.compute_roster(
+            departed, census, self._policy(), merged,
+            self.NOW + timedelta(days=7), warn=lambda _message: None)
+        self.assertIn("claude-sonnet-5",
+                      [entry["id"] for entry in later["catalogue_seen"]])
+
+    def test_arm_order_is_a_reviewable_proposal_change(self):
+        proposal = roster._proposal(
+            {"judge": {"id": "judge"}, "preflight": {"id": "arm-a"}},
+            ["arm-b", "arm-a"], [],
+            [{"id": "arm-a", "reason": "first"},
+             {"id": "arm-b", "reason": "second"}],
+            {"id": "judge", "reason": "judge"},
+            {"id": "arm-a", "reason": "preflight"}, [], {})
+        self.assertEqual(proposal["status"], "differs")
+        self.assertEqual(
+            [change["field"] for change in proposal["changes"]], ["arms.order"])
+        self.assertEqual(proposal["changes"][0]["from"], ["arm-b", "arm-a"])
+        self.assertEqual(proposal["changes"][0]["to"], ["arm-a", "arm-b"])
+
+    def _ordinary_computed_roster(self, *, multi_arm: bool) -> dict:
+        """A normal catalogue with an unseated fresh opus judge candidate."""
+        ids = (["claude-haiku-4-5", "claude-haiku-5", "claude-sonnet-5",
+                "claude-sonnet-6", "claude-opus-4-8"] if multi_arm
+               else ["claude-haiku-4-5"])
+        models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            self._model(model_id) for model_id in ids
+        ] + [self._model("claude-opus-9", "2026-09-11T12:00:00Z")]}
+        census = self._census({model_id: {self._week(): 100}
+                               for model_id in ids})
+        return self._compute(models=models, census=census,
+                             previous=self._steady_state()[2])
+
+    def test_ordinary_generated_rosters_meet_the_committed_contract(self):
+        for label, multi_arm in (("multiple arms", True), ("single arm", False)):
+            with self.subTest(shape=label):
+                computed = self._ordinary_computed_roster(multi_arm=multi_arm)
+                rendered = yaml.safe_load(render_roster_yaml.render(computed, "1", "a"))
+                self.assertEqual(self._lint(rendered), [])
+                self.assertFalse(rendered["judge"]["is_arm"])
+                self.assertIn(rendered["preflight"]["id"],
+                              [arm["id"] for arm in rendered["arms"]])
+                if multi_arm:
+                    self.assertGreater(len(rendered["arms"]), 1)
+
+    def test_admission_suite_accepts_a_rendered_multi_arm_roster(self):
+        if os.environ.get(TestTheRunnerItself.SUITE_CHILD_ENV):
+            self.skipTest("child suite run does not recursively run admission")
+        computed = self._ordinary_computed_roster(multi_arm=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "source.tar"
+            with archive.open("wb") as handle:
+                created = subprocess.run(
+                    ["git", "archive", "HEAD"], cwd=REPO_ROOT,
+                    stdout=handle, stderr=subprocess.PIPE, timeout=60)
+            self.assertEqual(created.returncode, 0, created.stderr.decode())
+            exported = root / "export"
+            exported.mkdir()
+            extracted = subprocess.run(
+                ["tar", "-xf", str(archive), "-C", str(exported)],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(extracted.returncode, 0, extracted.stderr)
+            self.assertFalse((exported / ".git").exists())
+            (exported / "evals" / "roster.yml").write_text(
+                render_roster_yaml.render(computed, "1", "a"), encoding="utf-8")
+            home = root / "home"
+            config = root / "claude"
+            memory = root / "memory"
+            home.mkdir()
+            config.mkdir()
+            memory.write_text("", encoding="utf-8")
+            env = {"PATH": "/usr/bin:/bin", "HOME": str(home),
+                   "CLAUDE_CONFIG_DIR": str(config),
+                   "SKILLS_EVALS_USER_MEMORY": str(memory),
+                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"}
+            child = TestTheRunnerItself()._spawn_suite(
+                "TestIssue147", cwd=exported, environment=env)
+            output = child.stdout + child.stderr
+            self.assertEqual(child.returncode, 0, output[-4000:])
+            self.assertRegex(output, r"Ran [1-9][0-9]* tests")
+            invalid = yaml.safe_load(render_roster_yaml.render(computed, "1", "a"))
+            invalid["judge"] = {"id": invalid["arms"][0]["id"],
+                                "reason": "synthetic invalid overlap", "is_arm": True}
+            (exported / "evals" / "roster.yml").write_text(
+                yaml.safe_dump(invalid, sort_keys=False), encoding="utf-8")
+            rejected = TestTheRunnerItself()._spawn_suite(
+                "TestIssue147", cwd=exported, environment=env)
+            self.assertEqual(rejected.returncode, 1,
+                             (rejected.stdout + rejected.stderr)[-4000:])
+
+    def _run_proposal_step(self, status, pages, *, computed=None,
+                           listing_error=False, run_results=False,
+                           results_push_error=False, source=None):
+        """Run eval.yml's real proposal shell with only recording shims."""
+        source = Path(source) if source is not None else REPO_ROOT
+        document = yaml.safe_load(
+            (source / ".github" / "workflows" / "eval.yml").read_text(
+                encoding="utf-8"))
+        script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+                      if step.get("name") == "Propose a roster change")
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            temp = root / "temp"
+            tools = root / "bin"
+            workspace = root / "workspace"
+            temp.joinpath("roster").mkdir(parents=True)
+            temp.joinpath("roster-inputs").mkdir()
+            tools.mkdir()
+            # The real workflow shells normally run from the repository
+            # checkout.  Stage only their runtime inputs here so their branch
+            # switches, badge and roster writes cannot touch the test caller.
+            workspace.joinpath("scripts").mkdir(parents=True)
+            workspace.joinpath("harness").mkdir()
+            workspace.joinpath("evals").mkdir()
+            for relative in ("scripts/render_roster_yaml.py",
+                             "scripts/make_badge.py",
+                             "harness/roster.py",
+                             "harness/timeweeks.py",
+                             "evals/roster.yml"):
+                shutil.copy2(source / relative, workspace / relative)
+            # The publication shell snapshots and restores `results/` before
+            # adding it.  Supply a complete, deterministic run so that path
+            # is exercised rather than hidden behind an empty directory.
+            for arm, passed, judge in (("with_skill", 3, 8),
+                                       ("without_skill", 2, 7)):
+                summary = workspace / "results" / "workflow-path-audit" / \
+                    "20260915T000000Z" / arm / "summary.json"
+                summary.parent.mkdir(parents=True, exist_ok=True)
+                summary.write_text(json.dumps({
+                    "objective_checks": [
+                        {"passed": index < passed} for index in range(3)],
+                    "judge": {"overall": judge},
+                }), encoding="utf-8")
+            roster_doc = computed or self._ordinary_computed_roster(multi_arm=False)
+            roster_doc = copy.deepcopy(roster_doc)
+            roster_doc["proposal"] = {"status": status, "changes": []}
+            temp.joinpath("roster", "latest.json").write_text(
+                json.dumps(roster_doc), encoding="utf-8")
+            temp.joinpath("roster-inputs", "summary.md").write_text(
+                "Synthetic summary.\n", encoding="utf-8")
+            temp.joinpath("eval-key").write_text(
+                "workflow-path-audit", encoding="utf-8")
+            pages_path = root / "pages.json"
+            calls_path = root / "calls.jsonl"
+            pages_path.write_text(json.dumps(pages), encoding="utf-8")
+            gh = tools / "gh"
+            gh.write_text("""#!/usr/bin/env python3
+import json, os, pathlib, sys
+args = sys.argv[1:]
+with open(os.environ['PROPOSAL_CALLS'], 'a', encoding='utf-8') as handle:
+    handle.write(json.dumps(['gh', *args]) + '\\n')
+if args and args[0] == 'api':
+    if os.environ.get('PROPOSAL_LISTING_ERROR') == '1':
+        raise SystemExit(1)
+    print(pathlib.Path(os.environ['PROPOSAL_PAGES']).read_text(encoding='utf-8'))
+""", encoding="utf-8")
+            git = tools / "git"
+            git.write_text("""#!/usr/bin/env python3
+import json, os, pathlib, shutil, sys
+args = sys.argv[1:]
+with open(os.environ['PROPOSAL_CALLS'], 'a', encoding='utf-8') as handle:
+    handle.write(json.dumps(['git', *args]) + '\\n')
+if 'rev-parse' in args:
+    print('a' * 40)
+elif ('push' in args and 'eval-results' in args
+      and os.environ.get('PROPOSAL_RESULTS_PUSH_ERROR') == '1'):
+    raise SystemExit(1)
+elif 'worktree' in args and 'add' in args:
+    worktree = pathlib.Path(args[args.index('--detach') + 1])
+    shutil.copytree(pathlib.Path(os.environ['PROPOSAL_SOURCE']) / 'evals',
+                    worktree / 'evals')
+elif 'diff' in args:
+    raise SystemExit(1)
+elif 'worktree' in args and 'remove' in args:
+    shutil.rmtree(args[-1], ignore_errors=True)
+""", encoding="utf-8")
+            gh.chmod(0o755)
+            git.chmod(0o755)
+            home = root / "home"
+            config = root / "claude"
+            memory = root / "memory"
+            home.mkdir()
+            config.mkdir()
+            memory.write_text("", encoding="utf-8")
+            env = {"PATH": f"{tools}:/usr/bin:/bin", "HOME": str(home),
+                   "CLAUDE_CONFIG_DIR": str(config),
+                   "SKILLS_EVALS_USER_MEMORY": str(memory),
+                   "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
+                   "RUNNER_TEMP": str(temp), "RUN_ID": "1", "REPO": "example/repo",
+                   "SERVER_URL": "https://example.com", "GITHUB_TOKEN": "synthetic",
+                   "GH_TOKEN": "synthetic", "PROPOSAL_CALLS": str(calls_path),
+                   "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(workspace),
+                   "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0",
+                   "PROPOSAL_RESULTS_PUSH_ERROR": "1" if results_push_error else "0",
+                   "GITHUB_STEP_SUMMARY": str(temp / "summary")}
+            run = subprocess.run(["/bin/bash", "-c", script], cwd=workspace,
+                                 env=env, capture_output=True, text=True, timeout=60)
+            results_run = None
+            if run_results and run.returncode == 0:
+                results_script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+                                      if step.get("name") == "Build the badge over the run window, commit, and push")
+                results_run = subprocess.run(["/bin/bash", "-c", results_script], cwd=workspace,
+                                             env=env, capture_output=True, text=True, timeout=60)
+            calls = [json.loads(line) for line in calls_path.read_text(
+                encoding="utf-8").splitlines()] if calls_path.exists() else []
+            body = temp.joinpath("proposal-body.md")
+            return run, calls, body.read_text(encoding="utf-8") if body.exists() else "", results_run
+
+    def test_proposal_step_uses_only_a_complete_bot_owned_tracker(self):
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        outsider = {"number": 91, "body": marker,
+                   "user": {"login": "ordinary-user", "type": "User"}}
+        pull = {"number": 22, "body": marker, "pull_request": {},
+                "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        rows = [
+            ("same closes owned only", "same", [[outsider, bot, pull]], False,
+             ["gh", "issue", "close", "17"]),
+            ("later page updates owned", "differs", [[outsider] * 100, [bot]], False,
+             ["gh", "issue", "edit", "17"]),
+            ("ordinary marker is never closed", "same", [[outsider]], False, None),
+            ("incomplete listing writes nothing", "differs", [[bot]], True, None),
+            ("empty page list writes nothing", "differs", [], False, None),
+            ("malformed success listing writes nothing", "differs", [[{}]], False, None),
+            ("ambiguous bot trackers write nothing", "differs", [[bot, {**bot, "number": 18}]], False, None),
+            ("unknown proposal status writes nothing", "unknown", [[bot]], False, None),
+        ]
+        for label, status, pages, listing_error, expected in rows:
+            with self.subTest(case=label):
+                run, calls, _body, _results = self._run_proposal_step(
+                    status, pages, listing_error=listing_error)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                mutations = [call for call in calls if call[:2] == ["gh", "issue"]]
+                if expected is None:
+                    self.assertEqual(mutations, [])
+                    self.assertFalse(any(call[0] == "git" and "push" in call
+                                         for call in calls), calls)
+                else:
+                    self.assertTrue(any(call[:4] == expected for call in mutations), calls)
+                self.assertTrue(any(call[:3] == ["gh", "api", "--paginate"]
+                                    for call in calls), calls)
+
+        # A successful listing proves absence only when every row carries the
+        # fields needed to identify a tracker. Supported identities are
+        # positive integer issue numbers and nonblank string login/type fields,
+        # with a present string or JSON-null body. Do not normalize malformed
+        # values into bot ownership.
+        malformed = [
+            ("empty owner login", {**bot, "user": {"login": "", "type": "Bot"}}),
+            ("whitespace owner login", {**bot, "user": {"login": "  ", "type": "Bot"}}),
+            ("empty owner type", {**bot, "user": {"login": "github-actions[bot]", "type": ""}}),
+            ("whitespace owner type", {**bot, "user": {"login": "github-actions[bot]", "type": "  "}}),
+            ("true issue number", {**bot, "number": True}),
+            ("false issue number", {**bot, "number": False}),
+            ("zero issue number", {**bot, "number": 0}),
+            ("negative issue number", {**bot, "number": -1}),
+            ("string issue number", {**bot, "number": "17"}),
+            ("missing issue number", {key: value for key, value in bot.items() if key != "number"}),
+            ("missing body", {key: value for key, value in bot.items() if key != "body"}),
+            ("wrong body type", {**bot, "body": {}}),
+            ("missing owner type", {**bot, "user": {"login": "github-actions[bot]"}}),
+        ]
+        for label, row in malformed:
+            for status in ("same", "differs"):
+                with self.subTest(case=label, status=status):
+                    run, calls, _body, _results = self._run_proposal_step(status, [[row]])
+                    self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                    self.assertEqual([call for call in calls if call[:2] == ["gh", "issue"]], [])
+                    self.assertFalse(any(call[0] == "git" and "push" in call
+                                         for call in calls), calls)
+
+        # JSON null is an explicit empty body, so it is valid evidence that no
+        # bot-owned marker exists and a differing proposal can open one.
+        null_body = {**bot, "number": 19, "body": None}
+        run, calls, _body, _results = self._run_proposal_step("differs", [[null_body]])
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
+
+    def test_proposal_step_blocks_invalid_rendering_without_a_branch_update(self):
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        valid = self._ordinary_computed_roster(multi_arm=True)
+        run, calls, _body, _results = self._run_proposal_step("differs", [[]], computed=valid)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertTrue(any(call[:2] == ["git", "-C"] and "push" in call
+                            for call in calls), calls)
+        self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
+
+        mature_ids = ["claude-haiku-4-5", "claude-haiku-5", "claude-sonnet-5",
+                      "claude-sonnet-6", "claude-opus-4-8"]
+        mature_models = {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            self._model(model_id) for model_id in mature_ids]}
+        mature = self._compute(
+            models=mature_models,
+            census=self._census({model_id: {self._week(): 100}
+                                 for model_id in mature_ids}),
+            previous=self._steady_state()[2])
+        self.assertTrue(mature["judge"]["is_arm"])
+        duplicate_history = copy.deepcopy(valid)
+        duplicate_history["catalogue_seen"].append(
+            copy.deepcopy(duplicate_history["catalogue_seen"][0]))
+        for label, invalid in (("mature all-arm catalogue", mature),
+                               ("duplicate history", duplicate_history)):
+            with self.subTest(shape=label):
+                run, calls, body, _results = self._run_proposal_step(
+                    "differs", [[bot]], computed=invalid)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertFalse(any(call[0] == "git" and "push" in call
+                                     for call in calls), calls)
+                blocked_edit = next((call for call in calls
+                                     if call[:4] == ["gh", "issue", "edit", "17"]), None)
+                self.assertIsNotNone(blocked_edit, calls)
+                self.assertIn("Model roster: proposal needs review", blocked_edit)
+                self.assertIn("Needs review before publication", body)
+                self.assertNotIn("compare/main...roster/proposal", body)
+
+        # The ordinary generator refuses an empty arms list upstream. These
+        # deliberately corrupted artifacts prove that renderer rejection uses
+        # the same nonfatal admission path, including a scalar arm that would
+        # otherwise raise during rendering.
+        for label, arms in (("empty arms", []), ("scalar arm", ["bad"])):
+            with self.subTest(shape=label):
+                invalid = copy.deepcopy(valid)
+                invalid["arms"] = arms
+                run, calls, body, _results = self._run_proposal_step(
+                    "differs", [[bot]], computed=invalid)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertFalse(any(call[0] == "git" and "push" in call
+                                     for call in calls), calls)
+                self.assertTrue(any(call[:4] == ["gh", "issue", "edit", "17"]
+                                    for call in calls), calls)
+                self.assertIn("Needs review before publication", body)
+                self.assertIn("Rendering was rejected", body)
+                self.assertNotIn("Traceback", body)
+
+    def test_rejected_proposals_publish_results_and_results_push_stays_fatal(self):
+        """Execute both YAML-extracted shells with inert git/gh shims."""
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        renderable = self._ordinary_computed_roster(multi_arm=True)
+        renderable["catalogue_seen"].append(copy.deepcopy(renderable["catalogue_seen"][0]))
+        corrupted = copy.deepcopy(self._ordinary_computed_roster(multi_arm=True))
+        corrupted["arms"] = []
+        valid = self._ordinary_computed_roster(multi_arm=True)
+        for label, candidate, reason, proposal_push in (
+                ("valid proposal", valid, None, True),
+                ("renderable admission rejection", renderable, "Admission was rejected", False),
+                ("renderer rejection", corrupted, "Rendering was rejected", False)):
+            with self.subTest(shape=label):
+                run, calls, body, results_run = self._run_proposal_step(
+                    "differs", [[bot]], computed=candidate, run_results=True)
+                self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                self.assertIsNotNone(results_run)
+                self.assertEqual(results_run.returncode, 0, results_run.stdout + results_run.stderr)
+                pushes = [call for call in calls if call[0] == "git" and "push" in call]
+                self.assertEqual(any("roster/proposal" in call for call in pushes), proposal_push, calls)
+                self.assertTrue(any("eval-results" in call for call in pushes), calls)
+                self.assertTrue(any(
+                    call[:3] == ["git", "commit", "-m"]
+                    and call[3] == "eval: workflow-path-audit run + badge + roster [skip ci]"
+                    for call in calls), calls)
+                if reason:
+                    self.assertIn(reason, body)
+
+        run, calls, _body, results_run = self._run_proposal_step(
+            "differs", [[bot]], computed=corrupted, run_results=True,
+            results_push_error=True)
+        self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+        self.assertIsNotNone(results_run)
+        self.assertNotEqual(results_run.returncode, 0,
+                            results_run.stdout + results_run.stderr)
+        self.assertTrue(any(
+            call[:3] == ["git", "commit", "-m"]
+            and call[3] == "eval: workflow-path-audit run + badge + roster [skip ci]"
+            for call in calls), calls)
+
+    def test_proposal_shells_do_not_touch_their_source_fixture(self):
+        """Both real shells leave a caller's generated outputs byte-identical."""
+        marker = "<!-- skills-evals:roster-proposal -->"
+        bot = {"number": 17, "body": marker,
+               "user": {"login": "github-actions[bot]", "type": "Bot"}}
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "source"
+            for relative in (".github/workflows/eval.yml",
+                             "scripts/render_roster_yaml.py",
+                             "scripts/make_badge.py",
+                             "harness/roster.py",
+                             "harness/timeweeks.py",
+                             "evals/roster.yml"):
+                destination = source / relative
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(REPO_ROOT / relative, destination)
+            sentinels = {
+                source / "badges" / "workflow-path-audit.json": b"badge sentinel\n",
+                source / "roster" / "latest.json": b"roster sentinel\n",
+                source / "results" / "reviewer-preserve.txt": b"results sentinel\n",
+            }
+            for path, content in sentinels.items():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+            for results_push_error in (False, True):
+                with self.subTest(results_push_error=results_push_error):
+                    run, _calls, _body, results_run = self._run_proposal_step(
+                        "differs", [[bot]],
+                        computed=self._ordinary_computed_roster(multi_arm=True),
+                        run_results=True, results_push_error=results_push_error,
+                        source=source)
+                    self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
+                    self.assertIsNotNone(results_run)
+                    self.assertEqual(results_run.returncode != 0, results_push_error,
+                                     results_run.stdout + results_run.stderr)
+                    for path, content in sentinels.items():
+                        self.assertEqual(path.read_bytes(), content, path)
+
+    def test_every_proposed_seat_change_quotes_its_numerator_and_denominator(self):
+        # A percentage with no counts behind it is unfalsifiable from the
+        # outside: 100.0% of two turns and 100.0% of nine thousand are the
+        # same string and are not the same claim.
+        committed = self._committed()
+        arm = committed["arms"][0]["id"]
+        result = self._compute(
+            models=self._models("claude-haiku-4-5", arm, "claude-opus-7"),
+            census=self._census({arm: {self._week(): 100},
+                                 "claude-opus-7": {self._week(): 900}}),
+            previous=committed)
+        seats = [c for c in result["proposal"]["changes"] if c["kind"] == "seat"
+                 and c["field"] == "arms"]
+        self.assertTrue(seats, result["proposal"])
+        for change in seats:
+            with self.subTest(change=change["to"] or change["from"]):
+                self.assertRegex(
+                    change["reason"],
+                    r"\d+ of the window's \d+ rankable, attributable census "
+                    r"turns — ",
+                    "a proposed seat has to carry the numerator and the "
+                    "denominator its share was taken over")
+
+    def test_render_summary_prints_the_proposal_in_words(self):
+        committed = self._committed()
+        arm = committed["arms"][0]["id"]
+        result = self._compute(
+            models=self._models("claude-haiku-4-5", arm, "claude-opus-7"),
+            census=self._census({arm: {self._week(): 100},
+                                 "claude-opus-7": {self._week(): 900}}),
+            previous=committed)
+        text = roster.render_summary(result)
+        self.assertIn("### Proposal", text)
+        self.assertIn("evals/roster.yml", text)
+        self.assertIn("rankable, attributable census turns", text)
+        self.assertIn("Nothing changes until a human merges it", text)
+
+    def test_render_summary_says_so_when_there_is_nothing_to_propose(self):
+        models, census, previous = self._steady_state()
+        text = roster.render_summary(
+            self._compute(models=models, census=census, previous=previous))
+        self.assertIn("Nothing to propose", text)
+
+    def test_an_unreadable_committed_roster_is_fatal_not_a_state(self):
+        """`previous_state: "unavailable"` was the right posture while the
+        previous roster came off `eval-results` — an unreadable file on an
+        unprotected branch is an ordinary fact and carrying on is the only
+        option. It is not an ordinary fact about `main`: it means somebody
+        merged a broken file, and the proposal an empty `previous` would
+        produce is "seat every live model", which is the shape a reviewer
+        is most likely to wave through.
+        """
+        with self.assertRaises(roster.TrustedRosterUnreadable) as ctx:
+            self._compute(previous=None,
+                          previous_problem="roster.yml is present but "
+                                           "unreadable (YAMLError)")
+        self.assertIn("defect in this repository", str(ctx.exception))
+        self.assertNotIn("unavailable",
+                         self._compute(previous=None)["previous_state"])
+
+    def test_main_exits_nonzero_and_publishes_nothing_on_a_broken_committed_roster(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(
+                self._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8")), encoding="utf-8")
+            previous = Path(tmp) / "roster.yml"
+            previous.write_text("arms: [\n", encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(REPO_ROOT / "evals" / "roster-policy.yml"),
+                    "--previous", str(previous), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertEqual(rc, 5, stderr.getvalue())
+            self.assertFalse(out.exists(), "nothing is published")
+            self.assertIn("defect in this repository", stderr.getvalue())
+
+    def test_main_reads_the_committed_roster_as_yaml(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(
+                self._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8")), encoding="utf-8")
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(REPO_ROOT / "evals" / "roster-policy.yml"),
+                    "--previous", str(self.ROSTER), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertEqual(rc, 0, stderr.getvalue())
+            published = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual(published["previous_state"], "compared",
+                             "the committed YAML roster was read and compared")
+            self.assertIn("proposal", published)
+            self.assertIn("### Proposal", stdout.getvalue())
+
+    # --- the census size bound (the one bound left on an untrusted input) --
+
+    def test_a_census_naming_too_many_keys_is_refused_by_name(self):
+        counts = {f"claude-sonnet-5-{n:08d}": {self._week(): 1}
+                  for n in range(roster.CENSUS_MAX_KEYS + 1)}
+        with self.assertRaises(roster.RosterRefusal) as ctx:
+            self._compute(census=self._census(counts),
+                          previous=self._committed())
+        message = str(ctx.exception)
+        self.assertIn(str(roster.CENSUS_MAX_KEYS), message)
+        self.assertIn("model keys", message)
+        # Counts only, never a key: this message reaches a public log.
+        self.assertNotIn("claude-sonnet-5-0", message)
+
+    def test_a_census_just_under_the_key_bound_is_read(self):
+        # The negative control. Without it the row above passes for a
+        # refusal that fires on every census.
+        counts = {f"claude-sonnet-5-{n:08d}": {self._week(): 1}
+                  for n in range(10)}
+        result = self._compute(census=self._census(counts),
+                               previous=self._committed())
+        self.assertTrue(result["arms"])
+
+    def test_a_census_file_past_the_byte_bound_is_refused_before_it_is_parsed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            models = Path(tmp) / "models.json"
+            models.write_text(json.dumps(
+                self._models("claude-haiku-4-5", "claude-sonnet-5",
+                             "claude-opus-4-8")), encoding="utf-8")
+            census = Path(tmp) / "census.json"
+            # ONE key holding a huge string — the shape a key count
+            # structurally cannot bound, and the reason the byte check
+            # runs before the parser allocates anything.
+            census.write_bytes(b'{"counts": {"x": "'
+                               + b"a" * (roster.CENSUS_MAX_BYTES + 1)
+                               + b'"}}')
+            out = Path(tmp) / "roster" / "latest.json"
+            argv = ["roster.py", "--models", str(models), "--policy",
+                    str(REPO_ROOT / "evals" / "roster-policy.yml"),
+                    "--census", str(census),
+                    "--previous", str(self.ROSTER), "--out", str(out)]
+            stdout, stderr = io.StringIO(), io.StringIO()
+            with mock.patch.object(sys, "argv", argv), \
+                 contextlib.redirect_stdout(stdout), \
+                 contextlib.redirect_stderr(stderr):
+                rc = roster.main()
+            self.assertEqual(rc, 4, stderr.getvalue())
+            self.assertIn(str(roster.CENSUS_MAX_BYTES), stderr.getvalue())
+            self.assertFalse(out.exists())
+
+    # --- scripts/render_roster_yaml.py -----------------------------------
+
+    def test_render_roster_yaml_round_trips_through_the_lint(self):
+        """The renderer's output has to be a file the lint above accepts,
+        or a merged proposal breaks the very selection it was proposing
+        for."""
+        models, census, previous = self._steady_state()
+        computed = self._compute(models=models, census=census, previous=previous)
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "latest.json"
+            source.write_text(json.dumps(computed), encoding="utf-8")
+            out = Path(tmp) / "roster.yml"
+            rc = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts" / "render_roster_yaml.py"),
+                 "--roster", str(source), "--out", str(out),
+                 "--run-id", "1234567890",
+                 "--eval-results-commit", "abc1234"],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(rc.returncode, 0, rc.stderr)
+            rendered = yaml.safe_load(out.read_text(encoding="utf-8"))
+        self.assertEqual(self._lint(rendered), [])
+        self._assert_roster_provenance(rendered)
+        self.assertIn("evals/roster.yml", rendered["provenance"]["from"])
+        self.assertIn("Models API", rendered["provenance"]["from"])
+        self.assertIn("usage census", rendered["provenance"]["from"])
+        self.assertEqual(rendered["provenance"]["run_id"], "1234567890")
+        self.assertEqual(rendered["provenance"]["eval_results_commit"], "abc1234")
+        self.assertEqual([a["id"] for a in rendered["arms"]],
+                         [a["id"] for a in computed["arms"]])
+        self.assertEqual(rendered["judge"]["id"], computed["judge"]["id"])
+        self.assertEqual(rendered["preflight"]["id"], computed["preflight"]["id"])
+
+    def test_render_roster_yaml_reads_no_environment(self):
+        """N7, carried forward: eval.yml runs this in the same shell that
+        exports the Anthropic bearer, so the credential is in this
+        process's environment even though nothing here wants it. A module
+        that reads no environment cannot leak one — and the run id and the
+        eval-results commit are ARGUMENTS for that reason, not
+        `$GITHUB_RUN_ID` read from underneath.
+        """
+        source = (REPO_ROOT / "scripts" / "render_roster_yaml.py").read_text(
+            encoding="utf-8")
+        tree = ast.parse(source)
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Attribute) and node.attr in (
+                    "environ", "getenv"):
+                self.fail(f"render_roster_yaml.py reads the environment "
+                          f"(line {node.lineno})")
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    self.assertNotEqual(alias.name, "os")
+            if isinstance(node, ast.ImportFrom):
+                self.assertNotEqual(node.module, "os")
+
+    def test_render_roster_yaml_refuses_a_roster_with_no_arms(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            source = Path(tmp) / "latest.json"
+            source.write_text(json.dumps({"arms": []}), encoding="utf-8")
+            out = Path(tmp) / "roster.yml"
+            rc = subprocess.run(
+                [sys.executable, str(REPO_ROOT / "scripts" / "render_roster_yaml.py"),
+                 "--roster", str(source), "--out", str(out),
+                 "--run-id", "1", "--eval-results-commit", "a"],
+                capture_output=True, text=True, timeout=60)
+            self.assertEqual(rc.returncode, 1)
+            self.assertFalse(out.exists())
+
+    # --- item 5: the five #147 defects, as regression rows ---------------
+    #
+    # EACH ROW IS THE SAME CLAIM ABOUT A DIFFERENT DEFECT, and the claim is
+    # not "the harness now detects this input". It is that the input cannot
+    # reach a decision at all:
+    #
+    #   (a) THE RUNNING SET. The hostile document is written where
+    #       `eval-results` puts it — `<repo>/roster/latest.json`, the path
+    #       `_resolve_roster` defaulted to on `424eebf` and the one
+    #       `eval.yml` pointed `$EVAL_ROSTER` at. `select_models`, resolved
+    #       the way a real run resolves it (no `--model`, no `--roster`, no
+    #       `$EVAL_ROSTER`), must still return the COMMITTED roster's arm
+    #       and judge. RED on `424eebf`, where it returns the plant's.
+    #
+    #   (b) THE PROPOSAL IS ALL THE PLANT CAN MOVE. Fed as `previous` — the
+    #       position `eval.yml` used to pass it in — the hostile document
+    #       still produces the defect, and that output is now a PROPOSAL a
+    #       human merges. The same computation against the trusted roster
+    #       does not produce it. Both halves are asserted per row, because
+    #       "the attack no longer works" and "the attack no longer reaches
+    #       a decision" are different claims and only the second is true.
+    #
+    # THE PLANT GOES IN A THROWAWAY CHECKOUT, NOT THE OPERATOR'S (#161).
+    # `roster/` is gitignored (it is published on `eval-results` and
+    # untracked on `main`), which used to be read as licence to write the
+    # plant at the real `<repo>/roster/latest.json` and `shutil.rmtree`
+    # `<repo>/roster` in `addCleanup` — so a run of this suite in a
+    # checkout that had the published roster beside it deleted that
+    # directory and whatever else was in it. Measured on 2026-09-21: an
+    # otherwise byte-identical tree with one path removed. Each row gets
+    # its own temporary checkout instead, and the RESOLVER'S OWN ANCHOR is
+    # pointed at it for the row, so the plant still lands where `424eebf`
+    # looked — `<root>/roster/latest.json`, relative to the root the
+    # resolver reads — and nothing outside a temporary directory is
+    # written or removed.
+
+    def _plant_published_roster(self, document) -> Path:
+        """Write `document` where the published roster lands IN A THROWAWAY
+        checkout, and return the path it landed at.
+
+        `run_eval.TRUSTED_ROSTER` is `<root>/evals/roster.yml`, and
+        `_resolve_roster` reads it at call time, so rebinding it for the
+        duration of the row moves the resolver's whole notion of the
+        checkout — including the sibling `<root>/roster/latest.json` the
+        old default named — without touching the operator's. The copy is
+        the committed file byte for byte, so selection still answers from
+        the document a real run answers from.
+        """
+        self.assertEqual(
+            run_eval.TRUSTED_ROSTER.parent.parent, REPO_ROOT,
+            "the resolver's anchor is this checkout's root, which is what "
+            "makes moving the anchor move the old default with it")
+        root = Path(tempfile.mkdtemp(prefix="issue147-checkout-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        trusted = root / "evals" / "roster.yml"
+        trusted.parent.mkdir(parents=True)
+        shutil.copyfile(self.ROSTER, trusted)
+        self.assertEqual(trusted.read_bytes(), self.ROSTER.read_bytes())
+        anchored = mock.patch.object(run_eval, "TRUSTED_ROSTER", trusted)
+        anchored.start()
+        self.addCleanup(anchored.stop)
+        published = root / "roster" / "latest.json"
+        published.parent.mkdir(parents=True)
+        published.write_text(json.dumps(document), encoding="utf-8")
+        return published
+
+    def _running_set(self):
+        """(agent, judge) as a real run resolves them — no flag, no
+        environment."""
+        args = argparse.Namespace(model=None, roster=None, no_judge=False)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            agent, judge_model, error = run_eval.select_models({}, args)
+        self.assertIsNone(error)
+        return agent, judge_model
+
+    def _assert_running_set_is_committed(self, published):
+        """`published` is the roster this run WOULD have published from the
+        hostile input — which is exactly what `eval.yml` wrote to
+        `eval-results` and what the next run read back on `424eebf`. It is
+        planted where the published roster lands, and the running set must
+        be the committed one regardless."""
+        committed = self._committed()
+        planted = self._plant_published_roster(published)
+        agent, judge_model = self._running_set()
+        self.assertEqual(agent, committed["arms"][0]["id"])
+        self.assertEqual(judge_model, committed["judge"]["id"])
+        # And the plant really was where the old default looked, or the
+        # row proves nothing.
+        self.assertTrue(planted.is_file())
+        self.assertEqual(
+            planted,
+            run_eval.TRUSTED_ROSTER.parent.parent / "roster" / "latest.json",
+            "the plant must sit at the path `424eebf` defaulted to, "
+            "relative to the root the resolver itself reads")
+        self.assertNotEqual(
+            run_eval._resolve_roster(None), planted,
+            "selection must not resolve to the published roster")
+
+    #: A live catalogue with a NEWER model beside the victim, so there is
+    #: no newest-per-tier fallback to rescue a share the denominator got
+    #: wrong. Same shape TestIssue67Review12/13 use, restated here so this
+    #: class does not inherit a fixture built for another question.
+    _VICTIM = "claude-haiku-4-5"
+    _NEWER = "claude-haiku-9"
+    _BRIDGE = "claude-haiku-4-5-20250101"
+    _BRIDGED_KEY = "claude-haiku-4-5-20250101-20260101"
+    _DEPARTED = "claude-haiku-3"
+    _DEPARTED_DATED = "claude-haiku-3-20250101"
+    _GHOST = "claude-opus-4-1-proxy-eu"
+
+    @classmethod
+    def _victim_catalogue(cls):
+        return {"fetched_at": "2026-09-13T11:00:00Z", "models": [
+            cls._model(cls._VICTIM, "2026-06-01T00:00:00Z"),
+            cls._model(cls._NEWER, "2026-07-01T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z")]}
+
+    @classmethod
+    def _days_ago(cls, days):
+        return (cls.NOW - timedelta(days=days)).date().isoformat()
+
+    def _run(self, previous, census, models=None):
+        return self._compute(models=models or self._victim_catalogue(),
+                             census=census, previous=previous)
+
+    @staticmethod
+    def _arm_ids(result):
+        return [a["id"] for a in result["arms"]]
+
+    @staticmethod
+    def _reason(result, model_id):
+        for entry in result["arms"] + result["retired_since_last"]:
+            if entry["id"] == model_id:
+                return entry["reason"]
+        return ""
+
+    # --- row 1: round-13 BLOCKER B — one deletion from catalogue_seen ----
+
+    def test_row1_a_catalogue_seen_deletion_cannot_reach_the_running_set(self):
+        """#147 defect 1. On `eval-results`, delete the ONE
+        `catalogue_seen` entry that bridges a live arm's own census key
+        onto it. Its 3,000 turns leave the attributable denominator, the
+        arm measures 0.0%, and it is published `RETIRED ... (0.0%)` — rc
+        0, empty stderr, and permanent, because the next run reads that
+        roster back.
+        """
+        census = self._census({self._BRIDGED_KEY: {self._week(): 3_000},
+                               "claude-sonnet-5": {self._week(): 2_000}})
+        bridged = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                   "catalogue_seen": [{"id": self._BRIDGE,
+                                       "last_seen": self._days_ago(3)}]}
+        deleted = {"arms": bridged["arms"], "catalogue_seen": []}
+
+        intact = self._run(bridged, census)
+        self.assertIn(self._VICTIM, self._arm_ids(intact))
+        self.assertIn("60.0%", self._reason(intact, self._VICTIM),
+                      "the control must measure the victim at its true "
+                      "60.0%, or this row is about nothing")
+        # (b) the deletion still produces the defect — as a PROPOSAL.
+        broken = self._run(deleted, census)
+        # (a) THE HEADLINE CLAIM, and the assertion that is RED on
+        # `424eebf`: this defective roster is what the run published and
+        # what the next run read back, and it does not decide a thing.
+        self._assert_running_set_is_committed(broken)
+        self.assertNotIn(self._VICTIM, self._arm_ids(broken))
+        self.assertEqual(broken["proposal"]["status"], "differs")
+
+    # --- row 2: round-14 BLOCKER 1 — a planted `arms` line ---------------
+
+    def test_row2_a_planted_arms_line_cannot_reach_the_running_set(self):
+        """#147 defect 2. One `arms` entry naming a ranked census key
+        nothing can credit widens the attributable denominator, which puts
+        a live arm carrying 100% of what the catalogue can account for
+        under the exit bar. The revert of `0db198a` returns this to a
+        survival; what closes it is that the line cannot get into
+        `evals/roster.yml` without a reviewed commit.
+        """
+        census = self._census({self._VICTIM: {self._week(): 625},
+                               self._GHOST: {self._week(): 50_000}})
+        honest = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}]}
+        planted = {"arms": honest["arms"] + [{"id": self._GHOST,
+                                              "reason": "was an arm"}]}
+
+        control = self._run(honest, census)
+        self.assertIn(self._VICTIM, self._arm_ids(control))
+        # (b) the plant is expressible as a proposal and no further.
+        with_plant = self._run(planted, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(with_plant)
+        self.assertEqual(with_plant["proposal"]["status"], "differs")
+
+    # --- row 3: round-14 BLOCKER 2 — a needed hop aged out ---------------
+
+    def test_row3_an_aged_out_hop_cannot_reach_the_running_set(self):
+        """#147 defect 3, and the one that needs NO hostile input at all:
+        a bridge's `last_seen` is only ever refreshed for a LIVE id, so an
+        honest bridge crosses `catalogue_seen_max_age_days` on its own and
+        the next busy window retires the arm it was bridging. The trusted
+        record does not make the ageing cleverer — the entry ages out here
+        too. What it changes is that the roster the ageing produced is a
+        proposal, so the retirement is a line in a diff a person reads
+        rather than a fact about the next run.
+        """
+        census = self._census({self._BRIDGED_KEY: {self._week(): 3_000},
+                               "claude-sonnet-5": {self._week(): 2_000}})
+        fresh = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                 "catalogue_seen": [{"id": self._BRIDGE,
+                                     "last_seen": self._days_ago(3)}]}
+        quiet = {"arms": fresh["arms"],
+                 "catalogue_seen": [{"id": self._BRIDGE,
+                                     "last_seen": self._days_ago(400)}]}
+
+        control = self._run(fresh, census)
+        self.assertIn(self._VICTIM, self._arm_ids(control))
+        aged = self._run(quiet, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(aged)
+        self.assertEqual(aged["proposal"]["status"], "differs")
+
+    # --- row 4: round-14 BLOCKER 3 — the fold SOURCE, under a dated id ---
+
+    def test_row4_a_dated_fold_source_cannot_reach_the_running_set(self):
+        """#147 defect 4 (= round 13's BLOCKER C). A model this harness
+        observed under a DATED id, whose census usage the census records
+        under the UNDATED alias. Neither of round 13's two ageing
+        exemptions reached it: the raw-identity one because neither
+        document names the entry, and the fold-relation one because it
+        walked FORWARD from census keys and this entry is the fold SOURCE
+        rather than a hop. One `last_seen` date and 9,500 real turns leave
+        the denominator, so a hold-over at a true 5.0% becomes a seat at
+        `carries 100.0%`.
+        """
+        census = self._census({self._VICTIM: {self._week(): 500},
+                               self._DEPARTED: {self._week(): 9_500}})
+        observed = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                    "catalogue_seen": [{"id": self._DEPARTED_DATED,
+                                        "last_seen": self._days_ago(3)}]}
+        expired = {"arms": observed["arms"],
+                   "catalogue_seen": [{"id": self._DEPARTED_DATED,
+                                       "last_seen": self._days_ago(400)}]}
+
+        control = self._run(observed, census)
+        self.assertIn("5.0%", self._reason(control, self._VICTIM),
+                      "the control must measure the victim at its true "
+                      "5.0%, or this row is about nothing")
+        gone = self._run(expired, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(gone)
+        self.assertIn("carries 100.0%", self._reason(gone, self._VICTIM),
+                      "the inflation this row is about")
+        self.assertEqual(gone["proposal"]["status"], "differs")
+
+    # --- row 5: the declared open cell ----------------------------------
+
+    def test_row5_the_open_cell_cannot_reach_the_running_set(self):
+        """#147 defect 5 — the cell
+        `TestIssue67Review12::test_the_one_cell_this_cannot_cover`
+        declared open and could not close: remove a since-retired model
+        from `arms` AND from `catalogue_seen` at once, and its census
+        turns leave the denominator, so the victim's true 5.0% publishes
+        as `carries 100.0%`. That test's own reasoning named the fix:
+        "closing it needs a trusted history the harness does not have."
+        This is that history, and the closure is not a rule that detects
+        the removal — no rule can, because the removal and an honest
+        absence are the same bytes — it is that the removal has to be
+        MERGED.
+        """
+        census = self._census({self._VICTIM: {self._week(): 500},
+                               self._DEPARTED: {self._week(): 9_500}})
+        before = {"arms": [{"id": self._VICTIM, "reason": "was an arm"},
+                           {"id": self._DEPARTED, "reason": "was an arm"}],
+                  "catalogue_seen": [{"id": self._DEPARTED,
+                                      "last_seen": self._days_ago(1)}]}
+        after = {"arms": [{"id": self._VICTIM, "reason": "was an arm"}],
+                 "catalogue_seen": []}
+
+        control = self._run(before, census)
+        self.assertIn("5.0%", self._reason(control, self._VICTIM))
+        removed = self._run(after, census)
+        # (a) THE HEADLINE CLAIM — RED on `424eebf`.
+        self._assert_running_set_is_committed(removed)
+        self.assertIn("carries 100.0%", self._reason(removed, self._VICTIM))
+        self.assertEqual(removed["proposal"]["status"], "differs")
+
+    # --- the invariant the five rows above are held to (#161) ------------
+
+    def test_the_plant_helper_writes_nothing_into_the_operators_checkout(self):
+        """[#161](https://github.com/Adam-S-Daniel/skills-evals/issues/161).
+        The five rows share ONE helper, and it used to plant the hostile
+        roster at the real `<repo>/roster/latest.json` and remove
+        `<repo>/roster` in `addCleanup`, so running this suite in a
+        checkout that had the published roster beside it deleted that
+        directory — the operator's file, not the suite's. Measured on
+        2026-09-21 in the isolated verification archive: an otherwise
+        byte-identical tree with `roster/latest.json` removed.
+
+        The fixture is a DISPOSABLE CHECKOUT holding a seeded
+        `roster/latest.json` and a sibling file, with the anchor the old
+        helper read pointed straight at it. Every byte of it must survive
+        the helper and its cleanups: the suite writes and removes inside
+        its own temporary directories and nowhere else.
+        """
+        checkout = Path(tempfile.mkdtemp(prefix="issue161-checkout-"))
+        self.addCleanup(shutil.rmtree, checkout, ignore_errors=True)
+        (checkout / "evals").mkdir()
+        shutil.copyfile(self.ROSTER, checkout / "evals" / "roster.yml")
+        (checkout / "roster").mkdir()
+        seeded = {
+            checkout / "roster" / "latest.json":
+                b'{"arms": [{"id": "seeded-by-the-operator"}]}\n',
+            checkout / "roster" / "other.txt":
+                b"a sibling file this suite does not own\n",
+        }
+        for path, payload in seeded.items():
+            path.write_bytes(payload)
+
+        def snapshot():
+            return {path.relative_to(checkout).as_posix(): path.read_bytes()
+                    for path in sorted(checkout.rglob("*")) if path.is_file()}
+
+        before = snapshot()
+        row = TestIssue147("test_row5_the_open_cell_cannot_reach_the_running_set")
+        # `create=True`: the constant the old helper read is gone, and the
+        # claim is precisely that pointing it at a checkout cannot make the
+        # helper write there.
+        with mock.patch.object(TestIssue147, "_PUBLISHED",
+                               checkout / "roster" / "latest.json",
+                               create=True):
+            row._plant_published_roster(
+                {"arms": [{"id": self._GHOST, "reason": "planted"}]})
+            row.doCleanups()
+
+        for path, payload in seeded.items():
+            self.assertTrue(path.is_file(),
+                            f"roster/{path.name} was REMOVED from a checkout "
+                            "this suite does not own")
+            self.assertEqual(path.read_bytes(), payload,
+                             f"roster/{path.name} was rewritten in a checkout "
+                             "this suite does not own")
+        self.assertEqual(snapshot(), before,
+                         "the helper changed a checkout it does not own")
+
+    def test_no_row_above_can_be_applied_without_a_human(self):
+        """The claim every row leans on, asserted once at the workflow:
+        nothing in `eval.yml` writes `evals/roster.yml`. It renders a
+        PROPOSED copy into `$RUNNER_TEMP`, commits it on a bot-owned
+        branch, and files an issue; a person opens the pull request.
+        """
+        raw = (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
+            encoding="utf-8")
+        doc = yaml.safe_load(raw)
+        for step in doc["jobs"]["eval"]["steps"]:
+            script = step.get("run") or ""
+            code = "\n".join(line for line in script.splitlines()
+                             if not line.lstrip().startswith("#"))
+            with self.subTest(step=step.get("name")):
+                for verb in ("> evals/roster.yml", ">> evals/roster.yml",
+                             "cp \"$RUNNER_TEMP/proposed-roster.yml\" evals/roster.yml"):
+                    self.assertNotIn(verb, code,
+                                     "no step may write the committed roster")
+        self.assertIn("roster/proposal", raw)
+        self.assertIn("<!-- skills-evals:roster-proposal -->", raw)
 # ---------------------------------------------------------------------------
 # Per-issue test discovery (#97)
 #
@@ -21137,9 +29919,9 @@ def select_tests(opts: argparse.Namespace
 # So the recogniser below is written against the SURFACE, not the line: every
 # subprocess API that can start a process, every way of naming the runner
 # (a literal, a module- or class-level constant bound to one, a path
-# expression), and the transitive closure over same-module helpers — because
-# the guard belongs on whatever unittest can run, and the spawn may be two
-# calls down.
+# expression), and Python argv handoffs through same-module/class helpers.
+# The finite handoff analysis propagates only known-Python argv, never executes
+# a callee, and does not claim arbitrary call-graph or other-script safety.
 # ----------------------------------------------------------------------
 
 # The one file the runner IS, in the spelling that appears in a spawn, and
@@ -21149,20 +29931,545 @@ def select_tests(opts: argparse.Namespace
 SUITE_RUNNER_NAME = "run_tests.py"
 SUITE_RUNNER_MODULE = SUITE_RUNNER_NAME[:-len(".py")]
 
-# The trees a discovered test can import from. `test/` is `sys.path[0]` for
-# every `python3 test/run_tests.py` run — it is the directory the runner
-# itself lives in — and `harness/` is on `sys.path` from the moment
-# run_tests.py inserts it. Round 4 measured a forking helper in each, plus one
-# in a PACKAGE inside the discovery dir, all three invisible to a pin whose
-# file set was two globs. So the scan is the directory TREES, walked, not a
-# pattern anyone has to keep up to date.
-SUITE_SCAN_DIRS = ("test", "harness")
+# Scan roots are derived below from the runner's actual `sys.path.insert`
+# calls, plus the runner's own directory.  Keeping a second list here made a
+# newly importable helper invisible until somebody remembered to update it.
 # Everything that starts a process. `subprocess.run` is the spelling the
 # committed tree uses; the other seven are the ones round 3 measured walking
 # straight past the old pin.
 SPAWN_ATTRS = ("run", "Popen", "call", "check_call", "check_output")
 OS_SPAWN_PREFIXES = ("spawn", "exec")
-OS_SPAWN_NAMES = ("system", "posix_spawn", "posix_spawnp")
+OS_SPAWN_NAMES = ("system", "popen", "posix_spawn", "posix_spawnp")
+# Every way a dict can be written through, so that a statement which
+# clears $SKILLS_EVALS_SUITE_CHILD before it is read is never inert.
+ENVIRON_MUTATORS = ("pop", "popitem", "update", "clear", "setdefault",
+                    "__setitem__", "__delitem__")
+# `os.putenv` and `os.unsetenv` leave `os.environ` untouched, so a rule that
+# only watches the MAPPING never sees them — but they do change what a child
+# process inherits, which is the thing the marker exists to carry. Counted as
+# environment writes, conservatively.
+OS_ENVIRONMENT_CALLS = ("putenv", "unsetenv")
+# Everything unittest runs around a test without the test spelling a call:
+# a marker cleared in any of them is never there for any sink in the class.
+FIXTURE_METHODS = ("setUp", "setUpClass", "tearDown", "tearDownClass",
+                   "asyncSetUp", "asyncTearDown")
+MODULE_FIXTURES = ("setUpModule", "tearDownModule")
+
+
+class SuiteScanError(RuntimeError):
+    """The runner uses a path expression this bounded parser cannot prove."""
+
+
+_UNKNOWN = object()
+_PYTHON = object()
+_SYS = object()
+_OS = object()
+# `os.environ` ITSELF. `_e = os.environ` is not a copy, so `_e.pop(MARKER,
+# None)` clears exactly the mapping the guard reads — the route round 3
+# measured walking past the round-2 rule on the real `_spawn_suite` body.
+_ENVIRON = object()
+# A FRESH mapping: `dict(...)`, `{...}` and `<mapping>.copy()` always build a
+# new dict, so a write through one can never clear the marker the guard
+# reads. Naming it is what keeps the fail-closed rule in
+# `_mutates_environment` off the sanctioned `env = dict(os.environ);
+# env[MARKER] = "1"` shape that every reviewed sink in this repository uses.
+_COPY = object()
+# A BOUND MARKER-CLEARING METHOD of the mapping: `f = os.environ.pop` parked
+# on a name, then `f(MARKER, None)`. That call's `func` is a bare NAME, so no
+# attribute rule below looks at it, and the mapping appears in no argument
+# either — the bound method carries it. Round 5 measured three spellings of it
+# keeping a sink's proof. Resolving the member is what gives the rules
+# something to fail closed ON: this sentinel is treated as strictly worse than
+# a binding the parser merely lost, everywhere `_UNKNOWN` is (`_lost_binding`).
+_ENVIRON_METHOD = object()
+# `pathlib.Path`, the `shutil` module, the `importlib` module, and the import
+# FUNCTION (`__import__` / `importlib.import_module`). Round 4 measured the
+# pure-call admission matching `str`/`Path`/`shutil` by SPELLING, so a module
+# that rebound one of those names to something this parser cannot read had an
+# arbitrary call admitted into the pre-stand-down region.
+_PATH = object()
+_SHUTIL = object()
+_IMPORTLIB = object()
+_IMPORTER = object()
+_SENTINELS = (_UNKNOWN, _PYTHON, _SYS, _OS, _ENVIRON, _COPY, _PATH, _SHUTIL,
+              _IMPORTLIB, _IMPORTER, _ENVIRON_METHOD)
+
+# THE binding table. Every spelling that names one of these modules, or one
+# of their members, resolves HERE — in `_bind_statement` and `_static_value`
+# — and every downstream rule (`_os_environ`, `_mutates_environment`,
+# `_resolve_environment_writers`, `_python_executable`,
+# `_pre_sink_environment_errors`) asks those two rather than re-deriving a
+# spelling of its own. Round 3 taught `import os as o` to `Import` alone and
+# left `ImportFrom`, so all seven indirect routes it closed re-opened under
+# `from os import environ`. One table is the fix for the CLASS of gap.
+_MODULE_SENTINELS = {"os": _OS, "sys": _SYS, "shutil": _SHUTIL,
+                     "importlib": _IMPORTLIB}
+_MEMBER_SENTINELS = {(_OS, "environ"): _ENVIRON,
+                     (_SYS, "executable"): _PYTHON,
+                     (_IMPORTLIB, "import_module"): _IMPORTER}
+_FROM_IMPORT_SENTINELS = {("os", "environ"): _ENVIRON,
+                          ("sys", "executable"): _PYTHON,
+                          ("importlib", "import_module"): _IMPORTER,
+                          ("pathlib", "Path"): _PATH}
+# Every member of the mapping that can leave the marker unset, resolved
+# through the SAME table rather than left unknown, so a name bound to one is
+# a binding this parser read rather than one it lost.
+_MEMBER_SENTINELS.update({(_ENVIRON, attr): _ENVIRON_METHOD
+                          for attr in ENVIRON_MUTATORS})
+# The builtins this value parser models exactly. A name IS the builtin only
+# while nothing in scope has rebound it, which is what `name not in bindings`
+# means here: `_bind_statement` records every write it can read, and records
+# every write it cannot read as `_UNKNOWN`.
+_MODELLED_BUILTINS = ("str", "dict", "getattr", "vars", "type", "__import__")
+
+
+def _imported_module(dotted):
+    """The sentinel for a module named by a dotted string, or `_UNKNOWN`."""
+    return _MODULE_SENTINELS.get(dotted, _UNKNOWN)
+
+
+def _imported_member(module, name, level=0):
+    """The sentinel `from <module> import <name>` binds. A relative import
+    names a package of this repository, never the stdlib module it spells."""
+    if level:
+        return _UNKNOWN
+    return _FROM_IMPORT_SENTINELS.get((module, name), _UNKNOWN)
+
+
+def _member_of(value, attr):
+    """`<already resolved owner>.<attr>`, for EVERY spelling of the owner."""
+    try:
+        return _MEMBER_SENTINELS.get((value, attr), _UNKNOWN)
+    except TypeError:          # an unhashable resolved value owns no member
+        return _UNKNOWN
+
+
+def _unshadowed(name, bindings) -> bool:
+    """This name still denotes the builtin it spells."""
+    return name in _MODELLED_BUILTINS and name not in bindings
+
+
+def _lost_binding(value) -> bool:
+    """A resolved value this parser cannot vouch for as anything but the
+    mapping the guard reads.
+
+    `_UNKNOWN` is a binding it lost. `_ENVIRON_METHOD` is one it READ, and
+    that is strictly worse: a bound marker-clearing method of the mapping
+    itself. Every rule that fails closed on the first fails closed on the
+    second, so resolving the member can never cost a shape its flag.
+    """
+    return value is _UNKNOWN or value is _ENVIRON_METHOD
+# Values parked on an attribute rather than on a bare name: `self.PY =
+# sys.executable` written anywhere in a class, and `C.PY = sys.executable`
+# read from outside the class body that binds it.
+ATTRIBUTE_BINDING = "@self."
+CLASS_BINDING = "@class."
+
+
+def _static_value(node, bindings):
+    """Resolve the deliberately small expression language used for argv/path.
+
+    It accepts constants, locally bound names, path joins, string/list
+    concatenation, `str`/`Path`, and f-strings whose parts are all known.
+    Everything else is unknown.  In particular, this never imports a module
+    to inspect an imported value: uncertainty is a potential Python spawn.
+    """
+    if isinstance(node, ast.Constant):
+        if isinstance(node.value, bytes):
+            # `[b"python3", b"/abs/run_tests.py"]` is the same argv as its
+            # text spelling; leaving it unknown exonerated the whole call.
+            return node.value.decode("utf-8", "surrogateescape")
+        if isinstance(node.value, (str, int)):
+            return str(node.value)
+    if isinstance(node, ast.Name):
+        return bindings.get(node.id, _UNKNOWN)
+    if isinstance(node, (ast.List, ast.Tuple)):
+        values = []
+        for item in node.elts:
+            if isinstance(item, ast.Starred):
+                # `[*base, target]` with a known `base` keeps the interpreter
+                # in argv[0]. An unknown unpack stays ONE unknown element, so
+                # no position that used to fail closed stops doing so.
+                spliced = _static_value(item.value, bindings)
+                values.extend(spliced if isinstance(spliced, tuple) else [_UNKNOWN])
+                continue
+            values.append(_static_value(item, bindings))
+        # Preserve a known interpreter before an unknown target.  Collapsing
+        # the whole argv to unknown would accidentally classify it as an
+        # unknown *external* command instead of fail-closing Python.
+        return tuple(values)
+    if isinstance(node, ast.JoinedStr):
+        parts = []
+        for value in node.values:
+            if isinstance(value, ast.Constant) and isinstance(value.value, str):
+                parts.append(value.value)
+            elif isinstance(value, ast.FormattedValue):
+                if value.format_spec is not None or value.conversion != -1:
+                    return _UNKNOWN
+                resolved = _static_value(value.value, bindings)
+                if (_lost_binding(resolved) or resolved is _PYTHON
+                        or resolved is _ENVIRON):
+                    return _UNKNOWN
+                parts.append(str(resolved))
+            else:
+                return _UNKNOWN
+        return "".join(parts)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Div)):
+        left, right = _static_value(node.left, bindings), _static_value(node.right, bindings)
+        if left in _SENTINELS or right in _SENTINELS:
+            return _UNKNOWN
+        if isinstance(node.op, ast.Add) and isinstance(left, tuple) and isinstance(right, tuple):
+            return left + right
+        return str(left) + ("/" if isinstance(node.op, ast.Div) else "") + str(right)
+    if isinstance(node, ast.Attribute):
+        owner = node.value
+        # `type(self).X` and `type(cls).X` name exactly the attribute that
+        # `self.X` names, so an interpreter or a mapping parked on the class
+        # is the same one however the owner is spelled.
+        if (isinstance(owner, ast.Call) and isinstance(owner.func, ast.Name)
+                and owner.func.id == "type" and _unshadowed("type", bindings)
+                and len(owner.args) == 1 and not owner.keywords
+                and isinstance(owner.args[0], ast.Name)
+                and owner.args[0].id in ("self", "cls")):
+            return bindings.get(ATTRIBUTE_BINDING + node.attr, _UNKNOWN)
+        value = _static_value(node.value, bindings)
+        # `os.environ`, `o.environ`, `b.environ` after `a = os; b = a`,
+        # `__import__("os").environ` and `sys.executable` through every
+        # alias: ONE table, asked once, for every owner spelling at once.
+        member = _member_of(value, node.attr)
+        if member is not _UNKNOWN:
+            return member
+        if isinstance(node.value, ast.Name):
+            # An interpreter — or the mapping — parked on an attribute:
+            # `class C: PY = sys.executable` read as `C.PY`, and a
+            # `self.env = os.environ` written in any method of the class.
+            key = ((ATTRIBUTE_BINDING + node.attr)
+                   if node.value.id in ("self", "cls")
+                   else (CLASS_BINDING + node.value.id + "." + node.attr))
+            if key in bindings:
+                return bindings[key]
+        if node.attr == "parent" and value not in _SENTINELS:
+            return str(value) + "/.."
+        return _UNKNOWN
+    if isinstance(node, ast.Subscript):
+        # `vars(os)["environ"]` names the mapping as surely as `os.environ`.
+        if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, str):
+            return _member_of(_static_value(node.value, bindings), node.slice.value)
+        return _UNKNOWN
+    if isinstance(node, ast.ListComp) and len(node.generators) == 1:
+        gen = node.generators[0]
+        if (isinstance(gen.target, ast.Name) and not gen.ifs and not gen.is_async
+                and isinstance(node.elt, ast.Call) and isinstance(node.elt.func, ast.Name)
+                and node.elt.func.id == "str" and _unshadowed("str", bindings)
+                and len(node.elt.args) == 1
+                and isinstance(node.elt.args[0], ast.Name)
+                and node.elt.args[0].id == gen.target.id):
+            return _static_value(gen.iter, bindings)
+    if isinstance(node, ast.Call):
+        func = node.func
+        if isinstance(func, ast.Name) and len(node.args) == 1:
+            # `str` is the builtin, and `Path` is `pathlib.Path`, only while
+            # this module has not rebound the name to something unparsed.
+            if func.id == "str" and _unshadowed("str", bindings):
+                return _static_value(node.args[0], bindings)
+            if func.id == "Path" and bindings.get("Path") is _PATH:
+                return _static_value(node.args[0], bindings)
+            # `vars(os)` IS the `os` namespace.
+            if func.id == "vars" and _unshadowed("vars", bindings):
+                return _static_value(node.args[0], bindings)
+        # `__import__("os")` and `importlib.import_module("os")` bind the
+        # module exactly as `import os` does. A non-constant argument names a
+        # module this parser cannot know, and stays unknown.
+        if ((isinstance(func, ast.Name) and func.id == "__import__"
+             and _unshadowed("__import__", bindings))
+                or _static_value(func, bindings) is _IMPORTER):
+            if (len(node.args) == 1 and isinstance(node.args[0], ast.Constant)
+                    and isinstance(node.args[0].value, str)):
+                return _imported_module(node.args[0].value)
+            return _UNKNOWN
+        # `getattr(os, "environ")` with a constant name IS that attribute.
+        if (isinstance(func, ast.Name) and func.id == "getattr"
+                and _unshadowed("getattr", bindings) and len(node.args) == 2):
+            if isinstance(node.args[1], ast.Constant) and isinstance(node.args[1].value, str):
+                return _member_of(_static_value(node.args[0], bindings),
+                                  node.args[1].value)
+            return _UNKNOWN
+        # `dict(...)` and `<mapping>.copy()` always build a NEW mapping, so a
+        # name bound to one is never the mapping the guard reads.
+        if isinstance(func, ast.Name) and func.id == "dict" and _unshadowed("dict", bindings):
+            return _COPY
+        if isinstance(func, ast.Attribute) and not node.args:
+            if func.attr == "copy" and _static_value(func.value, bindings) in (_ENVIRON, _COPY):
+                return _COPY
+            if func.attr == "resolve":
+                return _static_value(func.value, bindings)
+        if (isinstance(func, ast.Attribute) and func.attr == "which"
+                and isinstance(func.value, ast.Name)
+                and bindings.get(func.value.id) is _SHUTIL and len(node.args) == 1):
+            # A statically named interpreter IS knowable. Leaving
+            # `shutil.which("python3")` unknown demoted argv[0] to an unknown
+            # EXTERNAL command, which exonerates the whole call.
+            found = _static_value(node.args[0], bindings)
+            return found if isinstance(found, str) else _UNKNOWN
+    if isinstance(node, ast.Dict):
+        return _COPY
+    return _UNKNOWN
+
+
+def _enclosing_evaluated(node):
+    """The parts of a definition that run where the definition APPEARS.
+
+    A decorator, a default, a base class and a return annotation are
+    evaluated in the enclosing scope, not in the body they belong to. A
+    spawn written in one was walked by neither scope and so could never be
+    flagged.
+    """
+    yield from getattr(node, "decorator_list", [])
+    yield from getattr(node, "bases", [])
+    for keyword in getattr(node, "keywords", []):
+        yield keyword.value
+    args = getattr(node, "args", None)
+    if args is not None:
+        yield from [d for d in args.defaults if d is not None]
+        yield from [d for d in args.kw_defaults if d is not None]
+    if getattr(node, "returns", None) is not None:
+        yield node.returns
+
+
+def _parameter_names(node):
+    """Every formal parameter name (defaults excluded: those are expressions
+    evaluated outside). A parameter shadows a same-named outer binding for
+    this scope AND for every scope nested inside it."""
+    args = getattr(node, "args", None)
+    if args is None:
+        return ()
+    return tuple(arg.arg for arg in
+                 [*args.posonlyargs, *args.args, *args.kwonlyargs,
+                  args.vararg, args.kwarg] if arg is not None)
+
+
+MODULE_SCOPE = "<module>"
+CLASS_SCOPE = "<class body>"
+
+
+def _synthetic_scope(name, body, at, args=None):
+    """A scope the language executes and no `def` names.
+
+    Module level, a class body and a `lambda` each run statements the
+    collector attributed to no function, so a fork written in one was
+    inventoried by nothing at all. Each becomes a scope whose identity is
+    BRACKETED and therefore unspellable by a `def`: it can never match a
+    sanctioned inventory entry, so the live assertion is red for it.
+    """
+    node = ast.FunctionDef(
+        name=name,
+        args=args if args is not None else ast.arguments(
+            posonlyargs=[], args=[], vararg=None, kwonlyargs=[],
+            kw_defaults=[], kwarg=None, defaults=[]),
+        body=list(body) or [ast.Pass()],
+        decorator_list=[], returns=None, type_comment=None)
+    node.type_params = []
+    node.lineno = getattr(at, "lineno", 1)
+    node.col_offset = getattr(at, "col_offset", 0)
+    return node
+
+
+def _scope_walk(node):
+    """Walk a statement, stopping at nested lexical scopes — but not at the
+    parts of a nested definition the enclosing scope evaluates."""
+    yield node
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+        for child in _enclosing_evaluated(node):
+            yield from _scope_walk(child)
+        return
+    for child in ast.iter_child_nodes(node):
+        yield from _scope_walk(child)
+
+
+def _bound_scope_walk(stmt, bindings):
+    """`_scope_walk`, pairing every node with the bindings that hold WHERE
+    IT RUNS rather than where its statement begins.
+
+    A caller that walks a statement and only then binds it judges everything
+    INSIDE a compound statement against the bindings that held BEFORE the
+    statement. Round 5 measured the consequence: `env = dict(os.environ)`
+    followed by `if c: env = os.environ; env.pop(MARKER, None)` read `env` as
+    the copy, and the write disappeared — as it did for the `for`-body, the
+    `with`-body and the `try`-body spellings, and for a plain resolved string
+    in place of the copy, so the shadow was never about `_COPY` at all.
+
+    Each block gets its OWN copy of the bindings and each statement in it
+    binds before the next is walked, so a rebind is seen from the statement
+    after it. The caller's dictionary is never written to: what a block binds
+    is not knowable after the block, which is exactly what the caller's own
+    `_bind_statement` on the compound statement records by invalidating every
+    name it assigns. Node for node this yields what `_scope_walk` yields.
+    """
+    yield stmt, bindings
+    if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef,
+                         ast.Lambda)):
+        for child in _enclosing_evaluated(stmt):
+            yield from _bound_scope_walk(child, bindings)
+        return
+    blocks = [block for block in
+              (getattr(stmt, field, None)
+               for field in ("body", "orelse", "finalbody"))
+              if isinstance(block, list)]
+    within = {id(node) for block in blocks for node in block}
+    for child in ast.iter_child_nodes(stmt):
+        # The header runs where the statement does: an `if` test, a `for`
+        # iterable, a `with` item, an `except` clause.
+        if id(child) not in within:
+            yield from _bound_scope_walk(child, bindings)
+    for block in blocks:
+        local = dict(bindings)
+        for node in block:
+            yield from _bound_scope_walk(node, local)
+            _bind_statement(node, local)
+
+
+def _assigned_names(node):
+    names = set()
+    for item in _scope_walk(node):
+        if isinstance(item, ast.Name) and isinstance(item.ctx, (ast.Store, ast.Del)):
+            names.add(item.id)
+        elif isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(item.name)
+        elif isinstance(item, (ast.Import, ast.ImportFrom)):
+            names.update(alias.asname or alias.name.split(".")[0] for alias in item.names)
+        elif isinstance(item, ast.ExceptHandler) and item.name:
+            names.add(item.name)
+    return names
+
+
+def _bind_statement(node, bindings):
+    """Straight-line constants; every unsupported write invalidates its name.
+
+    Every import spelling goes through the ONE binding table above, so
+    `import os`, `import os as o`, `import os.path` (which binds the NAME
+    `os`, not `os.path`), `import os.path as p` (which binds `os.path` and so
+    is NOT the `os` module), `from os import environ [as e]`,
+    `from os import path`, `from sys import executable [as py]`,
+    `import sys as s` and `from importlib import import_module` all reach the
+    same sentinels that `os.environ` and `sys.executable` reach. Round 3
+    taught the alias spelling to `Import` alone and left `ImportFrom` mapping
+    everything but `sys.executable` to `_UNKNOWN`, which re-opened every
+    indirect route it had just closed.
+    """
+    if isinstance(node, ast.Import):
+        for alias in node.names:
+            if alias.asname:
+                bindings[alias.asname] = _imported_module(alias.name)
+            else:
+                head = alias.name.split(".")[0]
+                bindings[head] = _imported_module(head)
+    elif isinstance(node, ast.ImportFrom):
+        for alias in node.names:
+            bindings[alias.asname or alias.name] = _imported_member(
+                node.module, alias.name, node.level or 0)
+    elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+        value = _static_value(node.value, bindings)
+        targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+        for target in targets:
+            for name in _assigned_names(target):
+                bindings[name] = value if isinstance(target, ast.Name) else _UNKNOWN
+    else:
+        for name in _assigned_names(node):
+            bindings[name] = _UNKNOWN
+
+
+def _class_attribute_bindings(tree, bindings) -> None:
+    """`C.PY` read from OUTSIDE the class body that binds it.
+
+    A class body already binds its own names for its own methods; nothing
+    bound them for a reader that spells the owner, so `[C.PY, target]`
+    resolved argv[0] to unknown and the call was exonerated as an unknown
+    EXTERNAL command instead of failing closed on its target.
+    """
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.ClassDef):
+            continue
+        local = dict(bindings)
+        for stmt in node.body:
+            _bind_statement(stmt, local)
+        for stmt in node.body:
+            if isinstance(stmt, ast.Assign):
+                targets = stmt.targets
+            elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+                targets = [stmt.target]
+            else:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    bindings[CLASS_BINDING + node.name + "." + target.id] = local.get(
+                        target.id, _UNKNOWN)
+
+
+def _module_bindings(tree):
+    bindings = {"__file__": "__file__"}
+    for node in tree.body:
+        _bind_statement(node, bindings)
+    _class_attribute_bindings(tree, bindings)
+    return bindings
+
+
+def _suite_scan_roots(repo_root: Path, runner_path: Path) -> tuple[Path, ...]:
+    """Evaluate insertions at their statement, never against later bindings.
+
+    Constants, joins, Path/str/resolve/parent and sys import aliases are
+    supported. Control-flow writes become unknown; unresolved and outside
+    roots fail with their source location. Nested lexical bodies have their
+    own bindings and cannot overwrite their enclosing scope.
+    """
+    tree = ast.parse(runner_path.read_text(encoding="utf-8"))
+    roots = [runner_path.parent.resolve()]
+    insertions = set()
+
+    def visit(body, bindings):
+        for stmt in body:
+            if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                local = dict(bindings)
+                if hasattr(stmt, "args"):
+                    for arg in [*stmt.args.posonlyargs, *stmt.args.args, *stmt.args.kwonlyargs]:
+                        local[arg.arg] = _UNKNOWN
+                visit(stmt.body, local)
+                _bind_statement(stmt, bindings)
+                continue
+            # Unsupported containers cannot preserve a possibly overwritten
+            # constant even for an insertion inside that container.
+            if not isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.Import, ast.ImportFrom, ast.Expr)):
+                _bind_statement(stmt, bindings)
+            for node in _scope_walk(stmt):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                        and isinstance(node.func.value, ast.Attribute)
+                        and isinstance(node.func.value.value, ast.Name)
+                        and bindings.get(node.func.value.value.id) is _SYS
+                        and node.func.value.attr == "path" and node.func.attr == "insert"):
+                    continue
+                insertions.add(id(node))
+                value = _static_value(node.args[1], bindings) if len(node.args) >= 2 else _UNKNOWN
+                if not isinstance(value, str):
+                    raise SuiteScanError(f"unsupported scan root at {runner_path}:{node.lineno}")
+                candidate = Path(value.replace("__file__", str(runner_path))).resolve()
+                try:
+                    candidate.relative_to(repo_root.resolve())
+                except ValueError as error:
+                    raise SuiteScanError(
+                        f"scan root outside repository at {runner_path}:{node.lineno}: {candidate}") from error
+                roots.append(candidate)
+            _bind_statement(stmt, bindings)
+
+    visit(tree.body, {"__file__": "__file__"})
+    aliases = {"sys"} | {alias.asname or alias.name for node in ast.walk(tree)
+                          if isinstance(node, ast.Import) for alias in node.names if alias.name == "sys"}
+    for node in ast.walk(tree):
+        if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Attribute)
+                and isinstance(node.func.value.value, ast.Name)
+                and node.func.value.value.id in aliases and node.func.value.attr == "path"
+                and node.func.attr == "insert" and id(node) not in insertions):
+            raise SuiteScanError(f"unsupported scan root at {runner_path}:{node.lineno}")
+    return tuple(dict.fromkeys(roots))
 
 
 class _SuiteForkScan:
@@ -21187,11 +30494,23 @@ class _SuiteForkScan:
         self._resolve_bindings()
         self._walk_functions()
 
+    @staticmethod
+    def _os_family(attr) -> bool:
+        return attr in OS_SPAWN_NAMES or attr.startswith(OS_SPAWN_PREFIXES)
+
     def _resolve_imports(self) -> None:
-        """`import subprocess as sp` and `from subprocess import run as r`
-        are ordinary Python, and both were invisible to the old pin."""
+        """`import subprocess as sp`, `from subprocess import run as r` and
+        `sp = subprocess` are all ordinary Python. The old pin saw none of
+        them; the import-only version of this method still missed the last,
+        so `sp = subprocess` followed by `sp.run(...)` was not a spawn at
+        all, and the literal-runner fallback inside that branch never ran
+        either."""
         self.module_aliases = {"subprocess"}
+        self.os_aliases = {"os"}
         self.bare_spawners = set()
+        # A bare name that IS an os spawn function, and WHICH one: the argv
+        # layout of `os.execv` is not the layout of `subprocess.run`.
+        self.bare_os_kind = {}
         # `import run_tests [as rt]` and `from run_tests import main [as m]`:
         # the in-process spellings. `run_tests.main()` and
         # `multiprocessing.Process(target=run_tests.main)` never touch
@@ -21202,6 +30521,8 @@ class _SuiteForkScan:
                 for alias in node.names:
                     if alias.name == "subprocess":
                         self.module_aliases.add(alias.asname or alias.name)
+                    if alias.name == "os":
+                        self.os_aliases.add(alias.asname or alias.name)
                     if alias.name == SUITE_RUNNER_MODULE:
                         self.runner_modules.add(alias.asname or alias.name)
             elif (isinstance(node, ast.ImportFrom)
@@ -21209,20 +30530,82 @@ class _SuiteForkScan:
                 for alias in node.names:
                     if alias.name in SPAWN_ATTRS:
                         self.bare_spawners.add(alias.asname or alias.name)
+            elif isinstance(node, ast.ImportFrom) and node.module == "os":
+                for alias in node.names:
+                    if self._os_family(alias.name):
+                        bound = alias.asname or alias.name
+                        self.bare_spawners.add(bound)
+                        self.bare_os_kind[bound] = alias.name
             elif (isinstance(node, ast.ImportFrom)
                   and node.module == SUITE_RUNNER_MODULE):
                 for alias in node.names:
                     if alias.name == "main":
                         self.runner_mains.add(alias.asname or alias.name)
 
-    def _resolve_bindings(self) -> None:
-        """Names bound — at module OR class level — to something that mentions
-        the runner, or to the child-marker environment variable's name.
+        # `sp = subprocess`, `sp2 = sp`, `go = subprocess.run`, `launch =
+        # os.execv`. Taken to a fixed point over every assignment in the
+        # module, deliberately over-approximating: a name rebound later stays
+        # a spawn surface, which can only flag MORE, never less.
+        assignments = [node for node in ast.walk(self.tree)
+                       if isinstance(node, ast.Assign)]
+        changed = True
+        while changed:
+            before = (len(self.module_aliases), len(self.os_aliases),
+                      len(self.bare_spawners))
+            for node in assignments:
+                value = node.value
+                for target in node.targets:
+                    if not isinstance(target, ast.Name):
+                        continue
+                    if isinstance(value, ast.Name):
+                        if value.id in self.module_aliases:
+                            self.module_aliases.add(target.id)
+                        if value.id in self.os_aliases:
+                            self.os_aliases.add(target.id)
+                        if value.id in self.bare_spawners:
+                            self.bare_spawners.add(target.id)
+                            if value.id in self.bare_os_kind:
+                                self.bare_os_kind[target.id] = self.bare_os_kind[value.id]
+                    elif isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name):
+                        if (value.value.id in self.module_aliases
+                                and value.attr in SPAWN_ATTRS):
+                            self.bare_spawners.add(target.id)
+                        if (value.value.id in self.os_aliases
+                                and self._os_family(value.attr)):
+                            self.bare_spawners.add(target.id)
+                            self.bare_os_kind[target.id] = value.attr
+            changed = before != (len(self.module_aliases), len(self.os_aliases),
+                                 len(self.bare_spawners))
 
-        `RUNNER = TEST_DIR / "run_tests.py"` and
-        `PLANTED = ISSUES_DIR / "x.py"` are the same shape; only the first
-        mentions the runner, and only its NAME appears at the spawn.
-        """
+        # A SUBCLASS of `subprocess.Popen` starts a process exactly as its
+        # base does, so its constructor is a spawn site with `Popen`'s own
+        # argv layout. Round 4 measured `class MyPopen(subprocess.Popen)`
+        # followed by `MyPopen([sys.executable, RUNNER])` reaching the
+        # inventory as nothing at all. Transitive over the classes this
+        # module parses, through every alias spelling of the base.
+        classes = [node for node in ast.walk(self.tree)
+                   if isinstance(node, ast.ClassDef)]
+        changed = True
+        while changed:
+            changed = False
+            for node in classes:
+                if node.name in self.bare_spawners:
+                    continue
+                for base in node.bases:
+                    named = ((isinstance(base, ast.Attribute)
+                              and isinstance(base.value, ast.Name)
+                              and base.value.id in self.module_aliases
+                              and base.attr in SPAWN_ATTRS)
+                             or (isinstance(base, ast.Name)
+                                 and base.id in self.bare_spawners))
+                    if named:
+                        self.bare_spawners.add(node.name)
+                        changed = True
+                        break
+
+    def _resolve_bindings(self) -> None:
+        """Bound values used by the no-execution target classifier."""
+        self.bindings = _module_bindings(self.tree)
         self.runner_names, self.guard_names = set(), set()
         for node in ast.walk(self.tree):
             if isinstance(node, ast.Assign):
@@ -21231,13 +30614,13 @@ class _SuiteForkScan:
                 targets, value = [node.target], node.value
             else:
                 continue
-            source = ast.unparse(value)
+            value = _static_value(value, self.bindings)
             for target in targets:
                 if not isinstance(target, ast.Name):
                     continue
-                if SUITE_RUNNER_NAME in source:
+                if value is not _UNKNOWN and value is not _PYTHON and SUITE_RUNNER_NAME in str(value):
                     self.runner_names.add(target.id)
-                if self.guard_env in source:
+                if value is not _UNKNOWN and value is not _PYTHON and self.guard_env in str(value):
                     self.guard_names.add(target.id)
 
     def _names_the_runner(self, node) -> bool:
@@ -21257,22 +30640,159 @@ class _SuiteForkScan:
             if (func.value.id in self.module_aliases
                     and func.attr in SPAWN_ATTRS):
                 return True
-            if func.value.id == "os" and (
-                    func.attr in OS_SPAWN_NAMES
-                    or func.attr.startswith(OS_SPAWN_PREFIXES)):
+            if func.value.id in self.os_aliases and self._os_family(func.attr):
                 return True
         return isinstance(func, ast.Name) and func.id in self.bare_spawners
 
-    def _reads_the_marker(self, node) -> bool:
-        """A READ of the child marker, never a write.
+    @staticmethod
+    def _python_executable(value):
+        # Regex is solely a lexical executable token check, never code shape.
+        return value is _PYTHON or (isinstance(value, str) and re.fullmatch(
+            r"python(?:[0-9]+(?:\.[0-9]+)*)?(?:\.exe)?", value.replace("\\", "/").rsplit("/", 1)[-1]) is not None)
 
-        `_run_suite` SETS `SKILLS_EVALS_SUITE_CHILD` in the child's
-        environment — that is what makes the child a child, and it is the
-        opposite of standing down. A guard detector that counted any mention
-        of the name would call the spawner itself guarded and pass over the
-        very function whose callers need the guard.
+    @staticmethod
+    def _python_target(argv):
+        """Known other-script target, or `_UNKNOWN` for a possible suite run."""
+        if not isinstance(argv, tuple) or not argv or not _SuiteForkScan._python_executable(argv[0]):
+            return None
+        index = 1
+        while index < len(argv) and isinstance(argv[index], str) and argv[index].startswith("-"):
+            if argv[index] in ("-c", "-", "-m"):
+                return _UNKNOWN
+            index += 2 if argv[index] in ("-W", "-X") else 1
+        if index >= len(argv) or argv[index] is _UNKNOWN:
+            return _UNKNOWN
+        target = argv[index]
+        return target if isinstance(target, str) else _UNKNOWN
+
+    @staticmethod
+    def _joined_argv(node, bindings):
+        """`shlex.join([...])` and a string `.join([...])` keep their list."""
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "join" and len(node.args) == 1
+                and not node.keywords):
+            return None
+        receiver = node.func.value
+        if not ((isinstance(receiver, ast.Constant) and isinstance(receiver.value, str))
+                or (isinstance(receiver, ast.Name) and receiver.id == "shlex")):
+            return None
+        value = _static_value(node.args[0], bindings)
+        return value if isinstance(value, tuple) else (_PYTHON, _UNKNOWN)
+
+    def _shell_argv(self, node, bindings):
+        """Classify a string COMMAND LINE by its text, and fail closed.
+
+        `os.system`, `os.popen` and `shell=True` take a command line, not a
+        program path. Handing the whole line to the executable classifier
+        resolved it to unknown and exonerated the call as an unknown
+        EXTERNAL command, so a command line naming the real interpreter ran
+        the suite with the pin green. A line this parser cannot read is
+        unknown PYTHON instead, which is flagged.
         """
-        return any(self._reads_the_marker_node(sub) for sub in ast.walk(node))
+        if node is not None:
+            joined = self._joined_argv(node, bindings)
+            if joined is not None:
+                return joined
+            command = _static_value(node, bindings)
+            if isinstance(command, tuple) and command:
+                command = command[0]
+            if isinstance(command, str):
+                try:
+                    return tuple(shlex.split(command))
+                except ValueError:
+                    return (_PYTHON, _UNKNOWN)
+        return (_PYTHON, _UNKNOWN)
+
+    def _spawn_argv(self, call, bindings):
+        def arg(index, keyword):
+            node = call.args[index] if len(call.args) > index else next(
+                (k.value for k in call.keywords if k.arg == keyword), None)
+            return _static_value(node, bindings)
+
+        def node_at(index, *keywords):
+            if len(call.args) > index:
+                return call.args[index]
+            return next((k.value for k in call.keywords if k.arg in keywords), None)
+        # An argument shape this parser cannot read is not an absence of
+        # one: round 3 measured `**OPTS` carrying `{"shell": True}` walking
+        # straight past an `is not None` test on the `shell` keyword.
+        unreadable_shape = (any(k.arg is None for k in call.keywords)
+                            or any(isinstance(a, ast.Starred) for a in call.args))
+        name = None
+        if (isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
+                and call.func.value.id in self.os_aliases):
+            name = call.func.attr
+        elif isinstance(call.func, ast.Name):
+            name = self.bare_os_kind.get(call.func.id)
+        if name is not None:
+            if unreadable_shape:
+                return (_PYTHON, _UNKNOWN)
+            if name in ("system", "popen"):
+                return self._shell_argv(node_at(0, "command", "cmd"), bindings)
+            offset = 1 if name.startswith("spawn") else 0
+            executable = arg(offset, "file" if name in ("execlp", "execlpe", "execvp", "execvpe",
+                "spawnlp", "spawnlpe", "spawnvp", "spawnvpe") else "path")
+            if name.startswith(("exec", "spawn")) and "l" in name[4:]:
+                argv = tuple(_static_value(n, bindings) for n in call.args[offset + 1:])
+                if name.endswith("e"):
+                    argv = argv[:-1]
+            else:
+                argv = arg(offset + 1, "argv")
+            if self._python_executable(executable):
+                return (_PYTHON, *argv[1:]) if isinstance(argv, tuple) and argv else (_PYTHON, _UNKNOWN)
+            return _UNKNOWN
+        args_node = node_at(0, "args")
+        value = _static_value(args_node, bindings) if args_node is not None else _UNKNOWN
+        shell = next((k.value for k in call.keywords if k.arg == "shell"), None)
+        if shell is None:
+            state = "unreadable" if unreadable_shape else "absent"
+        elif isinstance(shell, ast.Constant):
+            state = "off" if not shell.value else "on"
+        else:
+            state = "unreadable"
+        if state in ("on", "unreadable") and not isinstance(value, tuple):
+            # A command LINE, or a shape this parser cannot read: classified
+            # by its text and failing closed, never exonerated as "not a
+            # Python spawn". A list argv is not a command line, so a `**kw`
+            # call with a known other program stays quiet.
+            return self._shell_argv(args_node, bindings)
+        if state == "absent" and self._string_shaped(args_node, bindings):
+            return self._shell_argv(args_node, bindings)
+        if state == "off" and isinstance(value, str):
+            # `shell=False` takes a program PATH, but a path this parser can
+            # read is still readable: a text that starts with an interpreter
+            # token is an interpreter.
+            try:
+                return tuple(shlex.split(value))
+            except ValueError:
+                return (_PYTHON, _UNKNOWN)
+        return value
+
+    def _string_shaped(self, node, bindings) -> bool:
+        """An expression that IS a command line rather than an argv list: a
+        literal, an f-string, a concatenation or %-format of one, a
+        `.format`/`.join`, or a name resolved to a string."""
+        if node is None:
+            return False
+        if isinstance(node, ast.JoinedStr):
+            return True
+        if isinstance(node, ast.Constant):
+            return isinstance(node.value, str)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
+            return (self._string_shaped(node.left, bindings)
+                    or self._string_shaped(node.right, bindings))
+        if isinstance(node, ast.Call):
+            if self._joined_argv(node, bindings) is not None:
+                return True
+            return (isinstance(node.func, ast.Attribute) and node.func.attr == "format"
+                    and self._string_shaped(node.func.value, bindings))
+        return isinstance(_static_value(node, bindings), str)
+
+    def _potential_suite_spawn(self, call, bindings) -> bool:
+        if not self._is_spawn(call):
+            return False
+        target = self._python_target(self._spawn_argv(call, bindings))
+        return target is _UNKNOWN or (isinstance(target, str) and SUITE_RUNNER_NAME in target)
 
     def _mentions_the_marker(self, sub) -> bool:
         return (isinstance(sub, ast.Constant) and sub.value == self.guard_env
@@ -21280,44 +30800,19 @@ class _SuiteForkScan:
                       ) or (isinstance(sub, ast.Attribute)
                             and sub.attr in self.guard_names)
 
-    def _reads_the_marker_node(self, sub) -> bool:
-        """One node, so a caller can ask WHERE the read is and not only
-        whether there is one."""
-        mentions = self._mentions_the_marker
-        # os.environ.get(MARKER) / os.environ.get(MARKER, default)
-        if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
-                and sub.func.attr in ("get", "getenv")
-                and any(mentions(a) for arg in sub.args
-                        for a in ast.walk(arg))):
-            return True
-        # MARKER in os.environ / not in
-        if isinstance(sub, ast.Compare) and any(
-                isinstance(op, (ast.In, ast.NotIn)) for op in sub.ops):
-            if any(mentions(n) for n in ast.walk(sub.left)):
-                return True
-        # os.environ[MARKER]
-        if isinstance(sub, ast.Subscript) and any(
-                mentions(n) for n in ast.walk(sub.slice)):
-            return True
-        return False
-
-    def _writes_the_marker(self, sub) -> bool:
-        """The marker set as a KEY in an environment a child will be given.
-
-        `dict(os.environ, **{MARKER: "1"})` and `env[MARKER] = "1"` are the two
-        shapes this tree uses. Nothing asserted this before: deleting the
-        `**{CHILD_ENV: "1"}` from `_run_suite` left every pin green while the
-        child no longer knew it was a child and the tree ran away.
-        """
-        if isinstance(sub, ast.Dict):
-            return any(key is not None and self._mentions_the_marker(key)
-                       for key in sub.keys)
-        if isinstance(sub, ast.Assign):
-            return any(isinstance(t, ast.Subscript)
-                       and any(self._mentions_the_marker(n)
-                               for n in ast.walk(t.slice))
-                       for t in sub.targets)
-        return False
+    def _marker_write_count(self, sub) -> int:
+        """Diagnostic syntax count; only `_verify_guard` establishes safety."""
+        count = 0
+        for node in ast.walk(sub):
+            if isinstance(node, ast.Dict):
+                count += sum(key is not None and self._mentions_the_marker(key)
+                             for key in node.keys)
+            elif isinstance(node, ast.Assign):
+                count += sum(isinstance(target, ast.Subscript)
+                             and any(self._mentions_the_marker(item)
+                                     for item in ast.walk(target.slice))
+                             for target in node.targets)
+        return count
 
     def _names_the_runner_in_process(self, node) -> bool:
         """`run_tests.main` named anywhere outside the runner's own module.
@@ -21340,99 +30835,912 @@ class _SuiteForkScan:
         return False
 
     def _walk_functions(self) -> None:
-        self.functions = [n for n in ast.walk(self.tree)
-                          if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))]
-        self.lineno = {fn.name: fn.lineno for fn in self.functions}
-        spawns_any, direct, callees, stands_down = {}, {}, {}, {}
-        # Statement INDEX, inside the function's own body, of the first read of
-        # the child marker and of the first spawn — so "stands down BEFORE it
-        # spawns" is decided from the parse rather than from where the lines
-        # happen to sit. And whether the function WRITES the marker into a
-        # child's environment, which nothing asserted before round 4: deleting
-        # that one expression from `_run_suite` left the pin green and ran the
-        # tree away.
-        first_marker_read, first_spawn, writes_marker = {}, {}, {}
-        # Callee names this function hands a runner-naming argument to. A
-        # helper that takes the path as a PARAMETER names nothing itself.
-        runner_arg_callees = {}
-        # {function: {callee: the statement index of its first call}} — so a
-        # spawner that stands down through a helper (`self._skip_in_child()`)
-        # can still be shown to do it BEFORE it spawns.
-        stmt_calls = {}
-        for fn in self.functions:
-            any_spawn = names_runner_at_spawn = False
-            called, arg_callees = set(), set()
-            calls_at = {}
-            read_at = spawn_at = None
-            wrote = False
+        def record(identity, node, inherited):
+            logical = identity
+            while identity in self.scopes:
+                identity += f"@{node.lineno}"
+            self.definitions.setdefault(logical, []).append(identity)
+            self.functions.append((identity, node))
+            self.scopes[identity] = dict(inherited)
+            return identity
+
+        def collect(node, prefix="", inherited=None, owner=MODULE_SCOPE):
+            inherited = dict(self.bindings if inherited is None else inherited)
+            for child in ast.iter_child_nodes(node):
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                      ast.ClassDef, ast.Lambda)):
+                    if isinstance(child, ast.Lambda):
+                        # A lambda is a scope `_scope_walk` stops at and that
+                        # `collect` recorded as nothing, so its body was
+                        # walked by neither: `go = lambda: subprocess.run(
+                        # [sys.executable, target])` was invisible.
+                        label = f"<lambda@{child.lineno}>"
+                        identity = record(prefix + label, _synthetic_scope(
+                            label,
+                            [ast.copy_location(ast.Expr(value=child.body), child.body)],
+                            child, args=child.args), inherited)
+                        self.lambda_owner[identity] = owner
+                        body = []
+                    else:
+                        identity = prefix + child.name
+                        if not isinstance(child, ast.ClassDef):
+                            identity = record(identity, child, inherited)
+                        body = child.body
+                    local = dict(inherited)
+                    # A parameter of THIS scope shadows a same-named module
+                    # constant for every scope nested inside it, so the
+                    # snapshot handed down must forget it. Without this, an
+                    # inner function read the module's `target = "other.py"`
+                    # through an enclosing `def outer(target)` and passed.
+                    for name in _parameter_names(child):
+                        local[name] = _UNKNOWN
+                    for stmt in body:
+                        _bind_statement(stmt, local)
+                    if isinstance(child, ast.ClassDef):
+                        self.class_nodes[identity] = child
+                        # A class BODY constant is `self.<name>` for every
+                        # instance of the class, so `PY = sys.executable`
+                        # read as `self.PY` or `type(self).PY` is the same
+                        # interpreter that `C.PY` is.
+                        for stmt in child.body:
+                            if isinstance(stmt, ast.Assign):
+                                targets = stmt.targets
+                            elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+                                targets = [stmt.target]
+                            else:
+                                continue
+                            for target in targets:
+                                if isinstance(target, ast.Name):
+                                    local[ATTRIBUTE_BINDING + target.id] = local.get(
+                                        target.id, _UNKNOWN)
+                        # `self.PY = sys.executable` written in `setUp` is the
+                        # same interpreter every method of the class reads,
+                        # and two different writes are no binding at all.
+                        for sub in ast.walk(child):
+                            if not isinstance(sub, ast.Assign):
+                                continue
+                            for target in sub.targets:
+                                if not (isinstance(target, ast.Attribute)
+                                        and isinstance(target.value, ast.Name)
+                                        and target.value.id in ("self", "cls")):
+                                    continue
+                                key = ATTRIBUTE_BINDING + target.attr
+                                bound = _static_value(sub.value, local)
+                                if key in local and local[key] is not bound:
+                                    bound = _UNKNOWN
+                                local[key] = bound
+                    nested_owner = identity
+                    if isinstance(child, ast.ClassDef):
+                        nested_owner = record(
+                            identity + "." + CLASS_SCOPE,
+                            _synthetic_scope(CLASS_SCOPE, child.body, child),
+                            inherited)
+                    collect(child, identity + ".", local, nested_owner)
+                else:
+                    collect(child, prefix, inherited, owner)
+
+        self.functions, self.scopes, self.definitions = [], {}, {}
+        self.lambda_owner, self.class_nodes = {}, {}
+        # Module level RUNS: `loader.discover` imports every discovered test
+        # module, so a fork written beside the imports forks the suite at
+        # collection time. It belonged to no function and so to no scope.
+        record(MODULE_SCOPE,
+               _synthetic_scope(MODULE_SCOPE, self.tree.body, self.tree),
+               {"__file__": "__file__"})
+        collect(self.tree)
+        self.lineno = {name: fn.lineno for name, fn in self.functions}
+        self.function_nodes = dict(self.functions)
+        self.incoming = {name: {} for name, _ in self.functions}
+
+        # A finite, monotone taint: a same-module/class argument is known to
+        # carry Python argv. No execution, general call graph or path proof.
+        # Every uncertain target stays unknown through each immediate handoff.
+        while True:
+            changed = False
+            for identity, fn in self.functions:
+                bindings = self._function_bindings(identity, fn)
+                for stmt in fn.body:
+                    for node in _scope_walk(stmt):
+                        if not isinstance(node, ast.Call):
+                            continue
+                        callee = self._callee(identity, node)
+                        if callee not in self.incoming:
+                            continue
+                        for variant in self.definitions.get(callee, [callee]):
+                            params = list(self.function_nodes[variant].args.posonlyargs) + list(self.function_nodes[variant].args.args)
+                            if params and params[0].arg in ("self", "cls"):
+                                params = params[1:]
+                            supplied = list(zip((p.arg for p in params), node.args))
+                            supplied += [(k.arg, k.value) for k in node.keywords if k.arg]
+                            for param, value in supplied:
+                                if self._python_target(_static_value(value, bindings)) is not None and param not in self.incoming[variant]:
+                                    self.incoming[variant][param] = (_PYTHON, _UNKNOWN)
+                                    changed = True
+                    _bind_statement(stmt, bindings)
+            if not changed:
+                break
+
+        # Which parsed scopes change the environment, before any sink is
+        # asked to prove that nothing did so before its marker read.
+        self._resolve_environment_writers()
+        self._fixture_errors = {}
+        self.spawns_any, self.direct, self.callees = {}, {}, {}
+        self.runner_arg_callees, self.first_spawn = {}, {}
+        self.first_marker_read, self.writes_marker, self.marker_writes = {}, {}, {}
+        self.stands_down, self.guard_errors, self.guard_verified = {}, {}, {}
+        for identity, fn in self.functions:
+            bindings = self._function_bindings(identity, fn)
+            calls, runner_calls, spawns = set(), set(), []
+            direct = False
             for index, stmt in enumerate(fn.body):
-                for node in ast.walk(stmt):
-                    if self._writes_the_marker(node):
-                        wrote = True
-                    if self._reads_the_marker_node(node) and read_at is None:
-                        read_at = index
+                if not isinstance(stmt, (ast.Assign, ast.AnnAssign, ast.Import, ast.ImportFrom)):
+                    _bind_statement(stmt, bindings)
+                for node in _scope_walk(stmt):
                     if not isinstance(node, ast.Call):
                         continue
-                    name = (node.func.attr if isinstance(node.func, ast.Attribute)
-                            else getattr(node.func, "id", None))
-                    if name:
-                        called.add(name)
-                        calls_at.setdefault(name, index)
+                    callee = self._callee(identity, node)
+                    if callee:
+                        calls.add(callee)
                         if any(self._names_the_runner(a) for a in node.args):
-                            arg_callees.add(name)
-                    if self._names_the_runner_in_process(node):
-                        names_runner_at_spawn = True
-                        if spawn_at is None:
-                            spawn_at = index
-                    if not self._is_spawn(node):
+                            runner_calls.add(callee)
+                    if self._is_spawn(node):
+                        spawns.append(index)
+                        direct |= self._potential_suite_spawn(node, bindings) or any(
+                            self._names_the_runner(a) for a in [*node.args, *(k.value for k in node.keywords)])
+                    direct |= self._names_the_runner_in_process(node)
+                _bind_statement(stmt, bindings)
+            self.spawns_any[identity] = bool(spawns)
+            self.direct[identity] = direct
+            self.callees[identity] = calls
+            self.runner_arg_callees[identity] = runner_calls
+            self.first_spawn[identity] = min(spawns) if spawns else None
+            errors, guard_at, marked = self._verify_guard(identity, fn)
+            if spawns:
+                # Everything the language runs before this sink that the sink
+                # does not write itself: module and class fixtures, the
+                # cleanup callbacks its class registers, and the decorators
+                # on the sink and on its class.
+                errors = errors + self._pre_sink_environment_errors(identity)
+            self.guard_errors[identity] = errors
+            self.guard_verified[identity] = bool(spawns) and not errors
+            self.first_marker_read[identity] = guard_at
+            self.writes_marker[identity] = marked
+            self.marker_writes[identity] = self._marker_write_count(fn)
+            self.stands_down[identity] = guard_at is not None
+        for name in self.direct:
+            if self.runner_arg_callees[name] & {n for n, yes in self.spawns_any.items() if yes}:
+                self.direct[name] = True
+        # A lambda is CONSTRUCTED by the scope that writes it, and that scope
+        # is the name a reviewer needs, so a forking lambda flags its writer
+        # too. Transitive, for a lambda written inside a lambda.
+        changed = True
+        while changed:
+            changed = False
+            for lam, owner in self.lambda_owner.items():
+                if self.direct.get(lam) and owner in self.direct and not self.direct[owner]:
+                    self.direct[owner] = True
+                    changed = True
+
+    def _function_bindings(self, identity, fn):
+        bindings = dict(self.scopes[identity])
+        args = fn.args
+        for arg in [*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg]:
+            if arg is not None:
+                bindings[arg.arg] = _UNKNOWN
+        bindings.update(self.incoming[identity])
+        return bindings
+
+    def _callee(self, identity, call):
+        return self._referenced_scope(identity, call.func)
+
+    def _referenced_scope(self, identity, node):
+        """The scope a name denotes, whether it is CALLED or merely handed on.
+
+        `self.addCleanup(self._disarm)` runs `_disarm` between the tests of
+        its class without a call ever being spelled at the registration site.
+        """
+        if isinstance(node, ast.Name):
+            name = node.id
+            # Resolve nested definitions before enclosing lexical scopes.
+            parts = identity.split(".")
+            for size in range(len(parts), -1, -1):
+                candidate = ".".join(parts[:size] + [name])
+                if candidate in self.function_nodes:
+                    return candidate
+            return name
+        if (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.value.id in ("self", "cls")):
+            return identity.rpartition(".")[0] + "." + node.attr
+        return None
+
+    def _scope_variants(self, scope):
+        """Every parsed definition a resolved name can reach, or nothing."""
+        if scope is None:
+            return []
+        if scope in self.definitions:
+            return self.definitions[scope]
+        return [scope] if scope in self.function_nodes else []
+
+    def _marker_key(self, node, bindings):
+        if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in ("self", "cls"):
+            return bindings.get(node.attr) == self.guard_env
+        return _static_value(node, bindings) == self.guard_env
+
+    @staticmethod
+    def _os_environ(node, bindings):
+        """`os.environ` ITSELF, in EVERY spelling the binding table resolves.
+
+        `import os as o`, `import os.path` (which binds `os`),
+        `from os import environ [as e]`, `a = os; b = a`,
+        `env = os.environ; e2 = env`, `self.env = os.environ` read back as
+        `self.env`, `type(self).X` where the class body bound it,
+        `__import__("os").environ`, `importlib.import_module("os").environ`,
+        `getattr(os, "environ")` and `vars(os)["environ"]` all resolve to the
+        SAME sentinel here, because this predicate asks `_static_value` and
+        nothing else. That is what keeps `_mutates_environment`,
+        `_resolve_environment_writers` and `_pre_sink_environment_errors`
+        from seeing one spelling and missing its sibling — the defect round 3
+        fixed for `import os as o` and round 4 found returning under
+        `from os import environ`.
+
+        None of these is a copy: `_e.pop(MARKER, None)` clears exactly the
+        mapping the guard reads. `dict(os.environ)` IS a copy and resolves to
+        `_COPY`, not to this sentinel.
+        """
+        return _static_value(node, bindings) is _ENVIRON
+
+    @staticmethod
+    def _unresolved_mapping(node, bindings) -> bool:
+        """A receiver whose value this parser cannot vouch for — HOWEVER it
+        is spelled.
+
+        The hole round 5 measured was in the SHAPE of the receiver, not in
+        its value: the rule fired only for a bare name or a `self`/`cls`
+        attribute, so a chain whose owner is a call or a subscript this
+        parser cannot read — `importlib.import_module('o' + 's').environ`,
+        `globals()['os'].environ`, `sys.modules['os'].environ` — was not a
+        receiver at all, and a fixture that popped the marker through one
+        kept the sink's proof. What a receiver is spelled as decides
+        nothing; what it RESOLVES to decides everything.
+
+        Not any expression: a receiver the parser CAN read is judged by what
+        it reads, and `dict(...)`, `{...}` and `<mapping>.copy()` read as a
+        fresh mapping rather than as the one the guard reads.
+        """
+        return _lost_binding(_static_value(node, bindings))
+
+    def _marker_or_unreadable(self, key, bindings) -> bool:
+        """The key of a mapping write that could be the marker."""
+        return (key is None or self._marker_key(key, bindings)
+                or _lost_binding(_static_value(key, bindings)))
+
+    def _leaves_the_marker(self, node, bindings) -> bool:
+        """A merged mapping this parser reads in full that can neither unset
+        the marker nor blank it."""
+        if node is None:
+            return False
+        if self._marked_env(node, bindings, {}):
+            return True
+        if not isinstance(node, ast.Dict):
+            return False
+        for key in node.keys:
+            if (key is None or self._marker_key(key, bindings)
+                    or _lost_binding(_static_value(key, bindings))):
+                return False
+        return True
+
+    def _guard_condition(self, node, bindings):
+        return (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get" and self._os_environ(node.func.value, bindings)
+                and len(node.args) == 1 and not node.keywords
+                and self._marker_key(node.args[0], bindings))
+
+    @staticmethod
+    def _effective_skip(body):
+        # Accept an unconditional SkipTest/skipTest in this branch. A return,
+        # nested try or conditional action is deliberately not proof.
+        for stmt in body:
+            if isinstance(stmt, ast.Raise):
+                call = stmt.exc
+                return (isinstance(call, ast.Call) and isinstance(call.func, ast.Attribute)
+                        and isinstance(call.func.value, ast.Name)
+                        and call.func.value.id == "unittest" and call.func.attr == "SkipTest")
+            if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+                func = stmt.value.func
+                if (isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name)
+                        and func.value.id == "self" and func.attr == "skipTest"):
+                    return True
+            if isinstance(stmt, ast.Assign):
+                if any(isinstance(n, ast.Call) for n in ast.walk(stmt)):
+                    return False
+            elif isinstance(stmt, ast.Expr):
+                calls = [n for n in ast.walk(stmt) if isinstance(n, ast.Call)]
+                if calls and not (len(calls) == 1 and isinstance(calls[0].func, ast.Name)
+                                  and calls[0].func.id == "print"):
+                    return False
+            elif not isinstance(stmt, ast.Pass):
+                return False
+        return False
+
+    def _mutates_environment(self, node, bindings) -> bool:
+        """A write to the environment a child would inherit, in any spelling.
+
+        Three rules, all of them sink-level rather than per-route.
+
+        (1) A write THROUGH THE MAPPING, however the name was bound — every
+        spelling `_os_environ` resolves, including `os.environ |= {...}`,
+        `os.environ.__setitem__(...)` and `__delitem__`.
+
+        (2) `os.putenv` / `os.unsetenv` through any alias of `os`. They leave
+        `os.environ` untouched, so a mapping-only rule never saw them, but
+        they do change what a child inherits.
+
+        (3) FAIL CLOSED. A name this parser cannot resolve at all, USED AS
+        the mapping in a position that can leave the marker unset —
+        `X.pop(MARKER)`, `del X[MARKER]`, `X[MARKER] = <not a non-empty
+        literal>`, `X.update(...)`, `X |= ...`, `X.clear()`,
+        `X.popitem()`, with a key that is the marker or that this parser
+        cannot read — is a write, in a fixture, in a helper and in a sink
+        preamble alike. `dict(...)`, `{...}` and `<mapping>.copy()` resolve
+        to a FRESH mapping, which is exactly why the sanctioned
+        `env = dict(os.environ); env[MARKER] = "1"` shape is untouched by
+        (3), and why an authoritative `X[MARKER] = "1"` is not a disarming
+        write. `X.setdefault(...)` cannot remove a key and is not one either.
+
+        (4) A BOUND METHOD OF THE MAPPING, called through the name it was
+        parked on. `f = os.environ.pop` then `f(MARKER, None)` clears
+        exactly the mapping the guard reads, but the call's `func` is a bare
+        NAME, so (1) never looks at it, and the mapping appears in no
+        argument, so the escape rule never sees it either. The binding table
+        resolves every marker-clearing member to `_ENVIRON_METHOD`, and
+        calling one is the write the same member spelled out in full is.
+        """
+        if isinstance(node, ast.Call):
+            func = node.func
+            if _static_value(func, bindings) is _ENVIRON_METHOD:
+                return True
+            if not isinstance(func, ast.Attribute):
+                return False
+            if (func.attr in OS_ENVIRONMENT_CALLS
+                    and _static_value(func.value, bindings) is _OS):
+                return True
+            if func.attr not in ENVIRON_MUTATORS:
+                return False
+            if self._os_environ(func.value, bindings):
+                return True
+            if not self._unresolved_mapping(func.value, bindings):
+                return False
+            if func.attr in ("clear", "popitem"):
+                return True
+            if func.attr == "update":
+                return not self._leaves_the_marker(
+                    node.args[0] if node.args else None, bindings)
+            if func.attr in ("pop", "__delitem__"):
+                return self._marker_or_unreadable(
+                    node.args[0] if node.args else None, bindings)
+            return False
+        if isinstance(node, ast.Subscript) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            if self._os_environ(node.value, bindings):
+                return True
+            return (isinstance(node.ctx, ast.Del)
+                    and self._unresolved_mapping(node.value, bindings)
+                    and self._marker_or_unreadable(node.slice, bindings))
+        if isinstance(node, ast.Assign) and len(node.targets) == 1:
+            target = node.targets[0]
+            return (isinstance(target, ast.Subscript)
+                    and self._unresolved_mapping(target.value, bindings)
+                    and self._marker_or_unreadable(target.slice, bindings)
+                    and not (isinstance(node.value, ast.Constant)
+                             and isinstance(node.value.value, str)
+                             and bool(node.value.value)))
+        if isinstance(node, ast.AugAssign):
+            if self._os_environ(node.target, bindings):
+                return True
+            return (self._unresolved_mapping(node.target, bindings)
+                    and not self._leaves_the_marker(node.value, bindings))
+        if isinstance(node, ast.Attribute) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            return (node.attr == "environ"
+                    and _static_value(node.value, bindings) is _OS)
+        return False
+
+    def _environment_write(self, stmt, bindings, identity=None) -> bool:
+        """A write to the environment, directly or through a call followed.
+
+        Round 3 measured both routes past the round-2 rule on the real
+        `_spawn_suite` body: `_e = os.environ; _e.pop(MARKER, None)`, and an
+        ordinary `self._disarm()` whose body does the popping. Passing an
+        `identity` follows calls; omitting it is the syntax-only question.
+
+        `_bound_scope_walk` rather than `_scope_walk`: a rebind written
+        inside an `if`/`for`/`with`/`try` body is in force for the rest of
+        that body, and round 5 measured three shapes exonerated because it
+        was not (N2).
+        """
+        for node, scoped in _bound_scope_walk(stmt, bindings):
+            if self._mutates_environment(node, scoped):
+                return True
+            if identity is None or not isinstance(node, ast.Call):
+                continue
+            variants = self._scope_variants(self._callee(identity, node))
+            if variants:
+                if any(target in self.environment_writers for target in variants):
+                    return True
+            elif self._environment_escapes(node, scoped):
+                return True
+        return False
+
+    def _environment_escapes(self, call, bindings) -> bool:
+        """`os.environ`, an alias of it, or `os` itself handed to a callee
+        this parser cannot read.
+
+        The mapping is mutable, so an unparsed callee that receives it can
+        clear the marker; `mock.patch.dict(os.environ, ...)` is exactly that
+        shape. `dict(os.environ)` is the supported COPY and is not an escape.
+        Nested calls are skipped because every caller of this predicate
+        visits every call node in its own right.
+        """
+        if isinstance(call.func, ast.Name) and call.func.id == "dict":
+            return False
+        if not _lost_binding(_static_value(call, bindings)):
+            # A call this parser MODELS is not an unparsed callee.
+            # `getattr(os, "environ")` and `vars(os)["environ"]` ARE the
+            # mapping and are judged as the mapping by every rule above;
+            # counting them as an escape as well would make a plain READ of
+            # the mapping through those spellings a write.
+            return False
+        for value in [*call.args, *(keyword.value for keyword in call.keywords)]:
+            stack = [value]
+            while stack:
+                node = stack.pop()
+                # A CALL that RESOLVES to the mapping is the mapping:
+                # `getattr(os, "environ")` handed to an unparsed callee is
+                # `os.environ` handed to it. Only an unresolved call is
+                # skipped, because every caller of this predicate visits
+                # every call node in its own right. A BOUND METHOD of the
+                # mapping is the mapping too: `self.addCleanup(f, MARKER,
+                # None)` after `f = os.environ.pop` hands unittest a
+                # callable that clears the marker between the tests of the
+                # class (round 5, N1).
+                if _static_value(node, bindings) in (_ENVIRON, _OS,
+                                                     _ENVIRON_METHOD):
+                    return True
+                if isinstance(node, ast.Call):
+                    continue
+                stack.extend(ast.iter_child_nodes(node))
+        return False
+
+    def _resolve_environment_writers(self) -> None:
+        """Which parsed scopes change the environment, following calls.
+
+        A monotone fixed point over the same-module/class call graph, so
+        `sink -> a -> b -> os.environ.pop(...)` is the sink's write too, and
+        a cycle can only fail to ADD a member. Bounded by what the parser can
+        read: a callee outside the scanned module counts only when the
+        mapping itself escapes into it, because this repository's own
+        `test/issues/test_issue_97.py::setUpModule` legitimately reaches
+        `hashlib.md5(path.read_bytes())` and counting every unparsed callee
+        would make the sanctioned inventory unprovable rather than safe.
+        """
+        direct, edges = set(), {}
+        for identity, fn in self.functions:
+            bindings = self._function_bindings(identity, fn)
+            reached, writes = set(), False
+            for stmt in fn.body:
+                # `_bound_scope_walk` binds a block's own statements as it
+                # descends, so a rebind inside an `if`/`for`/`with`/`try`
+                # body governs the rest of that body; `_bind_statement`
+                # below still invalidates every name the whole compound
+                # statement assigns, because nothing it bound is knowable
+                # after it (round 5, N2).
+                for node, scoped in _bound_scope_walk(stmt, bindings):
+                    if self._mutates_environment(node, scoped):
+                        writes = True
+                    if not isinstance(node, ast.Call):
                         continue
-                    any_spawn = True
-                    if spawn_at is None:
-                        spawn_at = index
-                    if any(self._names_the_runner(a) for a in
-                           [*node.args, *(k.value for k in node.keywords)]):
-                        names_runner_at_spawn = True
-            spawns_any[fn.name] = any_spawn
-            direct[fn.name] = names_runner_at_spawn
-            callees[fn.name] = called
-            runner_arg_callees[fn.name] = arg_callees
-            stmt_calls[fn.name] = calls_at
-            first_marker_read[fn.name] = read_at
-            first_spawn[fn.name] = spawn_at
-            writes_marker[fn.name] = wrote
-            stands_down[fn.name] = (
-                "_skip_in_child" in called or self._reads_the_marker(fn))
-        # Second pass: a call to a same-module function that itself reads the
-        # marker counts as a read at that statement. `self._skip_in_child()`
-        # is that shape, and it is the spelling both files already use.
-        reads_directly = {fn.name: self._reads_the_marker(fn)
-                          for fn in self.functions}
-        for fn in self.functions:
-            candidates = [i for i in (first_marker_read[fn.name],) if i is not None]
-            candidates += [index for callee, index in stmt_calls[fn.name].items()
-                           if reads_directly.get(callee)]
-            first_marker_read[fn.name] = min(candidates) if candidates else None
-        self.first_marker_read = first_marker_read
-        self.first_spawn = first_spawn
-        self.writes_marker = writes_marker
-        self.runner_arg_callees = runner_arg_callees
-        # A helper that takes the path as a PARAMETER names nothing itself;
-        # its CALLER names the runner and does not spawn. Neither is caught by
-        # the rule above, so the call that hands a runner-naming argument to a
-        # SAME-MODULE spawner counts as naming the runner itself. The pin
-        # applies the same rule across the whole scanned tree, because `test/`
-        # is on sys.path and importing a helper from another file is free.
-        for fn in self.functions:
-            if runner_arg_callees[fn.name] & {
-                    name for name, spawns in spawns_any.items() if spawns}:
-                direct[fn.name] = True
-        self.spawns_any, self.callees = spawns_any, callees
-        self.direct = direct
-        # Retained for the message the pin prints: whether a flagged function
-        # already stands down (a caller of one of the two spawners does, one
-        # frame later), which decides whether the failure reads as "add a
-        # guard" or as "route this through the spawner".
-        self.stands_down = stands_down
+                    variants = self._scope_variants(self._callee(identity, node))
+                    if variants:
+                        reached.update(variants)
+                    elif self._environment_escapes(node, scoped):
+                        writes = True
+                _bind_statement(stmt, bindings)
+            edges[identity] = reached
+            if writes:
+                direct.add(identity)
+        self.environment_writers = direct
+        changed = True
+        while changed:
+            changed = False
+            for identity, reached in edges.items():
+                if (identity not in self.environment_writers
+                        and reached & self.environment_writers):
+                    self.environment_writers.add(identity)
+                    changed = True
+
+    @staticmethod
+    def _pure_value_call(call, bindings) -> bool:
+        """The calls the target classifier already models exactly, and no
+        others — and only where the NAME is still bound to what it spells.
+
+        Admitting these is what lets a sink NORMALISE its argv before it
+        reads the marker without weakening the rule. Round 4 measured the
+        admission being made LEXICALLY (`func.id in ("str", "Path")`,
+        `func.value.id == "shutil"`), so `from mylib import str` followed by
+        `x = str(CHILD)`, or `import mylib as shutil` followed by
+        `shutil.which(...)`, put an arbitrary unparsed call into the
+        pre-stand-down region with the proof still granted. A shadowed or
+        unknown binding is impure and costs the proof; `.resolve()` is pure
+        only on a receiver this parser already resolves.
+        """
+        func = call.func
+        if isinstance(func, ast.Name):
+            if func.id == "str":
+                return _unshadowed("str", bindings)
+            return func.id == "Path" and bindings.get("Path") is _PATH
+        if isinstance(func, ast.Attribute):
+            if func.attr == "resolve" and not call.args:
+                return not _lost_binding(_static_value(func.value, bindings))
+            return (func.attr == "which" and isinstance(func.value, ast.Name)
+                    and bindings.get(func.value.id) is _SHUTIL)
+        return False
+
+    def _inert_before_marker(self, stmt, bindings) -> bool:
+        """Nothing that can reach the environment or the marker may run
+        before the marker is read.
+
+        A helper whose first line is `os.environ.pop(MARKER, None)` reads a
+        marker that is never there, so every caller of it spawns
+        unconditionally — while the proof stayed granted, because the round-1
+        rule rejected only a direct spawn written inside the helper. Round 3
+        closed the rest of the routes: ALIASING the mapping is not a copy, so
+        `_e = os.environ` is itself a loss of proof, and so is any attribute
+        reached through `os`. A call is a loss unless it is one of the forms
+        the target classifier already models exactly AND the whole value
+        resolves — which is what `rendered = [str(a) for a in argv]` is, and
+        what `reason = prepare()` is not.
+        """
+        if isinstance(stmt, ast.Expr):
+            # A docstring, and nothing else that merely evaluates.
+            return isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str)
+        if not isinstance(stmt, (ast.Assign, ast.AnnAssign)):
+            return False
+        calls = []
+        for node in _scope_walk(stmt):
+            if self._mutates_environment(node, bindings):
+                return False
+            if self._os_environ(node, bindings):
+                return False
+            if _static_value(node, bindings) is _OS:
+                return False
+            if isinstance(node, ast.Call):
+                calls.append(node)
+        if not calls:
+            return True
+        if not all(self._pure_value_call(call, bindings) for call in calls):
+            return False
+        return (stmt.value is not None
+                and not _lost_binding(_static_value(stmt.value, bindings)))
+
+    def _standdown_helper(self, identity, call):
+        callee = self._callee(identity, call)
+        fn = self.function_nodes.get(callee)
+        if fn is None or len(self.definitions.get(callee, [])) != 1:
+            return False
+        bindings = self._function_bindings(callee, fn)
+        for stmt in fn.body:
+            if isinstance(stmt, ast.If) and self._guard_condition(stmt.test, bindings):
+                return self._effective_skip(stmt.body)
+            if not self._inert_before_marker(stmt, bindings):
+                return False
+            _bind_statement(stmt, bindings)
+        return False
+
+    def _establishes_standdown(self, identity, stmt, bindings) -> bool:
+        """The statement that IS the stand-down, or the single normalization
+        branch this parser proves and that CONTAINS it. Everything else
+        before the marker read is held to `_inert_before_marker`."""
+        if isinstance(stmt, ast.If):
+            if self._guard_condition(stmt.test, bindings) and self._effective_skip(stmt.body):
+                return True
+            return self._python_branch(stmt.test, bindings)
+        return (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+                and self._standdown_helper(identity, stmt.value))
+
+    def _fault_before_marker(self, identity, stmt, bindings):
+        """Why this statement costs the sink its proof, or None."""
+        line = getattr(stmt, "lineno", 0)
+        if self._environment_write(stmt, bindings, identity):
+            return (f"{identity}:{line}: environment written before the child "
+                    "marker is read")
+        if not self._inert_before_marker(stmt, bindings):
+            return (f"{identity}:{line}: a statement that is not provably inert "
+                    "runs before the child marker is read")
+        return None
+
+    def _referenced_class(self, prefix, base):
+        if isinstance(base, ast.Name):
+            for candidate in ((prefix + "." + base.id) if prefix else base.id, base.id):
+                if candidate in self.class_nodes:
+                    return candidate
+        return None
+
+    def _class_chain(self, owner):
+        """The owning class and every parsed base of it. An unparsed base is
+        not followed and is not claimed; `unittest.TestCase`'s own fixtures
+        do nothing."""
+        chain, queue = [], [owner]
+        while queue:
+            name = queue.pop(0)
+            if name in chain or name not in self.class_nodes:
+                continue
+            chain.append(name)
+            prefix = name.rpartition(".")[0]
+            for base in self.class_nodes[name].bases:
+                resolved = self._referenced_class(prefix, base)
+                if resolved is not None:
+                    queue.append(resolved)
+        return chain
+
+    @staticmethod
+    def _dotted_name(node):
+        parts = []
+        while isinstance(node, ast.Attribute):
+            parts.append(node.attr)
+            node = node.value
+        if not isinstance(node, ast.Name):
+            return None
+        parts.append(node.id)
+        return ".".join(reversed(parts))
+
+    @staticmethod
+    def _pure_decorator(dotted) -> bool:
+        """The standard decorators that provably run no code of their own.
+        Everything else is fail closed, because a decorator runs at class
+        body time and one that clears the marker disarms every sink it
+        wraps."""
+        if not dotted:
+            return False
+        parts = dotted.split(".")
+        if parts[0] in ("staticmethod", "classmethod", "property", "abstractmethod"):
+            return len(parts) == 1
+        if parts[-1] == "wraps" and parts[0] in ("wraps", "functools"):
+            return True
+        if (parts[0] == "unittest" and len(parts) > 1
+                and (parts[1].startswith("skip") or parts[1] == "expectedFailure")):
+            return True
+        if len(parts) == 1 and (parts[0].startswith("skip") or parts[0] == "expectedFailure"):
+            return True
+        # `mock.patch`, `mock.patch.object`, `unittest.mock.patch`, a bare
+        # `patch`. `patch.dict(os.environ, ...)` never reaches here: the
+        # mapping escapes into it, which is a write.
+        return "patch" in parts and parts[0] in ("mock", "unittest", "patch")
+
+    def _decorator_writes(self, identity, decorator) -> bool:
+        bindings = self.scopes.get(identity, self.bindings)
+        if isinstance(decorator, ast.Call) and self._environment_escapes(decorator, bindings):
+            return True
+        node = decorator.func if isinstance(decorator, ast.Call) else decorator
+        variants = self._scope_variants(self._referenced_scope(identity, node))
+        if variants:
+            return any(target in self.environment_writers for target in variants)
+        return not self._pure_decorator(self._dotted_name(node))
+
+    def _cleanup_writes(self, identity, call, bindings) -> bool:
+        if call.args and isinstance(call.args[0], ast.Lambda):
+            if self._environment_write(call.args[0].body, bindings, identity):
+                return True
+        elif call.args:
+            variants = self._scope_variants(self._referenced_scope(identity, call.args[0]))
+            if any(target in self.environment_writers for target in variants):
+                return True
+        # `self.addCleanup(os.environ.pop, MARKER, None)` hands the mapping's
+        # own bound method to unittest, which calls it between the tests.
+        return self._environment_escapes(call, bindings)
+
+    def _class_environment_errors(self, cls):
+        """Fixtures, cleanup callbacks and decorators of ONE class."""
+        if cls in self._fixture_errors:
+            return self._fixture_errors[cls]
+        self._fixture_errors[cls] = errors = []
+        node = self.class_nodes[cls]
+        for item in node.body:
+            if (isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and item.name in FIXTURE_METHODS
+                    and cls + "." + item.name in self.environment_writers):
+                errors.append(f"{cls}.{item.name}:{item.lineno}: a fixture of this "
+                              "class writes the environment, so every sink in it "
+                              "reads a child marker that is never there")
+        for decorator in node.decorator_list:
+            if self._decorator_writes(cls + "." + CLASS_SCOPE, decorator):
+                errors.append(f"{cls}:{decorator.lineno}: a decorator on this class "
+                              "is not provably free of environment writes")
+        prefix = cls + "."
+        for member, fn in self.functions:
+            if not member.startswith(prefix):
+                continue
+            bindings = self._function_bindings(member, fn)
+            for stmt in fn.body:
+                for sub in _scope_walk(stmt):
+                    if (isinstance(sub, ast.Call) and isinstance(sub.func, ast.Attribute)
+                            and sub.func.attr == "addCleanup"
+                            and self._cleanup_writes(member, sub, bindings)):
+                        errors.append(f"{member}:{sub.lineno}: a cleanup callback "
+                                      "this class registers writes the environment "
+                                      "between its tests")
+                _bind_statement(stmt, bindings)
+        return errors
+
+    def _pre_sink_environment_errors(self, identity):
+        """Statements the language runs before this sink that the sink does
+        not write itself.
+
+        A marker cleared in `setUp`, in a cleanup callback or in a decorator
+        is read by every sink in the class as "not a child", so the spawn is
+        unconditional and no amount of care inside the sink body can see it.
+        """
+        errors = []
+        for name in MODULE_FIXTURES:
+            if name in self.environment_writers:
+                errors.append(f"{identity}:{self.lineno[name]}: {name}() writes the "
+                              "environment before any sink in this module reads "
+                              "the child marker")
+        for cls in self._class_chain(identity.rpartition(".")[0]):
+            errors.extend(self._class_environment_errors(cls))
+        fn = self.function_nodes.get(identity)
+        for decorator in getattr(fn, "decorator_list", []):
+            if self._decorator_writes(identity, decorator):
+                errors.append(f"{identity}:{decorator.lineno}: a decorator on this "
+                              "sink is not provably free of environment writes")
+        return errors
+
+    def _marked_env(self, node, bindings, envs):
+        if isinstance(node, ast.Name):
+            return envs.get(node.id, False)
+        if isinstance(node, ast.Dict):
+            marked = False
+            for key, value in zip(node.keys, node.values):
+                if key is None:
+                    marked = self._marked_env(value, bindings, envs)
+                elif self._marker_key(key, bindings):
+                    marked = isinstance(value, ast.Constant) and isinstance(value.value, str) and bool(value.value)
+                elif _static_value(key, bindings) is _UNKNOWN:
+                    marked = False
+            return marked
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "dict":
+            marked = self._marked_env(node.args[0], bindings, envs) if len(node.args) == 1 else False
+            for key in node.keywords:
+                if key.arg is None:
+                    marked = self._marked_env(key.value, bindings, envs)
+                elif key.arg == self.guard_env:
+                    marked = isinstance(key.value, ast.Constant) and isinstance(key.value.value, str) and bool(key.value.value)
+            return marked
+        return False
+
+    def _python_branch(self, test, bindings):
+        # The generic sink's concrete normalization/condition. Recognizing
+        # this AST shape proves its branch for an incoming known Python argv.
+        if not (isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And)
+                and len(test.values) == 2 and isinstance(test.values[0], ast.Name)):
+            return False
+        name = test.values[0].id
+        expected = ast.parse(f"{name} and Path({name}[0]).name.startswith('python')", mode="eval").body
+        return ast.dump(test) == ast.dump(expected) and self._python_target(bindings.get(name)) is not None
+
+    def _verify_guard(self, identity, fn):
+        """Prove supported stand-down and environment flow at each real sink.
+
+        Straight-line assignments/dict merges, a marker-conditioned SkipTest,
+        a verified same-scope skip helper, and try bodies are supported. Other
+        branches are checked independently and cannot establish a later guard
+        or marker. Passing an environment to an unknown call invalidates it.
+        """
+        errors, guard_indices, marked_sites = [], [], []
+        visited_spawns = set()
+        def visit(body, bindings, envs, guarded=False, outer_index=None):
+            for index, stmt in enumerate(body):
+                at = index if outer_index is None else outer_index
+                if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    continue
+                if not guarded and not self._establishes_standdown(identity, stmt, bindings):
+                    # The stand-down helper rule, AT THE SINK: a marker
+                    # cleared before it is read makes the read answer "not a
+                    # child" every time, so the spawn is unconditional — and
+                    # the clearing need not be written here, nor be a write
+                    # at all. Anything this parser cannot prove inert costs
+                    # the proof.
+                    fault = self._fault_before_marker(identity, stmt, bindings)
+                    if fault is not None:
+                        errors.append(fault)
+                if isinstance(stmt, ast.If):
+                    if self._guard_condition(stmt.test, bindings) and self._effective_skip(stmt.body):
+                        guarded = True
+                        guard_indices.append(at)
+                        continue
+                    if self._python_branch(stmt.test, bindings):
+                        guarded = visit(stmt.body, bindings, envs, guarded, at)
+                        continue
+                    visit(stmt.body, dict(bindings), dict(envs), guarded, at)
+                    visit(stmt.orelse, dict(bindings), dict(envs), guarded, at)
+                    for name in _assigned_names(stmt):
+                        bindings[name] = _UNKNOWN
+                    # Unknown control flow cannot establish a marked env and
+                    # may mutate one through calls or subscript writes.
+                    envs.clear()
+                    continue
+                if isinstance(stmt, ast.Try):
+                    visit(stmt.body, dict(bindings), dict(envs), guarded, at)
+                    for handler in stmt.handlers:
+                        visit(handler.body, dict(bindings), dict(envs), guarded, at)
+                    visit(stmt.orelse, dict(bindings), {}, guarded, at)
+                    visit(stmt.finalbody, dict(bindings), {}, guarded, at)
+                    envs.clear()
+                    continue
+                if isinstance(stmt, (ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith,
+                                     ast.Match, getattr(ast, "TryStar", ast.Try))):
+                    # Loops may execute zero times and context managers may
+                    # suppress an exception. No guard established inside is
+                    # usable after the container. Its internal sinks still
+                    # need their own named proof.
+                    for child in ast.iter_child_nodes(stmt):
+                        if isinstance(child, ast.stmt):
+                            visit([child], dict(bindings), dict(envs), guarded, at)
+                    envs.clear()
+                    _bind_statement(stmt, bindings)
+                    continue
+                nodes = list(_scope_walk(stmt))
+                for node in nodes:
+                    if not isinstance(node, ast.Call):
+                        continue
+                    if self._is_spawn(node):
+                        visited_spawns.add(id(node))
+                        env = next((k.value for k in node.keywords if k.arg == "env"), None)
+                        marked = self._marked_env(env, bindings, envs)
+                        marked_sites.append(marked)
+                        if not guarded:
+                            errors.append(f"{identity}:{node.lineno}: no effective child stand-down before spawn")
+                        if not marked:
+                            errors.append(f"{identity}:{node.lineno}: spawn environment lacks authoritative truthy child marker")
+                    elif (isinstance(stmt, ast.Expr) and stmt.value is node
+                          and self._standdown_helper(identity, node)):
+                        guarded = True
+                        guard_indices.append(at)
+                    else:
+                        # Calls may mutate dictionaries supplied by argument
+                        # or receiver; dict(env) is the supported copy shape.
+                        copying = isinstance(node.func, ast.Name) and node.func.id == "dict"
+                        if not copying:
+                            for arg in [*node.args, *(k.value for k in node.keywords)]:
+                                if isinstance(arg, ast.Name):
+                                    envs.pop(arg.id, None)
+                        if isinstance(node.func, ast.Attribute) and isinstance(node.func.value, ast.Name):
+                            envs.pop(node.func.value.id, None)
+                if isinstance(stmt, ast.Assign):
+                    marked = self._marked_env(stmt.value, bindings, envs)
+                    if isinstance(stmt.value, ast.Name):
+                        # Aliasing a mutable dict would require an alias
+                        # analysis. Reject it; dict(env) is the supported copy.
+                        envs.pop(stmt.value.id, None)
+                        marked = False
+                    for target in stmt.targets:
+                        if isinstance(target, ast.Name):
+                            envs[target.id] = marked
+                        elif isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name):
+                            envs[target.value.id] = (self._marker_key(target.slice, bindings)
+                                and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str)
+                                and bool(stmt.value.value))
+                elif not isinstance(stmt, (ast.Expr, ast.Return)):
+                    for name in _assigned_names(stmt):
+                        envs.pop(name, None)
+                    for node in nodes:
+                        if isinstance(node, ast.Subscript) and isinstance(node.ctx, (ast.Store, ast.Del)) and isinstance(node.value, ast.Name):
+                            envs.pop(node.value.id, None)
+                _bind_statement(stmt, bindings)
+            return guarded
+        visit(fn.body, self._function_bindings(identity, fn), {})
+        for stmt in fn.body:
+            for node in _scope_walk(stmt):
+                if isinstance(node, ast.Call) and self._is_spawn(node) and id(node) not in visited_spawns:
+                    errors.append(f"{identity}:{node.lineno}: unsupported spawn control flow")
+        return errors, min(guard_indices) if guard_indices else None, bool(marked_sites) and all(marked_sites)
 
 
 class TestTheRunnerItself(unittest.TestCase):
@@ -21463,7 +31771,8 @@ class TestTheRunnerItself(unittest.TestCase):
             print(reason)
             self.skipTest(reason)
 
-    def _spawn_suite(self, *argv_tail) -> subprocess.CompletedProcess:
+    def _spawn_suite(self, *argv_tail, cwd: Path | None = None,
+                     environment: dict | None = None) -> subprocess.CompletedProcess:
         """The ONE place in this file that spawns `python3 test/run_tests.py`,
         and it stands down itself when this run IS the child.
 
@@ -21476,13 +31785,15 @@ class TestTheRunnerItself(unittest.TestCase):
         test needs no guard of its own and no table entry.
         """
         self._skip_in_child()
+        root = REPO_ROOT if cwd is None else cwd
         return subprocess.run(
-            [sys.executable, str(TEST_DIR / SUITE_RUNNER_NAME),
+            [sys.executable, str(root / "test" / SUITE_RUNNER_NAME),
              *[str(a) for a in argv_tail]],
-            cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=900,
+            cwd=str(root), capture_output=True, text=True, timeout=900,
             # test/issues/test_issue_97.py's own spawner reads this and stands
             # down, and so does this method, so a child can never fork.
-            env=dict(os.environ, **{self.SUITE_CHILD_ENV: "1"}))
+            env=dict(environment if environment is not None else os.environ,
+                     **{self.SUITE_CHILD_ENV: "1"}))
 
     @staticmethod
     def _modules(suite: unittest.TestSuite) -> set[str]:
@@ -21688,15 +31999,17 @@ class TestTheRunnerItself(unittest.TestCase):
                     "assertions that can see this runner's exit code, and it "
                     "no longer exists")
 
-    # The ONLY functions in this repository allowed to name the suite runner
-    # at a spawn, as (file, function). Each of them stands down itself when
-    # the run IS the child, so every caller — in any file, guarded or not —
-    # is bounded by construction. The test below asserts this membership is
-    # EXACT over an `ast` walk of every `*.py` under test/ and harness/, so a
-    # forking helper anywhere in either tree is red with its file and line.
+    # The reviewed inventory of potential Python suite sinks, as (file,
+    # lexical function identity). Each stands down on the child marker before
+    # its sink and passes an environment with an authoritative truthy marker. The
+    # test below asserts this membership is EXACT over every derived import
+    # root, so a new helper is red with its file and line.
     SUITE_SPAWNERS = (
-        ("test/issues/test_issue_97.py", "_run_suite"),
-        ("test/run_tests.py", "_spawn_suite"),
+        ("test/issues/test_issue_97.py", "TestIssue97._run_copy"),
+        ("test/issues/test_issue_97.py", "TestIssue97._run_suite"),
+        ("test/run_tests.py", "TestTheRunnerItself._spawn_suite"),
+        ("test/run_tests.py", "TestIssue84Round5._guarded_invoke"),
+        ("test/test_propagation.py", "LockAndDigestTests.test_digest_matches_the_registry_generator"),
     )
 
     # What unittest can execute on its own. Kept because the message a
@@ -21709,17 +32022,16 @@ class TestTheRunnerItself(unittest.TestCase):
 
     @classmethod
     def _scan_the_forkable_tree(cls) -> dict:
-        """`{relative path: _SuiteForkScan}` for every `*.py` under test/ and
-        harness/ that rglob finds — packages, subdirectories and `__init__.py`
-        included, `__pycache__` aside.
+        """Parse every Python file under the runner's real import roots.
 
-        A directory walk and not a file pattern: round 3's pin parsed one
-        file, round 4's parsed two globs, and each time the helper that ran
-        the tree away lived one directory over.
+        The root parser accepts constants, names, joins, `str` and `Path`.
+        Any other insertion expression fails named and closed; it never means
+        "scan fewer files". This proves only invocation construction, not
+        arbitrary code a known different script might subsequently import.
         """
         scans = {}
-        for directory in SUITE_SCAN_DIRS:
-            for path in sorted((REPO_ROOT / directory).rglob("*.py")):
+        for directory in _suite_scan_roots(REPO_ROOT, TEST_DIR / SUITE_RUNNER_NAME):
+            for path in sorted(directory.rglob("*.py")):
                 if "__pycache__" in path.parts:
                     continue
                 rel = path.relative_to(REPO_ROOT).as_posix()
@@ -21732,14 +32044,109 @@ class TestTheRunnerItself(unittest.TestCase):
         """S-B-a-2. Nothing in this repository can fork `test/run_tests.py`
         without standing down when it IS the child.
 
-        The invariant is enforced at the SPAWNER, not at its callers: exactly
-        two functions may name the runner at a spawn, each reads
-        $SKILLS_EVALS_SUITE_CHILD before it spawns, and `_run_suite` writes
-        that marker into the child's environment. Everything else — a new
-        forking test, a helper in `test/`, a helper in `harness/`, a helper in
-        a package inside the discovery dir — is red here with its file and
-        line, and the remedy is always the same one sentence: call the
-        spawner.
+        The invariant is enforced at the subprocess sink, not at its callers.
+        Every reviewed inventory member reads $SKILLS_EVALS_SUITE_CHILD before
+        spawning and writes it authoritatively for the child.
+
+        What this CLAIMS about DISCOVERY: every `subprocess`/`os` process
+        start and every string command line — written in a function, a
+        lambda, a class body, a module body, a decorator, a default or a
+        comprehension, reached through an import alias or an alias bound by
+        assignment — is inventoried, and a call whose argument shape cannot
+        be read in full is classified fail closed rather than exonerated as
+        "not a Python spawn": an unreadable `shell`, a `**kwargs` spread, a
+        `*args` spread and a string command line all reach the
+        interpreter-token classifier, a `bytes` argv is the argv it spells,
+        and an interpreter parked on a class or instance attribute — read as
+        `C.PY`, `self.PY` or `type(self).PY` — is still the interpreter. A
+        SUBCLASS of `subprocess.Popen` declared in a scanned module, and any
+        subclass of that, is a spawn surface with `Popen`'s own argv layout.
+        A member whose Python target is unknown or names the runner is red
+        here with its file and line, and must then gain the same verified
+        guard or a provable other-program target.
+
+        What a VERIFIED guard CLAIMS: between the first statement of the sink
+        and the marker read that guards it, nothing runs but a docstring, an
+        assignment whose value this parser resolves completely through the
+        calls it already models (`str`, `Path`, `.resolve()`,
+        `shutil.which`) AND whose names are still bound to what they spell —
+        a module that rebinds `str`, `Path` or `shutil` to something this
+        parser cannot read loses the proof rather than admitting the call. An
+        alias of `os.environ`, any attribute reached through `os`, and any
+        other call — including one that resolves to a scope clearing the
+        marker two or three hops away — costs the proof. The same rule holds
+        for the stand-down helper's own body.
+
+        What a FIXTURE claim covers, exactly: a write this parser READS in
+        `setUp`/`setUpClass`/`tearDown`/`tearDownClass`/`setUpModule`/
+        `tearDownModule`, in a cleanup callback the sink's class registers,
+        or in a decorator on the sink or on its class costs every sink in
+        that class its proof. "Reads" is the whole rule below — every
+        spelling of the mapping the binding table resolves, `putenv` /
+        `unsetenv`, the mapping handed to a callee this parser cannot read,
+        a receiver whose value it cannot read AT ALL however that receiver
+        is spelled (a bare name, a `self`/`cls` attribute, or a chain on a
+        call or a subscript such as `sys.modules['os'].environ`), a bound
+        marker-clearing method of the mapping parked on a name and then
+        called or registered as a cleanup, and a rebind made INSIDE an
+        `if`/`for`/`while`/`with`/`try` body for the rest of that body. It
+        does not cover a fixture that reaches the marker only through code
+        this parser never sees: that bound, and the one loop-carried shape
+        it leaves, are named below rather than promised away.
+
+        What "the environment mapping" MEANS here: ONE binding table
+        (`_MODULE_SENTINELS` / `_MEMBER_SENTINELS` / `_FROM_IMPORT_SENTINELS`)
+        resolves every spelling, and `_os_environ` asks nothing else, so no
+        rule above can see one spelling and miss its sibling. `import os`,
+        `import os as o`, `import os.path` (which binds `os`),
+        `from os import environ [as e]`, `env = os.environ; e2 = env`,
+        `a = os; b = a; b.environ`, `self.env = os.environ` read back as
+        `self.env` or `type(self).env`, `__import__("os")`,
+        `importlib.import_module("os")` with a constant argument,
+        `getattr(os, "environ")` and `vars(os)["environ"]` are all the same
+        mapping; `from os import path`, `import os.path as p` and an import
+        whose module name is not constant are not. `os.putenv` and
+        `os.unsetenv` count as environment writes although they leave the
+        mapping itself unchanged, because they change what a child inherits.
+        FAIL CLOSED: a name this parser cannot resolve at all, used AS the
+        mapping in a position that can leave the marker unset —
+        `X.pop(MARKER)`, `del X[MARKER]`, `X[MARKER] = <not a non-empty
+        literal>`, `X.update(...)`, `X |= ...`, `X.clear()`, `X.popitem()`,
+        with a key that is the marker or that this parser cannot read — is a
+        write wherever it appears: in a fixture, in a helper the fixture
+        reaches, or in a sink preamble. `dict(...)`, `{...}` and
+        `<mapping>.copy()` resolve to a FRESH mapping, so the sanctioned
+        `env = dict(os.environ); env[MARKER] = "1"` shape is not caught by
+        that rule and neither is an authoritative `X[MARKER] = "1"`.
+
+        What this deliberately does NOT claim, and does not implement:
+        `functools.partial`, `runpy.run_path` and `importlib.import_module`
+        HANDOFFS are OUT OF SCOPE — they construct the callable or the module
+        indirectly and this parser proves invocation CONSTRUCTION only
+        (`import_module("os")` is resolved as a BINDING of the `os` module,
+        which is a different question). The environment analysis is bounded
+        by what it parses: a callee outside the scanned module counts as a
+        write only when the mapping itself is handed to it, because this
+        repository's own `setUpModule` reaches
+        `hashlib.md5(path.read_bytes())`; a sibling-module helper that clears
+        the marker without receiving the mapping is not detectable here, and
+        neither is `exec`/`eval` of a source string that names the mapping,
+        which is the same bound wearing a different face — in a SINK
+        PREAMBLE both lose the proof, because nothing there may run at all,
+        but in a FIXTURE they do not. A name whose value CHANGES BETWEEN
+        ITERATIONS of a loop is read with the value it has on entry to the
+        body: statements inside a block bind for the rest of that block, but
+        the body is not re-read with what its last statement left behind, so
+        `for ...: env.pop(MARKER); env = os.environ` is read with the
+        `env` that held before the loop. (After the block ends, a name the
+        block assigned is unknown rather than trusted, which fails closed.) A
+        `subprocess` call whose argv is a name this parser cannot resolve,
+        with no `shell`, no spread and no string shape, stays an unknown
+        EXTERNAL command — measured cost of closing it: 32 of the 148 spawn
+        sites in the scan roots would newly flag. An unparsed base class
+        contributes no fixtures and is not read for a `Popen` inheritance
+        either. Each of these is named here rather than covered with a
+        promise.
 
         Measured on f9115ce, each in its own throwaway copy and each with the
         two round-3 pins GREEN: `test/r4forkhelper.py`, `harness/r4harnessfork.py`
@@ -21754,18 +32161,17 @@ class TestTheRunnerItself(unittest.TestCase):
                       "missed it is one of the defects being fixed here")
 
         # Which functions name the runner at a spawn. `direct` is the
-        # function's own body; the closure below is the one-hop case, in which
-        # a helper takes the path as a PARAMETER (so it names nothing) and its
-        # CALLER hands it over (so it does not spawn) — across files as well
-        # as inside one, because `test/` is on sys.path and an import is free.
+        # function's own body, including a known-Python argv received from
+        # a same-module/class helper. The legacy literal-runner handoff below
+        # also catches named imported spawners across the derived scan roots.
         spawner_names = {name for scan in scans.values()
                          for name, spawns in scan.spawns_any.items() if spawns}
         flagged = {}
         for rel, scan in scans.items():
-            for fn in scan.functions:
-                if scan.direct[fn.name] or (
-                        scan.runner_arg_callees[fn.name] & spawner_names):
-                    flagged[(rel, fn.name)] = scan.lineno[fn.name]
+            for identity, _ in scan.functions:
+                if scan.direct[identity] or (
+                        scan.runner_arg_callees[identity] & spawner_names):
+                    flagged[(rel, identity)] = scan.lineno[identity]
 
         self.assertTrue(
             flagged,
@@ -21774,38 +32180,22 @@ class TestTheRunnerItself(unittest.TestCase):
 
         self.assertEqual(
             sorted(flagged), sorted(self.SUITE_SPAWNERS),
-            "the set of functions that name `python3 test/run_tests.py` at a "
-            "spawn has changed. Exactly the functions in SUITE_SPAWNERS may "
-            "do it, and each of them stands down inside a child — so a test "
-            "that forks the suite THROUGH one of them needs no guard of its "
-            "own and no entry anywhere. If your new function is in this list, "
-            "route its spawn through `_run_suite` (or this file's "
-            "`_spawn_suite`) instead: a second unguarded spawner is how the "
-            "suite forks itself forever, measured at 19 concurrent runner "
-            "processes and still climbing.\n  flagged: "
+            "the reviewed inventory of potential Python suite sinks changed. "
+            "Every listed function must have a parser-verified child guard; "
+            "a new member needs either a provable other-program target or an "
+            "explicit guarded-inventory review.\n  flagged: "
             + "\n  ".join(f"{rel}:{lineno} {name}()"
                           for (rel, name), lineno in sorted(flagged.items())))
 
         for rel, name in sorted(self.SUITE_SPAWNERS):
             scan = scans[rel]
             with self.subTest(spawner=f"{rel}::{name}"):
-                read_at = scan.first_marker_read[name]
-                spawn_at = scan.first_spawn[name]
-                self.assertIsNotNone(
-                    read_at,
-                    f"{rel}:{scan.lineno[name]} {name}() spawns the whole "
-                    f"suite and never reads ${self.SUITE_CHILD_ENV}. It is "
-                    "the only thing bounding every caller: without the check "
-                    "here the child forks again, and again.")
-                self.assertLess(
-                    read_at, spawn_at,
-                    f"{rel}:{scan.lineno[name]} {name}() reads "
-                    f"${self.SUITE_CHILD_ENV} only AFTER it has already "
-                    "spawned — the child is already running by then")
+                self.assertTrue(scan.guard_verified[name],
+                                "\n".join(scan.guard_errors[name]) or f"{rel}:{scan.lineno[name]} missing spawn")
 
         issue97 = scans["test/issues/test_issue_97.py"]
         self.assertTrue(
-            issue97.writes_marker["_run_suite"],
+            issue97.writes_marker["TestIssue97._run_suite"],
             "_run_suite no longer writes $" + self.SUITE_CHILD_ENV + " into "
             "the child's environment, so the child does not know it is one "
             "and nothing makes it stand down. Measured: with that single "
@@ -22070,6 +32460,1951 @@ def main(argv: list[str] | None = None) -> int:
     # by a child run with $SKILLS_EVALS_USER_MEMORY redirected.
     return memory_guard(memory, before, status)
 
+
+class TestIssue152(unittest.TestCase):
+    """Parser-only regression rows for the suite-fork scan.
+
+    These sources are written under a temporary root and are never imported,
+    discovered, or executed. A finding is sufficient: executing a hostile
+    recursive fixture would be the failure mode this pin exists to prevent.
+    """
+
+    CHILD = "SKILLS_EVALS_SUITE_CHILD"
+
+    def _repo(self, runner_extra=""):
+        root = Path(tempfile.mkdtemp(prefix="issue152-parser-"))
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        for name in ("test", "harness", "scripts", "fourth"):
+            (root / name).mkdir()
+        runner = """from pathlib import Path
+import sys
+TEST_DIR = Path(__file__).resolve().parent
+REPO_ROOT = TEST_DIR.parent
+HARNESS_DIR = REPO_ROOT / 'harness'
+sys.path.insert(0, str(HARNESS_DIR))
+sys.path.insert(0, str(REPO_ROOT / 'scripts'))
+sys.path.insert(0, str(REPO_ROOT / 'fourth'))
+""" + runner_extra
+        path = root / "test" / "run_tests.py"
+        path.write_text(runner, encoding="utf-8")
+        return root, path
+
+    def _scan_source(self, source):
+        root, _ = self._repo()
+        path = root / "scripts" / "hostile.py"
+        path.write_text(source, encoding="utf-8")
+        return _SuiteForkScan(path, self.CHILD)
+
+    @staticmethod
+    def _flagged(scan):
+        """The live inventory predicate, restricted to one parsed file."""
+        spawners = {name for name, spawns in scan.spawns_any.items() if spawns}
+        return {identity: scan.lineno[identity]
+                for identity, _ in scan.functions
+                if scan.direct[identity]
+                or (scan.runner_arg_callees[identity] & spawners)}
+
+    def test_roots_follow_real_sys_path_insertions_including_a_fourth_tree(self):
+        root, runner = self._repo()
+        roots = _suite_scan_roots(root, runner)
+        self.assertEqual({path.relative_to(root).as_posix() for path in roots},
+                         {"test", "harness", "scripts", "fourth"})
+        (root / "fourth" / "helper.py").write_text("x = 1\n", encoding="utf-8")
+        scanned = {path.relative_to(root).as_posix()
+                   for directory in roots for path in directory.rglob("*.py")}
+        self.assertIn("fourth/helper.py", scanned)
+
+    def test_unsupported_or_outside_inserted_root_fails_named_and_closed(self):
+        root, runner = self._repo("sys.path.insert(0, dynamic_root)\n")
+        with self.assertRaisesRegex(SuiteScanError, "unsupported scan root"):
+            _suite_scan_roots(root, runner)
+        root, runner = self._repo("sys.path.insert(0, '/outside-the-repo')\n")
+        with self.assertRaisesRegex(SuiteScanError, "outside repository"):
+            _suite_scan_roots(root, runner)
+
+    def test_python_targets_fail_closed_but_known_other_programs_pass(self):
+        scan = self._scan_source("""import subprocess as sp
+import sys
+import os
+from run_tests import TEST_DIR, SUITE_RUNNER_NAME
+import run_tests as rt
+RUNNER = f'{TEST_DIR}/{SUITE_RUNNER_NAME}'
+UNKNOWN = imported_target
+def imported(): sp.run(args=[sys.executable, TEST_DIR / SUITE_RUNNER_NAME])
+def qualified(): sp.Popen([sys.executable, rt.TEST_DIR / rt.SUITE_RUNNER_NAME])
+def f_string(): sp.run([sys.executable, RUNNER])
+def unknown(): sp.run([sys.executable, UNKNOWN])
+def cycle():
+    one = two
+    two = one
+    sp.run([sys.executable, one])
+def reassigned():
+    target = 'other.py'
+    target = imported_target
+    sp.run([sys.executable, target])
+def branch_reassigned():
+    target = 'other.py'
+    if condition:
+        target = 'maybe.py'
+    sp.run([sys.executable, target])
+def formatted(): sp.run([sys.executable, f'{114:c}{117:c}{110:c}_tests.py'])
+def sink(target): sp.run([sys.executable, target])
+def handoff(): sink('run_tests.py')
+def os_spawn(): os.spawnv(os.P_WAIT, sys.executable, [sys.executable, 'run_tests.py'])
+def in_process(): rt.main()
+def safe(): sp.run([sys.executable, 'scripts/generate_skills_lock.py'])
+""")
+        for name in ("imported", "qualified", "f_string", "unknown", "cycle",
+                     "reassigned", "branch_reassigned", "formatted", "handoff", "os_spawn", "in_process"):
+            with self.subTest(name=name):
+                self.assertTrue(scan.direct[name])
+        self.assertFalse(scan.direct["safe"])
+
+    def test_guarded_sink_accepts_only_read_before_spawn_and_authoritative_write(self):
+        good = """import os, subprocess, sys, unittest
+class Guard:
+ def sink(self, env_extra=None):
+  if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):
+   raise unittest.SkipTest('child')
+  env = dict(os.environ)
+  env.update(env_extra or {})
+  env['SKILLS_EVALS_SUITE_CHILD'] = '1'
+  subprocess.run([sys.executable, target], env=env)
+"""
+        scan = self._scan_source(good)
+        self.assertTrue(scan.guard_verified['Guard.sink'])
+        # Each counterexample changes runtime behavior, not a syntax count.
+        cases = {
+            'no exit': good.replace("raise unittest.SkipTest('child')", 'pass'),
+            'empty marker': good.replace("CHILD'] = '1'", "CHILD'] = ''"),
+            'override': good.replace("  env.update(env_extra or {})\n  env['SKILLS_EVALS_SUITE_CHILD'] = '1'",
+                                    "  env['SKILLS_EVALS_SUITE_CHILD'] = '1'\n  env.update(env_extra or {})"),
+            'unrelated environment': good.replace('target], env=env)', 'target], env=dict(os.environ))'),
+            'unrelated get': good.replace('os.environ.get(', 'other.get('),
+            'inverted guard': good.replace('if os.environ.get(', 'if not os.environ.get('),
+            'guard after spawn': good.replace("  if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):\n   raise unittest.SkipTest('child')\n", '')
+                + "  if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):\n   raise unittest.SkipTest('child')\n",
+            'deleted marker': good.replace('  subprocess.run(', "  del env['SKILLS_EVALS_SUITE_CHILD']\n  subprocess.run("),
+            'alias mutation': good.replace('  subprocess.run(', "  alias = env\n  alias.clear()\n  subprocess.run("),
+            'shadowed os': good.replace('env_extra=None', 'env_extra=None, os=None'),
+            'fake skip helper': good.replace("  if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):\n   raise unittest.SkipTest('child')", '  self._skip_in_child()')
+                + ' def _skip_in_child(self): pass\n',
+        }
+        real_helper = " def _skip_in_child(self):\n  if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):\n   raise unittest.SkipTest('child')\n"
+        conditional_helper = good.replace("  if os.environ.get('SKILLS_EVALS_SUITE_CHILD'):\n   raise unittest.SkipTest('child')",
+                                          '  condition and self._skip_in_child()') + real_helper
+        cases['conditional helper'] = conditional_helper
+        cases['loop helper'] = conditional_helper.replace('  condition and self._skip_in_child()',
+                                                          '  for item in items:\n   self._skip_in_child()')
+        cases['exception group helper'] = conditional_helper.replace('  condition and self._skip_in_child()',
+            '  try:\n   operation()\n  except* Exception:\n   self._skip_in_child()')
+        for label, source in cases.items():
+            with self.subTest(case=label):
+                changed = self._scan_source(source)
+                self.assertTrue(changed.direct['Guard.sink'])
+                self.assertFalse(changed.guard_verified['Guard.sink'])
+                self.assertTrue(changed.guard_errors['Guard.sink'])
+
+    def test_python_import_aliases_versioned_tokens_and_os_argv_layouts(self):
+        expressions = [
+            'sp.run([sy.executable, target])', 'sp.run([py, target])',
+            "sp.run(['python3.12', target])", "sp.run(['/usr/bin/python3.13', target])",
+            'sp.run(args=[interpreter, target])',
+            'os.execv(sy.executable, ["display-name", target])',
+            'os.execve(py, ["display-name", target], {})',
+            'os.execl(py, "display-name", target)',
+            'os.execle(py, "display-name", target, {})',
+            'os.spawnv(os.P_WAIT, py, ["display-name", target])',
+            'os.spawnve(os.P_WAIT, py, ["display-name", target], {})',
+            'os.spawnl(os.P_WAIT, py, "display-name", target)',
+            'os.posix_spawn(py, ["display-name", target], {})',
+            'os.posix_spawnp(py, ["display-name", target], {})',
+        ]
+        for expression in expressions:
+            with self.subTest(expression=expression):
+                scan = self._scan_source('import os, subprocess as sp, sys as sy\nfrom sys import executable as py\n'
+                    + 'interpreter = py\ndef probe(): ' + expression)
+                self.assertTrue(scan.direct['probe'])
+        for expression in ['sp.run([external, target])', "sp.run(['git', target])", "os.execv('git', ['git', target])"]:
+            with self.subTest(external=expression):
+                self.assertFalse(self._scan_source('import os, subprocess as sp\ndef probe(): ' + expression).direct['probe'])
+
+    def test_lexical_scopes_containers_and_shadowed_bindings(self):
+        for header, tail in [('if condition:', ''), ('try:', 'except Exception:\n pass\n'),
+                             ('with context:', ''), ('for item in values:', '')]:
+            with self.subTest(container=header):
+                scan = self._scan_source('import subprocess, sys\n' + header
+                    + "\n def probe(): subprocess.run([sys.executable, 'run_tests.py'])\n" + tail)
+                self.assertTrue(scan.direct['probe'])
+        for write in ['if condition:\n target = imported', 'for target in values:\n pass',
+                      'try:\n target = imported\nexcept Exception:\n pass', 'target += suffix', 'del target']:
+            with self.subTest(write=write):
+                scan = self._scan_source("import sys, subprocess\ntarget = 'other.py'\n" + write
+                    + '\ndef probe(): subprocess.run([sys.executable, target])')
+                self.assertTrue(scan.direct['probe'])
+        scan = self._scan_source("""import subprocess, sys
+target = 'other.py'
+def probe(target): subprocess.run([sys.executable, target])
+def outer():
+ target = 'other.py'
+ def inner():
+  target = imported
+  subprocess.run([sys.executable, target])
+ subprocess.run([sys.executable, target])
+class A:
+ def same(self): subprocess.run([sys.executable, target_unknown])
+class B:
+ def same(self): pass
+""")
+        self.assertTrue(scan.direct['probe'])
+        self.assertTrue(scan.direct['outer.inner'])
+        self.assertFalse(scan.direct['outer'])
+        self.assertTrue(scan.direct['A.same'])
+        self.assertFalse(scan.direct['B.same'])
+        duplicate = self._scan_source("import subprocess, sys\nif condition:\n def sink(argv): pass\nelse:\n def sink(argv): subprocess.run(argv)\ndef probe(): sink([sys.executable, target])\n")
+        self.assertEqual(len([name for name, _ in duplicate.functions if name.startswith('sink')]), 2)
+        self.assertTrue(any(duplicate.direct.values()))
+
+    def test_each_root_uses_its_own_statement_bindings(self):
+        root, runner = self._repo("extra = REPO_ROOT / 'first'\nsys.path.insert(0, str(extra))\n"
+                                  "extra = REPO_ROOT / 'second'\nsys.path.insert(0, str(extra))\n")
+        self.assertEqual({p.name for p in _suite_scan_roots(root, runner)},
+                         {'test', 'harness', 'scripts', 'fourth', 'first', 'second'})
+
+    def test_known_python_argv_reaches_qualified_helper_sinks(self):
+        scan = self._scan_source("""import sys, subprocess
+def sink(argv): subprocess.run(argv)
+def relay(command): sink(command)
+def probe(): relay([sys.executable, unknown_target])
+class A:
+ def sink(self, argv): subprocess.run(argv)
+ def probe(self): self.sink(argv=[sys.executable, unknown_target])
+class B:
+ def sink(self, argv): subprocess.run(argv)
+ def probe(self): self.sink(['git', 'status'])
+""")
+        self.assertTrue(scan.direct['sink'])
+        self.assertTrue(scan.direct['A.sink'])
+        self.assertFalse(scan.direct['B.sink'])
+
+    def test_actual_sanctioned_bodies_reject_guard_mutations(self):
+        # Transform parsed copies only: no mutant is imported or executed.
+        scans = TestTheRunnerItself._scan_the_forkable_tree()
+        for rel, identity in TestTheRunnerItself.SUITE_SPAWNERS:
+            scan = scans[rel]
+            self.assertTrue(scan.direct[identity])
+            self.assertTrue(scan.guard_verified[identity], scan.guard_errors[identity])
+            kinds = ['empty marker', 'remove stand-down', 'fresh env', 'late guard',
+                     'late override', 'marker cleared before the stand-down']
+            # Round 3, against these same ACTUAL bodies: the sink's own
+            # preamble. An ALIAS of the mapping, an ordinary method call that
+            # pops it, the same write two calls deep, and a callee this
+            # parser cannot read at all each left the proof granted while the
+            # spawn became unconditional.
+            marker = repr(self.CHILD)
+            preamble = {
+                'the mapping aliased and cleared before the stand-down':
+                    ('', '_e = os.environ\n_e.pop(' + marker + ', None)\n'),
+                'a method call clears the marker before the stand-down':
+                    ('def _disarm(self):\n    os.environ.pop(' + marker + ', None)\n',
+                     'self._disarm()\n'),
+                'the marker is cleared two calls below the stand-down':
+                    ('def _disarm_outer(self):\n    self._disarm_inner()\n'
+                     'def _disarm_inner(self):\n    os.environ.pop(' + marker + ', None)\n',
+                     'self._disarm_outer()\n'),
+                'an unresolvable callee runs before the stand-down':
+                    ('', 'disarm_from_somewhere_else()\n'),
+            }
+            kinds.extend(preamble)
+            if identity == 'TestIssue97._run_suite':
+                kinds.append('before caller overrides')
+            # Keep the actual helper, its lexical constants/imports and
+            # its real skip helper. Parsing dozens of copies of this entire
+            # runner in every child suite adds minutes without more evidence.
+            names = identity.split('.')
+            original_class = next(n for n in scan.tree.body if isinstance(n, ast.ClassDef) and n.name == names[0])
+            selected = {names[-1]}
+            selected.update(callee.rsplit('.', 1)[-1] for callee in scan.callees[identity]
+                            if callee in scan.function_nodes and callee.rpartition('.')[0] == names[0])
+            class_node = copy.deepcopy(original_class)
+            class_node.body = [copy.deepcopy(n) for n in original_class.body
+                               if isinstance(n, (ast.Assign, ast.AnnAssign))
+                               or isinstance(n, ast.FunctionDef) and n.name in selected]
+            if identity == 'TestIssue84Round5._guarded_invoke':
+                class_node.body.extend(ast.parse("def _python_argv_probe(self): self._guarded_invoke([sys.executable, target], cwd=None, env={})").body)
+            source_tree = ast.Module(body=[copy.deepcopy(n) for n in scan.tree.body
+                                          if isinstance(n, (ast.Import, ast.ImportFrom, ast.Assign, ast.AnnAssign))]
+                                    + [class_node], type_ignores=[])
+            for kind in kinds:
+                tree = copy.deepcopy(source_tree)
+                def function(body, parts):
+                    node = next(n for n in body if isinstance(n, (ast.ClassDef, ast.FunctionDef)) and n.name == parts[0])
+                    return node if len(parts) == 1 else function(node.body, parts[1:])
+                fn = function(tree.body, names)
+                mutations = []
+                if kind == 'before caller overrides':
+                    marker = next(n for n in fn.body if isinstance(n, ast.Assign) and any(
+                        isinstance(t, ast.Subscript) and scan._marker_key(t.slice, scan._function_bindings(identity, fn)) for t in n.targets))
+                    update = next(n for n in fn.body if isinstance(n, ast.Expr) and isinstance(n.value, ast.Call)
+                                  and isinstance(n.value.func, ast.Attribute) and n.value.func.attr == 'update')
+                    fn.body.remove(marker)
+                    fn.body.insert(fn.body.index(update), marker)
+                    mutations.append(marker)
+                elif kind == 'remove stand-down':
+                    # _spawn_suite delegates its guard: mutate the actual
+                    # helper too, proving a method's name is no exemption.
+                    candidates = [fn]
+                    for n in ast.walk(fn):
+                        if isinstance(n, ast.Call):
+                            callee = scan._callee(identity, n)
+                            if scan._standdown_helper(identity, n):
+                                candidates.append(function(tree.body, callee.split('.')))
+                    for candidate in candidates:
+                        for node in ast.walk(candidate):
+                            for field, value in ast.iter_fields(node):
+                                if isinstance(value, list):
+                                    for index, stmt in enumerate(value):
+                                        if isinstance(stmt, ast.Raise) or (isinstance(stmt, ast.Expr)
+                                                and isinstance(stmt.value, ast.Call)
+                                                and isinstance(stmt.value.func, ast.Attribute)
+                                                and stmt.value.func.attr == 'skipTest'):
+                                            value[index] = ast.Pass()
+                                            mutations.append(stmt)
+                elif kind == 'marker cleared before the stand-down':
+                    # Round-2 Q(b) against the ACTUAL bodies: ONE line that
+                    # reaches os.environ before the marker is read disarms
+                    # the sink, and when it is written in a shared helper it
+                    # disarms every caller of that helper. Parsed only.
+                    clearing = ast.parse(
+                        'os.environ.pop(' + repr(self.CHILD) + ', None)').body[0]
+                    guard_bindings = scan._function_bindings(identity, fn)
+                    scopes = [fn]
+                    for n in ast.walk(fn):
+                        if isinstance(n, ast.Call) and scan._standdown_helper(identity, n):
+                            scopes.append(function(tree.body, scan._callee(identity, n).split('.')))
+                    for scope in scopes:
+                        for node in ast.walk(scope):
+                            for field, value in ast.iter_fields(node):
+                                if not isinstance(value, list):
+                                    continue
+                                for stmt in list(value):
+                                    is_guard = (isinstance(stmt, ast.If) and
+                                                scan._guard_condition(stmt.test, guard_bindings))
+                                    is_helper = (isinstance(stmt, ast.Expr)
+                                                 and isinstance(stmt.value, ast.Call)
+                                                 and scan._standdown_helper(identity, stmt.value))
+                                    if is_guard or is_helper:
+                                        value.insert(value.index(stmt), copy.deepcopy(clearing))
+                                        mutations.append(stmt)
+                                        break
+                elif kind in preamble:
+                    extra_defs, inserted = preamble[kind]
+                    guard_bindings = scan._function_bindings(identity, fn)
+                    if extra_defs:
+                        function(tree.body, names[:-1]).body.extend(
+                            ast.parse(extra_defs).body)
+                    added = ast.parse(inserted).body
+                    placed = False
+                    for node in ast.walk(fn):
+                        for field, value in ast.iter_fields(node):
+                            if placed or not isinstance(value, list):
+                                continue
+                            for stmt in list(value):
+                                is_guard = (isinstance(stmt, ast.If) and
+                                            scan._guard_condition(stmt.test, guard_bindings))
+                                is_helper = (isinstance(stmt, ast.Expr)
+                                             and isinstance(stmt.value, ast.Call)
+                                             and scan._standdown_helper(identity, stmt.value))
+                                if not (is_guard or is_helper):
+                                    continue
+                                at = value.index(stmt)
+                                for offset, extra in enumerate(added):
+                                    value.insert(at + offset, copy.deepcopy(extra))
+                                mutations.append(stmt)
+                                placed = True
+                                break
+                        if placed:
+                            break
+                elif kind in ('late guard', 'late override'):
+                    if kind == 'late guard':
+                        for node in ast.walk(fn):
+                            for field, value in ast.iter_fields(node):
+                                if isinstance(value, list):
+                                    for stmt in list(value):
+                                        is_guard = isinstance(stmt, ast.If) and scan._guard_condition(stmt.test, scan._function_bindings(identity, fn))
+                                        is_helper = (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call)
+                                                     and scan._standdown_helper(identity, stmt.value))
+                                        if is_guard or is_helper:
+                                            value.remove(stmt)
+                                            mutations.append(stmt)
+                        fn.body.extend(mutations)
+                    else:
+                        for node in ast.walk(fn):
+                            if isinstance(node, ast.Call) and scan._is_spawn(node):
+                                env = next(k for k in node.keywords if k.arg == 'env')
+                                env.value = ast.Call(func=ast.Name(id='dict', ctx=ast.Load()), args=[env.value],
+                                    keywords=[ast.keyword(arg=None, value=ast.Dict(keys=[ast.Constant(self.CHILD)], values=[ast.Constant('')]))])
+                                mutations.append(node)
+                else:
+                    for node in ast.walk(fn):
+                        if kind == 'empty marker':
+                            if isinstance(node, ast.Assign) and any(isinstance(t, ast.Subscript) and scan._marker_key(t.slice, scan._function_bindings(identity, fn)) for t in node.targets):
+                                node.value = ast.Constant(''); mutations.append(node)
+                            if isinstance(node, ast.Dict):
+                                for i, key in enumerate(node.keys):
+                                    if key is not None and scan._marker_key(key, scan._function_bindings(identity, fn)):
+                                        node.values[i] = ast.Constant(''); mutations.append(node)
+                        elif isinstance(node, ast.Call) and scan._is_spawn(node):
+                            env = next(k for k in node.keywords if k.arg == 'env')
+                            env.value = ast.Call(func=ast.Name(id='dict', ctx=ast.Load()), args=[], keywords=[])
+                            mutations.append(node)
+                with self.subTest(sink=identity, mutation=kind):
+                    self.assertTrue(mutations, 'mutation must change actual sanctioned source')
+                    ast.fix_missing_locations(tree)
+                    changed = self._scan_source(ast.unparse(tree))
+                    self.assertFalse(changed.guard_verified[identity], changed.guard_errors[identity])
+
+    def test_mocked_invocation_contract_and_authoritative_suite_override(self):
+        from issues import test_issue_97 as issue97
+        supplied = {self.CHILD: '', 'PROBE': 'yes'}
+        argv = [sys.executable, '-']
+        stdin = object()
+        result = subprocess.CompletedProcess(argv, 0, 'out', 'err')
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(subprocess, 'run', return_value=result) as run:
+            got = TestIssue84Round5()._guarded_invoke(argv, cwd=Path('/tmp'), env=supplied, stdin=stdin)
+            self.assertIs(got, result)
+            self.assertEqual(run.call_args.args[0], argv)
+            self.assertIs(run.call_args.kwargs['stdin'], stdin)
+            self.assertEqual(run.call_args.kwargs['cwd'], '/tmp')
+            self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
+            self.assertEqual(supplied[self.CHILD], '')
+            self.assertIs(issue97.TestIssue97()._run_suite(supplied), result)
+            self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
+        with mock.patch.dict(os.environ, {self.CHILD: '1'}, clear=True), mock.patch.object(subprocess, 'run') as run:
+            with self.assertRaises(unittest.SkipTest):
+                TestIssue84Round5()._guarded_invoke(argv, cwd='/tmp', env={})
+            with self.assertRaises(unittest.SkipTest):
+                issue97.TestIssue97()._run_suite(supplied)
+            run.assert_not_called()
+
+    def test_generic_python_sink_is_a_qualified_verified_inventory_member(self):
+        scan = _SuiteForkScan(Path(__file__), self.CHILD, is_runner=True)
+        identity = "TestIssue84Round5._guarded_invoke"
+        self.assertTrue(scan.spawns_any[identity],
+                        "the generic sink must remain visible to the parser")
+        self.assertTrue(scan.direct[identity])
+        self.assertIn(("test/run_tests.py", identity), TestTheRunnerItself.SUITE_SPAWNERS)
+        self.assertTrue(scan.guard_verified[identity], scan.guard_errors[identity])
+        self.assertLess(scan.first_marker_read[identity], scan.first_spawn[identity])
+        self.assertEqual(scan.marker_writes[identity], 1)
+
+    def test_a_spawn_outside_any_function_body_is_collected_and_flagged(self):
+        """Round-2 should-fix 1. `collect` recorded FunctionDef nodes only,
+        so a fork at module level, in a class body, in a decorator, in a
+        default or in a comprehension belonged to no scope and could not be
+        flagged by anything. The module-level shape is the planted
+        `test/issues/test_issue_zz_r5_module_level.py`: `loader.discover`
+        imports that file, so it forks the suite at collection time.
+        """
+        head = ("import subprocess, sys\n"
+                "from pathlib import Path\n"
+                "RUNNER = str(Path('test') / 'run_tests.py')\n")
+        shapes = {
+            'module level':
+                'subprocess.run([sys.executable, RUNNER])\n',
+            'class body':
+                'class Fixture:\n'
+                ' RESULT = subprocess.Popen([sys.executable, RUNNER])\n',
+            'decorator expression':
+                'def wrap(x): return x\n'
+                'class Fixture:\n'
+                ' @wrap(subprocess.run([sys.executable, RUNNER]))\n'
+                ' def probe(self): pass\n',
+            'default argument':
+                'def probe(done=subprocess.run([sys.executable, RUNNER])): pass\n',
+            'comprehension':
+                'RESULTS = [subprocess.run([sys.executable, t]) for t in TARGETS]\n',
+        }
+        sanctioned = {name for _, name in TestTheRunnerItself.SUITE_SPAWNERS}
+        for label, body in shapes.items():
+            with self.subTest(shape=label):
+                scan = self._scan_source(head + body)
+                flagged = self._flagged(scan)
+                self.assertTrue(
+                    flagged, f"a {label} spawn was collected by nothing, so "
+                    "no assertion anywhere could see it")
+                self.assertTrue(
+                    any('<' in identity for identity in flagged),
+                    "the scope must be one no def can name, so it can never "
+                    f"match a sanctioned entry: {sorted(flagged)}")
+                for identity in flagged:
+                    self.assertNotIn(identity, sanctioned)
+        quiet = self._scan_source(head + "OTHER = subprocess.run("
+                                  "[sys.executable, 'scripts/make_badge.py'])\n")
+        self.assertFalse(self._flagged(quiet),
+                         "a module-level spawn of a known other program is "
+                         "still not a suite fork")
+
+    def test_a_spawn_inside_a_lambda_is_a_scope_the_scanner_walks(self):
+        """Round-2 should-fix 2. `_scope_walk` stops at `ast.Lambda` and
+        `collect` never recorded one, so a lambda body was walked by
+        neither."""
+        head = "import subprocess, sys\nRUNNER = 'run_tests.py'\n"
+        shapes = {
+            'assigned lambda':
+                'def probe(target):\n'
+                ' go = lambda: subprocess.run([sys.executable, target])\n'
+                ' return go()\n',
+            'lambda passed as an argument':
+                'def probe(target):\n'
+                ' return later(lambda: subprocess.run([sys.executable, target]))\n',
+            'lambda in a default':
+                'def probe(go=lambda: subprocess.run([sys.executable, RUNNER])):\n'
+                ' return go()\n',
+            'module-level lambda':
+                'GO = lambda: subprocess.run([sys.executable, RUNNER])\n',
+        }
+        for label, body in shapes.items():
+            with self.subTest(shape=label):
+                flagged = self._flagged(self._scan_source(head + body))
+                self.assertTrue(flagged, label)
+                self.assertTrue(
+                    any('<lambda@' in identity for identity in flagged),
+                    f"the lambda must carry a qualified identity: {sorted(flagged)}")
+        quiet = self._scan_source(
+            head + 'def probe():\n'
+            " go = lambda: subprocess.run([sys.executable, 'other.py'])\n"
+            ' return go()\n')
+        self.assertFalse(self._flagged(quiet))
+
+    def test_a_side_effect_before_the_marker_read_is_not_a_stand_down_proof(self):
+        """Round-2 should-fix 3 (recorded inspection question (b)). The old
+        rule accepted every Expr and Assign before the helper's marker-
+        conditioned `if`, rejecting only a direct spawn — so one line that
+        cleared the marker left the proof granted for every caller."""
+        def helper_source(head):
+            return ("import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    " def _skip_in_child(self):\n"
+                    + head +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    " def sink(self, target):\n"
+                    "  self._skip_in_child()\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n"
+                    " def other(self, target):\n"
+                    "  self._skip_in_child()\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.Popen([sys.executable, target], env=env)\n")
+
+        def inline_source(head):
+            return ("import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    " def sink(self, target):\n"
+                    + head +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n")
+
+        callers = ('Guard.sink', 'Guard.other')
+        for label, head in (('nothing at all', ''),
+                            ('a docstring', "  'stand down in the child'\n"),
+                            ('an inert binding', '  reason = CHILD\n')):
+            clean = self._scan_source(helper_source(head))
+            for caller in callers:
+                with self.subTest(control=label, caller=caller):
+                    self.assertTrue(clean.guard_verified[caller],
+                                    clean.guard_errors[caller])
+        poisons = {
+            'pops the marker': '  os.environ.pop(CHILD, None)\n',
+            'deletes the marker': '  del os.environ[CHILD]\n',
+            'blanks the marker': "  os.environ[CHILD] = ''\n",
+            'updates the environment': '  os.environ.update(extra)\n',
+            'clears the environment': '  os.environ.clear()\n',
+            'setdefaults the marker': "  os.environ.setdefault(CHILD, '')\n",
+            'calls something unproven': '  prepare()\n',
+            'binds through a call': '  reason = prepare()\n',
+            'evaluates an unknown expression': '  extra[CHILD]\n',
+        }
+        for label, head in poisons.items():
+            with self.subTest(helper=label):
+                changed = self._scan_source(helper_source(head))
+                for caller in callers:
+                    self.assertFalse(
+                        changed.guard_verified[caller],
+                        f"{caller} keeps a guard proof although its shared "
+                        f"stand-down helper {label} before reading it")
+                    self.assertTrue(changed.guard_errors[caller])
+        # The same rule inside the sink's own body, before its own read.
+        self.assertTrue(self._scan_source(inline_source('')).guard_verified['Guard.sink'])
+        for label, head in poisons.items():
+            if not head.lstrip().startswith(('os.environ', 'del os.environ')):
+                continue
+            with self.subTest(sink=label):
+                changed = self._scan_source(inline_source(head))
+                self.assertFalse(changed.guard_verified['Guard.sink'])
+                self.assertTrue(changed.guard_errors['Guard.sink'])
+
+    def test_the_sink_body_is_held_to_the_stand_down_helper_rule(self):
+        """Round-3 should-fix 1 (round-2 should-fix 3, returned). The sink's
+        own body before its stand-down was checked for a DIRECT `os.environ`
+        write and nothing else, so an ALIAS of the mapping, an ordinary
+        method call that pops it, the same write two calls down, and a callee
+        this parser cannot read at all each left the proof granted while the
+        spawn became unconditional. The rule is now the helper's rule: a
+        docstring, and an assignment whose value this parser resolves
+        completely through the calls it already models."""
+        def source(head, extra=''):
+            return ("import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    + extra +
+                    " def sink(self, target):\n"
+                    + head +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n")
+
+        clean = self._scan_source(source(''))
+        self.assertTrue(clean.guard_verified['Guard.sink'],
+                        clean.guard_errors['Guard.sink'])
+        for label, head in (
+                ('a docstring', "  'stand down in the child'\n"),
+                ('a call-free binding', '  reason = CHILD\n'),
+                ('an argv normalisation this parser resolves',
+                 '  rendered = [str(a) for a in [sys.executable, target]]\n')):
+            with self.subTest(control=label):
+                kept = self._scan_source(source(head))
+                self.assertTrue(kept.guard_verified['Guard.sink'],
+                                kept.guard_errors['Guard.sink'])
+        extra = (" def _disarm(self):\n"
+                 "  os.environ.pop(CHILD, None)\n"
+                 " def _outer(self):\n"
+                 "  self._inner()\n"
+                 " def _inner(self):\n"
+                 "  os.environ.pop(CHILD, None)\n")
+        poisons = {
+            'aliases the mapping': '  _e = os.environ\n',
+            'pops the marker through an alias':
+                '  _e = os.environ\n  _e.pop(CHILD, None)\n',
+            'reaches os for anything at all':
+                '  home = os.path.expanduser("~")\n',
+            'calls a method of its own class that pops': '  self._disarm()\n',
+            'reaches the write two calls down': '  self._outer()\n',
+            'calls a callee this parser cannot read': '  disarm_elsewhere()\n',
+            'binds through a call this parser cannot read':
+                '  reason = prepare()\n',
+            'branches before the read': '  if target:\n   pass\n',
+            'hands the mapping to an unreadable callee':
+                '  patch_it(os.environ)\n',
+        }
+        for label, head in poisons.items():
+            with self.subTest(sink=label):
+                changed = self._scan_source(source(head, extra))
+                self.assertFalse(
+                    changed.guard_verified['Guard.sink'],
+                    f"the sink keeps a guard proof although it {label} before "
+                    "reading the child marker")
+                self.assertTrue(changed.guard_errors['Guard.sink'])
+
+    def test_fixtures_cleanups_and_decorators_are_pre_sink_statements(self):
+        """Round-3 should-fix 1, the half no sink body can see. unittest runs
+        `setUp`, the cleanup callbacks a class registers and every decorator
+        before the sink body starts, so a marker cleared in one of them is
+        never there for ANY sink in that class, however careful the sink is.
+        """
+        head = ("import os, shutil, subprocess, sys, tempfile, unittest\n"
+                "from unittest import mock\n"
+                "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n")
+        sink = (" def sink(self, target):\n"
+                "  if os.environ.get(CHILD):\n"
+                "   raise unittest.SkipTest('child')\n"
+                "  env = dict(os.environ)\n"
+                "  env[CHILD] = '1'\n"
+                "  subprocess.run([sys.executable, target], env=env)\n")
+
+        def klass(body='', module='', decorator=''):
+            return (head + module + decorator
+                    + "class Guard(unittest.TestCase):\n" + body + sink)
+
+        base = self._scan_source(klass())
+        self.assertTrue(base.guard_verified['Guard.sink'],
+                        base.guard_errors['Guard.sink'])
+        kept = {
+            'a setUp that does unrelated work':
+                (' def setUp(self):\n  self.tmp = tempfile.mkdtemp()\n', '', ''),
+            'a cleanup that removes a directory':
+                (' def setUp(self):\n'
+                 '  self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)\n',
+                 '', ''),
+            'a module fixture that only READS the marker':
+                ('', 'SEEN = None\n'
+                     'def setUpModule():\n'
+                     ' global SEEN\n'
+                     ' SEEN = os.environ.get(CHILD)\n', ''),
+            'a standard skip decorator on the class':
+                ('', '', '@unittest.skipIf(False, "never")\n'),
+        }
+        for label, (body, module, decorator) in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(klass(body, module, decorator))
+                self.assertTrue(scan.guard_verified['Guard.sink'],
+                                scan.guard_errors['Guard.sink'])
+        lost = {
+            'setUp pops the marker':
+                (' def setUp(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'tearDown pops the marker':
+                (' def tearDown(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUpClass pops the marker':
+                (' @classmethod\n def setUpClass(cls):\n'
+                 '  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUp reaches the write two calls down':
+                (' def setUp(self):\n  self._prepare()\n'
+                 ' def _prepare(self):\n  self._disarm()\n'
+                 ' def _disarm(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUp hands the mapping to a callee this parser cannot read':
+                (' def setUp(self):\n'
+                 '  mock.patch.dict(os.environ, {}, clear=True).start()\n', '', ''),
+            'a cleanup callback pops the marker':
+                (' def setUp(self):\n'
+                 '  self.addCleanup(os.environ.pop, CHILD, None)\n', '', ''),
+            'a cleanup lambda pops the marker':
+                (' def setUp(self):\n'
+                 '  self.addCleanup(lambda: os.environ.pop(CHILD, None))\n', '', ''),
+            'a cleanup method reference pops the marker':
+                (' def setUp(self):\n  self.addCleanup(self._disarm)\n'
+                 ' def _disarm(self):\n  os.environ.pop(CHILD, None)\n', '', ''),
+            'setUpModule pops the marker':
+                ('', 'def setUpModule():\n os.environ.pop(CHILD, None)\n', ''),
+            'a class decorator patches the environment':
+                ('', '', '@mock.patch.dict(os.environ, {}, clear=True)\n'),
+            'a class decorator this parser cannot read':
+                ('', '', '@whatever_this_is\n'),
+        }
+        for label, (body, module, decorator) in lost.items():
+            with self.subTest(fixture=label):
+                scan = self._scan_source(klass(body, module, decorator))
+                self.assertFalse(
+                    scan.guard_verified['Guard.sink'],
+                    f"every sink in the class keeps its proof although {label}")
+                self.assertTrue(scan.guard_errors['Guard.sink'])
+        inherited = self._scan_source(
+            head + "class Base:\n def setUp(self):\n"
+            "  os.environ.pop(CHILD, None)\n"
+            "class Guard(Base, unittest.TestCase):\n" + sink)
+        self.assertFalse(inherited.guard_verified['Guard.sink'],
+                         "a base class this parser CAN read contributes its "
+                         "fixtures to every sink of the subclass")
+        decorated = self._scan_source(
+            head + "class Guard(unittest.TestCase):\n"
+            " @mock.patch.dict(os.environ, {})\n" + sink)
+        self.assertFalse(decorated.guard_verified['Guard.sink'])
+        allowed = self._scan_source(
+            head + "class Guard(unittest.TestCase):\n"
+            " @unittest.skipIf(False, 'never')\n" + sink)
+        self.assertTrue(allowed.guard_verified['Guard.sink'],
+                        allowed.guard_errors['Guard.sink'])
+
+    def test_unreadable_spawn_shapes_are_classified_fail_closed(self):
+        """Round-3 should-fix 2 (round-2 should-fix 5, returned). `shell` was
+        read only as a literal keyword AT the call, so a `**kwargs` spread
+        carrying it walked past the test and the string command line it
+        guarded went to the executable classifier, which resolved it to
+        unknown and exonerated the call as an unknown EXTERNAL command."""
+        head = ('import os, subprocess, sys\n'
+                'from pathlib import Path\n'
+                'OTHER = "other.py"\n')
+        flagged = {
+            'shell arrives through **kwargs':
+                'def probe(target, **kw):\n'
+                ' subprocess.run(f"{sys.executable} {target}", **kw)\n',
+            '**kwargs spread of a dict literal holding shell':
+                'OPTS = {"shell": True}\n'
+                'def probe(target):\n'
+                ' subprocess.run(f"{sys.executable} {target}", **OPTS)\n',
+            '**kwargs on Popen with a string command':
+                'def probe(target, **kw):\n'
+                ' subprocess.Popen(f"{sys.executable} {target}", **kw)\n',
+            'a list argv still fails closed under **kwargs':
+                'def probe(target, **kw):\n'
+                ' subprocess.run([sys.executable, target], **kw)\n',
+            'a string command with no shell keyword at all':
+                'def probe(target):\n'
+                ' subprocess.run(f"{sys.executable} {target}")\n',
+            'a concatenated command line with no shell keyword':
+                'def probe(target):\n'
+                ' subprocess.run(sys.executable + " " + target)\n',
+            'argv spread through *args':
+                'def probe(parts):\n subprocess.run(*parts)\n',
+            'an os spawn whose whole shape arrives through **kwargs':
+                'def probe(**kw):\n os.system(**kw)\n',
+            'a readable shell=False program path naming the runner':
+                'def probe():\n'
+                ' subprocess.run("python3 test/run_tests.py", shell=False)\n',
+        }
+        for label, source in flagged.items():
+            with self.subTest(shape=label):
+                self.assertTrue(self._scan_source(head + source).direct['probe'],
+                                label)
+        quiet = {
+            'a known other program under **kwargs':
+                'def probe(**kw):\n'
+                ' subprocess.run([sys.executable, OTHER], **kw)\n',
+            'a known other program as a shell=False program path':
+                'def probe():\n subprocess.run("python3 other.py", shell=False)\n',
+            'an unreadable program path under shell=False':
+                'def probe(target):\n'
+                ' subprocess.run(sys.executable + " " + target, shell=False)\n',
+            'an external program under **kwargs':
+                'def probe(target, **kw):\n'
+                ' subprocess.run(["git", target], **kw)\n',
+            'an argv name with no shell, no spread and no string shape':
+                'def probe(cmd):\n subprocess.run(cmd, capture_output=True)\n',
+        }
+        for label, source in quiet.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source).direct['probe'],
+                                 label)
+
+    def test_an_interpreter_bound_to_an_attribute_is_still_the_interpreter(self):
+        """Round-3 nit 3. A class body binds its names for its own methods
+        only and an instance attribute was bound nowhere, so `C.PY` and
+        `self.PY` resolved argv[0] to unknown and the call was exonerated as
+        an unknown EXTERNAL command rather than failing closed."""
+        head = 'import subprocess, sys, unittest\n'
+        klass = self._scan_source(
+            head + 'class C:\n PY = sys.executable\n'
+            'def probe(target): subprocess.run([C.PY, target])\n')
+        self.assertTrue(klass.direct['probe'],
+                        'a class attribute read from outside the class body')
+        instance = self._scan_source(
+            head + 'class C(unittest.TestCase):\n'
+            ' def setUp(self):\n  self.PY = sys.executable\n'
+            ' def probe(self, target):\n  subprocess.run([self.PY, target])\n')
+        self.assertTrue(instance.direct['C.probe'],
+                        'an instance attribute written in a fixture')
+        module = self._scan_source(
+            head + 'PY = sys.executable\n'
+            'def probe(target): subprocess.run([PY, target])\n')
+        self.assertTrue(module.direct['probe'], 'the module-level control')
+        external = self._scan_source(
+            head + 'class C:\n PY = "git"\n TARGET = "other.py"\n'
+            'def probe(): subprocess.run([C.PY, C.TARGET])\n')
+        self.assertFalse(external.direct['probe'])
+        other = self._scan_source(
+            head + 'class C:\n PY = sys.executable\n TARGET = "other.py"\n'
+            'def probe(): subprocess.run([C.PY, C.TARGET])\n')
+        self.assertFalse(other.direct['probe'],
+                         'a class attribute must resolve BOTH ways, or the '
+                         'rule would only ever add flags')
+
+    def test_the_sanctioned_sinks_survive_the_strengthened_pre_sink_rule(self):
+        """The positive control for the two rules above, on the REAL tree:
+        nothing but a docstring, an argv normalisation this parser resolves
+        and the proven Python branch runs before any sanctioned sink's marker
+        read, and no fixture, cleanup callback or decorator of their classes
+        or modules writes the environment."""
+        scans = TestTheRunnerItself._scan_the_forkable_tree()
+        for rel, identity in TestTheRunnerItself.SUITE_SPAWNERS:
+            scan = scans[rel]
+            with self.subTest(sink=f"{rel}::{identity}"):
+                self.assertTrue(scan.guard_verified[identity],
+                                scan.guard_errors[identity])
+                self.assertEqual(scan._pre_sink_environment_errors(identity), [])
+                self.assertNotIn(
+                    identity, scan.environment_writers,
+                    "a sanctioned sink that writes the environment itself "
+                    "would disarm every other sink of its class")
+
+    # ------------------------------------------------------------------
+    # Round 4. One binding resolver, so no spelling of the same thing is
+    # left out of any downstream rule.
+    # ------------------------------------------------------------------
+
+    # (label, the import line that brings `os` in, module-level prelude,
+    #  the expression that IS `os.environ`)
+    MAPPING_SPELLINGS = (
+        ("os.environ", "import os\n", "", "os.environ"),
+        ("import os as _o", "import os\nimport os as _o\n", "", "_o.environ"),
+        ("import os.path binds the name os", "import os.path\n", "",
+         "os.environ"),
+        ("from os import environ", "import os\nfrom os import environ\n", "",
+         "environ"),
+        ("from os import environ as E",
+         "import os\nfrom os import environ as E\n", "", "E"),
+        ("module alias chain a = os; b = a", "import os\n", "_a = os\n_b = _a\n",
+         "_b.environ"),
+        ("mapping alias chain", "import os\n", "_m = os.environ\n_m2 = _m\n",
+         "_m2"),
+        ("__import__('os')", "import os\n", "", "__import__('os').environ"),
+        ("importlib.import_module('os')", "import os\nimport importlib\n", "",
+         "importlib.import_module('os').environ"),
+        ("from importlib import import_module",
+         "import os\nfrom importlib import import_module\n", "",
+         "import_module('os').environ"),
+        ("getattr(os, 'environ')", "import os\n", "", "getattr(os, 'environ')"),
+        ("vars(os)['environ']", "import os\n", "", "vars(os)['environ']"),
+    )
+
+    def _mapping_source(self, imports, prelude, body="", module="",
+                        decorator="", pre="", helper=None):
+        """A guarded sink whose class and module are spelled by the caller."""
+        if helper is None:
+            helper = ("    def _skip_in_child(self):\n"
+                      "        if os.environ.get(self.CHILD):\n"
+                      "            raise unittest.SkipTest('child')\n\n")
+        return (imports
+                + "import subprocess\n"
+                  "import sys\n"
+                  "import unittest\n"
+                  "from pathlib import Path\n\n"
+                  "RUNNER = Path(__file__).parent / 'run_tests.py'\n"
+                  "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                + prelude + module + "\n\n"
+                + "class Guard(unittest.TestCase):\n"
+                  "    CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n\n"
+                + helper + body + decorator
+                + "    def sink(self):\n" + pre
+                + "        self._skip_in_child()\n"
+                  "        env = dict(os.environ)\n"
+                  "        env[self.CHILD] = '1'\n"
+                  "        subprocess.run([sys.executable, str(RUNNER)], env=env)\n")
+
+    def _mapping_routes(self, mapping):
+        """Every place unittest or the language can clear the marker before
+        the sink reads it, parameterised by HOW the mapping is spelled."""
+        return {
+            "setUp pops the marker": dict(
+                body="    def setUp(self):\n"
+                     "        %s.pop(self.CHILD, None)\n\n" % mapping),
+            "tearDown pops the marker": dict(
+                body="    def tearDown(self):\n"
+                     "        %s.pop(self.CHILD, None)\n\n" % mapping),
+            "setUpClass pops the marker": dict(
+                body="    @classmethod\n    def setUpClass(cls):\n"
+                     "        %s.pop(cls.CHILD, None)\n\n" % mapping),
+            "a cleanup method pops the marker": dict(
+                body="    def setUp(self):\n"
+                     "        self.addCleanup(self._disarm)\n\n"
+                     "    def _disarm(self):\n"
+                     "        %s.pop(self.CHILD, None)\n\n" % mapping),
+            "addCleanup of the mapping's own bound method": dict(
+                body="    def setUp(self):\n"
+                     "        self.addCleanup(%s.pop, self.CHILD, None)\n\n"
+                     % mapping),
+            "setUpModule pops the marker": dict(
+                module="def setUpModule():\n"
+                       "    %s.pop(CHILD, None)\n" % mapping),
+            "a decorator in this file pops the marker": dict(
+                module="def disarming(fn):\n"
+                       "    %s.pop(CHILD, None)\n"
+                       "    return fn\n" % mapping,
+                decorator="    @disarming\n"),
+            "the sink's own preamble pops the marker": dict(
+                pre="        %s.pop(self.CHILD, None)\n" % mapping),
+            "the stand-down helper pops the marker first": dict(
+                helper="    def _skip_in_child(self):\n"
+                       "        %s.pop(self.CHILD, None)\n"
+                       "        if os.environ.get(self.CHILD):\n"
+                       "            raise unittest.SkipTest('child')\n\n"
+                       % mapping),
+        }
+
+    def test_every_spelling_of_the_environment_mapping_is_one_binding(self):
+        """Round-4 should-fix 1 (round-3 should-fix 1, returned). The seven
+        indirect routes round 3 closed for `os.environ` all re-opened under
+        `from os import environ`, because `_bind_statement` special-cased the
+        `sys` sibling in its `ImportFrom` branch and mapped everything else
+        to unknown. The fix is not an eighth special case: every spelling
+        that names the `os` module, the mapping, `sys` or `sys.executable`
+        resolves through ONE table, and `_os_environ` asks `_static_value`
+        and nothing else, so no downstream rule can see one spelling and
+        miss its sibling."""
+        for label, imports, prelude, mapping in self.MAPPING_SPELLINGS:
+            for route, parts in self._mapping_routes(mapping).items():
+                with self.subTest(spelling=label, route=route):
+                    scan = self._scan_source(
+                        self._mapping_source(imports, prelude, **parts))
+                    self.assertFalse(
+                        scan.guard_verified["Guard.sink"],
+                        f"the sink keeps a guard proof although {route} "
+                        f"spelled as {label}, so the marker read can never "
+                        "answer 'child'")
+                    self.assertTrue(scan.guard_errors["Guard.sink"])
+            with self.subTest(spelling=label, route="a fixture that only READS"):
+                quiet = self._scan_source(self._mapping_source(
+                    imports, prelude,
+                    body="    def setUp(self):\n"
+                         "        self.seen = %s.get(self.CHILD)\n\n" % mapping))
+                self.assertTrue(quiet.guard_verified["Guard.sink"],
+                                quiet.guard_errors["Guard.sink"])
+        for label, imports, mapping in (
+                ("from os import path", "import os\nfrom os import path\n",
+                 "path.environ"),
+                ("import os.path as _p", "import os\nimport os.path as _p\n",
+                 "_p.environ")):
+            # A pop of a key this parser CAN read and that is not the
+            # marker. If either spelling bound the `os` module, the mapping
+            # rule would fire on `<name>.environ` whatever the key was, so
+            # this row still measures exactly what it always measured — and
+            # it no longer leans on the receiver being unreachable, because
+            # a receiver this parser cannot read IS a write when the key
+            # could be the marker (#164, N1; the row below).
+            with self.subTest(not_the_module=label):
+                scan = self._scan_source(self._mapping_source(
+                    imports, "",
+                    body="    def setUp(self):\n"
+                         "        %s.pop('OTHER_VARIABLE', None)\n\n" % mapping))
+                self.assertTrue(
+                    scan.guard_verified["Guard.sink"],
+                    f"{label} does not bind the `os` module; if it did, the "
+                    "mapping rule would fire here on any key at all")
+            with self.subTest(not_the_module=label, fail_closed=True):
+                scan = self._scan_source(self._mapping_source(
+                    imports, "",
+                    body="    def setUp(self):\n"
+                         "        %s.pop(self.CHILD, None)\n\n" % mapping))
+                self.assertFalse(
+                    scan.guard_verified["Guard.sink"],
+                    f"{label} is a receiver this parser cannot read, and the "
+                    "marker popped through one is a write")
+
+    def test_putenv_unsetenv_and_merge_spellings_are_environment_writes(self):
+        """A child inherits what `putenv` wrote, not only what the mapping
+        holds, and `|=`, `__setitem__` and `__delitem__` write the mapping as
+        surely as `pop` does."""
+        lost = {
+            "os.putenv": "        os.putenv(self.CHILD, '')\n",
+            "os.unsetenv": "        os.unsetenv(self.CHILD)\n",
+            "os.environ |= {}": "        os.environ |= {}\n",
+            "os.environ.__setitem__":
+                "        os.environ.__setitem__(self.CHILD, '')\n",
+            "os.environ.__delitem__":
+                "        os.environ.__delitem__(self.CHILD)\n",
+            "del os.environ[MARKER]": "        del os.environ[self.CHILD]\n",
+            "os.environ rebound wholesale": "        os.environ = {}\n",
+        }
+        for label, statement in lost.items():
+            with self.subTest(write=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statement + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        aliased = self._scan_source(self._mapping_source(
+            "import os\nimport os as _o\nfrom os import environ\n", "",
+            body="    def setUp(self):\n"
+                 "        _o.unsetenv(self.CHILD)\n"
+                 "        environ |= {}\n\n"))
+        self.assertFalse(aliased.guard_verified["Guard.sink"],
+                         "the alias spellings of the same two writes")
+        for label, statement in (
+                ("a read of the mapping",
+                 "        self.seen = os.environ.get(self.CHILD)\n"),
+                ("an os call that is not an environment write",
+                 "        self.where = os.getcwd()\n")):
+            with self.subTest(control=label):
+                kept = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statement + "\n"))
+                self.assertTrue(kept.guard_verified["Guard.sink"],
+                                kept.guard_errors["Guard.sink"])
+
+    def test_an_unresolved_name_used_as_the_mapping_is_a_write(self):
+        """Fail closed. A name whose binding this parser lost, used AS the
+        mapping in a position that can leave the marker unset, is a write —
+        the parser cannot prove it is not `os.environ`. `dict(...)`, `{...}`
+        and `.copy()` build a FRESH mapping, which is what keeps this rule
+        off the sanctioned `env = dict(os.environ); env[MARKER] = '1'`."""
+        lost = {
+            "pop of the marker": "        m = unreadable()\n"
+                                 "        m.pop(self.CHILD, None)\n",
+            "del of the marker": "        m = unreadable()\n"
+                                 "        del m[self.CHILD]\n",
+            "the marker set to nothing": "        m = unreadable()\n"
+                                         "        m[self.CHILD] = ''\n",
+            "clear": "        m = unreadable()\n        m.clear()\n",
+            "popitem": "        m = unreadable()\n        m.popitem()\n",
+            "update from something unreadable":
+                "        m = unreadable()\n        m.update(self.extra)\n",
+            "pop of a key this parser cannot read":
+                "        m = unreadable()\n"
+                "        m.pop(self.key, None)\n",
+            "|= from something unreadable":
+                "        m = unreadable()\n        m |= self.extra\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(fail_closed=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        handed_on = self._scan_source(self._mapping_source(
+            "import os\n", "",
+            body="    def setUp(self):\n"
+                 "        self._disarm(self.mapping)\n\n"
+                 "    def _disarm(self, mapping):\n"
+                 "        mapping.pop(self.CHILD, None)\n\n"))
+        self.assertFalse(handed_on.guard_verified["Guard.sink"],
+                         "a parameter used as the mapping two frames down")
+        kept = {
+            "a copy written authoritatively":
+                "        env = dict(os.environ)\n"
+                "        env[self.CHILD] = '1'\n",
+            "a copy popped": "        env = dict(os.environ)\n"
+                             "        env.pop(self.CHILD, None)\n",
+            "a fresh literal updated":
+                "        d = {}\n        d.update(self.extra)\n",
+            "an explicit copy cleared":
+                "        env = os.environ.copy()\n        env.clear()\n",
+            "the authoritative write through an unreadable name":
+                "        m = unreadable()\n        m[self.CHILD] = '1'\n",
+            "a readable key that is not the marker":
+                "        m = unreadable()\n"
+                "        m.pop('OTHER_VARIABLE', None)\n",
+            "setdefault, which cannot remove a key":
+                "        m = unreadable()\n"
+                "        m.setdefault(self.CHILD, '1')\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+
+    def test_a_receiver_this_parser_cannot_read_is_the_mapping(self):
+        """Round-5 nit 1(a). The fail-closed rule asked what the receiver was
+        SPELLED as before asking what it resolved to: only a bare name or a
+        `self`/`cls` attribute could be an unreadable mapping, so a chain
+        whose owner is a call or a subscript walked straight past it, with
+        the marker popped in `setUp` and the sink's proof still granted.
+        Every one of these resolves to nothing this parser can read, and the
+        marker is popped through it.
+        """
+        head = "import os\nimport importlib\n"
+        lost = {
+            "import_module of a computed name, direct chain":
+                "        importlib.import_module('o' + 's')"
+                ".environ.pop(self.CHILD, None)\n",
+            "import_module of a computed name, through a name":
+                "        os2 = importlib.import_module('o' + 's')\n"
+                "        os2.environ.pop(self.CHILD, None)\n",
+            "globals()[...], direct chain":
+                "        globals()['os'].environ.pop(self.CHILD, None)\n",
+            "globals()[...], through a name":
+                "        g = globals()['os']\n"
+                "        g.environ.pop(self.CHILD, None)\n",
+            "sys.modules[...], direct chain":
+                "        sys.modules['os'].environ.pop(self.CHILD, None)\n",
+            "sys.modules[...], through a name":
+                "        m = sys.modules['os']\n"
+                "        m.environ.pop(self.CHILD, None)\n",
+            "an unreadable chain cleared outright":
+                "        sys.modules['os'].environ.clear()\n",
+            "an unreadable chain deleted from":
+                "        del globals()['os'].environ[self.CHILD]\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(fail_closed=label):
+                scan = self._scan_source(self._mapping_source(
+                    head, "", body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "an unreadable chain popped by a key that is not the marker":
+                "        sys.modules['os'].environ.pop('OTHER', None)\n",
+            "an unreadable chain written authoritatively":
+                "        globals()['os'].environ[self.CHILD] = '1'\n",
+            "a readable copy popped":
+                "        env = dict(os.environ)\n"
+                "        env.pop(self.CHILD, None)\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    head, "", body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+
+    def test_a_bound_method_of_the_mapping_is_the_mapping(self):
+        """Round-5 nit 1(b). `f = os.environ.pop` parks a bound method of the
+        mapping on a name; `f(MARKER, None)` then clears exactly the mapping
+        the guard reads through a call whose `func` is a bare NAME, with the
+        mapping in no argument — so neither the mapping rule nor the escape
+        rule saw it, and `self.addCleanup(f, ...)` handed unittest the same
+        callable to run between the tests of the class. (The direct
+        `self.addCleanup(os.environ.pop, ...)` was already caught: it was
+        specifically the intermediate binding that lost it.)
+        """
+        lost = {
+            "pop through the name it was parked on":
+                "        f = os.environ.pop\n"
+                "        f(self.CHILD, None)\n",
+            "clear through the name it was parked on":
+                "        f = os.environ.clear\n        f()\n",
+            "popitem through the name it was parked on":
+                "        f = os.environ.popitem\n        f()\n",
+            "a second hop":
+                "        f = os.environ.pop\n        g = f\n"
+                "        g(self.CHILD, None)\n",
+            "registered as a cleanup":
+                "        f = os.environ.pop\n"
+                "        self.addCleanup(f, self.CHILD, None)\n",
+            "registered as a cleanup, clear":
+                "        f = os.environ.clear\n"
+                "        self.addCleanup(f)\n",
+            "an aliased spelling of the mapping":
+                "        f = environ.pop\n        f(self.CHILD, None)\n",
+            "used as a mapping rather than called":
+                "        f = os.environ.pop\n        del f[self.CHILD]\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(bound_method=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\nfrom os import environ\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "a member that cannot remove or blank a key":
+                "        f = os.environ.get\n        self.seen = f(self.CHILD)\n",
+            "a copy's own bound method":
+                "        env = dict(os.environ)\n        f = env.pop\n"
+                "        f(self.CHILD, None)\n",
+            "a bound method of a copy registered as a cleanup":
+                "        env = os.environ.copy()\n"
+                "        self.addCleanup(env.clear)\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+
+    def test_a_rebind_inside_a_block_governs_the_rest_of_that_block(self):
+        """Round-5 nit 2. Every node of a compound statement used to be
+        judged against the bindings that held BEFORE the statement, because
+        the walk ran before the statement was bound. One resolved
+        statement-level binding therefore shadowed a rebind to the real
+        mapping made inside an `if`/`for`/`with`/`try` body — and it was
+        never about `_COPY`: a plain string did it too. `dict(os.environ)`
+        is this repository's own idiom, which is what makes the shape worth
+        pinning.
+
+        The controls hold the other direction: a rebind at statement level
+        is still caught, a first binding inside a block is still caught, a
+        conditional rebind is not trusted after the block ends, and a
+        genuine copy — bound before the block or inside it — is still
+        verified, because a write through a copy can never clear the marker
+        the guard reads.
+        """
+        lost = {
+            "a copy shadowing an `if`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a resolved string shadowing an `if`-body rebind":
+                "        env = 'x'\n"
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a `for`-body rebind":
+                "        env = {}\n"
+                "        for _ in range(1):\n"
+                "            env = os.environ\n"
+                "            del env[self.CHILD]\n",
+            "a `with`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        with self.lock:\n"
+                "            env = os.environ\n"
+                "            env.clear()\n",
+            "a `try`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        try:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n"
+                "        except KeyError:\n"
+                "            pass\n",
+            "an `except`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        try:\n"
+                "            pass\n"
+                "        except KeyError:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "an `else`-body rebind":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            pass\n"
+                "        else:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a nested block":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            for _ in range(1):\n"
+                "                env = os.environ\n"
+                "                env.pop(self.CHILD, None)\n",
+            "a bound method parked inside a block":
+                "        f = None\n"
+                "        if self.c:\n"
+                "            f = os.environ.pop\n"
+                "            f(self.CHILD, None)\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(shadowed=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "a copy bound before the block and popped inside it":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a copy bound inside the block and popped inside it":
+                "        if self.c:\n"
+                "            env = dict(os.environ)\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a copy rebound inside the block":
+                "        env = os.environ.copy()\n"
+                "        for _ in range(1):\n"
+                "            env = dict(os.environ)\n"
+                "            env.clear()\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+        still_lost = {
+            "a rebind at statement level":
+                "        env = dict(os.environ)\n"
+                "        env = os.environ\n"
+                "        env.pop(self.CHILD, None)\n",
+            "a first binding inside the block":
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a conditional rebind is not trusted after the block":
+                "        env = dict(os.environ)\n"
+                "        if self.c:\n"
+                "            env = os.environ\n"
+                "        env.pop(self.CHILD, None)\n",
+        }
+        for label, statements in still_lost.items():
+            with self.subTest(unchanged=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+
+    def test_a_subclass_of_subprocess_popen_is_a_spawn_surface(self):
+        """Round-4 nit 2. `class MyPopen(subprocess.Popen)` starts a process
+        exactly as its base does, so its constructor is a spawn site — and
+        discovery saw nothing at all, in a paragraph that claims every
+        subprocess process start is inventoried."""
+        head = ("import subprocess\n"
+                "import sys\n"
+                "from subprocess import Popen as P\n"
+                "import subprocess as sp\n"
+                "RUNNER = 'run_tests.py'\n"
+                "OTHER = 'other.py'\n")
+        flagged = {
+            "a Popen subclass with a list argv":
+                "class MyPopen(subprocess.Popen):\n    pass\n"
+                "def probe():\n    MyPopen([sys.executable, RUNNER])\n",
+            "a Popen subclass with a string command":
+                "class MyPopen(subprocess.Popen):\n    pass\n"
+                "def probe():\n"
+                "    MyPopen(f'{sys.executable} {RUNNER}', shell=True)\n",
+            "a subclass of a subclass":
+                "class MyPopen(subprocess.Popen):\n    pass\n"
+                "class Deeper(MyPopen):\n    pass\n"
+                "def probe():\n    Deeper([sys.executable, RUNNER])\n",
+            "a subclass of an imported Popen alias":
+                "class Q(P):\n    pass\n"
+                "def probe():\n    Q([sys.executable, RUNNER])\n",
+            "a subclass through a module alias":
+                "class R(sp.Popen):\n    pass\n"
+                "def probe():\n    R([sys.executable, RUNNER])\n",
+            "a subclass whose target this parser cannot read":
+                "class MyPopen(subprocess.Popen):\n    pass\n"
+                "def probe(target):\n    MyPopen([sys.executable, target])\n",
+        }
+        for label, source in flagged.items():
+            with self.subTest(spawn=label):
+                self.assertTrue(self._scan_source(head + source).direct["probe"],
+                                label)
+        quiet = {
+            "a Popen subclass running a known other program":
+                "class MyPopen(subprocess.Popen):\n    pass\n"
+                "def probe():\n    MyPopen([sys.executable, OTHER])\n",
+            "a class that inherits nothing that spawns":
+                "class NotOne(dict):\n    pass\n"
+                "def probe():\n    NotOne([sys.executable, RUNNER])\n",
+        }
+        for label, source in quiet.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source).direct["probe"],
+                                 label)
+
+    def test_pure_value_calls_are_verified_unshadowed(self):
+        """Round-4 nit 1. The pre-stand-down region admits `str`, `Path`,
+        `.resolve()` and `shutil.which` because the target classifier models
+        them exactly — but the admission was made by SPELLING, so a module
+        that rebound one of those names to something this parser cannot read
+        got an arbitrary call admitted with the proof still granted."""
+        def source(head, pre):
+            return (head + "import os, subprocess, sys, unittest\n"
+                    "CHILD = 'SKILLS_EVALS_SUITE_CHILD'\n"
+                    "class Guard:\n"
+                    " def sink(self, target):\n" + pre +
+                    "  if os.environ.get(CHILD):\n"
+                    "   raise unittest.SkipTest('child')\n"
+                    "  env = dict(os.environ)\n"
+                    "  env[CHILD] = '1'\n"
+                    "  subprocess.run([sys.executable, target], env=env)\n")
+
+        lost = {
+            "str rebound by an import this parser cannot read":
+                ("from mylib import str\n", "  x = str(CHILD)\n"),
+            "str rebound by an assignment":
+                ("str = _elsewhere\n", "  x = str(CHILD)\n"),
+            "shutil rebound by an import alias":
+                ("import mylib as shutil\n", "  x = shutil.which('python3')\n"),
+            "Path this module never imported":
+                ("", "  x = Path(CHILD)\n"),
+            "resolve on a receiver this parser cannot read":
+                ("", "  x = target.resolve()\n"),
+        }
+        for label, (head, pre) in lost.items():
+            with self.subTest(shadowed=label):
+                scan = self._scan_source(source(head, pre))
+                self.assertFalse(
+                    scan.guard_verified["Guard.sink"],
+                    f"an arbitrary call was admitted before the marker read "
+                    f"although {label}")
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "the real builtin str": ("", "  x = str(CHILD)\n"),
+            "pathlib.Path imported by name":
+                ("from pathlib import Path\n", "  x = str(Path(CHILD))\n"),
+            "the real shutil module":
+                ("import shutil\n", "  x = shutil.which('python3')\n"),
+        }
+        for label, (head, pre) in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(source(head, pre))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+        runner = _SuiteForkScan(Path(__file__).resolve(), self.CHILD,
+                                is_runner=True)
+        self.assertTrue(
+            runner.guard_verified["TestIssue84Round5._guarded_invoke"],
+            "the one statement in this repository the admission exists for — "
+            "`rendered = [str(a) for a in argv]` — must still be admitted: "
+            + "\n".join(runner.guard_errors["TestIssue84Round5._guarded_invoke"]))
+
+    def test_an_enclosing_parameter_shadows_a_module_constant_for_nested_scopes(self):
+        """Round-2 should-fix 4 (recorded inspection question (a)). A nested
+        scope seeded `local = dict(inherited)` and the enclosing function's
+        own formal parameters were never invalidated, so an inner function
+        read the module constant its caller's parameter shadows."""
+        scan = self._scan_source("""import subprocess, sys
+target = 'other.py'
+def outer(target):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def keyword_only(*, target='other.py'):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def star_args(*target):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def star_kwargs(**target):
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+def through_a_lambda(target):
+ return lambda: subprocess.run([sys.executable, target])
+def deep(target):
+ def middle():
+  def inner():
+   subprocess.run([sys.executable, target])
+  inner()
+ middle()
+def untouched():
+ def inner():
+  subprocess.run([sys.executable, target])
+ inner()
+""")
+        for name in ('outer.inner', 'keyword_only.inner', 'star_args.inner',
+                     'star_kwargs.inner', 'deep.middle.inner'):
+            with self.subTest(name=name):
+                self.assertTrue(scan.direct[name],
+                                f"{name} read a module constant that an "
+                                "enclosing parameter shadows at runtime")
+        self.assertTrue(
+            any(name.startswith('through_a_lambda.<lambda@') and flagged
+                for name, flagged in scan.direct.items()),
+            sorted(scan.direct))
+        self.assertFalse(
+            scan.direct['untouched.inner'],
+            "a nested scope with nothing shadowing it must still resolve the "
+            "module constant, or this rule would flag everything")
+
+    def test_string_command_sinks_are_classified_by_their_command_text(self):
+        """Round-2 should-fix 5. `os.system` takes a command LINE; handing it
+        to the executable classifier resolved it to unknown and exonerated it
+        as an unknown EXTERNAL command."""
+        head = 'import os, shlex, subprocess, sys\n'
+        unknown_python = {
+            'os.system f-string': 'def probe(target): os.system(f"{sys.executable} {target}")',
+            'os.system concatenation': 'def probe(target): os.system("python3 " + target)',
+            'os.system shlex.join': 'def probe(target): os.system(shlex.join([sys.executable, target]))',
+            'os.system str.join': 'def probe(target): os.system(" ".join([sys.executable, target]))',
+            'os.system unreadable line': 'def probe(command): os.system(command)',
+            'os.popen': 'def probe(target): os.popen(shlex.join([sys.executable, target]))',
+            'shell=True unreadable line': 'def probe(command): subprocess.run(command, shell=True)',
+            'shell=True concatenation': 'def probe(target): subprocess.run("python3 " + target, shell=True)',
+            'os.system names the runner': 'def probe(): os.system("python3 test/run_tests.py")',
+        }
+        for label, source in unknown_python.items():
+            with self.subTest(shape=label):
+                self.assertTrue(self._scan_source(head + source + '\n').direct['probe'],
+                                label)
+        external = {
+            'plain external command': 'def probe(): os.system("git status --short")',
+            'external popen': 'def probe(): os.popen("jq --version")',
+            'known other program': 'def probe(): os.system(shlex.join([sys.executable, "other.py"]))',
+            'known other program literal': 'def probe(): os.system("python3 other.py")',
+            'external shell string': 'def probe(): subprocess.run("git status", shell=True)',
+            'explicit shell=False': 'def probe(target): subprocess.run(["git", target], shell=False)',
+        }
+        for label, source in external.items():
+            with self.subTest(external=label):
+                self.assertFalse(self._scan_source(head + source + '\n').direct['probe'],
+                                 label)
+
+    def test_module_aliases_bound_by_assignment_are_spawn_surfaces(self):
+        """Round-2 should-fix 6. `_resolve_imports` collected aliases from
+        `Import`/`ImportFrom` only, so `sp = subprocess` followed by
+        `sp.run(...)` failed `_is_spawn` and was not a spawn at all."""
+        head = 'import os, subprocess, sys\n'
+        shapes = {
+            'module alias by assignment':
+                'sp = subprocess\ndef probe(target): sp.run([sys.executable, target])',
+            'chained module alias':
+                'sp = subprocess\nsp2 = sp\n'
+                'def probe(target): sp2.Popen([sys.executable, target])',
+            'spawn function bound by assignment':
+                'go = subprocess.run\ndef probe(target): go([sys.executable, target])',
+            'spawn function imported as':
+                'from subprocess import run as r\n'
+                'def probe(target): r([sys.executable, target])',
+            'module alias by import':
+                'import subprocess as sp\ndef probe(target): sp.run([sys.executable, target])',
+            'os alias by import':
+                'import os as o\n'
+                'def probe(target): o.execv(sys.executable, [sys.executable, target])',
+            'os alias by assignment':
+                'o = os\ndef probe(target): o.system(f"{sys.executable} {target}")',
+            'os function bound by assignment':
+                'launch = os.execv\n'
+                'def probe(target): launch(sys.executable, [sys.executable, target])',
+            'os function imported from':
+                'from os import system\n'
+                'def probe(target): system(f"{sys.executable} {target}")',
+        }
+        for label, source in shapes.items():
+            with self.subTest(alias=label):
+                self.assertTrue(self._scan_source(head + source + '\n').direct['probe'],
+                                label)
+        quiet = {
+            'known other program through an alias':
+                'sp = subprocess\ndef probe(): sp.run([sys.executable, "other.py"])',
+            'external command through an alias':
+                'sp = subprocess\ndef probe(target): sp.run(["git", target])',
+        }
+        for label, source in quiet.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source + '\n').direct['probe'],
+                                 label)
+
+    def test_a_known_interpreter_survives_an_unpack_and_shutil_which(self):
+        """Round-2 nit 7. A `Starred` element resolved to unknown, so argv[0]
+        was unknown and the call became an unknown EXTERNAL command rather
+        than failing closed on its target."""
+        head = 'import shutil, subprocess, sys\n'
+        for label, source in {
+                'leading star-unpack':
+                    'def probe(target):\n base = [sys.executable]\n'
+                    ' subprocess.run([*base, target])\n',
+                'shutil.which names the interpreter':
+                    'def probe(target): subprocess.run([shutil.which("python3"), target])\n',
+        }.items():
+            with self.subTest(shape=label):
+                self.assertTrue(self._scan_source(head + source).direct['probe'], label)
+        for label, source in {
+                'shutil.which names another program':
+                    'def probe(target): subprocess.run([shutil.which("git"), target])\n',
+                'unpack of a known interpreter and a known target':
+                    'def probe(rest):\n base = [sys.executable, "other.py"]\n'
+                    ' subprocess.run([*base, *rest])\n',
+        }.items():
+            with self.subTest(quiet=label):
+                self.assertFalse(self._scan_source(head + source).direct['probe'], label)
+
+
+class TestNewestPerQualifyingTier(unittest.TestCase):
+    """The newest-per-tier rule is restricted to tiers that qualify on
+    usage (Adam's decision, 2026-09-22).
+
+    THE RULE IN ONE SENTENCE: every model at or above the entry bar is an
+    arm, and in a tier that already holds such an arm the newest available
+    model past the cooling-off is one too — everywhere else the newest
+    model in a tier is nobody's arm.
+
+    WHY IT CHANGED. The rule used to read "newest in its tier", across
+    every rung of the ladder. On the census published 2026-09-22 that
+    seated the newest haiku and the newest fable beside the two models the
+    fleet actually runs, because being newest in a tier was enough on its
+    own: a four-arm roster measuring two tiers carrying 6.3% and 3.0% of
+    the fleet's turns between them, at four arms' worth of spend per
+    fixture. The shares below are that census's, rounded as it measured
+    them.
+
+    Every model id here is FIXTURE data, like every other id in this file;
+    `test_no_model_ids_are_hardcoded_outside_fixtures` is what keeps them
+    out of the policy code.
+    """
+
+    NOW = TestIssue67.NOW
+    W = TestIssue67.W
+    _model = staticmethod(TestIssue67._model)
+    _policy = classmethod(lambda cls: TestIssue67._policy())
+    _arm_ids = staticmethod(TestIssue67._arm_ids)
+    _reason = staticmethod(TestIssue67._reason)
+
+    #: The 2026-09-22 census's own enter-window numerators: 2475 + 2465 +
+    #: 346 + 164 = 5450 rankable, attributable turns, which is where
+    #: 45.4 / 45.2 / 6.3 / 3.0 come from. Two tiers clear the 10% entry
+    #: bar; two do not.
+    TURNS = {"claude-sonnet-5": 2475, "claude-opus-5": 2465,
+             "claude-haiku-4-5": 346, "claude-fable-5-1": 164}
+
+    @classmethod
+    def _catalogue(cls, extra=None, drop=()):
+        """One current model per tier, plus a superseded sonnet and opus.
+        EVERY model here is past the 7-day cooling-off, so nothing in
+        these rows is excluded by age unless the row says so."""
+        models = [
+            cls._model("claude-haiku-4-5", "2025-10-01T00:00:00Z", max_input=200_000),
+            cls._model("claude-sonnet-4-6", "2025-11-24T00:00:00Z"),
+            cls._model("claude-sonnet-5", "2026-02-01T00:00:00Z"),
+            cls._model("claude-opus-4-8", "2026-01-15T00:00:00Z"),
+            cls._model("claude-opus-5", "2026-04-01T00:00:00Z"),
+            cls._model("claude-fable-5", "2026-03-01T00:00:00Z"),
+            cls._model("claude-fable-5-1", "2026-05-01T00:00:00Z"),
+        ]
+        models = [m for m in models if m["id"] not in drop]
+        models += list(extra or [])
+        return {"fetched_at": "2026-09-04T11:00:00Z", "models": models}
+
+    @classmethod
+    def _census(cls, counts=None, generated_at="2026-09-04T06:00:00Z"):
+        if counts is None:
+            counts = {i: {cls.W[0]: n} for i, n in cls.TURNS.items()}
+        return {"generated_at": generated_at, "weeks": list(cls.W),
+                "counts": counts}
+
+    @classmethod
+    def _compute(cls, models=None, census=None, previous=None):
+        return roster.compute_roster(
+            models_doc=models if models is not None else cls._catalogue(),
+            census_doc=census if census is not None else cls._census(),
+            policy=cls._policy(), previous=previous, now=cls.NOW)
+
+    @staticmethod
+    def _excluded(result, model_id):
+        return next((e["reason"] for e in result["excluded"]
+                     if e["id"] == model_id), None)
+
+    @staticmethod
+    def _days_before(now, days):
+        return (now - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    # --- the worked examples ---------------------------------------------
+
+    def test_todays_census_and_catalogue_seat_exactly_the_two_used_tiers(self):
+        """WORKED EXAMPLE 1. sonnet-5 45.4%, opus-5 45.2%, haiku 6.3%,
+        fable-5-1 3.0% against a 10% entry bar: two arms, not four.
+
+        RED before the change, where the newest haiku and the newest
+        fable took seats of their own on being newest."""
+        result = self._compute()
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        self.assertIn("45.4%", self._reason(result, "claude-sonnet-5"))
+        self.assertIn("45.2%", self._reason(result, "claude-opus-5"))
+
+        # The two tiers that did NOT qualify say so, in words, where the
+        # newest model of each used to carry an arm's reason instead.
+        for model_id, tier in (("claude-haiku-4-5", "haiku"),
+                               ("claude-fable-5-1", "fable/mythos")):
+            reason = self._excluded(result, model_id)
+            self.assertIsNotNone(reason, f"{model_id} is neither seated nor "
+                                         f"explained")
+            self.assertIn(f"newest in the {tier} tier", reason)
+            self.assertIn("no model in that tier carries 10%", reason)
+
+    def test_a_newer_opus_is_seated_because_the_opus_tier_qualifies(self):
+        """WORKED EXAMPLE 2. Ship an opus 5.1 past the cooling-off and
+        the same census seats three arms: the opus tier qualifies on
+        opus-5's 45.2%, so its newest model comes in beside it."""
+        newer = self._model("claude-opus-5-1", self._days_before(self.NOW, 30))
+        result = self._compute(models=self._catalogue(extra=[newer]))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-opus-5-1",
+                          "claude-sonnet-5"])
+        reason = self._reason(result, "claude-opus-5-1")
+        self.assertIn("newest model in the opus tier", reason)
+        self.assertIn("30 days old", reason)
+        # IN WORDS, and naming the share it rides on: the seat rests on a
+        # number that is not its own, so the number and its owner are both
+        # in the sentence a reviewer reads.
+        self.assertIn("in a tier that qualifies by usage", reason)
+        self.assertIn("`claude-opus-5` carries 45.2%", reason)
+        self.assertIn("10% entry bar", reason)
+        # opus-5 keeps its own seat on its own share, not on this one.
+        self.assertIn("carries 45.2%", self._reason(result, "claude-opus-5"))
+        self.assertNotIn("qualifies by usage",
+                         self._reason(result, "claude-opus-5"))
+
+    def test_a_newer_haiku_or_fable_changes_nothing(self):
+        """WORKED EXAMPLE 3. The newest model in the catalogue, in a tier
+        no model of which clears the entry bar, is not an arm — which is
+        the whole of what changed."""
+        newer = [self._model("claude-haiku-5", self._days_before(self.NOW, 40)),
+                 self._model("claude-fable-6", self._days_before(self.NOW, 20))]
+        result = self._compute(models=self._catalogue(extra=newer))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        for model_id in ("claude-haiku-5", "claude-fable-6"):
+            reason = self._excluded(result, model_id)
+            self.assertIsNotNone(reason)
+            self.assertIn("no model in that tier carries 10%", reason)
+        # ...and the models they superseded are not seated either: being
+        # newest was the only claim either tier ever had.
+        for model_id in ("claude-haiku-4-5", "claude-fable-5-1"):
+            self.assertNotIn(model_id, self._arm_ids(result))
+
+    def test_a_newer_sonnet_inside_the_cooling_off_is_not_seated_yet(self):
+        """WORKED EXAMPLE 4. The sonnet tier DOES qualify, so the rule
+        reaches its newest model — and the cooling-off still holds it
+        back. The two gates are independent and both apply."""
+        fresh = self._model("claude-sonnet-6", self._days_before(self.NOW, 3))
+        result = self._compute(models=self._catalogue(extra=[fresh]))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5"])
+        reason = self._excluded(result, "claude-sonnet-6")
+        self.assertIn("inside the 7-day cooling-off", reason)
+        self.assertNotIn("no model in that tier carries", reason)
+
+    def test_the_same_newer_sonnet_is_seated_once_it_clears_the_cooling_off(self):
+        """The companion to the row above: nothing but the age moved, and
+        the sonnet tier's own 45.4% is what lets the rule reach it at
+        all."""
+        cooled = self._model("claude-sonnet-6", self._days_before(self.NOW, 8))
+        result = self._compute(models=self._catalogue(extra=[cooled]))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-opus-5", "claude-sonnet-5",
+                          "claude-sonnet-6"])
+        reason = self._reason(result, "claude-sonnet-6")
+        self.assertIn("newest model in the sonnet tier", reason)
+        self.assertIn("in a tier that qualifies by usage", reason)
+        self.assertIn("`claude-sonnet-5` carries 45.4%", reason)
+
+    def test_the_judge_and_preflight_seats_are_unchanged_by_the_restriction(self):
+        """Restricting the ARMS must not move the other two seats: the
+        judge is still the strongest available non-arm and the preflight
+        still the cheapest safely-invocable model in the lowest tier.
+        Both now have MORE non-arms to choose from, and neither rule
+        reads the arm set for anything but exclusion."""
+        result = self._compute()
+        self.assertEqual(result["judge"]["id"], "claude-fable-5-1")
+        self.assertFalse(result["judge"]["is_arm"])
+        self.assertIn("tier above", result["judge"]["reason"])
+        self.assertEqual(result["preflight"]["id"], "claude-haiku-4-5")
+        self.assertIn("cheapest", result["preflight"]["reason"])
+
+    # --- the fallback, which is NOT restricted ---------------------------
+
+    def test_no_usable_census_still_falls_back_across_every_tier(self):
+        """INVARIANT: with no usable usage there is no usage-qualified
+        tier, and a roster must not be empty — so the newest-per-tier
+        fallback keeps every tier, exactly as it was, and every arm's
+        reason still names which of `_census_verdict`'s eight verdicts it
+        was.
+
+        Restricting the rule here would seat nobody at all, which is why
+        the restriction is written against `enter_usable` rather than
+        stated unconditionally."""
+        future = self._census(generated_at="2026-09-30T00:00:00Z")
+        stale = self._census(generated_at="2026-08-01T00:00:00Z")  # 34 days
+        empty = self._census(counts={})
+        unranked = self._census(counts={"other": {self.W[0]: 9000}})
+        thin = self._census(counts={"claude-sonnet-5": {self.W[0]: 3}})
+        cases = {
+            "absent": None,
+            "future-dated": future,
+            "stale": stale,
+            "empty over the window": empty,
+            "nothing rankable": unranked,
+            "under the ranked-turn floor": thin,
+        }
+        for label, census in cases.items():
+            with self.subTest(case=label):
+                result = roster.compute_roster(
+                    models_doc=self._catalogue(), census_doc=census,
+                    policy=self._policy(), previous=None, now=self.NOW)
+                # Newest per tier, ACROSS ALL FOUR TIERS.
+                self.assertEqual(sorted(self._arm_ids(result)),
+                                 ["claude-fable-5-1", "claude-haiku-4-5",
+                                  "claude-opus-5", "claude-sonnet-5"])
+                for arm in result["arms"]:
+                    self.assertIn("fell back to newest per tier",
+                                  arm["reason"])
+                    self.assertNotIn("qualifies by usage", arm["reason"])
+
+    def test_an_enter_window_under_the_floor_falls_back_the_same_way(self):
+        """The ninth case, and it is not one of the eight: the census is
+        fresh and the UNION window clears both ranked-usage floors, while
+        the four-week ENTER window on its own does not. No share can be
+        measured there, so no tier can qualify, so the fallback is the
+        same one — with the plain newest-in-tier reason, because there is
+        no staleness note to quote."""
+        counts = {"claude-sonnet-5": {w: 500 for w in self.W[4:]},
+                  "claude-opus-5": {w: 500 for w in self.W[4:]},
+                  "claude-haiku-4-5": {self.W[0]: 3}}
+        result = self._compute(census=self._census(counts=counts))
+        self.assertEqual(sorted(self._arm_ids(result)),
+                         ["claude-fable-5-1", "claude-haiku-4-5",
+                          "claude-opus-5", "claude-sonnet-5"])
+        for arm in result["arms"]:
+            self.assertIn("newest model in the", arm["reason"])
+            self.assertNotIn("qualifies by usage", arm["reason"])
+            self.assertNotIn("fell back", arm["reason"])
+
+    def test_a_usable_census_at_no_models_entry_bar_seats_no_newest(self):
+        """The sharp edge of the rule, pinned so nobody softens it back
+        into an all-tiers fallback by accident: eleven models each
+        carrying 9.09% is EVIDENCE, and what it is evidence of is that no
+        tier qualifies. The only arms left would be previous ones held
+        over the exit bar; with none, `compute_roster` returns an empty
+        arm set and `main()` refuses to publish it (rc 3), leaving the
+        committed roster standing."""
+        ids = ([f"claude-haiku-9-{i}" for i in range(3)]
+               + [f"claude-sonnet-9-{i}" for i in range(3)]
+               + [f"claude-opus-9-{i}" for i in range(3)]
+               + [f"claude-fable-9-{i}" for i in range(2)])
+        models = {"fetched_at": "2026-09-04T11:00:00Z", "models": [
+            self._model(i, "2026-01-01T00:00:00Z") for i in ids]}
+        census = self._census(counts={i: {self.W[0]: 1000} for i in ids})
+        result = self._compute(models=models, census=census)
+        self.assertEqual(result["arms"], [])
+        for model_id in ("claude-haiku-9-2", "claude-sonnet-9-2",
+                         "claude-opus-9-2", "claude-fable-9-1"):
+            self.assertIn("no model in that tier carries 10%",
+                          self._excluded(result, model_id) or "")
+
+    def test_a_previous_arm_is_still_held_over_by_the_exit_bar(self):
+        """The restriction is on the ENTRY side only. A previous arm in a
+        tier that no longer qualifies keeps its seat until it measurably
+        falls under the exit bar — "no evidence is not evidence" cuts
+        both ways, and this rule proposes no retirement of its own."""
+        previous = {"arms": [{"id": "claude-haiku-4-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        self.assertIn("claude-haiku-4-5", self._arm_ids(result))
+        reason = self._reason(result, "claude-haiku-4-5")
+        self.assertIn("held over from the previous roster", reason)
+        self.assertIn("6.3%", reason)
+        self.assertEqual(result["retired_since_last"], [])
+
+    # --- the proposal surface carries the new reasons --------------------
+
+    def test_the_rendered_proposal_and_summary_carry_the_new_reason(self):
+        """The seat's words have to survive every rendering a reviewer
+        actually reads: the step-summary table, and the bytes of the
+        proposed `evals/roster.yml` itself."""
+        newer = self._model("claude-opus-5-1", self._days_before(self.NOW, 30))
+        previous = {"schema": 1,
+                    "arms": [{"id": "claude-sonnet-5", "reason": "was an arm"}],
+                    "judge": {"id": "claude-fable-5-1", "reason": "",
+                              "is_arm": False},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""},
+                    "catalogue_seen": [],
+                    "provenance": {"seeded": "by hand", "from": "the fixtures"},
+                    "generated_at": "2026-09-01T00:00:00Z"}
+        result = self._compute(models=self._catalogue(extra=[newer]),
+                               previous=previous)
+        self.assertEqual(result["proposal"]["status"], "differs")
+
+        summary = roster.render_summary(result)
+        self.assertIn("in a tier that qualifies by usage", summary)
+        self.assertIn("no model in that tier carries 10%", summary)
+
+        rendered = render_roster_yaml.render(result, "1234567890", "abc1234")
+        document = yaml.safe_load(rendered)
+        self.assertEqual([a["id"] for a in document["arms"]],
+                         [a["id"] for a in result["arms"]])
+        opus_5_1 = next(a for a in document["arms"]
+                        if a["id"] == "claude-opus-5-1")
+        self.assertIn("in a tier that qualifies by usage", opus_5_1["reason"])
+        self.assertIn("`claude-opus-5` carries 45.2%", opus_5_1["reason"])
+        self.assertEqual(roster.committed_roster_problems(document), [])
+
+    def test_added_since_last_and_previous_state_are_unchanged(self):
+        """`previous_state`/`added_since_last`/`retired_since_last`
+        semantics are untouched by the rule: they still compare the
+        computed arm set against the committed one, whatever seated it."""
+        previous = {"arms": [{"id": "claude-sonnet-5", "reason": "was an arm"},
+                             {"id": "claude-fable-5-1", "reason": "was an arm"}],
+                    "judge": {"id": "claude-opus-4-8", "reason": ""},
+                    "preflight": {"id": "claude-haiku-4-5", "reason": ""}}
+        result = self._compute(previous=previous)
+        self.assertEqual(result["previous_state"], "compared")
+        self.assertTrue(result["compared_to_previous"])
+        self.assertEqual([a["id"] for a in result["added_since_last"]],
+                         ["claude-opus-5"])
+        # fable-5-1 carries 3.0%, over the 2% exit bar, so it is HELD —
+        # the restriction retires nothing on its own.
+        self.assertIn("claude-fable-5-1", self._arm_ids(result))
+        self.assertEqual(result["retired_since_last"], [])
 
 if __name__ == "__main__":
     raise SystemExit(main())

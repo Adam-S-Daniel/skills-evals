@@ -217,9 +217,8 @@ class TestIssue97(unittest.TestCase):
 
     def _run_suite(self, env_extra: dict | None = None
                    ) -> subprocess.CompletedProcess:
-        """The ONE function in this repository allowed to name the runner at a
-        spawn (test/run_tests.py::_spawn_suite is the other; the pin there
-        holds the membership exact), and it stands down itself.
+        """A reviewed suite spawner that stands down itself. The runner
+        verifies every member of its sanctioned sink inventory.
 
         S-B-a-2. Round 2 guarded the one test that forked; round 3 pinned two
         file globs; round 4 measured three helper locations those globs never
@@ -238,7 +237,11 @@ class TestIssue97(unittest.TestCase):
                       "re-fork the suite from inside itself")
             print(reason)
             raise unittest.SkipTest(reason)
-        env = dict(os.environ, **{CHILD_ENV: "1"}, **(env_extra or {}))
+        # The caller may add a throwaway-memory path, but may never clear the
+        # marker that makes a recursively launched suite stand down.
+        env = dict(os.environ)
+        env.update(env_extra or {})
+        env[CHILD_ENV] = "1"
         return subprocess.run(
             [sys.executable, str(TEST_DIR / "run_tests.py")],
             cwd=str(REPO_ROOT), env=env, capture_output=True, text=True,
@@ -3017,8 +3020,11 @@ class TestIssue97(unittest.TestCase):
         return tmp / "harness" / "run_eval.py"
 
     def _run_copy(self, runner: Path, argv_tail) -> tuple[int, str]:
+        if os.environ.get(CHILD_ENV):
+            raise unittest.SkipTest("child suite run — guarded copied harness")
         cmd = [sys.executable, str(runner), *[str(a) for a in argv_tail]]
         env = dict(os.environ, CLAUDE_BIN=str(FAKE_CLAUDE))
+        env[CHILD_ENV] = "1"
         try:
             proc = subprocess.run(cmd, cwd=str(REPO_ROOT), env=env,
                                   capture_output=True, text=True,
@@ -3036,7 +3042,13 @@ class TestIssue97(unittest.TestCase):
         (eval_dir / "seed").mkdir(parents=True, exist_ok=True)
         (eval_dir / "seed" / "placeholder.txt").write_text("x\n",
                                                            encoding="utf-8")
-        fixture = {"skill": "some-skill", "prompt": "do the thing"}
+        # Pin the agent model so this test's standalone harness copy reaches
+        # run_agent's timeout sink. Since #147, an unpinned skill fixture reads
+        # the trusted evals/roster.yml; _harness_copy intentionally carries
+        # harness/ alone, so leaving this unpinned would stop at model
+        # selection and never exercise the sink this helper exists to test.
+        fixture = {"skill": "some-skill", "prompt": "do the thing",
+                   "model": "fixture-model"}
         fixture.update(overrides)
         (eval_dir / "fixture.yaml").write_text(
             yaml.safe_dump(fixture, sort_keys=False), encoding="utf-8")
@@ -4667,4 +4679,3 @@ class TestIssue97(unittest.TestCase):
         self.assertTrue("per\n    # DECLARED arm" in comment,
                         "the timeout-minutes comment must account for a "
                         "guidance fixture's per-declared-arm budget")
-
