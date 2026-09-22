@@ -172,8 +172,20 @@ linked comment there.
   four project directories, were not included). The next `eval.yml` run,
   Monday 07:00 UTC or a manual dispatch, proposes from usage and updates
   #162 and `roster/proposal`. The current fallback proposal was not merged.
-  Adam then decides on the usage-based one; the Monday run keeps proposing
-  until the committed file matches.
+  Adam then asked for a manual dispatch: [run 35730106365](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35730106365)
+  on `main` `3515904` succeeded in 6 min 24 s wall clock; measured cost
+  $1.03 (Sonnet 5 arms $0.380 and $0.620, Haiku preflight $0.031) plus an
+  estimated $0.4–1.0 for the unitemised Opus 4.8 judge; at most one point of
+  the weekly all-models allowance, possibly zero if the WIF bearer bills the
+  API org. Results 8/8 vs 8/8 objective, judge 9.2 vs 8.9, badge still green
+  over the 5-run window. The census was read and
+  [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162) now
+  carries the **usage-based proposal** (`roster/proposal` `c4a8bea`): sonnet-5
+  45.4% and opus-5 45.2% of rankable usage seated by share; haiku and
+  fable-5-1 seated by the newest-per-tier rule at 6.3% and 3.0%; judge
+  fable-5. Adam decides; the Monday run keeps proposing until the committed
+  file matches. Full accounting: the
+  [board comment](https://github.com/Adam-S-Daniel/skills-evals/issues/126#issuecomment-5777021600).
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
 - **Optional next work if Adam reopens:** #166 (nits, test-only). Nothing
