@@ -155,10 +155,14 @@ Evidence directories under `.evals-resume-20260915/`:
 
 ### Tie-off state at the end of 2026-09-21
 
-`main` is [`3515904`](https://github.com/Adam-S-Daniel/skills-evals/commit/3515904050cac78b0b233080c7de0cc1c0945be9)
-with CI and Propagation green. Three merges today, each with a merge commit on
-the expected head and ancestry verified: PR #153 `cddb224`, PR #163
-`47ca1e6`, PR #165 `3515904`. Issues closed today: #152, #161, #164; opened:
+`main` is [`46f5246`](https://github.com/Adam-S-Daniel/skills-evals/commit/46f5246423daa2b9d588b8ba29e861f7113698e0)
+at the end of 2026-09-22. Merges across 2026-09-21/22, each with a merge
+commit on the expected head and ancestry verified: PR #153 `cddb224`,
+PR #163 `47ca1e6`, PR #165 `3515904`, PR #157 `fd18f9b` (this handoff and
+`docs/how-it-works.md`), PR #167 `46f5246` (the usage-qualified-tier rule).
+The plain-English guide with results locations, fixture descriptions,
+remaining steps and cost ranges is [`docs/how-it-works.md`](docs/how-it-works.md);
+the results branch README carries a per-fixture table and a pointer to it. Issues closed today: #152, #161, #164; opened:
 #162 (by the workflow), #166. The
 [status board](https://github.com/Adam-S-Daniel/skills-evals/issues/126)
 body's current-state header was rewritten to this state and every step is a
@@ -194,6 +198,21 @@ linked comment there.
   roster; after it, a fixture run costs roughly $10–14 instead of $1.71
   (four arms, judge at twice Opus prices). Full accounting: the
   [board comment](https://github.com/Adam-S-Daniel/skills-evals/issues/126#issuecomment-5777021600).
+  **Later on 2026-09-22 Adam changed the rule:** the newest-per-tier seat
+  applies only to tiers that already qualify by usage. Implemented and
+  **merged as [PR #167](https://github.com/Adam-S-Daniel/skills-evals/pull/167)**,
+  merge commit [`46f5246`](https://github.com/Adam-S-Daniel/skills-evals/commit/46f5246423daa2b9d588b8ba29e861f7113698e0)
+  (independent review CLEAN with four nits, filed as
+  [#168](https://github.com/Adam-S-Daniel/skills-evals/issues/168); full
+  suite 1490 / 2 skipped). Under it today's census yields **two arms**,
+  `claude-sonnet-5` and `claude-opus-5`, and the unchanged judge rule now
+  picks **`claude-fable-5-1`** (it is no longer an arm; same tier and price
+  as fable-5). The four-arm proposal Adam approved earlier is superseded:
+  do not open a PR from `c4a8bea`. The next `eval.yml` run (Monday 07:00
+  UTC or a dispatch) recreates `roster/proposal` under the new rule and
+  updates #162; a PR from that head, CI, and a merge commit is then the
+  remaining human step. Expected run cost after that merge: about $5–7
+  per fixture run (two arms, fable-tier judge).
   **Superseded the same day.** Adam then narrowed the rule that produced
   that proposal: the newest model in a tier is seated only where that tier
   already has a model over the usage bar, so haiku and fable-5-1 lose their
