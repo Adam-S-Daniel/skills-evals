@@ -1,26 +1,26 @@
 {
-  "generated_at": "2026-09-21T14:39:19Z",
+  "generated_at": "2026-09-22T12:55:49Z",
   "source": {
-    "models_api_at": "2026-09-21T14:39:19Z",
-    "census_at": null,
+    "models_api_at": "2026-09-22T12:55:49Z",
+    "census_at": "2026-09-22T02:36:27Z",
     "admin_report_at": null
   },
   "arms": [
     {
       "id": "claude-haiku-4-5-20251001",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the haiku tier, 341 days old (past the 7-day cooling-off)"
+      "reason": "newest model in the haiku tier, 342 days old (past the 7-day cooling-off)"
     },
     {
       "id": "claude-sonnet-5",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the sonnet tier, 84 days old (past the 7-day cooling-off)"
+      "reason": "carries 45.4% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
     },
     {
       "id": "claude-opus-5",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the opus tier, 59 days old (past the 7-day cooling-off)"
+      "reason": "carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
     },
     {
       "id": "claude-fable-5-1",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the fable/mythos tier, 24 days old (past the 7-day cooling-off)"
+      "reason": "newest model in the fable/mythos tier, 25 days old (past the 7-day cooling-off)"
     }
   ],
   "judge": {
@@ -40,61 +40,61 @@
   "added_since_last": [
     {
       "id": "claude-haiku-4-5-20251001",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the haiku tier, 341 days old (past the 7-day cooling-off)"
+      "reason": "newest model in the haiku tier, 342 days old (past the 7-day cooling-off)"
     },
     {
       "id": "claude-opus-5",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the opus tier, 59 days old (past the 7-day cooling-off)"
+      "reason": "carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
     },
     {
       "id": "claude-fable-5-1",
-      "reason": "no fresh census (none published); fell back to newest per tier \u2014 newest model in the fable/mythos tier, 24 days old (past the 7-day cooling-off)"
+      "reason": "newest model in the fable/mythos tier, 25 days old (past the 7-day cooling-off)"
     }
   ],
   "catalogue_seen": [
     {
       "id": "claude-fable-5",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-fable-5-1",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-haiku-4-5-20251001",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-opus-4-5-20251101",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-opus-4-6",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-opus-4-7",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-opus-4-8",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-opus-5",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-sonnet-4-5-20250929",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-sonnet-4-6",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     },
     {
       "id": "claude-sonnet-5",
-      "last_seen": "2026-09-21"
+      "last_seen": "2026-09-22"
     }
   ],
   "proposal": {
@@ -105,21 +105,21 @@
         "field": "arms",
         "from": null,
         "to": "claude-haiku-4-5-20251001",
-        "reason": "seat it: no fresh census (none published); fell back to newest per tier \u2014 newest model in the haiku tier, 341 days old (past the 7-day cooling-off); no rankable, attributable census turns in the window at all, so there is no share to quote"
+        "reason": "seat it: newest model in the haiku tier, 342 days old (past the 7-day cooling-off); 346 of the window's 5450 rankable, attributable census turns \u2014 6.3%"
       },
       {
         "kind": "seat",
         "field": "arms",
         "from": null,
         "to": "claude-opus-5",
-        "reason": "seat it: no fresh census (none published); fell back to newest per tier \u2014 newest model in the opus tier, 59 days old (past the 7-day cooling-off); no rankable, attributable census turns in the window at all, so there is no share to quote"
+        "reason": "seat it: carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar); 2465 of the window's 5450 rankable, attributable census turns \u2014 45.2%"
       },
       {
         "kind": "seat",
         "field": "arms",
         "from": null,
         "to": "claude-fable-5-1",
-        "reason": "seat it: no fresh census (none published); fell back to newest per tier \u2014 newest model in the fable/mythos tier, 24 days old (past the 7-day cooling-off); no rankable, attributable census turns in the window at all, so there is no share to quote"
+        "reason": "seat it: newest model in the fable/mythos tier, 25 days old (past the 7-day cooling-off); 164 of the window's 5450 rankable, attributable census turns \u2014 3.0%"
       },
       {
         "kind": "seat",
