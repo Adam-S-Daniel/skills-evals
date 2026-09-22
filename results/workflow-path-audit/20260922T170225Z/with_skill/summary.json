@@ -1,0 +1,91 @@
+{
+  "skill": "workflow-path-audit",
+  "arm": "with_skill",
+  "timestamp": "20260922T170225Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.38888334999999996,
+    "num_turns": 19,
+    "duration_ms": 73003,
+    "usage": {
+      "input_tokens": 21,
+      "cache_creation_input_tokens": 45471,
+      "cache_read_input_tokens": 395497,
+      "output_tokens": 6603,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 45471
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "docs-change-routes-correctly",
+      "passed": true,
+      "detail": "changing docs/guide.md routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "source-change-routes-correctly",
+      "passed": true,
+      "detail": "changing src/index.js routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "lockfile-change-routes-to-installers",
+      "passed": true,
+      "detail": "changing package-lock.json routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "prose-change-runs-nothing-but-the-required-check",
+      "passed": true,
+      "detail": "changing README.md, LICENSE routes as expected across 3 workflow(s)"
+    },
+    {
+      "id": "required-check-always-fires-and-gates-internally",
+      "passed": true,
+      "detail": "required check(s) always fire and gate internally (.github/workflows/tests.yml)"
+    },
+    {
+      "id": "workflows-still-parse",
+      "passed": true,
+      "detail": "all workflows parse"
+    },
+    {
+      "id": "event-only-workflows-unfiltered",
+      "passed": true,
+      "detail": "event-only workflows carry no path filters (.github/workflows/nightly-sweep.yml, .github/workflows/triage.yml)"
+    },
+    {
+      "id": "ruleset-unchanged",
+      "passed": true,
+      "detail": "unchanged (.github/rulesets/main.json)"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Completeness",
+        "score": 9,
+        "rationale": "All five pull_request/push and non-path-eligible workflows received deliberate decisions, and the required check was given exactly the one correct shape \u2014 a single workflow, no workflow-level paths/paths-ignore, always-running job with a computed `salient.outputs.run` output gating the real steps via `if:`, with no companion skip workflow duplicating the check name."
+      },
+      {
+        "name": "Salience",
+        "score": 8,
+        "rationale": "Each workflow's paths are tailored to what its own steps consume (deploy \u2192 src/deploy script/lockfile, docs-site \u2192 docs/mkdocs.yml, tests \u2192 src/test/manifests) rather than catch-alls, each annotated with why, and self-references are included; only mild uncertainty since the full step bodies aren't shown to confirm every consumed input."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The schedule-only nightly-sweep and issue-driven triage workflows were correctly left untouched, the branch-protection ruleset was verified and left alone, and no out-of-scope files (README/docs) were edited."
+      }
+    ],
+    "overall": 8.9
+  }
+}

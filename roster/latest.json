@@ -1,15 +1,11 @@
 {
-  "generated_at": "2026-09-22T12:55:49Z",
+  "generated_at": "2026-09-22T17:02:22Z",
   "source": {
-    "models_api_at": "2026-09-22T12:55:49Z",
+    "models_api_at": "2026-09-22T17:02:22Z",
     "census_at": "2026-09-22T02:36:27Z",
     "admin_report_at": null
   },
   "arms": [
-    {
-      "id": "claude-haiku-4-5-20251001",
-      "reason": "newest model in the haiku tier, 342 days old (past the 7-day cooling-off)"
-    },
     {
       "id": "claude-sonnet-5",
       "reason": "carries 45.4% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
@@ -17,15 +13,11 @@
     {
       "id": "claude-opus-5",
       "reason": "carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
-    },
-    {
-      "id": "claude-fable-5-1",
-      "reason": "newest model in the fable/mythos tier, 25 days old (past the 7-day cooling-off)"
     }
   ],
   "judge": {
-    "id": "claude-fable-5",
-    "reason": "strongest available model that is not an arm \u2014 nothing available sits above the strongest arm's fable/mythos tier",
+    "id": "claude-fable-5-1",
+    "reason": "most capable available model at least one tier above the strongest arm model (fable/mythos over opus), and not itself an arm",
     "is_arm": false
   },
   "preflight": {
@@ -33,22 +25,27 @@
     "reason": "newest model in the haiku tier that is past the 7-day cooling-off: the lowest tier the Models API still returns, and this is its cheapest safely-invocable pick"
   },
   "unranked": [],
-  "excluded": [],
+  "excluded": [
+    {
+      "id": "claude-haiku-4-5-20251001",
+      "reason": "excluded from the arm set: newest in the haiku tier, but no model in that tier carries 10% of rankable census usage over the last 4 weeks, so the tier qualifies by usage for no seat and the newest-per-tier rule does not seat it"
+    },
+    {
+      "id": "claude-opus-5-5",
+      "reason": "excluded from the arm set: newest in the opus tier but only 1 days old, inside the 7-day cooling-off"
+    },
+    {
+      "id": "claude-fable-5-1",
+      "reason": "excluded from the arm set: newest in the fable/mythos tier, but no model in that tier carries 10% of rankable census usage over the last 4 weeks, so the tier qualifies by usage for no seat and the newest-per-tier rule does not seat it"
+    }
+  ],
   "compared_to_previous": true,
   "previous_state": "compared",
   "retired_since_last": [],
   "added_since_last": [
     {
-      "id": "claude-haiku-4-5-20251001",
-      "reason": "newest model in the haiku tier, 342 days old (past the 7-day cooling-off)"
-    },
-    {
       "id": "claude-opus-5",
       "reason": "carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
-    },
-    {
-      "id": "claude-fable-5-1",
-      "reason": "newest model in the fable/mythos tier, 25 days old (past the 7-day cooling-off)"
     }
   ],
   "catalogue_seen": [
@@ -85,6 +82,10 @@
       "last_seen": "2026-09-22"
     },
     {
+      "id": "claude-opus-5-5",
+      "last_seen": "2026-09-22"
+    },
+    {
       "id": "claude-sonnet-4-5-20250929",
       "last_seen": "2026-09-22"
     },
@@ -104,29 +105,15 @@
         "kind": "seat",
         "field": "arms",
         "from": null,
-        "to": "claude-haiku-4-5-20251001",
-        "reason": "seat it: newest model in the haiku tier, 342 days old (past the 7-day cooling-off); 346 of the window's 5450 rankable, attributable census turns \u2014 6.3%"
-      },
-      {
-        "kind": "seat",
-        "field": "arms",
-        "from": null,
         "to": "claude-opus-5",
         "reason": "seat it: carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar); 2465 of the window's 5450 rankable, attributable census turns \u2014 45.2%"
       },
       {
         "kind": "seat",
-        "field": "arms",
-        "from": null,
-        "to": "claude-fable-5-1",
-        "reason": "seat it: newest model in the fable/mythos tier, 25 days old (past the 7-day cooling-off); 164 of the window's 5450 rankable, attributable census turns \u2014 3.0%"
-      },
-      {
-        "kind": "seat",
         "field": "judge",
         "from": "claude-opus-4-8",
-        "to": "claude-fable-5",
-        "reason": "strongest available model that is not an arm \u2014 nothing available sits above the strongest arm's fable/mythos tier"
+        "to": "claude-fable-5-1",
+        "reason": "most capable available model at least one tier above the strongest arm model (fable/mythos over opus), and not itself an arm"
       },
       {
         "kind": "seat",
@@ -189,6 +176,13 @@
         "field": "catalogue_seen",
         "from": null,
         "to": "claude-opus-5",
+        "reason": "the Models API listed it this run, so this harness has now observed it"
+      },
+      {
+        "kind": "catalogue_seen",
+        "field": "catalogue_seen",
+        "from": null,
+        "to": "claude-opus-5-5",
         "reason": "the Models API listed it this run, so this harness has now observed it"
       },
       {
