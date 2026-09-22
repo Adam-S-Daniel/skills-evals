@@ -40,8 +40,24 @@ because `main` is pull-request only: nothing automated can change it.
 Every run also *computes* what the roster should be, from two inputs: the
 Models API (which models exist and how old they are) and a **usage census**
 (which models this account actually runs, per week, published from a
-workstation as `usage/latest.json` on the results branch). The computed
-roster is only a **proposal**. When it differs from the committed file the run
+workstation as `usage/latest.json` on the results branch).
+
+**How a model earns an arm's seat** (Adam decided this on 2026-09-22). A
+model is an arm if the fleet actually runs on it — at least 10% of the
+countable turns of the last four weeks. On top of that, the *newest* model
+in a tier gets a seat too, but **only in a tier where some model already
+earned one on usage**, and only once it is a week old. So the newest Opus
+comes in because the fleet runs Opus; the newest Haiku does not, because it
+does not. The rule used to give every tier on the ladder a seat regardless,
+which put four arms on a roster where two of them measured tiers carrying
+3% and 6% of the work — at four arms' worth of paid spend per run. On
+today's census that means two arms (Sonnet 5 and Opus 5); an Opus 5.1
+shipped before the next run would make three. The one exception is when
+there is no usable census at all: then nothing can qualify, a roster with no
+arms is useless, and the newest model of every tier takes a seat, with each
+reason saying plainly that it did so because the usage evidence was missing.
+
+The computed roster is only a **proposal**. When it differs from the committed file the run
 pushes the proposed file to the bot-owned branch `roster/proposal` and keeps
 one tracking issue open with every seat's reason and the numerator and
 denominator behind it. A human opens a pull request from that branch and
@@ -217,16 +233,23 @@ unless stated.
 
 ### Blocking decisions (Adam's)
 
-1. **The roster proposal, [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162): decided.**
+1. **The roster proposal, [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162): decided, and the approved proposal is now superseded.**
    Usage-based since 2026-09-22: Sonnet 5 (45.4% of rankable usage) and
    Opus 5 (45.2%) seated by share; Haiku 4.5 and Fable 5.1 seated by the
    newest-per-tier rule at 6.3% and 3.0%; judge Fable 5. **Adam approved
-   it on 2026-09-22.** The remaining action is the human one ADR 0001
-   reserves: open a pull request from `roster/proposal` (commit `c4a8bea`,
-   changing only `evals/roster.yml`), let CI run, merge it. Not yet done at
-   the time of writing. Once merged, a fixture run rises from about $1.7 to
-   roughly $10–14 (four arms, a judge at twice Opus prices), and the Monday
-   run stops re-proposing. No allowance cost.
+   that four-arm proposal on 2026-09-22 and then, the same day, narrowed
+   the rule that produced it**: the newest model in a tier is seated only
+   where that tier already has a model over the usage bar (§ 2). Haiku 4.5
+   and Fable 5.1 lose their seats under that rule, so **the approved
+   four-arm proposal is superseded and the next run proposes two arms** —
+   Sonnet 5 and Opus 5, both on their own shares. Do not open a pull
+   request from the old `roster/proposal` commit (`c4a8bea`): it renders
+   the four-arm roster. Let the next Monday run, or a manual dispatch,
+   recompute the branch first; then open the pull request from what it
+   pushes, let CI run, merge it. Once merged, a fixture run rises from
+   about $1.7 to roughly $5–7 (two arms, a judge at twice Opus prices)
+   rather than the $10–14 four arms would have cost, and the Monday run
+   stops re-proposing. No allowance cost.
 2. **Whether to reopen the fixture lanes** ([#62](https://github.com/Adam-S-Daniel/skills-evals/issues/62),
    [#96](https://github.com/Adam-S-Daniel/skills-evals/issues/96)), stopped by
    decision 8 on 2026-09-08 ("stop adding and completing evals for specific
@@ -259,9 +282,11 @@ unless stated.
 Everything not held: roughly **60–120 points**, three to six weekly
 allowances at today's local rates, spread over the order above. The
 standing weekly run is about $1.70 on the current one-arm roster and
-$10–14 once the approved #162 roster is merged, before any matrix or trials
-multiplier; the dollar figures in the table assume the approved roster where
-they say so.
+$5–7 once the two-arm #162 roster is merged, before any matrix or trials
+multiplier. **The dollar figures in the table above were priced at the
+four-arm roster approved on 2026-09-22**; treat every "on the proposed
+roster" figure there as an upper bound worth roughly halving, since the
+narrowed rule in § 2 proposes two arms rather than four.
 
 ### Standing holds
 

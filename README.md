@@ -488,6 +488,31 @@ could not make a local check over it safe
 - **usage** — `scripts/model_usage_census.py` counts what this account actually
   ran, per model per ISO week, from the local Claude Code transcripts.
 
+**Who becomes an arm** (Adam's decision, 2026-09-22). Two rules, and the
+second is subordinate to the first:
+
+1. **Usage seats.** Every available model at or above the entry bar — 10% of
+   rankable, attributable census turns over the trailing 4 weeks — is an arm,
+   with its share in its reason.
+2. **Newest per *qualifying* tier.** In a tier rule 1 already seated somebody
+   in, the newest available model past the 7-day cooling-off is an arm too,
+   and its reason says so in words, naming the qualifying share it rides on.
+   **A tier no model of which clears the entry bar gets no arm at all**,
+   however new its newest model is; that model is listed under `excluded`
+   with exactly that reason.
+
+Rule 2 used to read "newest in its tier" across every tier on the ladder,
+which seated the newest haiku and the newest fable on a census showing the
+fleet ran 6.3% and 3.0% of its turns on them — four arms' worth of spend per
+fixture to measure two tiers nobody uses. On the 2026-09-22 census (sonnet-5
+45.4%, opus-5 45.2%) the roster is two arms; ship an opus 5.1 and the opus
+tier, which qualifies, seats it beside opus-5 for three; ship a newer haiku or
+fable and nothing changes. **The no-census fallback is untouched**: with no
+usable usage there is no qualifying tier and a roster must not be empty, so
+the rule reverts to newest-per-tier across *all* tiers and every arm's reason
+says which degradation it was. No new threshold was added — rule 2 reads rule
+1's entry bar, and the numbers all stay in `evals/roster-policy.yml`.
+
 **But what it computes is a PROPOSAL.** When it differs from the committed
 file, the weekly run renders the proposed `evals/roster.yml`
 (`scripts/render_roster_yaml.py`) and checks it against the committed-roster
@@ -541,8 +566,10 @@ is no usable evidence — present but unreadable, absent, future-dated, stale,
 published but empty over the window, published but holding no usage the
 tier ladder can rank or attribute, and holding some but under either the
 absolute or the relative rankable-usage floor — and in every one the roster
-falls back to newest-per-tier and says, in every arm's reason, which of
-those it was. **It remains the one input written by another machine**, so it
+falls back to newest-per-tier **across every tier** and says, in every arm's
+reason, which of those it was. (So does a fresh census whose four-week enter
+window alone fails one of those floors: there is no share there to qualify a
+tier with.) **It remains the one input written by another machine**, so it
 is the one input with a size bound on it (`CENSUS_MAX_KEYS`,
 `CENSUS_MAX_BYTES`): past either, the run refuses with a named error rather
 than letting an untrusted document decide how much work it does.
