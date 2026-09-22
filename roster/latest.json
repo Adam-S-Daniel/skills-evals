@@ -1,7 +1,7 @@
 {
-  "generated_at": "2026-09-22T17:02:22Z",
+  "generated_at": "2026-09-22T17:22:57Z",
   "source": {
-    "models_api_at": "2026-09-22T17:02:22Z",
+    "models_api_at": "2026-09-22T17:22:57Z",
     "census_at": "2026-09-22T02:36:27Z",
     "admin_report_at": null
   },
@@ -42,12 +42,7 @@
   "compared_to_previous": true,
   "previous_state": "compared",
   "retired_since_last": [],
-  "added_since_last": [
-    {
-      "id": "claude-opus-5",
-      "reason": "carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar)"
-    }
-  ],
+  "added_since_last": [],
   "catalogue_seen": [
     {
       "id": "claude-fable-5",
@@ -99,113 +94,7 @@
     }
   ],
   "proposal": {
-    "status": "differs",
-    "changes": [
-      {
-        "kind": "seat",
-        "field": "arms",
-        "from": null,
-        "to": "claude-opus-5",
-        "reason": "seat it: carries 45.2% of rankable census usage over the last 4 weeks (at or above the 10% entry bar); 2465 of the window's 5450 rankable, attributable census turns \u2014 45.2%"
-      },
-      {
-        "kind": "seat",
-        "field": "judge",
-        "from": "claude-opus-4-8",
-        "to": "claude-fable-5-1",
-        "reason": "most capable available model at least one tier above the strongest arm model (fable/mythos over opus), and not itself an arm"
-      },
-      {
-        "kind": "seat",
-        "field": "preflight",
-        "from": "claude-haiku-4-5",
-        "to": "claude-haiku-4-5-20251001",
-        "reason": "newest model in the haiku tier that is past the 7-day cooling-off: the lowest tier the Models API still returns, and this is its cheapest safely-invocable pick"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-fable-5",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-fable-5-1",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-haiku-4-5-20251001",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-opus-4-5-20251101",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-opus-4-6",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-opus-4-7",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-opus-4-8",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-opus-5",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-opus-5-5",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-sonnet-4-5-20250929",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-sonnet-4-6",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      },
-      {
-        "kind": "catalogue_seen",
-        "field": "catalogue_seen",
-        "from": null,
-        "to": "claude-sonnet-5",
-        "reason": "the Models API listed it this run, so this harness has now observed it"
-      }
-    ]
+    "status": "same",
+    "changes": []
   }
 }
