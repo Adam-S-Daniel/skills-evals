@@ -12,6 +12,10 @@ Implements Phase 5 of
 Full method and rationale: [`DESIGN.md`](DESIGN.md). Deliberately a dedicated
 harness — `GHA-bench` is not used for this.
 
+New here? Start with [`docs/how-it-works.md`](docs/how-it-works.md): a
+plain-English guide to what runs, where the results are, what each fixture
+measures, what is left and what it costs.
+
 ## Layout
 
 ```
