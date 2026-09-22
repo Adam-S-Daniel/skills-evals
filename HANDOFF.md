@@ -164,11 +164,16 @@ the expected head and ancestry verified: PR #153 `cddb224`, PR #163
 body's current-state header was rewritten to this state and every step is a
 linked comment there.
 
-- **Waiting on Adam, not blocking anything:** #162, the first roster proposal
-  (four arms plus a Fable judge by newest-per-tier fallback, no census
-  published). Publish the census first (Routine step 6 on a machine with
-  transcripts) or open and merge a PR from `roster/proposal`. The Monday run
-  keeps proposing until the committed file matches.
+- **#162, the first roster proposal:** Adam chose to publish the census
+  first. `usage/latest.json` is now on `eval-results` at
+  [`47adc70`](https://github.com/Adam-S-Daniel/skills-evals/commit/47adc7003fb5c469071751c5368413dfdafdae44)
+  (Routine step 6 on the WSL workstation, default transcript root; 6 model
+  ids plus `other`, 8 ISO weeks, counts only; the Windows-side transcripts,
+  four project directories, were not included). The next `eval.yml` run,
+  Monday 07:00 UTC or a manual dispatch, proposes from usage and updates
+  #162 and `roster/proposal`. The current fallback proposal was not merged.
+  Adam then decides on the usage-based one; the Monday run keeps proposing
+  until the committed file matches.
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
 - **Optional next work if Adam reopens:** #166 (nits, test-only). Nothing
@@ -180,7 +185,8 @@ linked comment there.
   `codex-suite-fork-152-20260915` (clean at `9bdcb95`, merged),
   `claude-161-164` (clean at `8cca426`, merged),
   `codex-reconcile-evals-20260915` (clean at `efb48b8`, merged),
-  `codex-handoff-evals-20260915` (this branch). They can be removed with
+  `codex-handoff-evals-20260915` (this branch), `eval-results` (clean at
+  `47adc70`, the census publication). They can be removed with
   `git worktree remove` when convenient; none holds unpublished work.
 - Usage: weekly all-models 6%, weekly Fable 3% at tie-off (session-side
   reading of the account window).
