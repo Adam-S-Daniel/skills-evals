@@ -186,8 +186,13 @@ linked comment there.
   carries the **usage-based proposal** (`roster/proposal` `c4a8bea`): sonnet-5
   45.4% and opus-5 45.2% of rankable usage seated by share; haiku and
   fable-5-1 seated by the newest-per-tier rule at 6.3% and 3.0%; judge
-  fable-5. Adam decides; the Monday run keeps proposing until the committed
-  file matches. Full accounting: the
+  fable-5. **Adam reviewed and approved #162 on 2026-09-22** (in chat, with
+  the instruction to record it, not act on it yet). The remaining action is
+  the human one ADR 0001 reserves: open a PR from `roster/proposal`
+  (`c4a8bea`, only `evals/roster.yml`), let CI run, merge with a merge
+  commit. Until then the Monday run keeps proposing and runs on the one-arm
+  roster; after it, a fixture run costs roughly $10–14 instead of $1.71
+  (four arms, judge at twice Opus prices). Full accounting: the
   [board comment](https://github.com/Adam-S-Daniel/skills-evals/issues/126#issuecomment-5777021600).
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
