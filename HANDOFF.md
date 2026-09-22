@@ -224,10 +224,11 @@ linked comment there.
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
 - **Planned next steps, in order** (full list with cost ranges in
-  [`docs/how-it-works.md`](docs/how-it-works.md) § 7): (1) move the judge
-  calls in `eval.yml` to the Batch API (Adam's request; the arms cannot be
-  batched, only the two judge calls; about 3–6 points, saves about half the
-  judge spend); (2) the owed real N=3 runs for the merged fixtures, held by
+  [`docs/how-it-works.md`](docs/how-it-works.md) § 7): (1) ~~move the judge
+  calls in `eval.yml` to the Batch API~~ — **deferred by Adam on 2026-09-22**:
+  not implemented for now; revisit its projected cost-effectiveness after a
+  few weeks (around 2026-10-13) against the two-arm roster's real judge
+  spend, tracked in [#170](https://github.com/Adam-S-Daniel/skills-evals/issues/170); (2) the owed real N=3 runs for the merged fixtures, held by
   decision 8; (3) #166 nits; then the harness lane #139, #66, #64, #68/#99,
   #69/#121, #70, #71/#122, #65/#98, explorer and docs. Roughly 60–120 points
   of allowance in total at 2026-09-21 local rates.
