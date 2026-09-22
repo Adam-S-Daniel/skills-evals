@@ -259,13 +259,21 @@ unless stated.
    parked with its fix budget spent and two reproduced defects. It holds
    [#139](https://github.com/Adam-S-Daniel/skills-evals/issues/139). Options:
    authorise one more fix round (2–3 points), redesign, or close.
-4. **The Batch API step below**: go or no-go, given the reservations.
+4. **The Batch API step below: decided no-go for now (2026-09-22).** Adam
+   chose not to move the judge calls to the Batch API yet. The judge is
+   the only batchable call and the saving is about half of judge spend,
+   which at the two-arm roster is a dollar or two per run against a 3–6
+   point build plus two reviews on a one-way-door workflow. **Revisit
+   after a few weeks** (around 2026-10-13), once the two-arm roster with the
+   Fable 5.1 judge has produced several weekly runs, by re-projecting the
+   saving from the org API usage export against the build cost; tracked in
+   [#170](https://github.com/Adam-S-Daniel/skills-evals/issues/170).
 
 ### Planned steps, in order
 
 | # | Step | Allowance | Org API |
 |---|---|---|---|
-| 1 | **Move the judge calls to the Batch API from `eval.yml`.** Only the judge is batchable: each arm is an agentic loop where every turn depends on the previous tool result, and the Batch API takes independent single requests. The judge today is one `claude -p` call per arm; it would become one `messages.batches.create` with two requests, polled to completion inside the job. `eval.yml` is a one-way door, so it takes a worker, a code review and an adversarial review. | 3–6 points | about $5 of verification runs; then saves ~50% of judge spend, about $0.40 per run today and $1.50–2 per run on the proposed roster |
+| 1 | **Move the judge calls to the Batch API from `eval.yml`.** DEFERRED on 2026-09-22 (blocking decision 4 above); revisit around 2026-10-13. Only the judge is batchable: each arm is an agentic loop where every turn depends on the previous tool result, and the Batch API takes independent single requests. The judge today is one `claude -p` call per arm; it would become one `messages.batches.create` with two requests, polled to completion inside the job. `eval.yml` is a one-way door, so it takes a worker, a code review and an adversarial review. | 3–6 points | about $5 of verification runs; then saves ~50% of judge spend, about $0.40 per run today and $1.50–2 per run on the proposed roster |
 | 2 | Owed real runs (N=3) for the merged fixtures whose issues stay open for them: #82, #86, #85, #77, #74, #80, #84, #81. Dispatch and record only. **Held by decision 8 until Adam reopens.** | 1–2 points | about $40 at one arm, $250 on the proposed roster |
 | 3 | [#166](https://github.com/Adam-S-Daniel/skills-evals/issues/166) suite-fork guard nits (test-only). | 1–2 points | none |
 | 4 | [#139](https://github.com/Adam-S-Daniel/skills-evals/issues/139) receipts per arm. Blocked by decision 3 above. | 4–8 points | none |
