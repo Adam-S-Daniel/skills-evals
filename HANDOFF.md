@@ -173,11 +173,14 @@ linked comment there.
   Monday 07:00 UTC or a manual dispatch, proposes from usage and updates
   #162 and `roster/proposal`. The current fallback proposal was not merged.
   Adam then asked for a manual dispatch: [run 35730106365](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35730106365)
-  on `main` `3515904` succeeded in 6 min 24 s wall clock; measured cost
-  $1.03 (Sonnet 5 arms $0.380 and $0.620, Haiku preflight $0.031) plus an
-  estimated $0.4–1.0 for the unitemised Opus 4.8 judge; at most one point of
-  the weekly all-models allowance, possibly zero if the WIF bearer bills the
-  API org. Results 8/8 vs 8/8 objective, judge 9.2 vs 8.9, badge still green
+  on `main` `3515904` succeeded in 6 min 24 s wall clock. **Cost, from the
+  org's API usage export for 2026-09-22 (workspace `skills-evals-ci`, the
+  only run that day): $1.71** — Sonnet 5 arms $0.89 (output $0.31, cache
+  read $0.30, cache write $0.28), Opus 4.8 judge $0.78 (cache write $0.59,
+  output $0.18, cache read $0.01), Haiku 4.5 preflight $0.04. Real runs bill
+  the API org through the WIF-minted bearer, not the weekly allowance; the
+  one-point tick observed on the meter was this session's own tracking.
+  Results 8/8 vs 8/8 objective, judge 9.2 vs 8.9, badge still green
   over the 5-run window. The census was read and
   [#162](https://github.com/Adam-S-Daniel/skills-evals/issues/162) now
   carries the **usage-based proposal** (`roster/proposal` `c4a8bea`): sonnet-5
@@ -188,8 +191,14 @@ linked comment there.
   [board comment](https://github.com/Adam-S-Daniel/skills-evals/issues/126#issuecomment-5777021600).
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
-- **Optional next work if Adam reopens:** #166 (nits, test-only). Nothing
-  else in scope.
+- **Planned next steps, in order** (full list with cost ranges in
+  [`docs/how-it-works.md`](docs/how-it-works.md) § 7): (1) move the judge
+  calls in `eval.yml` to the Batch API (Adam's request; the arms cannot be
+  batched, only the two judge calls; about 3–6 points, saves about half the
+  judge spend); (2) the owed real N=3 runs for the merged fixtures, held by
+  decision 8; (3) #166 nits; then the harness lane #139, #66, #64, #68/#99,
+  #69/#121, #70, #71/#122, #65/#98, explorer and docs. Roughly 60–120 points
+  of allowance in total at 2026-09-21 local rates.
 - All workers and reviewers ran locally through the Agent tool in
   `git archive` scratch exports with `env -i` and throwaway profiles; each
   released clean with zero test children and deleted its scratch. Local
