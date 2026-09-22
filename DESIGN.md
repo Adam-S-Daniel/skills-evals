@@ -479,6 +479,36 @@ proposal and merges it after CI. That is the fleet's sanctioned bot-write path;
 nothing in CI writes `evals/roster.yml`. When the computed roster matches, the
 tracking issue is closed.
 
+**Who is an arm (2026-09-22, Adam's decision).** Two rules, the second
+subordinate to the first. **(1) Usage seats:** every available model at or
+above `arm_enter_usage_pct` of rankable, attributable census turns over
+`arm_enter_window_weeks` is an arm, with its share in its reason. **(2)
+Newest per QUALIFYING tier:** in a tier rule 1 already seated somebody in,
+the newest available model past the cooling-off is an arm too, and its reason
+says so in words, naming the qualifying share it rides on. A tier no model of
+which clears the entry bar gets no arm from rule 2, however new its newest
+model is; that model is listed under `excluded` saying exactly that.
+
+Rule 2 used to read "newest in its tier" across every tier on the ladder.
+That seated the newest haiku and the newest fable on a census showing the
+fleet ran 6.3% and 3.0% of its turns on them — a four-arm roster, at four
+arms' worth of spend per fixture, two of whose arms measured tiers nobody
+uses. The ladder decides *capability order*; it was never evidence that a
+tier is worth measuring, and the census already is.
+
+**The no-census fallback is deliberately NOT restricted.** With no usable
+usage there is no usage-qualified tier at all, and a roster must not be
+empty — so wherever the enter window carries no usable evidence (any of
+`_census_verdict`'s eight verdicts, or a fresh census whose enter window
+alone fails one of the ranked-usage floors) rule 2 reverts to newest per tier
+across every tier, with the existing degradation reasons. A usable census
+that simply names no model at the entry bar is a different thing: that is
+evidence, and it says no tier qualifies, so the only seats are previous arms
+held over the exit bar — and with none, `main()` refuses to publish a roster
+with no arms (rc 3) and the committed one stands. Rule 2 added no threshold
+of its own: it reads rule 1's entry bar, and every number stays in
+`evals/roster-policy.yml`.
+
 Five properties are load-bearing and should survive any rework:
 
 1. **No model id in the machinery.** Tier comes from the family word in a
@@ -524,7 +554,8 @@ Five properties are load-bearing and should survive any rework:
    for retirement, and once that proposal is merged the model is no longer
    a previous arm, so the exit bar no longer applies to it and a dozen
    turns a week never re-seats it. It returns by clearing the ENTRY bar, by
-   being the newest in its tier, or by hand.
+   being the newest in a tier that some model of ITS OWN clears the entry
+   bar in, or by hand.
 
    **Migration.** `evals/roster.yml` was seeded by hand with an empty
    `catalogue_seen`, because the only history that existed lived on
