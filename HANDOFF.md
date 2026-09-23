@@ -28,6 +28,16 @@ reconstructed from memory.
   status blockquote at the top of its body and a "Review rounds" record with
   each round's findings, fix-round session links and verified counts.
 
+**Eval runs on hold (Adam, 2026-09-23).** No paid eval runs until the roster
+seats `claude-opus-5-5` and `claude-sonnet-5` as the arms with
+`claude-fable-5-1` judging. Opus 5.5 came out on 2026-09-22, and the roster
+step of [run 35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203)
+excluded it as inside the 7-day cooling-off, so the earliest it can be seated
+is about 2026-09-29. That run was the one paid run of the skills-doctor
+fixture (decision 8's exception, below): `with_skill` 5/5, judge 10.0;
+`without_skill` timed out at 600 s, so there is no delta yet. Before its
+re-run, decide whether that arm needs a longer agent budget.
+
 ## 0B. Session of 2026-09-21 — RESUME HERE
 
 This section supersedes § 0A where the two differ. Adam asked to proceed from
@@ -831,7 +841,7 @@ reopening of the lane; everything below still stands. The run,
 [35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203):
 `with_skill` 5/5 objective, judge 10.0, $0.46 (claude-sonnet-5, 17 turns, 91 s);
 `without_skill` hit the 600 s agent timeout, so there is no delta and no
-badge. Not re-run.
+badge. Not re-run: see the hold above § 0B.
 
 Epic #62 in full: no dispatch on #75, #76, #78, #79, #83, #87 to #94 or
 [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408); #130 and #131 stay parked as stopped; the real N=3 runs and
