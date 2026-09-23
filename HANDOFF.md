@@ -223,6 +223,16 @@ linked comment there.
   DESIGN.md roster sections.
 - **Under existing holds, untouched:** _agent-guidance PR #124 (fix budget
   spent), fixture lanes #62 and #96 (decision 8), #139 (receipt hold).
+- **Paying for runs out of the weekly allowance: evaluated 2026-09-23, no-go.**
+  A subscription credential in CI is permitted (`claude setup-token` →
+  `CLAUDE_CODE_OAUTH_TOKEN`), but it must never reach an arm's environment,
+  and judge-only saves about $6–13 a month for a 3–6 point build while
+  blinding the dollar accounting — folded into the #170 revisit as a third
+  column. Browser-read or file-copied credentials are prohibited by
+  Anthropic's terms. Full record, with the quoted sources and the revisit
+  triggers: ADR
+  [`docs/decisions/0002-runs-bill-the-api-org-not-the-subscription.md`](docs/decisions/0002-runs-bill-the-api-org-not-the-subscription.md),
+  summarised in `docs/how-it-works.md` § 7 blocking decision 5.
 - **Planned next steps, in order** (full list with cost ranges in
   [`docs/how-it-works.md`](docs/how-it-works.md) § 7): (1) ~~move the judge
   calls in `eval.yml` to the Batch API~~ — **deferred by Adam on 2026-09-22**:

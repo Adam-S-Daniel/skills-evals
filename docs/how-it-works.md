@@ -4,7 +4,7 @@ A plain-English guide for someone who knows the fleet but has not worked in
 this repository. The technical method is in [`DESIGN.md`](../DESIGN.md), the
 operating record in [`HANDOFF.md`](../HANDOFF.md), and the live status board is
 [issue #126](https://github.com/Adam-S-Daniel/skills-evals/issues/126).
-Last revised 2026-09-22.
+Last revised 2026-09-23.
 
 ## 1. What the system does
 
@@ -73,6 +73,12 @@ identity federation, not the Claude Code subscription. A measured run on
 2026-09-22 (one fixture, one Sonnet 5 arm, Opus 4.8 judge) took 6 minutes 24
 seconds wall clock and cost **$1.71**: Sonnet 5 arms $0.89, Opus 4.8 judge
 $0.78, Haiku preflight $0.04. The judge is about 45% of a run.
+
+Running the arms or the judge on the account's Claude subscription instead —
+the weekly allowance, not dollars — was evaluated on 2026-09-23 and not
+adopted: see ADR
+[0002](decisions/0002-runs-bill-the-api-org-not-the-subscription.md) and § 7's
+blocking decision 5.
 
 ## 4. Where to look for current results
 
@@ -228,8 +234,9 @@ Costs are ranges. "Points" are percent of the weekly Claude Code allowance,
 calibrated on 2026-09-21 when local sessions delivered the #152 merge (five
 review rounds and three fix rounds) plus PR #165 for about six points;
 earlier orchestrator-driven cloud sessions ran three to five times costlier
-per round. Dollars are organisation API spend only, at today's one-arm roster
-unless stated.
+per round. Dollars are organisation API spend only; rows below that say "at
+one arm" predate the two-arm roster merged on 2026-09-22 as
+[PR #172](https://github.com/Adam-S-Daniel/skills-evals/pull/172).
 
 ### Blocking decisions (Adam's)
 
@@ -244,12 +251,12 @@ unless stated.
    four-arm proposal is superseded and the next run proposes two arms** —
    Sonnet 5 and Opus 5, both on their own shares. Do not open a pull
    request from the old `roster/proposal` commit (`c4a8bea`): it renders
-   the four-arm roster. Let the next Monday run, or a manual dispatch,
-   recompute the branch first; then open the pull request from what it
-   pushes, let CI run, merge it. Once merged, a fixture run rises from
-   about $1.7 to roughly $5–7 (two arms, a judge at twice Opus prices)
-   rather than the $10–14 four arms would have cost, and the Monday run
-   stops re-proposing. No allowance cost.
+   the four-arm roster. **Settled on 2026-09-22**: the recomputed proposal
+   merged as [PR #172](https://github.com/Adam-S-Daniel/skills-evals/pull/172)
+   (`b1bb221`) and #162 is closed. A fixture run therefore costs roughly
+   $5–7 (two arms, a judge at twice Opus prices) rather than about $1.7 on
+   the one-arm roster or the $10–14 four arms would have cost, and the
+   Monday run has stopped re-proposing. No allowance cost.
 2. **Whether to reopen the fixture lanes** ([#62](https://github.com/Adam-S-Daniel/skills-evals/issues/62),
    [#96](https://github.com/Adam-S-Daniel/skills-evals/issues/96)), stopped by
    decision 8 on 2026-09-08 ("stop adding and completing evals for specific
@@ -268,6 +275,23 @@ unless stated.
    Fable 5.1 judge has produced several weekly runs, by re-projecting the
    saving from the org API usage export against the build cost; tracked in
    [#170](https://github.com/Adam-S-Daniel/skills-evals/issues/170).
+5. **Paying for runs out of the weekly allowance instead of the API
+   organisation: decided no-go (2026-09-23), recorded as ADR
+   [0002](decisions/0002-runs-bill-the-api-org-not-the-subscription.md).**
+   Anthropic does permit a subscription credential in CI — `claude
+   setup-token` mints a one-year `CLAUDE_CODE_OAUTH_TOKEN` documented for
+   exactly that — but the arms run registry content under
+   `bypassPermissions` with every `ANTHROPIC_*`/`CLAUDE_*` variable in their
+   environment, so that credential must never sit there; today's WIF bearer
+   lasts an hour, is workspace-scoped and is spend-capped. Judge-only is
+   permitted and buildable, and saves about $6–13 a month at the two-arm
+   roster for a 3–6 point build while blinding the dollar accounting, so it
+   is folded into the #170 revisit as a third column. Credentials read out of
+   a browser session, copied from `~/.claude/.credentials.json`, or obtained
+   by automating the OAuth consent screen are prohibited by Anthropic's terms
+   and are not to be built. Local runs under the account holder's own
+   `/login` stay available for ad-hoc bulk work, as a local exhibit rather
+   than badge input.
 
 ### Planned steps, in order
 
@@ -289,8 +313,8 @@ unless stated.
 
 Everything not held: roughly **60–120 points**, three to six weekly
 allowances at today's local rates, spread over the order above. The
-standing weekly run is about $1.70 on the current one-arm roster and
-$5–7 once the two-arm #162 roster is merged, before any matrix or trials
+standing weekly run was about $1.70 on the one-arm roster and is $5–7 on
+the two-arm roster merged on 2026-09-22, before any matrix or trials
 multiplier. **The dollar figures in the table above were priced at the
 four-arm roster approved on 2026-09-22**; treat every "on the proposed
 roster" figure there as an upper bound worth roughly halving, since the

@@ -11,3 +11,4 @@ with, so the next session can tell a deliberate constraint from an accident.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-roster-trusted-on-main.md) | The roster the harness runs on is committed on `main`; a computed roster is a proposal | accepted (2026-09-13) |
+| [0002](0002-runs-bill-the-api-org-not-the-subscription.md) | Real runs bill the API organisation; subscription credentials are not adopted | accepted (2026-09-23) |
