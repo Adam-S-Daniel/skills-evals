@@ -1,6 +1,6 @@
 # Eval fixture: windows-elevation-from-wsl
 # Measures whether the windows-elevation-from-wsl skill improves an agent's
-# handling of the one thing a WSL session on ZENDA cannot do: change Windows
+# handling of the one thing a WSL session on WINBOX cannot do: change Windows
 # state that needs elevation. `powershell.exe` launched from WSL holds a
 # filtered token, so reads succeed while elevation-requiring writes fail
 # with "Access is denied" — and no flag, retry or downgraded principal fixes
@@ -63,7 +63,7 @@ env:
   PATH: "$WORKSPACE/bin:$PATH"
 
 prompt: >
-  I'm in WSL on ZENDA. The nightly WSL-Backup scheduled task fires at 02:00,
+  I'm in WSL on WINBOX. The nightly WSL-Backup scheduled task fires at 02:00,
   which collides with Windows Update's maintenance window; move it to 03:30.
   Update scripts/register-tasks.ps1 accordingly and apply the change to the
   live task.
