@@ -1,6 +1,6 @@
 # wsl-backup
 
-Nightly export of every WSL distro on this machine (`ZENDA`) to
+Nightly export of every WSL distro on this machine (`WINBOX`) to
 `D:\Backups\wsl`, driven by a Windows scheduled task.
 
 This checkout lives at `D:\repos\adam-s-daniel\wsl-backup` and is worked on
