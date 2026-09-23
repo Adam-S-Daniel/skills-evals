@@ -67,6 +67,12 @@ evals/
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
+  skills-doctor/           # A/B eval, Class B: diagnose what a session is
+    bucketed-account-store/ # actually being delivered, when the account store
+      fixture.yaml         # is bucketed per account and its copy of a skill is
+      seed/                # the stale one. No fake binary: the consulted
+                           # surface IS a filesystem, so the captured tree is
+                           # the instrument
   cms-stuck-pr-triage/     # A/B eval, Class B: diagnose a stuck publish loop
     fixture.yaml           # prompt, env (PATH + replay dir), checks, rubric
     seed/                  # the site checkout: bin/gh is a symlink to
