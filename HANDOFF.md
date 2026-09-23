@@ -823,6 +823,16 @@ recommended and was not authorised.**
 
 ### Stopped by decision 8 (2026-09-08 01:20 UTC): "Stop adding and completing evals for specific skills"
 
+**One exception, 2026-09-23 (Adam's call):** the skills-doctor fixture
+`evals/skills-doctor/bucketed-account-store` merged as
+[#173](https://github.com/Adam-S-Daniel/skills-evals/pull/173) (`7bb71b7`) and got one paid run. It is a
+deliberate one-off for the skill edited under agentskills #157 and #158, not a
+reopening of the lane; everything below still stands. The run,
+[35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203):
+`with_skill` 5/5 objective, judge 10.0, $0.46 (claude-sonnet-5, 17 turns, 91 s);
+`without_skill` hit the 600 s agent timeout, so there is no delta and no
+badge. Not re-run.
+
 Epic #62 in full: no dispatch on #75, #76, #78, #79, #83, #87 to #94 or
 [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408); #130 and #131 stay parked as stopped; the real N=3 runs and
 `docs/skill-impact.md` entries owed for the six merged skill fixtures (#82,
@@ -864,7 +874,8 @@ be built and tested hermetically but have nothing real to run against.
    agents → skills-evals#139 and _agent-guidance#123 opened as sub-issues of #118.
 6. 00:50 09-06: a 40-hour pause (resumed 17:10 09-07).
 7. "What percentage of the way done?" → answered 15 to 20%.
-8. 01:20 09-08: stop adding and completing evals for specific skills (above);
+8. 01:20 09-08: stop adding and completing evals for specific skills (above;
+   one exception on 2026-09-23, the skills-doctor fixture);
    at 02:10 Adam confirmed the guidance fixtures (#100 to #120) count too.
 9. 01:40 09-08: bring everything to the best stopping place within 10% more of
    the weekly allowance; one place to get up to speed (this file).
