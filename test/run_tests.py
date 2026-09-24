@@ -32,6 +32,7 @@ import textwrap
 import unicodedata
 import unittest
 import urllib.error
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -32807,6 +32808,156 @@ class _XdistCollector:
         self.collected.update(_normalise_nodeid(nodeid) for nodeid in ids)
 
 
+# ----------------------------------------------------------------------
+# git auto-maintenance, disabled run-wide (CI run 36036939626)
+#
+# `--jobs auto`, 4 workers, git 2.55: TestIssue77's
+# test_reaper_in_a_nested_dir_sharing_checkouts_basename_passes and
+# test_reaper_ran_in_standalone_repo_recorded_facts_match_through_a_symlink
+# both failed inside `shutil.rmtree(...)` with `FileNotFoundError:
+# 'maintenance.lock'`.
+# evals/disarm-inherited-reach/seed/repo-content/scripts/reaper.sh runs `git
+# commit`, which spawns a DETACHED `git maintenance run --auto` — it creates
+# and removes maintenance.lock inside the same throwaway repo the test's own
+# rmtree is walking. A latent race, made LIKELY by parallel CPU contention;
+# any test in this suite that commits and then deletes a repo is exposed the
+# same way, not just TestIssue77's two. The fixture stays untouched on
+# purpose: it's eval content an agent runs (evals/ is off limits to this
+# fix), and the race belongs to the harness — deleting a repo out from under
+# a background git process IT spawned — not to the script being evaluated.
+# ----------------------------------------------------------------------
+
+def without_git_auto_maintenance(environ: Mapping[str, str]) -> dict[str, str]:
+    """A copy of `environ` with `maintenance.auto=false` appended via git's
+    own env-injection protocol (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_N`/
+    `GIT_CONFIG_VALUE_N`) — no config file involved, so it survives a blanked
+    `GIT_CONFIG_GLOBAL` the same way
+    test_build_is_deterministic_under_hostile_ambient_git_config's hostile
+    injection does.
+
+    Appends at the first free index rather than touching any existing
+    `GIT_CONFIG_KEY_N`/`GIT_CONFIG_VALUE_N` — a pre-existing injection (a
+    caller's own ambient config, or this same function applied earlier by a
+    parent process) is never clobbered. Idempotent: if `maintenance.auto` is
+    already injected as `false` anywhere in `environ`, returns an unchanged
+    copy instead of appending a second, redundant entry — this is what lets
+    a `--jobs` execnet worker or a test's own subprocess inherit an
+    already-patched environment and apply this again for free. A
+    `GIT_CONFIG_COUNT` that isn't a valid non-negative integer is left alone
+    entirely: appending under a bad count wouldn't disable maintenance, it
+    would just make git itself error on every single invocation, which is
+    worse than not applying the fix at all.
+    """
+    result = dict(environ)
+    try:
+        count = int(result.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        return result
+    if count < 0:
+        return result
+    for i in range(count):
+        if (result.get(f"GIT_CONFIG_KEY_{i}") == "maintenance.auto"
+                and result.get(f"GIT_CONFIG_VALUE_{i}") == "false"):
+            return result
+    result[f"GIT_CONFIG_KEY_{count}"] = "maintenance.auto"
+    result[f"GIT_CONFIG_VALUE_{count}"] = "false"
+    result["GIT_CONFIG_COUNT"] = str(count + 1)
+    return result
+
+
+class TestWithoutGitAutoMaintenance(unittest.TestCase):
+    """without_git_auto_maintenance() — CI run 36036939626's fix for the
+    detached `git maintenance run --auto` vs. `shutil.rmtree` race (see the
+    block comment above the function). Deterministic and network-free: only
+    the behavioural test below touches a real git repo, and that repo is a
+    fresh tempdir this test creates and tears down itself.
+    """
+
+    def test_appends_to_an_empty_environ(self):
+        self.assertEqual(without_git_auto_maintenance({}), {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
+        })
+
+    def test_appends_after_existing_entries_without_touching_them(self):
+        environ = {
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "core.fileMode", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "true",
+        }
+        result = without_git_auto_maintenance(environ)
+        self.assertEqual(result, {
+            "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "core.fileMode", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "true",
+            "GIT_CONFIG_KEY_2": "maintenance.auto", "GIT_CONFIG_VALUE_2": "false",
+        })
+
+    def test_idempotent_when_already_present(self):
+        environ = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
+        }
+        self.assertEqual(without_git_auto_maintenance(environ), environ)
+
+    def test_unchanged_copy_on_a_garbage_count(self):
+        not_a_number = {"GIT_CONFIG_COUNT": "not-a-number", "PATH": "/usr/bin"}
+        self.assertEqual(without_git_auto_maintenance(not_a_number),
+                         not_a_number)
+        negative = {"GIT_CONFIG_COUNT": "-1"}
+        self.assertEqual(without_git_auto_maintenance(negative), negative)
+
+    def test_does_not_mutate_its_input(self):
+        environ = {"GIT_CONFIG_COUNT": "0"}
+        without_git_auto_maintenance(environ)
+        self.assertEqual(environ, {"GIT_CONFIG_COUNT": "0"})
+
+    def test_git_honours_the_injected_config(self):
+        # The behavioural proof, not just a shape check: a real git repo, in
+        # an env carrying only this helper's injection on top of whatever
+        # `git init`/`commit` themselves need, reports maintenance.auto=false
+        # back — proving git actually reads the env-injected config, not
+        # just that this function built the right-looking dict.
+        repo = Path(tempfile.mkdtemp(prefix="without-git-auto-maintenance-"))
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        env = without_git_auto_maintenance(os.environ)
+        subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"],
+                       cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"],
+                       cwd=repo, env=env, check=True)
+        (repo / "f.txt").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "add", "f.txt"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=repo, env=env,
+                       check=True)
+        result = subprocess.run(
+            ["git", "config", "--get", "maintenance.auto"],
+            cwd=repo, env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false")
+
+    def test_main_applies_it_to_os_environ(self):
+        # main(["-j", "0"]) returns 2 early (test_dash_j_rejects_zero_a_
+        # target_and_a_pattern above) without ever reaching pytest — cheap
+        # enough to call in-process. The assertion has to run INSIDE the
+        # patch.dict block: patch.dict restores os.environ to its pre-call
+        # state on exit, so nothing leaks into a test that runs after this
+        # one.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                status = main(["-j", "0"])
+            self.assertEqual(status, 2)
+            count = int(os.environ["GIT_CONFIG_COUNT"])
+            found = any(
+                os.environ.get(f"GIT_CONFIG_KEY_{i}") == "maintenance.auto"
+                and os.environ.get(f"GIT_CONFIG_VALUE_{i}") == "false"
+                for i in range(count))
+            self.assertTrue(found, f"GIT_CONFIG_COUNT={count} did not carry "
+                            "an injected maintenance.auto=false entry")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit status, always from the runner result and the memory guard.
 
@@ -32814,6 +32965,22 @@ def main(argv: list[str] | None = None) -> int:
     `unittest.main` exits the process itself. The status is computed here now,
     on every path.)
     """
+    # Disable git's background auto-maintenance for the WHOLE run, before
+    # anything else — including argv parsing, so a rejected `--jobs`
+    # combination that returns early still leaves it set for any subprocess
+    # a test spawns afterwards. See without_git_auto_maintenance() above for
+    # the race this closes (CI run 36036939626). `os.environ[key] = value`
+    # per changed key, never `os.environ.clear(); os.environ.update(...)` —
+    # that would drop every OTHER variable a CI runner or a developer's own
+    # shell set. Applying it here, once, is what makes it universal: a
+    # `--jobs` execnet worker inherits the controller's environment, and
+    # every subprocess a test spawns inherits its parent's — so one edit
+    # here covers the serial path, every worker, and every child process.
+    before_env = dict(os.environ)
+    after_env = without_git_auto_maintenance(before_env)
+    for key, value in after_env.items():
+        if before_env.get(key) != value:
+            os.environ[key] = value
     opts = parse_argv(list(sys.argv[1:] if argv is None else argv))
     # The snapshot comes BEFORE the targeted-run branch, not after it. It used
     # to sit below, so `python3 test/run_tests.py TestFoo.test_bar` returned
