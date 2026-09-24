@@ -1120,7 +1120,10 @@ class RunnerTests(unittest.TestCase):
             fixture.replace("hook_path: .claude/hooks/skills-bootstrap.sh",
                             "hook_path: hook.sh")
                    .replace("collision_skill: workflow-path-audit",
-                            "collision_skill: fixture-alpha"),
+                            "collision_skill: fixture-alpha")
+                   # --self-test plants its phantom under `bundle`, so it must
+                   # name a plugin this fixture registry ships.
+                   .replace("bundle: adam-coding-anywhere", "bundle: adam"),
             encoding="utf-8")
 
     def run_cli(self, *extra, registry: Path | None = None):
