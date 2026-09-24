@@ -1,8 +1,8 @@
 name: CI
 
 # The salient list is DERIVED, not guessed: this workflow runs exactly one
-# thing — `python3 test/run_tests.py` — so it is the set of files that suite
-# actually reads, taken from tracing a real run. harness/ (run_eval,
+# thing — `python3 test/run_tests.py --jobs auto` — so it is the set of files
+# that suite actually reads, taken from tracing a real run. harness/ (run_eval,
 # run_canary, the scorers it imports), scripts/ (make_badge.py, both imported
 # and shelled out to), test/ (the suite, its fake-claude stub, fixtures/),
 # evals/ (the fixture YAML and seed trees the eval and canary dirs load), and
@@ -202,12 +202,27 @@ jobs:
         if: steps.salient.outputs.run == 'true'
         # markdown-it-py is what harness/guidance.py parses a guidance
         # section's extent with, and the hermetic suite imports it. Pinned
-        # exact, same convention as eval.yml.
-        run: pip install pyyaml markdown-it-py==4.2.0
+        # exact, same convention as eval.yml. pytest + pytest-xdist are what
+        # `run_tests.py --jobs` fans the suite out with (#182); pinned exact
+        # and more than 7 days old at adoption, same as every other pin here.
+        # These are the same two pins agentskills carries in its own
+        # requirements-dev.txt for its own `-n auto` run
+        # (https://github.com/Adam-S-Daniel/agentskills/pull/179) — kept in
+        # step deliberately:
+        # TestIssue63::test_parallel_pins_agree_with_agentskills_requirements
+        # fails the whole suite when the two repos' pins disagree.
+        run: pip install pyyaml markdown-it-py==4.2.0 pytest==9.1.1 pytest-xdist==3.8.0
       - name: Run tests
         if: steps.salient.outputs.run == 'true'
         working-directory: skills-evals
-        run: python3 test/run_tests.py
+        # `auto` (one worker per CPU) for fleet consistency with
+        # agentskills#179's own `-n auto`; ubuntu-latest has 4 vCPUs on a
+        # public repo and 8 workers measured no faster than 4, so this
+        # resolves to the same thing an explicit `--jobs 4` would. This calls
+        # the RUNNER, not bare pytest, so the run-wide user-memory guard and
+        # the build_suite() collection cross-check still span the whole run
+        # (#182).
+        run: python3 test/run_tests.py --jobs auto
 
       - name: No salient path changed
         if: steps.salient.outputs.run != 'true'
