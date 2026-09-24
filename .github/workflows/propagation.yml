@@ -22,7 +22,7 @@
 #   than trusting someone to read the Actions tab, idempotently, because a
 #   steady-state red would otherwise file a fresh issue every morning. #17
 #   specifies Tier 2 as scheduled for a reason the arms make concrete: their
-#   one unpinned input is the agentskills registry at `main`, so real delivery
+#   one unpinned input is the adam-agentskills registry at `main`, so real delivery
 #   can break with no commit in this repo, and pull requests here are too
 #   infrequent to find out. What a schedule here CANNOT do is run the Tier-3
 #   audit — that needs a signed-in account CI has not got — so `gate` reads
@@ -116,11 +116,11 @@ jobs:
           path: skills-evals
           persist-credentials: false
 
-      - name: Check out agentskills registry (side-by-side)
+      - name: Check out adam-agentskills registry (side-by-side)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: Adam-S-Daniel/agentskills
-          path: agentskills
+          repository: Adam-S-Daniel/adam-agentskills
+          path: adam-agentskills
           persist-credentials: false
 
       - name: Set up Python
@@ -152,7 +152,7 @@ jobs:
         # here (it binds this harness's digest to the registry's own
         # generator) instead of skipping.
         env:
-          AGENTSKILLS_DIR: ${{ github.workspace }}/agentskills
+          AGENTSKILLS_DIR: ${{ github.workspace }}/adam-agentskills
         run: python3 test/test_propagation.py
 
       - name: Freshness gate — is the Tier-3 account audit still running?
@@ -221,14 +221,14 @@ jobs:
           path: skills-evals
           persist-credentials: false
 
-      - name: Check out agentskills registry (side-by-side)
+      - name: Check out adam-agentskills registry (side-by-side)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: Adam-S-Daniel/agentskills
+          repository: Adam-S-Daniel/adam-agentskills
           # Full history: the bootstrap-hook arm clones this checkout at the
           # commit skills.lock pins, which a shallow clone may not contain.
           fetch-depth: 0
-          path: agentskills
+          path: adam-agentskills
           persist-credentials: false
 
       - name: Set up Node
@@ -272,7 +272,7 @@ jobs:
           extra=()
           if [ "$ARM" = "plugin-marketplace" ]; then extra=(--self-test); fi
           python3 harness/run_propagation.py evals/propagation \
-            --arm "$ARM" --registry ../agentskills --no-gate \
+            --arm "$ARM" --registry ../adam-agentskills --no-gate \
             --json "$RUNNER_TEMP/propagation.json" "${extra[@]+"${extra[@]}"}"
 
       - name: Upload the run record on failure
@@ -396,7 +396,7 @@ jobs:
           anything drifted, and the gate's own message says which it saw.
 
           A failing **arm** is the CI-side fault. The arms' one unpinned input is
-          the agentskills registry, which they check out at main, so a red arm
+          the adam-agentskills registry, which they check out at main, so a red arm
           most likely means a change there rather than a change here. The Claude
           Code CLI is version-pinned in this workflow and cannot have moved on
           its own.

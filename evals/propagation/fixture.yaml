@@ -8,13 +8,17 @@
 # code, not data.
 name: propagation
 
-# Resolved against the agentskills checkout (--registry / $AGENTSKILLS_DIR).
+# Resolved against the adam-agentskills checkout (--registry /
+# $AGENTSKILLS_DIR).
 lock_path: skills.lock
 hook_path: .claude/hooks/skills-bootstrap.sh
 
-# The cloud-safe bundle the lock pins. `adam:<skill>` is what a marketplace
+# One cloud-safe plugin the lock pins. The plugin-marketplace arm installs
+# EVERY plugin the lock names (adam-anything-anywhere and adam-coding-anywhere);
+# this one is where --self-test plants its phantom skill, so it must be a
+# plugin the registry really ships. `<plugin>:<skill>` is what a marketplace
 # install makes visible, and the namespace is the plugin-channel discriminator.
-bundle: adam
+bundle: adam-coding-anywhere
 
 # Seeded as a repo-owned `.claude/skills/<skill>/` copy in the collision arm,
 # which must make the hook decline to install its own copy and say so.
