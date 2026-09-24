@@ -112,7 +112,7 @@ if [[ "$cmd" =~ Export-ScheduledTask ]]; then
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.4" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Author>ZENDA\adam</Author>
+    <Author>BOXY\adam</Author>
     <Description>Nightly export of every WSL distro to D:\Backups\wsl.</Description>
     <URI>\WslAutomation\WSL-Backup</URI>
   </RegistrationInfo>
@@ -127,7 +127,7 @@ if [[ "$cmd" =~ Export-ScheduledTask ]]; then
   </Triggers>
   <Principals>
     <Principal id="Author">
-      <UserId>ZENDA\adam</UserId>
+      <UserId>BOXY\adam</UserId>
       <LogonType>S4U</LogonType>
       <RunLevel>HighestAvailable</RunLevel>
     </Principal>
@@ -184,14 +184,14 @@ BUILTIN\Administrators                     Alias            S-1-5-32-544 Group u
 Mandatory Label\Medium Mandatory Level     Label            S-1-16-8192
 TXT
   else
-    echo 'zenda\adam'
+    echo 'boxy\adam'
   fi
 elif [[ "$cmd" =~ COMPUTERNAME|hostname ]]; then
-  echo "ZENDA"
+  echo "BOXY"
 elif [[ "$cmd" =~ USERNAME ]]; then
   echo "adam"
 elif [[ "$cmd" =~ USERDOMAIN ]]; then
-  echo "ZENDA"
+  echo "BOXY"
 elif [[ "$cmd" =~ PSVersionTable ]]; then
   echo "5.1.26100.4202"
 fi
