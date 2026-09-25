@@ -1,6 +1,6 @@
 # skills-evals — design
 
-Evals for the [`agentskills`](https://github.com/Adam-S-Daniel/agentskills)
+Evals for the [`adam-agentskills`](https://github.com/Adam-S-Daniel/adam-agentskills)
 registry. Implements Phase 5 of
 [agentskills#18](https://github.com/Adam-S-Daniel/agentskills/issues/18).
 
@@ -151,8 +151,8 @@ text:
 ## How it pulls skills
 
 Two modes:
-1. **Marketplace install** (`/plugin install <skill>@agentskills`) — realistic,
-   tests the shipped artifact.
+1. **Marketplace install** (`/plugin install <skill>@adam-agentskills`) —
+   realistic, tests the shipped artifact.
 2. **Local path** — point at a `plugins/<name>/` checkout to eval a skill
    *before* it merges into the registry.
 
@@ -215,9 +215,9 @@ is objectively decidable from the resulting files alone.
 ### Skill install path (corrected)
 
 Claude Code auto-loads a skill from `.claude/skills/<name>/` only when
-`SKILL.md` sits directly at that path. In the `agentskills` registry, each
-skill ships as part of a *plugin*, with the actual skill content nested one
-level deeper:
+`SKILL.md` sits directly at that path. In the `adam-agentskills` registry,
+each skill ships as part of a *plugin*, with the actual skill content nested
+one level deeper:
 
 ```
 plugins/<plugin>/.claude-plugin/plugin.json
@@ -238,7 +238,7 @@ name — and because cms-platform's flat `skills/<skill>/` and adamdaniel.ai's
 `.claude/skills/<skill>/` shapes need the same treatment (issue #63) —
 resolution is not a glob hardcoded in `run_agent` any more. Each registry
 gets a `layout` glob in [`harness/registries.yml`](harness/registries.yml)
-(`plugins/*/skills/*/SKILL.md` for agentskills, `skills/*/SKILL.md` for
+(`plugins/*/skills/*/SKILL.md` for adam-agentskills, `skills/*/SKILL.md` for
 cms-platform, `.claude/skills/*/SKILL.md` for adamdaniel.ai), and `run_agent`
 substitutes the skill name for the placeholder segment immediately before
 `SKILL.md`. It globs for the `SKILL.md` FILE itself, not the containing
@@ -375,7 +375,7 @@ for every fixture, not folklore in one file's comments:
 - **Touch gate:** a PR that edits an existing SKILL.md either runs that
   skill's eval or adds its first fixture.
 
-Both gates belong in the registry's own contributor guidance (agentskills'
+Both gates belong in the registry's own contributor guidance (adam-agentskills'
 `AGENTS.md` repo-specific additions and the skill-creator flow); this file is
 the reference they point at.
 

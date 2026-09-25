@@ -48,8 +48,8 @@ on:
   push:
     branches: [main]
   # :41 rather than :00 because GitHub queues the whole platform's cron on the
-  # hour and delays it, and staggered off agentskills' 06:17 census so the
-  # fleet's daily audits do not all land at once.
+  # hour and delays it, and staggered off adam-agentskills' 06:17 census so
+  # the fleet's daily audits do not all land at once.
   schedule:
     - cron: "41 5 * * *" # daily, 05:41 UTC
   # A probe you cannot run on demand is a probe you cannot VERIFY on demand. A

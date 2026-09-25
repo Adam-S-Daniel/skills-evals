@@ -281,11 +281,11 @@ def read_manifest(store: Path) -> list:
 
 
 def registry_skill_dir(registry: Path, name: str) -> Path | None:
-    """`plugins/*/skills/<name>` — agentskills' own layout, hardcoded here
-    since this audit only ever compares against the agentskills registry.
+    """`plugins/*/skills/<name>` — adam-agentskills' own layout, hardcoded here
+    since this audit only ever compares against the adam-agentskills registry.
     run_eval.py now resolves this per-registry via harness/registries.yml
     (issue #63) rather than a single hardcoded glob; this one is deliberately
-    unchanged and stays a plain agentskills-shaped glob. That is NOT a clean
+    unchanged and stays a plain adam-agentskills-shaped glob. That is NOT a clean
     bill of health, though: unlike run_eval.py's `_skill_md_glob`, this still
     globs for the skill DIRECTORY rather than for `SKILL.md` itself, so the
     same stub hazard #63 closed there (a skill dir with no SKILL.md, e.g. a
@@ -301,7 +301,7 @@ def registry_skill_dir(registry: Path, name: str) -> Path | None:
 def audit(home: Path, registry: Path) -> AuditResult:
     """Compare every account copy that the registry also owns."""
     if not (registry / "plugins").is_dir():
-        raise AuditError(f"{registry} does not look like an agentskills checkout "
+        raise AuditError(f"{registry} does not look like an adam-agentskills checkout "
                          "(no plugins/ directory)")
     result = AuditResult()
     store = resolve_store(home)

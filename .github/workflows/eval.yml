@@ -15,7 +15,7 @@
 #   prompts ever run are this repo's committed fixtures. Never accept external
 #   fixture contributions into this path without dropping the key first.
 #   The trust boundary equally includes the three registries checked out
-#   below (agentskills, cms-platform, adamdaniel.ai): the with_skill arm
+#   below (adam-agentskills, cms-platform, adamdaniel.ai): the with_skill arm
 #   installs skill content from whichever registry the fixture names, from
 #   that registry's default branch, and executes it under bypassPermissions
 #   with the key in env — write access to any of the three checked-out
@@ -175,7 +175,8 @@
 #   comment went stale silently and then lied (Dependabot rewrites it only
 #   sometimes), so the SHA is the only claim made; resolve a version with
 #   `git ls-remote <url> | grep <sha>` when you need one. Same pins as
-#   agentskills' ci.yml, and this repo's own eval seeds practice what we pin.
+#   adam-agentskills' ci.yml, and this repo's own eval seeds practice what we
+#   pin.
 
 name: Real eval
 
@@ -235,11 +236,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Check out agentskills registry (side-by-side)
+      - name: Check out adam-agentskills registry (side-by-side)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: Adam-S-Daniel/agentskills
-          path: agentskills
+          repository: Adam-S-Daniel/adam-agentskills
+          path: adam-agentskills
           persist-credentials: false
 
       - name: Check out cms-platform registry (side-by-side)
@@ -648,7 +649,7 @@ jobs:
           python3 harness/run_eval.py "$fixture" \
             --arm both \
             --guidance ../_agent-guidance \
-            --registry agentskills=../agentskills \
+            --registry adam-agentskills=../adam-agentskills \
             --registry cms-platform=../cms-platform \
             --registry adamdaniel.ai=../adamdaniel.ai
 

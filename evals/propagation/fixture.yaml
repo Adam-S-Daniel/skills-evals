@@ -1,7 +1,7 @@
 # Tier-2 propagation probe fixture.
 #
 # Unlike the A/B fixtures there is no prompt and no rubric here: the probe
-# asserts set membership against agentskills' `skills.lock`, which is the
+# asserts set membership against adam-agentskills' `skills.lock`, which is the
 # declared expectation every arm compares against. Everything below names a
 # path or a knob; the arms themselves live in harness/propagation/arms.py
 # because materialising a marketplace install or a SessionStart hook run is
@@ -26,7 +26,7 @@ bundle: adam-coding-anywhere
 # This arms the hook-vs-PROJECT collision only. The hook-vs-ACCOUNT collision
 # cannot be armed here for the same surface reason Tier 3 exists — a runner has
 # no `~/.claude/skills/synced/` to collide with. It is measured instead in
-# agentskills `docs/experiments/E5-account-store-vs-hook-precedence.md`:
+# adam-agentskills `docs/experiments/E5-account-store-vs-hook-precedence.md`:
 # the hook's copy wins there too, and the name is listed once.
 collision_skill: workflow-path-audit
 

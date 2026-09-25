@@ -77,19 +77,20 @@ def resolve_registry(cli_value: Path | None) -> Path:
     """This script's OWN convention: --registry, $AGENTSKILLS_DIR, ~/repos.
 
     Unlike run_eval.py (issue #63), this probe only ever targets the
-    agentskills registry, so it keeps its own single-path resolution rather
-    than harness/registries.yml's multi-registry NAME=PATH scheme — the two
-    are deliberately NOT the same shape any more; don't assume parity.
+    adam-agentskills registry, so it keeps its own single-path resolution
+    rather than harness/registries.yml's multi-registry NAME=PATH scheme —
+    the two are deliberately NOT the same shape any more; don't assume parity.
 
     ABSOLUTE on every branch, and that is load-bearing rather than tidiness:
     the arms hand registry-derived paths to children they spawn with `cwd` set
     to a scratch workspace — `arms._run_hook` runs `bash <hook>` there — so a
     relative registry is read against a directory that does not contain it.
-    Measured in CI, where propagation.yml passes `--registry ../agentskills`:
-    both hook-running arms died with rc=127, `bash:
-    ../agentskills/.claude/hooks/skills-bootstrap.sh: No such file or
+    Measured in CI, where propagation.yml at the time passed
+    `--registry ../agentskills`: both hook-running arms died with rc=127,
+    `bash: ../agentskills/.claude/hooks/skills-bootstrap.sh: No such file or
     directory`. It never reproduced locally because every local invocation had
-    passed an absolute path — which is exactly how it reached CI.
+    passed an absolute path — which is exactly how it reached CI. (Now
+    `../adam-agentskills`; the failure mode is unchanged.)
     """
     if cli_value:
         return Path(cli_value).expanduser().resolve()

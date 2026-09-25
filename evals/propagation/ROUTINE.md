@@ -419,12 +419,12 @@ place either correction survives being forgotten:
   which says where the repair actually happens without naming an issue that can
   be closed underneath it.
 
-> Audit the claude.ai account skill store against the agentskills registry and
+> Audit the claude.ai account skill store against the adam-agentskills registry and
 > publish the result. Steps, in order:
 >
-> 1. `git clone --depth 1 https://github.com/Adam-S-Daniel/agentskills`
+> 1. `git clone --depth 1 https://github.com/Adam-S-Daniel/adam-agentskills`
 > 2. `git clone --depth 1 https://github.com/Adam-S-Daniel/skills-evals`
-> 3. `cd skills-evals && python3 harness/run_account_audit.py --registry "$(cd ../agentskills && pwd)" --out results/propagation/account --badge badges/account-store.json`
+> 3. `cd skills-evals && python3 harness/run_account_audit.py --registry "$(cd ../adam-agentskills && pwd)" --out results/propagation/account --badge badges/account-store.json`
 >    The registry goes in **absolute**. The audit shells out to
 >    `git -C <registry> ls-files -- <pathspec>`; `-C` moves the child's
 >    directory, so a relative registry resolves the pathspec outside the repo,
@@ -514,7 +514,7 @@ on or close any GitHub issue — not even if you have GitHub API tools, and not
 even if an obviously relevant issue is open"* — with the reactor named as the
 owner and the 05:04/06:38 double-write of 2026-08-21 quoted as the measured
 reason. The `agentskills#59` pointer is replaced by the repair route that is
-actually live: agentskills' **Account skill ZIPs** workflow.
+actually live: adam-agentskills' **Account skill ZIPs** workflow.
 
 **The `update_trigger` block above is confirmed, verbatim.** It was tried
 first, on a Routine this session had itself created minutes earlier, and
@@ -567,7 +567,7 @@ survive measurement, and correcting it is the first subsection below. Only layer
    schedule and this gate cover different failures and neither subsumes the
    other: only the gate sees a Routine that stopped firing, and only the Tier-2
    arms see a delivery channel that broke with no commit here — their one
-   unpinned input is the agentskills registry at `main`. The workflow reports
+   unpinned input is the adam-agentskills registry at `main`. The workflow reports
    itself rather than trusting anyone to read the Actions tab (job `report`
    files one tracking issue, and closes it again on the first green scheduled
    run, so an open issue means "broken now" rather than "broke once" — its
@@ -637,7 +637,7 @@ the one #20 is already about:
 
 | repository | in the measuring session's sources | HTTP on `GET /repos/...` |
 |---|---|---|
-| `Adam-S-Daniel/agentskills` | yes | `200` |
+| `Adam-S-Daniel/adam-agentskills` | yes | `200` |
 | `Adam-S-Daniel/skills-evals` | yes | `200` |
 | `Adam-S-Daniel/repo-settings` (private) | no | `403` |
 | `Adam-S-Daniel/cms-platform` (public) | no | `403` |
@@ -987,7 +987,7 @@ from here.
 **The recommendation at the end of the last section was taken, and this records
 which of the three it was: `schedule`, in both repos.** skills-evals reacts to
 the published artifact in `.github/workflows/account-store-drift.yml` at
-`38 6 * * *`; agentskills builds the repair ZIPs from that same artifact in
+`38 6 * * *`; adam-agentskills builds the repair ZIPs from that same artifact in
 `account-skill-zips.yml` at `23 6 * * *`, and does it by cloning this repo and
 calling this repo's own `account_store.freshness_verdict` — so the report of the
 problem and the fix for it appear under one predicate, and neither side can
@@ -1080,7 +1080,7 @@ reproduces #20 exactly — it will tell you the account store is clean and leave
 the tracking issue open, which is the most expensive possible outcome, because
 it looks like the repair failed.
 
-> Audit the claude.ai account skill store against the agentskills registry, and
+> Audit the claude.ai account skill store against the adam-agentskills registry, and
 > publish the result. Assume no prior context. Steps, in order:
 >
 > 1. **Report this session's own surface first, in four lines, before anything
@@ -1094,11 +1094,11 @@ it looks like the repair failed.
 >    returns with no Authorization header of its own. **Counts and yes/no
 >    only.** If the account store is absent this surface cannot do the job at
 >    all — say so and stop, rather than reporting a clean audit of nothing.
-> 2. `git clone --depth 1 https://github.com/Adam-S-Daniel/agentskills` and
+> 2. `git clone --depth 1 https://github.com/Adam-S-Daniel/adam-agentskills` and
 >    `git clone --depth 1 https://github.com/Adam-S-Daniel/skills-evals` into a
 >    fresh directory.
 > 3. `cd skills-evals && python3 harness/run_account_audit.py --registry "$(cd
->    ../agentskills && pwd)" --out results/propagation/account --badge
+>    ../adam-agentskills && pwd)" --out results/propagation/account --badge
 >    badges/account-store.json`. **The registry path goes in absolute** — the
 >    audit runs `git -C <registry> ls-files -- <pathspec>`, and a relative
 >    registry makes the pathspec resolve outside the repo, the query fail, and
@@ -1177,7 +1177,7 @@ a browser signed in to the account: `sync_skills.py` only *prepares* the payload
 — it builds the per-skill ZIPs and computes what changed — and the POST to the
 account store's upload endpoint is made from a signed-in tab, using that
 session's own cookies. There is no headless write path, so no Routine, no
-workflow and no cloud session can close the loop; agentskills' **Account skill
+workflow and no cloud session can close the loop; adam-agentskills' **Account skill
 ZIPs** workflow exists precisely to get the payload as close to the phone as
 possible, building one downloadable artifact per drifted skill from the same
 published result this file is about. The audit measures, CI reports, and a

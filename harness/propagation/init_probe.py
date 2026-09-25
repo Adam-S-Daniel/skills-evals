@@ -29,7 +29,7 @@ Three measured traps this module exists to close:
 
 3. **A probe launched from inside a Claude Code session inherits
    `CLAUDE_CODE_REMOTE_SESSION_ID` / `CLAUDE_CODE_ENTRYPOINT=remote`**, which
-   are exactly what agentskills' `skills-bootstrap.sh` surface guard keys on. A
+   are exactly what adam-agentskills' `skills-bootstrap.sh` surface guard keys on. A
    bootstrap-hook control leg that inherits them installs the skills it was
    supposed to decline to install, and the "expect invisible" assertion then
    passes for entirely the wrong reason. The allowlist scrubs them.

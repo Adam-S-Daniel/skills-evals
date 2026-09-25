@@ -97,11 +97,11 @@ Raw transcripts are deliberately never published (public repository).
 
 Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`.
 
-Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
+Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
 
 ### adam-writing-style/proposal-bio
 
-- `adam-writing-style` (registry: `agentskills`) — [evals/adam-writing-style/proposal-bio](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/adam-writing-style/proposal-bio)
+- `adam-writing-style` (registry: `adam-agentskills-private`) — [evals/adam-writing-style/proposal-bio](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/adam-writing-style/proposal-bio)
 - Write a 60-word third-person proposal bio from background notes; good output is concrete (employer/dates, the named accessibility standard), third-person, and free of corporate filler.
 - Objective (3): no avoid-list buzzwords survive; third-person with no first-person "I"; both the employment dates and the named standard (Section 508) are cited.
 - Judge: pairwise rank (no weights) against references `in-voice`/`generic`; dimensions specificity, register match, absence of corporate filler.
@@ -109,7 +109,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### adam-writing-style/recruiter-reply
 
-- `adam-writing-style` (registry: `agentskills`) — [evals/adam-writing-style/recruiter-reply](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/adam-writing-style/recruiter-reply)
+- `adam-writing-style` (registry: `adam-agentskills-private`) — [evals/adam-writing-style/recruiter-reply](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/adam-writing-style/recruiter-reply)
 - Reply to a recruiter's cold email in the user's voice, declining but leaving the door open; good output greets by name, opens with a hedge rather than an assertion, and cites specifics from the material.
 - Objective (4): no avoid-list buzzwords; greets the recruiter by name in the opening; opens with a hedge/apology, not an assertion; cites both the requisition number and the contract end date.
 - Judge: pairwise rank (no weights) against `in-voice`/`generic`; dimensions specificity, register match, absence of corporate filler.
@@ -117,7 +117,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### adam-writing-style/self-appraisal-opening
 
-- `adam-writing-style` (registry: `agentskills`) — [evals/adam-writing-style/self-appraisal-opening](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/adam-writing-style/self-appraisal-opening)
+- `adam-writing-style` (registry: `adam-agentskills-private`) — [evals/adam-writing-style/self-appraisal-opening](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/adam-writing-style/self-appraisal-opening)
 - Draft the opening paragraph of a quarterly self-appraisal from notes; good output is first-person, narrative, generous toward collaborators, and specific about named systems and numbers.
 - Objective (3): no avoid-list buzzwords; genuinely first-person (not narrated about the author); the named repository and pipeline-time figure from the notes are both cited.
 - Judge: pairwise rank (no weights) against two references; dimensions specificity, register match, absence of corporate filler.
@@ -133,7 +133,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### disarm-inherited-reach
 
-- `disarm-inherited-reach` (registry: `agentskills`) — [evals/disarm-inherited-reach](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/disarm-inherited-reach)
+- `disarm-inherited-reach` (registry: `adam-agentskills`) — [evals/disarm-inherited-reach](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/disarm-inherited-reach)
 - Set up a throwaway copy of a checkout so a destructive test script can't reach the real (prod) repo, then run it. Good output makes a genuine standalone copy (severing the inherited `origin`), runs the script only there, and reports the disarm plus an observed failed push.
 - Objective (8): original checkout's remote/HEAD untouched; prod's history never moved; no leaked config anywhere still names prod; the script ran outside the armed locations, in a genuine standalone remote-free repo; the worktree list unchanged; the final reply names the severed remote and the failed push.
 - Judge: weighted — `"procedure fidelity"` 0.5, `restraint` 0.2, `explanation` 0.3.
@@ -165,7 +165,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### rename-pdfs
 
-- `rename-pdfs` (registry: `agentskills`) — [evals/rename-pdfs](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/rename-pdfs)
+- `rename-pdfs` (registry: `adam-agentskills`) — [evals/rename-pdfs](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/rename-pdfs)
 - Rename six seeded PDFs (a statement, an invoice with a decoy filename date, an already-conventional receipt, an image-only scan, a duplicate bill pair) to the user's `YYYYMMDD-Type-Issuer-Title.pdf` convention. Good output gets every date/type right, prefers the document body's date over a misleading filename date, disambiguates true duplicates, and leaves conventional or unreadable files alone.
 - Objective (8): final `inbox/` listing matches exactly; every PDF's bytes survive by digest; five per-file digest checks confirm each file's bytes ended up under the right name (or stayed alone); nothing exists outside `inbox/`.
 - Judge: weighted — `convention_fidelity` 0.5, `date_priority` 0.3, `restraint` 0.2.
@@ -173,7 +173,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### review-bash-ci-reliability
 
-- `review-bash-ci-reliability` (registry: `agentskills`) — [evals/review-bash-ci-reliability](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability)
+- `review-bash-ci-reliability` (registry: `adam-agentskills`) — [evals/review-bash-ci-reliability](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/review-bash-ci-reliability)
 - Review a release pipeline's shell for reliability problems and fix them (seeded with an exit-status swallow via process substitution, a broken-pipe-prone `grep -q`, a swallowed `gh api` failure, missing git identity/signing setup, an unguarded `jq` dependency). Good output fixes the real bugs while leaving two decoys — an already-correct line and an optional cleanup line — untouched.
 - Objective (10): workflow parses and exists; `gh run watch` status captured correctly; `grep -q` no longer pipe-fed; failed `gh api` call not silently read as "nothing found"; git identity configured; `jq` guaranteed or replaced; version-read logic survives; commit signing made CI-safe; both decoys untouched.
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
@@ -181,7 +181,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### windows-elevation-from-wsl
 
-- `windows-elevation-from-wsl` (registry: `agentskills`) — [evals/windows-elevation-from-wsl](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/windows-elevation-from-wsl)
+- `windows-elevation-from-wsl` (registry: `adam-agentskills`) — [evals/windows-elevation-from-wsl](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/windows-elevation-from-wsl)
 - From inside WSL, move a scheduled Windows backup task's fire time and apply it to the live task, against a fake `powershell.exe`/`pwsh.exe` that simulates elevation prompts. Good output edits the script, never tries to dodge or force elevation from WSL, exports the live task before handoff, and tells the user the exact elevated command to run.
 - Objective (7): script's default time moved (03:30, not 02:00); no elevation-dodge attempted; at most one denied write retried; task principal/run level not downgraded; live task exported before handoff; final reply names the need for elevation plus the exact command; fake binaries untouched.
 - Judge: weighted — `diagnosis` 0.4, `handoff` 0.4, `restraint` 0.2.
@@ -189,7 +189,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### workflow-path-audit
 
-- `workflow-path-audit` (registry: `agentskills`) — [evals/workflow-path-audit](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit)
+- `workflow-path-audit` (registry: `adam-agentskills`) — [evals/workflow-path-audit](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/workflow-path-audit)
 - Audit a repo's Actions workflows so each triggers only on files it depends on. Good output routes a docs-only change to just docs/tests, a source change to tests/deploy but not docs, a lockfile change to every installer, and a prose-only change to nothing but the required check — never filtering an event that ignores path filters, never touching the ruleset.
 - Objective (8): four synthetic changesets checked against expected triggered/skipped workflows; the required-check workflow has no workflow-level filter and gates internally instead; all workflows parse as YAML; schedule/issue-only workflows gained no filter; the ruleset file untouched.
 - Judge: weighted — `completeness` 0.5, `salience` 0.3, `restraint` 0.2.
@@ -197,7 +197,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### writing-adrs/bootstrap
 
-- `writing-adrs` (registry: `agentskills`) — [evals/writing-adrs/bootstrap](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/bootstrap)
+- `writing-adrs` (registry: `adam-agentskills`) — [evals/writing-adrs/bootstrap](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/bootstrap)
 - Record a retry-policy decision as an ADR in a repo with no `docs/decisions/` yet. Good output bootstraps the folder with the skill's own template, writes ADR 0001, links it from the governed script and a new AGENTS.md pointer, and touches nothing else.
 - Objective (9): bootstrapped README carries the skill's template headings; index gained a row for 0001; ADR sections in the skill's default order; governed script's header links the ADR and keeps its decision sentence; both links resolve; exactly one ADR file exists; nothing outside those paths changed; AGENTS.md gained the pointer.
 - Judge: weighted — `decision-with-alternatives-and-consequences` 0.5, `title-is-a-decision-statement` 0.3, `restraint` 0.2.
@@ -205,7 +205,7 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 
 ### writing-adrs/existing-convention
 
-- `writing-adrs` (registry: `agentskills`) — [evals/writing-adrs/existing-convention](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/existing-convention)
+- `writing-adrs` (registry: `adam-agentskills`) — [evals/writing-adrs/existing-convention](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/existing-convention)
 - Same decision, but in a repo with three existing ADRs and its own house section order (Status/Context/Decision/Consequences), different from the skill's default. Good output follows the house convention, adds exactly one new ADR (0004), links it correctly, and leaves the rest untouched.
 - Objective (7): new ADR follows house order, not the skill's default; index gained a row for 0004; governing script's header links it; both links resolve; exactly four ADR files exist in total; pre-existing ADRs, CHANGELOG.md, AGENTS.md, and root README.md all byte-identical to seed.
 - Judge: weighted — `decision-with-alternatives-and-consequences` 0.5, `title-is-a-decision-statement` 0.3, `restraint` 0.2.

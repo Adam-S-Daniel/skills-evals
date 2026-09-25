@@ -238,7 +238,7 @@ def _layout_parts(layout: str) -> list[str]:
 
 def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
     """harness/registries.yml: [{name, url, layout}, ...] — this harness's own
-    record of registry name/URL/layout, kept in step by hand with agentskills'
+    record of registry name/URL/layout, kept in step by hand with adam-agentskills'
     scripts/skills_registries.yml (see test/run_tests.py::TestIssue63) rather
     than importing that file at run time: this harness must resolve using
     only its own checkout plus the registry under test.
@@ -307,10 +307,11 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
 
 def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
     """Repeatable --registry NAME=PATH entries. A bare PATH (no "=") is the
-    pre-#63 single-path form and is taken as the agentskills entry, so the
-    legacy invocation (`--registry ../agentskills`) keeps working unchanged.
-    An empty PATH (`--registry agentskills=`, or a bare empty string) is
-    rejected here rather than silently resolving to the current directory.
+    pre-#63 single-path form and is taken as the adam-agentskills entry, so
+    the legacy invocation (`--registry ../adam-agentskills`) keeps working
+    unchanged. An empty PATH (`--registry adam-agentskills=`, or a bare empty
+    string) is rejected here rather than silently resolving to the current
+    directory.
     A NAME repeated across two flags (bare or explicit) is rejected too —
     silently taking the last one made a copy-pasted or re-ordered invocation
     "work" while quietly dropping the first flag's registry.
@@ -328,8 +329,8 @@ def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
             if not value:
                 raise ValueError(
                     "--registry '': empty value — expected NAME=PATH, or a "
-                    "bare PATH (legacy, taken as the agentskills entry)")
-            key = "agentskills"
+                    "bare PATH (legacy, taken as the adam-agentskills entry)")
+            key = "adam-agentskills"
             path = value
         if key in out:
             raise ValueError(
@@ -342,8 +343,8 @@ def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
 
 def _parse_registry_env(value: str | None) -> dict[str, str]:
     """$SKILLS_EVALS_REGISTRIES: the same NAME=PATH shape, comma-separated. A
-    bare entry (no "=") is taken as the agentskills entry too, the same as
-    the --registry flag's legacy bare-PATH form (see _parse_registry_flags)
+    bare entry (no "=") is taken as the adam-agentskills entry too, the same
+    as the --registry flag's legacy bare-PATH form (see _parse_registry_flags)
     — previously this silently dropped a bare entry instead, which was the
     one shape the CLI flag treats as meaningful. A NAME repeated across two
     entries (bare or explicit) is rejected too, the same as
@@ -364,7 +365,7 @@ def _parse_registry_env(value: str | None) -> dict[str, str]:
                     f"after '=' for registry {name!r}")
             key = name
         else:
-            key = "agentskills"
+            key = "adam-agentskills"
             path = item
         if key in out:
             raise ValueError(
@@ -380,14 +381,15 @@ def resolve_registries(cli_values: list[str] | None, env_value: str | None,
     """Map every registry named in harness/registries.yml to a local checkout.
 
     Sources, in order: a --registry NAME=PATH flag (repeatable; a bare PATH
-    means agentskills) merged BY NAME with $SKILLS_EVALS_REGISTRIES (same
+    means adam-agentskills) merged BY NAME with $SKILLS_EVALS_REGISTRIES (same
     shape; a flag wins over an env entry naming the same registry, but an env
     entry for a DIFFERENT registry still applies even when a flag is also
-    given), then `agentskills_dir` for the agentskills entry specifically
-    (the harness's pre-#63 override — callers pass $AGENTSKILLS_DIR), then a
-    sibling-directory default `../<name>` next to `base_dir` — the same
-    convention agentskills' own skills_registries.yml uses for the registries
-    it doesn't live in.
+    given), then `agentskills_dir` for the adam-agentskills entry specifically
+    (the harness's pre-#63 override — callers pass $AGENTSKILLS_DIR, whose
+    name outlived the agentskills -> adam-agentskills rename since renaming a
+    public env var is out of scope), then a sibling-directory default
+    `../<name>` next to `base_dir` — the same convention adam-agentskills'
+    own skills_registries.yml uses for the registries it doesn't live in.
 
     An override naming a registry not listed in harness/registries.yml
     (a typo'd `--registry cms_platform=...`, say) is rejected here rather
@@ -416,7 +418,7 @@ def resolve_registries(cli_values: list[str] | None, env_value: str | None,
         elif name in overrides_env:
             path = Path(overrides_env[name]).expanduser().resolve()
             source = "$SKILLS_EVALS_REGISTRIES"
-        elif name == "agentskills" and agentskills_dir:
+        elif name == "adam-agentskills" and agentskills_dir:
             path = Path(agentskills_dir).expanduser().resolve()
             source = "$AGENTSKILLS_DIR"
         else:
@@ -433,7 +435,7 @@ def _validate_registry_paths(registries: dict[str, dict]) -> None:
     is not a directory — a typo'd override is a config mistake worth catching
     before any arm spends agent budget, not several minutes later as a
     confusing skill_not_found. Sibling-default entries are left alone here:
-    most of registries.yml (e.g. agentskills-private) is never checked out
+    most of registries.yml (e.g. adam-agentskills-private) is never checked out
     locally and is fine to stay unresolved unless a fixture actually needs
     it — that path is checked lazily, per-arm, in _run_arm instead.
     """
@@ -932,11 +934,11 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         except ValueError as exc:
             return {"error": "invalid_skill_name", "detail": str(exc)}
         registry = arm["registry"]
-        # Registry layouts vary (agentskills' plugins/<bundle>/skills/<skill>/,
+        # Registry layouts vary (adam-agentskills' plugins/<bundle>/skills/<skill>/,
         # cms-platform's flat skills/<skill>/, adamdaniel.ai's
         # .claude/skills/<skill>/ — see harness/registries.yml). `layout`
         # carries the glob for the registry under test, defaulting to
-        # agentskills' shape for callers that predate #63. Globs for the
+        # adam-agentskills' shape for callers that predate #63. Globs for the
         # SKILL.md FILE (not the containing directory) and takes its parent,
         # so a skill directory with no SKILL.md — a stub left by a rename, a
         # bundle mid-migration — fails closed as skill_not_found instead of
@@ -2134,13 +2136,14 @@ def main() -> int:
     parser.add_argument("--registry", action="append", default=None,
                         help="registry checkout, repeatable: NAME=PATH (name from "
                              "harness/registries.yml), or a bare PATH (legacy) taken "
-                             "as the agentskills entry; unknown names and empty "
+                             "as the adam-agentskills entry; unknown names and empty "
                              "paths are rejected. Merges by name with "
                              "$SKILLS_EVALS_REGISTRIES (same NAME=PATH,NAME=PATH "
                              "shape; a bare entry there is also taken as "
-                             "agentskills), then $AGENTSKILLS_DIR for agentskills "
-                             "specifically, then a sibling checkout ../<name> next "
-                             "to this repo for any name still unresolved")
+                             "adam-agentskills), then $AGENTSKILLS_DIR (name kept "
+                             "unchanged) for adam-agentskills specifically, then a "
+                             "sibling checkout ../<name> next to this repo for any "
+                             "name still unresolved")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--roster", type=Path, default=None,

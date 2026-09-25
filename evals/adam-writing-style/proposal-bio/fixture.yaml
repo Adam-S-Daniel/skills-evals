@@ -74,7 +74,7 @@
 # nothing before or after it; the judge backstops the rest.
 
 skill: adam-writing-style
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills-private
 
 model: claude-sonnet-5
 

@@ -75,12 +75,13 @@ MARKER = "<!-- propagation-account-audit -->"
 
 TITLE = "Account skill store drifted from registry (automated Tier-3 audit)"
 
-# agentskills builds the upload artifact; nothing in this repo can. The link
-# goes to the workflow rather than to an issue on purpose: agentskills#59, the
-# repair issue ROUTINE.md and skills-evals#48 both point at, is CLOSED, and a
-# body that sends a reader to a closed issue every morning is worse than one
-# that sends them nowhere.
-ZIPS_WORKFLOW = ("https://github.com/Adam-S-Daniel/agentskills/actions/"
+# adam-agentskills builds the upload artifact; nothing in this repo can. The
+# link goes to the workflow rather than to an issue on purpose: agentskills#59,
+# the repair issue ROUTINE.md and skills-evals#48 both point at, is CLOSED (it
+# was filed against the now-retired agentskills repo), and a body that sends a
+# reader to a closed issue every morning is worse than one that sends them
+# nowhere.
+ZIPS_WORKFLOW = ("https://github.com/Adam-S-Daniel/adam-agentskills/actions/"
                  "workflows/account-skill-zips.yml")
 
 # Two shapes that must never reach a public issue body, scrubbed out of every
@@ -274,7 +275,7 @@ def render_body(status: str, message: str, summary: dict | None,
         lines += [
             "### How to repair it",
             "",
-            "1. **Get the ZIP.** agentskills' [Account skill ZIPs]"
+            "1. **Get the ZIP.** adam-agentskills' [Account skill ZIPs]"
             f"({ZIPS_WORKFLOW}) workflow builds one downloadable artifact per "
             "drifted skill from this same published result — on its own daily "
             "schedule, or on demand from that page.",
@@ -283,7 +284,7 @@ def render_body(status: str, message: str, summary: dict | None,
             "Do not unzip it: GitHub serves an artifact *as* a zip with "
             "`SKILL.md` at its root, which is exactly the shape the upload "
             "expects.",
-            "3. **Record it.** Dispatch agentskills' **Record an account "
+            "3. **Record it.** Dispatch adam-agentskills' **Record an account "
             "upload** with the skill name and the run ID of the ZIP build, so "
             "the next build stops offering the same skill.",
             "4. **Leave this issue alone.** The next audit that reads `pass` "
