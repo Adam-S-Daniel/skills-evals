@@ -13706,6 +13706,15 @@ class TestIssue81(unittest.TestCase):
                 encoding="utf-8")
             fixture = copy.deepcopy(self._fixture("recruiter-reply"))
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+            # recruiter-reply's registry is adam-agentskills-private, which CI
+            # has no token to clone, so `_run_arm` would stop at
+            # registry_not_found before the seed cap under test. run_agent is
+            # stubbed below, so any existing directory satisfies the checkout
+            # test.
+            private_stub = Path(tmp) / "adam-agentskills-private"
+            private_stub.mkdir()
+            registries["adam-agentskills-private"] = dict(
+                registries["adam-agentskills-private"], path=private_stub)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results",
                                       no_judge=True)
