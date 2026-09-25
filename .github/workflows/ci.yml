@@ -19,8 +19,9 @@ name: CI
 # here. AGENTS/CLAUDE and badges/ stay deliberately absent: the
 # suite never opens them, so a docs-only pull request touching only those has
 # nothing to prove here and should not pay for a runner. One
-# path this filter structurally cannot name: the suite also reads agentskills'
-# own scripts/skills_registries.yml from the side-by-side checkout below, for
+# path this filter structurally cannot name: the suite also reads
+# adam-agentskills' own scripts/skills_registries.yml from the side-by-side
+# checkout below, for
 # TestIssue63::test_registries_agree_with_agentskills_own_file — a file in a
 # different repo, outside anything a `paths:` filter here can match.
 #
@@ -174,18 +175,11 @@ jobs:
           fi
 
       # Side-by-side, same convention as eval.yml and propagation.yml: this
-      # is what makes the harness's sibling-directory default (`../agentskills`
-      # next to a skills-evals checkout) resolve to something real here, which
-      # is what lets TestIssue63::test_registries_agree_with_agentskills_own_file
-      # actually run in CI instead of skipping every time.
-      - name: Check out agentskills registry (side-by-side)
-        if: steps.salient.outputs.run == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          repository: Adam-S-Daniel/agentskills
-          path: agentskills
-          persist-credentials: false
-
+      # is what makes the harness's sibling-directory default
+      # (`../adam-agentskills` next to a skills-evals checkout) resolve to
+      # something real here, which is what lets
+      # TestIssue63::test_registries_agree_with_agentskills_own_file actually
+      # run in CI instead of skipping every time.
       - name: Check out adam-agentskills registry (side-by-side)
         if: steps.salient.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -213,7 +207,7 @@ jobs:
         # exact, same convention as eval.yml. pytest + pytest-xdist are what
         # `run_tests.py --jobs` fans the suite out with (#182); pinned exact
         # and more than 7 days old at adoption, same as every other pin here.
-        # These are the same two pins agentskills carries in its own
+        # These are the same two pins adam-agentskills carries in its own
         # requirements-dev.txt for its own `-n auto` run
         # (https://github.com/Adam-S-Daniel/agentskills/pull/179) — kept in
         # step deliberately:

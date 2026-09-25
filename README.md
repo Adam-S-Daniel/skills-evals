@@ -3,7 +3,7 @@
 [![skill eval: workflow-path-audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Fworkflow-path-audit.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
 [![account skill store](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Faccount-store.json)](https://github.com/Adam-S-Daniel/skills-evals/blob/eval-results/propagation/account/latest.json)
 
-Evals for the [`agentskills`](https://github.com/Adam-S-Daniel/agentskills)
+Evals for the [`adam-agentskills`](https://github.com/Adam-S-Daniel/adam-agentskills)
 registry: for each skill, measure agent quality **with vs. without** the skill
 installed, so "this skill helps" is a number instead of an assertion.
 
@@ -133,19 +133,19 @@ the objective checks and the LLM judge, writes `results/<skill>/<timestamp>/`):
 
 ```bash
 python3 harness/run_eval.py evals/workflow-path-audit --arm both \
-  --registry ../agentskills
+  --registry ../adam-agentskills
 ```
 
 Useful variations:
 
 ```bash
 # Only the with_skill or without_skill arm:
-python3 harness/run_eval.py evals/workflow-path-audit --arm with_skill --registry ../agentskills
+python3 harness/run_eval.py evals/workflow-path-audit --arm with_skill --registry ../adam-agentskills
 
 # Skip the LLM judge (objective checks + cost/turns only):
 python3 harness/run_eval.py evals/workflow-path-audit --arm both --no-judge
 
-# Point at a different agent binary or output root (a sibling ../agentskills
+# Point at a different agent binary or output root (a sibling ../adam-agentskills
 # checkout resolves with no --registry flag at all — see below):
 CLAUDE_BIN=/path/to/claude \
   python3 harness/run_eval.py evals/workflow-path-audit --arm both --results-dir /tmp/eval-out
@@ -155,25 +155,26 @@ A fixture's `registry:` field names which registry its skill lives in (by
 URL); [`harness/registries.yml`](harness/registries.yml) maps each registry
 named there to a layout glob. `--registry NAME=PATH` (repeatable) points a
 name at a local checkout; a bare `--registry PATH` (no `=`, legacy) is taken
-as the `agentskills` entry. `$SKILLS_EVALS_REGISTRIES` (same
+as the `adam-agentskills` entry. `$SKILLS_EVALS_REGISTRIES` (same
 `NAME=PATH,NAME=PATH` shape; a bare entry there is likewise taken as
-`agentskills`) merges with `--registry` **by name** — a flag naming one
+`adam-agentskills`) merges with `--registry` **by name** — a flag naming one
 registry does not suppress an env entry naming another, and a flag wins only
-where both name the same one. `$AGENTSKILLS_DIR` covers the `agentskills`
+where both name the same one. `$AGENTSKILLS_DIR` (name kept unchanged since
+the `agentskills` -> `adam-agentskills` rename) covers the `adam-agentskills`
 entry specifically (its older, single-registry override), and any name still
 unresolved after all of the above falls back to a sibling checkout
-`../<name>` next to this repo — so `agentskills`, `cms-platform`, and
+`../<name>` next to this repo — so `adam-agentskills`, `cms-platform`, and
 `adamdaniel.ai` checkouts next to `skills-evals/` resolve with no flags at
 all. (The harness's older `~/repos/agentskills` last-resort default is gone;
-a sibling `../agentskills` checkout is the default now, which is what the
-invocations above rely on.) An unknown registry name, an empty `PATH`, or an
-override that resolves to a nonexistent directory aborts the run before any
-arm starts — including `--arm objective-only` — rather than failing partway
-through or silently ignoring the bad value. Within a registry, the
+a sibling `../adam-agentskills` checkout is the default now, which is what
+the invocations above rely on.) An unknown registry name, an empty `PATH`, or
+an override that resolves to a nonexistent directory aborts the run before
+any arm starts — including `--arm objective-only` — rather than failing
+partway through or silently ignoring the bad value. Within a registry, the
 `with_skill` arm resolves the skill dir by globbing that registry's layout
 with the skill name substituted for its second-to-last path segment — the
 `*` immediately before `SKILL.md` (the first sorted match wins), which is
-what lets `plugins/*/skills/<skill>` (agentskills' own
+what lets `plugins/*/skills/<skill>` (adam-agentskills' own
 mix of the legacy `plugins/<skill>/skills/<skill>/` shape and the bundled
 `plugins/<bundle>/skills/<skill>/` shape), `skills/<skill>` (cms-platform),
 and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
@@ -367,12 +368,12 @@ what lets these run on every pull request *and* again on a daily schedule
 (`.github/workflows/propagation.yml`) rather than behind `eval.yml`'s OIDC.
 
 ```bash
-# All five arms against a local agentskills checkout (~15s, no credential):
-python3 harness/run_propagation.py evals/propagation --registry ~/repos/agentskills --no-gate
+# All five arms against a local adam-agentskills checkout (~15s, no credential):
+python3 harness/run_propagation.py evals/propagation --registry ~/repos/adam-agentskills --no-gate
 
 # One arm, plus the live self-test that proves the assertions can still fail:
 python3 harness/run_propagation.py evals/propagation --arm plugin-marketplace \
-  --registry ~/repos/agentskills --no-gate --self-test
+  --registry ~/repos/adam-agentskills --no-gate --self-test
 
 # The freshness gate alone — no CLI needed at all:
 python3 harness/run_propagation.py evals/propagation --gate-only \
@@ -620,7 +621,7 @@ maintainer-dispatched run of this repo's **committed** fixtures
 produced — the workflow never runs on pull requests (it holds an API key and
 runs the agent with `bypassPermissions`, so it must never see untrusted
 fixture content; fixtures here — and the three checked-out registries
-(agentskills, cms-platform, adamdaniel.ai) whose skill content the
+(adam-agentskills, cms-platform, adamdaniel.ai) whose skill content the
 with-skill arm executes — are trusted because only maintainers can push to
 any of the four repos involved, directly or through an automated lane such
 as cms-platform's Decap CMS publish loop or dependabot auto-merge; see

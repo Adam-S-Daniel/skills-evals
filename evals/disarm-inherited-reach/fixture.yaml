@@ -34,7 +34,7 @@
 # script loses all three at once, not independently.
 
 skill: disarm-inherited-reach
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # Same calibration as the other fixtures: a pinned mid-tier model so the
 # with/without comparison isn't flattened by a ceiling effect, and so the
