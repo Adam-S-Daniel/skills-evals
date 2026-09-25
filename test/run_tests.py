@@ -9084,15 +9084,29 @@ class TestIssue63(unittest.TestCase):
         self.assertTrue(entry["path"].is_absolute())
 
     def test_registries_agree_with_agentskills_own_file(self):
+        # Since adam-agentskills' ADR 0013, there are TWO registry repos, not
+        # one: agentskills (retired, but still holding the seven fixtures
+        # that have not moved off it) and adam-agentskills (the new public
+        # registry). Neither repo's own scripts/skills_registries.yml lists
+        # the other, so harness/registries.yml — which this repo alone must
+        # keep complete — is checked against the UNION of both files' own
+        # {name: layout} pairs, not either one alone. The retired repo's
+        # entries stay in that union for as long as any fixture still names
+        # it; only when the seven remaining fixtures move to adam-agentskills
+        # does agentskills' side of the union stop mattering.
+        #
         # Routed through resolve_registries (rather than a hardcoded
         # "../agentskills") so $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES can
-        # steer which checkout this compares against, same as a real run.
+        # steer which checkouts this compares against, same as a real run.
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
             os.environ.get("AGENTSKILLS_DIR"))
-        agentskills_file = registries["agentskills"]["path"] / "scripts" / "skills_registries.yml"
-        if not agentskills_file.is_file():
-            reason = (f"no agentskills checkout at {agentskills_file} — "
+        registries_files = {
+            name: registries[name]["path"] / "scripts" / "skills_registries.yml"
+            for name in ("agentskills", "adam-agentskills")}
+        missing = [str(path) for path in registries_files.values() if not path.is_file()]
+        if missing:
+            reason = (f"no checkout at {', '.join(missing)} — "
                       "skipping the cross-repo registries.yml agreement check")
             # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
             # pytest's `-rfEs` prints skip reasons in its own summary; this
@@ -9103,8 +9117,17 @@ class TestIssue63(unittest.TestCase):
             print(reason)
             self.skipTest(reason)
         import yaml
-        theirs = {e["name"]: e["layout"] for e in
-                 yaml.safe_load(agentskills_file.read_text(encoding="utf-8"))["registries"]}
+        theirs: dict[str, str] = {}
+        for name, path in registries_files.items():
+            entries = yaml.safe_load(path.read_text(encoding="utf-8"))["registries"]
+            for entry in entries:
+                if entry["name"] in theirs and theirs[entry["name"]] != entry["layout"]:
+                    self.fail(
+                        f"{entry['name']!r} names two different layouts across "
+                        f"the two registries' own files: {theirs[entry['name']]!r} "
+                        f"vs {entry['layout']!r} ({name}'s "
+                        "scripts/skills_registries.yml)")
+                theirs[entry["name"]] = entry["layout"]
         ours = {e["name"]: e["layout"] for e in
                yaml.safe_load(self.REGISTRIES_YML.read_text(encoding="utf-8"))["registries"]}
         self.assertEqual(ours, theirs)
@@ -9644,7 +9667,8 @@ class TestIssue63Review(unittest.TestCase):
         entries = run_eval._load_registries_config()
         names = {e["name"] for e in entries}
         self.assertEqual(names, {"agentskills", "adam-agentskills", "cms-platform",
-                                 "adamdaniel.ai", "agentskills-private"})
+                                 "adamdaniel.ai", "agentskills-private",
+                                 "adam-agentskills-private"})
 
 
 class TestIssue63Round2(unittest.TestCase):

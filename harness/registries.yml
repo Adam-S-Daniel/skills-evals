@@ -31,3 +31,7 @@ registries:
   - name: agentskills-private
     url: https://github.com/Adam-S-Daniel/agentskills-private
     layout: "plugins/*/skills/*/SKILL.md"
+  # Private; not checked out by eval.yml.
+  - name: adam-agentskills-private
+    url: https://github.com/Adam-S-Daniel/adam-agentskills-private
+    layout: "plugins/*/skills/*/SKILL.md"

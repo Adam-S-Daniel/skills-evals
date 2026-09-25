@@ -186,6 +186,14 @@ jobs:
           path: agentskills
           persist-credentials: false
 
+      - name: Check out adam-agentskills registry (side-by-side)
+        if: steps.salient.outputs.run == 'true'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: adam-agentskills
+          persist-credentials: false
+
       # Also side-by-side, and for the same reason: the guidance-subject tests
       # (#97) drive the REAL fleet-memory.sh hook and the REAL section
       # manifest out of this checkout. Without it they skip with a printed
