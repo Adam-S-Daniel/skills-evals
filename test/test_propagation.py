@@ -583,6 +583,38 @@ class ArmMutationTests(unittest.TestCase):
         self.assertEqual(result.status, arms.FAIL, result.render())
         self.assertIn("missing", self.findings(result)["delivered-set"].detail)
 
+    def _add_second_bundle(self):
+        """Give the fixture registry a second plugin and lock both, the shape
+        adam-agentskills' own lock has (adam-anything-anywhere plus
+        adam-coding-anywhere)."""
+        write_skill(self.registry / "plugins" / "second" / "skills" / "fixture-gamma",
+                    "fixture-gamma", "fixture skill fixture-gamma.")
+        lock = arms.load_lock(self.registry / "skills.lock")
+        lock["bundles"] = ["adam", "second"]
+        lock["skills"]["second/fixture-gamma"] = arms.digest_skill_dir(
+            self.registry / "plugins" / "second" / "skills" / "fixture-gamma")
+        (self.registry / "skills.lock").write_text(json.dumps(lock, indent=2),
+                                                   encoding="utf-8")
+        return lock
+
+    def test_plugin_arm_installs_every_bundle_the_lock_names(self):
+        # THE REGRESSION: the arm installed only the fixture's one `bundle`, so
+        # a lock spanning two plugins reported the second plugin's skills as
+        # missing although the marketplace channel would deliver them.
+        lock = self._add_second_bundle()
+        result = self.run_arm("plugin-marketplace", lock=lock)
+        self.assertEqual(result.status, arms.PASS, result.render())
+
+    def test_plugin_arm_catches_drift_in_the_second_bundle(self):
+        # Negative control for the test above: the second plugin's content is
+        # digested against ITS OWN install root, not the first plugin's.
+        lock = self._add_second_bundle()
+        lock["skills"]["second/fixture-gamma"] = "f" * 64
+        result = self.run_arm("plugin-marketplace", lock=lock)
+        self.assertEqual(result.status, arms.FAIL, result.render())
+        self.assertIn("second/fixture-gamma",
+                      self.findings(result)["plugin/digest"].detail)
+
     def test_plugin_arm_negative_control_fires_on_a_preinstalled_bundle(self):
         # If a namespaced skill is visible BEFORE the install, the arm is
         # reading someone else's plugin, not its own delivery.
@@ -1088,7 +1120,10 @@ class RunnerTests(unittest.TestCase):
             fixture.replace("hook_path: .claude/hooks/skills-bootstrap.sh",
                             "hook_path: hook.sh")
                    .replace("collision_skill: workflow-path-audit",
-                            "collision_skill: fixture-alpha"),
+                            "collision_skill: fixture-alpha")
+                   # --self-test plants its phantom under `bundle`, so it must
+                   # name a plugin this fixture registry ships.
+                   .replace("bundle: adam-coding-anywhere", "bundle: adam"),
             encoding="utf-8")
 
     def run_cli(self, *extra, registry: Path | None = None):

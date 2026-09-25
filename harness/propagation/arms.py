@@ -470,8 +470,14 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
                                 f"install: {sorted(n for n in control.skills if ':' in n)}")])
 
     marketplace = ctx.registry.resolve()
-    for argv in (["plugin", "marketplace", "add", str(marketplace)],
-                 ["plugin", "install", f"{ctx.bundle}@{marketplace.name}"]):
+    # EVERY bundle the lock names, in lock order. The lock is the declared
+    # expectation this arm compares against, and adam-agentskills' lock spans
+    # two plugins; installing only `ctx.bundle` would report the other
+    # plugin's skills as missing although the channel delivered them fine.
+    bundles = list(dict.fromkeys(bundle for bundle, _ in lock_pairs(ctx.lock)))
+    installs = [["plugin", "install", f"{bundle}@{marketplace.name}"]
+                for bundle in bundles]
+    for argv in (["plugin", "marketplace", "add", str(marketplace)], *installs):
         env = init_probe.build_env(home=scratch.home, tmpdir=scratch.tmp)
         proc = subprocess.run(  # noqa: S603 — argv list, no shell
             [init_probe.claude_bin(), *argv], cwd=str(scratch.ws), env=env,
@@ -490,23 +496,26 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
     expected = {f"{bundle}:{skill}" for bundle, skill in lock_pairs(ctx.lock)}
     findings = [_delivery_finding(expected, _delivered(control, facts), "plugin")]
 
-    root = facts.plugin_path(ctx.bundle)
-    if root is None:
+    roots = {bundle: facts.plugin_path(bundle) for bundle in bundles}
+    unresolved = [bundle for bundle, root in roots.items() if root is None]
+    if unresolved:
         findings.append(Finding("plugin/digest", False,
-                                f"the init event names no plugin {ctx.bundle!r}; "
+                                f"the init event names no plugin "
+                                f"{', '.join(repr(b) for b in unresolved)}; "
                                 f"plugins={facts.plugins}"))
     else:
         drift = []
         for bundle, skill in lock_pairs(ctx.lock):
             want = unlabelled_digest(ctx.lock["skills"][f"{bundle}/{skill}"])
-            path = root / "skills" / skill
+            path = roots[bundle] / "skills" / skill
             got = digest_skill_dir(path) if path.is_dir() else "ABSENT"
             if got != want:
                 drift.append(f"{bundle}/{skill}: got {got[:12]} want {want[:12]}")
+        where = ", ".join(str(root) for root in roots.values())
         findings.append(Finding(
             "plugin/digest", not drift,
             f"{len(ctx.lock['skills'])} skill digest(s) match skills.lock "
-            f"(resolved at {root})" if not drift else "; ".join(drift)))
+            f"(resolved at {where})" if not drift else "; ".join(drift)))
     return _finish("plugin-marketplace", guards, findings)
 
 

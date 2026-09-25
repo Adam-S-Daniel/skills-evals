@@ -19,8 +19,8 @@ request when it is missing, stale or failing, which is what makes a scheduled
 probe that silently stops firing impossible to ignore.
 
 Usage:
-    python3 harness/run_account_audit.py --registry ~/repos/agentskills
-    python3 harness/run_account_audit.py --registry ../agentskills \\
+    python3 harness/run_account_audit.py --registry ~/repos/adam-agentskills
+    python3 harness/run_account_audit.py --registry ../adam-agentskills \\
         --out results/propagation/account --badge badges/account-store.json
 
 Exit codes: 0 in sync; 1 drift found; 2 the audit could not run (no account
@@ -80,14 +80,14 @@ def resolve_registry(cli_value: Path | None) -> Path:
     env = os.environ.get("AGENTSKILLS_DIR")
     if env:
         return Path(env).expanduser().resolve()
-    return (Path.home() / "repos" / "agentskills").resolve()
+    return (Path.home() / "repos" / "adam-agentskills").resolve()
 
 
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--registry", type=Path, default=None,
-                        help="agentskills checkout: this, else $AGENTSKILLS_DIR, "
-                             "else ~/repos/agentskills")
+                        help="adam-agentskills checkout: this, else $AGENTSKILLS_DIR, "
+                             "else ~/repos/adam-agentskills")
     parser.add_argument("--home", type=Path, default=None,
                         help="surface whose account store to read (default $HOME)")
     parser.add_argument("--out", type=Path, default=None,

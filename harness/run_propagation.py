@@ -96,7 +96,7 @@ def resolve_registry(cli_value: Path | None) -> Path:
     env = os.environ.get("AGENTSKILLS_DIR")
     if env:
         return Path(env).expanduser().resolve()
-    return (Path.home() / "repos" / "agentskills").resolve()
+    return (Path.home() / "repos" / "adam-agentskills").resolve()
 
 
 # The one status that says "the audit ran, on time, and did not like what it
@@ -182,7 +182,7 @@ def build_context(fixture: dict, registry: Path, root: Path,
         if not path.exists():
             raise arms.ArmError(
                 f"{what} not found at {path} — pass --registry PATH (or set "
-                "$AGENTSKILLS_DIR) pointing at an agentskills checkout")
+                "$AGENTSKILLS_DIR) pointing at an adam-agentskills checkout")
     return arms.ArmContext(
         root=root, registry=registry, lock_path=lock_path,
         lock=arms.load_lock(lock_path), hook=hook,
@@ -196,8 +196,8 @@ def main(argv=None) -> int:
     parser.add_argument("--arm", action="append", default=None,
                         help="run only this arm (repeatable); default: all")
     parser.add_argument("--registry", type=Path, default=None,
-                        help="agentskills checkout: this, else $AGENTSKILLS_DIR, "
-                             "else ~/repos/agentskills")
+                        help="adam-agentskills checkout: this, else $AGENTSKILLS_DIR, "
+                             "else ~/repos/adam-agentskills")
     parser.add_argument("--account-latest", type=Path, default=None,
                         help="the Tier-3 audit's published latest.json, fetched "
                              "from the eval-results branch by the caller")
