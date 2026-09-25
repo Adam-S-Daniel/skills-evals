@@ -32,6 +32,7 @@ import textwrap
 import unicodedata
 import unittest
 import urllib.error
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -4606,6 +4607,47 @@ class CiDispatchTests(unittest.TestCase):
                          "the no-salient-change notice must be the LAST step, "
                          "so it always runs when the suite is skipped")
 
+    # -- pytest-xdist fan-out (#182) ----------------------------------------
+
+    def test_run_step_uses_jobs_and_the_install_step_pins_match_the_runner(self):
+        # shlex, never a regex: `run:` is a shell command line, and a regex
+        # over it cannot tell an actual `--jobs 4` argument from the same
+        # text sitting inside a comment or a string. Bare pytest here would
+        # skip main()'s run-wide memory guard and collection cross-check, so
+        # this pins the RUNNER's own flag, never `pytest` invoked directly.
+        steps = self._doc()["jobs"]["test"]["steps"]
+        run_step = next(s for s in steps if s.get("name") == "Run tests")
+        run_argv = shlex.split(run_step["run"])
+        self.assertIn("python3", run_argv)
+        self.assertIn("test/run_tests.py", run_argv)
+        jobs_value = None
+        for flag in ("--jobs", "-j"):
+            if flag in run_argv:
+                jobs_value = run_argv[run_argv.index(flag) + 1]
+                break
+        self.assertIsNotNone(jobs_value,
+                             f"no --jobs/-j in the Run tests step: {run_argv}")
+        # "auto" (one worker per CPU, fleet-consistent with agentskills#179's
+        # `-n auto`) or an explicit int > 1 — either actually parallelises.
+        if jobs_value != "auto":
+            self.assertGreater(int(jobs_value), 1,
+                               f"--jobs must be 'auto' or > 1 to actually "
+                               f"parallelise: {run_argv}")
+
+        install_step = next(s for s in steps
+                            if s.get("name") == "Install dependencies")
+        install_argv = shlex.split(install_step["run"])
+        for pin in PARALLEL_PINS:
+            self.assertIn(pin, install_argv,
+                         f"{pin} must be pinned exact (==) in the Install "
+                         f"dependencies step: {install_argv}")
+        # PARALLEL_PINS is what main()'s own ImportError message names, so an
+        # install step that drifts from it would tell an operator to
+        # `pip install` a version CI does not actually run.
+        self.assertTrue(set(PARALLEL_PINS).issubset(install_argv),
+                        "PARALLEL_PINS must equal the exact versions "
+                        f"pip-installed in ci.yml: {install_argv}")
+
 
 class CiSalientDetectionTests(unittest.TestCase):
     """Executes ci.yml's own `salient` step script against a real git repo.
@@ -9052,10 +9094,12 @@ class TestIssue63(unittest.TestCase):
         if not agentskills_file.is_file():
             reason = (f"no agentskills checkout at {agentskills_file} — "
                       "skipping the cross-repo registries.yml agreement check")
-            # ci.yml runs this suite as `python3 test/run_tests.py`, no -v —
-            # skipTest's reason is otherwise never printed anywhere, which
-            # registries.yml's own header promises never happens ("skips
-            # with a printed reason, never silently").
+            # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
+            # pytest's `-rfEs` prints skip reasons in its own summary; this
+            # print() is what still covers the plain serial run, which has
+            # no -v and nothing else that would surface skipTest's reason —
+            # registries.yml's own header promises this never happens
+            # silently, on either path.
             print(reason)
             self.skipTest(reason)
         import yaml
@@ -9064,6 +9108,33 @@ class TestIssue63(unittest.TestCase):
         ours = {e["name"]: e["layout"] for e in
                yaml.safe_load(self.REGISTRIES_YML.read_text(encoding="utf-8"))["registries"]}
         self.assertEqual(ours, theirs)
+
+    def test_parallel_pins_agree_with_agentskills_requirements(self):
+        # ci.yml checks agentskills out side by side for this run
+        # ("Check out agentskills registry (side-by-side)"), so this test
+        # runs on every CI run, not just when someone happens to touch
+        # --jobs. A pin bump landing in agentskills' requirements-dev.txt
+        # first (agentskills#179's own -n auto run) turns THIS red until
+        # skills-evals' PARALLEL_PINS follows — deliberate: the owner wants
+        # the two repos' pins drifting apart to be loud, not silent (#182).
+        registries = run_eval.resolve_registries(
+            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
+            os.environ.get("AGENTSKILLS_DIR"))
+        requirements_file = registries["agentskills"]["path"] / "requirements-dev.txt"
+        if not requirements_file.is_file():
+            reason = (f"no requirements-dev.txt at {requirements_file} — "
+                      "skipping the cross-repo parallel-pins agreement check")
+            print(reason)
+            self.skipTest(reason)
+        problems = parallel_pin_disagreements(
+            PARALLEL_PINS, requirements_file.read_text(encoding="utf-8"))
+        self.assertEqual(
+            problems, [],
+            "PARALLEL_PINS (test/run_tests.py, also pip-installed in "
+            "ci.yml's Install dependencies step) disagrees with "
+            f"{requirements_file}: {problems} — bump both repos together. "
+            "See https://github.com/Adam-S-Daniel/skills-evals/issues/182 "
+            "and https://github.com/Adam-S-Daniel/agentskills/pull/179.")
 
     # --- Review round 3, item B: a TRUTHY non-string skill:/prompt:/
     # registry: must never reach re/subprocess/.strip() and crash with an
@@ -9186,6 +9257,48 @@ class TestIssue63(unittest.TestCase):
             with self.assertRaises(ValueError) as ctx:
                 run_eval._load_registries_config(bad)
             self.assertIn("**", str(ctx.exception))
+
+
+class TestParallelPinAgreement(unittest.TestCase):
+    """`parallel_pin_disagreements` in isolation (#182) — no sibling
+    checkout, no filesystem. TestIssue63's own
+    test_parallel_pins_agree_with_agentskills_requirements exercises it
+    against the real agentskills requirements-dev.txt when one is checked
+    out; these pin the parsing rules the way build_suite() and CI never
+    would on their own.
+    """
+
+    def test_matching_pins_return_no_disagreements(self):
+        text = ("# dev-only deps\n"
+               "pyyaml==6.0.2\n"
+               "\n"
+               "pytest==9.1.1\n"
+               "pytest-xdist==3.8.0 # parallel runner\n")
+        self.assertEqual(parallel_pin_disagreements(PARALLEL_PINS, text), [])
+
+    def test_different_version_names_both_versions(self):
+        text = "pytest==9.1.1\npytest-xdist==3.7.0\n"
+        problems = parallel_pin_disagreements(PARALLEL_PINS, text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("3.7.0", problems[0])
+        self.assertIn("3.8.0", problems[0])
+
+    def test_missing_package_is_one_disagreement(self):
+        text = "pytest==9.1.1\n"
+        problems = parallel_pin_disagreements(PARALLEL_PINS, text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("pytest-xdist", problems[0])
+
+    def test_underscore_and_hyphen_spellings_are_the_same_package(self):
+        # PEP 503: pytest_xdist and pytest-xdist name the same package.
+        text = "pytest==9.1.1\npytest_xdist==3.8.0\n"
+        self.assertEqual(parallel_pin_disagreements(PARALLEL_PINS, text), [])
+
+    def test_non_exact_pin_is_a_disagreement(self):
+        text = "pytest>=9.1.1\npytest-xdist==3.8.0\n"
+        problems = parallel_pin_disagreements(PARALLEL_PINS, text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("pytest", problems[0])
 
 
 class TestIssue63Review(unittest.TestCase):
@@ -11634,8 +11747,10 @@ class TestIssue81(unittest.TestCase):
             reason = ("no adam-writing-style SKILL.md in the resolved "
                       "agentskills checkout — skipping the avoid-list drift "
                       "check")
-            # `python3 test/run_tests.py` runs without -v, so skipTest's own
-            # reason is never printed; print it, same as TestIssue63 does.
+            # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
+            # pytest's `-rfEs` prints skip reasons; the serial run still has no
+            # -v of its own, so skipTest's reason is never printed there —
+            # print it, same as TestIssue63 does.
             print(reason)
             self.skipTest(reason)
         terms = self._quoted_terms(skill_md, "Avoid (almost always)")
@@ -29801,8 +29916,22 @@ elif 'worktree' in args and 'remove' in args:
 DISCOVERY_DIR = TEST_DIR / "issues"
 DISCOVERY_PATTERN = "test_issue_*.py"
 
+# `$SKILLS_EVALS_DISCOVERY_DIR` exists for one reason, the same as
+# `$SKILLS_EVALS_USER_MEMORY`: so the two #97 planting pins can plant a probe
+# module in a SCRATCH discovery dir instead of writing into the real
+# test/issues/, which a concurrently running child suite (a parallel run,
+# #182) would otherwise discover.
+DISCOVERY_ENV = "SKILLS_EVALS_DISCOVERY_DIR"
 
-def build_suite(discovery_dir: Path | None = None) -> unittest.TestSuite:
+
+def discovery_dir() -> Path:
+    """DISCOVERY_DIR, or `$SKILLS_EVALS_DISCOVERY_DIR` when that is set and
+    non-empty."""
+    override = os.environ.get(DISCOVERY_ENV)
+    return Path(override) if override else DISCOVERY_DIR
+
+
+def build_suite(discovery: Path | None = None) -> unittest.TestSuite:
     """This module's own classes plus every discovered test/issues/ module.
 
     `top_level_dir` is the discovery dir itself, so a discovered module is
@@ -29811,19 +29940,22 @@ def build_suite(discovery_dir: Path | None = None) -> unittest.TestSuite:
     skipped: unittest turns it into a synthetic failing test, which is exactly
     the loud behaviour a broken new file should get.
 
-    `discovery_dir` defaults to DISCOVERY_DIR and is a parameter for one
-    reason: so the coverage assertion below can be driven against a SCRATCH
-    tree with a module planted in it, and prove its own failure message
-    without planting anything in the repo.
+    `discovery` defaults to `discovery_dir()` — DISCOVERY_DIR, or
+    `$SKILLS_EVALS_DISCOVERY_DIR` when that is set — and is a parameter for
+    one reason: so the coverage assertion below can be driven against a
+    SCRATCH tree with a module planted in it, and prove its own failure
+    message without planting anything in the repo. (Named `discovery`, not
+    `discovery_dir`, so this parameter cannot shadow the module-level
+    `discovery_dir()` function this default calls.)
     """
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromModule(sys.modules[__name__]))
-    discovery_dir = DISCOVERY_DIR if discovery_dir is None else discovery_dir
-    if discovery_dir.is_dir():
+    discovery = discovery_dir() if discovery is None else discovery
+    if discovery.is_dir():
         suite.addTests(loader.discover(
-            str(discovery_dir), pattern=DISCOVERY_PATTERN,
-            top_level_dir=str(discovery_dir)))
+            str(discovery), pattern=DISCOVERY_PATTERN,
+            top_level_dir=str(discovery)))
     return suite
 
 
@@ -29834,6 +29966,20 @@ def flatten_suite(suite: unittest.TestSuite):
             yield from flatten_suite(item)
         else:
             yield item
+
+
+def _jobs_arg(value: str) -> int | str:
+    """`-j/--jobs`'s own argparse type: an int, or the literal `"auto"`
+    pytest-xdist accepts for `-n auto` — one worker per CPU. #182 measured
+    `auto` equal to `-n 4` on this fleet's 4-vCPU hosted runners, and
+    agentskills#179 pins the same spelling for the same reason."""
+    if value == "auto":
+        return "auto"
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid --jobs value {value!r}: expected an integer or 'auto'")
 
 
 def parse_argv(argv: list[str]) -> argparse.Namespace:
@@ -29865,6 +30011,12 @@ def parse_argv(argv: list[str]) -> argparse.Namespace:
                         help="run only tests whose id matches PATTERN "
                              "(substring, or fnmatch when it carries a *); "
                              "repeatable, and the run says it was narrowed")
+    parser.add_argument("-j", "--jobs", type=_jobs_arg, default=1,
+                        metavar="N|auto",
+                        help="run the whole suite across N worker processes "
+                             "via pytest-xdist, or 'auto' for one worker per "
+                             "CPU (needs pytest and pytest-xdist installed; "
+                             "the memory guard still spans the run)")
     parser.add_argument("targets", nargs="*", metavar="TestClass.test_name",
                         help="a targeted run through unittest.main, which "
                              "addresses this file's own classes only")
@@ -32334,6 +32486,130 @@ class TestTheRunnerItself(unittest.TestCase):
             f"never read as a full-suite pass\n{output[-3000:]}")
 
 
+class TestParallelJobs(unittest.TestCase):
+    """`-j/--jobs` (#182): argv parsing, the rejected combinations, and the
+    collection cross-check that catches pytest-xdist collecting a different
+    test set than build_suite() would.
+
+    Deterministic and network-free throughout: the collection-mismatch pair
+    below fakes `pytest.main` itself rather than actually distributing work
+    across workers, so nothing here spawns a process or waits on one.
+    """
+
+    def test_parse_argv_jobs_defaults_to_one(self):
+        self.assertEqual(parse_argv([]).jobs, 1)
+        self.assertEqual(parse_argv(["-j", "4"]).jobs, 4)
+        self.assertEqual(parse_argv(["--jobs", "4"]).jobs, 4)
+        self.assertEqual(parse_argv(["-j", "auto"]).jobs, "auto")
+        self.assertEqual(parse_argv(["--jobs", "auto"]).jobs, "auto")
+
+    def test_dash_j_rejects_zero_a_target_and_a_pattern(self):
+        # None of these three may reach pytest.main at all: main() rejects
+        # them before the `import pytest` line, so no worker — real or
+        # faked — ever runs. Calling main() in-process here is fine: every
+        # rejected combination is read-only, so the memory guard it runs
+        # under has nothing to catch.
+        for argv in (["-j", "0"],
+                     ["-j", "4", "-k", "TestParallelJobs"],
+                     ["-j", "4", "TestParallelJobs.test_parse_argv_jobs_defaults_to_one"]):
+            with self.subTest(argv=argv):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    status = main(argv)
+                out = buf.getvalue()
+                self.assertEqual(status, 2, out)
+                self.assertIn("FAILED", out)
+                self.assertNotIn("(pytest-xdist)", out,
+                                 "a rejected --jobs combination must never "
+                                 f"reach the pytest-xdist run\n{out}")
+
+    def test_dash_j_collection_mismatch_fails_and_the_matching_set_passes(self):
+        # _expected_test_ids() only calls build_suite() — constructing test
+        # objects, never running one — so this is as cheap as any other test
+        # here that calls build_suite() directly.
+        try:
+            import pytest  # noqa: F401
+        except ImportError:
+            reason = ("pytest not installed — skipping the --jobs "
+                      "collection cross-check")
+            print(reason)
+            self.skipTest(reason)
+
+        expected = _expected_test_ids()
+        self.assertTrue(expected, "build_suite() carried no tests at all")
+        nodeids = [f"{module}.py::{cls}::{method}"
+                  for module, cls, method in expected]
+
+        # Two fake worker nodes, each reporting the SAME collected set — real
+        # xdist's default load scheduling has every worker collect the whole
+        # suite and only RUN its assigned share, so this is what two real
+        # `-j 2` workers would report too.
+        def fake_main_missing_one(args, plugins):
+            for node in ("gw0", "gw1"):
+                plugins[0].pytest_xdist_node_collection_finished(
+                    node=node, ids=nodeids[1:])
+            return 0
+
+        buf = io.StringIO()
+        with mock.patch("pytest.main", side_effect=fake_main_missing_one), \
+                contextlib.redirect_stdout(buf):
+            status = main(["-j", "2"])
+        out = buf.getvalue()
+        self.assertEqual(status, 1, out)
+        self.assertIn("FAILED", out)
+        self.assertIn(f"Ran {len(expected) - 1} tests across 2 workers", out)
+
+        def fake_main_matching(args, plugins):
+            for node in ("gw0", "gw1"):
+                plugins[0].pytest_xdist_node_collection_finished(
+                    node=node, ids=nodeids)
+            return 0
+
+        buf = io.StringIO()
+        with mock.patch("pytest.main", side_effect=fake_main_matching), \
+                contextlib.redirect_stdout(buf):
+            status = main(["-j", "2"])
+        out = buf.getvalue()
+        self.assertEqual(status, 0, out)
+        self.assertNotIn("FAILED", out)
+        self.assertIn(f"Ran {len(expected)} tests across 2 workers", out)
+
+    def test_dash_j_auto_reports_the_resolved_worker_count(self):
+        # `--jobs auto` requests the literal string "auto", never a count —
+        # the printed "Ran N tests across <k> workers" line must name how
+        # many workers xdist actually resolved that to, not echo "auto"
+        # back, since the whole point is to see what ran.
+        try:
+            import pytest  # noqa: F401
+        except ImportError:
+            reason = "pytest not installed — skipping the --jobs auto test"
+            print(reason)
+            self.skipTest(reason)
+
+        expected = _expected_test_ids()
+        nodeids = [f"{module}.py::{cls}::{method}"
+                  for module, cls, method in expected]
+
+        def fake_main_three_workers(args, plugins):
+            self.assertIn("-n", args)
+            self.assertEqual(args[args.index("-n") + 1], "auto",
+                             "--jobs auto must pass -n auto through to xdist")
+            for node in ("gw0", "gw1", "gw2"):
+                plugins[0].pytest_xdist_node_collection_finished(
+                    node=node, ids=nodeids)
+            return 0
+
+        buf = io.StringIO()
+        with mock.patch("pytest.main", side_effect=fake_main_three_workers), \
+                contextlib.redirect_stdout(buf):
+            status = main(["-j", "auto"])
+        out = buf.getvalue()
+        self.assertEqual(status, 0, out)
+        self.assertIn(f"Ran {len(expected)} tests across 3 workers", out,
+                      f"expected the RESOLVED worker count (3), not the "
+                      f"literal 'auto'\n{out}")
+
+
 # ----------------------------------------------------------------------
 # The run-wide user-memory guard (issue #97, S2)
 #
@@ -32398,6 +32674,290 @@ def memory_guard(memory: Path, before: str, status: int) -> int:
     return 1
 
 
+# ----------------------------------------------------------------------
+# `-j/--jobs` — the whole suite fanned out across pytest-xdist workers
+# (#182). Bare pytest would bypass main()'s run-wide memory guard and the
+# build_suite() collection cross-check, so the fan-out lives INSIDE this
+# runner: `main()` still snapshots user memory around the whole run, still
+# builds the expected test set from build_suite(), and now also proves
+# pytest's workers collected exactly that set before trusting their result.
+# ----------------------------------------------------------------------
+
+# Read by both the ImportError message in main() and CiDispatchTests' pin on
+# ci.yml's Install dependencies step, so a version bump is one edit instead
+# of two copies drifting apart.
+PARALLEL_PINS = ("pytest==9.1.1", "pytest-xdist==3.8.0")
+
+_PIN_OPERATORS = ("==", ">=", "<=", "~=", "!=", ">", "<")
+
+
+def _normalise_pin_name(name: str) -> str:
+    """PEP 503: a package name compares case-insensitively with `_` and `-`
+    interchangeable, so `pytest_xdist` and `pytest-xdist` name the same
+    package.
+    """
+    return name.strip().lower().replace("_", "-")
+
+
+def _parse_requirement_line(line: str) -> tuple[str, str | None, str | None]:
+    """`(normalised_name, operator, version)` for one already-stripped,
+    non-blank, non-comment requirements-dev.txt line. `operator`/`version`
+    come back `None` when the line names a package with no version
+    specifier at all — still a "not exact ==" disagreement, not a parse
+    failure.
+    """
+    for op in _PIN_OPERATORS:
+        idx = line.find(op)
+        if idx != -1:
+            return (_normalise_pin_name(line[:idx]), op,
+                    line[idx + len(op):].strip())
+    return _normalise_pin_name(line), None, None
+
+
+def parallel_pin_disagreements(ours: tuple[str, ...],
+                               requirements_text: str) -> list[str]:
+    """Where `ours` (PARALLEL_PINS-shaped `name==version` entries) disagrees
+    with a sibling requirements-dev.txt's pins for the same packages — []
+    when every one of `ours` is pinned there too, exact, at the same
+    version. A lexical, line-by-line parse of the requirements file (strip;
+    drop blank lines and `#`-comment lines; drop a trailing ` #...` inline
+    comment; PEP 503 name-fold), which is fine per house style — this is
+    text, not code or YAML shape, so plain string ops are the right tool,
+    not an AST.
+    """
+    theirs: dict[str, tuple[str | None, str | None]] = {}
+    for raw_line in requirements_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.split(" #", 1)[0].rstrip()
+        if not line:
+            continue
+        name, op, version = _parse_requirement_line(line)
+        theirs[name] = (op, version)
+
+    problems = []
+    for pin in ours:
+        name, _, version = pin.partition("==")
+        key = _normalise_pin_name(name)
+        if key not in theirs:
+            problems.append(
+                f"{pin}: {name} is not pinned at all in their "
+                "requirements-dev.txt")
+            continue
+        their_op, their_version = theirs[key]
+        if their_op != "==":
+            problems.append(
+                f"{pin}: theirs pins {name}{their_op or ''}"
+                f"{their_version or ''} — not an exact == pin")
+        elif their_version != version:
+            problems.append(
+                f"{pin}: theirs pins {name}=={their_version}, ours pins "
+                f"{name}=={version}")
+    return problems
+
+
+def _expected_test_ids() -> set[tuple[str, str, str]]:
+    """`(module_stem, Class, method)` for every test build_suite() carries.
+
+    `_normalise_nodeid` derives the same triple from a pytest nodeid, so the
+    two sets are comparable no matter which side collected the test. A class
+    defined in THIS file has `__module__ == "__main__"` when run as a script
+    (`python3 test/run_tests.py --jobs N`), which pytest's nodeid never
+    says — its path is always `test/run_tests.py`, stem `run_tests` — so
+    that one spelling is normalised to SUITE_RUNNER_MODULE here.
+    """
+    ids = set()
+    for test in flatten_suite(build_suite()):
+        module = test.__class__.__module__
+        if module == "__main__":
+            module = SUITE_RUNNER_MODULE
+        ids.add((module, test.__class__.__name__, test._testMethodName))
+    return ids
+
+
+def _normalise_nodeid(nodeid: str) -> tuple[str, str, str]:
+    """A pytest nodeid (`path::Class::method`) as the triple above."""
+    path_part, cls, method = nodeid.split("::")
+    return (Path(path_part).stem, cls, method)
+
+
+class _XdistCollector:
+    """Every test id an xdist WORKER actually collected, summed over all, plus
+    how many distinct workers reported in.
+
+    `pytest_collection_modifyitems` runs once per WORKER process under `-n
+    N`, never in the controller — verified empirically running this file: a
+    controller-side instance of this plugin recorded nothing.
+    `pytest_xdist_node_collection_finished` does fire in the controller, once
+    per worker, with that worker's own collected nodeids (the whole suite,
+    under xdist's default load scheduling — a worker collects everything and
+    only RUNS its assigned share), so summing it over every worker call gives
+    exactly the set `_expected_test_ids()` does. `self.workers` — the distinct
+    `node` values seen — is how `main()` reports the RESOLVED worker count
+    for `--jobs auto`, whose requested value is the literal string "auto",
+    never a count.
+    """
+
+    def __init__(self) -> None:
+        self.collected: set[tuple[str, str, str]] = set()
+        self.workers: set = set()
+
+    def pytest_xdist_node_collection_finished(self, node, ids) -> None:
+        self.workers.add(node)
+        self.collected.update(_normalise_nodeid(nodeid) for nodeid in ids)
+
+
+# ----------------------------------------------------------------------
+# git auto-maintenance, disabled run-wide (CI run 36036939626)
+#
+# `--jobs auto`, 4 workers, git 2.55: TestIssue77's
+# test_reaper_in_a_nested_dir_sharing_checkouts_basename_passes and
+# test_reaper_ran_in_standalone_repo_recorded_facts_match_through_a_symlink
+# both failed inside `shutil.rmtree(...)` with `FileNotFoundError:
+# 'maintenance.lock'`.
+# evals/disarm-inherited-reach/seed/repo-content/scripts/reaper.sh runs `git
+# commit`, which spawns a DETACHED `git maintenance run --auto` — it creates
+# and removes maintenance.lock inside the same throwaway repo the test's own
+# rmtree is walking. A latent race, made LIKELY by parallel CPU contention;
+# any test in this suite that commits and then deletes a repo is exposed the
+# same way, not just TestIssue77's two. The fixture stays untouched on
+# purpose: it's eval content an agent runs (evals/ is off limits to this
+# fix), and the race belongs to the harness — deleting a repo out from under
+# a background git process IT spawned — not to the script being evaluated.
+# ----------------------------------------------------------------------
+
+def without_git_auto_maintenance(environ: Mapping[str, str]) -> dict[str, str]:
+    """A copy of `environ` with `maintenance.auto=false` appended via git's
+    own env-injection protocol (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_N`/
+    `GIT_CONFIG_VALUE_N`) — no config file involved, so it survives a blanked
+    `GIT_CONFIG_GLOBAL` the same way
+    test_build_is_deterministic_under_hostile_ambient_git_config's hostile
+    injection does.
+
+    Appends at the first free index rather than touching any existing
+    `GIT_CONFIG_KEY_N`/`GIT_CONFIG_VALUE_N` — a pre-existing injection (a
+    caller's own ambient config, or this same function applied earlier by a
+    parent process) is never clobbered. Idempotent: if `maintenance.auto` is
+    already injected as `false` anywhere in `environ`, returns an unchanged
+    copy instead of appending a second, redundant entry — this is what lets
+    a `--jobs` execnet worker or a test's own subprocess inherit an
+    already-patched environment and apply this again for free. A
+    `GIT_CONFIG_COUNT` that isn't a valid non-negative integer is left alone
+    entirely: appending under a bad count wouldn't disable maintenance, it
+    would just make git itself error on every single invocation, which is
+    worse than not applying the fix at all.
+    """
+    result = dict(environ)
+    try:
+        count = int(result.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        return result
+    if count < 0:
+        return result
+    for i in range(count):
+        if (result.get(f"GIT_CONFIG_KEY_{i}") == "maintenance.auto"
+                and result.get(f"GIT_CONFIG_VALUE_{i}") == "false"):
+            return result
+    result[f"GIT_CONFIG_KEY_{count}"] = "maintenance.auto"
+    result[f"GIT_CONFIG_VALUE_{count}"] = "false"
+    result["GIT_CONFIG_COUNT"] = str(count + 1)
+    return result
+
+
+class TestWithoutGitAutoMaintenance(unittest.TestCase):
+    """without_git_auto_maintenance() — CI run 36036939626's fix for the
+    detached `git maintenance run --auto` vs. `shutil.rmtree` race (see the
+    block comment above the function). Deterministic and network-free: only
+    the behavioural test below touches a real git repo, and that repo is a
+    fresh tempdir this test creates and tears down itself.
+    """
+
+    def test_appends_to_an_empty_environ(self):
+        self.assertEqual(without_git_auto_maintenance({}), {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
+        })
+
+    def test_appends_after_existing_entries_without_touching_them(self):
+        environ = {
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "core.fileMode", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "true",
+        }
+        result = without_git_auto_maintenance(environ)
+        self.assertEqual(result, {
+            "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "core.fileMode", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "true",
+            "GIT_CONFIG_KEY_2": "maintenance.auto", "GIT_CONFIG_VALUE_2": "false",
+        })
+
+    def test_idempotent_when_already_present(self):
+        environ = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
+        }
+        self.assertEqual(without_git_auto_maintenance(environ), environ)
+
+    def test_unchanged_copy_on_a_garbage_count(self):
+        not_a_number = {"GIT_CONFIG_COUNT": "not-a-number", "PATH": "/usr/bin"}
+        self.assertEqual(without_git_auto_maintenance(not_a_number),
+                         not_a_number)
+        negative = {"GIT_CONFIG_COUNT": "-1"}
+        self.assertEqual(without_git_auto_maintenance(negative), negative)
+
+    def test_does_not_mutate_its_input(self):
+        environ = {"GIT_CONFIG_COUNT": "0"}
+        without_git_auto_maintenance(environ)
+        self.assertEqual(environ, {"GIT_CONFIG_COUNT": "0"})
+
+    def test_git_honours_the_injected_config(self):
+        # The behavioural proof, not just a shape check: a real git repo, in
+        # an env carrying only this helper's injection on top of whatever
+        # `git init`/`commit` themselves need, reports maintenance.auto=false
+        # back — proving git actually reads the env-injected config, not
+        # just that this function built the right-looking dict.
+        repo = Path(tempfile.mkdtemp(prefix="without-git-auto-maintenance-"))
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        env = without_git_auto_maintenance(os.environ)
+        subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"],
+                       cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"],
+                       cwd=repo, env=env, check=True)
+        (repo / "f.txt").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "add", "f.txt"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=repo, env=env,
+                       check=True)
+        result = subprocess.run(
+            ["git", "config", "--get", "maintenance.auto"],
+            cwd=repo, env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false")
+
+    def test_main_applies_it_to_os_environ(self):
+        # main(["-j", "0"]) returns 2 early (test_dash_j_rejects_zero_a_
+        # target_and_a_pattern above) without ever reaching pytest — cheap
+        # enough to call in-process. The assertion has to run INSIDE the
+        # patch.dict block: patch.dict restores os.environ to its pre-call
+        # state on exit, so nothing leaks into a test that runs after this
+        # one.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                status = main(["-j", "0"])
+            self.assertEqual(status, 2)
+            count = int(os.environ["GIT_CONFIG_COUNT"])
+            found = any(
+                os.environ.get(f"GIT_CONFIG_KEY_{i}") == "maintenance.auto"
+                and os.environ.get(f"GIT_CONFIG_VALUE_{i}") == "false"
+                for i in range(count))
+            self.assertTrue(found, f"GIT_CONFIG_COUNT={count} did not carry "
+                            "an injected maintenance.auto=false entry")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit status, always from the runner result and the memory guard.
 
@@ -32405,6 +32965,22 @@ def main(argv: list[str] | None = None) -> int:
     `unittest.main` exits the process itself. The status is computed here now,
     on every path.)
     """
+    # Disable git's background auto-maintenance for the WHOLE run, before
+    # anything else — including argv parsing, so a rejected `--jobs`
+    # combination that returns early still leaves it set for any subprocess
+    # a test spawns afterwards. See without_git_auto_maintenance() above for
+    # the race this closes (CI run 36036939626). `os.environ[key] = value`
+    # per changed key, never `os.environ.clear(); os.environ.update(...)` —
+    # that would drop every OTHER variable a CI runner or a developer's own
+    # shell set. Applying it here, once, is what makes it universal: a
+    # `--jobs` execnet worker inherits the controller's environment, and
+    # every subprocess a test spawns inherits its parent's — so one edit
+    # here covers the serial path, every worker, and every child process.
+    before_env = dict(os.environ)
+    after_env = without_git_auto_maintenance(before_env)
+    for key, value in after_env.items():
+        if before_env.get(key) != value:
+            os.environ[key] = value
     opts = parse_argv(list(sys.argv[1:] if argv is None else argv))
     # The snapshot comes BEFORE the targeted-run branch, not after it. It used
     # to sit below, so `python3 test/run_tests.py TestFoo.test_bar` returned
@@ -32414,6 +32990,75 @@ def main(argv: list[str] | None = None) -> int:
     # goes through memory_guard().
     memory = user_memory_path()
     before = user_memory_fingerprint(memory)
+    override = os.environ.get(DISCOVERY_ENV)
+    if override:
+        print(f"DISCOVERY OVERRIDE: ${DISCOVERY_ENV}={override} — "
+              "test/issues/ is NOT what this run discovered.")
+    if opts.jobs != 1:
+        if isinstance(opts.jobs, int) and opts.jobs < 1:
+            print(f"FAILED: --jobs {opts.jobs} is not a positive worker "
+                  "count.")
+            return memory_guard(memory, before, 2)
+        if opts.targets or opts.patterns:
+            print("FAILED: --jobs runs the WHOLE suite across pytest-xdist "
+                  "workers and cannot be combined with a targeted run or "
+                  "-k.")
+            return memory_guard(memory, before, 2)
+        try:
+            import pytest
+            # pytest-xdist's import NAME is `xdist`, not `pytest_xdist`
+            # (#182) — checked here alongside pytest itself so a missing
+            # xdist gets this same FAILED message and exit 2, rather than
+            # pytest rejecting `-n` on its own and the run surfacing as a
+            # confusing zero-collected mismatch below.
+            import xdist  # noqa: F401
+        except ImportError:
+            print("FAILED: --jobs needs pytest and pytest-xdist installed "
+                  f"— pip install {' '.join(PARALLEL_PINS)}")
+            return memory_guard(memory, before, 2)
+        expected = _expected_test_ids()
+        collector = _XdistCollector()
+        # Named `pytest_argv`, not the generic `args` this file's helpers use
+        # everywhere for an arbitrary *args passthrough: the suite-fork scan
+        # (test_every_suite_forking_test_in_this_repo_stands_down_in_a_child)
+        # resolves this list's static value, sees `test/run_tests.py` in it,
+        # and registers whatever NAME it is assigned to as "names the
+        # runner" file-wide — a bare `args` would then make every unrelated
+        # helper that forwards an `args` parameter to `gh`/`pwsh` look like a
+        # suite spawner too.
+        # `-rfEs`, never a bare `-rs`: pytest's `-r` REPLACES the default
+        # `fE`, so `-rs` alone drops failures and errors from the short
+        # summary (observed in agentskills, run 35949072744; agentskills#179
+        # uses `-rfEs` for the same reason).
+        pytest_argv = [str(TEST_DIR / SUITE_RUNNER_NAME), str(discovery_dir()),
+                      "-n", str(opts.jobs), "-p", "no:cacheprovider", "-rfEs"]
+        if opts.verbose:
+            pytest_argv.append("-v")
+        if opts.quiet:
+            pytest_argv.append("-q")
+        if opts.failfast:
+            pytest_argv.append("-x")
+        rc = pytest.main(pytest_argv, plugins=[collector])
+        collected = collector.collected
+        if collected != expected:
+            missing = sorted(expected - collected)[:10]
+            extra = sorted(collected - expected)[:10]
+            print(f"FAILED: pytest-xdist collected {len(collected)} tests, "
+                  f"build_suite() expected {len(expected)}. missing (up to "
+                  f"10): {missing} extra (up to 10): {extra}")
+            status = 1
+        else:
+            status = 0 if rc == 0 else 1
+        # The RESOLVED worker count — how many distinct xdist worker nodes
+        # actually reported in — not the requested `opts.jobs`: with
+        # `--jobs auto` the requested value is the literal string "auto",
+        # never a count. Falls back to `opts.jobs` only if no worker
+        # reported at all, which the collection mismatch above already
+        # failed the run for.
+        worker_count = len(collector.workers) or opts.jobs
+        print(f"Ran {len(collected)} tests across {worker_count} workers "
+              "(pytest-xdist)")
+        return memory_guard(memory, before, status)
     if opts.targets:
         # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) goes
         # through unittest.main, which addresses only this module's own
