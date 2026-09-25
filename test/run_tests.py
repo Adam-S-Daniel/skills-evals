@@ -4160,8 +4160,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # the header prose said. Scoped to just the file's LEADING comment
         # block (the run of lines at the top that start with '#' or are
         # blank) instead, and matched against the registry's basename
-        # (`agentskills`, not `Adam-S-Daniel/agentskills`) — the spelling
-        # the header prose actually uses.
+        # (`adam-agentskills`, not `Adam-S-Daniel/adam-agentskills`) — the
+        # spelling the header prose actually uses.
         lines = self.WORKFLOW.read_text(encoding="utf-8").splitlines()
         header_lines = list(itertools.takewhile(
             lambda line: line.strip() == "" or line.lstrip().startswith("#"),
@@ -4218,7 +4218,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # whether that checkout's `repository:` is the repo registries.yml
         # actually names for that flag's NAME — so a NAME/PATH pair
         # transposed between two registries (e.g.
-        # `--registry agentskills=../cms-platform`) stayed green here and
+        # `--registry adam-agentskills=../cms-platform`) stayed green here and
         # died at runtime with skill_not_found. Now built from
         # {with.path: with.repository} and cross-checked against each
         # registry's own url in harness/registries.yml.
@@ -4508,16 +4508,17 @@ class CiDispatchTests(unittest.TestCase):
 
     def test_checks_out_agentskills_side_by_side_for_the_agreement_test(self):
         # TestIssue63::test_registries_agree_with_agentskills_own_file skips
-        # (with a printed reason) when no agentskills checkout is present —
-        # which was EVERY run in CI, since ci.yml checked out only this repo.
-        # A side-by-side checkout, matching eval.yml's and propagation.yml's
-        # own pattern, is what lets that test actually execute here.
+        # (with a printed reason) when no adam-agentskills checkout is
+        # present — which was EVERY run in CI, since ci.yml checked out only
+        # this repo. A side-by-side checkout, matching eval.yml's and
+        # propagation.yml's own pattern, is what lets that test actually
+        # execute here.
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
         steps = doc["jobs"]["test"]["steps"]
         # Identified by with.path == "skills-evals", not positionally — a
         # reordering of the checkout steps must not make this compare the
-        # agentskills checkout's SHA against itself and pass vacuously.
+        # adam-agentskills checkout's SHA against itself and pass vacuously.
         own_checkout = next(s for s in steps
                             if (s.get("uses") or "").startswith("actions/checkout@")
                             and (s.get("with") or {}).get("path") == "skills-evals")
@@ -4526,16 +4527,16 @@ class CiDispatchTests(unittest.TestCase):
         agentskills_checkouts = [
             s for s in steps
             if (s.get("uses") or "").startswith("actions/checkout@")
-            and (s.get("with") or {}).get("repository") == "Adam-S-Daniel/agentskills"]
+            and (s.get("with") or {}).get("repository") == "Adam-S-Daniel/adam-agentskills"]
         self.assertEqual(len(agentskills_checkouts), 1,
-                         "expected exactly one agentskills checkout step")
+                         "expected exactly one adam-agentskills checkout step")
         step = agentskills_checkouts[0]
         with_block = step.get("with") or {}
-        self.assertEqual(with_block.get("path"), "agentskills")
+        self.assertEqual(with_block.get("path"), "adam-agentskills")
         self.assertIs(with_block.get("persist-credentials"), False)
         self.assertEqual(step["uses"].split("@", 1)[1], own_sha,
-                         "the agentskills checkout must pin the same bare "
-                         "40-hex SHA as ci.yml's own checkout")
+                         "the adam-agentskills checkout must pin the same "
+                         "bare 40-hex SHA as ci.yml's own checkout")
 
     # -- always-run + early-skip shape (cms-platform#437) -------------------
 
@@ -6451,7 +6452,7 @@ class TestIssue67Review(unittest.TestCase):
         (eval_dir / "seed").mkdir(parents=True)
         (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
         fixture = {"skill": "a-skill", "prompt": "do the thing",
-                   "registry": "https://github.com/Adam-S-Daniel/agentskills",
+                   "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
                    "judge_rubric": "grade it",
                    "arms": {"without_skill": {"install": "none"}}}
         if pinned:
@@ -6600,7 +6601,7 @@ class TestIssue67Review(unittest.TestCase):
             results = Path(tmp) / "results"
             argv = ["run_eval.py", str(eval_dir), "--arm", "both",
                     "--roster", str(path), "--results-dir", str(results),
-                    "--registry", f"agentskills={tmp}"]
+                    "--registry", f"adam-agentskills={tmp}"]
 
             def fake_run_agent(workspace, prompt, arm):
                 return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
@@ -8875,7 +8876,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
 
 class TestIssue63(unittest.TestCase):
     """Issue #63: resolve the with_skill arm's skill dir against any registry
-    layout named in harness/registries.yml, not just agentskills'
+    layout named in harness/registries.yml, not just adam-agentskills'
     plugins/*/skills/*/SKILL.md — cms-platform's flat skills/*/SKILL.md and
     adamdaniel.ai's .claude/skills/*/SKILL.md must resolve too, and an
     unknown registry: URL must fail loudly naming the file to fix.
@@ -8973,7 +8974,7 @@ class TestIssue63(unittest.TestCase):
 
     def test_flat_layout_missing_skill_names_the_skills_path(self):
         # A non-plugins layout's skill_not_found detail must name the actual
-        # glob searched (skills/<skill>/SKILL.md), not agentskills' own
+        # glob searched (skills/<skill>/SKILL.md), not adam-agentskills' own
         # plugins/*/skills/<skill> shape.
         with tempfile.TemporaryDirectory() as tmp:
             registry = self._fake_registry(tmp, "skills/some-skill/SKILL.md")
@@ -9040,7 +9041,7 @@ class TestIssue63(unittest.TestCase):
             # The pre-#63 form: one bare path, no NAME= prefix.
             registries = run_eval.resolve_registries([str(registry)], None, REPO_ROOT)
             entry = run_eval.registry_for_url(
-                registries, "https://github.com/Adam-S-Daniel/agentskills")
+                registries, "https://github.com/Adam-S-Daniel/adam-agentskills")
             self.assertEqual(entry["path"], registry)
             self.assertEqual(entry["layout"], "plugins/*/skills/*/SKILL.md")
 
@@ -9085,14 +9086,14 @@ class TestIssue63(unittest.TestCase):
 
     def test_registries_agree_with_agentskills_own_file(self):
         # Routed through resolve_registries (rather than a hardcoded
-        # "../agentskills") so $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES can
-        # steer which checkout this compares against, same as a real run.
+        # "../adam-agentskills") so $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES
+        # can steer which checkout this compares against, same as a real run.
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
             os.environ.get("AGENTSKILLS_DIR"))
-        agentskills_file = registries["agentskills"]["path"] / "scripts" / "skills_registries.yml"
+        agentskills_file = registries["adam-agentskills"]["path"] / "scripts" / "skills_registries.yml"
         if not agentskills_file.is_file():
-            reason = (f"no agentskills checkout at {agentskills_file} — "
+            reason = (f"no adam-agentskills checkout at {agentskills_file} — "
                       "skipping the cross-repo registries.yml agreement check")
             # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
             # pytest's `-rfEs` prints skip reasons in its own summary; this
@@ -9110,17 +9111,17 @@ class TestIssue63(unittest.TestCase):
         self.assertEqual(ours, theirs)
 
     def test_parallel_pins_agree_with_agentskills_requirements(self):
-        # ci.yml checks agentskills out side by side for this run
-        # ("Check out agentskills registry (side-by-side)"), so this test
-        # runs on every CI run, not just when someone happens to touch
-        # --jobs. A pin bump landing in agentskills' requirements-dev.txt
+        # ci.yml checks adam-agentskills out side by side for this run
+        # ("Check out adam-agentskills registry (side-by-side)"), so this
+        # test runs on every CI run, not just when someone happens to touch
+        # --jobs. A pin bump landing in adam-agentskills' requirements-dev.txt
         # first (agentskills#179's own -n auto run) turns THIS red until
         # skills-evals' PARALLEL_PINS follows — deliberate: the owner wants
         # the two repos' pins drifting apart to be loud, not silent (#182).
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
             os.environ.get("AGENTSKILLS_DIR"))
-        requirements_file = registries["agentskills"]["path"] / "requirements-dev.txt"
+        requirements_file = registries["adam-agentskills"]["path"] / "requirements-dev.txt"
         if not requirements_file.is_file():
             reason = (f"no requirements-dev.txt at {requirements_file} — "
                       "skipping the cross-repo parallel-pins agreement check")
@@ -9239,7 +9240,7 @@ class TestIssue63(unittest.TestCase):
     def test_repeated_bare_env_entry_raises(self):
         with self.assertRaises(ValueError) as ctx:
             run_eval.resolve_registries(None, "/a,/b", REPO_ROOT)
-        self.assertIn("agentskills", str(ctx.exception))
+        self.assertIn("adam-agentskills", str(ctx.exception))
 
     # --- Review round 3, item G: a `**` layout segment passes the
     # "ends in '*/SKILL.md'" load-time check but lets a recursive glob at
@@ -9263,9 +9264,9 @@ class TestParallelPinAgreement(unittest.TestCase):
     """`parallel_pin_disagreements` in isolation (#182) — no sibling
     checkout, no filesystem. TestIssue63's own
     test_parallel_pins_agree_with_agentskills_requirements exercises it
-    against the real agentskills requirements-dev.txt when one is checked
-    out; these pin the parsing rules the way build_suite() and CI never
-    would on their own.
+    against the real adam-agentskills requirements-dev.txt when one is
+    checked out; these pin the parsing rules the way build_suite() and CI
+    never would on their own.
     """
 
     def test_matching_pins_return_no_disagreements(self):
@@ -9318,7 +9319,7 @@ class TestIssue63Review(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn("cms_platform", msg)
         self.assertIn("harness/registries.yml", msg)
-        for name in ("agentskills", "cms-platform", "adamdaniel.ai"):
+        for name in ("adam-agentskills", "cms-platform", "adamdaniel.ai"):
             self.assertIn(name, msg)
 
     def test_unknown_env_override_name_is_rejected(self):
@@ -9326,27 +9327,27 @@ class TestIssue63Review(unittest.TestCase):
             run_eval.resolve_registries(None, "not-a-real-registry=/x", REPO_ROOT)
         self.assertIn("not-a-real-registry", str(ctx.exception))
 
-    def test_bare_env_entry_is_taken_as_agentskills_like_the_cli_flag(self):
+    def test_bare_env_entry_is_taken_as_adam_agentskills_like_the_cli_flag(self):
         # A bare $SKILLS_EVALS_REGISTRIES entry (no "=") used to be silently
         # dropped, even though a bare --registry PATH is the documented
-        # legacy agentskills shorthand. The two are now consistent.
+        # legacy adam-agentskills shorthand. The two are now consistent.
         with tempfile.TemporaryDirectory() as tmp:
             registry = Path(tmp) / "registry"
             registry.mkdir()
             registries = run_eval.resolve_registries(None, str(registry), REPO_ROOT)
-        self.assertEqual(registries["agentskills"]["path"], registry.resolve())
-        self.assertEqual(registries["agentskills"]["source"], "$SKILLS_EVALS_REGISTRIES")
+        self.assertEqual(registries["adam-agentskills"]["path"], registry.resolve())
+        self.assertEqual(registries["adam-agentskills"]["source"], "$SKILLS_EVALS_REGISTRIES")
 
     def test_empty_path_after_equals_is_rejected_at_parse_time(self):
-        # --registry agentskills= used to resolve Path("") == the current
-        # working directory, silently.
+        # --registry adam-agentskills= used to resolve Path("") == the
+        # current working directory, silently.
         with self.assertRaises(ValueError) as ctx:
-            run_eval.resolve_registries(["agentskills="], None, REPO_ROOT)
-        self.assertIn("agentskills", str(ctx.exception))
+            run_eval.resolve_registries(["adam-agentskills="], None, REPO_ROOT)
+        self.assertIn("adam-agentskills", str(ctx.exception))
 
     def test_empty_env_path_after_equals_is_rejected_at_parse_time(self):
         with self.assertRaises(ValueError):
-            run_eval.resolve_registries(None, "agentskills=", REPO_ROOT)
+            run_eval.resolve_registries(None, "adam-agentskills=", REPO_ROOT)
 
     def test_nonexistent_explicit_override_is_rejected_before_any_arm_runs(self):
         bad_path = REPO_ROOT / "does-not-exist-anywhere"
@@ -9365,40 +9366,40 @@ class TestIssue63Review(unittest.TestCase):
         self.assertNotIn("does-not-exist-anywhere", msg)
 
     def test_unoverridden_sibling_default_is_not_eagerly_validated(self):
-        # agentskills-private has no sibling checkout in this environment and
-        # no fixture references it — validating every registries.yml entry
-        # unconditionally would make eval.yml's real run (which never checks
-        # it out) fail on every dispatch.
+        # adam-agentskills-private has no sibling checkout in this
+        # environment and no fixture references it — validating every
+        # registries.yml entry unconditionally would make eval.yml's real
+        # run (which never checks it out) fail on every dispatch.
         #
         # Issue #142: the original version of this test resolved the
         # sibling default against REPO_ROOT (this repo's own checkout) and
         # asserted the resulting path is NOT a directory — an environment
         # fact, not a property of the code. It fails on any machine that
-        # happens to have the real fleet repo `agentskills-private` cloned
-        # beside `skills-evals` (this account's own workstation does).
+        # happens to have the real fleet repo `adam-agentskills-private`
+        # cloned beside `skills-evals` (this account's own workstation does).
         # Hermetic fix, mirroring `test_registry_not_found_ends_via_exit_2_
         # with_message_naming_path` above: resolve against a throwaway
         # base_dir instead of REPO_ROOT, and prove
         # `_validate_registry_paths` doesn't raise regardless of whether
         # that base_dir's sibling exists — by creating, then removing, a
-        # real `agentskills-private` directory beside a throwaway copy
+        # real `adam-agentskills-private` directory beside a throwaway copy
         # (never beside the real checkout).
         with tempfile.TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)
             fake_repo_root = tmp_root / "skills-evals"
             fake_repo_root.mkdir()
-            sibling = tmp_root / "agentskills-private"
+            sibling = tmp_root / "adam-agentskills-private"
 
             # Condition 1: no sibling checkout present.
             self.assertFalse(sibling.is_dir())
             registries = run_eval.resolve_registries(None, None, fake_repo_root)
-            self.assertEqual(registries["agentskills-private"]["path"], sibling.resolve())
+            self.assertEqual(registries["adam-agentskills-private"]["path"], sibling.resolve())
             run_eval._validate_registry_paths(registries)  # must not raise
 
             # Condition 2: a real sibling checkout now exists.
             sibling.mkdir()
             registries = run_eval.resolve_registries(None, None, fake_repo_root)
-            self.assertTrue(registries["agentskills-private"]["path"].is_dir())
+            self.assertTrue(registries["adam-agentskills-private"]["path"].is_dir())
             run_eval._validate_registry_paths(registries)  # must not raise either way
 
             # Tear back down to condition 1, proving removal doesn't matter.
@@ -9421,14 +9422,14 @@ class TestIssue63Review(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"AGENTSKILLS_DIR": tmp}):
                 registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        self.assertEqual(registries["agentskills"]["source"], "sibling default")
+        self.assertEqual(registries["adam-agentskills"]["source"], "sibling default")
 
     def test_registry_url_match_normalizes_slash_git_suffix_and_case(self):
         registries = run_eval.resolve_registries(None, None, REPO_ROOT)
         for variant in (
-            "https://github.com/Adam-S-Daniel/agentskills/",
-            "https://github.com/Adam-S-Daniel/agentskills.git",
-            "https://GITHUB.COM/adam-s-daniel/AgentSkills",
+            "https://github.com/Adam-S-Daniel/adam-agentskills/",
+            "https://github.com/Adam-S-Daniel/adam-agentskills.git",
+            "https://GITHUB.COM/adam-s-daniel/Adam-AgentSkills",
         ):
             with self.subTest(url=variant):
                 entry = run_eval.registry_for_url(registries, variant)
@@ -9522,7 +9523,7 @@ class TestIssue63Review(unittest.TestCase):
             path.mkdir(parents=True)
             (path / "fixture.yaml").write_text(yaml.safe_dump(
                 {"skill": "a-skill", "prompt": "do the thing",
-                 "registry": "https://github.com/Adam-S-Daniel/agentskills"},
+                 "registry": "https://github.com/Adam-S-Daniel/adam-agentskills"},
                 sort_keys=False), encoding="utf-8")
         found = self._fixture_dirs(evals_root)
         self.assertIn(planted["nested"] / "fixture.yaml", found,
@@ -9643,8 +9644,8 @@ class TestIssue63Review(unittest.TestCase):
     def test_real_registries_yml_passes_shape_validation(self):
         entries = run_eval._load_registries_config()
         names = {e["name"] for e in entries}
-        self.assertEqual(names, {"agentskills", "cms-platform", "adamdaniel.ai",
-                                 "agentskills-private"})
+        self.assertEqual(names, {"adam-agentskills", "cms-platform", "adamdaniel.ai",
+                                 "adam-agentskills-private"})
 
 
 class TestIssue63Round2(unittest.TestCase):
@@ -9813,7 +9814,7 @@ class TestIssue63Round2(unittest.TestCase):
             seed_dir.mkdir(parents=True)
             (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
             fixture = {"skill": "some-skill",
-                      "registry": "https://github.com/Adam-S-Daniel/agentskills"}
+                      "registry": "https://github.com/Adam-S-Daniel/adam-agentskills"}
             import yaml
             (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
 
@@ -9853,13 +9854,14 @@ class TestIssue63Round2(unittest.TestCase):
 
     def test_registry_not_found_ends_via_exit_2_with_message_naming_path(self):
         # Review round 3, item D: the original version of this test asserted
-        # the SIBLING DEFAULT for "agentskills-private" specifically
-        # (../agentskills-private next to THIS repo's own checkout) does not
-        # resolve to a directory — which fails on entirely correct code for
-        # any maintainer who has that real fleet repo cloned beside
+        # the SIBLING DEFAULT for "adam-agentskills-private" specifically
+        # (../adam-agentskills-private next to THIS repo's own checkout) does
+        # not resolve to a directory — which fails on entirely correct code
+        # for any maintainer who has that real fleet repo cloned beside
         # skills-evals (`with_skill` then resolves it and hits
         # skill_not_found instead of registry_not_found; verified locally by
-        # creating a sibling `agentskills-private/` next to this checkout).
+        # creating a sibling `adam-agentskills-private/` next to this
+        # checkout).
         #
         # Hermetic fix: run a COPY of the harness rooted inside a fresh tmp
         # directory, with its own scratch registries.yml naming a registry
@@ -9998,7 +10000,7 @@ class TestIssue63Round2(unittest.TestCase):
     def test_repeated_bare_legacy_flag_raises(self):
         with self.assertRaises(ValueError) as ctx:
             run_eval.resolve_registries(["/a", "/b"], None, REPO_ROOT)
-        self.assertIn("agentskills", str(ctx.exception))
+        self.assertIn("adam-agentskills", str(ctx.exception))
 
     # --- N5: registry resolution/validation must abort BEFORE any arm
     # starts, including --arm objective-only ---
@@ -11685,19 +11687,24 @@ class TestIssue81(unittest.TestCase):
 
     def _skill_md(self) -> str | None:
         """The skill's own SKILL.md text, or None (with a printed reason)
-        when no agentskills checkout is reachable.
+        when no adam-agentskills-private checkout is reachable.
 
-        Routed through resolve_registries, same as
-        TestIssue63::test_registries_agree_with_agentskills_own_file, so
-        $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES steer which checkout this
-        reads — and so CI's side-by-side checkout (ci.yml) makes it run for
-        real rather than skip.
+        adam-writing-style lives in the PRIVATE registry, not the public one
+        (it is no longer shipped by any public registry) — so this is routed
+        through resolve_registries' `adam-agentskills-private` entry, unlike
+        TestIssue63::test_registries_agree_with_agentskills_own_file, which
+        reads the public one. $SKILLS_EVALS_REGISTRIES can still steer which
+        checkout this reads, but there is no dedicated env var for the
+        private entry the way $AGENTSKILLS_DIR covers the public one, and
+        CI's public-repo token cannot clone the private repo at all — so this
+        skips (with a printed reason) rather than running for real there,
+        same as every other private-registry-dependent check in this suite.
         """
         registries = run_eval.resolve_registries(
-            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
-            os.environ.get("AGENTSKILLS_DIR"))
-        skill_md = (registries["agentskills"]["path"] / "plugins" / "adam"
-                    / "skills" / "adam-writing-style" / "SKILL.md")
+            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT, None)
+        skill_md = (registries["adam-agentskills-private"]["path"] / "plugins"
+                    / "adam-private-anything-anywhere" / "skills"
+                    / "adam-writing-style" / "SKILL.md")
         if not skill_md.is_file():
             return None
         return skill_md.read_text(encoding="utf-8")
@@ -11745,8 +11752,9 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the avoid-list drift "
-                      "check")
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the avoid-list "
+                      "drift check")
             # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
             # pytest's `-rfEs` prints skip reasons; the serial run still has no
             # -v of its own, so skipTest's reason is never printed there —
@@ -11781,7 +11789,8 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the avoid-list "
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the avoid-list "
                       "leftover check")
             print(reason)
             self.skipTest(reason)
@@ -11804,7 +11813,8 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the use-freely check")
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the use-freely check")
             print(reason)
             self.skipTest(reason)
         terms = self._quoted_terms(skill_md, "Use freely")
@@ -15253,7 +15263,8 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the register check")
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the register check")
             print(reason)
             self.skipTest(reason)
         self.assertRegex(skill_md, self.CONTRACTION_RE)
@@ -17778,9 +17789,9 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
             os.environ.get("AGENTSKILLS_DIR"))
-        entry = registries["agentskills"]
+        entry = registries["adam-agentskills"]
         if not entry["path"].is_dir():
-            reason = (f"no agentskills checkout at {entry['path']} — skipping "
+            reason = (f"no adam-agentskills checkout at {entry['path']} — skipping "
                       "the live-template drift check")
             print(reason)
             self.skipTest(reason)

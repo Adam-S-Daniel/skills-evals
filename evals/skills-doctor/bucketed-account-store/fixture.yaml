@@ -45,7 +45,7 @@
 # changes nothing at all) and destroyed the evidence.
 
 skill: skills-doctor
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 model: claude-sonnet-5
 

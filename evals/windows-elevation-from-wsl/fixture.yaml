@@ -36,7 +36,7 @@
 # check reading this log cannot be added without the flag.
 
 skill: windows-elevation-from-wsl
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # Same calibration as workflow-path-audit: arms on a pinned mid-tier model so
 # the with/without comparison is not flattened by a ceiling effect, and so the

@@ -76,8 +76,9 @@ def write_skill(directory: Path, name: str, description: str, body: str = "body\
 
 def make_registry(root: Path, bundle: str = "adam",
                   skills=FIXTURE_SKILLS) -> Path:
-    """A miniature agentskills checkout, plus a skills.lock whose digests are
-    computed from the tree it ships — so the lock can never rot against it."""
+    """A miniature adam-agentskills-shaped checkout, plus a skills.lock whose
+    digests are computed from the tree it ships — so the lock can never rot
+    against it."""
     registry = root / "registry"
     for name in skills:
         write_skill(registry / "plugins" / bundle / "skills" / name,
@@ -284,7 +285,7 @@ class LockAndDigestTests(unittest.TestCase):
         self.assertEqual(arms.unlabelled_digest("ABSENT"), "ABSENT")
 
     def test_digest_matches_the_registry_generator(self):
-        # Binds this third copy of the algorithm to agentskills' own. Skipped
+        # Binds this third copy of the algorithm to adam-agentskills' own. Skipped
         # where no registry is checked out; propagation.yml runs this suite
         # WITH one, and the live plugin arm is the same binding by other means.
         # The child marker is read FIRST, before any other statement of this
@@ -297,7 +298,7 @@ class LockAndDigestTests(unittest.TestCase):
         registry = run_propagation.resolve_registry(None)
         generator = registry / "scripts" / "generate_skills_lock.py"
         if not generator.is_file():
-            self.skipTest(f"no agentskills checkout at {registry}")
+            self.skipTest(f"no adam-agentskills checkout at {registry}")
         root = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         skill = write_skill(root / "s", "s", "desc",
@@ -1157,10 +1158,12 @@ class RunnerTests(unittest.TestCase):
 
     def test_a_relative_registry_still_finds_the_hook(self):
         # The CI failure, as a mutation of the CALLER rather than the harness:
-        # propagation.yml passes `--registry ../agentskills`, and the arms run
-        # the hook with `cwd` set to a scratch workspace — so a registry left
-        # relative was read against THAT directory and bash could not find the
-        # hook (rc=127, "No such file or directory"). Both hook-running arms
+        # propagation.yml passed `--registry ../agentskills` at the time (now
+        # `--registry ../adam-agentskills`; the failure mode is unchanged),
+        # and the arms run the hook with `cwd` set to a scratch workspace —
+        # so a registry left relative was read against THAT directory and
+        # bash could not find the hook (rc=127, "No such file or directory").
+        # Both hook-running arms
         # went INCONCLUSIVE; every local invocation had passed an absolute path,
         # which is why nothing here saw it first.
         #
@@ -2195,7 +2198,7 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         # The registry still gets named — it is the right answer for a red ARM.
         # What must not survive is the old body's claim that it is where to
         # look FIRST regardless of which job went red.
-        self.assertIn("agentskills registry", body)
+        self.assertIn("adam-agentskills registry", body)
 
     # ---- B2: which write each pair of results reaches ----
 

@@ -14,7 +14,7 @@
 # dimension.
 
 skill: writing-adrs
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # Pinned mid-tier model, same rationale as every other fixture here: an
 # Opus-tier agent could plausibly ace this without the skill (ceiling
