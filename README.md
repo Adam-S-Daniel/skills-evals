@@ -64,6 +64,10 @@ evals/
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
+                           # vendor's release notes' effect on a repo
+    fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
+    seed/                  # ExampleCLI 4.1.0-4.3.0 release notes + a small consumer repo
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py

@@ -14,13 +14,14 @@
 #   here are trusted because only maintainers can push to this repo; the only
 #   prompts ever run are this repo's committed fixtures. Never accept external
 #   fixture contributions into this path without dropping the key first.
-#   The trust boundary equally includes the three registries checked out
-#   below (agentskills, cms-platform, adamdaniel.ai): the with_skill arm
-#   installs skill content from whichever registry the fixture names, from
-#   that registry's default branch, and executes it under bypassPermissions
-#   with the key in env — write access to any of the three checked-out
-#   registries is equivalent to key access here. All four repos (this one
-#   included) are maintainer-only; keep it that way or drop the key.
+#   The trust boundary equally includes the four registries checked out
+#   below (agentskills, adam-agentskills, cms-platform, adamdaniel.ai): the
+#   with_skill arm installs skill content from whichever registry the
+#   fixture names, from that registry's default branch, and executes it
+#   under bypassPermissions with the key in env — write access to any of the
+#   four checked-out registries is equivalent to key access here. All five
+#   repos (this one included) are maintainer-only; keep it that way or drop
+#   the key.
 #   cms-platform and adamdaniel.ai also land commits on their default
 #   branches through automated lanes — Decap CMS editorial publish loops,
 #   auto-merge nudges, dependabot auto-merge — not only direct maintainer
@@ -115,7 +116,7 @@
 #   class name, and refresh_models.py is written to produce nothing else. The
 #   token-exchange failure output below is a separate pre-existing path.
 #
-# * All five checkouts use `persist-credentials: false`; push auth is injected
+# * All six checkouts use `persist-credentials: false`; push auth is injected
 #   only in the two steps that push — the roster-proposal step and the final
 #   commit step — and only in their own `env:`. Both sit AFTER the eval, so
 #   while the bypassPermissions agent is running, no GitHub write credential
@@ -240,6 +241,13 @@ jobs:
         with:
           repository: Adam-S-Daniel/agentskills
           path: agentskills
+          persist-credentials: false
+
+      - name: Check out adam-agentskills registry (side-by-side)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          repository: Adam-S-Daniel/adam-agentskills
+          path: adam-agentskills
           persist-credentials: false
 
       - name: Check out cms-platform registry (side-by-side)
@@ -649,6 +657,7 @@ jobs:
             --arm both \
             --guidance ../_agent-guidance \
             --registry agentskills=../agentskills \
+            --registry adam-agentskills=../adam-agentskills \
             --registry cms-platform=../cms-platform \
             --registry adamdaniel.ai=../adamdaniel.ai
 

@@ -17,6 +17,11 @@ registries:
   - name: agentskills
     url: https://github.com/Adam-S-Daniel/agentskills
     layout: "plugins/*/skills/*/SKILL.md"
+  # The new public registry (ADR 0013 there), the only one holding
+  # vendor-release-impact-issues.
+  - name: adam-agentskills
+    url: https://github.com/Adam-S-Daniel/adam-agentskills
+    layout: "plugins/*/skills/*/SKILL.md"
   - name: cms-platform
     url: https://github.com/Adam-S-Daniel/cms-platform
     layout: "skills/*/SKILL.md"

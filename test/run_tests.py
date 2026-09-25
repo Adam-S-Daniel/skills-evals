@@ -4173,7 +4173,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         checkout_steps = [s for s in self._steps()
                           if (s.get("uses") or "").startswith("actions/checkout@")]
         count = len(checkout_steps)
-        number_words = {2: "two", 3: "three", 4: "four", 5: "five"}
+        number_words = {2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
         self.assertIn(count, number_words,
                       f"unexpected number of checkout steps: {count}")
         self.assertIn(
@@ -9643,8 +9643,8 @@ class TestIssue63Review(unittest.TestCase):
     def test_real_registries_yml_passes_shape_validation(self):
         entries = run_eval._load_registries_config()
         names = {e["name"] for e in entries}
-        self.assertEqual(names, {"agentskills", "cms-platform", "adamdaniel.ai",
-                                 "agentskills-private"})
+        self.assertEqual(names, {"agentskills", "adam-agentskills", "cms-platform",
+                                 "adamdaniel.ai", "agentskills-private"})
 
 
 class TestIssue63Round2(unittest.TestCase):
