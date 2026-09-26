@@ -548,6 +548,17 @@ Five properties are load-bearing and should survive any rework:
    leaves.** Both the exemptions that used to sit beside it, and both length
    caps, are deleted — see below.
 
+   **A refresh is only a PROPOSAL once the committed date is stale.** The
+   COMMITTED `last_seen` (in `evals/roster.yml`) only needs re-reviewing at
+   the cadence the ageing window actually cares about, not on every run: a
+   refresh is routine — recorded, not proposed — while the committed date is
+   younger than half of `catalogue_seen_max_age_days`, and becomes material
+   once it is at least that old. Proposing on every observation made the
+   weekly tracking issue nothing but date churn (#200); the half-window cut
+   still refreshes the committed history at least every ~90 days, which
+   keeps a departed model's eviction clock (above) from running down more
+   than half its allowance before a human last confirmed the date.
+
    **Ageing out is not a repair.** It ends a plant's future effect, but it
    does not undo a retirement the plant already caused: a model whose
    measured share fabricated usage pushed under the exit bar is proposed

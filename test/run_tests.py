@@ -28925,6 +28925,77 @@ class TestIssue147(unittest.TestCase):
         self.assertIn("claude-sonnet-5",
                       [entry["id"] for entry in later["catalogue_seen"]])
 
+    def test_routine_last_seen_refresh_within_half_window_says_same(self):
+        """Regression for #200: a week's worth of `last_seen` churn alone
+        used to file a tracking issue every time, even though nothing a
+        reviewer would act on had changed. A committed date well within
+        half the observation window is routine — recorded, not proposed."""
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=7)).date().isoformat()
+        observed = self._compute(models=models, census=census, previous=previous)
+        refreshes = [change for change in observed["proposal"]["changes"]
+                     if change["field"] == "catalogue_seen.last_seen"]
+        self.assertEqual(observed["proposal"]["status"], "same",
+                         observed["proposal"]["changes"])
+        self.assertEqual(len(refreshes), len(previous["catalogue_seen"]))
+
+    def test_last_seen_refresh_is_material_at_exactly_half_the_window(self):
+        """The cut is "at least half the window old", not "more than" —
+        exactly half is already material, one day younger is still
+        routine. `_update_catalogue_seen` measures a departed model's
+        eviction from this same committed date, so waiting past half the
+        window to refresh it would let a departed model's remaining
+        runway fall below half of `catalogue_seen_max_age_days`."""
+        half = self._policy()["catalogue_seen_max_age_days"] // 2
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=half)).date().isoformat()
+        at_half = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(at_half["proposal"]["status"], "differs",
+                         at_half["proposal"]["changes"])
+
+        younger_previous = copy.deepcopy(previous)
+        for entry in younger_previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=half - 1)).date().isoformat()
+        younger = self._compute(models=models, census=census,
+                                previous=younger_previous)
+        self.assertEqual(younger["proposal"]["status"], "same",
+                         younger["proposal"]["changes"])
+
+    def test_routine_refresh_rides_along_with_a_material_change(self):
+        """A routine date refresh does not vanish from `changes` just
+        because a material change also fired in the same run — the table
+        and the rendered file still carry every refresh riding along."""
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=7)).date().isoformat()
+        models = copy.deepcopy(models)
+        models["models"].append(self._model("claude-new-model-1",
+                                            "2026-09-12T00:00:00Z"))
+        observed = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(observed["proposal"]["status"], "differs",
+                         observed["proposal"]["changes"])
+        refreshes = [c for c in observed["proposal"]["changes"]
+                     if c["field"] == "catalogue_seen.last_seen"]
+        additions = [c for c in observed["proposal"]["changes"]
+                     if c["field"] == "catalogue_seen"
+                     and c["to"] == "claude-new-model-1"]
+        self.assertEqual(len(refreshes), len(previous["catalogue_seen"]))
+        self.assertEqual(len(additions), 1)
+
+    def test_render_summary_notes_routine_refreshes_left_for_next_proposal(self):
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=7)).date().isoformat()
+        observed = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(observed["proposal"]["status"], "same",
+                         observed["proposal"]["changes"])
+        summary = roster.render_summary(observed)
+        self.assertIn("Nothing to propose", summary)
+        self.assertIn("catalogue_seen.last_seen", summary)
+        self.assertIn("left for the next material proposal", summary)
+
     def test_arm_order_is_a_reviewable_proposal_change(self):
         proposal = roster._proposal(
             {"judge": {"id": "judge"}, "preflight": {"id": "arm-a"}},
@@ -28932,7 +29003,8 @@ class TestIssue147(unittest.TestCase):
             [{"id": "arm-a", "reason": "first"},
              {"id": "arm-b", "reason": "second"}],
             {"id": "judge", "reason": "judge"},
-            {"id": "arm-a", "reason": "preflight"}, [], {})
+            {"id": "arm-a", "reason": "preflight"}, [], {},
+            now=self.NOW, max_age_days=self._policy()["catalogue_seen_max_age_days"])
         self.assertEqual(proposal["status"], "differs")
         self.assertEqual(
             [change["field"] for change in proposal["changes"]], ["arms.order"])

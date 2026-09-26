@@ -42,9 +42,14 @@ a one-way-door review of the writer.
    `roster/latest.json` off `eval-results`. Its census input stays
    `usage/latest.json` off `eval-results` (untrusted). Its output is still
    published to `eval-results` as `roster/latest.json` for the explorer, and
-   when it differs from the committed roster in any seat, arm order, or
-   `catalogue_seen` membership or `last_seen` date, `eval.yml` admits the
-   rendered proposal against the committed-roster contract. A valid proposal is
+   when it differs from the committed roster in any seat, arm order,
+   `catalogue_seen` membership, or a `catalogue_seen` entry's committed
+   `last_seen` that is at least half of `catalogue_seen_max_age_days` old,
+   `eval.yml` admits the rendered proposal against the committed-roster
+   contract. A `last_seen` refresh younger than that half-window still rides
+   along in the proposal's `changes` once something else makes a proposal,
+   but does not by itself make the run differ — otherwise routine weekly date
+   churn alone would file a tracking issue every run (#200). A valid proposal is
    pushed as one commit on the
    bot-owned branch `roster/proposal` (recreated from `main` every run; never a
    shared branch) and upserts one tracking issue (marker
@@ -84,10 +89,15 @@ a one-way-door review of the writer.
   whose assertion is "the running set is unchanged by this input" — RED on
   `424eebf`, where `select_models` reads the published roster.
 - **The trusted history costs a human merge per meaningful change.** Model
-  releases and retirements need review, and a weekly Models API observation can
-  also refresh a committed `last_seen` date even when no seat changes. That
-  history-only proposal is intentional: it keeps the 180-day window based on
-  a reviewed observation rather than an unmerged ephemeral result. Automation
+  releases and retirements need review, and once a `catalogue_seen` entry's
+  committed `last_seen` is at least half of `catalogue_seen_max_age_days`
+  old, a Models API observation can also make a proposal on its own,
+  refreshing that date even when no seat changes. That history-only proposal
+  is intentional: it keeps the 180-day window anchored to a reviewed
+  observation rather than an unmerged ephemeral result — but only at the
+  cadence the window actually needs (about every 90 days), not on every
+  week's routine re-observation, which would otherwise make the tracking
+  issue nothing but date churn (#200). Automation
   is kept where it is cheap
   (noticing, computing, proposing) and removed where it was expensive
   (deciding). This is the fleet's sanctioned bot-write path — a branch and a
