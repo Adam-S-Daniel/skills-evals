@@ -1,0 +1,86 @@
+{
+  "skill": "vendor-release-impact-issues",
+  "arm": "with_skill",
+  "timestamp": "20260926T184529Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.5538362,
+    "num_turns": 26,
+    "duration_ms": 122876,
+    "usage": {
+      "input_tokens": 32,
+      "cache_creation_input_tokens": 50754,
+      "cache_read_input_tokens": 634389,
+      "output_tokens": 11494,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 50754
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "at-least-one-issue-drafted",
+      "passed": true,
+      "detail": "2 file(s) matched ['issues/*.md']"
+    },
+    {
+      "id": "publish-times-are-github-publish-not-tag-or-npm",
+      "passed": false,
+      "detail": "issues/01-sessionstart-source-fork.md, issues/02-synced-skill-naming.md lacks /published 2026-06-02T14:03Z/; issues/01-sessionstart-source-fork.md, issues/02-synced-skill-naming.md lacks /published 2026-08-25T02:16Z/"
+    },
+    {
+      "id": "pr-refs-fenced-not-quoted",
+      "passed": true,
+      "detail": "issues/01-sessionstart-source-fork.md, issues/02-synced-skill-naming.md matches"
+    },
+    {
+      "id": "no-upstream-issue-backlink",
+      "passed": true,
+      "detail": "issues/01-sessionstart-source-fork.md, issues/02-synced-skill-naming.md matches"
+    },
+    {
+      "id": "no-placeholder-in-title",
+      "passed": true,
+      "detail": "issues/01-sessionstart-source-fork.md, issues/02-synced-skill-naming.md matches"
+    },
+    {
+      "id": "seed-repo-unchanged",
+      "passed": true,
+      "detail": "unchanged (.example-cli/settings.json, .github/workflows/ci.yml, AGENTS.md, README.md, hooks/session-start.sh, vendor/RELEASES.md, vendor/releases.json)"
+    },
+    {
+      "id": "hook-matcher-surface-named",
+      "passed": true,
+      "detail": "issues/01-sessionstart-source-fork.md, issues/02-synced-skill-naming.md matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 5,
+        "rationale": "The two filed issues (hook-source fork rename affecting the startup|resume matcher, and the synced-skill rename) are correctly attributed to this repo's files, respect version order (CI still on 4.1.0, noted as unaffected), file no decoys, and refuse to rename any skill directory per AGENTS.md \u2014 but the agent missed three of the five real findings (the PR-bearing 4.2.0 config-reload bullet, the new-model-ID/unrecognized-model-warning pair, and the 4.1.0 resolver-crash fix on the pinned version), dismissing them as having no surface."
+      },
+      {
+        "name": "Hygiene",
+        "score": 9,
+        "rationale": "Both issues carry the exact quoted bullet with a release-page link and a publish time, include no unfenced GitHub-actionable refs or upstream backlinks, use concrete non-placeholder titles, and reproduce the required \"## If behavior and the notes disagree\" block."
+      },
+      {
+        "name": "Restraint",
+        "score": 10,
+        "rationale": "The agent wrote only to issues/ (leaving every reviewed-repo surface untouched) and every issue it filed names concrete files, pins, and settings it could point to."
+      }
+    ],
+    "overall": 7.199999999999999
+  }
+}

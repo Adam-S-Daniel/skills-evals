@@ -1,0 +1,86 @@
+{
+  "skill": "vendor-release-impact-issues",
+  "arm": "without_skill",
+  "timestamp": "20260926T184529Z",
+  "error": null,
+  "agent": {
+    "cost_usd": 0.2506181,
+    "num_turns": 14,
+    "duration_ms": 82825,
+    "usage": {
+      "input_tokens": 12,
+      "cache_creation_input_tokens": 20400,
+      "cache_read_input_tokens": 198787,
+      "output_tokens": 7584,
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 0,
+        "ephemeral_5m_input_tokens": 20400
+      },
+      "inference_geo": "global",
+      "iterations": [],
+      "speed": "standard"
+    }
+  },
+  "objective_checks": [
+    {
+      "id": "at-least-one-issue-drafted",
+      "passed": true,
+      "detail": "3 file(s) matched ['issues/*.md']"
+    },
+    {
+      "id": "publish-times-are-github-publish-not-tag-or-npm",
+      "passed": false,
+      "detail": "issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md lacks /published 2026-06-02T14:03Z/; issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md lacks /published 2026-07-14T09:47Z/; issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md lacks /published 2026-08-25T02:16Z/"
+    },
+    {
+      "id": "pr-refs-fenced-not-quoted",
+      "passed": true,
+      "detail": "issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md matches"
+    },
+    {
+      "id": "no-upstream-issue-backlink",
+      "passed": false,
+      "detail": "issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md contains /(?<!`)example-vendor/example-cli#6235(?!`)/"
+    },
+    {
+      "id": "no-placeholder-in-title",
+      "passed": false,
+      "detail": "issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md contains /^# .*<[A-Za-z/!]/"
+    },
+    {
+      "id": "seed-repo-unchanged",
+      "passed": true,
+      "detail": "unchanged (.example-cli/settings.json, .github/workflows/ci.yml, AGENTS.md, README.md, hooks/session-start.sh, vendor/RELEASES.md, vendor/releases.json)"
+    },
+    {
+      "id": "hook-matcher-surface-named",
+      "passed": true,
+      "detail": "issues/01-session-start-hook-misses-forked-sessions.md, issues/02-synced-skill-invocation-docs-broken-by-naming-change.md, issues/03-revisit-ci-pinned-example-cli-version.md matches"
+    }
+  ],
+  "judge": {
+    "dimensions": [
+      {
+        "name": "Correctness",
+        "score": 6,
+        "rationale": "The two behavior-break findings (fork-source matcher, synced-skill rename) and the 4.1.0 resolver-crash CI pin are each correctly grouped and attributed to this repo's files, decoys were rightly excluded, and no skill-directory rename was proposed \u2014 but the new-model-ID/unrecognized-model-warning pair is missing entirely and the PR-bearing 4.2.0 bullet is only mentioned in passing (misfiled as 4.3.0) rather than getting its own issue."
+      },
+      {
+        "name": "Hygiene",
+        "score": 2,
+        "rationale": "Capped at 4 and well below it: no issue carries a release-page link or publish time, upstream ref example-vendor/example-cli#6235 and bare #6235/#812 sit in prose/quotes unfenced (creating live autolinks/upstream backlinks), and not a single issue includes the required '## If behavior and the notes disagree' block."
+      },
+      {
+        "name": "Restraint",
+        "score": 9,
+        "rationale": "The agent touched only files under issues/, left the reviewed repo untouched, and every issue is anchored to a concrete file, pin, or setting with decoys deliberately omitted."
+      }
+    ],
+    "overall": 5.4
+  }
+}
