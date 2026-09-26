@@ -2189,7 +2189,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         "catalogue_seen": catalogue_seen_entries,
         "proposal": _proposal(previous, previous_arms, previous_seen, arms,
                               judge, preflight, catalogue_seen_entries,
-                              evidence),
+                              evidence, now=now,
+                              max_age_days=policy["catalogue_seen_max_age_days"]),
     }
 
 
@@ -2227,7 +2228,7 @@ def _change(kind: str, field: str, from_value, to_value, reason: str) -> dict:
 def _proposal(previous: dict | None, previous_arms: list[str],
               previous_seen: list[dict], arms: list[dict], judge: dict,
               preflight: dict, catalogue_seen_entries: list[dict],
-              evidence: dict) -> dict:
+              evidence: dict, *, now: datetime, max_age_days: int) -> dict:
     """What this run would CHANGE about the committed roster, and why.
 
     THE OUTPUT OF THIS MODULE IS A PROPOSAL, NOT THE RUNNING SET (ADR
@@ -2247,6 +2248,23 @@ def _proposal(previous: dict | None, previous_arms: list[str],
 
     `status` is "same" or "differs"; on "same" `eval.yml` closes the
     tracking issue rather than leaving a stale one open.
+
+    A `catalogue_seen.last_seen` refresh is ROUTINE — recorded in
+    `changes` below like every other change, but not by itself enough to
+    make `status` "differs" — when the COMMITTED date is younger than
+    half of `max_age_days` (#200). Every live model's `last_seen` marches
+    forward on every single run whether or not anything a reviewer needs
+    to see changed, and unconditionally proposing on that alone made the
+    weekly tracking issue nothing but date churn (issue #200: twelve rows,
+    all of them `catalogue_seen.last_seen`, nothing a merge would change).
+    A routine refresh still rides along in `changes` so it is applied the
+    next time something material actually needs review. Once the
+    committed date is at LEAST half the window old, though, the refresh
+    IS material: `_update_catalogue_seen`'s eviction clock measures a
+    departed model's remaining runway from that same committed date, so a
+    refresh has to land at least every `max_age_days / 2` or a model that
+    leaves the API keeps less than half its intended history before it
+    ages out.
     """
     changes: list[dict] = []
     arm_ids = [a["id"] for a in arms]
@@ -2295,7 +2313,20 @@ def _proposal(previous: dict | None, previous_arms: list[str],
             "seat", "arms.order", previous_arm_ids, arm_ids,
             "the ordered arm list changed; its first entry is the default "
             "unpinned model"))
-    return {"status": "differs" if changes else "same", "changes": changes}
+    # STATUS, NOT JUST "any change at all" (#200). Every change kind above
+    # is material except `catalogue_seen.last_seen`, which is material
+    # only once the COMMITTED date (`change["from"]`) is at least half of
+    # `max_age_days` old — see the docstring for why the half-window cut
+    # exists. Falling back to `now` when the committed date does not
+    # parse mirrors `_update_catalogue_seen`'s own `parse_ts(...) or now`,
+    # so an unparseable date reads as "just seen" (routine) rather than
+    # ancient, the same fallback the eviction check already trusts.
+    half_window = timedelta(days=max_age_days / 2)
+    material = any(
+        change["field"] != "catalogue_seen.last_seen"
+        or (now - (parse_ts(change["from"]) or now)) >= half_window
+        for change in changes)
+    return {"status": "differs" if material else "same", "changes": changes}
 
 
 def render_summary(roster: dict, previous_state: str = "auto") -> str:
@@ -2376,6 +2407,19 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     else:
         lines += ["The committed roster (`evals/roster.yml`) already says what "
                   "this run would compute. Nothing to propose.", ""]
+        # ROUTINE REFRESHES STILL GET A LINE (#200), even though they did
+        # not earn a proposal: a reviewer reading "nothing to propose" on
+        # a week that actually moved a dozen `last_seen` dates should not
+        # have to go read the JSON to learn that.
+        refreshes = [c for c in (proposal.get("changes") or [])
+                    if c.get("field") == "catalogue_seen.last_seen"]
+        if refreshes:
+            plural = len(refreshes) != 1
+            lines += [f"{len(refreshes)} `catalogue_seen.last_seen` refresh"
+                      f"{'es' if plural else ''} "
+                      f"{'were' if plural else 'was'} left for the next "
+                      f"material proposal (routine: the committed dates are "
+                      f"within half the observation window).", ""]
 
     source = roster["source"]
     lines += [f"Models API `{source['models_api_at']}` · census "
