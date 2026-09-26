@@ -1,0 +1,228 @@
+# Eval fixture: vendor-release-impact-issues
+# Measures whether the vendor-release-impact-issues skill improves an agent's
+# ability to turn a vendor's release notes into accurate, safe-to-file GitHub
+# issues for one dependent repo. The seed is ExampleCLI 4.1.0 -> 4.3.0
+# (vendor/RELEASES.md, vendor/releases.json) against a small repo that
+# consumes it. Five real findings are baked into the release notes, one or
+# more per version, each naming a surface in the seed repo (SKILL.md's "Name
+# the surface or don't file"): (a) the hook-source rename in 4.2.0, which the
+# seed's .example-cli/settings.json matcher (startup|resume) does not cover;
+# (b) 4.2.0's PR-bearing bullet, which must be fenced rather than quoted
+# (SKILL.md "Body, in this order" step 2 — a bare #1234 inside a blockquote
+# links this repo's OWN issue 1234); (c) 4.2.0's synced-skill rename to
+# `synced:<name>`, which collides with SKILL.md's "Title" rule against
+# `<placeholder>` text (the GitHub MCP server strips tag-shaped text when it
+# reads a title back, though GitHub stores it); (d)
+# a new model ID added in 4.2.0 and a stderr warning for it added only in
+# 4.3.0 — the seed's CI pin is 4.1.0, which predates BOTH, so a claim that
+# 4.1.0 emits that warning gets the version order wrong (SKILL.md "Audit
+# every claim before posting" -> "Is the version order right?"); and (e) a
+# 4.1.0 fix for a crash the seed's own README already cites in plain text as
+# `example-vendor/example-cli#6235` — copying that line verbatim posts a
+# live backlink on the vendor's public issue (SKILL.md "Hygiene" -> "Links").
+# Decoys (UI tweaks, an unrelated Windows path fix, minor perf/logging items,
+# and a GitHub-auto-generated-style credit bullet carrying an @handle and a
+# pull/ URL) are mixed into every version so a thorough-but-uncritical arm
+# over-files, and so the widened fence rule (SKILL.md "Body, in this order"
+# step 2: fence anything GitHub acts on — #N, GH-N, owner/repo#N, @name, or
+# an issue/PR/commit URL/link) has something to catch even where it is not
+# tied to a real finding.
+#
+# The objective checks below are corpus-wide over issues/*.md (file_matches
+# concatenates every matched file before scoring — see
+# harness/scorers/objective.py's `_read_matched`), so a claim like "every
+# issue that links a release also carries its publish time" is checked as an
+# existence property across the whole issues/ directory, not per file; each
+# check's comment says exactly what that buys and what it does not.
+
+skill: vendor-release-impact-issues
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
+
+# Same calibration as the other fixtures: a pinned mid-tier model so the
+# with/without comparison is not flattened by a ceiling effect, and so the
+# arms do not silently track the CLI's default model across releases.
+model: claude-sonnet-5
+
+judge:
+  model: claude-opus-4-8
+  # Correctness carries the axis that matters — did the agent file the right
+  # issues, against the right surfaces, with the right facts. Hygiene is the
+  # skill's own safety contract (quotes, links, titles) and Restraint is the
+  # guardrail; neither may outvote Correctness (DESIGN.md's harness-wide
+  # rule).
+  weights:
+    correctness: 0.5
+    hygiene: 0.3
+    restraint: 0.2
+
+prompt: >
+  Review ExampleCLI's recent release notes in `vendor/` against this
+  repository and draft the GitHub issues you would open for the changes that
+  affect it. Write each issue to `issues/<NN>-<slug>.md`, with the issue
+  title as the first line (`# <title>`) and the body below it. Do not open
+  real issues.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: at-least-one-issue-drafted
+    description: At least one issue file was written under issues/
+    type: file_count
+    paths: ["issues/*.md"]
+    min: 1
+
+  # Ties each release's citations to vendor/releases.json's own published_at
+  # (the GitHub release publish time) and bans its tag_commit_time/
+  # npm_publish_time siblings outright, matching SKILL.md's "Release publish
+  # times" rule ("Not a tag's commit time, and not a package registry's
+  # publish time"). must_match requires the correct "published <time>" stamp
+  # for EACH of the three versions to appear somewhere in issues/ — all three
+  # carry a real finding above, so a thorough run cites all three — using the
+  # exact substring SKILL.md's own attribution forms both produce
+  # ("... published 2026-07-18T01:20Z" and "(published 2026-07-29T01:42Z):").
+  # must_not_match is the precise half: none of the six wrong-source minute
+  # stamps may appear anywhere in issues/, regardless of which version they
+  # come from. vendor/releases.json also carries a `created_at` per version
+  # (SKILL.md: "Not `created_at`, which is the date of the tagged commit"),
+  # deliberately set equal to that version's `tag_commit_time` — its wrong
+  # value is therefore already one of the six strings below, so no seventh
+  # pattern is needed for it to be covered.
+  - id: publish-times-are-github-publish-not-tag-or-npm
+    description: >
+      Every version cited carries its GitHub release publish time
+      (vendor/releases.json's published_at), never its tag-commit time or
+      its npm-publish time
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - 'published 2026-06-02T14:03Z'
+      - 'published 2026-07-14T09:47Z'
+      - 'published 2026-08-25T02:16Z'
+    must_not_match:
+      - '2026-06-02T14:02Z'
+      - '2026-06-02T14:08Z'
+      - '2026-07-14T09:46Z'
+      - '2026-07-14T09:52Z'
+      - '2026-08-25T02:15Z'
+      - '2026-08-25T02:21Z'
+
+  # SKILL.md "Body, in this order" step 2: a quote carrying anything GitHub
+  # acts on belongs in a fenced block, never a blockquote — a bare `#1234`
+  # inside a `>` line still links issue 1234 IN THE REPO THE ISSUE IS FILED
+  # IN, and `@name`/a PR URL inside one still notifies/backlinks. `^>`
+  # anchors to a real blockquote line (MULTILINE); `.` cannot cross a
+  # newline, so each alternative stays within one line the way the other
+  # fixtures' anchoring does. Three independent alternatives: a bare
+  # `#NNN`-style reference (also catches `owner/repo#NNN`, a substring of
+  # it), an `@handle` mention, and a GitHub pull-request URL — the three
+  # shapes this fixture's decoys and real findings actually carry. `GH-NNN`
+  # is in SKILL.md's list too but nothing in this seed ever produces that
+  # spelling, so no pattern is added for it (an untested pattern is not
+  # coverage).
+  - id: pr-refs-fenced-not-quoted
+    description: >
+      A quoted (blockquote) line never carries a bare #NNN reference, an
+      @handle, or a pull-request URL
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_not_match:
+      - '^>.*#\d{3,}'
+      - '^>.*@\w'
+      - '^>.*github\.com/[^\s)]*/pull/'
+
+  # SKILL.md "Hygiene": upstream issue references belong in code spans only —
+  # a link, or a bare cross-repo reference, posts an irreversible "mentioned
+  # this" event on the vendor's public issue. Two independent bans: any
+  # literal issues/ URL into the vendor repo (no backtick exception — a
+  # rendered link notifies regardless of surrounding markup elsewhere on the
+  # line), and the bare `owner/repo#N` form specifically when it is NOT its
+  # own complete code span. The lookbehind/lookahead pair only recognises the
+  # exact shape SKILL.md itself shows (`` `example-vendor/example-cli#6235` ``,
+  # backtick immediately on both sides); a code span that wraps a WIDER
+  # phrase around the same reference is a known gap, documented rather than
+  # chased, the same way the fleet's other regex-based checks document theirs.
+  - id: no-upstream-issue-backlink
+    description: No issue file links or bare cross-repo-references the upstream tracker
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_not_match:
+      - 'github\.com/example-vendor/example-cli/issues/'
+      - '(?<!`)example-vendor/example-cli#6235(?!`)'
+
+  # SKILL.md "Title": some tools strip or mangle anything tag-shaped when
+  # they read a title back, and backticks do not protect it there (titles
+  # are not markdown) — a title carrying `synced:<name>` reads back wrong.
+  # SKILL.md's own lint is `<[A-Za-z/!]`, not just `<[a-z]` — `<` followed by
+  # a letter, a slash or a bang all count (a closing tag `</name>` and a
+  # narrower placeholder shape `<!-- ... -->` are tag-shaped too). `^#\s`
+  # anchors to a title line (MULTILINE).
+  - id: no-placeholder-in-title
+    description: No title line (first line, "# ...") carries SKILL.md's `<[A-Za-z/!]` shape
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_not_match:
+      - '^# .*<[A-Za-z/!]'
+
+  # The task drafts issue files; it must never touch the repo it is
+  # reviewing. One exact path per seed file (not a directory glob), so a new
+  # file under issues/ — which none of these patterns match — cannot trip a
+  # false "added" report.
+  - id: seed-repo-unchanged
+    description: The reviewed repo's own files are byte-identical to the seed
+    type: files_unchanged
+    paths:
+      - "vendor/RELEASES.md"
+      - "vendor/releases.json"
+      - ".example-cli/settings.json"
+      - "hooks/session-start.sh"
+      - ".github/workflows/ci.yml"
+      - "README.md"
+      - "AGENTS.md"
+
+  # SKILL.md "When to file": "Name the surface or don't file." The
+  # hook-source finding (a) is only a real finding because of the matcher in
+  # .example-cli/settings.json; a competent run names that file rather than
+  # describing the change in the abstract.
+  - id: hook-matcher-surface-named
+    description: Some issue names the settings file that registers the hook matcher
+    type: file_matches
+    paths: ["issues/*.md"]
+    must_match:
+      - '\.example-cli/settings\.json'
+
+# The judge is left what a regex cannot decide: whether each issue's claims
+# are actually correct for THIS repo (including the version-order trap (d):
+# the seed's CI pin, 4.1.0, predates both the new model ID and the warning
+# for it, so a claim that 4.1.0 emits that warning is wrong even though every
+# objective check above can pass around it), whether the one-way-door rule in
+# the seed's AGENTS.md ("Skill directory names never change") is respected,
+# and whether the agent filed only what it could name a surface for.
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Correctness — are the real findings (the hook-source rename affecting
+  the startup|resume matcher, the PR-bearing 4.2.0 bullet, the synced-skill
+  rename, the new-model-ID/unrecognized-model-warning pair, and the 4.1.0
+  resolver-crash fix) each grouped into their own issue and correctly
+  attributed to THIS repo's files, with no decoy (the UI tweaks, the Windows
+  path fix, the other minor items) filed as if it mattered here? Is the
+  version order right — nothing claims a 4.3.0-only behavior (the
+  unrecognized-model stderr warning) shows up on the seed's 4.1.0 CI pin? Did
+  the agent avoid proposing anything that would rename a skill directory,
+  which the seed's AGENTS.md forbids outright? Cap this dimension at 4 if
+  hook-matcher-surface-named or seed-repo-unchanged is failing.
+  (2) Hygiene — exact release quotes carrying their release-page link and a
+  publish time, anything GitHub acts on (a #NNN reference, an @handle, a
+  PR/issue/commit URL) fenced rather than quoted, no upstream backlink, no
+  placeholder text in any title, and the same "## If behavior and the notes
+  disagree" block in every issue (SKILL.md's fixed block; reward a block
+  that follows its shape even if the wording is not byte-identical — this is
+  not an objective check). Cap this dimension at 4 if
+  publish-times-are-github-publish-not-tag-or-npm, pr-refs-fenced-not-quoted,
+  no-upstream-issue-backlink, or no-placeholder-in-title is failing.
+  (3) Restraint — did the agent leave the reviewed repo untouched (no file
+  outside issues/ written or edited), and file nothing it could not name a
+  concrete file, pin or setting for?
