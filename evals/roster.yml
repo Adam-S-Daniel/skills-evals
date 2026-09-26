@@ -38,29 +38,29 @@ preflight:
 # cannot appear or vanish without a reviewed commit.
 catalogue_seen:
   - id: "claude-fable-5"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-fable-5-1"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-haiku-4-5-20251001"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-opus-4-5-20251101"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-opus-4-6"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-opus-4-7"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-opus-4-8"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-opus-5"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-opus-5-5"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-sonnet-4-5-20250929"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-sonnet-4-6"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
   - id: "claude-sonnet-5"
-    last_seen: "2026-09-22"
+    last_seen: "2026-09-26"
 
 provenance:
   seeded: >-
@@ -68,10 +68,10 @@ provenance:
     scripts/render_roster_yaml.py; merged by a human, per ADR 0001
   from: >-
     the committed evals/roster.yml, the Models API catalogue fetched at
-    2026-09-22T17:02:22Z, and the usage census published at
+    2026-09-26T18:45:27Z, and the usage census published at
     2026-09-22T02:36:27Z; rendered from harness/roster.py's proposal
-  run_id: "35758007707"
-  eval_results_commit: "3e367e049f4685f95448e9da5334e732577cbdfb"
-  models_api_at: "2026-09-22T17:02:22Z"
+  run_id: "36263643613"
+  eval_results_commit: "137f74a6e63805ef0d12961f0fa093bdd8fd235d"
+  models_api_at: "2026-09-26T18:45:27Z"
   census_at: "2026-09-22T02:36:27Z"
-generated_at: "2026-09-22T17:02:22Z"
+generated_at: "2026-09-26T18:45:27Z"
