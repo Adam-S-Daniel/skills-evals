@@ -5721,6 +5721,7 @@ class TestIssue67(unittest.TestCase):
         # here is machinery and may not name one.
         for rel in ("harness/roster.py", "harness/timeweeks.py",
                     "harness/run_eval.py", "scripts/refresh_models.py",
+                    "scripts/fetch_model_defaults.py",
                     "scripts/model_usage_census.py", "evals/roster-policy.yml",
                     ".github/workflows/eval.yml"):
             text = (REPO_ROOT / rel).read_text(encoding="utf-8")
@@ -6691,7 +6692,7 @@ class TestIssue67Review(unittest.TestCase):
         stub_args = ("import sys, json, argparse\n"
                      "p = argparse.ArgumentParser()\n"
                      "for f in ('--models','--policy','--census',"
-                     "'--admin-report','--previous','--out'):\n"
+                     "'--admin-report','--previous','--defaults','--out'):\n"
                      "    p.add_argument(f)\n"
                      "a = p.parse_args()\n")
         (tmp / "scripts" / "refresh_models.py").write_text(
@@ -10981,7 +10982,8 @@ class TestIssue67Review5(unittest.TestCase):
     def test_roster_policy_is_the_single_source_of_thresholds(self):
         base = dict(self._policy())
         for key in ("min_ranked_turns", "min_ranked_share", "cooling_off_days",
-                   "arm_enter_usage_pct", "arm_exit_window_weeks"):
+                   "arm_enter_usage_pct", "arm_exit_window_weeks",
+                   "superseded_exit_weeks"):
             for bad, label in ((None, "missing"), ("20", "string"),
                               (-5, "negative"), (None, "None")):
                 policy = dict(base)

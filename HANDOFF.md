@@ -37,6 +37,11 @@ is about 2026-09-29. That run was the one paid run of the skills-doctor
 fixture (decision 8's exception, below): `with_skill` 5/5, judge 10.0;
 `without_skill` timed out at 600 s, so there is no delta yet. Before its
 re-run, decide whether that arm needs a longer agent budget.
+**Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
+once it merges, the next roster run proposes `claude-opus-5-5` immediately
+as the opus tier's vendor default, with no wait for 2026-09-29, and keeps
+`claude-opus-5` for a one-week buffer (`superseded_exit_weeks: 1`) before
+proposing its retirement.
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 

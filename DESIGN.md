@@ -509,6 +509,25 @@ with no arms (rc 3) and the committed one stands. Rule 2 added no threshold
 of its own: it reads rule 1's entry bar, and every number stays in
 `evals/roster-policy.yml`.
 
+**Vendor defaults override both rules where they resolve (2026-09-27, Adam's
+decision, #202, ADR 0002).** Evals are valued going forward only, so the
+roster follows the vendor's default version of each family rather than the
+fleet's usage of individual versions. `scripts/fetch_model_defaults.py` parses
+the Markdown model-config docs (the "Anthropic API" row of the alias table,
+and the `fable` resolution sentence); `roster.py` matches each display name to
+exactly one available model in the alias's own tier. In such a tier usage has
+one job left — putting the tier on the roster (a model clearing the entry bar,
+a previous arm in it, or the no-census fallback) — and the seat goes to the
+default with no cooling-off. A superseded model gets no usage seat; a
+superseded previous arm is retired once `superseded_exit_weeks` complete ISO
+weeks have passed since the default's `created_at` and its share over the most
+recent such weeks is under the exit bar (a stale or too-thin census holds it,
+and the 8-week exit rule no longer applies to it). A model newer than the
+default is excluded. Any failure to read or resolve a default degrades that
+tier (or all of them) to rules 1 and 2, cooling-off included, loudly; with no
+defaults document the roster is byte-for-byte the one computed without it.
+The preflight keeps its cooling-off, and the judge rule is unchanged.
+
 Five properties are load-bearing and should survive any rework:
 
 1. **No model id in the machinery.** Tier comes from the family word in a

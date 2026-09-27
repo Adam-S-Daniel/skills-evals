@@ -494,8 +494,8 @@ could not make a local check over it safe
 `harness/roster.py` still computes what the roster SHOULD be, from two inputs:
 
 - **availability** — `scripts/refresh_models.py` reads `GET /v1/models` (the
-  only network call in the feature) using the WIF-derived bearer `eval.yml`
-  already mints;
+  only authenticated network call in the feature) using the WIF-derived bearer
+  `eval.yml` already mints;
 - **usage** — `scripts/model_usage_census.py` counts what this account actually
   ran, per model per ISO week, from the local Claude Code transcripts.
 
@@ -523,6 +523,26 @@ usable usage there is no qualifying tier and a roster must not be empty, so
 the rule reverts to newest-per-tier across *all* tiers and every arm's reason
 says which degradation it was. No new threshold was added — rule 2 reads rule
 1's entry bar, and the numbers all stay in `evals/roster-policy.yml`.
+
+**A tier with a known vendor default follows the vendor** (Adam's decision,
+2026-09-27, [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202),
+[ADR 0002](docs/decisions/0002-roster-follows-vendor-defaults.md)).
+`scripts/fetch_model_defaults.py` reads which version each alias (`opus`,
+`sonnet`, `fable`, …) resolves to from the Claude Code
+[model-config docs](https://code.claude.com/docs/en/model-config.md), and the
+roster matches that display name to an id through the Models API. In a tier
+whose default resolved, usage only decides whether the tier is on the roster
+(a model in it clears the entry bar, a previous arm is in it, or there is no
+usable census): the seat goes to the default **at once, with no cooling-off**,
+and rules 1 and 2 do not apply there. A model the default supersedes earns no
+seat from its usage; a previous arm it supersedes keeps its seat until
+`superseded_exit_weeks` (1) complete ISO weeks have passed since its
+successor's `created_at` **and** its share over those weeks is under the 2%
+exit bar, with a stale or too-thin census holding it as before. A model newer
+than the default takes no seat. A tier whose default did not resolve — or
+every tier, when the docs cannot be read — keeps rules 1 and 2 verbatim,
+cooling-off included, and a `roster: ` warning says why. The preflight pick
+keeps its cooling-off either way.
 
 **But what it computes is a PROPOSAL.** When it differs from the committed
 file, the weekly run renders the proposed `evals/roster.yml`

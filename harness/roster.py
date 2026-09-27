@@ -13,8 +13,9 @@ its numerator and denominator beside it, for a human to merge or not.
 
 A PURE FUNCTION OVER FILES. `compute_roster()` takes already-parsed documents
 and a frozen `now`, and returns the roster dict — no network, no clock, no
-environment. The one network call in the whole feature lives in
-`scripts/refresh_models.py`, which produces this module's `models_doc`.
+environment. The network calls in the feature live in
+`scripts/refresh_models.py`, which produces this module's `models_doc`, and
+`scripts/fetch_model_defaults.py`, which produces `defaults_doc`.
 
 WHO IS AN ARM (Adam's decision, 2026-09-22). Two rules, and the second one
 is subordinate to the first:
@@ -48,6 +49,14 @@ is subordinate to the first:
   arms (rc 3) and the committed roster stands — which is the honest
   outcome, not a hole.
 
+  VENDOR DEFAULTS OVERRIDE BOTH RULES WHERE THEY RESOLVE (Adam's decision,
+  2026-09-27, #202, ADR 0002). In a tier whose default version the docs name
+  and exactly one available model matches, usage only decides whether the
+  tier is on the roster; the seat goes to the default with no cooling-off,
+  and a previous arm it supersedes retires by `superseded_exit_weeks` rather
+  than the exit window. See `_default_rung_decision`. Every other tier keeps
+  the two rules above verbatim.
+
 Inputs
   models_doc   {"fetched_at": ..., "models": [{id, created_at, ...}, ...]} —
                availability, straight from GET /v1/models. Trusted for
@@ -61,6 +70,10 @@ Inputs
                empty over the window, and the roster falls back to "newest
                per tier" and says which of those it was in every reason.
   policy       evals/roster-policy.yml — every threshold, plus the tier ladder.
+  defaults_doc {"fetched_at", "source", "defaults": {alias: display name},
+               "error"} from scripts/fetch_model_defaults.py. Optional and
+               untrusted; absent, errored or junk, and the roster is
+               byte-for-byte the one computed without it.
   previous     THE COMMITTED `evals/roster.yml`. Trusted, and the source of
                the observation history (`catalogue_seen`). Present and
                unreadable is FATAL (`TrustedRosterUnreadable`): that is a
@@ -80,6 +93,8 @@ document decide how much work it does.
 Output — roster/latest.json on `eval-results`, an EXHIBIT read by no
 decision, plus `proposal`, which is what `eval.yml` acts on:
   {generated_at, source: {models_api_at, census_at, admin_report_at},
+   defaults: {source, fetched_at, resolved: {alias: id},
+              unresolved: [{alias, reason}]}   -- only when a document was read,
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
    compared_to_previous: bool, previous_state: "compared"|"none",
@@ -126,7 +141,7 @@ from pathlib import Path
 
 import yaml
 
-from timeweeks import parse_ts, window_weeks
+from timeweeks import complete_weeks_since, parse_ts, window_weeks
 from timeweeks import iso_week  # noqa: F401 -- re-exported: identity-checked
                                  # by test_roster_and_census_share_one_week_implementation
 
@@ -243,6 +258,7 @@ _THRESHOLD_CHECKS = {
     "min_ranked_turns": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
     "min_ranked_share": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1,
     "catalogue_seen_max_age_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
+    "superseded_exit_weeks": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
 }
 
 
@@ -1610,11 +1626,264 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
     return True, "", CENSUS_FRESH
 
 
+#: Bounds on the vendor-defaults document (#202). It is written by
+#: `scripts/fetch_model_defaults.py` from a public docs page, so it is an
+#: untrusted input like the census: every field is type-checked, sized, and
+#: shape-checked before any of it can reach a reason — and so the Markdown
+#: `render_summary` prints to a log where `::` is a workflow command.
+DEFAULTS_MAX_ALIASES = 16
+DEFAULTS_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 .]{0,63}\Z")
+DEFAULTS_ALIAS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}\Z")
+DEFAULTS_SOURCE_RE = re.compile(r"^(?!.*::)[A-Za-z0-9._/][A-Za-z0-9._~/:+-]{0,255}\Z")
+DEFAULTS_ERROR_RE = re.compile(r"^[A-Za-z0-9 ._:-]{1,64}\Z")
+
+
+def _resolve_defaults(defaults_doc, available: list[dict],
+                      rungs: list[list[str]], warn) -> dict | None:
+    """The vendor-default model of each tier the docs name, as an id (#202).
+
+    None — and so a roster BYTE-FOR-BYTE the one computed without it —
+    whenever the document is absent, errored, empty or junk: every tier then
+    keeps the newest-in-tier rule, and a `roster: ` warning says why. A
+    well-formed alias that cannot be resolved (no match, several matches, a
+    match in another tier) is recorded under `unresolved` and its tier alone
+    falls back.
+
+    A display name matches a model whose Models-API `display_name` is that
+    name or `Claude <name>`, case-insensitively, among `available` — so a
+    dated snapshot, collapsed onto its alias there, is never a second match.
+    """
+    fallback = "every tier keeps the newest-in-tier rule"
+    if defaults_doc is None:
+        return None
+    if not isinstance(defaults_doc, dict):
+        warn(f"model defaults document is not an object; {fallback}")
+        return None
+    error = defaults_doc.get("error")
+    if error is not None:
+        said = (error if isinstance(error, str) and DEFAULTS_ERROR_RE.match(error)
+                else "an error was recorded")
+        warn(f"model defaults unavailable ({said}); {fallback}")
+        return None
+    entries = defaults_doc.get("defaults")
+    if not isinstance(entries, dict) or not entries:
+        warn(f"model defaults document names no defaults; {fallback}")
+        return None
+    if len(entries) > DEFAULTS_MAX_ALIASES:
+        warn(f"model defaults document names {len(entries)} aliases, past the "
+             f"{DEFAULTS_MAX_ALIASES}-alias bound; {fallback}")
+        return None
+    clean: dict[str, str] = {}
+    junk = 0
+    for alias, name in entries.items():
+        if not (isinstance(alias, str) and DEFAULTS_ALIAS_RE.match(alias.lower())
+                and isinstance(name, str) and DEFAULTS_NAME_RE.match(name)):
+            junk += 1
+            continue
+        clean[alias.lower()] = name
+    if junk:
+        warn(f"model defaults document: skipped {junk} entry/entries that are "
+             f"not a family alias mapped to a display name")
+    if not clean:
+        warn(f"model defaults document names no usable defaults; {fallback}")
+        return None
+
+    source = defaults_doc.get("source")
+    if not (isinstance(source, str) and DEFAULTS_SOURCE_RE.match(source)):
+        source = "the model-config docs"
+    fetched = parse_ts(defaults_doc.get("fetched_at"))
+    try:
+        fetched_at = (fetched.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                      if fetched else None)
+    except (OverflowError, ValueError, OSError):
+        fetched_at = None
+
+    by_rung: dict[int, str] = {}
+    alias_of_rung: dict[int, str] = {}
+    resolved: dict[str, str] = {}
+    unresolved: list[dict] = []
+
+    def unresolve(alias, name, why, label):
+        unresolved.append({"alias": alias, "reason": why})
+        warn(f"model default for `{alias}` ({name}) not resolved: {why}; the "
+             f"{label} tier keeps the newest-in-tier rule")
+
+    for alias in sorted(clean):
+        name = clean[alias]
+        rung = next((i for i, words in enumerate(rungs) if alias in words), None)
+        if rung is None:
+            unresolved.append({"alias": alias, "reason": "not a family word on "
+                                                         "the tier ladder"})
+            warn(f"model default alias `{alias}` is not a family word on the "
+                 f"tier ladder; ignored")
+            continue
+        label = rung_label(rungs, rung)
+        wanted = {name.lower(), f"claude {name}".lower()}
+        matches = [m for m in available
+                   if isinstance(m.get("display_name"), str)
+                   and m["display_name"].lower() in wanted]
+        if not matches:
+            unresolve(alias, name, f"no available model's display name is "
+                                   f"`{name}` or `Claude {name}`", label)
+            continue
+        if len(matches) > 1:
+            unresolve(alias, name, f"{len(matches)} available models share that "
+                                   f"display name", label)
+            continue
+        model = matches[0]
+        found_rung = rung_of(model["id"], rungs)
+        if found_rung != rung:
+            unresolve(alias, name, f"`{model['id']}` matches it but sits in the "
+                                   f"{rung_label(rungs, found_rung)} tier, not "
+                                   f"the {label} tier", label)
+            continue
+        if parse_ts(model.get("created_at")) is None:
+            unresolve(alias, name, f"`{model['id']}` has no parseable created_at "
+                                   f"to start its predecessor's buffer from", label)
+            continue
+        if rung in by_rung and by_rung[rung] != model["id"]:
+            # Two peer aliases naming different models: neither is THE
+            # default of the tier, so the tier falls back.
+            other = alias_of_rung[rung]
+            resolved.pop(other, None)
+            del by_rung[rung]
+            unresolve(alias, name, f"peer alias `{other}` names a different "
+                                   f"model in the same tier", label)
+            continue
+        by_rung[rung] = model["id"]
+        alias_of_rung[rung] = alias
+        resolved[alias] = model["id"]
+    return {"source": source, "fetched_at": fetched_at, "by_rung": by_rung,
+            "resolved": resolved, "unresolved": unresolved}
+
+
+def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
+                           defaults_info: dict, *, available, rungs, policy, now,
+                           counts, aliases, api_ids, previous_arms,
+                           catalogue_seen, census_doc, usable, stale_note,
+                           enter_usable, enter_share, qualifier,
+                           retire_notes, retire_windows) -> tuple[str | None, str | None]:
+    """(arm reason, exclusion reason) for a model in a tier whose vendor
+    default resolved — Adam's decision of 2026-09-27 (#202, ADR 0002).
+
+    Usage keeps ONE job here: deciding whether the tier is on the roster.
+    Inside it the seat goes to the default, at once and with no cooling-off;
+    a model the default supersedes earns no seat from its usage, and a
+    previous arm it supersedes keeps its seat only through the
+    `superseded_exit_weeks` buffer below. A model NEWER than the default is
+    a preview the vendor has not made the default, and takes no seat.
+    Retirements are recorded in `retire_notes` for `retired_since_last`.
+    """
+    model_id = model["id"]
+    by_id = {m["id"]: m for m in available}
+    default_words = (f"vendor default for the {label} tier per "
+                     f"{defaults_info['source']} (fetched "
+                     f"{defaults_info['fetched_at'] or 'at an unknown time'})")
+    enter_bar = policy["arm_enter_usage_pct"]
+    enter_span = f"over the last {policy['arm_enter_window_weeks']} weeks"
+
+    if model_id == default_id:
+        previous_in_tier = sorted(p for p in previous_arms if rung_of(p, rungs) == rung)
+        if qualifier is not None:
+            qualifying_id, qualifying_share = qualifier
+            why = (f"the tier qualifies by usage: `{qualifying_id}` carries "
+                   f"{_format_share(qualifying_share, enter_bar)}% of rankable "
+                   f"census usage {enter_span} (at or above the {enter_bar}% "
+                   f"entry bar)")
+        elif previous_in_tier:
+            why = f"the tier is on the roster because previous arm `{previous_in_tier[0]}` is in it"
+        elif not enter_usable:
+            why = (f"{stale_note}; every tier is on the roster under the "
+                   f"no-census fallback" if not usable else
+                   "the enter window holds too little rankable usage to qualify "
+                   "any tier, so every tier is on the roster under the fallback")
+        else:
+            return None, (f"excluded from the arm set: {default_words}, but the "
+                          f"tier is not on the roster — no model in it carries "
+                          f"{enter_bar}% of rankable census usage {enter_span} "
+                          f"and no previous arm is in it")
+        return f"{default_words}, seated with no cooling-off; {why}", None
+
+    default_model = by_id[default_id]
+    if _rank(model, rungs) > _rank(default_model, rungs):
+        if model_id in previous_arms:
+            retire_notes[model_id] = (f"newer than `{default_id}`, the vendor "
+                                      f"default for the {label} tier, which "
+                                      f"holds the seat")
+        return None, (f"excluded from the arm set: newer than the vendor default "
+                      f"`{default_id}` for the {label} tier (a release the vendor "
+                      f"has not made the default), so it takes no seat while the "
+                      f"tier has a known default")
+
+    superseded = f"superseded by `{default_id}`, the {default_words}"
+    if model_id not in previous_arms:
+        share = enter_share.get(model_id)
+        if share is not None and share >= enter_bar:
+            return None, (f"excluded from the arm set: {superseded}; its "
+                          f"{_format_share(share, enter_bar)}% of rankable census "
+                          f"usage {enter_span} keeps the tier on the roster but "
+                          f"earns it no seat")
+        return None, None
+
+    weeks_needed = policy["superseded_exit_weeks"]
+    if weeks_needed == 0:
+        retire_notes[model_id] = (f"{superseded}, and `superseded_exit_weeks` is "
+                                  f"0, so it retires as soon as it is superseded")
+        return None, None
+    held = "held over from the previous roster"
+    census_at = parse_ts((census_doc or {}).get("generated_at"))
+    try:
+        complete, buffer_weeks = (
+            complete_weeks_since(parse_ts(default_model.get("created_at")),
+                                 min(census_at, now), weeks_needed)
+            if census_at else (0, []))
+    except (OverflowError, ValueError):
+        complete, buffer_weeks = 0, []
+    if complete < weeks_needed:
+        return (f"{held}: {superseded}, and inside its {weeks_needed}-week buffer "
+                f"— {complete} of {weeks_needed} complete ISO week(s) since that "
+                f"release are covered by the census"), None
+    if not usable:
+        return f"{held}: {superseded}; {stale_note}, so there is no evidence to retire it", None
+    span = f"the {weeks_needed} complete week(s) {', '.join(buffer_weeks)}"
+    raw_total, ranked_total = _in_window_totals(
+        counts, set(buffer_weeks), rungs, aliases=aliases, api_ids=api_ids,
+        previous_arms=previous_arms, catalogue_seen=catalogue_seen)
+    if ranked_total < policy["min_ranked_turns"]:
+        return (f"{held}: {superseded}; a ranked, attributable total of "
+                f"{ranked_total} turn(s) over {span} is under the "
+                f"{policy['min_ranked_turns']}-turn floor, too little to be "
+                f"evidence of anything, so there is no evidence to retire it"), None
+    if ranked_total < policy["min_ranked_share"] * raw_total:
+        bar = 100 * policy["min_ranked_share"]
+        pct = 100 * ranked_total / raw_total
+        return (f"{held}: {superseded}; only {ranked_total} of {raw_total} raw "
+                f"turns over {span} are rankable, attributable usage "
+                f"({_format_share(pct, bar, under=True)}% — under the {bar:g}% "
+                f"relative floor), too little to be evidence of anything, so "
+                f"there is no evidence to retire it"), None
+    share = usage_share(counts, model_id, buffer_weeks, rungs, aliases,
+                        api_ids=api_ids, previous_arms=previous_arms,
+                        catalogue_seen=catalogue_seen)
+    exit_bar = policy["arm_exit_usage_pct"]
+    if share >= exit_bar:
+        return (f"{held}: {superseded}, but still "
+                f"{_format_share(share, exit_bar)}% of rankable census usage "
+                f"over {span} (at or above the {exit_bar}% exit bar)"), None
+    retire_notes[model_id] = (f"{superseded}; "
+                              f"{_format_share(share, exit_bar, under=True)}% of "
+                              f"rankable census usage over {span}, under the "
+                              f"{exit_bar}% exit bar")
+    retire_windows[model_id] = buffer_weeks
+    return None, None
+
+
 def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                    previous: dict | None, now: datetime,
                    admin_doc: dict | None = None, warn=None,
                    census_problem: str | None = None,
-                   previous_problem: str | None = None) -> dict:
+                   previous_problem: str | None = None,
+                   defaults_doc: dict | None = None) -> dict:
     warn = warn or _stderr
     # FATAL, and it is the first thing checked (#147, ADR 0001). `previous`
     # is the COMMITTED roster now. A present-but-unreadable one is a repo
@@ -1849,6 +2118,19 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         if best is None or share > best[1]:
             qualifying_by_rung[rung] = (model_id, share)
 
+    # --- vendor defaults (#202, ADR 0002) ----------------------------------
+    # A tier whose default resolved is seated by `_default_rung_decision`
+    # below and never reaches the usage/newest/hold-over rules; every other
+    # tier keeps them verbatim, cooling-off included. With no document the
+    # map is empty and nothing below changes.
+    defaults_info = _resolve_defaults(defaults_doc, available, rungs, warn)
+    default_by_rung = defaults_info["by_rung"] if defaults_info else {}
+    #: Why a previous arm this rule dropped left, for `retired_since_last`
+    #: and the proposal — and, for a superseded arm measured over its
+    #: buffer weeks, which weeks its evidence covers.
+    retire_notes: dict[str, str] = {}
+    retire_windows: dict[str, list[str]] = {}
+
     # --- who is an arm, and why ------------------------------------------
     arms: list[dict] = []
     excluded: list[dict] = []
@@ -1856,6 +2138,21 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         model_id = model["id"]
         rung = rung_of(model_id, rungs)
         label = rung_label(rungs, rung)
+        if rung in default_by_rung:
+            seat, exclusion = _default_rung_decision(
+                model, rung, label, default_by_rung[rung], defaults_info,
+                available=available, rungs=rungs, policy=policy, now=now,
+                counts=counts, aliases=aliases, api_ids=api_ids,
+                previous_arms=previous_arms, catalogue_seen=catalogue_seen,
+                census_doc=census_doc, usable=usable, stale_note=stale_note,
+                enter_usable=enter_usable, enter_share=enter_share,
+                qualifier=qualifying_by_rung.get(rung),
+                retire_notes=retire_notes, retire_windows=retire_windows)
+            if seat:
+                arms.append({"id": model_id, "reason": seat})
+            elif exclusion:
+                excluded.append({"id": model_id, "reason": exclusion})
+            continue
         raw_created = model.get("created_at")
         created = parse_ts(raw_created)
         age_days = (now - created).days if created else None
@@ -2112,6 +2409,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             elif model_id in snapshots:
                 why = (f"collapsed onto its undated alias `{snapshots[model_id]}`, "
                        f"which holds the seat")
+            elif model_id in retire_notes:
+                why = retire_notes[model_id]
             else:
                 # Never `not usable` (nor `not exit_usable`) here: the arms
                 # loop above gives every previous arm still in `available`
@@ -2163,20 +2462,27 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     evidence: dict[str, str] = {}
     for model_id, weeks_for, bar in (
             [(a["id"], enter_weeks, policy["arm_enter_usage_pct"]) for a in arms]
-            + [(i, exit_weeks, policy["arm_exit_usage_pct"])
+            + [(i, retire_windows.get(i, exit_weeks), policy["arm_exit_usage_pct"])
                for i in previous_arms if i not in arm_ids]):
         mine, total = usage_numbers(counts, model_id, weeks_for, rungs, aliases,
                                     api_ids=api_ids, previous_arms=previous_arms,
                                     catalogue_seen=catalogue_seen)
         evidence[model_id] = _usage_words(mine, total, bar)
 
-    return {
+    result = {
         "generated_at": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
         "source": {
             "models_api_at": (models_doc or {}).get("fetched_at"),
             "census_at": census_at_published,
             "admin_report_at": (admin_doc or {}).get("fetched_at") if admin_doc else None,
         },
+    }
+    if defaults_info is not None:
+        # Only when a document was read: without one the roster is the one
+        # this module has always published, key for key.
+        result["defaults"] = {key: defaults_info[key] for key in
+                              ("source", "fetched_at", "resolved", "unresolved")}
+    result.update({
         "arms": arms,
         "judge": judge,
         "preflight": preflight,
@@ -2190,8 +2496,10 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         "proposal": _proposal(previous, previous_arms, previous_seen, arms,
                               judge, preflight, catalogue_seen_entries,
                               evidence, now=now,
-                              max_age_days=policy["catalogue_seen_max_age_days"]),
-    }
+                              max_age_days=policy["catalogue_seen_max_age_days"],
+                              retire_notes=retire_notes),
+    })
+    return result
 
 
 #: HOW MANY PROPOSED CHANGES THE STEP SUMMARY RENDERS. The JSON carries
@@ -2228,7 +2536,8 @@ def _change(kind: str, field: str, from_value, to_value, reason: str) -> dict:
 def _proposal(previous: dict | None, previous_arms: list[str],
               previous_seen: list[dict], arms: list[dict], judge: dict,
               preflight: dict, catalogue_seen_entries: list[dict],
-              evidence: dict, *, now: datetime, max_age_days: int) -> dict:
+              evidence: dict, *, now: datetime, max_age_days: int,
+              retire_notes: dict | None = None) -> dict:
     """What this run would CHANGE about the committed roster, and why.
 
     THE OUTPUT OF THIS MODULE IS A PROPOSAL, NOT THE RUNNING SET (ADR
@@ -2276,9 +2585,11 @@ def _proposal(previous: dict | None, previous_arms: list[str],
                 f"seat it: {arm['reason']}; {evidence.get(arm['id'], '')}".rstrip("; ")))
     for model_id in sorted(previous_arm_ids):
         if model_id not in arm_ids:
+            note = (retire_notes or {}).get(model_id)
             changes.append(_change(
                 "seat", "arms", model_id, None,
-                f"retire it: {evidence.get(model_id, 'no evidence recorded')}"))
+                f"retire it: {note + '; ' if note else ''}"
+                f"{evidence.get(model_id, 'no evidence recorded')}"))
     for field, entry in (("judge", judge), ("preflight", preflight)):
         before = (previous or {}).get(field) if isinstance(previous, dict) else None
         before_id = before.get("id") if isinstance(before, dict) else None
@@ -2425,6 +2736,18 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     lines += [f"Models API `{source['models_api_at']}` · census "
                   f"`{source['census_at'] or 'none'}` · admin report "
                   f"`{source['admin_report_at'] or 'none'}`", ""]
+    # Only when a defaults document was read (#202), so a roster computed
+    # without one renders exactly as it always has.
+    defaults = roster.get("defaults")
+    if defaults:
+        seated = ", ".join(f"`{alias}` → `{model_id}`" for alias, model_id
+                           in sorted(defaults["resolved"].items())) or "none resolved"
+        lines += [f"Vendor model defaults from {defaults['source']} "
+                  f"`{defaults['fetched_at'] or 'unknown'}`: {seated}", ""]
+        for entry in defaults["unresolved"]:
+            lines += [f"- `{entry['alias']}` not resolved: {entry['reason']}"]
+        if defaults["unresolved"]:
+            lines.append("")
     return "\n".join(lines)
 
 
@@ -2441,6 +2764,9 @@ def main() -> int:
     parser.add_argument("--previous", type=Path, default=None,
                         help="the COMMITTED roster (evals/roster.yml) this run "
                              "computes a proposal against; YAML or JSON")
+    parser.add_argument("--defaults", type=Path, default=None,
+                        help="vendor model defaults from "
+                             "scripts/fetch_model_defaults.py; optional (#202)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -2473,6 +2799,12 @@ def main() -> int:
     # YAML OR JSON, and a problem here is FATAL (#147). This is the
     # committed roster on `main`, not a document off an unprotected branch.
     previous_doc, previous_problem = read_trusted_roster(args.previous)
+    # Absent or unreadable is not fatal: every tier keeps the newest-in-tier
+    # rule, and the problem is a named one-line warning.
+    defaults_doc, defaults_problem = read_json(args.defaults)
+    if defaults_problem:
+        _stderr(f"model defaults: {defaults_problem}; every tier keeps the "
+                f"newest-in-tier rule")
 
     try:
         roster = compute_roster(
@@ -2484,6 +2816,7 @@ def main() -> int:
             admin_doc=load_json(args.admin_report),
             census_problem=census_problem,
             previous_problem=previous_problem,
+            defaults_doc=defaults_doc,
         )
     except TrustedRosterUnreadable as exc:
         # A DISTINCT rc, so eval.yml can tell "somebody merged a broken

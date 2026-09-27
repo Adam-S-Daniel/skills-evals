@@ -429,6 +429,12 @@ jobs:
       # bearer minted above; ANTHROPIC_ADMIN_KEY is optional and its absence
       # produces a ::notice::, never a failure.
       #
+      # Vendor defaults (#202, ADR 0002): one unauthenticated GET of the
+      # public Claude Code model-config docs, by
+      # scripts/fetch_model_defaults.py, run before the bearer is exported.
+      # It never fails the step; a failed read degrades every tier to the
+      # newest-in-tier rule, and the roster's warnings say so.
+      #
       # NOT FATAL TO THE EVAL. The Models API read is still fatal to the
       # ROSTER — a half-read API is indistinguishable from a model retiring,
       # and publishing that quietly is the failure mode this feature exists to
@@ -513,6 +519,12 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           }
           refresh() {
+            # Vendor model defaults (#202): which version each alias resolves
+            # to, read off the public model-config docs. Run BEFORE the bearer
+            # is exported so it never sits in this process's environment, and
+            # it cannot fail the step: a failed read writes `defaults: {}` and
+            # roster.py falls back to newest-in-tier for every tier.
+            python3 scripts/fetch_model_defaults.py --out "$work/defaults.json" || true
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
             # The published census comes off eval-results WITHOUT checking it
@@ -565,6 +577,7 @@ jobs:
                  --census "$work/census.json" \
                  --admin-report "$RUNNER_TEMP/admin-usage.json" \
                  --previous evals/roster.yml \
+                 --defaults "$work/defaults.json" \
                  --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
               cat "$work/roster.err" >&2
               reason="$(extract_reason "$work/roster.err")"
