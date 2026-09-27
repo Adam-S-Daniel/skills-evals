@@ -156,7 +156,7 @@ class TestHarnessInstallStep(unittest.TestCase):
         self.assertNotIn("${{", script)
         lines = [ln.strip() for ln in script.splitlines()]
         guard = next(i for i, ln in enumerate(lines)
-                     if ln.startswith("if command -v claude"))
+                     if ln.startswith('if [[ -x "$(command -v claude)" ]]'))
         other = lines.index("else", guard)
         end = lines.index("fi", other)
         installs = [i for i, ln in enumerate(lines)
@@ -172,7 +172,10 @@ class TestHarnessInstallStep(unittest.TestCase):
         self.assertIn("set -euo pipefail", script)
         # A failing or empty `--version` fails the step by name, and only
         # version characters reach the summary's markdown code span.
-        self.assertIn('version="$(claude --version)" || {', script)
+        # A non-executable `claude` on PATH falls back to npm; a hanging
+        # `--version` is bounded; an absurd line is capped before filtering.
+        self.assertIn('version="$(timeout 60 claude --version)" || {', script)
+        self.assertIn('version="${version:0:80}"', script)
         self.assertIn('version="${version//[^A-Za-z0-9._() -]/}"', script)
         self.assertIn('[[ -n "$version" ]] || {', script)
         self.assertEqual(script.count("::error::"), 2)
