@@ -240,9 +240,11 @@ jobs:
         # Pinned to the version this harness was validated against. The arms
         # assert on the SHAPE of the stream-json init event, so a CLI bump is a
         # deliberate, reviewed change here — and the --self-test below is what
-        # catches a bump that silently blinded the assertions.
+        # catches a bump that silently blinded the assertions. No cooling-off
+        # for a model harness (fleet rule): 2.1.283, all five arms and the
+        # self-test green on it locally, 2026-09-27.
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.231
+          npm install -g @anthropic-ai/claude-code@2.1.283
           claude --version
 
       - name: Set up Python

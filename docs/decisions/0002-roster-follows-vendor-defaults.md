@@ -87,10 +87,11 @@ happened to accumulate usage on.
   `model`.** Rejected. The probe works with an invalid key and costs nothing,
   but the CLI resolves aliases itself, so it reports the defaults of whichever
   CLI version is installed. Measured 2026-09-27 with an invalid key: CLI
-  2.1.283 resolves `opus` → `claude-opus-5-5`, while CI's pinned 2.1.211
-  resolves `opus` → `claude-opus-4-8` and `fable` → `claude-fable-5`. Running
-  an unpinned latest CLI in the key-bearing job to get a current answer would
-  break the pinning convention.
+  2.1.283 resolves `opus` → `claude-opus-5-5`, while 2.1.211, CI's pin at the
+  time, resolves `opus` → `claude-opus-4-8` and `fable` → `claude-fable-5`.
+  The same PR drops the harness cooling-off and bumps CI to 2.1.283, but the
+  CLI stays pinned exact, so a probe would still lag every vendor change
+  until the next hand bump; the docs page does not.
 - **Shorten the cooling-off.** Rejected: it would still seat by age rather
   than by what the vendor defaults to, and would also seat a preview the
   vendor has not made the default.

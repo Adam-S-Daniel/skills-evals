@@ -274,12 +274,14 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # Pinned per the repo cooling-off convention: this step feeds the
-        # key-bearing eval step, so an unpinned install is a supply-chain
-        # vector straight into the API key. 2.1.211 is the version this
-        # harness was validated against locally; bump deliberately via PR.
+        # Pinned exact: this step feeds the key-bearing eval step, so an
+        # unpinned install is a supply-chain vector straight into the API key;
+        # bump deliberately via PR. Model harnesses are exempt from the 7-day
+        # cooling-off (fleet rule, _agent-guidance base.md "Dependency
+        # updates"), so the pin tracks the newest release: 2.1.283, published
+        # 2026-09-25.
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.211
+          npm install -g @anthropic-ai/claude-code@2.1.283
           claude --version
 
       - name: Set up Python
