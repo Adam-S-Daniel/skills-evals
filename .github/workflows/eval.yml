@@ -192,6 +192,14 @@ on:
           evals/**/fixture.yaml set before any credential is minted.
         required: false
         default: evals/workflow-path-audit
+      roster_only:
+        description: >-
+          Refresh the model roster and file its proposal, then stop: skip the
+          WIF preflight, the eval and the badge, so nothing is spent on a
+          model beyond the Models API read.
+        type: boolean
+        required: false
+        default: false
 
 # Single job, so this block is the whole workflow's privilege set.
 # `contents: write` is required for the badge/results push; splitting eval and
@@ -646,6 +654,9 @@ jobs:
       # `test_no_model_ids_are_hardcoded_outside_fixtures` allows exactly one
       # such literal and only because the marker on its line says what it is.
       - name: WIF auth preflight
+        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
+        # interpolated into a run: body.
+        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         run: |
           set +e
@@ -679,6 +690,9 @@ jobs:
       # a skill fixture, and for a guidance fixture the arms it names (five,
       # one per delivery mode, for the delivery canary).
       - name: Run the eval (both arms, judge)
+        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
+        # interpolated into a run: body.
+        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         run: |
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
@@ -937,6 +951,9 @@ jobs:
       # working tree; it is stashed in $RUNNER_TEMP beforehand and invoked from
       # there. It is stdlib-only, so nothing else has to travel with it.
       - name: Build the badge over the run window, commit, and push
+        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
+        # interpolated into a run: body.
+        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         env:
           # Push auth lives only in this step.

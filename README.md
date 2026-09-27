@@ -303,6 +303,9 @@ bridge. Keep the bridge canary for the repo-stub path.
 Any fixture can be given a real run on `main` by dispatching **Real eval**
 with its `fixture` input (default `evals/workflow-path-audit`); the value is
 validated against the committed fixture set before any credential is minted.
+Set `roster_only` to refresh the model roster and file its proposal without
+the eval: the WIF preflight, the eval and the badge are skipped, so the only
+model-side call is the Models API read.
 
 ## Guidance-bridge canary
 

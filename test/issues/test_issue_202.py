@@ -694,5 +694,45 @@ class TestWorkflowFetchesDefaults(unittest.TestCase):
                         or line.lstrip().startswith("if "), line)
 
 
+class TestRosterOnlyDispatch(unittest.TestCase):
+    """A dispatch can refresh and propose the roster WITHOUT a paid eval run:
+    the owner held paid runs until the roster seats the new defaults, and the
+    roster step exists only inside this workflow."""
+
+    SKIPPED = ("WIF auth preflight", "Run the eval (both arms, judge)",
+               "Build the badge over the run window, commit, and push")
+    KEPT = ("Mint OIDC token and exchange for Anthropic access token",
+            "Refresh the model roster", "Propose a roster change")
+
+    def setUp(self):
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        # PyYAML reads the bare `on:` key as boolean True.
+        self.triggers = doc.get("on", doc.get(True))
+        self.steps = {s.get("name"): s for s in doc["jobs"]["eval"]["steps"]}
+
+    def test_the_input_is_a_boolean_that_defaults_off(self):
+        spec = self.triggers["workflow_dispatch"]["inputs"]["roster_only"]
+        self.assertEqual(spec.get("type"), "boolean")
+        self.assertIs(spec.get("default"), False)
+
+    def test_the_paid_steps_are_skipped_in_roster_only_mode(self):
+        for name in self.SKIPPED:
+            with self.subTest(step=name):
+                self.assertIn(name, self.steps)
+                self.assertEqual(self.steps[name].get("if"),
+                                 "${{ !inputs.roster_only }}")
+
+    def test_the_roster_steps_still_run(self):
+        for name in self.KEPT:
+            with self.subTest(step=name):
+                self.assertIn(name, self.steps)
+                self.assertNotIn("roster_only", str(self.steps[name].get("if", "")))
+
+    def test_the_input_never_reaches_a_run_block(self):
+        for name, step in self.steps.items():
+            with self.subTest(step=name):
+                self.assertNotIn("inputs.roster_only", step.get("run", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

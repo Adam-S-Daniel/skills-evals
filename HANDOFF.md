@@ -46,6 +46,9 @@ Also 2026-09-27: the model cooling-off is 0 and CI's Claude Code is unpinned
 (preinstalled, else latest), with the version and models recorded per arm in
 `summary.json` (`harness`, `models_used`, `judge_models_used`) — ADR 0002's
 update.
+A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
+roster without a paid eval run, so the hold above can be lifted by reviewing
+that proposal first.
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 
