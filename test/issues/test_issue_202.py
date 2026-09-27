@@ -534,6 +534,14 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
     """Every way a default can fail to resolve leaves its tier on today's
     rule — the cooling-off included — and says so in a warning."""
 
+    @staticmethod
+    def _policy(**overrides):
+        # A POSITIVE cooling-off, supplied rather than read: the shipped
+        # value is 0 since the owner's decision of 2026-09-27 (#202), and
+        # these tests pin that an unresolved default leaves its tier on the
+        # rule that applies the cooling-off whenever one is configured.
+        return _RosterFixture._policy(**{"cooling_off_days": 7, **overrides})
+
     def _assert_todays_opus_rule(self, result):
         # opus-5 by usage; opus-5-5 a day old, so the cooling-off excludes it.
         self.assertIn("claude-opus-5", self._arms(result))

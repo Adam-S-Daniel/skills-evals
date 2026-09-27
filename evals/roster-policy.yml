@@ -109,7 +109,14 @@ arm_enter_window_weeks: 4
 # tier is on the roster — no cooling-off: the vendor making it the default is
 # the signal the cooling-off was standing in for. See `superseded_exit_weeks`
 # below and docs/decisions/0002-roster-follows-vendor-defaults.md.
-cooling_off_days: 7
+#
+# SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku
+# and preflight." At 0 every model with a `created_at` is past the
+# cooling-off, so the newest-in-tier rule above (for a tier with no resolved
+# vendor default, e.g. haiku) and the preflight pick both take the newest
+# model at once. The knob and the machinery that reads it are kept, so a
+# positive value restores the cooling-off without a code change.
+cooling_off_days: 0
 
 # An arm keeps its seat until it falls under this share for the whole trailing
 # window (or disappears from the Models API, which is immediate). Hysteresis,

@@ -2321,6 +2321,10 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_canary.py", "run_leg", "subprocess.run", "timeout"):
             (1, (("flag", "harness/run_canary.py"),
                  ("knob", "guard.timeout_s"))),
+        # #202: the harness version, read once per run and recorded in every
+        # arm's summary.json — the same shape as run_canary's.
+        ("harness/run_eval.py", "claude_version", "subprocess.run",
+         "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
             (1, (("knob", "setup_timeout_s"),)),
         # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
@@ -2857,6 +2861,7 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_canary.py", "claude_version"):
             ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_canary.py", "run_leg"): ("param", "timeout"),
+        ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),

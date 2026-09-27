@@ -80,6 +80,13 @@ happened to accumulate usage on.
   a proposal can see why a seat appeared.
 - **One more unauthenticated network read** in the roster step. It runs
   before the Models API bearer is exported and carries no credential.
+- **Update 2026-09-27 (the owner's decision, #202):** the model cooling-off
+  is set to 0 (`cooling_off_days: 0`), so the tiers still on rules 1 and 2
+  (e.g. haiku) and the preflight pick take the newest model at once; the knob
+  and its machinery are kept. The harness is unpinned as well: CI uses the
+  Claude Code already on the runner, else installs the latest, and records
+  the version per run (step summary; `harness.version`, `models_used` and
+  `judge_models_used` in every arm's `summary.json`) instead of in a pin.
 
 ## Alternatives considered
 

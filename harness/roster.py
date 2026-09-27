@@ -1878,6 +1878,19 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
     return None, None
 
 
+def _cooling_off_cleared(days: int) -> str:
+    """How a reason says a model cleared the cooling-off.
+
+    At 0 — the shipped value since the owner's decision of 2026-09-27
+    (#202) — there is no cooling-off to be past, and "past the 0-day
+    cooling-off" reads as a rule that exists and was satisfied. A positive
+    value keeps the wording every earlier roster used.
+    """
+    if days == 0:
+        return "no cooling-off applies: `cooling_off_days` is 0"
+    return f"past the {days}-day cooling-off"
+
+
 def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                    previous: dict | None, now: datetime,
                    admin_doc: dict | None = None, warn=None,
@@ -2170,7 +2183,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                           f"(at or above the {policy['arm_enter_usage_pct']}% entry bar)")
         if reason is None and is_newest and old_enough:
             newest_words = (f"newest model in the {label} tier, {age_days} days old "
-                            f"(past the {policy['cooling_off_days']}-day cooling-off)")
+                            f"({_cooling_off_cleared(policy['cooling_off_days'])})")
             if not enter_usable:
                 # THE FALLBACK, UNCHANGED (and the reason the restriction
                 # below is not stated unconditionally): with no usable
@@ -2370,10 +2383,10 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 cooled.append(m)
         if cooled:
             cheapest = cooled[-1]
-            cheapest_reason = (f"newest model in the {label} tier that is past the "
-                               f"{policy['cooling_off_days']}-day cooling-off: the "
-                               f"lowest tier the Models API still returns, and this "
-                               f"is its cheapest safely-invocable pick")
+            cheapest_reason = (f"newest model in the {label} tier "
+                               f"({_cooling_off_cleared(policy['cooling_off_days'])}): "
+                               f"the lowest tier the Models API still returns, and "
+                               f"this is its cheapest safely-invocable pick")
         else:
             cheapest = rung_models[-1]
             cheapest_reason = (f"newest model in the {label} tier: the lowest tier "

@@ -274,15 +274,38 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # Pinned exact: this step feeds the key-bearing eval step, so an
-        # unpinned install is a supply-chain vector straight into the API key;
-        # bump deliberately via PR. Model harnesses are exempt from the 7-day
-        # cooling-off (fleet rule, _agent-guidance base.md "Dependency
-        # updates"), so the pin tracks the newest release: 2.1.283, published
-        # 2026-09-25.
+        # NOT PINNED, by the owner's decision of 2026-09-27 (#202): use the
+        # Claude Code already on the runner, else install the latest release.
+        # The pin existed because this step feeds the key-bearing eval step
+        # and an install is a supply-chain vector into whatever credential
+        # the job later holds. What still bounds that: this step runs BEFORE
+        # the OIDC mint / token exchange below, so nothing it installs runs
+        # with a credential in the environment at install time (the step
+        # order is asserted by test/issues/test_issue_202_harness.py). What
+        # replaces the pin's audit trail: the version actually used is
+        # recorded per run — here in the step summary, and in every arm's
+        # summary.json (`harness.version`) by harness/run_eval.py.
+        #
+        # `claude --version` is captured whole and cut to its first line in
+        # the shell, not piped through `head`: under pipefail a `head` that
+        # exits first can fail the step on the CLI's SIGPIPE. A failing or
+        # empty version fails the step by name.
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.283
-          claude --version
+          set -euo pipefail
+          if command -v claude >/dev/null 2>&1; then
+            source=preinstalled
+          else
+            npm install -g @anthropic-ai/claude-code@latest
+            source="npm latest"
+          fi
+          version="$(claude --version)" || { echo "::error::claude --version failed"; exit 1; }
+          # First line only, and only characters a version string needs: this
+          # lands in a markdown code span in the step summary.
+          version="${version%%$'\n'*}"
+          version="${version//[^A-Za-z0-9._() -]/}"
+          [[ -n "$version" ]] || { echo "::error::claude --version printed no version"; exit 1; }
+          echo "harness: Claude Code ${version} (${source})"
+          { echo "### Harness"; echo "Claude Code \`${version}\` (${source})"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97

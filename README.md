@@ -506,7 +506,7 @@ second is subordinate to the first:
    rankable, attributable census turns over the trailing 4 weeks — is an arm,
    with its share in its reason.
 2. **Newest per *qualifying* tier.** In a tier rule 1 already seated somebody
-   in, the newest available model past the 7-day cooling-off is an arm too,
+   in, the newest available model past the cooling-off is an arm too,
    and its reason says so in words, naming the qualifying share it rides on.
    **A tier no model of which clears the entry bar gets no arm at all**,
    however new its newest model is; that model is listed under `excluded`
@@ -542,7 +542,13 @@ exit bar, with a stale or too-thin census holding it as before. A model newer
 than the default takes no seat. A tier whose default did not resolve — or
 every tier, when the docs cannot be read — keeps rules 1 and 2 verbatim,
 cooling-off included, and a `roster: ` warning says why. The preflight pick
-keeps its cooling-off either way.
+applies the cooling-off either way.
+
+**The cooling-off is 0 days** (the owner's decision of 2026-09-27, #202):
+`cooling_off_days: 0` in `evals/roster-policy.yml`, so rule 2 (in a tier
+with no resolved vendor default, e.g. haiku) and the preflight pick take the
+newest model at once, and their reasons say "no cooling-off applies". The
+knob and the code that applies it are kept; a positive value restores it.
 
 **But what it computes is a PROPOSAL.** When it differs from the committed
 file, the weekly run renders the proposed `evals/roster.yml`
@@ -648,6 +654,26 @@ as cms-platform's Decap CMS publish loop or dependabot auto-merge; see
 `.github/workflows/eval.yml`'s security header), and the badge JSON is
 served raw from the default branch, so it can only change via a commit to
 this repo.
+
+**Which Claude Code, and which models.** The CLI is **not pinned** (the
+owner's decision of 2026-09-27,
+[#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202)): the
+workflow's "Install Claude Code CLI" step uses the `claude` already on the
+runner, else installs `@anthropic-ai/claude-code@latest` — before the OIDC
+token exchange, so no credential exists while it installs — and records the
+version it got, and whether it was preinstalled, in the job's step summary.
+`propagation.yml` does the same. Every arm's `summary.json` then records what
+actually ran:
+
+| Field | What it holds |
+| --- | --- |
+| `harness` | `{"name": "claude-code", "version": ...}` — the first line of `claude --version`, read once per run, reduced to version characters and capped at 64; `null` (with a warning) if it could not be read. Present on error paths too |
+| `models_used` | sorted keys of the agent result's `modelUsage` — the model id(s) that served the arm; `[]` when the agent call never produced a result |
+| `judge_models_used` | the same, from the judge's CLI result(s); `[]` when no judge ran |
+
+`report.md` carries one `- Harness:` line naming the version and each arm's
+models. The propagation probe's `--json` run record carries, per arm,
+`harness_version` and `model` from that arm's init event.
 
 ## Status
 

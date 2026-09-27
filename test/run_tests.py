@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import atexit
 import contextlib
 import copy
 import fnmatch
@@ -67,6 +68,40 @@ import make_badge  # noqa: E402
 import model_usage_census  # noqa: E402
 import refresh_models  # noqa: E402
 import render_roster_yaml  # noqa: E402
+
+#: The roster policy this repository SHIPS. Read directly only by tests about
+#: the shipped file itself.
+SHIPPED_POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+#: The cooling-off the roster tests below were written against. The shipped
+#: value is 0 since the owner's decision of 2026-09-27 (#202), but the
+#: machinery that applies a positive one is kept, so its coverage is too:
+#: those tests read POSITIVE_COOLING_OFF_POLICY instead of the shipped file.
+TEST_COOLING_OFF_DAYS = 7
+
+
+def _write_positive_cooling_off_policy() -> Path:
+    """The shipped policy, byte for byte, but for `cooling_off_days`.
+
+    Derived from the shipped file at import rather than committed as a copy,
+    so every other threshold — and every comment a test reads — can never
+    drift from what ships. Written once per process into a private temp dir
+    that is removed at exit.
+    """
+    text = SHIPPED_POLICY.read_text(encoding="utf-8")
+    pattern = re.compile(r"^cooling_off_days: \d+$", re.MULTILINE)
+    if len(pattern.findall(text)) != 1:
+        raise RuntimeError(f"{SHIPPED_POLICY} does not carry exactly one "
+                           "`cooling_off_days:` line to substitute")
+    tmp = Path(tempfile.mkdtemp(prefix="roster-policy-"))
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+    path = tmp / "roster-policy.yml"
+    path.write_text(pattern.sub(f"cooling_off_days: {TEST_COOLING_OFF_DAYS}", text),
+                    encoding="utf-8")
+    return path
+
+
+POSITIVE_COOLING_OFF_POLICY = _write_positive_cooling_off_policy()
 
 
 class WithSkillInstallTests(unittest.TestCase):
@@ -5194,7 +5229,10 @@ class TestIssue67(unittest.TestCase):
     W = ["2026-W36", "2026-W35", "2026-W34", "2026-W33",
          "2026-W32", "2026-W31", "2026-W30", "2026-W29"]
 
-    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+    # The shipped policy with a POSITIVE cooling-off (#202): see
+    # POSITIVE_COOLING_OFF_POLICY. Every class below that takes
+    # `TestIssue67.POLICY` inherits it.
+    POLICY = POSITIVE_COOLING_OFF_POLICY
 
     # --- fixture builders -------------------------------------------------
 
@@ -5662,9 +5700,10 @@ class TestIssue67(unittest.TestCase):
     # --- policy file + the no-hardcoded-ids guard ------------------------
 
     def test_policy_file_carries_the_thresholds_and_the_adr_placeholder(self):
-        raw = self.POLICY.read_text(encoding="utf-8")
-        policy = self._policy()
-        self.assertEqual(policy["cooling_off_days"], 7)
+        raw = SHIPPED_POLICY.read_text(encoding="utf-8")
+        policy = roster.load_policy(SHIPPED_POLICY)
+        # 0 since the owner's decision of 2026-09-27 (#202).
+        self.assertEqual(policy["cooling_off_days"], 0)
         self.assertEqual(policy["arm_enter_usage_pct"], 10)
         self.assertEqual(policy["arm_enter_window_weeks"], 4)
         self.assertEqual(policy["arm_exit_usage_pct"], 2)
@@ -6608,7 +6647,11 @@ class TestIssue67Review(unittest.TestCase):
                 return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
                         "num_turns": 1, "duration_ms": 1, "raw": {}}
 
+            # claude_version patched too (#202): main() reads the CLI's
+            # version once per run, and with no CLAUDE_BIN that would be
+            # whatever `claude` is on this machine's PATH.
             with mock.patch.object(run_eval, "read_roster", counting), \
+                 mock.patch.object(run_eval, "claude_version", lambda: None), \
                  mock.patch.object(run_eval, "run_agent", fake_run_agent), \
                  mock.patch.object(run_eval.judge, "score",
                                    lambda *a, **k: {"dimensions": [], "overall": 1.0}), \
@@ -10019,7 +10062,7 @@ class TestIssue67Review3(unittest.TestCase):
     class-per-review-round convention (TestIssue67Review, TestIssue67Review2)."""
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
-    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+    POLICY = POSITIVE_COOLING_OFF_POLICY  # see TestIssue67.POLICY (#202)
 
     # --- shared with TestIssue67Review: same step, same stub shape, one
     # definition (item 9, #129 review round 4 — this file's existing
@@ -16145,8 +16188,12 @@ class TestIssue81(unittest.TestCase):
         # pre-#81 shape.
         self.assertTrue(calls, "no judge call site in run_eval.py at all — "
                                "this pin must not pass vacuously")
-        self.assertEqual(sorted({node.func.attr for node in calls}), ["score"],
+        # `collecting_models` (#202) records which model served the judge; it
+        # wraps the `score()` call and changes nothing about its shape.
+        self.assertEqual(sorted({node.func.attr for node in calls}),
+                         ["collecting_models", "score"],
                          "run_eval.py's judge call site moved")
+        calls = [call for call in calls if call.func.attr == "score"]
         for call in calls:
             with self.subTest(line=call.lineno):
                 self.assertEqual(sorted(kw.arg for kw in call.keywords),
@@ -28827,7 +28874,9 @@ class TestIssue147(unittest.TestCase):
 
     @classmethod
     def _policy(cls):
-        return roster.load_policy(REPO_ROOT / "evals" / "roster-policy.yml")
+        # A positive cooling-off (#202): the "unseated fresh opus judge
+        # candidate" below is unseated BY it.
+        return roster.load_policy(POSITIVE_COOLING_OFF_POLICY)
 
     @staticmethod
     def _model(model_id, created="2026-01-01T00:00:00Z"):

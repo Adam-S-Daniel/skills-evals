@@ -203,6 +203,11 @@ class ArmResult:
     findings: list = field(default_factory=list)
     notes: list = field(default_factory=list)
     error: str | None = None
+    #: What the arm's own leg ran on (#202): the init event's
+    #: `claude_code_version` and `model`, or None when the arm never probed
+    #: or the event carried no usable value. See `probe_versions`.
+    harness_version: str | None = None
+    model: str | None = None
 
     def render(self) -> str:
         lines = [f"{self.status} {self.name}"]
@@ -230,6 +235,8 @@ class ArmResult:
             "notes": list(self.notes),
             "guards": [vars(g) for g in self.guards],
             "findings": [vars(f) for f in self.findings],
+            "harness_version": self.harness_version,
+            "model": self.model,
         }
 
 
@@ -424,7 +431,7 @@ def arm_clean_room(ctx) -> ArmResult:
                 f"namespaced skills present: {sorted(namespaced)}" if namespaced
                 else f"no {sorted(bundles)} namespace in the session"),
     ]
-    return _finish("clean-room", guards, findings)
+    return _finish("clean-room", guards, findings, facts)
 
 
 def arm_project_mirror(ctx) -> ArmResult:
@@ -440,7 +447,7 @@ def arm_project_mirror(ctx) -> ArmResult:
                            declared_env={}, lock=ctx.lock))
     expected = {skill for _, skill in lock_pairs(ctx.lock)}
     findings = [_delivery_finding(expected, _delivered(control, facts), "local")]
-    return _finish("project-mirror", guards, findings)
+    return _finish("project-mirror", guards, findings, facts)
 
 
 def arm_plugin_marketplace(ctx) -> ArmResult:
@@ -467,7 +474,8 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
                                   declared_env={}, lock=ctx.lock),
                        [Finding("plugin/negative-control", False,
                                 "namespaced skills were present before the "
-                                f"install: {sorted(n for n in control.skills if ':' in n)}")])
+                                f"install: {sorted(n for n in control.skills if ':' in n)}")],
+                       control)
 
     marketplace = ctx.registry.resolve()
     # EVERY bundle the lock names, in lock order. The lock is the declared
@@ -516,7 +524,7 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
             "plugin/digest", not drift,
             f"{len(ctx.lock['skills'])} skill digest(s) match skills.lock "
             f"(resolved at {where})" if not drift else "; ".join(drift)))
-    return _finish("plugin-marketplace", guards, findings)
+    return _finish("plugin-marketplace", guards, findings, facts)
 
 
 def arm_bootstrap_hook(ctx) -> ArmResult:
@@ -584,7 +592,7 @@ def arm_bootstrap_hook(ctx) -> ArmResult:
                 else f"the control leg installed {control_installed} — the "
                      "surface guard did not fire"),
     ]
-    return _finish("bootstrap-hook", guards, findings)
+    return _finish("bootstrap-hook", guards, findings, facts)
 
 
 def arm_collision_guard(ctx) -> ArmResult:
@@ -625,7 +633,7 @@ def arm_collision_guard(ctx) -> ArmResult:
                 else f"the hook reported skipping {collided} and copied it anyway"),
         _delivery_finding(expected, _delivered(before, facts), "local"),
     ]
-    return _finish("collision-guard", guards, findings)
+    return _finish("collision-guard", guards, findings, facts)
 
 
 ARMS = {
@@ -637,14 +645,43 @@ ARMS = {
 }
 
 
-def _finish(name: str, guards: list, findings: list) -> ArmResult:
-    """A bad guard outranks every finding: INCONCLUSIVE, never PASS or FAIL."""
+#: Caps on what the run record copies out of the init event (#202). Both are
+#: the CLI's own output and land in a public artifact.
+VERSION_MAX_CHARS = 64
+MODEL_ID_MAX_CHARS = 128
+
+
+def _bounded_str(value, limit: int) -> str | None:
+    if isinstance(value, str) and 0 < len(value.strip()) <= limit:
+        return value.strip()
+    return None
+
+
+def probe_versions(facts: ProbeFacts | None) -> dict:
+    """`{"harness_version", "model"}` from a leg's init event, each a
+    bounded string or None — never the "unknown" `ProbeFacts.version`
+    renders for a human."""
+    init = facts.init if facts is not None else {}
+    return {"harness_version": _bounded_str(init.get("claude_code_version"),
+                                            VERSION_MAX_CHARS),
+            "model": _bounded_str(init.get("model"), MODEL_ID_MAX_CHARS)}
+
+
+def _finish(name: str, guards: list, findings: list,
+            facts: ProbeFacts | None = None) -> ArmResult:
+    """A bad guard outranks every finding: INCONCLUSIVE, never PASS or FAIL.
+
+    `facts` is the arm's own (last) leg, whose init event names the CLI
+    version and model the run record carries for this arm (#202).
+    """
+    versions = probe_versions(facts)
     if not all(guard.ok for guard in guards):
         return ArmResult(name, INCONCLUSIVE, guards, findings,
                          notes=["a guard did not hold, so neither a pass nor a "
-                                "fail from this arm would mean anything"])
+                                "fail from this arm would mean anything"],
+                         **versions)
     status = PASS if all(finding.ok for finding in findings) else FAIL
-    return ArmResult(name, status, guards, findings)
+    return ArmResult(name, status, guards, findings, **versions)
 
 
 @dataclass

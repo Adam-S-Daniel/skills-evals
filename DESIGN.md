@@ -484,7 +484,8 @@ subordinate to the first. **(1) Usage seats:** every available model at or
 above `arm_enter_usage_pct` of rankable, attributable census turns over
 `arm_enter_window_weeks` is an arm, with its share in its reason. **(2)
 Newest per QUALIFYING tier:** in a tier rule 1 already seated somebody in,
-the newest available model past the cooling-off is an arm too, and its reason
+the newest available model past the cooling-off (`cooling_off_days`, 0 since
+2026-09-27 — see below) is an arm too, and its reason
 says so in words, naming the qualifying share it rides on. A tier no model of
 which clears the entry bar gets no arm from rule 2, however new its newest
 model is; that model is listed under `excluded` saying exactly that.
@@ -527,6 +528,19 @@ default is excluded. Any failure to read or resolve a default degrades that
 tier (or all of them) to rules 1 and 2, cooling-off included, loudly; with no
 defaults document the roster is byte-for-byte the one computed without it.
 The preflight keeps its cooling-off, and the judge rule is unchanged.
+
+**The cooling-off is 0 and the harness is unpinned (2026-09-27, the owner's
+decision, #202, ADR 0002's update).** `cooling_off_days: 0` makes every model
+with a `created_at` "past" it, so rule 2 and the preflight pick take the
+newest model at once; the reasons say "no cooling-off applies" rather than
+"past the 0-day cooling-off", and the machinery stays so a positive value
+restores it. The CI install uses the Claude Code already on the runner, else
+`@latest`, still ahead of any credential; since a pin no longer names the
+version, each run records it — the step summary, and in every arm's
+`summary.json` `harness.version` beside `models_used` (the agent result's
+`modelUsage` keys) and `judge_models_used` (the judge's), all three present on
+error paths too, and one `- Harness:` line in `report.md`. The propagation
+record carries each arm's `harness_version` and init-event `model`.
 
 Five properties are load-bearing and should survive any rework:
 
@@ -663,7 +677,7 @@ run with `FLEET_GUIDANCE_PAYLOAD` — running the real hook rather than
 imitating it is the point, since a harness that reimplements the delivery path
 measures the imitation. Guidance arms invoke the CLI with
 `--setting-sources user,project`; skill arms keep `project` and are otherwise
-untouched. Whether the pinned CLI honours `CLAUDE_CONFIG_DIR` for *memory*
+untouched. Whether the CLI honours `CLAUDE_CONFIG_DIR` for *memory*
 specifically has not been measured against a live CLI yet, so `--delivery
 project` exists as the documented fallback (same hook, pointed at the
 workspace, read as project memory) and every summary records which was used —

@@ -173,6 +173,10 @@ def main() -> int:
     init = {"type": "system", "subtype": "init", "skills": skills,
             "plugins": plugins, "slash_commands": [c["name"] for c in commands],
             "claude_code_version": "0.0.0-fake", "apiKeySource": "none",
+            # The real init event names the model the session runs on; the
+            # run record copies it per arm (#202).
+            "model": (argv[argv.index("--model") + 1]
+                      if "--model" in argv[:-1] else "fake-default-model"),
             "cwd": str(Path.cwd()), "tools": ["Read", "Bash"]}
     changed = {"type": "system", "subtype": "commands_changed", "commands": commands}
 
