@@ -23,8 +23,11 @@ writing-adrs
 synced
 
 $ ls -1 ~/.claude/skills/synced/
-29094e6a-eeb7-4d76-982e-84e62238e605_d11d9c2e-1772-4767-9197-f59d6fe0ab5a
+00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002
 ```
 
 which was read as "nothing has been uploaded to the account", and the question
 was left there.
+
+The bucket directory name above (and its `.bucket-` marker) is a synthetic
+`<orgUuid>_<accountUuid>` pair, not the real one captured off the laptop.
