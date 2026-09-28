@@ -427,11 +427,12 @@ jobs:
           unreadable — that says the Routine publishing it has stopped, not that
           anything drifted, and the gate's own message says which it saw.
 
-          A failing **arm** is the CI-side fault. The arms' one unpinned input is
-          the adam-agentskills registry, which they check out at main, so a red arm
-          most likely means a change there rather than a change here. The Claude
-          Code CLI is version-pinned in this workflow and cannot have moved on
-          its own.
+          A failing **arm** is the CI-side fault. The arms have two unpinned
+          inputs: the adam-agentskills registry, which they check out at main,
+          and the Claude Code CLI, which every run installs at the npm latest tag and
+          records in the step summary. A red arm most likely means a change in
+          one of those rather than a change here; compare the CLI version the
+          failing run recorded with the last green run's.
           EOF
           cat > "$RUNNER_TEMP/propagation-recovered.md" <<EOF
           The scheduled propagation probes are green again — gate: $GATE_RESULT,

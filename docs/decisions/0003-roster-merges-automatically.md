@@ -83,12 +83,13 @@ and approve pull requests" on this repo for this change.
    tracking issue says whose merge was turned off and why.
 5. **Permissions:** `pull-requests: write` and `actions: write`, used only by
    the auto path above. **Revised by the adversarial round 1 review on #209
-   (F2):** these two scopes live on a separate job, `roster-pr`
-   (`needs: eval`), never on `eval` itself — `eval` is the job that runs the
-   bypass-permissions agent, and giving the whole job a PR/workflow-dispatch
-   scope for one late step would have handed that scope to the agent too.
-   `roster-pr` runs `pull-requests: write, actions: write, issues: write,
-   contents: read`; `eval` keeps exactly its pre-#209 scopes
+   (F2):** these two scopes live on a separate job, `roster-pr`, never on
+   `eval` itself — `eval` is the job that runs the bypass-permissions agent,
+   and giving the whole job a PR/workflow-dispatch scope for one late step
+   would have handed that scope to the agent too. `roster-pr` runs
+   `pull-requests: write, actions: write, issues: write, contents: write`
+   (the `contents: write` reason is round 2's revision, immediately below);
+   `eval` keeps exactly its pre-#209 scopes
    (`contents: write, id-token: write, issues: write`) and never calls `gh
    pr`/`gh workflow run` at all. `roster-pr` needs `issues: write` too: the
    tracking issue's final wording (a PR number, "merging automatically",
@@ -104,7 +105,12 @@ and approve pull requests" on this repo for this change.
    `roster-pr` carries `contents: write`, not `contents: read` —
    `enablePullRequestAutoMerge`/an immediate merge both need write access to
    contents even though this job performs no checkout and runs no
-   repository code; only `gh` calls happen here.
+   repository code; only `gh` calls happen here. **Revised again by B1
+   (round 3 on #209, blocker):** the compute/render/admit/push path — and
+   with it `issues: write` — moved off `eval` entirely, onto a third job,
+   `roster` (see the Round 3 section below); `eval` keeps only `contents:
+   write, id-token: write`, and `roster-pr` now `needs: [roster, eval]`
+   rather than `needs: eval` alone.
 
 ## Round 2 (adversarial review on #209, spec-roster-mode-r2.md): `roster-pr`
 ## trusts nothing the `eval` job produced
@@ -146,17 +152,26 @@ and the `ci.yml` dispatch:
    itself is still the `eval` job's own claim, so this is what makes that
    claim mean something: the job cannot enable auto-merge on a sha it has
    not independently confirmed IS the branch's current head.
-3. **The change itself is re-verified, not re-trusted.**
+3. **The shape, the content and the commit's own identity are all
+   re-verified, not re-trusted (round 3 on #209 added the last of these).**
    `gh api "repos/$REPO/compare/$GITHUB_SHA...$PUSHED_SHA"` must show
-   `status == "ahead"`, `ahead_by == 1`, `behind_by == 0`, and
+   `status == "ahead"`, `ahead_by == 1`, `behind_by == 0`,
    `[.files[].filename] == ["evals/roster.yml"]` with that file's status
    `modified` — mirroring the path-allowlist precedent in
    `dependabot-auto-merge.yml`'s `auto-merge` job (a fixed set of paths a
    bot's own change may touch, checked server-side rather than trusted from
    the bot's own diff) applied here to a single fixed path rather than a
-   manifest glob. An extra commit riding along on the `eval` job's checkout
-   (ahead_by 2), an extra file in the same commit, or `main` having moved on
-   since this run started (behind_by > 0) each fail this check.
+   manifest glob — AND that the one commit's own message and author email
+   equal exactly what the propose step commits with
+   (`roster: proposed model roster (run <RUN_ID>)`,
+   `skills-evals@users.noreply.github.com`). An extra commit riding along on
+   the `eval` job's checkout (ahead_by 2), an extra file in the same commit,
+   `main` having moved on since this run started (behind_by > 0), or a
+   planted commit message/author (round 3 repro `test_B1_hostile_roster_
+   content_single_file_is_auto_merged`: a hostile `render_roster_yaml.py`
+   in the untrusted workspace rewrites the FILE content while a git
+   `commit-msg` hook plants a closing keyword — the file-shape checks alone
+   never catch either) each fail this check.
 4. **Only on `main`.** `roster-pr`'s own `if:` gains
    `&& github.ref == 'refs/heads/main'` — a dispatch on any other ref never
    has a `$GITHUB_SHA` worth trusting as "the committed policy", so this job
@@ -181,6 +196,107 @@ window is accepted rather than closed: closing it would mean either a
 `roster-pr` that runs even when `eval` is cancelled before pushing (nothing
 to verify) or a third job whose only purpose is "disable on cancel", for a
 window that self-heals on the very next run.
+
+## Round 3 (adversarial review on #209, spec-roster-mode-r3.md): the compute/
+## render/admit/push path moves off the agent's own job entirely
+
+Round 1 (F2) moved the PR/workflow-dispatch scopes off the `eval` job; round 2
+made `roster-pr` re-verify rather than re-trust what that job produced. Both
+left the computation, rendering, admission and push of the proposal itself —
+"Refresh the model roster" and "Propose a roster change" — running as later
+STEPS in the SAME job as the bypass-permissions agent. That job's runner is
+one filesystem: even though the `contents`/`issues` write credential is
+step-scoped `env:` and never exists while the agent step runs, anything the
+agent could have planted on that runner (a modified `git`, a shell rc file, a
+`bash -c` alias) is still there when the later, credentialed step runs. B1's
+fix is a third job, `roster`, that computes, renders, admits and pushes the
+proposal on a runner the agent never touches at all — before, after or
+alongside `eval`, never depending on it.
+
+**The new job boundary.** `roster` (`contents: write`, `id-token: write`,
+`issues: write`): its own checkout of `skills-evals` only (none of the four
+fixture/registry repositories), its own Node/Claude-CLI/Python setup, its own
+WIF mint, then "Refresh the model roster" and "Propose a roster change"
+unchanged in substance. It must never `needs: eval` — the whole point is
+independence, not sequencing. `eval` keeps its own checkout, its own separate
+WIF mint (never shared with `roster`'s — two jobs, two runners, no credential
+in common), the fixture run and the badge/commit; `issues: write` came off
+it since nothing here writes the tracking issue any more. `eval` DOES
+`needs: roster`, in one direction only, so its badge step can commit an
+EXHIBIT copy of `roster`'s own computed roster
+(`needs.roster.outputs.roster_latest_json`, ADR 0001 decision 3: read by no
+decision) without either job reaching into the other's runner; `if:
+${{ !cancelled() && !inputs.roster_only }}` keeps a `roster` failure
+non-fatal to the eval, exactly as before. `roster-pr` becomes the only job
+depending on BOTH (`needs: [roster, eval]`): the only place both an
+independent re-verification of what `roster` published (B1.1–B1.3, now read
+via `needs.roster.outputs.*`) AND the `eval` job's own outcome
+(`needs.eval.result`) are both in reach at once — the tracking issue's eval
+sentence, which used to read `steps.eval.outcome` inside the single shared
+job, is computed here now instead, since `roster` structurally cannot know
+it (see below).
+
+**What "the eval job's outcome" costs.** Because `roster` never depends on
+`eval`, its own "same"/frozen-same tracking-issue writes can no longer say
+whether the eval succeeded, failed, or didn't run this dispatch — only
+whether `roster_only` was set (known synchronously from the event payload,
+same as before). The fuller success/failure/unknown sentence — read from
+`needs.eval.result`, a fixed GitHub Actions word, never trusted as free text
+— lives in `roster-pr` alone now, for the "differs"/"rejected" bodies it
+writes. `needs.eval.result == "skipped"` reads unambiguously as "this was a
+`roster_only` dispatch" because the `eval` job's own `if:` is now EXACTLY
+`!inputs.roster_only` — no other reason skips that job.
+
+**Should-fix 1 (this round): the commit itself, not just its shape, is
+verified.** Round 2's check 3 (above) confirmed the pushed commit's file
+diff — one file, `evals/roster.yml`, modified. It never confirmed the
+commit's own MESSAGE or AUTHOR, so a hostile `scripts/render_roster_yaml.py`
+planted in the `roster` job's untrusted-in-principle-but-previously-
+unverified workspace, or a `commit-msg` git hook, could ride along inside a
+file-shape-clean commit and land arbitrary content — a closing keyword, an
+`@mention` — in a pull request `roster-pr` then auto-merges
+(`test_B1_hostile_roster_content_single_file_is_auto_merged`, the round-3
+adversarial repro this fixes). `verify_publish` in `roster-pr` now also
+requires the compare's one commit to carry EXACTLY the message the propose
+step commits with (`roster: proposed model roster (run <RUN_ID>)`) and the
+bot's own author email (`skills-evals@users.noreply.github.com`); anything
+else fails the same way an extra file or a wrong status would. Separately,
+`harness/roster.py`'s rendered `summary.md` — the one piece of this run's
+own text that legitimately varies, shaped in part by the untrusted census —
+is neutralised in place (a zero-width space after `@` and before a `#`-digit
+run) the moment it is read, before it can reach any PR or issue body, so a
+closing keyword or mention embedded in the SUMMARY TEXT itself (rather than
+smuggled via the commit) is defused too.
+
+**B2: a planted future `catalogue_seen.last_seen` can't be used to poison
+history.** `_update_catalogue_seen`'s ageing math (`now - seen_at > max_age`)
+never ages out an entry whose `last_seen` is in the future — the round-3
+repro `test_B2_future_catalogue_seen_never_ages_out` shows one planted at
+`2099-12-31` still present after 4+ simulated years. Rather than changing
+that ageing math (which only ever runs on data already inside the trusted
+`evals/roster.yml`, i.e. already reviewed), `committed_roster_problems` — the
+one gate every proposal and every committed file must pass — now also
+rejects any `catalogue_seen` entry whose `last_seen` is later than the
+document's own `generated_at`. A hostile proposal carrying such an entry is
+rejected at admission, before it can ever be pushed or merged.
+
+**Should-fix 2–6 (mutant-proofing and wording), briefly:** the round-3
+mutation run found five single-fault gaps in `verify_publish`'s compare
+check (dropping `ahead_by == 1`, the filename check, the `modified` status
+check, or loosening either to a prefix/inequality) that survived only
+because every existing test happened to violate more than one clause at
+once; dedicated single-fault tests close each. A failed policy read
+combined with a forged `roster_mode: auto` claim from the untrusted job
+still had to fall back to `proposal` (it already did; a test now proves it,
+fail-closed). The PR lookup's `--jq` filter now also requires
+`.head.ref == "roster/proposal"`, not just the same repository, so a
+same-repo PR opened from some other branch can never be matched. And three
+tracking-issue/PR sentences that used to say "merge it after CI" regardless
+of WHY the automatic path didn't run now distinguish: a push that never
+succeeded this run ("this run's proposal was not pushed; review before
+merging" — never implying this run's content is on the PR), and a
+verification failure ("inspect before merging" plus the specific failed
+check — never implying the content is safe to just merge).
 
 ## Consequences
 

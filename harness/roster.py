@@ -247,6 +247,20 @@ def committed_roster_problems(document) -> list[str]:
         if isinstance(judge_entry.get("id"), str) and judge_entry["id"] in arm_ids:
             problems.append("the judge id is also an arm; a model must not "
                             "grade its own run")
+    # B2 (adversarial round 3 on #209): `generated_at`'s own DATE (its first
+    # 10 characters, e.g. "2026-09-28T00:00:00Z" -> "2026-09-28"), read once
+    # here so every `catalogue_seen` entry below can be checked against it.
+    # A missing/unparseable `generated_at` skips this comparison (its own
+    # absence is already a separate problem, appended below); it never
+    # raises here.
+    generated_at_raw = document.get("generated_at")
+    generated_at_date = None
+    if isinstance(generated_at_raw, str) and generated_at_raw.strip():
+        try:
+            generated_at_date = datetime.strptime(
+                generated_at_raw[:10], "%Y-%m-%d").date()
+        except ValueError:
+            generated_at_date = None
     seen = document.get("catalogue_seen")
     if not isinstance(seen, list):
         problems.append("`catalogue_seen` is not a list")
@@ -259,10 +273,20 @@ def committed_roster_problems(document) -> list[str]:
                                 f"{{id, last_seen}} with string values")
                 continue
             try:
-                datetime.strptime(entry["last_seen"], "%Y-%m-%d")
+                last_seen_date = datetime.strptime(
+                    entry["last_seen"], "%Y-%m-%d").date()
             except ValueError:
                 problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
                                 "is not an ISO YYYY-MM-DD date")
+                continue
+            # A planted `last_seen` later than this document's own
+            # `generated_at` can never age out under `_update_catalogue_seen`
+            # (its computed age against `now` is negative forever) — caught
+            # here instead, at the one gate every proposal and every
+            # committed file must pass (B2, round 3 on #209).
+            if generated_at_date is not None and last_seen_date > generated_at_date:
+                problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
+                                "is later than `generated_at`")
     seen_ids = [e["id"] for e in (seen if isinstance(seen, list) else [])
                 if isinstance(e, dict) and isinstance(e.get("id"), str)]
     for label, ids in (("arms", arm_ids), ("catalogue_seen", seen_ids)):

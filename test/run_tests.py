@@ -4119,31 +4119,42 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "be added, per the header's first rule")
 
     def test_permissions_are_exactly_the_three_the_header_names(self):
-        # F2 (adversarial round 1 on #209): the workflow-level block is now
-        # `{}` deliberately — each JOB carries its own least-privilege set,
-        # so the `eval` job (which runs the bypass-permissions agent) never
-        # sees `pull-requests: write`/`actions: write` at all; only the
-        # `roster-pr` job (F2's split-out PR/workflow-dispatch job) does.
-        # Both dicts are asserted for EQUALITY, so a fifth scope on either
-        # job reds this row whatever it is, and a scope moved from
-        # `roster-pr` onto `eval` (widening the agent's job, not just the
-        # workflow) reds it too — that is exactly the defect this test
-        # exists to catch.
+        # B1 (round 3 on #209, blocker), extending F2 (adversarial round 1
+        # on #209): the workflow-level block is `{}` deliberately — each of
+        # the THREE jobs carries its own least-privilege set, so the `eval`
+        # job (which runs the bypass-permissions agent) never sees
+        # `pull-requests: write`/`actions: write`/`issues: write` at all,
+        # and never even reaches the roster-decision scopes B1 moved onto
+        # `roster`. Every dict is asserted for EQUALITY, so a fifth scope on
+        # any job reds this row whatever it is, and a scope moved onto
+        # `eval` from either of the other two (widening the agent's job,
+        # not just the workflow) reds it too — that is exactly the defect
+        # this test exists to catch.
         doc = self._doc()
         self.assertEqual(
             doc.get("permissions"), {},
             "eval.yml's workflow-level permissions must be {} — every scope "
-            "lives at job level since F2's roster-pr split, so the "
-            "bypass-permissions `eval` job never inherits a PR/workflow "
-            "scope it does not itself declare")
+            "lives at job level, so the bypass-permissions `eval` job never "
+            "inherits a scope it does not itself declare")
+        self.assertEqual(
+            doc["jobs"]["roster"].get("permissions"),
+            {"contents": "write", "id-token": "write", "issues": "write"},
+            "the `roster` job's permissions must be exactly {contents: "
+            "write, id-token: write, issues: write} — contents for the "
+            "roster/proposal branch push, id-token for its own WIF mint, "
+            "issues for #147's tracking issue (B1, round 3 on #209: this "
+            "job computes, renders, admits and pushes the proposal, and "
+            "must never carry pull-requests/actions, and must never "
+            "`needs: eval` or run the agent)")
         self.assertEqual(
             doc["jobs"]["eval"].get("permissions"),
-            {"contents": "write", "id-token": "write", "issues": "write"},
+            {"contents": "write", "id-token": "write"},
             "the `eval` job's permissions must be exactly {contents: write, "
-            "id-token: write, issues: write} — unchanged from before the "
-            "roster-pr split (#147's `issues: write` addition); it must "
-            "never carry pull-requests/actions again, since it runs the "
-            "bypass-permissions agent")
+            "id-token: write} — contents for the badge/results push, "
+            "id-token for its OWN separate WIF mint (never shared with "
+            "`roster`'s); B1 (round 3 on #209) moved `issues: write` off "
+            "this job onto `roster`, since nothing here writes the "
+            "tracking issue any more")
         self.assertEqual(
             doc["jobs"]["roster-pr"].get("permissions"),
             {"pull-requests": "write", "actions": "write", "issues": "write",
@@ -4160,6 +4171,9 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "this job performs no checkout and runs no repository code")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["contents"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["id-token"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["issues"], "write")
 
     def test_the_proposal_step_carries_no_expression_in_its_run_block(self):
         # The general rule is asserted over every step by
@@ -4168,19 +4182,18 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # holds a write credential AND reads run-scoped values (the run
         # id, the repository, the server URL). Those arrive through `env:`
         # and are read as shell variables.
+        # B1 (round 3 on #209): EVAL_OUTCOME is gone from this step's env —
+        # it moved (as EVAL_RESULT, from `needs.eval.result`) to the
+        # `roster-pr` job, the only one with a `needs` relationship to
+        # `eval` (see TestEvalNoteKnowsTheOutcome in test/issues/test_issue_202.py).
         step = next(s for s in self._steps()
                     if (s.get("name") or "") == "Propose a roster change")
         self.assertNotIn("${{", step["run"])
         self.assertEqual(
             sorted(step.get("env") or {}),
-            ["EVAL_OUTCOME", "GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID",
-             "SERVER_URL"],
+            ["GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID", "SERVER_URL"],
             "every run-scoped value the proposal step reads arrives through "
             "env:, and the write credential is step-local")
-        # EVAL_OUTCOME is the eval step's outcome (#203 probe round 3), the
-        # sanctioned `${{ steps.<id>.outcome }}` form in `env:`.
-        self.assertEqual(step["env"]["EVAL_OUTCOME"], "${{ steps.eval.outcome }}")
-        self.assertIn("${EVAL_OUTCOME:-}", step["run"])
         for name in ("RUN_ID", "REPO", "SERVER_URL"):
             self.assertIn(f"${name}", step["run"])
 
@@ -4231,10 +4244,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
         checkout_steps = [s for s in self._steps()
                           if (s.get("uses") or "").startswith("actions/checkout@")]
-        count = len(checkout_steps)
+        # B1 (round 3 on #209): the header's "All N checkouts" counts
+        # DISTINCT repositories in the trust boundary, not raw
+        # `actions/checkout@` steps — `skills-evals` is now checked out
+        # once per job (`roster` and `eval` each need their own), which
+        # doubles the step count without adding a repository.
+        repo_keys = {(step.get("with") or {}).get("repository") or "self"
+                    for step in checkout_steps}
+        count = len(repo_keys)
         number_words = {2: "two", 3: "three", 4: "four", 5: "five"}
         self.assertIn(count, number_words,
-                      f"unexpected number of checkout steps: {count}")
+                      f"unexpected number of distinct checked-out repositories: {count}")
         self.assertIn(
             f"All {number_words[count]} checkouts", header,
             f"the header must say 'All {number_words[count]} checkouts' — "
@@ -5821,14 +5841,17 @@ class TestIssue67(unittest.TestCase):
             path.read_text(encoding="utf-8"))
 
     def test_eval_workflow_refreshes_the_roster_before_running_the_eval(self):
+        # B1 (round 3 on #209): the refresh step moved into a SEPARATE
+        # `roster` job the `eval` job now `needs:` — "before" is a job
+        # dependency, not a step index within one list any more.
         _, doc = self._eval_workflow()
-        steps = doc["jobs"]["eval"]["steps"]
-        names = [s.get("name", "") for s in steps]
+        self.assertEqual(doc["jobs"]["eval"].get("needs"), "roster")
+        roster_steps = doc["jobs"]["roster"]["steps"]
+        names = [s.get("name", "") for s in roster_steps]
         refresh = next(i for i, n in enumerate(names) if "roster" in n.lower())
-        run = next(i for i, n in enumerate(names) if n.startswith("Run the eval"))
-        self.assertLess(refresh, run,
-                        "the roster has to exist before the eval reads it")
-        script = steps[refresh]["run"]
+        eval_names = [s.get("name", "") for s in doc["jobs"]["eval"]["steps"]]
+        self.assertTrue(any(n.startswith("Run the eval") for n in eval_names))
+        script = roster_steps[refresh]["run"]
         self.assertIn("GITHUB_STEP_SUMMARY", script,
                       "#67: the computed roster is called out in the job summary")
         self.assertIn("roster.py", script)
@@ -5853,15 +5876,19 @@ class TestIssue67(unittest.TestCase):
         # EvalWorkflowSecurityHeaderTests — the duplication is deliberate
         # and predates #147: this is the test nobody may delete.
         #
-        # F2 (adversarial round 1 on #209): the workflow-level block is now
-        # {} and each job carries its own scopes — `eval` keeps exactly
-        # this same three-scope set at JOB level, and `pull-requests`/
-        # `actions` moved to the new `roster-pr` job alone, so the
-        # bypass-permissions agent's own job never widened.
+        # F2 (adversarial round 1 on #209), extended by B1 (round 3 on
+        # #209, blocker): the workflow-level block is {} and each of the
+        # THREE jobs carries its own scopes — `roster` (never `eval`) now
+        # holds the roster-decision scopes (contents/id-token/issues);
+        # `eval` keeps only contents/id-token for its own badge push and
+        # WIF mint; `pull-requests`/`actions` stay on `roster-pr` alone —
+        # so the bypass-permissions agent's own job never widens.
         self.assertEqual(doc["permissions"], {})
-        self.assertEqual(doc["jobs"]["eval"]["permissions"],
+        self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "write", "id-token": "write",
                           "issues": "write"})
+        self.assertEqual(doc["jobs"]["eval"]["permissions"],
+                         {"contents": "write", "id-token": "write"})
         self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
                          {"pull-requests": "write", "actions": "write",
                           "issues": "write", "contents": "write"})
@@ -5886,11 +5913,14 @@ class TestIssue67(unittest.TestCase):
             if re.match(r"^\s*(?:-\s+)?uses:", line):
                 self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
                                  "a `uses:` pin carries a trailing comment")
-        for step in doc["jobs"]["eval"]["steps"]:
-            if (step.get("uses") or "").startswith("actions/checkout@"):
-                self.assertIs((step.get("with") or {}).get("persist-credentials"),
-                              False, f"checkout step {step.get('name')!r} keeps a "
-                                     "GitHub credential on the runner")
+        # B1 (round 3 on #209): the `roster` job now checks out
+        # skills-evals too, so this scans every job, not just `eval`.
+        for job in doc["jobs"].values():
+            for step in job["steps"]:
+                if (step.get("uses") or "").startswith("actions/checkout@"):
+                    self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                                  False, f"checkout step {step.get('name')!r} keeps a "
+                                         "GitHub credential on the runner")
         self.assertEqual(doc["concurrency"],
                          {"group": "real-eval", "cancel-in-progress": False},
                          "the badge commit races itself without this lane")
@@ -6706,19 +6736,30 @@ class TestIssue67Review(unittest.TestCase):
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        # B1 (round 3 on #209): "Refresh the model roster"/"Propose a
+        # roster change" moved to the `roster` job; "WIF auth preflight"
+        # and everything else named here stayed in `eval`. Concatenated so
+        # `_step_named` still finds either by substring regardless of
+        # which job actually holds it.
+        return doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]
 
     def _step_named(self, needle):
         return next(s for s in self._steps()
                     if needle.lower() in (s.get("name") or "").lower())
 
     def test_the_roster_is_refreshed_before_the_preflight_that_consumes_it(self):
-        names = [s.get("name", "") for s in self._steps()]
-        roster_at = next(i for i, n in enumerate(names) if "roster" in n.lower())
-        preflight_at = next(i for i, n in enumerate(names) if "preflight" in n.lower())
-        self.assertLess(roster_at, preflight_at,
-                        "the preflight takes its model from the roster, so the "
-                        "roster has to exist first")
+        # B1 (round 3 on #209): "before" is now a JOB dependency
+        # (`eval` needs: roster) rather than step order within one job's
+        # list — "Refresh the model roster" lives in the `roster` job,
+        # "WIF auth preflight" in `eval`.
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        self.assertEqual(doc["jobs"]["eval"].get("needs"), "roster",
+                         "the preflight takes its model from the roster, so "
+                         "the `eval` job must depend on `roster`")
+        roster_names = [s.get("name", "") for s in doc["jobs"]["roster"]["steps"]]
+        eval_names = [s.get("name", "") for s in doc["jobs"]["eval"]["steps"]]
+        self.assertTrue(any("roster" in n.lower() for n in roster_names))
+        self.assertTrue(any("preflight" in n.lower() for n in eval_names))
 
     def test_the_preflight_takes_its_model_from_the_roster(self):
         script = self._step_named("preflight")["run"]
@@ -6992,7 +7033,12 @@ class TestIssue67Review2(unittest.TestCase):
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        # B1 (round 3 on #209): "Refresh the model roster"/"Propose a
+        # roster change" moved to the `roster` job; "WIF auth preflight"
+        # and everything else named here stayed in `eval`. Concatenated so
+        # `_step_named` still finds either by substring regardless of
+        # which job actually holds it.
+        return doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]
 
     def _step_named(self, needle):
         return next(s for s in self._steps()
@@ -10113,7 +10159,12 @@ class TestIssue67Review3(unittest.TestCase):
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        # B1 (round 3 on #209): "Refresh the model roster"/"Propose a
+        # roster change" moved to the `roster` job; "WIF auth preflight"
+        # and everything else named here stayed in `eval`. Concatenated so
+        # `_step_named` still finds either by substring regardless of
+        # which job actually holds it.
+        return doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]
 
     def _step_named(self, needle):
         return next(s for s in self._steps()
@@ -28745,6 +28796,14 @@ class TestIssue147(unittest.TestCase):
             ("catalogue_seen bad date",
              mutate(catalogue_seen=[{"id": "claude-opus-4-8",
                                      "last_seen": "yesterday"}]), "ISO"),
+            # B2 (adversarial round 3 on #209): a planted `last_seen` later
+            # than `generated_at` never ages out under
+            # `_update_catalogue_seen` (its computed age is negative
+            # forever); caught here instead.
+            ("catalogue_seen last_seen after generated_at",
+             mutate(catalogue_seen=[{"id": "claude-opus-4-8",
+                                     "last_seen": "2099-12-31"}]),
+             "is later than `generated_at`"),
             ("duplicate ids",
              mutate(arms=[{"id": "claude-sonnet-5", "reason": "a"},
                           {"id": "claude-sonnet-5", "reason": "b"}]),
@@ -28878,21 +28937,25 @@ class TestIssue147(unittest.TestCase):
         doc = yaml.safe_load(
             (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
                 encoding="utf-8"))
-        for step in doc["jobs"]["eval"]["steps"]:
-            script = step.get("run") or ""
-            code = "\n".join(line for line in script.splitlines()
-                              if not line.lstrip().startswith("#"))
-            with self.subTest(step=step.get("name")):
-                self.assertNotIn(
-                    "EVAL_ROSTER", code,
-                    "eval.yml must not point selection at anything off "
-                    "eval-results; the committed evals/roster.yml is the "
-                    "roster the harness runs on (ADR 0001)")
-                self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
-                self.assertNotIn(
-                    "roster/latest.json > ", code,
-                    "the previous roster is the committed file now, not a "
-                    "copy materialised from the untrusted branch")
+        # B1 (round 3 on #209): scans every job — the property is
+        # workflow-wide, not `eval`-job-specific, and the roster logic this
+        # rule is about now lives in the `roster` job.
+        for job_name, job in doc["jobs"].items():
+            for step in job["steps"]:
+                script = step.get("run") or ""
+                code = "\n".join(line for line in script.splitlines()
+                                  if not line.lstrip().startswith("#"))
+                with self.subTest(job=job_name, step=step.get("name")):
+                    self.assertNotIn(
+                        "EVAL_ROSTER", code,
+                        "eval.yml must not point selection at anything off "
+                        "eval-results; the committed evals/roster.yml is the "
+                        "roster the harness runs on (ADR 0001)")
+                    self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
+                    self.assertNotIn(
+                        "roster/latest.json > ", code,
+                        "the previous roster is the committed file now, not a "
+                        "copy materialised from the untrusted branch")
         self.assertNotIn("EVAL_ROSTER", (doc.get("env") or {}))
 
     def test_eval_yml_preflight_reads_the_committed_file(self):
@@ -29181,7 +29244,7 @@ class TestIssue147(unittest.TestCase):
         document = yaml.safe_load(
             (source / ".github" / "workflows" / "eval.yml").read_text(
                 encoding="utf-8"))
-        script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+        script = next(step["run"] for step in document["jobs"]["roster"]["steps"]
                       if step.get("name") == "Propose a roster change")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -29294,13 +29357,17 @@ elif 'worktree' in args and 'remove' in args:
                 outputs = self._parse_github_output(github_output)
                 roster_pr_script = next(
                     step for step in document["jobs"]["roster-pr"]["steps"])
+                # B1 (round 3 on #209): `eval_note` is NOT here — it is
+                # computed inside `roster-pr` itself, from `needs.eval.result`
+                # (env2's EVAL_RESULT, left unset here, reads as "no eval
+                # result").
                 output_env = {
                     "roster_mode": "ROSTER_MODE", "status": "STATUS",
                     "probe_clean": "PROBE_CLEAN", "issue_number": "ISSUE_NUMBER",
                     "pushed_sha": "PUSHED_SHA", "rejected": "REJECTED",
                     "rejection_reason": "REJECTION_REASON",
                     "rendered_identical": "RENDERED_IDENTICAL",
-                    "eval_note": "EVAL_NOTE", "probe_note": "PROBE_NOTE",
+                    "probe_note": "PROBE_NOTE",
                     "roster_summary": "ROSTER_SUMMARY"}
                 env2 = dict(env)
                 for key, var in output_env.items():
@@ -30130,15 +30197,18 @@ elif 'worktree' in args and 'remove' in args:
         raw = (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
             encoding="utf-8")
         doc = yaml.safe_load(raw)
-        for step in doc["jobs"]["eval"]["steps"]:
-            script = step.get("run") or ""
-            code = "\n".join(line for line in script.splitlines()
-                             if not line.lstrip().startswith("#"))
-            with self.subTest(step=step.get("name")):
-                for verb in ("> evals/roster.yml", ">> evals/roster.yml",
-                             "cp \"$RUNNER_TEMP/proposed-roster.yml\" evals/roster.yml"):
-                    self.assertNotIn(verb, code,
-                                     "no step may write the committed roster")
+        # B1 (round 3 on #209): scans every job — the rendering/push logic
+        # this claim is about now lives in the `roster` job, not `eval`.
+        for job_name, job in doc["jobs"].items():
+            for step in job["steps"]:
+                script = step.get("run") or ""
+                code = "\n".join(line for line in script.splitlines()
+                                 if not line.lstrip().startswith("#"))
+                with self.subTest(job=job_name, step=step.get("name")):
+                    for verb in ("> evals/roster.yml", ">> evals/roster.yml",
+                                 "cp \"$RUNNER_TEMP/proposed-roster.yml\" evals/roster.yml"):
+                        self.assertNotIn(verb, code,
+                                         "no step may write the committed roster")
         self.assertIn("roster/proposal", raw)
         self.assertIn("<!-- skills-evals:roster-proposal -->", raw)
 # ---------------------------------------------------------------------------

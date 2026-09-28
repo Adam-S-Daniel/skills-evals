@@ -1140,7 +1140,7 @@ class TestWorkflowProbesDefaults(unittest.TestCase):
 
     def _roster_step(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        return next(s for s in doc["jobs"]["eval"]["steps"]
+        return next(s for s in doc["jobs"]["roster"]["steps"]
                     if "roster" in (s.get("name") or "").lower())["run"]
 
     def test_the_roster_step_probes_defaults_first_and_passes_them(self):
@@ -1191,6 +1191,11 @@ class TestRosterOnlyDispatch(unittest.TestCase):
     the owner held paid runs until the roster seats the new defaults, and the
     roster step exists only inside this workflow."""
 
+    # B1 (round 3 on #209): the SKIPPED steps live in the `eval` job (whose
+    # OWN `if:` is now `!cancelled() && !inputs.roster_only`, so the whole
+    # job — not just these steps — is skipped; their own step-level `if:`
+    # stays too, defensively). The KEPT steps live in the `roster` job,
+    # which has no `roster_only`-conditioned `if:` at all: it always runs.
     SKIPPED = ("WIF auth preflight", "Run the eval (both arms, judge)",
                "Build the badge over the run window, commit, and push")
     KEPT = ("Mint OIDC token and exchange for Anthropic access token",
@@ -1200,7 +1205,9 @@ class TestRosterOnlyDispatch(unittest.TestCase):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         # PyYAML reads the bare `on:` key as boolean True.
         self.triggers = doc.get("on", doc.get(True))
-        self.steps = {s.get("name"): s for s in doc["jobs"]["eval"]["steps"]}
+        self.jobs = doc["jobs"]
+        self.steps = {s.get("name"): s for s in
+                      doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]}
 
     def test_the_input_is_a_boolean_that_defaults_off(self):
         spec = self.triggers["workflow_dispatch"]["inputs"]["roster_only"]
@@ -1279,10 +1286,15 @@ class TestRosterOnlyDispatch(unittest.TestCase):
                 self.assertNotIn("no eval ran", note)
 
     def test_both_bodies_carry_the_note(self):
+        # B1 (round 3 on #209): this step's OWN local `eval_note` (the
+        # simplified 2-way roster_only/not version) is used only by the
+        # "same"/frozen-same bodies it writes directly — the fuller
+        # success/failure/unknown version now lives in `roster-pr`'s own
+        # `# >>> eval-note` fragment (see TestEvalNoteKnowsTheOutcome).
         run = self.steps["Propose a roster change"]["run"]
         self.assertNotIn("The paid eval ran on the committed", run.replace(
             self._note_fragment(), ""))
-        self.assertGreaterEqual(run.count('"$eval_note"'), 2)
+        self.assertGreaterEqual(run.count('"$eval_note"'), 1)
 
     def test_the_input_and_readme_say_nothing_is_published(self):
         spec = self.triggers["workflow_dispatch"]["inputs"]["roster_only"]
@@ -1781,21 +1793,24 @@ class _ProposeStepFixture(unittest.TestCase):
         the two `::warning::` lines must not read "for 1 families"."""
         return "family" if n == 1 else "families"
 
-    #: needs.eval.outputs.<key> -> the env var name the roster-pr job's step
-    #: reads it as (must match .github/workflows/eval.yml's `roster-pr` job
-    #: env: block exactly — TestRosterPrJobEnvMatchesOutputs asserts that).
+    #: needs.roster.outputs.<key> -> the env var name the roster-pr job's
+    #: step reads it as (must match .github/workflows/eval.yml's
+    #: `roster-pr` job env: block exactly — TestRosterPrJobEnvMatchesOutputs
+    #: asserts that). `eval_note` is NOT here (B1, round 3 on #209): it is
+    #: computed inside `roster-pr` itself, from `needs.eval.result` — the
+    #: `roster` job cannot know it (it must never depend on `eval`).
     OUTPUT_ENV = {
         "roster_mode": "ROSTER_MODE", "status": "STATUS",
         "probe_clean": "PROBE_CLEAN", "issue_number": "ISSUE_NUMBER",
         "pushed_sha": "PUSHED_SHA", "rejected": "REJECTED",
         "rejection_reason": "REJECTION_REASON",
-        "rendered_identical": "RENDERED_IDENTICAL", "eval_note": "EVAL_NOTE",
+        "rendered_identical": "RENDERED_IDENTICAL",
         "probe_note": "PROBE_NOTE", "roster_summary": "ROSTER_SUMMARY",
     }
 
     def setUp(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        self.run_body = next(s for s in doc["jobs"]["eval"]["steps"]
+        self.run_body = next(s for s in doc["jobs"]["roster"]["steps"]
                              if s.get("name") == "Propose a roster change")["run"]
         #: F2 (adversarial round 1 on #209): every `gh pr`/`gh workflow run`
         #: call moved out of `self.run_body` into this second job's own
@@ -2027,20 +2042,22 @@ class _ProposeStepFixture(unittest.TestCase):
             '              range="${url##*/compare/}"\n'
             '              base_sha="${range%%...*}"\n'
             '              head_sha="${range##*...}"\n'
-            "              ahead=0; behind=0; namestatus=''\n"
+            "              ahead=0; behind=0; namestatus=''; commitlog=''\n"
             '              if [ -n "$gitdir" ] && git -C "$gitdir" cat-file -e "$base_sha" 2>/dev/null \\\n'
             '                 && git -C "$gitdir" cat-file -e "$head_sha" 2>/dev/null; then\n'
             '                ahead=$(git -C "$gitdir" rev-list --count "$base_sha..$head_sha" 2>/dev/null || echo 0)\n'
             '                behind=$(git -C "$gitdir" rev-list --count "$head_sha..$base_sha" 2>/dev/null || echo 0)\n'
             '                namestatus=$(git -C "$gitdir" diff --name-status "$base_sha" "$head_sha" 2>/dev/null || echo \'\')\n'
+            '                commitlog=$(git -C "$gitdir" log --reverse --format=\'%B%x1f%ae%x1e\' "$base_sha..$head_sha" 2>/dev/null || echo \'\')\n'
             '              fi\n'
             '              cstatus=diverged\n'
             '              if [ "$ahead" -gt 0 ] && [ "$behind" -eq 0 ]; then cstatus=ahead\n'
             '              elif [ "$ahead" -eq 0 ] && [ "$behind" -gt 0 ]; then cstatus=behind\n'
             '              elif [ "$ahead" -eq 0 ] && [ "$behind" -eq 0 ]; then cstatus=identical\n'
             '              fi\n'
-            "              resp=$(python3 -c '\n"
+            "              resp=$(COMMITLOG=\"$commitlog\" python3 -c '\n"
             'import json\n'
+            'import os\n'
             'import sys\n'
             'status, ahead, behind = sys.argv[1], int(sys.argv[2]), int(sys.argv[3])\n'
             'names = {"A": "added", "M": "modified", "D": "removed"}\n'
@@ -2051,7 +2068,16 @@ class _ProposeStepFixture(unittest.TestCase):
             '        continue\n'
             '    code, _, path = line.partition("\\t")\n'
             '    files.append({"filename": path, "status": names.get(code[:1], code)})\n'
-            'print(json.dumps({"status": status, "ahead_by": ahead, "behind_by": behind, "files": files}))\n'
+            'commits = []\n'
+            'for record in (os.environ.get("COMMITLOG") or "").split("\\x1e"):\n'
+            '    record = record.lstrip("\\n")\n'
+            '    if not record.strip():\n'
+            '        continue\n'
+            '    message, _, email = record.partition("\\x1f")\n'
+            '    commits.append({"commit": {"message": message.rstrip("\\n"),\n'
+            '                               "author": {"email": email.strip()}}})\n'
+            'print(json.dumps({"status": status, "ahead_by": ahead, "behind_by": behind, '
+            '"files": files, "commits": commits}))\n'
             '\' "$cstatus" "$ahead" "$behind" <<<"$namestatus")\n'
             '              ;;\n'
             '            repos/*/pulls\\?state=open*)\n'
@@ -2353,7 +2379,7 @@ class TestWorkflowProbeFallbackDocument(unittest.TestCase):
 
     def test_a_failed_probe_leaves_a_document_that_freezes(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        script = next(s for s in doc["jobs"]["eval"]["steps"]
+        script = next(s for s in doc["jobs"]["roster"]["steps"]
                       if "roster" in (s.get("name") or "").lower())["run"]
         line = next(ln.strip() for ln in script.splitlines()
                     if "scripts/probe_model_defaults.py" in ln
@@ -2754,7 +2780,7 @@ class TestProbeExitedDocument(_RosterFixture):
 
     def test_the_workflow_writes_the_stand_in(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        script = next(s for s in doc["jobs"]["eval"]["steps"]
+        script = next(s for s in doc["jobs"]["roster"]["steps"]
                       if s.get("name") == "Refresh the model roster")["run"]
         line = next(ln.strip() for ln in script.splitlines()
                     if "scripts/probe_model_defaults.py" in ln
@@ -2774,7 +2800,7 @@ class TestProposeStepRunsUnlessCancelled(unittest.TestCase):
 
     def _step(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        return next(s for s in doc["jobs"]["eval"]["steps"]
+        return next(s for s in doc["jobs"]["roster"]["steps"]
                     if s.get("name") == "Propose a roster change")
 
     def test_the_step_runs_unless_cancelled(self):
@@ -3197,22 +3223,24 @@ class TestRound3Wording(_WeeklyLoop):
 
 
 class TestEvalNoteKnowsTheOutcome(unittest.TestCase):
-    """R3-3 (#203 probe round 3): the issue's eval sentence comes from the
-    eval step's `outcome`, passed in through `env:`. The propose step runs
-    BEFORE the badge/publish step, so a successful eval's sentence says the
-    publish is the later step's and is not known here."""
+    """R3-3 (#203 probe round 3); relocated by B1 (round 3 on #209): the
+    issue's eval sentence comes from the `eval` JOB's `result`, read
+    through `env:` by the `roster-pr` job — the only job with a `needs`
+    relationship to both `roster` and `eval`, so the only one that can
+    build this sentence at all (`roster`, which writes the "same"/
+    frozen-same bodies directly, must never depend on `eval` and so can
+    only ever know whether an eval runs THIS dispatch, never how it
+    turned out)."""
 
-    START = TestRosterOnlyDispatch.NOTE_START
-    END = TestRosterOnlyDispatch.NOTE_END
+    START = "# >>> eval-note"
+    END = "# <<< eval-note"
 
     def setUp(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        self.steps = doc["jobs"]["eval"]["steps"]
-        self.by_name = {s.get("name"): s for s in self.steps}
-        self.propose = self.by_name["Propose a roster change"]
+        self.roster_pr_step = doc["jobs"]["roster-pr"]["steps"][0]
 
     def _note(self, outcome, event=None):
-        run = self.propose["run"]
+        run = self.roster_pr_step["run"]
         fragment = run[run.index(self.START):run.index(self.END)]
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
@@ -3221,50 +3249,56 @@ class TestEvalNoteKnowsTheOutcome(unittest.TestCase):
         env = {"PATH": os.environ.get("PATH", ""),
                "GITHUB_EVENT_PATH": str(tmp / "event.json")}
         if outcome is not None:
-            env["EVAL_OUTCOME"] = outcome
+            env["EVAL_RESULT"] = outcome
         done = subprocess.run(["bash", "-c", "set -euo pipefail\n" + fragment
                                + '\nprintf "%s" "$eval_note"\n'],
                               capture_output=True, text=True, timeout=30, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout
 
-    def test_the_outcome_arrives_through_env_from_the_eval_steps_id(self):
-        eval_step = self.by_name["Run the eval (both arms, judge)"]
-        self.assertEqual(eval_step.get("id"), "eval")
-        self.assertEqual(self.propose["env"]["EVAL_OUTCOME"], "${{ steps.eval.outcome }}")
-        self.assertNotIn("${{", self.propose["run"])
-        names = [s.get("name") for s in self.steps]
-        self.assertLess(names.index("Propose a roster change"),
-                        names.index("Build the badge over the run window, commit, and push"))
+    def test_the_result_arrives_through_env_from_needs_eval_result(self):
+        self.assertEqual(self.roster_pr_step["env"]["EVAL_RESULT"], "${{ needs.eval.result }}")
+        self.assertNotIn("${{", self.roster_pr_step["run"])
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
     def test_a_failed_eval_says_nothing_was_published(self):
         note = self._note("failure")
-        self.assertIn("the eval step failed; nothing from this run was published to "
+        self.assertIn("the `eval` job failed; nothing from this run was published to "
                       "`eval-results`", note)
         self.assertNotIn("are published", note)
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_a_successful_eval_says_publishing_is_the_next_step(self):
+    def test_a_successful_eval_says_publishing_is_the_badge_step(self):
         note = self._note("success")
         self.assertIn("ran on the committed", note)
-        self.assertIn("results are published to `eval-results` by the next step", note)
+        self.assertIn("results are published to `eval-results` by the `eval` job's "
+                      "own badge step", note)
         self.assertNotIn("published to `eval-results` normally", note)
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
     def test_an_eval_that_did_not_run_says_so(self):
-        for outcome in ("skipped", "cancelled", "", None):
+        for outcome in ("cancelled", "", None):
             with self.subTest(outcome=outcome):
                 note = self._note(outcome)
-                self.assertIn("the eval step did not run; nothing from this run was "
-                              "published to `eval-results`", note)
+                self.assertIn("the `eval` job did not run, or its result is unknown; "
+                              "nothing from this run was published to `eval-results`",
+                              note)
                 self.assertNotIn("ran on the committed", note)
+
+    @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
+    def test_a_skipped_eval_reads_as_no_eval_ran(self):
+        # B1 (round 3 on #209): the `eval` job's `if:` is EXACTLY
+        # `!inputs.roster_only`, so a `result` of `skipped` means precisely
+        # a `roster_only` dispatch — never some other reason the job might
+        # be skipped.
+        note = self._note("skipped")
+        self.assertIn("no eval ran", note)
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
     def test_roster_only_wins(self):
         note = self._note("skipped", {"inputs": {"roster_only": True}})
         self.assertIn("no eval ran", note)
-        self.assertNotIn("the eval step did not run", note)
+        self.assertNotIn("the `eval` job did not run", note)
 
 
 class TestProposeStepGhWritesWarn(_ProposeStepFixture):
@@ -3420,28 +3454,59 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
 
     def test_env_maps_every_declared_output_under_the_fixtures_names(self):
         doc = self._doc()
-        eval_outputs = doc["jobs"]["eval"]["outputs"]
+        roster_outputs = doc["jobs"]["roster"]["outputs"]
         roster_pr_env = doc["jobs"]["roster-pr"]["steps"][0]["env"]
-        self.assertEqual(set(eval_outputs), set(_ProposeStepFixture.OUTPUT_ENV),
-                         "the eval job's outputs: keys must match "
-                         "_ProposeStepFixture.OUTPUT_ENV exactly")
+        # `roster_latest_json` is the one output NOT read by `roster-pr`
+        # (B1, round 3 on #209): it goes to the `eval` job's badge step
+        # instead, checked separately below.
+        self.assertEqual(set(roster_outputs) - {"roster_latest_json"},
+                         set(_ProposeStepFixture.OUTPUT_ENV),
+                         "the roster job's outputs (minus roster_latest_json): "
+                         "keys must match _ProposeStepFixture.OUTPUT_ENV exactly")
         for key, var in _ProposeStepFixture.OUTPUT_ENV.items():
             with self.subTest(key=key):
-                self.assertEqual(eval_outputs[key],
+                self.assertEqual(roster_outputs[key],
                                  "${{ steps.propose.outputs.%s }}" % key)
                 self.assertEqual(roster_pr_env.get(var),
-                                 "${{ needs.eval.outputs.%s }}" % key,
+                                 "${{ needs.roster.outputs.%s }}" % key,
                                  f"roster-pr job's env.{var} must read "
-                                 f"needs.eval.outputs.{key}")
+                                 f"needs.roster.outputs.{key}")
+
+    def test_eval_job_badge_step_reads_roster_latest_json_from_needs(self):
+        # B1 (round 3 on #209): the ONE roster output not read by
+        # `roster-pr` — it is an exhibit copy the `eval` job's badge step
+        # threads through instead (ADR 0001, decision 3: read by no
+        # decision).
+        doc = self._doc()
+        roster_outputs = doc["jobs"]["roster"]["outputs"]
+        self.assertEqual(roster_outputs["roster_latest_json"],
+                         "${{ steps.propose.outputs.roster_latest_json }}")
+        badge_step = next(s for s in doc["jobs"]["eval"]["steps"]
+                          if s.get("name") == "Build the badge over the run window, "
+                                              "commit, and push")
+        self.assertEqual(badge_step["env"].get("ROSTER_LATEST_JSON"),
+                         "${{ needs.roster.outputs.roster_latest_json }}")
 
     def test_roster_pr_job_needs_eval_and_runs_unless_cancelled(self):
         doc = self._doc()
         job = doc["jobs"]["roster-pr"]
-        self.assertEqual(job.get("needs"), "eval")
+        self.assertEqual(job.get("needs"), ["roster", "eval"])
         # B1.4 (round 2): only on `main` — added to the original
         # `!cancelled()` gate, never replacing it.
         self.assertEqual(job.get("if"),
                          "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+
+    def test_eval_job_needs_roster_and_is_not_fatal_to_a_roster_failure(self):
+        # B1 (round 3 on #209): the `eval` job depends on `roster` (for the
+        # exhibit-copy output only) but must still run on the committed
+        # roster when `roster` fails outright — never the other way
+        # (`roster` must never `needs: eval`).
+        doc = self._doc()
+        self.assertIsNone(doc["jobs"]["roster"].get("needs"))
+        eval_job = doc["jobs"]["eval"]
+        self.assertEqual(eval_job.get("needs"), "roster")
+        self.assertEqual(eval_job.get("if"),
+                         "${{ !cancelled() && !inputs.roster_only }}")
 
 
 class TestRosterModeFragment(_ProposeStepFixture):
@@ -3519,7 +3584,8 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
             case = self._pr_list_value
             if case and case.isdigit():
                 rows = [{"number": int(case),
-                         "head": {"repo": {"full_name": "example/skills-evals"}}}]
+                         "head": {"repo": {"full_name": "example/skills-evals"},
+                                  "ref": "roster/proposal"}}]
         rows_file = self.tmp / "pr-list-rows.json"
         rows_file.write_text(json.dumps(rows), encoding="utf-8")
         fail_sentinel = getattr(self, "_gh_fail", None) or "\x01NEVERMATCH\x01"
@@ -3960,9 +4026,12 @@ class TestAdversarialRound1F1NeverMatchesAForkPr(_AutoProposeStepFixture):
     sends (piped through actual `jq` here, never a hardcoded stand-in), so
     a regression to an unfiltered `.[0].number` form fails these."""
 
-    FOREIGN = {"number": 101, "head": {"repo": {"full_name": "attacker/skills-evals"}}}
-    OWN_55 = {"number": 55, "head": {"repo": {"full_name": "example/skills-evals"}}}
-    OWN_102 = {"number": 102, "head": {"repo": {"full_name": "example/skills-evals"}}}
+    FOREIGN = {"number": 101, "head": {"repo": {"full_name": "attacker/skills-evals"},
+                                       "ref": "roster/proposal"}}
+    OWN_55 = {"number": 55, "head": {"repo": {"full_name": "example/skills-evals"},
+                                     "ref": "roster/proposal"}}
+    OWN_102 = {"number": 102, "head": {"repo": {"full_name": "example/skills-evals"},
+                                       "ref": "roster/proposal"}}
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
                          "needs bash, jq and git")
@@ -4015,6 +4084,26 @@ class TestAdversarialRound1F1NeverMatchesAForkPr(_AutoProposeStepFixture):
         self.assertFalse(any(c.startswith("pr create") for c in pr_calls), pr_calls)
         self.assertIn("Pull request #55", body)
         self.assertNotIn("#102", body)
+
+    OWN_OTHER_BRANCH = {"number": 77,
+                        "head": {"repo": {"full_name": "example/skills-evals"},
+                                 "ref": "some-other-branch"}}
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_same_repo_pr_from_another_branch_is_treated_as_no_open_pr(self):
+        # N15 (round 3 on #209): a same-repo, same-base open PR that was
+        # opened from some OTHER branch (never `roster/proposal` at all)
+        # must never be matched or closed.
+        latest = self.SAME
+        d = self.tmp / "other-branch"; d.mkdir()
+        self._write_policy(d, "auto")
+        self._pr_list_rows = [self.OWN_OTHER_BRANCH]
+        out, calls, body = self._run_step(latest, self._tracker(), cwd=d)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("pr close") for c in pr_calls), pr_calls)
+        self.assertNotIn("77", " ".join(pr_calls))
+        self.assertNotIn("77", body or "")
 
 
 class TestAdversarialRound1F5MatchHeadCommit(_AutoProposeStepFixture):
@@ -4213,6 +4302,56 @@ class TestB1PolicyReadFromApi(TestB1RosterPrHelper):
         self.assertIn("roster_mode (policy at $GITHUB_SHA): proposal", out)
         self.assertFalse(any(c.startswith("api ") and "contents" in c for c in calls), calls)
 
+    def test_policy_unreadable_and_forged_auto_output_still_falls_back_to_proposal(self):
+        # N8 (round 3 on #209): the policy is unreadable/absent AND the
+        # `roster` job's own (untrusted) ROSTER_MODE output claims "auto" —
+        # fail closed to "proposal" regardless, never the forged value.
+        work = self.tmp / "unreadable-forged"; work.mkdir()
+        out, calls, body = self._run_roster_pr_direct(
+            {"GITHUB_SHA": "a" * 40, "STATUS": "same", "ROSTER_MODE": "auto"}, work=work)
+        self.assertIn("roster_mode (policy at $GITHUB_SHA): proposal", out)
+        self.assertNotIn("::warning::roster_mode is not auto", out)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+
+    def test_main_saying_proposal_overrides_a_stale_auto_at_github_sha(self):
+        # N9 (round 3 on #209): a policy edit that landed on `main` AFTER
+        # this run's trigger commit — setting `roster_mode: proposal` to
+        # pull the emergency brake — must win even though `$GITHUB_SHA`
+        # itself still reads `auto`.
+        work = self._repo("auto")
+        github_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        self._write_policy(work, "proposal")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm",
+                        "pull the emergency brake"], check=True)
+        out, calls, body = self._run_roster_pr_direct(
+            {"GITHUB_SHA": github_sha, "STATUS": "same"}, work=work)
+        self.assertIn("roster_mode (policy at $GITHUB_SHA): proposal", out)
+        self.assertIn("raw=auto", out)  # confirms $GITHUB_SHA alone still says auto
+
+    def test_github_sha_saying_proposal_is_not_overridden_by_main(self):
+        # The mirror case: `$GITHUB_SHA` itself says `proposal` (or main
+        # simply hasn't caught up to an `auto` flip yet) — `auto` never
+        # wins on a majority or a tie, only when BOTH agree. `main` is
+        # short-circuited (never even read) once `$GITHUB_SHA` alone isn't
+        # `auto`, since the AND can no longer become `auto` either way —
+        # so there is no "main says auto" line to see here; the decision
+        # itself is the only thing worth asserting.
+        work = self._repo("proposal")
+        subprocess.run(["git", "-C", str(work), "checkout", "-q", "main"], check=True)
+        self._write_policy(work, "auto")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm",
+                        "flip main to auto"], check=True)
+        # `$GITHUB_SHA` is the trigger commit BEFORE that flip.
+        github_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD~1"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._run_roster_pr_direct(
+            {"GITHUB_SHA": github_sha, "STATUS": "same"}, work=work)
+        self.assertIn("roster_mode (policy at $GITHUB_SHA): proposal", out)
+        self.assertFalse(any(c.startswith("api ") and "ref=main" in c for c in calls), calls)
+
     def test_a2_forged_eval_output_never_overrides_the_committed_policy(self):
         # A2 (repro, round 2): the eval job's own `ROSTER_MODE` output
         # claims `auto` (as a compromised eval job's forged
@@ -4239,6 +4378,13 @@ class TestB1PublishVerification(_AutoProposeStepFixture):
     `$PUSHED_SHA`/`$GITHUB_SHA` at face value fails these."""
 
     IDENT = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+    #: Should-fix 1 (round 3 on #209): the exact identity/message the
+    #: `roster` job's propose step commits the proposal with — a test whose
+    #: only intended fault is something OTHER than this check must commit
+    #: with these too, or that check would mask the fault under test.
+    BOT_IDENT = ["-c", "user.name=skills-evals real-eval bot",
+                 "-c", "user.email=skills-evals@users.noreply.github.com"]
+    BOT_MESSAGE = "roster: proposed model roster (run 1)"  # RUN_ID=1, see _direct's base env
 
     def _candidate_env(self, github_sha, pushed_sha):
         return {"STATUS": "differs", "PROBE_CLEAN": "true", "REJECTED": "false",
@@ -4328,6 +4474,31 @@ class TestB1PublishVerification(_AutoProposeStepFixture):
         self.assertIn("did not verify as a single", body)
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_a_verify_failure_with_an_open_pr_says_inspect_not_merge_after_ci(self):
+        # Should-fix 6 (round 3 on #209): the same scenario as the extra-
+        # file test above, but with an EARLIER run's PR already open —
+        # never "merge it after CI" about content that failed independent
+        # verification; name the specific failed check instead.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        (work / "evals" / "roster.yml").write_text(
+            (work / "evals" / "roster.yml").read_text() + "# changed\n")
+        (work / "harness" / "evil.py").write_text("print('planted')\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm", self.BOT_MESSAGE],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        self._pr_list_value = "55"
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("inspect before merging", body)
+        self.assertIn("did not verify as a single", body)
+        self.assertNotIn("merge it after CI", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
     def test_main_moved_on_since_the_proposal_blocks_auto_merge(self):
         # `$GITHUB_SHA` (this run's trigger commit) is AHEAD of the commit
         # `roster/proposal` actually branched from — behind_by > 0 — so the
@@ -4368,7 +4539,7 @@ class TestB1PublishVerification(_AutoProposeStepFixture):
         (work / "evals" / "roster.yml").write_text(
             (work / "evals" / "roster.yml").read_text() + "# changed\n")
         subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
-        subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm", "roster change"],
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm", self.BOT_MESSAGE],
                        check=True)
         pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
                                     capture_output=True, text=True, check=True).stdout.strip()
@@ -4376,6 +4547,219 @@ class TestB1PublishVerification(_AutoProposeStepFixture):
         merge = next((c for c in calls if c.startswith("pr merge") and "--auto" in c), None)
         self.assertIsNotNone(merge, calls)
         self.assertIn(f"--match-head-commit {pushed_sha}", merge)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_a_wrong_commit_message_blocks_auto_merge(self):
+        # Should-fix 1 (round 3 on #209): everything else about the commit
+        # is honest (single commit, right file, right identity) except its
+        # own message — a hostile commit-msg hook inside the `eval` job's
+        # untrusted workspace, say, planting a closing keyword.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        (work / "evals" / "roster.yml").write_text(
+            (work / "evals" / "roster.yml").read_text() + "# changed\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm",
+                        self.BOT_MESSAGE + "\n\nFixes #126"], check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_a_wrong_commit_author_blocks_auto_merge(self):
+        # Should-fix 1: right file, right message, wrong author identity.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        (work / "evals" / "roster.yml").write_text(
+            (work / "evals" / "roster.yml").read_text() + "# changed\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm", self.BOT_MESSAGE],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+    # ---- single-fault compare tests (round 3, N1/N3/N4/N11/N12) ---------
+    # Each of the four rows above stacks two or more violations at once
+    # (an extra commit is both `ahead_by != 1` AND touches a second file),
+    # so dropping any ONE of the compare's five clauses still failed
+    # against those cases (another clause caught it) — these isolate each
+    # clause with a history that violates exactly it.
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_two_commits_each_touching_only_roster_yml_blocks_auto_merge(self):
+        # N1/N11: `ahead_by == 1` dropped, or loosened to `>= 1`. Two
+        # separate commits, each touching only `evals/roster.yml`, verify
+        # as a single-file `modified` change (the diff is against the
+        # trees, not per-commit) but `ahead_by` is 2 — must still block.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        for suffix in ("# one\n", "# two\n"):
+            (work / "evals" / "roster.yml").write_text(
+                (work / "evals" / "roster.yml").read_text() + suffix)
+            subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+            subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm", "roster change"],
+                           check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_a_commit_touching_only_harness_blocks_auto_merge(self):
+        # N3: the filename check dropped to `True`. `ahead_by == 1`,
+        # `behind_by == 0`, but the one changed file is NOT
+        # `evals/roster.yml` at all.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        (work / "harness" / "roster.py").write_text(
+            (work / "harness" / "roster.py").read_text() + "# changed\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm", self.BOT_MESSAGE],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_roster_yml_added_blocks_auto_merge(self):
+        # N4: the `statuses == ["modified"]` check dropped. Delete the
+        # committed `evals/roster.yml` on `main` first so the proposal
+        # branch's commit is a pure ADD, not a modify.
+        work = self._repo("auto")
+        subprocess.run(["git", "-C", str(work), "rm", "-q", "evals/roster.yml"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm", "drop roster.yml"],
+                       check=True)
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        (work / "evals").mkdir(exist_ok=True)
+        (work / "evals" / "roster.yml").write_text("schema: 1\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm", self.BOT_MESSAGE],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_roster_yml_deleted_blocks_auto_merge(self):
+        # N4 (the deletion half): a single commit that removes
+        # `evals/roster.yml` verifies as `ahead_by == 1`, one file, but
+        # `status == "removed"`, never `"modified"`.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        subprocess.run(["git", "-C", str(work), "rm", "-q", "evals/roster.yml"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm", self.BOT_MESSAGE],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("git"), "needs bash and git")
+    def test_roster_yml_plus_a_later_file_blocks_auto_merge(self):
+        # N12: the filename check loosened to `names[:1] == [...]`, so an
+        # EXTRA file sorted after `evals/roster.yml` in the name-status
+        # list would slip through. `zzz-extra.txt` sorts after
+        # `evals/roster.yml` in `git diff --name-status`'s alphabetical
+        # order.
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"], check=True)
+        (work / "evals" / "roster.yml").write_text(
+            (work / "evals" / "roster.yml").read_text() + "# changed\n")
+        (work / "zzz-extra.txt").write_text("planted\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.BOT_IDENT, "commit", "-qm", self.BOT_MESSAGE],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        # Sanity: confirm the assumed sort order before relying on it.
+        namestatus = subprocess.run(
+            ["git", "-C", str(work), "diff", "--name-status", main_sha, pushed_sha],
+            capture_output=True, text=True, check=True).stdout
+        names = [line.split("\t", 1)[1] for line in namestatus.strip().splitlines()]
+        self.assertEqual(names, ["evals/roster.yml", "zzz-extra.txt"], namestatus)
+        out, calls, body = self._direct(self._candidate_env(main_sha, pushed_sha), work)
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertIn("did not verify as a single", body)
+
+
+class TestShouldFix1NeutralizeClosingKeywordsAndMentions(_AutoProposeStepFixture):
+    """Should-fix 1 (round 3 on #209): a closing keyword or `@mention`
+    inside `harness/roster.py`'s rendered `summary.md` (shaped in part by
+    the untrusted census) must never survive verbatim into a PR or issue
+    body — neutralised once, at the source, so every downstream read is
+    already safe."""
+
+    def _run_step_with_summary(self, latest, issues, cwd, summary):
+        runner = self.tmp / "runner"
+        (runner / "roster").mkdir(parents=True)
+        (runner / "roster-inputs").mkdir()
+        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
+        (runner / "roster-inputs" / "summary.md").write_text(summary, encoding="utf-8")
+        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
+        event = self.tmp / "event.json"
+        event.write_text(json.dumps({"schedule": "0 7 * * 1"}), encoding="utf-8")
+        env = {"RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
+               "REPO": "example/skills-evals", "RUN_ID": "1",
+               "SERVER_URL": "https://github.example.com",
+               "GITHUB_TOKEN": "t", "GH_TOKEN": "t"}
+        return self._run_two_jobs(self._gh_script(), env, cwd)
+
+    HOSTILE_SUMMARY = "### Model roster\n\nFixes #126 cc @someone\n"
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_differs_auto_path_never_carries_a_raw_closing_keyword_or_mention(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        out, calls, body = self._run_step_with_summary(latest, [], work, self.HOSTILE_SUMMARY)
+        self.assertTrue(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        self.assertNotIn("Fixes #126", body or "")
+        self.assertNotIn(" @someone", body or "")
+        # Substance survives — only the two trigger characters gain a
+        # zero-width space immediately after them.
+        self.assertIn("Fixes #​126", body or "")
+        self.assertIn("@​someone", body or "")
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_same_path_issue_body_never_carries_a_raw_closing_keyword_or_mention(self):
+        # The frozen-`same` branch embeds `summary.md` directly, inside the
+        # SAME step that neutralises it — never routed through the
+        # `roster_summary` output at all.
+        latest = dict(self.SAME, defaults_failed={"opus": "timeout"})
+        d = self.tmp / "same-hostile"; d.mkdir()
+        self._write_policy(d, "auto")
+        out, calls, body = self._run_step_with_summary(latest, self._tracker(), d,
+                                                        self.HOSTILE_SUMMARY)
+        self.assertNotIn("Fixes #126", body or "")
+        self.assertNotIn(" @someone", body or "")
+        self.assertIn("Fixes #​126", body or "")
+        self.assertIn("@​someone", body or "")
 
 
 class TestS1FailedPushDisablesOnly(_AutoProposeStepFixture):
@@ -4404,6 +4788,13 @@ class TestS1FailedPushDisablesOnly(_AutoProposeStepFixture):
                         if c.startswith("pr merge 55") and "--disable-auto" in c), None)
         self.assertIsNotNone(disable, calls)
         self.assertNotIn("merging automatically", body or "")
+        # Should-fix 5 (round 3 on #209): PR #55 predates this run — never
+        # tell a reviewer to "merge it after CI" as if this run's (never
+        # pushed) content were on it.
+        self.assertIn("This run's proposal was not pushed; PR #55 still "
+                      "holds an earlier proposal — review before merging.",
+                      body or "")
+        self.assertNotIn("merge it after CI", body or "")
 
 
 class TestN1HostileValidation(TestB1RosterPrHelper):
@@ -4964,13 +5355,18 @@ class TestRound4Docs(unittest.TestCase):
         self.assertIn("can outlast the freeze", flat)
         self.assertIn("`superseded_exit_weeks` buffer", flat)
 
-    def test_c_the_success_sentence_covers_a_skipped_publish(self):
+    def test_c_the_success_sentence_covers_a_failed_publish(self):
+        # B1 (round 3 on #209): relocated to `roster-pr`'s own eval-note
+        # fragment. Under the new job split, `needs.eval.result == success`
+        # already implies the badge step itself ran (its own `if:` is
+        # `!inputs.roster_only`, and a skip there would not have let the
+        # `eval` JOB conclude success) — so "or was skipped" no longer
+        # names a reachable case; only "failed" does.
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        propose = next(s for s in doc["jobs"]["eval"]["steps"]
-                       if s.get("name") == "Propose a roster change")
-        line = next(ln for ln in propose["run"].splitlines()
-                    if "by the next step" in ln)
-        self.assertIn("if that step failed or was skipped", line)
+        roster_pr = doc["jobs"]["roster-pr"]["steps"][0]
+        line = next(ln for ln in roster_pr["run"].splitlines()
+                    if "by the \\`eval\\` job's own badge step" in ln)
+        self.assertIn("if that step failed", line)
 
 
 # --- #203 probe round 5 -------------------------------------------------------
