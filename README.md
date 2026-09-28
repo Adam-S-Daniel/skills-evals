@@ -1,7 +1,6 @@
 # skills-evals
 
 [![skill eval: workflow-path-audit](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Fworkflow-path-audit.json)](https://github.com/Adam-S-Daniel/skills-evals/actions/workflows/eval.yml)
-[![account skill store](https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2FAdam-S-Daniel%2Fskills-evals%2Feval-results%2Fbadges%2Faccount-store.json)](https://github.com/Adam-S-Daniel/skills-evals/blob/eval-results/propagation/account/latest.json)
 
 Evals for the [`adam-agentskills`](https://github.com/Adam-S-Daniel/adam-agentskills)
 registry: for each skill, measure agent quality **with vs. without** the skill
@@ -25,9 +24,7 @@ harness/
   run_canary.py            # runner: probes the guidance-bridge canary against the real CLI
   guidance.py              # guidance subject: payload assembly per delivery mode,
                            # delivery through the real fleet-memory hook, the guard
-  run_propagation.py       # runner: Tier-2 propagation arms + the Tier-3 freshness gate
-  run_account_audit.py     # runner: Tier-3 claude.ai account-store audit
-  run_account_drift_issue.py  # open/close/none for the Tier-3 tracking issue
+  run_propagation.py       # runner: Tier-2 propagation arms
   roster.py                # model roster: availability + usage -> arms/judge/preflight
   timeweeks.py             # ISO-week arithmetic shared by the roster and the census
   scorers/
@@ -36,7 +33,6 @@ harness/
   propagation/
     init_probe.py          # the primitive: read a session's loaded skill set, free
     arms.py                # one arm per delivery channel, each with a control leg
-    account_store.py       # account-store measurement + the freshness gate
   fakes/                   # stand-in binaries shared across Class B fixtures
     gh                     # offline GitHub CLI: replays recorded responses,
                            # refuses every write, logs each invocation
@@ -93,7 +89,7 @@ evals/
       fixture.yaml         # section id, five arms, per-arm transcript checks
   propagation/             # skill-delivery probes (issue #17)
     fixture.yaml           # arms, bundle, collision skill, staleness budget
-    ROUTINE.md             # the Tier-3 scheduled session, and why it is session-bound
+    ROUTINE.md             # HISTORY: the retired Tier-3 scheduled session, and why it was session-bound
   roster-policy.yml        # model roster thresholds + the capability ladder
   adam-writing-style/      # Class C pilot (issue #81): three writing fixtures,
     README.md              # one dir each (recruiter-reply/, proposal-bio/,
@@ -374,15 +370,11 @@ what lets these run on every pull request *and* again on a daily schedule
 
 ```bash
 # All five arms against a local adam-agentskills checkout (~15s, no credential):
-python3 harness/run_propagation.py evals/propagation --registry ~/repos/adam-agentskills --no-gate
+python3 harness/run_propagation.py evals/propagation --registry ~/repos/adam-agentskills
 
 # One arm, plus the live self-test that proves the assertions can still fail:
 python3 harness/run_propagation.py evals/propagation --arm plugin-marketplace \
-  --registry ~/repos/adam-agentskills --no-gate --self-test
-
-# The freshness gate alone — no CLI needed at all:
-python3 harness/run_propagation.py evals/propagation --gate-only \
-  --account-latest eval-results/propagation/account/latest.json
+  --registry ~/repos/adam-agentskills --self-test
 ```
 
 | Arm | Asserts |
@@ -412,54 +404,22 @@ Two things worth knowing before editing any of it:
   `(type, subtype)`; selecting on `type == "system"` alone picks
   `commands_changed`, which has no `skills` key.
 
-### Tier 3 — the account store
+### Tier 3 — the account store (retired 2026-09-28)
 
 The claude.ai account store lands at `~/.claude/skills/synced/`, which exists
-only on a signed-in surface, so CI cannot see it. The manifest sits either
-directly there or one level down in a per-workspace bucket directory — the
-harness resolves both, and refuses to guess when several buckets are candidates
-(see [`ROUTINE.md`](evals/propagation/ROUTINE.md), "The store has TWO
-layouts"). `harness/run_account_audit.py`
-audits it (content digests CRLF-normalised, payload completeness, description of
-record, and whether the frontmatter parses at all), spends nothing, and
-publishes a JSON result to the `eval-results` branch. A Routine runs it daily at
-05:00 UTC, fired into a session that carries this repo in its authorized set —
-which a Routine's own freshly-minted sessions do not, and is why its first three
-runs measured correctly and published nothing
-([#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20)). What it found,
-and what that binding cost, is recorded in
-[`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md).
-
-**A scheduled probe that fails notifies nobody, and one that stops firing
-notifies nobody twice over.** So the credential-free freshness gate reads that
-published result on every pull request and on `propagation.yml`'s own daily
-schedule — a Routine that stopped firing surfaces within a day rather than
-whenever someone next opens a pull request. What it does with what it finds is
-split in two, and the split is deliberate. **Liveness is fatal everywhere:** a
-result that is missing, stale or unreadable means the audit is not reaching us
-at all, and catching that is the gate's whole reason to exist. **The audit's own
-verdict is advisory everywhere except the schedule:** a red verdict means the
-claude.ai account store has drifted, which no commit in this repo caused and
-none can clear, so reddening every pull request and every post-merge push on it
-only teaches people to scroll past a check that names no action they can take.
-The schedule stays fatal because it is the one surface that acts on the verdict
-— `evals/propagation/ROUTINE.md` carries the measurements behind both halves.
-
-Acting on it is `.github/workflows/account-store-drift.yml`, which reads the
-same published artifact on its own daily schedule, calls the same freshness
-verdict the gate calls, and keeps **one** tracking issue in step with it: opened
-when the store drifts, edited in place for as long as the episode lasts, and
-closed automatically by the first audit that reads `pass`. Repair still needs a
-person with a browser — only a signed-in surface can write that store — so the
-issue body carries the route rather than a runbook nobody can execute here. The
-gate is armed: the first published result carried the bootstrap marker, so it
-enforces rather than waiting, and as of 2026-08-21 it reports one drifted skill
-out of ten checked — the store's real state, not a fault in the probe. The
-Tier-2 probes answer the same objection for themselves: when a scheduled run of
-them fails, the workflow opens one tracking issue rather than leaving it to
-whoever next reads the Actions tab, and closes that issue again when a later
-scheduled run comes back green, so an open issue means "broken now" rather than
-"broke once".
+only on a signed-in surface, so CI cannot see it. This repo used to run a
+daily Tier-3 audit of that store on a claude.ai Routine, and gate
+`propagation.yml` on the audit's freshness. The owner deleted the Routine on
+2026-09-28, the same day the claude.ai ZIP-upload channel it audited was
+retired ([adam-agentskills#23](https://github.com/Adam-S-Daniel/adam-agentskills/issues/23)):
+once nothing repopulates the account store from that channel, there is
+nothing left for an audit of it to check. `harness/run_account_audit.py`,
+`harness/run_account_drift_issue.py`, `harness/propagation/account_store.py`
+and `.github/workflows/account-store-drift.yml` were removed in the same
+change, and `propagation.yml`'s freshness gate went with them. What the audit
+was, what it found, and the incidents that shaped its design are recorded in
+[`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md), now marked
+HISTORY.
 
 ## Tests
 
@@ -706,9 +666,12 @@ finer than a week — and no key that is not model-id-shaped, because
 carrying an ARN, a cloud project path and free prose. Everything else is
 counted under `other`. `test_census_emits_only_model_week_counts_and_leaks
 _nothing` is the guard, and it stays. The census runs on a durable machine, not
-in CI (a runner has no transcripts): it is **step 6 of the Tier-3 account-store
-Routine** (`evals/propagation/ROUTINE.md`), best-effort, publishing
-`usage/latest.json` to `eval-results` in the same commit as the audit.
+in CI (a runner has no transcripts): it used to ride, best-effort, as **step 6
+of the Tier-3 account-store Routine** (`evals/propagation/ROUTINE.md`),
+publishing `usage/latest.json` to `eval-results` in the same commit as the
+audit. That Routine was retired 2026-09-28 along with the audit it ran (see
+"Tier 3 — the account store" above); the census script itself was not
+deleted, but it lost its ride and needs a new one if it is to keep publishing.
 `harness/roster.py`'s `_census_verdict` recognizes eight distinct ways there
 is no usable evidence — present but unreadable, absent, future-dated, stale,
 published but empty over the window, published but holding no usage the
@@ -800,6 +763,9 @@ models. The propagation probe's `--json` run record carries, per arm,
 - [x] Guidance-bridge canary (`harness/run_canary.py`)
 - [x] Weekly real run + quality badge (`.github/workflows/eval.yml`, `scripts/make_badge.py`)
 - [x] Propagation probes, Tier 2 (`harness/run_propagation.py`, `.github/workflows/propagation.yml`)
-- [x] Propagation probes, Tier 3 measurement (`harness/run_account_audit.py`)
-- [x] Propagation probes, Tier 3 transport (the Routine publishes to `eval-results`; bound to an authorized session after freshly-minted ones were refused the push — [#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20), see `evals/propagation/ROUTINE.md`)
+- [x] Propagation probes, Tier 3 (built, ran daily via a Routine bound to an
+  authorized session after freshly-minted ones were refused the push —
+  [#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20) — then
+  **retired 2026-09-28** along with the claude.ai ZIP-upload channel it
+  audited; see `evals/propagation/ROUTINE.md`, now HISTORY)
 - [ ] Regression tracking (compare a run against the previous one)

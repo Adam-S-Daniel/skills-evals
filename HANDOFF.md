@@ -67,6 +67,19 @@ tracking issue on "same" too (#203 probe round 8, R8-1 — the workflow had
 read only `defaults_failed`), with a title that says "probe failed" only
 for a genuine failure and its own wording for a mismatch, both when both
 are present. See ADR 0002's decision 6 and third update.
+**Amended 2026-09-28 (retirement of the Tier-3 account-store audit):** the
+owner deleted the claude.ai Routine "skills-evals: account-store propagation
+audit" the same day the claude.ai ZIP-upload channel it audited was retired
+([adam-agentskills#23](https://github.com/Adam-S-Daniel/adam-agentskills/issues/23)).
+`.github/workflows/account-store-drift.yml`, `harness/run_account_audit.py`,
+`harness/run_account_drift_issue.py` and `harness/propagation/account_store.py`
+are gone, and `propagation.yml`'s freshness gate went with them; see that
+workflow's header comment and `evals/propagation/ROUTINE.md`, now marked
+HISTORY, for the full record. `scripts/model_usage_census.py` (§ "The
+census's public-output contract" in `README.md`/`DESIGN.md`) rode that
+Routine's schedule best-effort and has lost its ride — it was not deleted,
+but nothing currently fires it, which is a gap for whoever resumes the
+roster/census work to close, not something this change decided.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.

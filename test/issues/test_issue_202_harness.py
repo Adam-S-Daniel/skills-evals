@@ -722,7 +722,7 @@ class TestPropagationRecordsVersions(unittest.TestCase):
              mock.patch.object(arms, "_probe", return_value=facts), \
              contextlib.redirect_stdout(io.StringIO()):
             run_propagation.main([str(REPO_ROOT / "evals" / "propagation"),
-                                  "--no-gate", "--arm", "clean-room",
+                                  "--arm", "clean-room",
                                   "--json", str(out)])
         return json.loads(out.read_text(encoding="utf-8"))["arms"][0]
 

@@ -36,9 +36,3 @@ arms:
   - plugin-marketplace
   - bootstrap-hook
   - collision-guard
-
-# How stale the Tier-3 account audit's published result may be before the
-# credential-free PR gate reds the pull request. The Routine fires daily, so
-# three days tolerates a missed run plus a weekend without crying wolf, and
-# still catches a schedule that has actually stopped.
-account_audit_max_age_days: 3
