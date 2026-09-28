@@ -75,10 +75,17 @@ def write_skill(directory: Path, name: str, description: str, body: str = "body\
 
 
 def make_registry(root: Path, bundle: str = "adam",
-                  skills=FIXTURE_SKILLS) -> Path:
+                  skills=FIXTURE_SKILLS, declared=None) -> Path:
     """A miniature adam-agentskills-shaped checkout, plus a skills.lock whose
     digests are computed from the tree it ships — so the lock can never rot
-    against it."""
+    against it.
+
+    `declared` writes `plugins/<bundle>/skills/sync-skills/account-skills.txt`
+    — the file `account_store.read_declared_skills` requires exactly one of.
+    Defaults to `skills`, so a caller that does not care about the
+    declared/manifest distinction gets every fixture skill declared, same as
+    before that file existed.
+    """
     registry = root / "registry"
     for name in skills:
         write_skill(registry / "plugins" / bundle / "skills" / name,
@@ -88,6 +95,12 @@ def make_registry(root: Path, bundle: str = "adam",
             "skills": {f"{bundle}/{name}": arms.digest_skill_dir(
                 registry / "plugins" / bundle / "skills" / name) for name in skills}}
     (registry / "skills.lock").write_text(json.dumps(lock, indent=2), encoding="utf-8")
+    account_skills = registry / "plugins" / bundle / "skills" / "sync-skills" / "account-skills.txt"
+    account_skills.parent.mkdir(parents=True, exist_ok=True)
+    account_skills.write_text(
+        "# fixture account-skills.txt\n"
+        + "".join(f"{name}\n" for name in (skills if declared is None else declared)),
+        encoding="utf-8")
     shutil.copy(FAKE_HOOK, registry / "hook.sh")
     return registry
 
@@ -827,10 +840,86 @@ class AccountAuditTests(unittest.TestCase):
                       {f.kind for f in self.audit().findings})
 
     def test_registry_skills_absent_from_the_account_are_not_this_audits_business(self):
-        self._manifest("anything", name="not-in-the-registry")
+        # A registry skill nobody declared wanting on the account
+        # (`fixture-undeclared`, left out of `declared`) stays invisible to
+        # this audit even though the account has no copy of it at all — only
+        # a DECLARED absence is drift. `not-in-the-registry` is the account
+        # having something the registry doesn't own, which was always this
+        # audit's business to ignore and still is.
+        self.registry = make_registry(
+            self.root, skills=("fixture-alpha", "fixture-undeclared"),
+            declared=("fixture-alpha",))
+        (self.store / "manifest.json").write_text(json.dumps({
+            "lastUpdated": 0,
+            "skills": [
+                {"skillId": "fixture-alpha", "name": "fixture-alpha",
+                 "source": "custom", "description": self.description,
+                 "updatedAt": "2026-05-11T22:23:38.972889Z"},
+                {"skillId": "not-in-the-registry", "name": "not-in-the-registry",
+                 "source": "custom", "description": "anything",
+                 "updatedAt": "2026-05-11T22:23:38.972889Z"},
+            ]}), encoding="utf-8")
         result = self.audit()
-        self.assertEqual(result.checked, [])
+        self.assertEqual(result.checked, ["fixture-alpha"])
         self.assertEqual(result.skipped, ["not-in-the-registry"])
+        self.assertEqual(result.findings, [], [vars(f) for f in result.findings])
+
+    def test_a_declared_skill_absent_from_the_manifest_is_a_finding(self):
+        # The ZIP channel silently never delivered `fixture-missing`: the
+        # account manifest carries no entry for it at all, so nothing in the
+        # per-manifest-entry loop would ever see it. Declaring it and
+        # checking the declared list against the manifest is the only way
+        # this audit catches that shape of drift.
+        self.registry = make_registry(
+            self.root, skills=("fixture-alpha", "fixture-missing"),
+            declared=("fixture-alpha", "fixture-missing"))
+        result = self.audit()
+        self.assertEqual(result.checked, ["fixture-alpha"])
+        findings = {f.skill: f for f in result.findings}
+        self.assertIn("fixture-missing", findings)
+        self.assertEqual(findings["fixture-missing"].kind, "account-copy-missing")
+        self.assertEqual(result.status, "fail")
+        self.assertEqual(run_account_audit.main(
+            ["--registry", str(self.registry), "--home", str(self.home),
+             "--now", "2026-08-14T12:00:00Z"]), 1)
+
+    def test_zero_checked_skills_is_a_fault_not_a_pass(self):
+        # Every account entry either belongs to no registry skill (skipped)
+        # or is undeclared and missing (silently not this audit's business)
+        # — `checked` never gets a single entry. The old code called that a
+        # green pass; it must refuse to run rather than publish a false
+        # all-clear, and the CLI must publish nothing when it does.
+        self.registry = make_registry(
+            self.root, skills=("fixture-undeclared",), declared=())
+        self._manifest("anything", name="not-in-the-registry")
+        with self.assertRaises(account_store.AuditError) as caught:
+            self.audit()
+        self.assertIn("vacuous", str(caught.exception))
+        out = self.root / "out"
+        code = run_account_audit.main(
+            ["--registry", str(self.registry), "--home", str(self.home),
+             "--out", str(out), "--now", "2026-08-14T12:00:00Z"])
+        self.assertEqual(code, 2)
+        self.assertFalse(out.exists())
+
+    def test_a_missing_declared_skills_list_is_a_fault(self):
+        # No `account-skills.txt` anywhere in the registry means the ZIP
+        # channel's own declared-list contract is gone — the audit cannot
+        # tell "declared but missing" from "never declared" and must not
+        # guess. The reason must not leak a filesystem path under $HOME.
+        for path in self.registry.glob(account_store.ACCOUNT_SKILLS_GLOB):
+            path.unlink()
+        with self.assertRaises(account_store.AuditError) as caught:
+            self.audit()
+        message = str(caught.exception)
+        self.assertIn(account_store.ACCOUNT_SKILLS_GLOB, message)
+        self.assertNotIn(str(self.registry), message)
+        out = self.root / "out"
+        code = run_account_audit.main(
+            ["--registry", str(self.registry), "--home", str(self.home),
+             "--out", str(out), "--now", "2026-08-14T12:00:00Z"])
+        self.assertEqual(code, 2)
+        self.assertFalse(out.exists())
 
     def test_no_account_store_is_a_fault_never_a_pass(self):
         with self.assertRaises(account_store.AuditError) as caught:

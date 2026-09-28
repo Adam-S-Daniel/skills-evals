@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Turn the Tier-3 account audit's published verdict into ONE tracking issue.
 
-`evals/propagation/ROUTINE.md` step 5 asks the Routine-fired session to open,
-edit and close this issue. It never has, and CI owns the lifecycle instead —
-but NOT because the fired session cannot reach GitHub. That reason was written
+An earlier, now-retired Routine prompt asked the Routine-fired session to
+open, edit and close this issue itself (see `evals/propagation/ROUTINE.md`,
+History, "The prompt, as created"). It never has, and CI owns the lifecycle
+instead — but NOT because the fired session cannot reach GitHub. That reason was written
 here first and it does not survive measurement; the workflow's header carries
 the measurement and the reasons that do hold, which are about keeping the thing
 that measures separate from the thing that reports, and about a decision being
@@ -69,8 +70,9 @@ EXIT_OK, EXIT_USAGE = 0, 2
 # title. A title is edited by hand the first time someone rewords it; the
 # marker is what the workflow's lookup matches on as well, so a reworded title
 # degrades to "open a second issue" rather than to "silently edit whatever came
-# back first". ROUTINE.md step 5 mandates this exact string, so the two halves
-# of the design agree on one identifier even though CI now owns the lifecycle.
+# back first". ROUTINE.md's retired step 5 (History, "The prompt, as
+# created") mandates this exact string, so the two halves of the design agree
+# on one identifier even though CI now owns the lifecycle.
 MARKER = "<!-- propagation-account-audit -->"
 
 TITLE = "Account skill store drifted from registry (automated Tier-3 audit)"
