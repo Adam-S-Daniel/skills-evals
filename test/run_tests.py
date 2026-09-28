@@ -3976,9 +3976,13 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
 
     def _steps(self) -> list[dict]:
         # Structured formats go through a real parser, never a line scanner.
+        # B1 (round 4 on #209, blocker): the badge/commit/push logic moved
+        # off the agent-running `eval` job onto the agent-free `publish`
+        # job, which downloads `eval`'s uploaded results artifact instead
+        # of inheriting its workspace.
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        return doc["jobs"]["publish"]["steps"]
 
     def test_badge_is_built_after_the_eval_results_checkout(self):
         steps = self._steps()
@@ -4004,6 +4008,32 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
                 "make_badge.py must run after `git checkout -B eval-results` "
                 "and after the results/ restore, or its window sees only the "
                 "run that just finished and the badge always reports n=1")
+
+    def test_make_badge_always_runs_from_the_publish_jobs_own_checkout(self):
+        # B1 (round 4 on #209, blocker), item (e): `publish` downloads the
+        # `eval` job's raw output as a build artifact into `results/` —
+        # untrusted content, exactly like everything else `eval-results`
+        # already carries. `make_badge.py` must be invoked from THIS job's
+        # own fresh checkout (stashed at `$RUNNER_TEMP/make_badge.py`
+        # before the branch switch), never from any path under the
+        # downloaded artifact directory — a hostile artifact could
+        # otherwise substitute its own copy of the very script that builds
+        # the badge.
+        steps = self._steps()
+        building = [s for s in steps if self._invocation_lines(s.get("run") or "")]
+        self.assertEqual(len(building), 1)
+        script = building[0]["run"]
+        for line in script.splitlines():
+            if "make_badge.py" in line and "python" in line.split("make_badge.py")[0]:
+                self.assertIn('"$RUNNER_TEMP/make_badge.py"', line,
+                             f"make_badge.py must be invoked as "
+                             f"$RUNNER_TEMP/make_badge.py, never a path "
+                             f"under the downloaded results/ artifact: {line!r}")
+                self.assertNotIn("results/", line)
+        self.assertIn("cp scripts/make_badge.py \"$RUNNER_TEMP/\"", script,
+                      "the script must come from this job's OWN checkout of "
+                      "scripts/, stashed before the eval-results branch "
+                      "switch drops it, never from the downloaded artifact")
 
 
 class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
@@ -4119,15 +4149,18 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "be added, per the header's first rule")
 
     def test_permissions_are_exactly_the_three_the_header_names(self):
-        # B1 (round 3 on #209, blocker), extending F2 (adversarial round 1
-        # on #209): the workflow-level block is `{}` deliberately — each of
-        # the THREE jobs carries its own least-privilege set, so the `eval`
-        # job (which runs the bypass-permissions agent) never sees
-        # `pull-requests: write`/`actions: write`/`issues: write` at all,
-        # and never even reaches the roster-decision scopes B1 moved onto
-        # `roster`. Every dict is asserted for EQUALITY, so a fifth scope on
-        # any job reds this row whatever it is, and a scope moved onto
-        # `eval` from either of the other two (widening the agent's job,
+        # B1 (round 3 on #209, blocker; extended round 4, blocker),
+        # extending F2 (adversarial round 1 on #209): the workflow-level
+        # block is `{}` deliberately — each of the FIVE jobs carries its
+        # own least-privilege set, so the `eval` job (which runs the
+        # bypass-permissions agent) never sees `pull-requests: write`/
+        # `actions: write`/`issues: write` at all, never reaches the
+        # roster-decision scopes B1 round 3 moved onto `roster`, and — B1
+        # round 4 — holds NO write scope of any kind: the badge/results
+        # commit-and-push moved to a new `publish` job with a fresh
+        # checkout and no agent. Every dict is asserted for EQUALITY, so a
+        # fifth scope on any job reds this row whatever it is, and a scope
+        # moved onto `eval` from any other job (widening the agent's job,
         # not just the workflow) reds it too — that is exactly the defect
         # this test exists to catch.
         doc = self._doc()
@@ -4147,14 +4180,31 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "must never carry pull-requests/actions, and must never "
             "`needs: eval` or run the agent)")
         self.assertEqual(
+            doc["jobs"]["disarm"].get("permissions"),
+            {"pull-requests": "write", "contents": "read"},
+            "the `disarm` job's permissions must be exactly "
+            "{pull-requests: write, contents: read} — B1 (round 4 on #209, "
+            "blocker): it disables an earlier run's still-armed roster "
+            "pull request's auto-merge BEFORE the `eval` job's agent "
+            "starts, and needs no other scope to do it")
+        self.assertEqual(
             doc["jobs"]["eval"].get("permissions"),
-            {"contents": "write", "id-token": "write"},
-            "the `eval` job's permissions must be exactly {contents: write, "
-            "id-token: write} — contents for the badge/results push, "
-            "id-token for its OWN separate WIF mint (never shared with "
-            "`roster`'s); B1 (round 3 on #209) moved `issues: write` off "
-            "this job onto `roster`, since nothing here writes the "
-            "tracking issue any more")
+            {"contents": "read", "id-token": "write"},
+            "the `eval` job's permissions must be exactly {contents: read, "
+            "id-token: write} — B1 (round 4 on #209, blocker): this job "
+            "runs the bypass-permissions agent and must hold NO write "
+            "scope of any kind; contents: read is only for its checkout "
+            "steps, and id-token: write is its OWN separate WIF mint "
+            "(never shared with `roster`'s). The badge/results commit and "
+            "push moved to the `publish` job, and `issues: write` moved to "
+            "`roster` back in round 3")
+        self.assertEqual(
+            doc["jobs"]["publish"].get("permissions"),
+            {"contents": "write"},
+            "the `publish` job's permissions must be exactly "
+            "{contents: write} — B1 (round 4 on #209, blocker): this is "
+            "the only write scope the badge/results commit and push "
+            "needs, on a job with no agent and a fresh checkout")
         self.assertEqual(
             doc["jobs"]["roster-pr"].get("permissions"),
             {"pull-requests": "write", "actions": "write", "issues": "write",
@@ -4169,11 +4219,42 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "`contents: write` (S2, round 2, spec-roster-mode-r2.md) is for "
             "enablePullRequestAutoMerge/an immediate merge, even though "
             "this job performs no checkout and runs no repository code")
-        self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
+        self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "read")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
+        self.assertNotEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["contents"], "write")
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["id-token"], "write")
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["issues"], "write")
+
+    def test_roster_job_has_exactly_one_checkout_and_never_runs_the_eval(self):
+        # S2 (round 4 on #209): the `roster` job (B1, round 3) must never
+        # check out the fixture/registry repositories or run the eval
+        # itself — it computes, renders, admits and pushes the roster
+        # proposal ONLY, on a runner the agent never touches. This kills
+        # `roster_runs_eval` (a sneaky step running harness/run_eval.py)
+        # and `roster_checks_out_registry` (an extra `actions/checkout`
+        # with a `repository:` input) — adv209-r4/mutate4.py's two
+        # survivors from the pre-fix workflow.
+        doc = self._doc()
+        roster_steps = doc["jobs"]["roster"]["steps"]
+        checkouts = [s for s in roster_steps
+                    if (s.get("uses") or "").startswith("actions/checkout@")]
+        self.assertEqual(len(checkouts), 1,
+                         f"the `roster` job must have exactly one checkout "
+                         f"step; found {[s.get('name') for s in checkouts]}")
+        self.assertNotIn("repository", checkouts[0].get("with") or {},
+                        "the `roster` job's one checkout must be of THIS "
+                        "repo — a `repository:` input names some other one")
+        for step in roster_steps:
+            run = step.get("run") or ""
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("run_eval.py", run,
+                                 "the `roster` job must never run the eval "
+                                 "itself — that is the `eval` job's job alone")
+                self.assertNotIn("adam-agentskills", run)
+                self.assertNotIn("cms-platform", run)
+                self.assertNotIn("adamdaniel.ai", run)
+                self.assertNotIn("_agent-guidance", run)
 
     def test_the_proposal_step_carries_no_expression_in_its_run_block(self):
         # The general rule is asserted over every step by
@@ -5843,9 +5924,12 @@ class TestIssue67(unittest.TestCase):
     def test_eval_workflow_refreshes_the_roster_before_running_the_eval(self):
         # B1 (round 3 on #209): the refresh step moved into a SEPARATE
         # `roster` job the `eval` job now `needs:` — "before" is a job
-        # dependency, not a step index within one list any more.
+        # dependency, not a step index within one list any more. B1 (round
+        # 4 on #209, blocker): `eval` now also needs `disarm`, so `roster`
+        # is checked for membership, not exact equality.
         _, doc = self._eval_workflow()
-        self.assertEqual(doc["jobs"]["eval"].get("needs"), "roster")
+        eval_needs = doc["jobs"]["eval"].get("needs")
+        self.assertIn("roster", eval_needs if isinstance(eval_needs, list) else [eval_needs])
         roster_steps = doc["jobs"]["roster"]["steps"]
         names = [s.get("name", "") for s in roster_steps]
         refresh = next(i for i, n in enumerate(names) if "roster" in n.lower())
@@ -5858,8 +5942,10 @@ class TestIssue67(unittest.TestCase):
         self.assertIn("refresh_models.py", script)
 
     def test_eval_workflow_commits_the_roster(self):
+        # B1 (round 4 on #209, blocker): this logic lives in the `publish`
+        # job now, not `eval` — see that job's own comment.
         _, doc = self._eval_workflow()
-        commit = next(s for s in doc["jobs"]["eval"]["steps"]
+        commit = next(s for s in doc["jobs"]["publish"]["steps"]
                       if "git checkout -B eval-results" in (s.get("run") or ""))
         self.assertIn("roster", commit["run"],
                       "roster/ is published on eval-results alongside the badge")
@@ -5876,19 +5962,28 @@ class TestIssue67(unittest.TestCase):
         # EvalWorkflowSecurityHeaderTests — the duplication is deliberate
         # and predates #147: this is the test nobody may delete.
         #
-        # F2 (adversarial round 1 on #209), extended by B1 (round 3 on
-        # #209, blocker): the workflow-level block is {} and each of the
-        # THREE jobs carries its own scopes — `roster` (never `eval`) now
-        # holds the roster-decision scopes (contents/id-token/issues);
-        # `eval` keeps only contents/id-token for its own badge push and
-        # WIF mint; `pull-requests`/`actions` stay on `roster-pr` alone —
-        # so the bypass-permissions agent's own job never widens.
+        # F2 (adversarial round 1 on #209), extended by B1 (round 3, then
+        # round 4, on #209, blocker): the workflow-level block is {} and
+        # each of the FIVE jobs carries its own scopes — `roster` (never
+        # `eval`) holds the roster-decision scopes (contents/id-token/
+        # issues); `disarm` holds only pull-requests/contents-read to turn
+        # off an armed auto-merge BEFORE the agent runs; `eval` keeps only
+        # contents-READ/id-token — no write scope of any kind, since B1
+        # round 4 moved the badge commit/push off this job entirely;
+        # `publish` (contents: write only) does that commit/push instead,
+        # with no agent on its runner; `pull-requests`/`actions` stay on
+        # `roster-pr` alone — so the bypass-permissions agent's own job
+        # never widens.
         self.assertEqual(doc["permissions"], {})
         self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "write", "id-token": "write",
                           "issues": "write"})
+        self.assertEqual(doc["jobs"]["disarm"]["permissions"],
+                         {"pull-requests": "write", "contents": "read"})
         self.assertEqual(doc["jobs"]["eval"]["permissions"],
-                         {"contents": "write", "id-token": "write"})
+                         {"contents": "read", "id-token": "write"})
+        self.assertEqual(doc["jobs"]["publish"]["permissions"],
+                         {"contents": "write"})
         self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
                          {"pull-requests": "write", "actions": "write",
                           "issues": "write", "contents": "write"})
@@ -6751,11 +6846,14 @@ class TestIssue67Review(unittest.TestCase):
         # B1 (round 3 on #209): "before" is now a JOB dependency
         # (`eval` needs: roster) rather than step order within one job's
         # list — "Refresh the model roster" lives in the `roster` job,
-        # "WIF auth preflight" in `eval`.
+        # "WIF auth preflight" in `eval`. B1 (round 4 on #209, blocker):
+        # `eval` now also needs `disarm`, so `roster` alone is no longer
+        # the exact value — `in` rather than `==`.
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        self.assertEqual(doc["jobs"]["eval"].get("needs"), "roster",
-                         "the preflight takes its model from the roster, so "
-                         "the `eval` job must depend on `roster`")
+        eval_needs = doc["jobs"]["eval"].get("needs")
+        self.assertIn("roster", eval_needs if isinstance(eval_needs, list) else [eval_needs],
+                     "the preflight takes its model from the roster, so "
+                     "the `eval` job must depend on `roster`")
         roster_names = [s.get("name", "") for s in doc["jobs"]["roster"]["steps"]]
         eval_names = [s.get("name", "") for s in doc["jobs"]["eval"]["steps"]]
         self.assertTrue(any("roster" in n.lower() for n in roster_names))
@@ -28825,6 +28923,32 @@ class TestIssue147(unittest.TestCase):
         # The negative control: the unmutated document must still be clean,
         # or every row above passes for the wrong reason.
         self.assertEqual(self._lint(good), [])
+
+    def test_b2_last_seen_equal_to_generated_at_passes_one_day_later_fails(self):
+        # N1 (round 4 on #209): the general "catalogue_seen after
+        # generated_at" row above uses a value (2099-12-31) so far in the
+        # future that a mutant which only shifts the boundary by a day
+        # (`last_seen_date > generated_at_date` → `> generated_at_date +
+        # timedelta(days=1)`, B2_ge, adv209-r4/mutate4.py) still gets
+        # caught the same way and SURVIVES. Pinning the exact boundary
+        # kills it: `last_seen == generated_at` must pass, and exactly one
+        # day later must fail.
+        good = self._committed()
+        generated = good["generated_at"][:10]
+        same_day = copy.deepcopy(good)
+        same_day["catalogue_seen"] = [{"id": good["arms"][0]["id"], "last_seen": generated}]
+        self.assertEqual(self._lint(same_day), [],
+                         "last_seen == generated_at must be accepted, not "
+                         "just anything short of it")
+        next_day = (datetime.strptime(generated, "%Y-%m-%d").date()
+                    + timedelta(days=1)).isoformat()
+        one_day_later = copy.deepcopy(good)
+        one_day_later["catalogue_seen"] = [{"id": good["arms"][0]["id"], "last_seen": next_day}]
+        problems = self._lint(one_day_later)
+        self.assertTrue(any("is later than `generated_at`" in p for p in problems),
+                        f"last_seen one day after generated_at must be "
+                        f"rejected; got {problems!r}")
+
     # --- item 2: selection reads the committed file, and only it ---------
 
     def test_the_default_roster_path_is_the_committed_file(self):
@@ -29382,10 +29506,17 @@ elif 'worktree' in args and 'remove' in args:
                     run.stderr + run2.stderr)
             results_run = None
             if run_results and run.returncode == 0:
-                results_script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+                # B1 (round 4 on #209, blocker): this step lives in the
+                # `publish` job now, not `eval` — see that job's own
+                # comment. It reads the fixture key from `needs.eval.
+                # outputs.eval_key` (via `EVAL_KEY` in `env:`) rather than
+                # a `$RUNNER_TEMP` file, since `publish` runs on a
+                # different runner from the one that wrote that file.
+                results_script = next(step["run"] for step in document["jobs"]["publish"]["steps"]
                                       if step.get("name") == "Build the badge over the run window, commit, and push")
+                env3 = dict(env, EVAL_KEY="workflow-path-audit")
                 results_run = subprocess.run(["/bin/bash", "-c", results_script], cwd=workspace,
-                                             env=env, capture_output=True, text=True, timeout=60)
+                                             env=env3, capture_output=True, text=True, timeout=60)
             calls = [json.loads(line) for line in calls_path.read_text(
                 encoding="utf-8").splitlines()] if calls_path.exists() else []
             body = temp.joinpath("proposal-body.md")

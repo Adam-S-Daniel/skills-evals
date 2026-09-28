@@ -115,16 +115,20 @@
 #   class name, and refresh_models.py is written to produce nothing else. The
 #   token-exchange failure output below is a separate pre-existing path.
 #
-# * All five checkouts use `persist-credentials: false`; push auth is injected
-#   only in the two steps of the `eval` job that push — the roster-proposal
-#   step and the final commit step — and only in their own `env:`. Both sit
-#   AFTER the eval, so while the bypassPermissions agent is running, no
-#   GitHub write credential exists anywhere on that job's runner and no
-#   long-lived secret exists on it. The `roster-pr` job (F2, adversarial
-#   round 1 on #209) gets its own fresh `${{ github.token }}`, scoped to
-#   that job's own `permissions:` block, never the `eval` job's token — the
-#   two jobs run on separate runners and share no credential. What IS in
-#   reach differs by subject, because the two arms are built differently:
+# * All five checkouts use `persist-credentials: false`; push auth is
+#   injected only in the steps that push it — the `roster` job's
+#   roster-proposal step, the `disarm` and `roster-pr` jobs' `gh` calls, and
+#   the `publish` job's commit step — and only in their own `env:`. B1 (round
+#   4 on #209, blocker): the `eval` job itself holds NO write credential of
+#   any kind, at any point, on any runner — not even step-scoped and not
+#   even after the bypassPermissions agent finishes, because a later step OF
+#   THE SAME JOB is not a credential boundary against whatever that agent
+#   planted. Every job that writes anything (`roster`, `disarm`, `publish`,
+#   `roster-pr`) gets its own fresh `${{ github.token }}`, scoped to that
+#   job's own `permissions:` block and never shared with `eval`'s — five
+#   jobs, five runners, no credential in common between the one that runs
+#   the agent and any of the other four. What IS in reach differs by
+#   subject, because the two arms are built differently:
 #
 #     - a SKILL arm's agent gets an ALLOWLIST too, since #81 (harness/
 #       run_eval.py's `_ALLOWED_ENV` + `_ALLOWED_ENV_PREFIXES`): PATH, HOME,
@@ -206,8 +210,8 @@ on:
         required: false
         default: false
 
-# THREE jobs, each least-privileged at JOB level (B1, adversarial round 3
-# on #209, blocker; F2, round 1). Workflow-level permissions is `{}`
+# FIVE jobs, each least-privileged at JOB level (B1, adversarial round 4 on
+# #209, blocker; B1 round 3; F2, round 1). Workflow-level permissions is `{}`
 # deliberately: the `eval` job runs the bypass-permissions agent, and
 # giving it write scopes for the whole job would hand those scopes to that
 # agent too, not just to a later step that happens to need them. Each job
@@ -225,19 +229,68 @@ on:
 # never touches, before, after or alongside that job, never depending on
 # its outcome or its workspace.
 #
-# `eval` (contents: write, id-token: write): runs the fixture (including
-# the bypass-permissions agent) and publishes the badge/results to
-# `eval-results`. `needs: roster` — NOT the other way — so its badge step
-# can commit an EXHIBIT copy of the roster job's OWN computed roster
-# (`needs.roster.outputs.roster_latest_json`, ADR 0001 decision 3: read by
-# no decision) without either job reaching into the other's runner. `if:
-# ${{ !cancelled() && !inputs.roster_only }}` — the roster step's own
-# failures must never be fatal to the eval (a stale/unreachable census is
-# not this job's problem), and a `roster_only` dispatch skips this job
-# entirely. `id-token: write` is this job's OWN, separate WIF mint (never
-# shared with `roster`'s bearer — different runners, different jobs, no
-# credential in common) for the preflight and the eval run. Nothing in this
-# job ever calls `gh pr`, `gh issue` or `gh workflow run`.
+# `disarm` (pull-requests: write, contents: read): B1 (round 4 on #209,
+# blocker). `needs: roster` only — it runs BEFORE the `eval` job's agent
+# ever starts, never after. It finds whatever pull request is currently open
+# from `roster/proposal` (the SAME validated, owner-filtered lookup
+# `roster-pr` uses below) and unconditionally disables its auto-merge. A
+# failed lookup or a failed `gh pr merge --disable-auto` is a fixed
+# `::warning::`, exit 0 — this job must never fail the run, and its own
+# outcome must never block `eval` (see `eval`'s `if:` below). It performs no
+# checkout at all: every value it needs (the repository name, the write
+# token) arrives through `env:`. `if: github.ref == 'refs/heads/main'`,
+# matching `roster-pr`'s own main-only gate, since only a run on `main` has
+# a `$GITHUB_SHA` worth trusting as the committed policy and this job exists
+# only to protect that run's auto-merge surface. This is what closes ADR
+# 0003's "cancellation window": an EARLIER run's still-armed auto-merge is
+# turned off before this run's agent so much as starts, rather than only
+# after `eval` finishes — the window that is left is `roster`'s own push
+# plus this job's run, not the whole `eval` job's duration. `roster-pr`
+# still re-arms auto-merge afterward, but only once ITS OWN independent
+# verification (B1.1-B1.3 below) passes for the sha this run actually
+# pushed.
+#
+# `eval` (contents: read, id-token: write): runs the fixture (including the
+# bypass-permissions agent) and uploads its results as a build artifact.
+# B1 (round 4 on #209, blocker): this job no longer holds `contents: write`
+# and no longer commits or pushes anything — the agent it runs can plant
+# code (a git hook, an edited repo script, a background daemon, a `/proc`
+# read) that a LATER STEP OF THE SAME JOB would then execute with whatever
+# credential that step holds, so no write credential of any kind may exist
+# on this job's runner at all, ever. `needs: [roster, disarm]` — NOT the
+# other way, and not `needs: roster` alone any more: `disarm` must finish
+# (or fail; see `if:` below) before this job's agent starts, so a run that
+# gets cancelled mid-`eval` can never leave an earlier armed auto-merge
+# unprotected for the length of this job. `if: ${{ !cancelled() &&
+# !inputs.roster_only }}` — neither the roster step's own failures nor a
+# failed/warned `disarm` may ever be fatal to the eval (a stale/unreachable
+# census, or a `disarm` that could not reach the API, are not this job's
+# problem), and a `roster_only` dispatch skips this job entirely.
+# `id-token: write` is this job's OWN, separate WIF mint (never shared with
+# `roster`'s bearer — different runners, different jobs, no credential in
+# common) for the preflight and the eval run. Nothing in this job ever
+# calls `gh pr`, `gh issue`, `gh workflow run`, or touches `eval-results`.
+#
+# `publish` (contents: write): B1 (round 4 on #209, blocker). Everything
+# that used to be the `eval` job's own "Build the badge over the run
+# window, commit, and push" step, moved into a job with NO agent and a
+# FRESH checkout, so the write credential it holds never coexists on a
+# runner with the bypass-permissions agent. `needs: [roster, eval]`, `if:
+# ${{ !cancelled() && needs.eval.result == 'success' }}` — it only runs
+# once the eval has actually produced something to publish (this also
+# reproduces the old skip on a `roster_only` dispatch, whose `eval` job
+# never runs at all: `needs.eval.result` reads `skipped`, which is never
+# `success`). It takes a fresh `actions/checkout` of `skills-evals` at this
+# run's own triggering sha — never the `eval` job's checkout, which the
+# agent shared a filesystem with — downloads the `eval` job's uploaded
+# artifact into `results/`, and runs `scripts/make_badge.py` from ITS OWN
+# checkout, never from the artifact: the artifact is the eval's raw output,
+# untrusted content exactly like everything else `eval-results` already
+# carries, and it must never be able to substitute its own copy of the
+# script that builds the badge. The roster exhibit it commits
+# (`roster/latest.json`) comes from `needs.roster.outputs.roster_latest_json`
+# — the `roster` job's own computed roster — exactly as it did when this
+# logic lived in `eval` (ADR 0001 decision 3: read by no decision).
 #
 # `roster-pr` (pull-requests: write, actions: write, issues: write,
 # contents: write): everything that touches the pull request the `roster`
@@ -245,16 +298,18 @@ on:
 # dispatch `ci.yml` on it so `test` lands on its head sha (`pull-requests:
 # write`, `actions: write`, Adam's decision of 2026-09-28,
 # docs/decisions/0003-roster-merges-automatically.md). `needs: [roster,
-# eval]` — the ONLY job depending on both — because it is the only place
-# that can independently re-verify what `roster` published (B1.1-B1.3
-# below) AND know what `eval` actually did (`needs.eval.result`, for the
-# issue's eval sentence; validated to a fixed word, never trusted as free
-# text). It also carries `issues: write`: the tracking issue's final
-# wording depends on what this job did to the PR (opened it, could not
-# enable auto-merge, turned auto-merge off, …), so this job edits/creates
-# the SAME issue the `roster` job's propose step found or left neutral,
-# rather than splitting one issue's text across two writers with no shared
-# view of the outcome. `contents: write` (S2, round 2,
+# eval]` — the only job (besides `publish`) depending on both — because it
+# is the only place that can independently re-verify what `roster`
+# published (B1.1-B1.3 below) AND know what `eval` actually did
+# (`needs.eval.result`, for the issue's eval sentence; validated to a fixed
+# word, never trusted as free text). It re-arms auto-merge that `disarm`
+# above unconditionally turned off, but only for a proposal this job's own
+# checks (below) admit. It also carries `issues: write`: the tracking
+# issue's final wording depends on what this job did to the PR (opened it,
+# could not enable auto-merge, turned auto-merge off, …), so this job
+# edits/creates the SAME issue the `roster` job's propose step found or
+# left neutral, rather than splitting one issue's text across two writers
+# with no shared view of the outcome. `contents: write` (S2, round 2,
 # spec-roster-mode-r2.md) is needed by `enablePullRequestAutoMerge`/an
 # immediate merge even though this job performs no checkout and runs no
 # repository code — it only calls `gh`. This job runs on EVERY eval run,
@@ -718,11 +773,11 @@ jobs:
             exit 0
           fi
           # B1 (round 3 on #209): this run's computed roster, published as an
-          # OUTPUT so the `eval` job's badge step can commit an EXHIBIT copy
-          # to `eval-results` without the `roster` job depending on `eval`
-          # (ADR 0001, decision 3: `roster/latest.json` is read by no
-          # decision) and without the `eval` job needing any git access to
-          # this job's own runner.
+          # OUTPUT so the `publish` job (round 4: relocated off `eval`) can
+          # commit an EXHIBIT copy to `eval-results` without the `roster`
+          # job depending on `eval` or `publish` (ADR 0001, decision 3:
+          # `roster/latest.json` is read by no decision) and without either
+          # of those jobs needing any git access to this job's own runner.
           emit_ml roster_latest_json < "$computed"
           # Should-fix 1 (round 3 on #209): `summary.md` is rendered by
           # harness/roster.py, shaped in part by the untrusted census —
@@ -815,7 +870,12 @@ jobs:
           if [ "$roster_only" = true ]; then
             eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
           else
-            eval_note="The paid eval, in a separate \`eval\` job this one does not depend on, ran on the committed \`evals/roster.yml\`; that job's own result says whether it succeeded and what it published to \`eval-results\`."
+            # S3 (round 4 on #209): "runs", not "ran" — this step writes
+            # this sentence in the `roster` job, which never `needs:
+            # eval` and so cannot know whether the `eval` job (in a
+            # separate job after this one) has even started yet, let
+            # alone finished.
+            eval_note="The paid eval runs, in a separate job after this one, on the committed \`evals/roster.yml\`; that job's own result says whether it succeeded and what it published to \`eval-results\`."
           fi
           # <<< roster-only note
 
@@ -1104,21 +1164,91 @@ jobs:
           fi
           git worktree remove --force "$worktree"
 
-  eval:
+  # B1 (round 4 on #209, blocker): disarms any EARLIER run's still-armed
+  # `roster/proposal` auto-merge before the `eval` job's agent starts —
+  # see the header comment above for why this closes ADR 0003's
+  # cancellation window instead of merely narrowing it after the fact.
+  # `needs: roster` only, deliberately never `eval`: this job must complete
+  # (or fail loudly-but-harmlessly) before the agent runs, not after.
+  disarm:
     needs: roster
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      contents: read
+    steps:
+      # The SAME validated, owner-filtered lookup `roster-pr`'s
+      # `find_roster_pr` uses (server-side `head=` filter, re-asserted
+      # client-side by both the exact repo full name and the exact branch
+      # name, digits-only on the number) — duplicated here rather than
+      # shared, since this job performs no checkout and the two jobs run on
+      # separate runners with nothing in common to source a shared script
+      # from. Nothing here interpolates a GitHub Actions expression into
+      # the shell; `REPO` and the token arrive through `env:`.
+      - name: Disarm any armed roster pull request before the agent runs
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          find_roster_pr() {
+            local raw
+            if ! raw=$(gh api "repos/$REPO/pulls?state=open&base=main&head=${REPO%%/*}:roster/proposal" \
+                        --jq '[.[] | select(.head.repo.full_name == env.REPO and .head.ref == "roster/proposal")] | .[0].number // empty' \
+                        2>/dev/null); then
+              return 1
+            fi
+            case "$raw" in
+              ''|*[!0-9]*) printf '' ;;
+              *) printf '%s' "$raw" ;;
+            esac
+          }
+          if pr_number=$(find_roster_pr); then
+            if [ -n "$pr_number" ]; then
+              if gh pr merge "$pr_number" --repo "$REPO" --disable-auto; then
+                echo "disarmed pull request #$pr_number before the eval job's agent runs"
+              else
+                echo "::warning::could not disable auto-merge for the roster pull request before the agent ran"
+              fi
+            else
+              echo "no open roster pull request to disarm"
+            fi
+          else
+            echo "::warning::could not find the roster pull request to disarm"
+          fi
+          exit 0
+
+  eval:
+    needs: [roster, disarm]
     # NOT fatal on a `roster` failure (its own steps are already designed
     # to warn and continue rather than fail the job on an ordinary
     # refresh/publish problem; this `if:` covers the job dying outright,
     # e.g. a broken WIF mint) — the eval must still run on the committed
-    # roster either way. Skipped entirely for a `roster_only` dispatch.
+    # roster either way. Likewise never fatal on a failed/warned `disarm` —
+    # that job's own job-level `::warning::`s are its loud channel, and
+    # this job must still run on the committed roster regardless (B1, round
+    # 4 on #209). Skipped entirely for a `roster_only` dispatch.
     if: ${{ !cancelled() && !inputs.roster_only }}
     runs-on: ubuntu-latest
-    # Job-level, not workflow-level (F2) — this is exactly the eval.yml's
-    # pre-#209-review scope, minus the roster/tracking-issue scopes B1
-    # (round 3) moved to the `roster` job.
+    # Job-level, not workflow-level (F2). B1 (round 4 on #209, blocker):
+    # `contents: write` is GONE — this job runs the bypass-permissions
+    # agent and must hold no write scope of any kind; `contents: read` is
+    # only for the checkout steps below (a private-repo clone needs a
+    # read-scoped token), and `id-token: write` is this job's own WIF mint.
+    # Everything that used to need `contents: write` here (the badge
+    # commit/push) moved to the `publish` job, which the agent never
+    # shares a runner with.
     permissions:
-      contents: write
+      contents: read
       id-token: write
+    # Consumed by `publish` (B1, round 4 on #209): the fixture's results
+    # key, for the commit message it writes — that job has no file on this
+    # one's runner to read it from.
+    outputs:
+      eval_key: ${{ steps.select-fixture.outputs.eval_key }}
     # 45 min covers the widest committed shape, not just the 2-arm skill
     # A/B: a guidance fixture spends (agent budget + guard budget) per
     # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
@@ -1242,6 +1372,12 @@ jobs:
       # accepted too. Equivalent in the fresh CI checkout this workflow runs
       # in, where nothing is untracked.
       - name: Select and validate the fixture to run
+        # `id` + a `GITHUB_OUTPUT` write (B1, round 4 on #209): the
+        # `publish` job's commit message needs this same key, and that job
+        # has no file this one wrote to `$RUNNER_TEMP` — a separate runner
+        # entirely — so it travels as a job output instead, already
+        # charset-validated below before it is ever written anywhere.
+        id: select-fixture
         working-directory: skills-evals
         run: |
           set -euo pipefail
@@ -1315,7 +1451,9 @@ jobs:
           printf '%s' "$fixture" > "$RUNNER_TEMP/eval-fixture"
           # The results/badge key is the fixture path without its evals/
           # prefix: `workflow-path-audit`, or `guidance/<section id>`.
-          printf '%s' "${fixture#evals/}" > "$RUNNER_TEMP/eval-key"
+          key="${fixture#evals/}"
+          printf '%s' "$key" > "$RUNNER_TEMP/eval-key"
+          echo "eval_key=$key" >> "$GITHUB_OUTPUT"
           echo "fixture: $fixture"
 
       - name: Mint OIDC token and exchange for Anthropic access token
@@ -1419,6 +1557,68 @@ jobs:
             --registry cms-platform=../cms-platform \
             --registry adamdaniel.ai=../adamdaniel.ai
 
+      # B1 (round 4 on #209, blocker): this job does NOT build the badge,
+      # commit, or push any more — that logic (and the `contents: write`
+      # token it needs) moved to the `publish` job, which has no agent and
+      # a fresh checkout. This step hands `publish` its raw output as a
+      # build artifact instead: `results/` is exactly what the old badge
+      # step snapshotted before switching to `eval-results`, so `publish`
+      # can restore it the same way. `if: ${{ !cancelled() }}` rather than
+      # the default (only on success) so a failed eval run still uploads
+      # whatever partial output it produced — this is also this job's own
+      # debug artifact, replacing the old failure-only "Upload results on
+      # failure" step; `publish` only ever reads it when `eval` itself
+      # succeeded (its own `if:` on `needs.eval.result == 'success'`).
+      - name: Upload eval results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: eval-results-payload
+          path: skills-evals/results/
+          if-no-files-found: ignore
+          include-hidden-files: true
+
+  # F2 (adversarial round 1 on #209): everything that touches the
+  # B1 (round 4 on #209, blocker): the badge/results commit-and-push,
+  # relocated off the `eval` job to a runner the agent never touches. See
+  # the header comment above for the full rationale.
+  publish:
+    needs: [roster, eval]
+    if: ${{ !cancelled() && needs.eval.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      # Fresh — never the `eval` job's checkout, which the agent shared a
+      # filesystem with. `ref:` is explicit even though it matches the
+      # default, so this checkout can never silently drift onto a `main`
+      # that moved between this run's trigger and `publish` starting.
+      - name: Check out skills-evals
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          path: skills-evals
+          ref: ${{ github.sha }}
+          # Full history so the accumulated-window badge build and the
+          # eval-results branch switch below always have the commits they
+          # need; this repo is small.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The `eval` job's raw output, uploaded as a build artifact (B1,
+      # round 4 on #209) since this job shares no filesystem with that
+      # one. `actions/download-artifact` is pinned to v7.0.0
+      # (37930b1c2abaa49bbe596cd826c3c89aef350131, the same major as the
+      # `actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a`
+      # (v7) this repo already pins) — resolved with
+      # `git ls-remote https://github.com/actions/download-artifact
+      # 'refs/tags/v7*'`, a release well over 7 days old.
+      - name: Download eval results
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131
+        with:
+          name: eval-results-payload
+          path: skills-evals/results
+
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
       # nowhere until the `eval-results` checkout below has happened. This
@@ -1433,32 +1633,42 @@ jobs:
       # results/, and only THEN build the badge, so the window spans the real
       # run history. Note also that the `eval-results` branch carries no
       # scripts/ directory, so the branch switch takes make_badge.py out of the
-      # working tree; it is stashed in $RUNNER_TEMP beforehand and invoked from
-      # there. It is stdlib-only, so nothing else has to travel with it.
+      # working tree; it is stashed in $RUNNER_TEMP beforehand and invoked
+      # from there — from THIS job's own fresh checkout, never from the
+      # downloaded artifact (B1, round 4 on #209): the artifact is the
+      # `eval` job's raw, untrusted-exactly-like-everything-else-on-
+      # eval-results output, and it must never be able to substitute its
+      # own copy of the script that builds the badge. It is stdlib-only, so
+      # nothing else has to travel with it.
       - name: Build the badge over the run window, commit, and push
-        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
-        # interpolated into a run: body.
-        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         env:
           # Push auth lives only in this step.
           GITHUB_TOKEN: ${{ github.token }}
-          # B1 (round 3 on #209): the `roster` job's own computed roster,
-          # threaded through as a job output rather than a shared file —
-          # this job has no checkout of the `roster` job's runner at all,
-          # and the two run in parallel. An EXHIBIT copy only (ADR 0001,
-          # decision 3: `roster/latest.json` is read by no decision); empty
-          # when the roster job published nothing this run.
+          # B1 (round 3 on #209, carried by round 4 into this job): the
+          # `roster` job's own computed roster, threaded through as a job
+          # output rather than a shared file — this job has no checkout of
+          # the `roster` job's runner at all. An EXHIBIT copy only (ADR
+          # 0001, decision 3: `roster/latest.json` is read by no
+          # decision); empty when the roster job published nothing this
+          # run.
           ROSTER_LATEST_JSON: ${{ needs.roster.outputs.roster_latest_json }}
+          # The fixture's results/badge key (B1, round 4 on #209): the
+          # `eval` job already validated this against
+          # [A-Za-z0-9/_.-] before writing it as a job output; re-checked
+          # below regardless, since a job boundary is exactly where
+          # "validate again" earns its keep, and this value lands directly
+          # in a commit message.
+          EVAL_KEY: ${{ needs.eval.outputs.eval_key }}
         run: |
           set -euo pipefail
           git config user.name "skills-evals real-eval bot"
           git config user.email "skills-evals@users.noreply.github.com"
           # Stash the badge script before the branch switch drops scripts/.
           cp scripts/make_badge.py "$RUNNER_TEMP/"
-          # Snapshot generated outputs (results/ is new/untracked here, and is
-          # tracked on eval-results — without this the branch switch would
-          # clobber or refuse the fresh run's output)
+          # Snapshot the downloaded results (results/ is new/untracked
+          # here, and is tracked on eval-results — without this the branch
+          # switch would clobber or refuse the downloaded output)
           snap="$RUNNER_TEMP/eval-outputs"
           rm -rf "$snap"; mkdir -p "$snap"
           [ -d results ] && cp -r results "$snap/results"
@@ -1474,12 +1684,18 @@ jobs:
           # The `roster` job's own computed roster (B1, round 3 on #209):
           # threaded through `needs.roster.outputs.roster_latest_json`
           # rather than a shared file, since that job runs on a separate
-          # runner, in parallel with this one. Refreshing the roster is
-          # non-fatal there, so there may be none — in which case nothing
-          # is committed for it and the summary says why.
+          # runner. Refreshing the roster is non-fatal there, so there may
+          # be none — in which case nothing is committed for it and the
+          # summary says why.
           if [ -n "${ROSTER_LATEST_JSON:-}" ]; then
             mkdir -p roster
-            printf '%s' "$ROSTER_LATEST_JSON" > roster/latest.json
+            # N4 (round 4 on #209): harness/roster.py always writes this
+            # file with a trailing newline; the GITHUB_OUTPUT multiline
+            # round-trip (emit_ml's `content="$(cat)"`) strips it on the
+            # way through, so it is put back here explicitly — `printf
+            # '%s\n'`, not `'%s'` — rather than silently publishing a
+            # roster/latest.json byte-different from what was computed.
+            printf '%s\n' "$ROSTER_LATEST_JSON" > roster/latest.json
           else
             echo "No roster was published this run — see the roster job's warning." \
               >> "$GITHUB_STEP_SUMMARY"
@@ -1499,23 +1715,17 @@ jobs:
             echo "No changes to commit."
             exit 0
           fi
-          git commit -m "eval: $(cat "$RUNNER_TEMP/eval-key") run + badge + roster [skip ci]"
+          # Re-validated at this job boundary, matching the `eval` job's
+          # own gate; an empty or malformed value falls back to a fixed
+          # literal rather than ever reaching the commit message unchecked.
+          key="unknown-fixture"
+          case "${EVAL_KEY:-}" in
+            ''|*[!A-Za-z0-9/_.-]*) : ;;
+            *) key="$EVAL_KEY" ;;
+          esac
+          git commit -m "eval: $key run + badge + roster [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
-
-      # LAST step in the job so `if: failure()` sees a failure from ANY
-      # earlier step — not just the eval run, but also the badge-build and
-      # commit/push step (e.g. a rejected push). Surfaces
-      # the per-arm error detail (summaries + reports, incl. gitignored raw
-      # transcripts) as an artifact instead of losing it with the runner.
-      - name: Upload results on failure
-        if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
-        with:
-          name: eval-results-debug
-          path: skills-evals/results/
-          if-no-files-found: ignore
-          include-hidden-files: true
 
   # F2 (adversarial round 1 on #209): everything that touches the
   # `roster/proposal` pull request — find/create/edit/close/merge it, and
@@ -1661,9 +1871,19 @@ jobs:
           if [ "$roster_only" = true ] || [ "$eval_result" = skipped ]; then
             eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
           elif [ "$eval_result" = success ]; then
-            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the \`eval\` job's own badge step — if that step failed, this run's results were not published."
+            # B1 (round 4 on #209, blocker): publication moved off `eval`
+            # onto `publish`, which only runs once `eval` itself succeeds.
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the \`publish\` job — if that job failed, this run's results were not published."
           elif [ "$eval_result" = failure ]; then
             eval_note="The paid eval ran on the committed \`evals/roster.yml\`, but the \`eval\` job failed; nothing from this run was published to \`eval-results\`."
+          elif [ "$eval_result" = cancelled ]; then
+            # N2 (round 4 on #209): "cancelled or timed out" is what
+            # `needs.eval.result == 'cancelled'` actually means — a
+            # GitHub Actions job reads `cancelled` for a run-level
+            # cancellation AND for `timeout-minutes` expiring, never for
+            # simply not having started; "did not run" belongs to the
+            # else branch below (empty/unrecognised) alone.
+            eval_note="The eval job was cancelled or timed out; nothing from this run was published to \`eval-results\`."
           else
             eval_note="No eval result: the \`eval\` job did not run, or its result is unknown; nothing from this run was published to \`eval-results\`."
           fi
@@ -1761,7 +1981,15 @@ jobs:
           # back_to_proposal_without_reading_anything).
           policy_mode_main=""
           if [ "$policy_mode_sha" = auto ]; then
-            policy_mode_main=$(read_policy_mode "main") || policy_mode_main=""
+            # S1 (round 4 on #209): resolve live `main` to an explicit,
+            # validated sha before reading the policy at it, rather than
+            # trusting the contents API's own `?ref=main` resolution
+            # silently — the resolved sha is echoed, so a run's log names
+            # exactly which commit its "live main" read came from.
+            main_sha=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha 2>/dev/null) || main_sha=""
+            if ! [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]; then main_sha=""; fi
+            echo "live main resolved to: ${main_sha:-<unresolved>}"
+            policy_mode_main=$(read_policy_mode "$main_sha") || policy_mode_main=""
             echo "roster_mode (policy at live main): raw=${policy_mode_main:-<empty>}"
           fi
           # N9: `auto` only if BOTH reads say `auto`. A genuinely malformed
@@ -2036,6 +2264,18 @@ jobs:
             fi
 
             if [ -z "$pr_failed" ]; then
+              # S1 (round 4 on #209): `--ref` stays a bare branch name.
+              # `gh workflow run`'s own source (pkg/cmd/workflow/run/
+              # run.go) passes `--ref` through to the dispatch API's `ref`
+              # field completely unvalidated and unqualified — it never
+              # itself accepts or requires a fully-qualified
+              # `refs/heads/...` form, and GitHub's own workflow-dispatch
+              # docs name only "a branch or tag name" for that field. The
+              # bare form is the one this workflow has always used and
+              # already verified working; switching to a fully-qualified
+              # ref would be an unverified change to a live-API surface
+              # this hermetic suite cannot exercise, for no documented
+              # benefit.
               if ! gh workflow run ci.yml --repo "$REPO" --ref roster/proposal; then
                 pr_failed=1
                 echo "::warning::could not start checks for the roster pull request"

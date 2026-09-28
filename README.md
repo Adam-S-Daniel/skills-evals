@@ -662,11 +662,16 @@ this on a run whose vendor-default probe was clean (no `defaults_failed`,
 no `defaults_mismatched`) — a dirty probe or a rejected proposal keeps the
 human-merge flow exactly, and says why in the tracking issue. Any `gh`
 failure along the way is a fixed warning, never a failed job, and degrades
-that run to the human-merge flow too. On every run that does not (re-)enable
-auto-merge — a dirty probe, `roster_mode: proposal`, a rejected proposal, or
-a failed `gh` call partway through — an already-open pull request has its
-auto-merge explicitly turned off, so a later push whose `test` happens to
-pass can never merge a head this run did not approve. Set
+that run to the human-merge flow too. A dedicated `disarm` job
+(B1, adversarial round 4 on #209) turns off any already-open pull request's
+auto-merge FIRST, before the `eval` job's agent ever starts — never after —
+so an earlier run's still-armed auto-merge cannot sit exposed for the length
+of that job. `roster-pr` then re-arms it, but only for a proposal ITS OWN
+independent checks admit; on every run that does not (re-)enable auto-merge —
+a dirty probe, `roster_mode: proposal`, a rejected proposal, or a failed `gh`
+call partway through — the pull request's auto-merge is turned off again (or
+stays off), so nothing but a run whose proposal `roster-pr` itself verified
+can ever leave a head merging automatically. Set
 `roster_mode: proposal` to switch back; nothing else needs to change.
 
 Thresholds and the capability ladder live in

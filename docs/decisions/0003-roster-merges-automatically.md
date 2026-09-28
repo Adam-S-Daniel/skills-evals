@@ -186,16 +186,21 @@ failing API response) — "the pushed branch's head does not match this
 run's proposal" for check 2, "the pushed commit did not verify as a single
 `evals/roster.yml` change ahead of this run's checkout" for check 3.
 
-**Cancellation window.** A run cancelled after the `eval` job's push but
-before `roster-pr` runs can leave an EARLIER run's auto-merge still armed —
-cancellation does not itself disable anything. No `test` run lands on the
-new head unless something dispatches `ci.yml` on it, and nothing does until
-`roster-pr` next runs (the next scheduled or dispatched `eval` run) and
-performs checks 1–3 against whatever `$GITHUB_SHA` is current then. This
-window is accepted rather than closed: closing it would mean either a
-`roster-pr` that runs even when `eval` is cancelled before pushing (nothing
-to verify) or a third job whose only purpose is "disable on cancel", for a
-window that self-heals on the very next run.
+**Cancellation window (superseded by round 4 below).** As originally
+written: a run cancelled after the `roster` job's push but before
+`roster-pr` runs could leave an EARLIER run's auto-merge still armed —
+cancellation does not itself disable anything, and nothing disabled it until
+`roster-pr` next ran (the next scheduled or dispatched `eval` run) and
+performed checks 1–3 against whatever `$GITHUB_SHA` was current then. That
+window was accepted rather than closed, on the reasoning that closing it
+would need either a `roster-pr` that runs even when `eval` is cancelled
+before pushing (nothing to verify) or a third job whose only purpose is
+"disable on cancel" — which is exactly what round 4's `disarm` job below
+turns out to be worth building: it disables any earlier run's still-armed
+auto-merge immediately after `roster` pushes, before `eval`'s agent starts at
+all, so this run's own cancellation can only ever widen the already-small
+window between `roster`'s push and `disarm`'s own run — never the whole
+length of `eval`.
 
 ## Round 3 (adversarial review on #209, spec-roster-mode-r3.md): the compute/
 ## render/admit/push path moves off the agent's own job entirely
@@ -298,8 +303,85 @@ merging" — never implying this run's content is on the PR), and a
 verification failure ("inspect before merging" plus the specific failed
 check — never implying the content is safe to just merge).
 
+## Round 4 (adversarial review on #209, spec-roster-mode-r4.md): the badge
+## commit-and-push moves off the agent's own job, and the armed PR is
+## disarmed before the agent runs
+
+Round 3 moved the roster compute/render/admit/push path off the `eval` job
+entirely, onto `roster`. It left one thing behind: `eval` still ran the
+badge/results commit-and-push itself, as its LAST step, after the
+bypass-permissions agent had already finished — same threat as round 3's,
+applied to a different pair of steps. The agent can plant code (a git hook,
+an edited repo script, a background daemon, a `/proc` read) that a later step
+of the SAME job then executes with whatever credential that step holds; the
+badge/commit/push step held `contents: write` and the run's `GITHUB_TOKEN`.
+So `eval` must hold NO write scope of any kind, ever — not even one it only
+uses after the agent is done, because "after" is a step boundary on the same
+runner, not a credential boundary.
+
+**The fix: two more jobs, `publish` and `disarm`, neither running the
+agent.** `publish` (`contents: write` only) takes over the badge/commit/push
+logic exactly as it ran before, on a FRESH `actions/checkout` the agent never
+touched — it downloads the `eval` job's raw output as a build artifact
+(`actions/download-artifact`, pinned to the same major as this repo's already
+-pinned `actions/upload-artifact`) rather than inheriting `eval`'s workspace,
+and it runs `scripts/make_badge.py` from its OWN checkout, never from the
+downloaded artifact — the artifact is `eval`'s raw output, untrusted exactly
+like everything else `eval-results` already carries, and it must never be
+able to substitute its own copy of the very script that builds the badge.
+`eval` itself drops to `{contents: read, id-token: write}` — read only for
+its checkout steps, and its own separate WIF mint for the preflight and the
+run. `publish` runs `needs: [roster, eval]`, `if: !cancelled() &&
+needs.eval.result == 'success'`, reproducing the old `roster_only` skip
+structurally (a `roster_only` dispatch never runs `eval` at all, so
+`needs.eval.result` reads `skipped`, never `success`).
+
+**`disarm` closes the cancellation window the round-3 text above accepted.**
+It runs `needs: roster` ONLY, never `eval` — so it completes (or fails
+harmlessly; see below) before the agent so much as starts, not after. It
+finds whatever pull request is currently open from `roster/proposal` (the
+same validated, owner-filtered lookup `roster-pr` uses) and unconditionally
+disables its auto-merge. `eval` then gains `needs: [roster, disarm]`, with
+its `if:` staying non-fatal on either dependency (`!cancelled()`) so neither
+a `roster` failure nor a `disarm` warning ever blocks the eval from running
+on the committed roster. `roster-pr` still re-arms auto-merge afterward, but
+only for a proposal ITS OWN independent verification (checks 1–3 above)
+admits for THIS run's pushed sha — `disarm`'s job is only ever to turn
+something off, never to decide what gets turned back on.
+
+**Why disarm-then-rearm, not "make roster-pr run earlier instead."**
+`roster-pr`'s whole re-arming logic depends on knowing `eval`'s outcome
+(`needs.eval.result`, for the tracking issue's eval sentence) and on
+independently verifying what THIS run's `roster` job published — both of
+which are only available once `eval` has finished. Splitting "disarm"
+(needs nothing from `eval`) from "verify and re-arm" (needs both) into two
+jobs is what lets the disarming half run before the agent while the
+re-arming half still runs after it, rather than forcing one job to do
+both and therefore run twice, or forcing the safety property to wait on
+information it does not need.
+
+**`disarm`'s own permissions are `{pull-requests: write, contents: read}`**
+— nothing else: it performs no checkout, and reading or disabling a pull
+request's auto-merge needs no other scope. A failed lookup, or a failed
+`gh pr merge --disable-auto` call, is a fixed `::warning::`, exit 0 — this
+job must never fail the run, and a `disarm` failure must never block `eval`.
+
 ## Consequences
 
+- **The `roster` job installs the npm-latest Claude Code CLI while holding
+  its write scopes** (N3, round 4 on #209): `roster`'s "Install Claude Code
+  CLI" step is the same unpinned-and-always-latest install the `eval` job
+  runs (the owner's decisions of 2026-09-27/28, #202/#203) — it runs BEFORE
+  the WIF mint, so nothing it installs runs with a credential in the
+  environment at install time (same guarantee `eval`'s copy already has),
+  but `roster` still goes on to hold `contents: write`/`id-token: write`/
+  `issues: write` for the rest of its own steps, on the SAME runner that
+  install just ran on. This is the owner's existing unpinned-CLI decision,
+  extended by inheritance to a second job rather than reconsidered by this
+  round. Optional hardening — a separate CLI-install job with no write
+  scope, feeding `roster` only the resolved version string — is noted here,
+  not implemented; the probe's own reasoning (a version-pin's stale audit
+  trail vs. a per-run recorded version) applies here as much as in `eval`.
 - **The untrusted census can now move which tiers are on the roster with no
   human reading the diff first**, when the probe is clean. `test` still
   gates shape (the committed-roster contract, admission, the harness's own

@@ -5,11 +5,16 @@ running against today.
 IT DOES NOT DECIDE WHAT RUNS. The roster the harness runs on is
 `evals/roster.yml`, committed on `main` — ruleset-protected and
 pull-request-only, so a seat or a `catalogue_seen` entry cannot appear
-there or vanish from there without a reviewed commit. See
+there or vanish from there without a commit that went through a pull
+request: a human review and merge under `roster_mode: proposal`, or the
+same branch protection plus a passing `test` check under `roster_mode:
+auto` (ADR 0003) — never a direct push either way. See
 docs/decisions/0001-roster-trusted-on-main.md. What this module produces is
 a DIFF against that file, published with every seat's reason in words and
-its numerator and denominator beside it, for a human to merge or not.
-`run_eval.select_models` never reads this module's output.
+its numerator and denominator beside it, for a human to merge or not
+(`roster_mode: proposal`) or for the automation to merge once CI passes
+(`roster_mode: auto`). `run_eval.select_models` never reads this module's
+output.
 
 A PURE FUNCTION OVER FILES. `compute_roster()` takes already-parsed documents
 and a frozen `now`, and returns the roster dict — no network, no clock, no
@@ -1262,8 +1267,11 @@ def _clean_counts(counts, warn) -> dict:
 #
 # THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING. The lists they
 # bounded come from `evals/roster.yml`, and a line cannot appear there
-# without a reviewed commit on a ruleset-protected branch. So the input
-# the caps bounded is bounded by review, and every remaining effect of a
+# without a commit that went through a pull request on a ruleset-protected
+# branch — human-reviewed under `roster_mode: proposal`, or merged by the
+# automation only once CI passes under `roster_mode: auto` (ADR 0003); never
+# a direct push either way. So the input the caps bounded is bounded by
+# that PR gate, and every remaining effect of a
 # cap was on HONEST data: a repository with more than 500 genuinely
 # observed models would have had its own reviewed history evicted, by an
 # order chosen to defeat an attacker who can no longer write the file.
@@ -1546,8 +1554,11 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
             #
             # THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING: this
             # history is `evals/roster.yml`'s `catalogue_seen`, committed
-            # on a ruleset-protected branch. A `last_seen` here is a date
-            # a reviewer merged, so "the record was tampered with" is no
+            # on a ruleset-protected branch through a pull request. A
+            # `last_seen` here is a date that passed that PR gate — a
+            # human reviewer's merge under `roster_mode: proposal`, or the
+            # automation's merge once CI passed under `roster_mode: auto`
+            # (ADR 0003) — so "the record was tampered with" is no
             # longer one of the two readings of an old date — the only
             # remaining reading is the true one, that this harness has not
             # observed the model in that long. The census-names-it
