@@ -587,7 +587,11 @@ rather than resting on a guessed "effective default"), only the summary
 and reason wording says "the CLI's default `<id>` for `<alias>` does not
 match this run's catalogue (<class>)" rather than "vendor default ...
 unknown this run", so a human can tell the two apart. A frozen family keeps
-every previous arm's seat until it leaves the Models API and retires none.
+every previous arm's seat until it leaves the Models API and retires none —
+including a previous arm whose LISTED FORM switches between dated and
+undated from one run to the next, freeze or no freeze: it is still that
+same arm, held (or, for a seated default's tier, still counted as seated)
+under whichever spelling this run's catalogue lists (#203 probe round 9).
 While it still holds
 a seat the Models API lists it gets **no new seat at all** (#203 probe
 round 3); only a family that would otherwise vanish from the roster is

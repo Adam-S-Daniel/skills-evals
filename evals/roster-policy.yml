@@ -46,6 +46,13 @@ tiers:
 # two census keys, halving both shares. The collapse only happens when the
 # undated alias is itself in the catalogue; a catalogue that publishes only
 # dated ids has nothing to collapse onto and every id stands on its own.
+# A PREVIOUS ARM whose listed form switches between dated and undated from
+# one run to the next — the Models API is free to do that — is still that
+# same arm, whether or not the family's vendor-default probe succeeded this
+# run: a frozen family holds its previous arms under whichever spelling
+# this run's catalogue lists, and a seated default's tier stays on the
+# roster through another previous arm seated under either spelling (#203
+# probe round 9).
 
 # A since-retired model's usage still counts toward the denominator when
 # this harness's own history says it was once in the catalogue: the

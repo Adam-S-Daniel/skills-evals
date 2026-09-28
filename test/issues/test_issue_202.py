@@ -1702,8 +1702,14 @@ class _ProposeStepFixture(unittest.TestCase):
 
     START = "# >>> defaults-failed note"
     END = "# <<< defaults-failed note"
-    WARNING = "::warning::vendor-default probe failed for {n} families; their seats were held"
+    WARNING = "::warning::vendor-default probe failed for {n} {word}; their seats were held"
     MARKER = "<!-- skills-evals:roster-proposal -->"
+
+    @staticmethod
+    def _plural(n):
+        """"family" at 1, "families" otherwise (#203 probe round 9, R9-3):
+        the two `::warning::` lines must not read "for 1 families"."""
+        return "family" if n == 1 else "families"
 
     def setUp(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
@@ -1799,7 +1805,7 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
         out = self._run_fragment({"proposal": {"status": "same"},
                                   "defaults_failed": {"opus": "timeout",
                                                       "sonnet": "no-init"}})
-        self.assertIn(self.WARNING.format(n=2) + "\n", out)
+        self.assertIn(self.WARNING.format(n=2, word=self._plural(2)) + "\n", out)
         self.assertIn("COUNT=2\n", out)
         self.assertIn("NOTE=**The vendor-default probe failed", out)
 
@@ -1819,18 +1825,26 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
         fragment = self._fragment()
         self.assertNotIn("${{", fragment)
         # Each warning's text is fixed: the only expansion in each line is
-        # the count that line's own case validated as digits — the failed
-        # count in the first ::warning:: line, the mismatched count in the
-        # second (R8-1, #203 probe round 8).
+        # the count that line's own case validated as digits, and the
+        # singular/plural word chosen from that same count in shell (#203
+        # probe round 9, R9-3: "for 1 families" must read "for 1 family")
+        # — the failed count and word in the first ::warning:: line, the
+        # mismatched count and word in the second (R8-1, #203 probe round 8).
         warning_lines = [ln for ln in fragment.splitlines() if "::warning::" in ln]
         self.assertEqual(len(warning_lines), 2, warning_lines)
-        for line, var in zip(warning_lines, ("defaults_failed", "defaults_mismatched")):
-            self.assertEqual(re.findall(r"\$\{?(\w+)", line), [var], line)
+        for line, var, word_var in zip(
+                warning_lines, ("defaults_failed", "defaults_mismatched"),
+                ("failed_word", "mismatched_word")):
+            self.assertEqual(re.findall(r"\$\{?(\w+)", line), [var, word_var], line)
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
     def test_same_with_a_failed_probe_opens_the_issue(self):
         out, calls, body = self._run_step(self.FAILED, [])
-        self.assertIn(self.WARNING.format(n=1), out)
+        self.assertIn(self.WARNING.format(n=1, word=self._plural(1)), out)
+        # R9-3 (#203 probe round 9): the singular reads "1 family", never
+        # the plural "1 families".
+        self.assertIn("for 1 family;", out)
+        self.assertNotIn("for 1 families", out)
         self.assertEqual(len(calls), 1, calls)
         self.assertTrue(calls[0].startswith("issue create"), calls)
         self.assertIn("probe failed", calls[0])
@@ -1881,7 +1895,7 @@ class TestProposeStepOnAMismatch(_ProposeStepFixture):
     present. The reviewer's h1.py, h2.py and h3.py."""
 
     MISMATCH_WARNING = ("::warning::vendor default not matched by this run's "
-                        "catalogue for {n} families; their seats were held")
+                        "catalogue for {n} {word}; their seats were held")
 
     MISMATCHED = {"proposal": {"status": "same", "changes": []},
                  "defaults_mismatched": {"opus": {"id": "claude-opus-9",
@@ -1894,7 +1908,9 @@ class TestProposeStepOnAMismatch(_ProposeStepFixture):
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
     def test_a_mismatch_only_same_with_no_issue_creates_one(self):
         out, calls, body = self._run_step(self.MISMATCHED, [])
-        self.assertIn(self.MISMATCH_WARNING.format(n=1), out)
+        self.assertIn(self.MISMATCH_WARNING.format(n=1, word=self._plural(1)), out)
+        self.assertIn("for 1 family;", out)
+        self.assertNotIn("for 1 families", out)
         self.assertEqual(len(calls), 1, calls)
         self.assertTrue(calls[0].startswith("issue create"), calls)
         self.assertNotIn("probe failed", calls[0])
@@ -1916,8 +1932,8 @@ class TestProposeStepOnAMismatch(_ProposeStepFixture):
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
     def test_both_classes_present_names_both_in_the_title_and_never_closes(self):
         out, calls, body = self._run_step(self.BOTH, [])
-        self.assertIn(self.WARNING.format(n=1), out)
-        self.assertIn(self.MISMATCH_WARNING.format(n=1), out)
+        self.assertIn(self.WARNING.format(n=1, word=self._plural(1)), out)
+        self.assertIn(self.MISMATCH_WARNING.format(n=1, word=self._plural(1)), out)
         self.assertEqual(len(calls), 1, calls)
         self.assertTrue(calls[0].startswith("issue create"), calls)
         self.assertIn("probe failed", calls[0])
@@ -3867,6 +3883,131 @@ class TestRound7ProbeReproductions(_WeeklyLoop):
         for model_id in ("claude-opus-5", "claude-opus-5-5"):
             self.assertIn("held; none retired on a catalogue mismatch",
                           self._reason(result, model_id))
+
+
+class TestR9RenamedArmFormSurvivesAFrozenFamily(_WeeklyLoop):
+    """R9-1 (#203 probe round 9, adversarial round 9): `frozen_held_ids`
+    (built from `previous_arms`/`snapshots` alone) recognized a previous arm
+    under its DATED id only when the catalogue listed BOTH the dated id and
+    its undated alias this run (the ordinary same-run collapse). If the
+    Models API instead switches which SPELLING it lists between runs — the
+    dated form gone, only the undated alias remains, or the mirror, the
+    undated form gone with only a dated snapshot remaining — a clean run
+    still recognizes the renamed arm (`_resolve_defaults`'s
+    `_dated_candidates`/undated-collapse fallback), but a run whose probe
+    FAILED or MISMATCHED that same week did not: it froze the family, found
+    no literal match for the previous arm's old spelling in
+    `frozen_held_ids`, and either retired it outright or, worse, let a
+    `holds_listed_seat` check pass on an unrelated arm of the same family
+    while silently dropping this one's seat. Fixed by `_seated_form`, the
+    one helper both `frozen_held_ids` and `seated_in_tier` now use to map a
+    previous arm onto whichever spelling THIS run's catalogue lists.
+
+    Each direction is checked against a probe FAILURE and a catalogue
+    MISMATCH — the two ways `_resolve_defaults` freezes a family — and each
+    asserts the frozen week's arms and its `retired_since_last` are
+    IDENTICAL to the same week's clean run: a bad probe must retire nothing
+    a clean run keeps."""
+
+    def test_r9a_a_dated_previous_arm_survives_when_only_the_alias_is_listed(self):
+        # adv203-probe-r9's repro_rename.py, direction (a): the previous
+        # roster names the opus seat under its DATED id
+        # `claude-opus-5-5-20260926`; this run's catalogue (`BASE`) lists
+        # only the undated alias `claude-opus-5-5`. A clean run resolves
+        # the vendor default straight to the alias and retires the dated
+        # id as a collapse, not a loss. Before the fix, a frozen week found
+        # `claude-opus-5-5-20260926` in neither `previous_arms` (literal)
+        # nor `snapshots` (no same-run collapse: the dated form isn't even
+        # listed) and excluded the alias outright, even though the OTHER
+        # previous arm `claude-opus-5` kept `holds_listed_seat` true — so
+        # the alias's seat was silently dropped while the family read as
+        # "held".
+        PREV = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5"},
+                                      {"id": "claude-opus-5-5-20260926"}])
+
+        def usage(n):
+            return {"claude-sonnet-5": 900, "claude-opus-5": 100,
+                    "claude-opus-5-5": 200, "claude-haiku-4-5": 0,
+                    "claude-fable-5-1": 0}
+
+        def clean(k):
+            return self._docs(k, opus="claude-opus-5-5", sonnet="claude-sonnet-5")
+
+        def probe_failed(k):
+            d = self._docs(k, sonnet="claude-sonnet-5")
+            d["errors"] = {"opus": "timeout"}
+            return d
+
+        def mismatch(k):
+            return self._docs(k, opus="claude-opus-9", sonnet="claude-sonnet-5")
+
+        base, _ = self._loop(usage, 1, clean, previous=PREV)
+        clean_arms = self._arms(base[0]["result"])
+        clean_retired = sorted(r["id"] for r in base[0]["result"]["retired_since_last"])
+        self.assertIn("claude-opus-5-5", clean_arms)
+        for bad, label in ((probe_failed, "probe failure"), (mismatch, "mismatch")):
+            with self.subTest(bad=label):
+                out, _ = self._loop(usage, 1, bad, previous=PREV)
+                result = out[0]["result"]
+                self.assertEqual(self._arms(result), clean_arms)
+                self.assertEqual(
+                    sorted(r["id"] for r in result["retired_since_last"]),
+                    clean_retired)
+                self.assertIn("claude-opus-5-5", self._arms(result))
+                self.assertIn("held; none retired on",
+                              self._reason(result, "claude-opus-5-5"))
+
+    def test_r9b_an_undated_previous_arm_survives_when_only_a_dated_id_is_listed(self):
+        # adv203-probe-r9's repro_b.py, direction (b): the previous roster
+        # names the opus seat under its UNDATED alias `claude-opus-5`; this
+        # run's catalogue lists only a dated snapshot of it,
+        # `claude-opus-5-20260401` (the mirror of R9-1(a)). A clean run
+        # resolves the vendor default to the sole dated candidate
+        # (`_dated_candidates`) and retires the undated previous arm as a
+        # collapse onto it. Before the fix, a frozen week found
+        # `claude-opus-5` unlisted and its dated form nowhere in
+        # `frozen_held_ids`, so `holds_listed_seat("opus")` read false (no
+        # OTHER previous opus arm was listed either) and the family fell
+        # through to seating a seat by usage or the newest-per-tier
+        # fallback instead of holding the same id the clean run seats.
+        M = self._model
+        MODELS = [m for m in self.BASE if m["id"] != "claude-opus-5"] + [
+            M("claude-opus-5-20260401", "Claude Opus 5", "2026-04-01T00:00:00Z")]
+        PREV = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5"}])
+
+        def usage(n):
+            return {"claude-sonnet-5": 900, "claude-opus-5": 55,
+                    "claude-opus-5-5": 0, "claude-haiku-4-5": 0,
+                    "claude-fable-5-1": 0}
+
+        def clean(k):
+            return self._docs(k, opus="claude-opus-5", sonnet="claude-sonnet-5")
+
+        def probe_failed(k):
+            d = self._docs(k, sonnet="claude-sonnet-5")
+            d["errors"] = {"opus": "timeout"}
+            return d
+
+        def mismatch(k):
+            return self._docs(k, opus="claude-opus-9", sonnet="claude-sonnet-5")
+
+        base, _ = self._loop(usage, 1, clean, previous=PREV, models=MODELS)
+        clean_arms = self._arms(base[0]["result"])
+        clean_retired = sorted(r["id"] for r in base[0]["result"]["retired_since_last"])
+        self.assertIn("claude-opus-5-20260401", clean_arms)
+        for bad, label in ((probe_failed, "probe failure"), (mismatch, "mismatch")):
+            with self.subTest(bad=label):
+                out, _ = self._loop(usage, 1, bad, previous=PREV, models=MODELS)
+                result = out[0]["result"]
+                self.assertEqual(self._arms(result), clean_arms)
+                self.assertEqual(
+                    sorted(r["id"] for r in result["retired_since_last"]),
+                    clean_retired)
+                self.assertIn("claude-opus-5-20260401", self._arms(result))
+                self.assertIn("held; none retired on",
+                              self._reason(result, "claude-opus-5-20260401"))
 
 
 if __name__ == "__main__":

@@ -1856,6 +1856,40 @@ def _dated_candidates(model_id: str, available: list[dict]) -> list[str]:
                   and match.group("base") == model_id)
 
 
+def _seated_form(previous_arm: str, *, listed: set, snapshots: dict,
+                 available: list[dict]) -> str | None:
+    """The id that represents `previous_arm` in THIS run's catalogue, or
+    `None` if nothing does (#203 probe round 9, R9-1).
+
+    The Models API is free to switch which of a model's two spellings it
+    lists between runs — dated one run, undated the next, or back — and a
+    previous arm must still be recognized under whichever one it is now:
+    listed as-is -> itself; a dated snapshot whose undated alias is listed
+    -> the alias (`snapshots`, the existing collapse `alias_map` computes
+    from THIS run's catalogue); a dated id the catalogue does NOT list
+    while it lists the undated base -> the base (the mirror direction);
+    an undated id the catalogue does not list while it lists exactly ONE
+    dated snapshot of it -> that dated id (two or more is ambiguous, so
+    neither is preferred). Shared by `frozen_held_ids` (a frozen family's
+    previous arms are held under whichever form is listed) and
+    `seated_in_tier` (a default's tier stays on the roster through
+    whichever form of another previous arm is seated) so the two answer
+    the identical question about a rename the same way.
+    """
+    if previous_arm in snapshots:
+        return snapshots[previous_arm]
+    if previous_arm in listed:
+        return previous_arm
+    match = SNAPSHOT_SUFFIX.match(previous_arm)
+    if match and match.group("base") in listed:
+        return match.group("base")
+    if not match:
+        dated = _dated_candidates(previous_arm, available)
+        if len(dated) == 1:
+            return dated[0]
+    return None
+
+
 def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
                       rungs: list[list[str]], warn, *,
                       problem: str | None = None) -> dict | None:
@@ -2631,9 +2665,17 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     mismatched = defaults_info["mismatched"] if defaults_info else {}
     #: A previous arm published under a dated id whose undated alias the
     #: catalogue now lists is the same seat renamed, so a frozen family
-    #: holds it on the alias rather than losing it to "no new seat".
-    frozen_held_ids = set(previous_arms) | {snapshots[p] for p in previous_arms
-                                            if p in snapshots}
+    #: holds it on the alias rather than losing it to "no new seat" — and
+    #: the mirror direction, an undated previous arm the catalogue now
+    #: lists only in dated form (#203 probe round 9, R9-1): `_seated_form`
+    #: answers both through the one rule, keyed on THIS run's catalogue.
+    listed = {m["id"] for m in available}
+    frozen_held_ids = set(previous_arms)
+    for p in previous_arms:
+        seat = _seated_form(p, listed=listed, snapshots=snapshots,
+                            available=available)
+        if seat is not None:
+            frozen_held_ids.add(seat)
 
     def holds_listed_seat(family: str) -> bool:
         """Whether `family` has a previous arm the Models API still lists
@@ -2882,9 +2924,12 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         for model in deferred_defaults:
             family = family_of(model["id"], rungs)
             seated_in_tier = sorted(
-                p for p in previous_arms
-                if snapshots.get(p, p) in seated_ids and p != model["id"]
-                and family_of(p, rungs) == family)
+                seat for p in previous_arms
+                if p != model["id"] and family_of(p, rungs) == family
+                and (seat := _seated_form(
+                    p, listed=listed, snapshots=snapshots,
+                    available=available)) is not None
+                and seat in seated_ids)
             seat, exclusion = default_rung_decision(
                 model, seated_in_tier=seated_in_tier)
             if seat:
@@ -3001,7 +3046,21 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             if model_id in arm_ids:
                 continue
             if model_id not in api_ids:
-                why = "no longer returned by the Models API"
+                # Not literally returned this run — but its OTHER spelling
+                # may be, if the Models API switched which form it lists
+                # between runs (#203 probe round 9, R9-1): a dated previous
+                # arm whose undated alias now holds the seat, or an undated
+                # one whose sole dated snapshot does. `_seated_form` answers
+                # both; say so, rather than "no longer returned", whenever
+                # that answer is itself seated this run.
+                seat = _seated_form(model_id, listed=listed, snapshots=snapshots,
+                                    available=available)
+                if seat is not None and seat != model_id and seat in arm_ids:
+                    noun = ("dated snapshot" if SNAPSHOT_SUFFIX.match(seat)
+                            else "undated alias")
+                    why = f"collapsed onto its {noun} `{seat}`, which holds the seat"
+                else:
+                    why = "no longer returned by the Models API"
             elif model_id in unranked_ids:
                 why = ("still returned by the Models API, but no family word from "
                        "the tier ladder appears in its id, so it can no longer be "
