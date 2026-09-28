@@ -52,8 +52,10 @@ itself needs PyYAML. That import is LAZY (see `_require_model_id_re()`), so
 importing this module and running `--help` work with no PyYAML installed —
 only building an actual census does, and a machine that lacks it gets one
 named line on stderr and exit 2, never an ImportError traceback. See
-`evals/propagation/ROUTINE.md` step 6 for installing it on the durable
-machine that runs this script.
+`evals/propagation/ROUTINE.md`, History, "The usage census rode along on
+this Routine" for installing it on the durable machine that ran this script
+(that step is not part of the current prompt as of 2026-09-27 — see that
+section's note).
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json
@@ -264,10 +266,11 @@ def main() -> int:
         _require_model_id_re()
     except ImportError:
         # PyYAML (via roster.py) is not installed on this machine. Printed
-        # here, not raised: the durable-machine Routine that runs this
-        # script (evals/propagation/ROUTINE.md step 6) installs nothing by
-        # default, and a bare ImportError traceback used to kill the import
-        # of this module before argparse ever ran — even `--help` failed.
+        # here, not raised: the durable-machine Routine that historically ran
+        # this script (evals/propagation/ROUTINE.md, History, "The usage
+        # census rode along on this Routine") installs nothing by default,
+        # and a bare ImportError traceback used to kill the import of this
+        # module before argparse ever ran — even `--help` failed.
         print(PYYAML_MISSING_MESSAGE, file=sys.stderr)
         return 2
 

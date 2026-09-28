@@ -1,8 +1,9 @@
 # The account-store drift issue's LIFECYCLE — opened, edited in place, closed.
 #
 # WHY THIS EXISTS AT ALL — AND NOT FOR THE REASON FIRST WRITTEN HERE
-# `evals/propagation/ROUTINE.md` step 5 asks the Routine-fired session to keep
-# one marker-tagged issue in step with the Tier-3 audit. It never has, and
+# An earlier, now-retired `evals/propagation/ROUTINE.md` prompt (History, "The
+# prompt, as created", step 5) asked the Routine-fired session to keep one
+# marker-tagged issue in step with the Tier-3 audit. It never has, and
 # nothing else in this repo files, edits or closes that issue either, so a
 # drifted account store is today reported only by a red check nobody is obliged
 # to read. That gap is what this workflow closes.
@@ -42,8 +43,8 @@
 #
 # WHY A `schedule:` AND EMPHATICALLY NOT A PUSH ON `eval-results`
 # Reacting to the Routine's publish is the obvious design and it cannot work.
-# ROUTINE.md step 4 mandates the publish commit message
-# `propagation: account audit` plus a CI-skip token, and that token is GitHub's
+# ROUTINE.md's "The current prompt" section mandates the publish commit
+# message `propagation: account audit` plus a CI-skip token, and that token is GitHub's
 # documented instruction NOT to create a workflow run for the push. A listener
 # on that branch would therefore never fire: not red, not slow, not logged —
 # the worst shape a CI dependency can take. `PublishMessageAndPushTriggerTests`
