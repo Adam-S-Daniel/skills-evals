@@ -237,13 +237,45 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # Pinned to the version this harness was validated against. The arms
-        # assert on the SHAPE of the stream-json init event, so a CLI bump is a
-        # deliberate, reviewed change here — and the --self-test below is what
-        # catches a bump that silently blinded the assertions.
+        # NOT PINNED, and ALWAYS THE LATEST (the owner's decisions of
+        # 2026-09-27, #202, and 2026-09-28, #203): every run installs the
+        # newest Claude Code release npm reports, never reusing one already
+        # on the runner, and fails if another `claude` on PATH shadows it.
+        # The arms assert on the SHAPE of the stream-json init event, so a new
+        # CLI can change what they read — the --self-test below is what
+        # catches a release that silently blinded the assertions, and the
+        # version actually used is recorded per run: here in the step summary
+        # and, per arm, as `harness_version` (with the init event's `model`)
+        # in the --json run record. This job holds no credential at all (see
+        # the posture note at the top), and the install runs before any step
+        # that could be given one.
+        #
+        # `claude --version` is captured whole and cut to its first line in
+        # the shell, not piped through `head`: under pipefail a `head` that
+        # exits first can fail the step on the CLI's SIGPIPE. A failing or
+        # empty version, an unusable npm answer, or a shadowing CLI fails the
+        # step by name.
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.231
-          claude --version
+          set -euo pipefail
+          latest="$(npm view @anthropic-ai/claude-code version)" || { echo "::error::could not resolve the latest Claude Code version"; exit 1; }
+          # A plain MAJOR.MINOR.PATCH and nothing else: a prerelease, an error
+          # page, an empty answer or two lines is refused, never stripped
+          # into something that looks like a version.
+          [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::npm reported no usable latest Claude Code version"; exit 1; }
+          npm install -g "@anthropic-ai/claude-code@${latest}"
+          version="$(timeout -k 10 60 claude --version)" || { echo "::error::claude --version failed"; exit 1; }
+          # First line only, and only characters a version string needs: this
+          # lands in a markdown code span in the step summary.
+          version="${version%%$'\n'*}"
+          version="${version:0:80}"
+          version="${version//[^A-Za-z0-9._() -]/}"
+          [[ -n "$version" ]] || { echo "::error::claude --version printed no version"; exit 1; }
+          # A different claude earlier on PATH would shadow the one just
+          # installed. Exact on the first token: a prefix match would pass a
+          # stale 2.1.30 for a latest of 2.1.3.
+          [[ "${version%% *}" == "$latest" ]] || { echo "::error::claude on PATH is not the npm latest just installed"; exit 1; }
+          echo "harness: Claude Code ${version} (npm latest)"
+          { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97

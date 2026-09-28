@@ -484,7 +484,8 @@ subordinate to the first. **(1) Usage seats:** every available model at or
 above `arm_enter_usage_pct` of rankable, attributable census turns over
 `arm_enter_window_weeks` is an arm, with its share in its reason. **(2)
 Newest per QUALIFYING tier:** in a tier rule 1 already seated somebody in,
-the newest available model past the cooling-off is an arm too, and its reason
+the newest available model past the cooling-off (`cooling_off_days`, 0 since
+2026-09-27 — see below) is an arm too, and its reason
 says so in words, naming the qualifying share it rides on. A tier no model of
 which clears the entry bar gets no arm from rule 2, however new its newest
 model is; that model is listed under `excluded` saying exactly that.
@@ -508,6 +509,94 @@ held over the exit bar — and with none, `main()` refuses to publish a roster
 with no arms (rc 3) and the committed one stands. Rule 2 added no threshold
 of its own: it reads rule 1's entry bar, and every number stays in
 `evals/roster-policy.yml`.
+
+**Vendor defaults override both rules where they resolve (2026-09-27, Adam's
+decision, #202, ADR 0002).** Evals are valued going forward only, so the
+roster follows the vendor's default version of each family rather than the
+fleet's usage of individual versions. `scripts/probe_model_defaults.py` asks
+the Claude Code CLI CI has just installed at the npm latest, with no
+credential and a scrubbed environment, which model each family alias on the
+ladder resolves to — the `model` of the first `system/init` event, after
+which the CLI's process group is killed (#203). The CLI makes unauthenticated
+TLS connections of its own around that event; no credential exists in the
+probe's environment, so nothing can be billed or leaked, and alias resolution
+is built into the binary rather than fetched, so it does not depend on the
+network. A word
+the CLI echoes back is not an alias and is skipped. `roster.py` takes the
+reported id when it is an available model (a dated snapshot collapsed onto its
+alias stands for it) of the alias's own family. In such a tier usage has
+one job left — putting the tier on the roster (a model clearing the entry bar,
+another previous arm in it that is still seated this run, or the no-census
+fallback) — and the seat goes to the default with no cooling-off. The
+default's own previous seat is not one of those: with none of them, a default
+that is a previous arm gets rule 3's exit check (held on a stale or thin
+census, held at or above the exit bar over the exit window, else retired),
+measured on its TIER's combined share — every model of its family, the same
+numerators over the same denominator — so a tier between the exit and entry
+bars is never left with no arm by a version change (#203 round 2). "Its tier"
+is its family: a default governs the models whose family word is its alias,
+and a peer family in the same rung keeps rules 1 to 3. A
+superseded model gets no usage seat; a superseded previous arm is retired once
+`superseded_exit_weeks` complete ISO weeks have passed since the default's
+`created_at` and its share over the most recent such weeks is under the exit
+bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
+applies to it). A model newer than the default earns no new seat, and a
+previous arm newer than it gets rule 3's exit check instead of retiring on
+sight — held under its dated id too (#203 probe round 5, R5-3): a previous
+arm published under `<base>-YYYYMMDD` is still a previous arm once `<base>`
+appears in the catalogue. A failed probe freezes its family for that run
+(#203 probe round 1): a family whose alias the probe recorded an error for,
+answered with a model of the wrong tier or family (#203 probe round 3), or
+answered with a model with no `created_at` to start a predecessor's buffer
+from (`no-created-at`, #203 probe round 5, R5-1) — or every family the
+probe did not skip, when the document is unreadable, junk, answered for
+no ladder alias, or is the workflow's stand-in for a probe that exited
+non-zero (`probe-exited`) — keeps every previous arm's seat and retires
+nothing but a model gone from the Models API. While it still holds a seat
+the Models API lists it gets no new seat at all (#203 probe round 3); only
+a family that would otherwise vanish is seated, by the usage entry bar or,
+with no usable enter window (no fresh census, or one whose enter window is
+under the ranked-usage floors), as the newest in its tier as with no probe;
+with a usable one and nothing clearing the bar it gets no seat, the same
+outcome a clean run gives. It is
+named in the published `defaults_failed`, on the summary's first lines and
+in a `::warning::` that keeps the tracking issue open (the proposal step
+runs unless the workflow is cancelled; its `gh issue` writes warn rather
+than fail, its `git push` does not). An answer this run's catalogue does
+not otherwise match (not available, an ambiguous snapshot) is not a
+probe failure, but it FREEZES the family exactly the same way (#203 probe
+round 7, R7-1 — the governing guarantee, first stated in round 5 as R5-2:
+a single run whose probe answer is a failure or a mismatch changes no seat
+a clean run would not, now structural rather than resting on a guessed
+"effective default"); only the wording differs, and `defaults_mismatched`
+says "does not match this run's catalogue", loudly whether it holds a
+listed seat or seats by usage — its own fixed `::warning::` (#203 probe
+round 8, R8-1) and, on "same", the tracking issue kept open exactly as a
+failure keeps it, with a title that says "probe failed" only when a probe
+genuinely failed, "did not match this run's catalogue" for a mismatch, or
+both when both classes are present in the same run. Falling back to
+rules 1 and 2 instead flipped seats on one bad week. The freeze is per run; nothing is
+carried to the next (a carried-defaults block with an expiry briefly stood
+here and is gone). With no defaults document at all the roster is
+byte-for-byte the one computed without it.
+The committed roster keeps no `defaults` block; the published one records
+the CLI version, `probed_at`, and the resolved and unresolved aliases.
+The preflight keeps its cooling-off, and the judge rule is unchanged.
+
+**The cooling-off is 0 and the harness is unpinned (2026-09-27, the owner's
+decision, #202, ADR 0002's update).** `cooling_off_days: 0` makes every model
+with a `created_at` "past" it, so rule 2 and the preflight pick take the
+newest model at once; the reasons say "no cooling-off applies" rather than
+"past the 0-day cooling-off", and the machinery stays so a positive value
+restores it. The CI install always takes the npm latest (#203: never a CLI
+already on the runner, a plain `MAJOR.MINOR.PATCH` only, and a `claude` on
+PATH reporting any other version fails the step), still ahead of any
+credential; since a pin no longer names the
+version, each run records it — the step summary, and in every arm's
+`summary.json` `harness.version` beside `models_used` (the agent result's
+`modelUsage` keys) and `judge_models_used` (the judge's), all three present on
+error paths too, and one `- Harness:` line in `report.md`. The propagation
+record carries each arm's `harness_version` and init-event `model`.
 
 Five properties are load-bearing and should survive any rework:
 
@@ -644,7 +733,7 @@ run with `FLEET_GUIDANCE_PAYLOAD` — running the real hook rather than
 imitating it is the point, since a harness that reimplements the delivery path
 measures the imitation. Guidance arms invoke the CLI with
 `--setting-sources user,project`; skill arms keep `project` and are otherwise
-untouched. Whether the pinned CLI honours `CLAUDE_CONFIG_DIR` for *memory*
+untouched. Whether the CLI honours `CLAUDE_CONFIG_DIR` for *memory*
 specifically has not been measured against a live CLI yet, so `--delivery
 project` exists as the documented fallback (same hook, pointed at the
 workspace, read as project memory) and every summary records which was used —

@@ -11,3 +11,4 @@ with, so the next session can tell a deliberate constraint from an accident.
 | ADR | Title | Status |
 | --- | --- | --- |
 | [0001](0001-roster-trusted-on-main.md) | The roster the harness runs on is committed on `main`; a computed roster is a proposal | accepted (2026-09-13) |
+| [0002](0002-roster-follows-vendor-defaults.md) | The roster seats each tier's vendor-default model at once and retires the version it superseded after a buffer | accepted (2026-09-27; decision 1 revised 2026-09-28) |

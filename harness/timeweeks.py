@@ -54,3 +54,27 @@ def window_start(now: datetime, count: int) -> datetime:
     drops real data while one that is too loose only costs a file read.
     """
     return now - timedelta(weeks=count + 1)
+
+
+def complete_weeks_since(start: datetime, end: datetime,
+                         most_recent: int) -> tuple[int, list[str]]:
+    """(how many, the latest `most_recent` labels) of the ISO weeks that
+    began at or after `start` and had ENDED by `end`, oldest label first.
+
+    A week begins Monday 00:00 UTC and ends at the next one; both bounds are
+    inclusive. The count is arithmetic rather than a walk, so a `start` years
+    back costs nothing — it is the superseded-arm buffer's clock (#202),
+    started by a successor's `created_at`, which is an input.
+    """
+    start = start.astimezone(timezone.utc)
+    end = end.astimezone(timezone.utc)
+    first = (datetime(start.year, start.month, start.day, tzinfo=timezone.utc)
+             - timedelta(days=start.weekday()))
+    if first < start:
+        first += timedelta(weeks=1)
+    if end < first:
+        return 0, []
+    count = (end - first) // timedelta(weeks=1)
+    labels = [iso_week(first + timedelta(weeks=index))
+              for index in range(max(0, count - max(0, most_recent)), count)]
+    return count, labels

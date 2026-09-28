@@ -37,6 +37,39 @@ is about 2026-09-29. That run was the one paid run of the skills-doctor
 fixture (decision 8's exception, below): `with_skill` 5/5, judge 10.0;
 `without_skill` timed out at 600 s, so there is no delta yet. Before its
 re-run, decide whether that arm needs a longer agent budget.
+**Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
+once it merges, the next roster run proposes `claude-opus-5-5` immediately
+as the opus tier's vendor default, with no wait for 2026-09-29, and keeps
+`claude-opus-5` for a one-week buffer (`superseded_exit_weeks: 1`) before
+proposing its retirement.
+Also 2026-09-27: the model cooling-off is 0 and CI's Claude Code is unpinned,
+with the version and models recorded per arm in `summary.json` (`harness`,
+`models_used`, `judge_models_used`) — ADR 0002's update.
+**Amended 2026-09-28 by [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203):**
+CI always installs the npm latest (never a preinstalled CLI), and the vendor
+defaults come from that CLI, probed with no credential
+(`scripts/probe_model_defaults.py`), instead of from the docs page; the
+carried-defaults machinery is gone, and a failed probe freezes its family
+for that run: previous arms held, none retired except models gone from the
+Models API, and none added unless the family holds no seat the Models API
+still lists, said loudly in the summary, a warning and the tracking issue.
+A default the probe answered but the run's catalogue does not otherwise
+match FREEZES its family exactly like a probe failure (#203 probe round 7,
+R7-1), kept in its own field (`defaults_mismatched`) and wording so a human
+can tell a failure from a mismatch; an answer in the wrong tier or family,
+or one naming a model with no `created_at`, is a failure (probe round 5,
+R5-1). The governing guarantee, now structural rather than a guessed
+"effective default": a single run whose probe answer is a failure or a
+mismatch changes no seat a clean run would not — a persistent mismatch
+HOLDS a listed seat rather than seating a newer, more-used model the probe
+cannot corroborate, loudly: its own fixed `::warning::` and an open
+tracking issue on "same" too (#203 probe round 8, R8-1 — the workflow had
+read only `defaults_failed`), with a title that says "probe failed" only
+for a genuine failure and its own wording for a mismatch, both when both
+are present. See ADR 0002's decision 6 and third update.
+A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
+roster without a paid eval run, so the hold above can be lifted by reviewing
+that proposal first.
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 

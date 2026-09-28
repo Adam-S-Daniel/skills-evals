@@ -303,6 +303,11 @@ bridge. Keep the bridge canary for the repo-stub path.
 Any fixture can be given a real run on `main` by dispatching **Real eval**
 with its `fixture` input (default `evals/workflow-path-audit`); the value is
 validated against the committed fixture set before any credential is minted.
+Set `roster_only` to refresh the model roster and file its proposal without
+the eval: the WIF preflight, the eval and the badge are skipped, so the only
+model-side call is the Models API read. A roster_only run publishes nothing to
+`eval-results`; its only outputs are the `roster/proposal` branch and the
+tracking issue, whose text says that no eval ran.
 
 ## Guidance-bridge canary
 
@@ -494,8 +499,8 @@ could not make a local check over it safe
 `harness/roster.py` still computes what the roster SHOULD be, from two inputs:
 
 - **availability** — `scripts/refresh_models.py` reads `GET /v1/models` (the
-  only network call in the feature) using the WIF-derived bearer `eval.yml`
-  already mints;
+  only authenticated network call in the feature) using the WIF-derived bearer
+  `eval.yml` already mints;
 - **usage** — `scripts/model_usage_census.py` counts what this account actually
   ran, per model per ISO week, from the local Claude Code transcripts.
 
@@ -506,7 +511,7 @@ second is subordinate to the first:
    rankable, attributable census turns over the trailing 4 weeks — is an arm,
    with its share in its reason.
 2. **Newest per *qualifying* tier.** In a tier rule 1 already seated somebody
-   in, the newest available model past the 7-day cooling-off is an arm too,
+   in, the newest available model past the cooling-off is an arm too,
    and its reason says so in words, naming the qualifying share it rides on.
    **A tier no model of which clears the entry bar gets no arm at all**,
    however new its newest model is; that model is listed under `excluded`
@@ -524,6 +529,113 @@ the rule reverts to newest-per-tier across *all* tiers and every arm's reason
 says which degradation it was. No new threshold was added — rule 2 reads rule
 1's entry bar, and the numbers all stay in `evals/roster-policy.yml`.
 
+**A tier with a known vendor default follows the vendor** (Adam's decision,
+2026-09-27, [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202),
+[ADR 0002](docs/decisions/0002-roster-follows-vendor-defaults.md)).
+`scripts/probe_model_defaults.py` asks the Claude Code CLI the workflow has
+just installed at the npm latest which model each family alias on the tier
+ladder (`opus`, `sonnet`, `haiku`, `fable`, …) resolves to: it starts
+`claude -p --model <alias> --output-format stream-json --verbose` with **no
+credential** (a scrubbed environment: PATH, a fresh temporary HOME, LANG=C,
+and `DISABLE_AUTOUPDATER=1`/`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`),
+reads the `model` of the first `system/init` event and kills the CLI's process
+group ([#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)). The
+CLI does open unauthenticated TLS connections of its own around that event,
+but no credential exists in the probe's environment, so nothing can be billed
+or leaked; and the alias table is built into the binary, so resolution does
+not depend on the network (the same ids come back with networking removed). A word the
+CLI echoes back unchanged (`mythos`) is not an alias and is skipped. The
+roster takes the reported id when it is one of this run's available models (a
+dated snapshot the catalogue collapses onto its alias stands for that alias,
+and so does a dated `<base>-YYYYMMDD` the catalogue does not list while it
+lists `<base>`) of the alias's own family. In a tier whose default resolved, usage only
+decides whether the tier is on the roster (a model in it clears the entry bar,
+another previous arm in it is still seated this run, or there is no usable
+census): the seat goes to the default **at once, with no cooling-off**, and
+rules 1 and 2 do not apply there. The default's own previous seat does not
+keep its tier on the roster: once nothing else does, a seated default gets
+the ordinary exit check (2% over 8 weeks) and can retire — measured on the
+TIER's combined share, every model of the default's family in it, not its
+own, so a tier sitting between the 2% exit and 10% entry bars keeps an arm
+while the fleet moves from one version to the next (#203 round 2). A default
+governs the models of its own family word only: a peer family in the same
+rung (`[fable, mythos]`, a different access programme) keeps rules 1 and 2. A
+model the default supersedes earns no seat from its usage; a previous arm it
+supersedes keeps its seat until `superseded_exit_weeks` (1) complete ISO
+weeks have passed since its successor's `created_at` **and** its share over
+those weeks is under the 2% exit bar, with a stale or too-thin census holding
+it as before — held under its DATED id too (#203 probe round 5, R5-3): a
+previous arm published under `<base>-YYYYMMDD` is still a previous arm once
+`<base>` appears in the catalogue. A model newer than the default earns no
+new seat; one that is already a previous arm gets the ordinary exit check
+rather than retiring on sight. **A failed probe freezes its family for that
+run** (#203 probe round 1): a family whose alias the probe recorded an
+error for, answered with a model of the wrong tier or family (nonsensical
+about its own alias, #203 probe round 3), or answered with a model with no
+`created_at` to start a predecessor's buffer from (`no-created-at`, #203
+probe round 5, R5-1), is frozen — or every family the probe did not skip,
+when the document is unreadable, junk, answered for no ladder alias, or is
+the workflow's `{"probe_exit": "nonzero"}` stand-in for a probe script that
+exited with an error (`probe-exited`). A default the probe **answered** but
+this run's catalogue does not otherwise match (not available — an undated
+id the catalogue lists only as exactly one dated `<id>-YYYYMMDD` does
+resolve to it — an ambiguous snapshot) **freezes its family exactly like a
+failure** (#203 probe round 7, R7-1 — the GOVERNING GUARANTEE, first stated
+in round 5 as R5-2: a single run whose probe answer is a failure or a
+mismatch changes no seat a clean run would not, made structural in round 7
+rather than resting on a guessed "effective default"), only the summary
+and reason wording says "the CLI's default `<id>` for `<alias>` does not
+match this run's catalogue (<class>)" rather than "vendor default ...
+unknown this run", so a human can tell the two apart. A frozen family keeps
+every previous arm's seat until it leaves the Models API and retires none —
+including a previous arm whose LISTED FORM switches between dated and
+undated from one run to the next, freeze or no freeze: it is still that
+same arm, held (or, for a seated default's tier, still counted as seated)
+under whichever spelling this run's catalogue lists (#203 probe round 9).
+While it still holds
+a seat the Models API lists it gets **no new seat at all** (#203 probe
+round 3); only a family that would otherwise vanish from the roster is
+seated — by the usage entry bar, or, with no usable enter window (no fresh
+census, or one whose enter window is under the ranked-usage floors), as the
+newest in its tier exactly as with no probe; with a usable one and nothing
+clearing the bar it gets no seat, the same outcome a clean run gives. Falling back to the usage rules
+instead let one bad week retire a seated default or seat a preview that
+the next clean week then undid, and a usage seat granted during a freeze
+was one the next clean week retired. The freeze is **per run —
+nothing is carried to the next** (the owner's decision): the probe is not
+the eval (the eval authenticates; the probe must not), so a probe failure
+does not stop the eval, and the next run's probe decides afresh. It is loud:
+the published roster carries `defaults_failed` (`{alias: class}`, plus
+`defaults_document_failed` for a whole-document failure) or, for a catalogue
+mismatch, `defaults_mismatched` (`{alias: {id, class}}`), the step summary
+names the frozen families on its first lines, and the proposal step emits its
+own fixed `::warning::` for each class present and keeps the tracking issue
+open even when nothing else changed — the issue's title and first line say
+"probe failed", "a vendor default did not match this run's catalogue", or
+both, by whichever class or classes are present, so a mismatch-only run
+never claims the probe failed; that step runs unless the workflow is
+cancelled, so it fires even when the eval failed, and a failed `gh issue`
+write in it is a fixed `::warning::`, never a failed job, but a failed
+`git push` of
+`roster/proposal` still fails it, because the proposal branch must exist for review. Its issue says whether
+the eval step succeeded, failed or did not run; the step runs before the one
+that publishes to `eval-results`, so for a successful eval it says that
+step publishes next. With no `--defaults` document at all nothing is frozen and the
+roster is the same one the pre-#202 code computes, with one exception: a
+previous arm whose listed spelling has switched between dated and undated
+since the previous run is still recognised as that arm, rather than reading
+as no longer returned and dropping its seat. The committed `evals/roster.yml` keeps no
+`defaults` block; the published roster's `defaults` (source
+`claude-code-cli <version>`, `probed_at`, resolved and unresolved aliases)
+is there for the reviewer. The preflight pick applies the cooling-off either
+way.
+
+**The cooling-off is 0 days** (the owner's decision of 2026-09-27, #202):
+`cooling_off_days: 0` in `evals/roster-policy.yml`, so rule 2 (in a tier
+with no resolved vendor default, e.g. haiku) and the preflight pick take the
+newest model at once, and their reasons say "no cooling-off applies". The
+knob and the code that applies it are kept; a positive value restores it.
+
 **But what it computes is a PROPOSAL.** When it differs from the committed
 file, the weekly run renders the proposed `evals/roster.yml`
 (`scripts/render_roster_yaml.py`) and checks it against the committed-roster
@@ -533,7 +645,8 @@ every seat's reason in words, with the numerator and denominator its share was
 taken over — and a `main...roster/proposal` compare link. An invalid proposal
 does not update the branch or compare link; its tracking issue says it needs
 review and lists the admission failures. The paid eval result still publishes
-from the committed roster. A human opens the pull request for a valid proposal
+from the committed roster — except on a `roster_only` dispatch, where no eval
+runs and nothing is published to `eval-results`. A human opens the pull request for a valid proposal
 and merges it after CI. Nothing in CI writes `evals/roster.yml`. When the
 computed roster matches the committed one, that issue is closed.
 
@@ -628,6 +741,29 @@ as cms-platform's Decap CMS publish loop or dependabot auto-merge; see
 `.github/workflows/eval.yml`'s security header), and the badge JSON is
 served raw from the default branch, so it can only change via a commit to
 this repo.
+
+**Which Claude Code, and which models.** The CLI is **not pinned, and always
+the latest** (the owner's decisions of 2026-09-27,
+[#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202), and
+2026-09-28, [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)):
+the workflow's "Install Claude Code CLI" step asks npm for the latest
+`@anthropic-ai/claude-code` version, refuses anything that is not a plain
+`MAJOR.MINOR.PATCH`, installs exactly that version — never reusing one already
+on the runner — and fails if the `claude` on PATH then reports a different
+version (another install shadowing it). It runs before the OIDC token
+exchange, so no credential exists while it installs, and records the version
+in the job's step summary. `propagation.yml` does the same. Every arm's `summary.json` then records what
+actually ran:
+
+| Field | What it holds |
+| --- | --- |
+| `harness` | `{"name": "claude-code", "version": ...}` — the first line of `claude --version`, read once per run, reduced to version characters and capped at 64; `null` (with a warning) if it could not be read. Present on error paths too |
+| `models_used` | sorted keys of the agent result's `modelUsage` — the model id(s) that served the arm; `[]` when the agent call never produced a result |
+| `judge_models_used` | the same, from the judge's CLI result(s); `[]` when no judge ran |
+
+`report.md` carries one `- Harness:` line naming the version and each arm's
+models. The propagation probe's `--json` run record carries, per arm,
+`harness_version` and `model` from that arm's init event.
 
 ## Status
 

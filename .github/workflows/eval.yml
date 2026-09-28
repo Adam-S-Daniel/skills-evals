@@ -192,6 +192,16 @@ on:
           evals/**/fixture.yaml set before any credential is minted.
         required: false
         default: evals/workflow-path-audit
+      roster_only:
+        description: >-
+          Refresh the model roster and file its proposal, then stop: skip the
+          WIF preflight, the eval and the badge, so nothing is spent on a
+          model beyond the Models API read. A roster_only run publishes
+          nothing to `eval-results`; its only outputs are the
+          `roster/proposal` branch and the tracking issue.
+        type: boolean
+        required: false
+        default: false
 
 # Single job, so this block is the whole workflow's privilege set.
 # `contents: write` is required for the badge/results push; splitting eval and
@@ -274,13 +284,48 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # Pinned per the repo cooling-off convention: this step feeds the
-        # key-bearing eval step, so an unpinned install is a supply-chain
-        # vector straight into the API key. 2.1.211 is the version this
-        # harness was validated against locally; bump deliberately via PR.
+        # NOT PINNED, and ALWAYS THE LATEST (the owner's decisions of
+        # 2026-09-27, #202, and 2026-09-28, #203): every run installs the
+        # newest Claude Code release npm reports, never reusing one already
+        # on the runner, and fails if another `claude` on PATH shadows it.
+        # scripts/probe_model_defaults.py reads the vendor's alias defaults
+        # off this very CLI, so an older one would report older defaults.
+        # The pin existed because this step feeds the key-bearing eval step
+        # and an install is a supply-chain vector into whatever credential
+        # the job later holds. What still bounds that: this step runs BEFORE
+        # the OIDC mint / token exchange below, so nothing it installs runs
+        # with a credential in the environment at install time (the step
+        # order is asserted by test/issues/test_issue_202_harness.py). What
+        # replaces the pin's audit trail: the version actually used is
+        # recorded per run — here in the step summary, and in every arm's
+        # summary.json (`harness.version`) by harness/run_eval.py.
+        #
+        # `claude --version` is captured whole and cut to its first line in
+        # the shell, not piped through `head`: under pipefail a `head` that
+        # exits first can fail the step on the CLI's SIGPIPE. A failing or
+        # empty version, an unusable npm answer, or a shadowing CLI fails the
+        # step by name.
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.211
-          claude --version
+          set -euo pipefail
+          latest="$(npm view @anthropic-ai/claude-code version)" || { echo "::error::could not resolve the latest Claude Code version"; exit 1; }
+          # A plain MAJOR.MINOR.PATCH and nothing else: a prerelease, an error
+          # page, an empty answer or two lines is refused, never stripped
+          # into something that looks like a version.
+          [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::npm reported no usable latest Claude Code version"; exit 1; }
+          npm install -g "@anthropic-ai/claude-code@${latest}"
+          version="$(timeout -k 10 60 claude --version)" || { echo "::error::claude --version failed"; exit 1; }
+          # First line only, and only characters a version string needs: this
+          # lands in a markdown code span in the step summary.
+          version="${version%%$'\n'*}"
+          version="${version:0:80}"
+          version="${version//[^A-Za-z0-9._() -]/}"
+          [[ -n "$version" ]] || { echo "::error::claude --version printed no version"; exit 1; }
+          # A different claude earlier on PATH would shadow the one just
+          # installed. Exact on the first token: a prefix match would pass a
+          # stale 2.1.30 for a latest of 2.1.3.
+          [[ "${version%% *}" == "$latest" ]] || { echo "::error::claude on PATH is not the npm latest just installed"; exit 1; }
+          echo "harness: Claude Code ${version} (npm latest)"
+          { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -429,6 +474,28 @@ jobs:
       # bearer minted above; ANTHROPIC_ADMIN_KEY is optional and its absence
       # produces a ::notice::, never a failure.
       #
+      # Vendor defaults (#202, ADR 0002; #203): which model each family alias
+      # resolves to, asked of the Claude Code CLI the install step above just
+      # put on the runner at the npm latest, by scripts/probe_model_defaults.py.
+      # It runs before the bearer is exported, and it scrubs the CLI's
+      # environment itself (PATH, a fresh temporary HOME, LANG=C and two fixed
+      # traffic switches), so no credential exists in the probe's environment:
+      # the CLI's own unauthenticated connections can bill nothing and leak
+      # nothing, and alias resolution is built into the binary, not fetched.
+      # It reads the init event and kills the CLI's process group. It never
+      # fails the step. A family the probe FAILED for (an error recorded for
+      # its alias, an answer in the wrong tier or family, or no usable
+      # document) is FROZEN for this run by roster.py — its seats held, none
+      # retired except models gone from the Models API, none added unless the
+      # family holds no seat the Models API still lists. A default the probe
+      # answered but this run's catalogue does not match FREEZES its family
+      # too, through the identical rule (#203 probe round 7) — only the
+      # wording says a mismatch rather than a failure, and the summary says
+      # so. On a freeze the proposal step below warns
+      # and keeps the tracking issue open; that step runs unless the workflow
+      # is cancelled, so it fires even when the eval step failed. Nothing is
+      # carried to the next run.
+      #
       # NOT FATAL TO THE EVAL. The Models API read is still fatal to the
       # ROSTER — a half-read API is indistinguishable from a model retiring,
       # and publishing that quietly is the failure mode this feature exists to
@@ -513,6 +580,18 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           }
           refresh() {
+            # Vendor model defaults (#202, #203): which model each family
+            # alias resolves to, read off the installed CLI's init event with
+            # no credential. Run BEFORE the bearer is exported so it never
+            # sits in this process's environment (the probe scrubs the CLI's
+            # environment regardless), and it cannot fail the step: a failed
+            # probe records its error classes and roster.py freezes those
+            # families for this run. A probe that exits non-zero writes no
+            # document, so a stand-in naming that is written in its place —
+            # read as its own class, `probe-exited` (every family frozen),
+            # never as "no probe at all" nor as a probe that ran and
+            # resolved nothing (`{}`, `no-defaults`).
+            python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || printf '{"probe_exit": "nonzero"}\n' > "$work/defaults.json" || true
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
             # The published census comes off eval-results WITHOUT checking it
@@ -565,6 +644,7 @@ jobs:
                  --census "$work/census.json" \
                  --admin-report "$RUNNER_TEMP/admin-usage.json" \
                  --previous evals/roster.yml \
+                 --defaults "$work/defaults.json" \
                  --out "$pub/latest.json" > "$work/summary.md" 2> "$work/roster.err"; then
               cat "$work/roster.err" >&2
               reason="$(extract_reason "$work/roster.err")"
@@ -608,6 +688,9 @@ jobs:
       # `test_no_model_ids_are_hardcoded_outside_fixtures` allows exactly one
       # such literal and only because the marker on its line says what it is.
       - name: WIF auth preflight
+        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
+        # interpolated into a run: body.
+        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         run: |
           set +e
@@ -641,6 +724,12 @@ jobs:
       # a skill fixture, and for a guidance fixture the arms it names (five,
       # one per delivery mode, for the delivery canary).
       - name: Run the eval (both arms, judge)
+        # `id: eval` so the proposal step can say whether the eval ran (#203
+        # probe round 3): its `outcome` reaches that step through `env:`.
+        id: eval
+        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
+        # interpolated into a run: body.
+        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         run: |
           ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
@@ -691,6 +780,11 @@ jobs:
       # shell. The run id, the repository and the server URL arrive through
       # `env:` and are read as variables.
       - name: Propose a roster change
+        # Unless the workflow is cancelled (#203 probe round 2): the proposal
+        # and a failed probe's warning and tracking issue are the loud
+        # channels, so a failed eval step must not silence them. An
+        # expression in `if:`, never interpolated into a run: body.
+        if: ${{ !cancelled() }}
         working-directory: skills-evals
         env:
           # Write auth lives only in this step and the commit step.
@@ -699,6 +793,10 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           REPO: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
+          # The eval step's outcome (success, failure, skipped or cancelled),
+          # for the issue's eval sentence (#203 probe round 3). Read as a
+          # variable and matched against fixed words, never interpolated.
+          EVAL_OUTCOME: ${{ steps.eval.outcome }}
         run: |
           set -euo pipefail
           marker='<!-- skills-evals:roster-proposal -->'
@@ -709,6 +807,71 @@ jobs:
           fi
           status=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("proposal") or {}).get("status")) or "")' "$computed")
           echo "proposal status: ${status:-unknown}"
+
+          # >>> roster-only note
+          # What the issue says about the eval depends on whether one ran
+          # (#203 round 1) and how it ended (#203 probe round 3). roster_only
+          # is read from the event payload with jq at run time, never
+          # interpolated into this block: a dispatch sends the boolean input
+          # as a boolean or as the string "true", and a scheduled run has no
+          # inputs at all. The eval step's outcome arrives as EVAL_OUTCOME.
+          # THIS STEP RUNS BEFORE the badge step that publishes to
+          # `eval-results`, so whether that publish succeeds is not known
+          # here: a successful eval's sentence says the next step publishes,
+          # and a failed or skipped eval's says nothing was published (the
+          # badge step runs only when every step before it succeeded).
+          roster_only=false
+          if [ -f "${GITHUB_EVENT_PATH:-}" ] && jq -e '(.inputs.roster_only // false) | . == true or . == "true"' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; then
+            roster_only=true
+          fi
+          if [ "$roster_only" = true ]; then
+            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
+          elif [ "${EVAL_OUTCOME:-}" = success ]; then
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the next step, which runs after this issue is written — if that step failed or was skipped, this run's results were not published."
+          elif [ "${EVAL_OUTCOME:-}" = failure ]; then
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`, but the eval step failed; nothing from this run was published to \`eval-results\`."
+          else
+            eval_note="No eval result: the eval step did not run; nothing from this run was published to \`eval-results\`."
+          fi
+          # <<< roster-only note
+
+          # >>> defaults-failed note
+          # A vendor-default probe that failed FROZE its families for this run
+          # (#203 probe round 1): their seats were held, so the proposal can
+          # read "same" for a reason a reviewer must see. The count is read
+          # from the computed roster by python at run time, never
+          # interpolated, and validated as digits; the warning's text is
+          # otherwise fixed.
+          defaults_failed=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); f=d.get("defaults_failed") if isinstance(d,dict) else None; print(len(f) if isinstance(f,dict) else 0)' "$computed" 2>/dev/null) || defaults_failed=0
+          case "$defaults_failed" in ''|*[!0-9]*) defaults_failed=0 ;; esac
+          # Also read `defaults_mismatched` (#203 probe round 8, R8-1): a
+          # catalogue mismatch freezes its family exactly like a probe
+          # failure (see harness/roster.py's compute_roster), so it must be
+          # just as loud here — its own fixed warning, its own probe-note
+          # sentence, and it keeps the tracking issue open on "same" too.
+          defaults_mismatched=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); f=d.get("defaults_mismatched") if isinstance(d,dict) else None; print(len(f) if isinstance(f,dict) else 0)' "$computed" 2>/dev/null) || defaults_mismatched=0
+          case "$defaults_mismatched" in ''|*[!0-9]*) defaults_mismatched=0 ;; esac
+          probe_note=""
+          failed_note=""
+          if [ "$defaults_failed" -gt 0 ]; then
+            failed_word="families"; [ "$defaults_failed" -eq 1 ] && failed_word="family"
+            echo "::warning::vendor-default probe failed for $defaults_failed $failed_word; their seats were held"
+            failed_note="**The vendor-default probe failed for $defaults_failed $failed_word this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+          fi
+          mismatch_note=""
+          if [ "$defaults_mismatched" -gt 0 ]; then
+            mismatched_word="families"; [ "$defaults_mismatched" -eq 1 ] && mismatched_word="family"
+            echo "::warning::vendor default not matched by this run's catalogue for $defaults_mismatched $mismatched_word; their seats were held"
+            mismatch_note="**A vendor default did not match this run's catalogue for $defaults_mismatched $mismatched_word this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its mismatch class. Nothing is carried over: the next run's probe decides afresh."
+          fi
+          if [ -n "$failed_note" ] && [ -n "$mismatch_note" ]; then
+            probe_note=$(printf '%s\n\n%s' "$failed_note" "$mismatch_note")
+          elif [ -n "$failed_note" ]; then
+            probe_note="$failed_note"
+          elif [ -n "$mismatch_note" ]; then
+            probe_note="$mismatch_note"
+          fi
+          # <<< defaults-failed note
 
           # The open tracking issue is owned by this workflow's bot account,
           # not by whoever copied a public marker into an issue body. Query
@@ -760,11 +923,59 @@ jobs:
             exit 0
           fi
 
+          # A failed probe, or a catalogue mismatch, keeps the tracking
+          # issue OPEN even on "same" (#203 probe round 8, R8-1 folded the
+          # mismatch case in): the roster did not move because the probe
+          # could not say whether it should, or could not corroborate the
+          # catalogue, and closing the issue would hide either one. The
+          # title and first line are chosen BY CLASS so a mismatch-only run
+          # never says "probe failed", and a run with both says both.
+          if [ "$status" = "same" ] && { [ "$defaults_failed" -gt 0 ] || [ "$defaults_mismatched" -gt 0 ]; }; then
+            if [ "$defaults_failed" -gt 0 ] && [ "$defaults_mismatched" -gt 0 ]; then
+              issue_title="Model roster: the vendor-default probe failed and a default did not match the catalogue"
+              first_line="This run proposes no change to the committed \`evals/roster.yml\`, but the vendor-default probe failed and a vendor default did not match this run's catalogue, so this issue stays open until a run probes cleanly with a matching catalogue."
+            elif [ "$defaults_failed" -gt 0 ]; then
+              issue_title="Model roster: the vendor-default probe failed"
+              first_line="This run proposes no change to the committed \`evals/roster.yml\`, but the vendor-default probe failed, so this issue stays open until a run probes cleanly."
+            else
+              issue_title="Model roster: a vendor default did not match this run's catalogue"
+              first_line="This run proposes no change to the committed \`evals/roster.yml\`, but a vendor default did not match this run's catalogue, so this issue stays open until a run's catalogue matches."
+            fi
+            body="$RUNNER_TEMP/proposal-body.md"
+            {
+              printf '%s\n\n' "$marker"
+              echo "$first_line"
+              echo
+              echo "$probe_note"
+              echo
+              echo "$eval_note"
+              echo
+              cat "$RUNNER_TEMP/roster-inputs/summary.md"
+            } > "$body"
+            # A failed gh write warns and never fails the job (#203 probe
+            # rounds 2 and 3): the roster and the eval are already done.
+            if [ -n "$issue" ]; then
+              if gh issue edit "$issue" --repo "$REPO" \
+                --title "$issue_title" --body-file "$body"; then
+                echo "updated the roster tracking issue #$issue"
+              else
+                echo "::warning::could not update the roster tracking issue"
+              fi
+            else
+              gh issue create --repo "$REPO" \
+                --title "$issue_title" --body-file "$body" \
+                || echo "::warning::could not create the roster tracking issue"
+            fi
+            exit 0
+          fi
           if [ "$status" = "same" ]; then
             if [ -n "$issue" ]; then
-              gh issue close "$issue" --repo "$REPO" \
-                --comment "This run proposes no change to the model roster (routine observation-date refreshes are not proposed). Closing until something changes."
-              echo "closed the stale proposal issue #$issue"
+              if gh issue close "$issue" --repo "$REPO" \
+                --comment "This run proposes no change to the model roster (routine observation-date refreshes are not proposed). Closing until something changes."; then
+                echo "closed the stale proposal issue #$issue"
+              else
+                echo "::warning::could not close the roster tracking issue"
+              fi
             else
               echo "nothing to propose and no open proposal issue"
             fi
@@ -814,19 +1025,26 @@ jobs:
               printf '%s\n\n' "$marker"
               echo "The weekly run computed a roster difference, but it was rejected before proposal publication."
               echo
-              echo "**Needs review before publication.** No proposal branch or compare link was updated. The paid eval ran on the committed \`evals/roster.yml\`; its results will still be published normally."
+              echo "**Needs review before publication.** No proposal branch or compare link was updated."
+              echo
+              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
+              echo "$eval_note"
               echo
               echo "$rejection"
               echo
               cat "$RUNNER_TEMP/roster-inputs/summary.md"
             } > "$body"
             if [ -n "$issue" ]; then
-              gh issue edit "$issue" --repo "$REPO" \
-                --title "Model roster: proposal needs review" --body-file "$body"
-              echo "updated the blocked proposal issue #$issue"
+              if gh issue edit "$issue" --repo "$REPO" \
+                --title "Model roster: proposal needs review" --body-file "$body"; then
+                echo "updated the blocked proposal issue #$issue"
+              else
+                echo "::warning::could not update the roster tracking issue"
+              fi
             else
               gh issue create --repo "$REPO" \
-                --title "Model roster: proposal needs review" --body-file "$body"
+                --title "Model roster: proposal needs review" --body-file "$body" \
+                || echo "::warning::could not create the roster tracking issue"
             fi
             exit 0
           fi
@@ -857,6 +1075,9 @@ jobs:
           # expected-value lease form can require that a destination is absent.
           git -c "http.$SERVER_URL/.extraheader=$auth" fetch origin \
             '+refs/heads/roster/proposal:refs/remotes/origin/roster/proposal' || true
+          # NOT wrapped, unlike the `gh issue` writes (#203 probe round 3): a
+          # proposal branch that failed to push does not exist for review, so
+          # the step fails here rather than filing an issue that links to it.
           git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \
             push --force-with-lease origin roster/proposal
           git worktree remove --force "$worktree"
@@ -869,17 +1090,24 @@ jobs:
             echo "**Nothing has changed yet.** The harness runs on the committed file (ADR 0001); this is a proposal."
             echo "Open a pull request from \`roster/proposal\` and merge it after CI if the reasons below hold up."
             echo
+            [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
+            echo "$eval_note"
+            echo
             echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
             echo
             cat "$RUNNER_TEMP/roster-inputs/summary.md"
           } > "$body"
           if [ -n "$issue" ]; then
-            gh issue edit "$issue" --repo "$REPO" \
-              --title "Model roster: a change is proposed" --body-file "$body"
-            echo "updated the proposal issue #$issue"
+            if gh issue edit "$issue" --repo "$REPO" \
+              --title "Model roster: a change is proposed" --body-file "$body"; then
+              echo "updated the proposal issue #$issue"
+            else
+              echo "::warning::could not update the roster tracking issue"
+            fi
           else
             gh issue create --repo "$REPO" \
-              --title "Model roster: a change is proposed" --body-file "$body"
+              --title "Model roster: a change is proposed" --body-file "$body" \
+              || echo "::warning::could not create the roster tracking issue"
           fi
 
       # Badge generation, commit and push are ONE step because the badge's
@@ -899,6 +1127,9 @@ jobs:
       # working tree; it is stashed in $RUNNER_TEMP beforehand and invoked from
       # there. It is stdlib-only, so nothing else has to travel with it.
       - name: Build the badge over the run window, commit, and push
+        # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
+        # interpolated into a run: body.
+        if: ${{ !inputs.roster_only }}
         working-directory: skills-evals
         env:
           # Push auth lives only in this step.

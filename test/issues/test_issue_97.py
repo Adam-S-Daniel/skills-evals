@@ -2321,6 +2321,10 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_canary.py", "run_leg", "subprocess.run", "timeout"):
             (1, (("flag", "harness/run_canary.py"),
                  ("knob", "guard.timeout_s"))),
+        # #202: the harness version, read once per run and recorded in every
+        # arm's summary.json — the same shape as run_canary's.
+        ("harness/run_eval.py", "claude_version", "subprocess.run",
+         "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
             (1, (("knob", "setup_timeout_s"),)),
         # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
@@ -2857,6 +2861,7 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_canary.py", "claude_version"):
             ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_canary.py", "run_leg"): ("param", "timeout"),
+        ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),
@@ -3789,12 +3794,18 @@ class TestIssue97(unittest.TestCase):
             with self.subTest(step=step.get("name")):
                 self.assertNotIn("${{", run)
         scripts = [s.get("run") or "" for s in self._eval_steps()]
-        reading = [s for s in scripts if "GITHUB_EVENT_PATH" in s]
+        reading = [s for s in scripts if "GITHUB_EVENT_PATH" in s
+                   and "inputs.fixture" in s]
         self.assertEqual(len(reading), 1,
-                         "exactly one step reads the dispatch input, and it "
+                         "exactly one step reads the fixture input, and it "
                          "reads it from the event file")
-        self.assertIn("inputs.fixture", reading[0],
-                      "the event file's .inputs.fixture is the value read")
+        # The one other reader is "Propose a roster change", which reads the
+        # boolean `roster_only` from the same file to word its issue text
+        # (#203 round 1) — never the fixture.
+        others = [s for s in scripts if "GITHUB_EVENT_PATH" in s
+                  and "inputs.fixture" not in s]
+        for other in others:
+            self.assertIn(".inputs.roster_only", other)
 
     def test_the_fixture_is_validated_before_any_credential_step(self):
         names = [(s.get("name") or "") for s in self._eval_steps()]
