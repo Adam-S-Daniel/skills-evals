@@ -3431,8 +3431,69 @@ class TestMismatchCandidateSurvivingMutants(_RosterFixture):
         result, _ = self._compute(defaults=doc, previous=prev, models=models)
         self.assertIn("claude-opus-7", self._arms(result))
         self.assertIn("claude-opus-6", self._arms(result))
-        self.assertIn("inside its 1-week buffer",
+        # #203 round 6: an effective default holds every listed previous arm
+        # outright on a catalogue mismatch, rather than running it through
+        # the `superseded_exit_weeks` buffer — so no exception is raised and
+        # the arm is held, but not with the buffer's wording.
+        self.assertIn("held over from the previous roster",
                       self._reason(result, "claude-opus-6"))
+        self.assertIn("none retired on a catalogue mismatch",
+                      self._reason(result, "claude-opus-6"))
+
+
+class TestMismatchWeekRetiresNothing(_WeeklyLoop):
+    """R6-1 (#203 probe round 6): the EFFECTIVE default is a guess — the CLI
+    default did not match this run's catalogue, so `_default_rung_decision`
+    fell back to the newest of the family's listed seats and usage-qualified
+    models. That guess may be newer than the vendor's real default, so a
+    single catalogue-mismatch week must not retire a listed previous arm it
+    happens to supersede: the arm holds its seat every week, mismatch or
+    not, identically to a run with no mismatch at all. The reviewer's
+    adv203-probe-r6 f1.py, run with the `_WeeklyLoop` week-by-week loop."""
+
+    MODELS = [
+        _RosterFixture._model("claude-haiku-4-5", "Claude Haiku 4.5", "2025-10-01T00:00:00Z"),
+        _RosterFixture._model("claude-sonnet-5", "Claude Sonnet 5", "2026-02-01T00:00:00Z"),
+        _RosterFixture._model("claude-opus-5", "Claude Opus 5", "2026-04-01T00:00:00Z"),
+        _RosterFixture._model("claude-opus-5-5", "Claude Opus 5.5", "2026-06-01T00:00:00Z"),
+        _RosterFixture._model("claude-fable-5-1", "Claude Fable 5.1", "2026-09-01T00:00:00Z"),
+    ]
+    BAD_DEFAULT = "claude-opus-6"  # Not in MODELS: every "mm" week is a
+                                    # catalogue mismatch (probe: not-available).
+
+    @staticmethod
+    def _usage(n):
+        # opus-5 well under the 2% exit bar (0.5%), opus-5-5 dominant —
+        # the shape from the reproduction: a real exit check on opus-5
+        # would retire it, so only a mismatch's own carve-out can save it.
+        return {"claude-sonnet-5": 500, "claude-haiku-4-5": 50,
+                "claude-fable-5-1": 0, "claude-opus-5": 5,
+                "claude-opus-5-5": 400}
+
+    def _docs_with(self, mismatch_weeks):
+        def docs_for(k):
+            d = self._docs(k, opus="claude-opus-5", sonnet="claude-sonnet-5")
+            if k in mismatch_weeks:
+                d["defaults"]["opus"] = self.BAD_DEFAULT
+            return d
+        return docs_for
+
+    def test_a_mismatch_week_changes_nothing_a_clean_week_would_not_change(self):
+        previous = {**self.PREV0,
+                    "arms": [{"id": "claude-sonnet-5"}, {"id": "claude-opus-5"},
+                            {"id": "claude-opus-5-5"}]}
+        clean_out, _ = self._loop(self._usage, 4, self._docs_with(set()),
+                                  previous=previous, models=self.MODELS)
+        mismatch_out, _ = self._loop(self._usage, 4, self._docs_with({1}),
+                                     previous=previous, models=self.MODELS)
+        clean_arms = [sorted(self._arms(w["result"])) for w in clean_out]
+        mismatch_arms = [sorted(self._arms(w["result"])) for w in mismatch_out]
+        self.assertEqual(clean_arms, mismatch_arms)
+        for week in clean_out + mismatch_out:
+            self.assertEqual(week["result"].get("retired_since_last", []), [])
+        # claude-opus-5 keeps its seat every week of the mismatch run too.
+        for week in mismatch_out:
+            self.assertIn("claude-opus-5", self._arms(week["result"]))
 
 
 class TestRound5Docs(unittest.TestCase):

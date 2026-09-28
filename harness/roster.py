@@ -2049,7 +2049,12 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
     Inside it the seat goes to the default, at once and with no cooling-off;
     a model the default supersedes earns no seat from its usage, and a
     previous arm it supersedes keeps its seat only through the
-    `superseded_exit_weeks` buffer below. A model NEWER than the default is
+    `superseded_exit_weeks` buffer below — except while `effective_words` is
+    set: the EFFECTIVE default is itself a guess, possibly newer than the
+    vendor's real one, so a listed previous arm it supersedes is held
+    outright and never run through that buffer (#203 round 6, R6-1); a
+    single catalogue-mismatch week must not retire a seat a clean week
+    keeps. A model NEWER than the default is
     a preview the vendor has not made the default, and earns no new seat; a
     previous arm newer than it, and the default itself when nothing else puts
     its tier on the roster, get rule 3's exit check through `holdover`
@@ -2146,6 +2151,15 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
     # `previous_arm_ids` also names that alias, so it gets the
     # `superseded_exit_weeks` buffer below rather than retiring on sight.
     held_arm_ids = previous_arm_ids if previous_arm_ids is not None else previous_arms
+    if effective_words is not None and model_id in held_arm_ids:
+        # The effective default is a guess (R6-1, #203 probe round 6): with
+        # no vendor confirmation of which model is really the default, a
+        # catalogue-mismatch week must not retire a listed previous arm the
+        # guessed default happens to supersede — a clean week right after
+        # would just restore it. Hold it outright rather than running it
+        # through the `superseded_exit_weeks` buffer at all.
+        return (f"held over from the previous roster: {superseded}; none "
+                f"retired on a catalogue mismatch"), None
     if model_id not in held_arm_ids:
         share = enter_share.get(model_id)
         if share is not None and share >= enter_bar:

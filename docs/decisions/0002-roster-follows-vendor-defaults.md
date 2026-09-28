@@ -133,12 +133,14 @@ happened to accumulate usage on.
    probe cannot corroborate it — the guarantee wins: the listed seat holds,
    loudly (the mismatch's warning, summary line and open tracking issue),
    and a human fixes the probe. The effective default is seated or held on
-   the family's combined share, an older previous arm it supersedes leaves
-   through the `superseded_exit_weeks` buffer — held under its DATED id too
-   (R5-3, round 5): a previous arm published under `<base>-YYYYMMDD` is
-   still a previous arm once `<base>` appears in the catalogue — and nothing
-   newer is seated — so a one-run mismatch changes no seat a clean run would
-   not. A family with neither a listed arm nor a usage-qualifying model
+   the family's combined share, and an older previous arm it supersedes is
+   HELD OUTRIGHT rather than run through the `superseded_exit_weeks` buffer
+   (round 6, R6-1): the effective default is itself a guess, possibly newer
+   than the vendor's real one, so one mismatch week must not retire a seat a
+   clean week keeps — held under its DATED id too (R5-3, round 5): a
+   previous arm published under `<base>-YYYYMMDD` is still a previous arm
+   once `<base>` appears in the catalogue — and nothing newer is seated — so
+   a one-run mismatch changes no seat a clean run would not. A family with neither a listed arm nor a usage-qualifying model
    falls back, with no usable enter window, to
    its newest-in-tier model as with no probe; with a usable one it has no
    seat, as a clean run gives a tier no model of which clears the entry
