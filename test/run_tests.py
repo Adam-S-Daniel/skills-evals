@@ -4147,14 +4147,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         self.assertEqual(
             doc["jobs"]["roster-pr"].get("permissions"),
             {"pull-requests": "write", "actions": "write", "issues": "write",
-             "contents": "read"},
+             "contents": "write"},
             "the `roster-pr` job's permissions must be exactly "
             "{pull-requests: write, actions: write, issues: write, "
-            "contents: read} — this job (F2, adversarial round 1 on #209) "
+            "contents: write} — this job (F2, adversarial round 1 on #209) "
             "is the only one holding pull-requests/actions, for "
             "roster_mode: auto's PR create/edit/merge/close and its "
             "`gh workflow run ci.yml` dispatch; `issues: write` because it "
-            "finishes the tracking issue's PR-outcome-dependent text")
+            "finishes the tracking issue's PR-outcome-dependent text; "
+            "`contents: write` (S2, round 2, spec-roster-mode-r2.md) is for "
+            "enablePullRequestAutoMerge/an immediate merge, even though "
+            "this job performs no checkout and runs no repository code")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
 
@@ -5861,7 +5864,7 @@ class TestIssue67(unittest.TestCase):
                           "issues": "write"})
         self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
                          {"pull-requests": "write", "actions": "write",
-                          "issues": "write", "contents": "read"})
+                          "issues": "write", "contents": "write"})
         for job in doc["jobs"].values():
             for step in job["steps"]:
                 script = step.get("run") or ""

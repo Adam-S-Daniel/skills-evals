@@ -220,8 +220,8 @@ on:
 # Nothing in this job ever calls `gh pr` or `gh workflow run`.
 #
 # `roster-pr` (pull-requests: write, actions: write, issues: write,
-# contents: read): everything that touches the pull request the `eval` job's
-# propose step pushed — find/create/edit/merge/close it, and dispatch
+# contents: write): everything that touches the pull request the `eval`
+# job's propose step pushed — find/create/edit/merge/close it, and dispatch
 # `ci.yml` on it so `test` lands on its head sha (`pull-requests: write`,
 # `actions: write`, Adam's decision of 2026-09-28,
 # docs/decisions/0003-roster-merges-automatically.md). It also carries
@@ -229,12 +229,13 @@ on:
 # job did to the PR (opened it, could not enable auto-merge, turned auto-
 # merge off, …), so this job edits/creates the SAME issue the `eval` job's
 # propose step found or left neutral, rather than splitting one issue's text
-# across two writers with no shared view of the outcome. `contents: read` is
-# the default this job would get anyway; it is named explicitly because it
-# reads no repository content at all (no checkout step) — it only calls
-# `gh`. This job runs on EVERY eval run, `roster_mode: proposal` included
-# (F3): a stale `roster/proposal` PR's auto-merge must come off even when
-# this run's proposal never reached the auto path.
+# across two writers with no shared view of the outcome. `contents: write`
+# (S2, round 2, spec-roster-mode-r2.md) is needed by
+# `enablePullRequestAutoMerge`/an immediate merge even though this job
+# performs no checkout and runs no repository code — it only calls `gh`.
+# This job runs on EVERY eval run, `roster_mode: proposal` included (F3): a
+# stale `roster/proposal` PR's auto-merge must come off even when this
+# run's proposal never reached the auto path.
 permissions: {}
 
 # Never let two runs (e.g. a manual dispatch during the weekly run) race the
@@ -1209,10 +1210,16 @@ jobs:
           # `$base` (the checkout's HEAD before that commit, mutant M1) and
           # never a sha read from any OTHER checkout (mutant M8) — before
           # it becomes a job output the `roster-pr` job will pass straight
-          # to `--match-head-commit`.
-          if [[ "$pushed_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            emit pushed_sha "$pushed_sha"
-          fi
+          # to `--match-head-commit`. S1 (round 2, spec-roster-mode-r2.md):
+          # the `emit` itself waits until AFTER the push below actually
+          # succeeds — "a proposal was published" must never be claimed for
+          # a commit that only exists on this runner's local worktree. A
+          # failed push therefore emits no `pushed_sha` at all (the step
+          # dies at the push line, under `set -euo pipefail`, before
+          # reaching the `emit` that used to sit here) and the `roster-pr`
+          # job takes the same disable-only path as a rejected proposal.
+          pushed_sha_valid=false
+          if [[ "$pushed_sha" =~ ^[0-9a-f]{40}$ ]]; then pushed_sha_valid=true; fi
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           # Fetch first so the implicit lease compares against the current
           # remote-tracking ref when the proposal branch already exists. A
@@ -1230,6 +1237,9 @@ jobs:
           # takes the same disable-only path as a rejected proposal.
           git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \
             push --force-with-lease origin roster/proposal
+          if [ "$pushed_sha_valid" = true ]; then
+            emit pushed_sha "$pushed_sha"
+          fi
           git worktree remove --force "$worktree"
 
       # Badge generation, commit and push are ONE step because the badge's
@@ -1335,14 +1345,21 @@ jobs:
   # scope and why it also carries `issues: write`.
   roster-pr:
     needs: eval
-    if: ${{ !cancelled() }}
+    # B1.4 (round 2, spec-roster-mode-r2.md): only on `main` — a dispatch on
+    # any other ref never has a `$GITHUB_SHA` worth trusting as "the
+    # committed policy", so this job (and the auto-merge surface it alone
+    # holds) never runs for one.
+    if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
       pull-requests: write
       actions: write
       issues: write
-      contents: read
+      # S2 (round 2): `enablePullRequestAutoMerge` and an immediate merge
+      # both need write access to contents, even though this job performs
+      # no checkout and runs no repository code — it only calls `gh`.
+      contents: write
     steps:
       - name: Manage the roster pull request
         # Nothing here interpolates a GitHub Actions expression into the
@@ -1351,12 +1368,29 @@ jobs:
         # the `eval` job already validated each before emitting it, but the
         # boundary between two jobs is exactly where "validate again" earns
         # its keep (adversarial round 1 on #209's own hard constraint).
+        #
+        # ROUND 2 (spec-roster-mode-r2.md, B1, blocker): EVERYTHING the
+        # `eval` job produces — its outputs, the commit it pushed, its
+        # workspace — is untrusted; that job runs a bypass-permissions
+        # agent before this one. This step is the only place trust is
+        # established, from GitHub's own API and `$GITHUB_SHA` (the
+        # triggering commit on `main`, never the `eval` job's checkout).
+        # `ROSTER_MODE` below is therefore read but never trusted for the
+        # auto decision — `roster_mode` (the decision variable) comes from
+        # a fresh, independent read of `evals/roster-policy.yml` AT
+        # `$GITHUB_SHA` via the contents API (B1.1); the pushed branch's
+        # actual head is re-read from the API and required to equal
+        # `$PUSHED_SHA` (B1.2); and `$GITHUB_SHA...$PUSHED_SHA` must compare
+        # as exactly one commit ahead, none behind, touching only
+        # `evals/roster.yml` (B1.3) before this job will enable auto-merge.
+        # B1.4's main-ref gate lives on the job itself, above.
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
           REPO: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
+          GITHUB_SHA: ${{ github.sha }}
           ROSTER_MODE: ${{ needs.eval.outputs.roster_mode }}
           STATUS: ${{ needs.eval.outputs.status }}
           PROBE_CLEAN: ${{ needs.eval.outputs.probe_clean }}
@@ -1370,8 +1404,9 @@ jobs:
           ROSTER_SUMMARY: ${{ needs.eval.outputs.roster_summary }}
         run: |
           set -uo pipefail
-          roster_mode="proposal"
-          case "${ROSTER_MODE:-}" in auto) roster_mode="auto" ;; esac
+          export REPO
+          github_sha=""
+          if [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then github_sha="$GITHUB_SHA"; fi
           status=""
           case "${STATUS:-}" in same|differs) status="$STATUS" ;; esac
           probe_clean=false
@@ -1393,24 +1428,121 @@ jobs:
           esac
           rendered_identical=false
           case "${RENDERED_IDENTICAL:-}" in true) rendered_identical=true ;; esac
-          eval_note="${EVAL_NOTE:-}"
-          probe_note="${PROBE_NOTE:-}"
-          roster_summary="${ROSTER_SUMMARY:-}"
           marker='<!-- skills-evals:roster-proposal -->'
 
-          # F1 (blocker): never match a fork's same-named branch.
-          # `--head roster/proposal` alone has no owner filter — GitHub's
-          # GraphQL headRefName search matches ANY repo's `roster/proposal`
-          # — so a fork PR could otherwise be found, edited and named to
-          # humans as if it were this repo's own. `isCrossRepository` is
-          # asserted false before anything is taken off the list; a
-          # non-digit (or empty) answer is treated exactly like "no open
-          # PR", never interpolated further.
+          # >>> text-allowlist (N2, round 2): `eval_note`/`probe_note` are
+          # allow-listed against exactly the fixed sentences the `eval`
+          # job's propose step can emit — never trusted verbatim, since
+          # other text this job renders is shaped by the untrusted census
+          # (ADR 0003's Consequences section). A value that does not match
+          # falls back to empty rather than being printed.
+          eval_note_raw="${EVAL_NOTE:-}"
+          eval_note=""
+          case "$eval_note_raw" in
+            "This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."| \
+            "The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the next step, which runs after this issue is written — if that step failed or was skipped, this run's results were not published."| \
+            "The paid eval ran on the committed \`evals/roster.yml\`, but the eval step failed; nothing from this run was published to \`eval-results\`."| \
+            "No eval result: the eval step did not run; nothing from this run was published to \`eval-results\`.")
+              eval_note="$eval_note_raw" ;;
+          esac
+          probe_note="${PROBE_NOTE:-}"
+          probe_note_ok=true
+          if [ -n "$probe_note" ]; then
+          probe_note_ok=$(printf '%s' "$probe_note" | python3 -c '
+          import re
+          import sys
+          FAILED = (r"\*\*The vendor-default probe failed for (\d+) (family|families) this run\.\*\* "
+                     r"Their seats were held and none retired except models gone from the Models API; "
+                     r"a family of theirs gained a seat only if it held none the Models API still lists\. "
+                     r"The summary below names each family and its error class\. Nothing is carried over: "
+                     r"the next run'"'"'s probe decides afresh\.")
+          MISMATCH = (r"\*\*A vendor default did not match this run'"'"'s catalogue for (\d+) (family|families) "
+                       r"this run\.\*\* Their seats were held and none retired except models gone from the "
+                       r"Models API; a family of theirs gained a seat only if it held none the Models API "
+                       r"still lists\. The summary below names each family and its mismatch class\. Nothing "
+                       r"is carried over: the next run'"'"'s probe decides afresh\.")
+          def agrees(m):
+              n, word = m.group(1), m.group(2)
+              return (word == "family") == (n == "1")
+          text = sys.stdin.read()
+          parts = text.split("\n\n")
+          ok = False
+          if len(parts) == 1:
+              for pattern in (FAILED, MISMATCH):
+                  m = re.fullmatch(pattern, parts[0])
+                  if m and agrees(m):
+                      ok = True
+          elif len(parts) == 2:
+              mf = re.fullmatch(FAILED, parts[0])
+              mm = re.fullmatch(MISMATCH, parts[1])
+              ok = bool(mf and mm and agrees(mf) and agrees(mm))
+          print("true" if ok else "false")
+          ' 2>/dev/null) || probe_note_ok=false
+          fi
+          case "$probe_note_ok" in true) : ;; *) probe_note="" ;; esac
+          # <<< text-allowlist
+
+          roster_summary="${ROSTER_SUMMARY:-}"
+          # N2: the census-shaped summary's "Nothing changes until a human
+          # merges it" sentence is only true under `roster_mode: proposal`
+          # — swapped for an accurate one wherever this job builds the
+          # AUTO pull request's own body (the tracking issue keeps the
+          # unmodified summary; its own surrounding text already says
+          # whether a human or the automation is expected to act).
+          auto_summary=$(printf '%s' "$roster_summary" | sed \
+            "s/Nothing changes until a human merges it; the eval ran on the committed roster, as it always does\\./This proposal merges automatically once \`test\` passes on it (\`roster_mode: auto\`); the eval always runs on the committed roster, never on this proposal./")
+
+          # >>> policy-read (B1.1, round 2): the auto/proposal decision
+          # comes ONLY from the committed policy at `$GITHUB_SHA`, read
+          # fresh here — never from `$ROSTER_MODE` (the `eval` job's own
+          # output, logged below but never trusted for the decision itself,
+          # since a compromised `eval` job could forge it).
+          eval_roster_mode=""
+          case "${ROSTER_MODE:-}" in auto) eval_roster_mode="auto" ;; esac
+          policy_content=""
+          if [ -n "$github_sha" ]; then
+            policy_b64=$(gh api "repos/$REPO/contents/evals/roster-policy.yml?ref=$github_sha" \
+                          --jq .content 2>/dev/null) || policy_b64=""
+            if [ -n "$policy_b64" ]; then
+              policy_content=$(printf '%s' "$policy_b64" | base64 -d 2>/dev/null) || policy_content=""
+            fi
+          fi
+          policy_mode=$(printf '%s' "$policy_content" | python3 -c '
+          import sys
+          import yaml
+          try:
+              doc = yaml.safe_load(sys.stdin.read())
+          except Exception:
+              doc = None
+          value = doc.get("roster_mode") if isinstance(doc, dict) else None
+          print(value if isinstance(value, str) else "")
+          ' 2>/dev/null) || policy_mode=""
+          case "$policy_mode" in
+            auto|proposal) roster_mode="$policy_mode" ;;
+            "") roster_mode="proposal" ;;
+            *)
+              echo "::warning::roster_mode is not auto or proposal; using proposal"
+              roster_mode="proposal"
+              ;;
+          esac
+          echo "roster_mode (policy at \$GITHUB_SHA): $roster_mode"
+          if [ -n "$eval_roster_mode" ]; then
+            echo "roster_mode (eval job's own output, informational only): $eval_roster_mode"
+          fi
+          # <<< policy-read
+
+          # F1 (blocker): never match a fork's same-named branch. S4
+          # (round 2): the lookup itself is now server-side —
+          # `?head=<owner>:roster/proposal` filters by branch name at
+          # GitHub, and the `--jq` filter re-asserts the SAME repo by full
+          # name from `env.REPO` (never a client-side boolean GitHub
+          # computed) before anything is taken off the list; a non-digit
+          # (or empty) answer is treated exactly like "no open PR", never
+          # interpolated further.
           find_roster_pr() {
             local raw
-            if ! raw=$(gh pr list --repo "$REPO" --head roster/proposal --base main \
-                        --json number,isCrossRepository \
-                        --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty' \
+            if ! raw=$(gh api "repos/$REPO/pulls?state=open&base=main&head=${REPO%%/*}:roster/proposal" \
+                        --jq '[.[] | select(.head.repo.full_name == env.REPO)] | .[0].number // empty' \
                         2>/dev/null); then
               return 1
             fi
@@ -1419,6 +1551,46 @@ jobs:
               *) printf '%s' "$raw" ;;
             esac
           }
+
+          # >>> publish-verify (B1.2 + B1.3, round 2): re-derive, from the
+          # API alone, that `$PUSHED_SHA` really is `roster/proposal`'s
+          # current head and really is exactly one commit ahead of the
+          # trusted `$GITHUB_SHA`, changing only `evals/roster.yml`.
+          verify_publish() {
+            local actual_head compare_json ok
+            actual_head=$(gh api "repos/$REPO/git/ref/heads/roster/proposal" \
+                          --jq .object.sha 2>/dev/null) || actual_head=""
+            if ! [[ "$actual_head" =~ ^[0-9a-f]{40}$ ]]; then actual_head=""; fi
+            if [ -z "$actual_head" ] || [ "$actual_head" != "$pushed_sha" ]; then
+              printf 'head'
+              return 1
+            fi
+            compare_json=$(gh api "repos/$REPO/compare/$github_sha...$pushed_sha" 2>/dev/null) \
+              || compare_json=""
+            ok=$(printf '%s' "$compare_json" | python3 -c '
+          import json
+          import sys
+          try:
+              d = json.load(sys.stdin)
+          except Exception:
+              d = None
+          good = False
+          if isinstance(d, dict):
+              files = d.get("files") or []
+              names = [f.get("filename") for f in files if isinstance(f, dict)]
+              statuses = [f.get("status") for f in files if isinstance(f, dict)]
+              good = (d.get("status") == "ahead" and d.get("ahead_by") == 1
+                      and d.get("behind_by") == 0 and names == ["evals/roster.yml"]
+                      and statuses == ["modified"])
+          print("true" if good else "false")
+          ' 2>/dev/null) || ok="false"
+            if [ "$ok" != true ]; then
+              printf 'compare'
+              return 1
+            fi
+            return 0
+          }
+          # <<< publish-verify
 
           # F4: track whether a disable actually succeeded — the tracking
           # issue must never claim auto-merge is off when this call failed.
@@ -1448,28 +1620,25 @@ jobs:
           }
 
           if [ "$status" = same ]; then
-            # F3 (repro R2): under `roster_mode: auto`, closes an open PR
-            # regardless of probe cleanliness — the committed roster no
-            # longer differs either way, so a stale automatic PR is stale
-            # either way. `roster_mode: proposal` never opened one through
-            # this automation to begin with, so it looks for none (unchanged
-            # from before the split). No issue write here either way: the
-            # `eval` job's propose step already finished the tracking
-            # issue's text for every "same" case (it never depends on the
-            # PR).
-            if [ "$roster_mode" = auto ]; then
-              if same_pr=$(find_roster_pr); then
-                if [ -n "$same_pr" ]; then
-                  if gh pr close "$same_pr" --repo "$REPO" \
-                    --comment "This run proposes no change to the model roster; this pull request no longer differs from \`main\`. Closing."; then
-                    echo "closed the stale roster pull request #$same_pr"
-                  else
-                    echo "::warning::could not close the roster pull request"
-                  fi
+            # S3 (round 2): a stale automatic PR is closed on "same"
+            # regardless of `roster_mode` — the committed roster no longer
+            # differs either way, so a PR this automation opened earlier
+            # (under either mode, since `roster_mode: proposal` can follow
+            # an earlier `auto` run) no longer has anything to merge. No
+            # issue write here either way: the `eval` job's propose step
+            # already finished the tracking issue's text for every "same"
+            # case (it never depends on the PR).
+            if same_pr=$(find_roster_pr); then
+              if [ -n "$same_pr" ]; then
+                if gh pr close "$same_pr" --repo "$REPO" \
+                  --comment "This run proposes no change to the model roster; this pull request no longer differs from \`main\`. Closing."; then
+                  echo "closed the stale roster pull request #$same_pr"
+                else
+                  echo "::warning::could not close the roster pull request"
                 fi
-              else
-                echo "::warning::could not find the roster pull request"
               fi
+            else
+              echo "::warning::could not find the roster pull request"
             fi
             exit 0
           fi
@@ -1482,10 +1651,25 @@ jobs:
             # to the committed file (nothing to merge) get NO issue write
             # either way — today's behavior for all of these — but an open
             # PR from an EARLIER run must not be left carrying a stale
-            # auto-merge.
+            # auto-merge. S5 (round 2): when a stale auto-merge really was
+            # turned off, the tracking issue (if one is open) is corrected
+            # with one fixed line, so it never keeps saying "merging
+            # automatically" for a run that published nothing verifiable.
             if pr_number=$(find_roster_pr); then
               if [ -n "$pr_number" ]; then
-                disable_auto "$pr_number" || true
+                if disable_auto "$pr_number" && [ -n "$issue" ]; then
+                  body="$RUNNER_TEMP/proposal-body.md"
+                  {
+                    printf '%s\n\n' "$marker"
+                    echo "Automatic merge of PR #$pr_number was turned off: this run did not publish a proposal it could verify."
+                  } > "$body"
+                  if gh issue edit "$issue" --repo "$REPO" \
+                    --title "Model roster: automatic merge turned off" --body-file "$body"; then
+                    echo "updated the proposal issue #$issue"
+                  else
+                    echo "::warning::could not update the roster tracking issue"
+                  fi
+                fi
               fi
             else
               echo "::warning::could not find the roster pull request"
@@ -1497,10 +1681,18 @@ jobs:
           # that can enable auto-merge, and the only case whose tracking-
           # issue text this job constructs.
           attempt=false
+          verify_fail=""
           if [ "$rejected" != true ] && [ "$roster_mode" = auto ] \
-             && [ "$probe_clean" = true ] && [ -n "$pushed_sha" ]; then
-            attempt=true
+             && [ "$probe_clean" = true ] && [ -n "$pushed_sha" ] && [ -n "$github_sha" ]; then
+            if verify_fail=$(verify_publish); then
+              attempt=true
+            fi
           fi
+          verify_reason_text=""
+          case "$verify_fail" in
+            head) verify_reason_text="the pushed branch's head does not match this run's proposal" ;;
+            compare) verify_reason_text="the pushed commit did not verify as a single \`evals/roster.yml\` change ahead of this run's checkout" ;;
+          esac
 
           pr_number=""
           pr_failed=""
@@ -1516,7 +1708,7 @@ jobs:
               echo
               echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
               echo
-              printf '%s\n' "$roster_summary"
+              printf '%s\n' "$auto_summary"
               echo
               echo "Merged automatically once \`test\` passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
             } > "$pr_body"
@@ -1638,11 +1830,14 @@ jobs:
           fi
 
           # `roster_mode: proposal`, or `auto` with a probe that was not
-          # clean, or an attempt that started but failed partway.
+          # clean, or a publication that could not be verified (B1), or an
+          # attempt that started but failed partway.
           why=""
           if [ "$roster_mode" = auto ]; then
             if [ "$probe_clean" != true ]; then
               why="this run's vendor-default probe was not clean"
+            elif [ -n "$verify_reason_text" ]; then
+              why="this run's proposal needs review: $verify_reason_text"
             else
               why="this run's automatic-merge attempt did not complete"
             fi

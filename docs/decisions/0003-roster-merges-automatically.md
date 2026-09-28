@@ -100,7 +100,87 @@ and approve pull requests" on this repo for this change.
    `roster_mode: proposal` included — a stale `roster/proposal` PR's
    auto-merge must come off, or the PR must be closed if the roster no
    longer differs, whether or not this run's propose step reached the auto
-   path (F3, below).
+   path (F3, below). **Revised again by adversarial round 2 on #209 (S2):**
+   `roster-pr` carries `contents: write`, not `contents: read` —
+   `enablePullRequestAutoMerge`/an immediate merge both need write access to
+   contents even though this job performs no checkout and runs no
+   repository code; only `gh` calls happen here.
+
+## Round 2 (adversarial review on #209, spec-roster-mode-r2.md): `roster-pr`
+## trusts nothing the `eval` job produced
+
+Round 1 (F2, above) moved the PR/workflow-dispatch scopes off the job that
+runs the bypass-permissions agent. It did not go far enough: `roster-pr`
+still READ its auto/proposal decision, and the sha it enabled auto-merge
+on, from that same job's own outputs — `needs.eval.outputs.*` — which are
+just as reachable by a compromised `eval` job as a `pull-requests: write`
+scope would have been, through `$GITHUB_OUTPUT` (any earlier step, or a
+`BASH_ENV`/shell-startup trick, can append to it) or through the checkout
+that step's `git rev-parse HEAD` reads.
+
+**Threat model:** treat EVERYTHING the `eval` job produces — its job
+outputs, the commit it pushed to `roster/proposal`, its workspace — as
+untrusted. `roster-pr` (no checkout of its own) is the only place trust is
+established, and it establishes it from two sources only: GitHub's own API,
+and the triggering commit `$GITHUB_SHA` on `main` (`github.sha`, fixed at
+dispatch time and never touched by whatever the `eval` job's checkout later
+does — the same property that makes a `GITHUB_TOKEN` PR immune to a
+`pull_request` re-trigger, reused here as the one thing on the runner a
+compromised `eval` job cannot rewrite).
+
+Four checks, all in `roster-pr`, all before `gh pr create/edit/merge --auto`
+and the `ci.yml` dispatch:
+
+1. **The decision itself is re-read, not re-used.** `roster_mode` is read
+   fresh from `evals/roster-policy.yml` at `$GITHUB_SHA` via the contents
+   API (`gh api "repos/$REPO/contents/evals/roster-policy.yml?ref=$GITHUB_SHA"
+   --jq .content | base64 -d`, parsed with `yaml.safe_load`; the same
+   missing-key/unreadable-file/bad-value fallback rules as the `eval` job's
+   own read). The `eval` job's `ROSTER_MODE` output is still read and
+   logged, but never used for the decision — a compromised `eval` job
+   forging `roster_mode=auto` over `$GITHUB_OUTPUT` while the committed
+   policy still says `proposal` (the kill switch) no longer works.
+2. **The pushed branch's actual head is re-read from the API**
+   (`gh api repos/$REPO/git/ref/heads/roster/proposal --jq .object.sha`,
+   40-hex validated) and required to equal `$PUSHED_SHA`. `$PUSHED_SHA`
+   itself is still the `eval` job's own claim, so this is what makes that
+   claim mean something: the job cannot enable auto-merge on a sha it has
+   not independently confirmed IS the branch's current head.
+3. **The change itself is re-verified, not re-trusted.**
+   `gh api "repos/$REPO/compare/$GITHUB_SHA...$PUSHED_SHA"` must show
+   `status == "ahead"`, `ahead_by == 1`, `behind_by == 0`, and
+   `[.files[].filename] == ["evals/roster.yml"]` with that file's status
+   `modified` — mirroring the path-allowlist precedent in
+   `dependabot-auto-merge.yml`'s `auto-merge` job (a fixed set of paths a
+   bot's own change may touch, checked server-side rather than trusted from
+   the bot's own diff) applied here to a single fixed path rather than a
+   manifest glob. An extra commit riding along on the `eval` job's checkout
+   (ahead_by 2), an extra file in the same commit, or `main` having moved on
+   since this run started (behind_by > 0) each fail this check.
+4. **Only on `main`.** `roster-pr`'s own `if:` gains
+   `&& github.ref == 'refs/heads/main'` — a dispatch on any other ref never
+   has a `$GITHUB_SHA` worth trusting as "the committed policy", so this job
+   (and the auto-merge surface it alone holds) never runs for one.
+
+If any of 1–3 fails on a run that would otherwise attempt auto-merge: the
+attempt is not made; an open `roster/proposal` PR (from an earlier run) has
+its auto-merge disabled the same way every other "did not (re-)enable"
+path in decision 4 above does; and the tracking issue's text names which
+check failed, in fixed wording per check (never anything read off the
+failing API response) — "the pushed branch's head does not match this
+run's proposal" for check 2, "the pushed commit did not verify as a single
+`evals/roster.yml` change ahead of this run's checkout" for check 3.
+
+**Cancellation window.** A run cancelled after the `eval` job's push but
+before `roster-pr` runs can leave an EARLIER run's auto-merge still armed —
+cancellation does not itself disable anything. No `test` run lands on the
+new head unless something dispatches `ci.yml` on it, and nothing does until
+`roster-pr` next runs (the next scheduled or dispatched `eval` run) and
+performs checks 1–3 against whatever `$GITHUB_SHA` is current then. This
+window is accepted rather than closed: closing it would mean either a
+`roster-pr` that runs even when `eval` is cancelled before pushing (nothing
+to verify) or a third job whose only purpose is "disable on cancel", for a
+window that self-heals on the very next run.
 
 ## Consequences
 
