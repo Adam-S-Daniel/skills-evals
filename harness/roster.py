@@ -1759,6 +1759,11 @@ def _defaults_provenance(document: dict) -> tuple[str, str | None]:
     if not (isinstance(version, str) and DEFAULTS_VERSION_RE.match(version)
             and version.strip()):
         version = "(version unknown)"
+    else:
+        # Strip trailing " (Claude Code)" suffix if present (exact, case-sensitive).
+        version = version.rstrip()
+        if version.endswith(" (Claude Code)"):
+            version = version[:-len(" (Claude Code)")]
     probed = parse_ts(document.get("probed_at"))
     try:
         probed_at = (probed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
