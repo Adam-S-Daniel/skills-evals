@@ -4226,6 +4226,57 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["id-token"], "write")
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["issues"], "write")
 
+    def test_eval_job_holds_no_write_scope_but_id_token_and_no_step_gets_a_token(self):
+        # B1 (round 4 on #209, blocker), replacing the reviewer's badge-repro:
+        # the agent can plant code that a later step of the SAME job runs, so
+        # what matters is what that job can reach. GITHUB_TOKEN's scope is
+        # exactly the job's `permissions:`, so (1) no write scope other than
+        # `id-token` may exist on `eval`, and (2) no job-level or step-level
+        # `env:` of `eval` may hand any step a token at all (GITHUB_TOKEN,
+        # GH_TOKEN, or anything built from `github.token` / `secrets.*`),
+        # and no `with:` input may either (a checkout's `token:` would
+        # persist one). Parsed YAML, never a text scan.
+        doc = self._doc()
+        job = doc["jobs"]["eval"]
+        perms = job.get("permissions")
+        self.assertIsInstance(perms, dict)
+        self.assertEqual(
+            {k: v for k, v in perms.items() if v == "write"},
+            {"id-token": "write"},
+            "eval may hold no write scope except id-token")
+        self.assertEqual(doc.get("permissions"), {},
+                         "no workflow-level scope may leak into eval")
+
+        def carries_token(mapping):
+            found = []
+            for key, value in (mapping or {}).items():
+                text = str(value)
+                if (key.upper() in {"GITHUB_TOKEN", "GH_TOKEN", "TOKEN"}
+                        or "github.token" in text
+                        or "secrets." in text):
+                    found.append(key)
+            return found
+
+        self.assertEqual(carries_token(job.get("env")), [],
+                         "eval's job-level env must carry no token")
+        for step in job["steps"]:
+            with self.subTest(step=step.get("name")):
+                self.assertEqual(carries_token(step.get("env")), [],
+                                 "no eval step may receive a token in env")
+                self.assertEqual(carries_token(step.get("with")), [],
+                                 "no eval step may receive a token via with:")
+        # And the write-scoped jobs never run the agent or a checkout of the
+        # fixture registries: the jobs that DO get a write token are exactly
+        # the four that run no agent.
+        writers = sorted(
+            name for name, j in doc["jobs"].items()
+            if any(v == "write" and k != "id-token"
+                   for k, v in (j.get("permissions") or {}).items()))
+        self.assertEqual(writers, ["disarm", "publish", "roster", "roster-pr"])
+        for name in writers:
+            for step in doc["jobs"][name]["steps"]:
+                self.assertNotIn("run_eval.py", step.get("run") or "")
+
     def test_roster_job_has_exactly_one_checkout_and_never_runs_the_eval(self):
         # S2 (round 4 on #209): the `roster` job (B1, round 3) must never
         # check out the fixture/registry repositories or run the eval

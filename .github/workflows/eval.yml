@@ -107,9 +107,9 @@
 #
 #   The Admin API usage report, if it is ever provisioned, is BILLING data.
 #   It is written to $RUNNER_TEMP/admin-usage.json, deliberately NOT into
-#   $RUNNER_TEMP/roster/ — that directory is the one the commit step copies
-#   from, and it holds the published roster and nothing else so that a future
-#   directory copy cannot publish billing data to a public branch.
+#   $RUNNER_TEMP/roster/ — that directory is the one the published roster is
+#   taken from, and it holds the published roster and nothing else so that a
+#   future directory copy cannot publish billing data to a public branch.
 #
 #   The roster step's ::warning:: carries an HTTP status code or an exception
 #   class name, and refresh_models.py is written to produce nothing else. The
@@ -119,11 +119,11 @@
 #   injected only in the steps that push it — the `roster` job's
 #   roster-proposal step, the `disarm` and `roster-pr` jobs' `gh` calls, and
 #   the `publish` job's commit step — and only in their own `env:`. B1 (round
-#   4 on #209, blocker): the `eval` job itself holds NO write credential of
+#   4 on #209, blocker): the `eval` job itself holds no GitHub write credential of
 #   any kind, at any point, on any runner — not even step-scoped and not
 #   even after the bypassPermissions agent finishes, because a later step OF
 #   THE SAME JOB is not a credential boundary against whatever that agent
-#   planted. Every job that writes anything (`roster`, `disarm`, `publish`,
+#   planted; no long-lived secret exists on any of them either. Every job that writes anything (`roster`, `disarm`, `publish`,
 #   `roster-pr`) gets its own fresh `${{ github.token }}`, scoped to that
 #   job's own `permissions:` block and never shared with `eval`'s — five
 #   jobs, five runners, no credential in common between the one that runs
@@ -172,7 +172,7 @@
 #   branch-protection ruleset requires changes go through a pull request
 #   (this repo's fleet repo-settings baseline), so a bot direct-pushing
 #   straight to main would be rejected — as it was in run 29620223686. The
-#   commit step fetches/builds on `eval-results` (creating it on the first
+#   `publish` job's commit step fetches/builds on `eval-results` (creating it on the first
 #   run) and pushes there directly; nobody hand-commits to that branch and
 #   the `real-eval` concurrency lane serializes runs, so a rejected push
 #   fails the job loudly rather than retrying. The README badge URL consumes
@@ -341,8 +341,8 @@ jobs:
     # before use. Every one of these is written by the "Propose a roster
     # change" step (id: propose); a value it never reaches stays the empty
     # string, which `roster-pr` treats as "no action for this run" rather
-    # than an error. `roster_latest_json` is consumed by the `eval` job's
-    # badge step instead (an EXHIBIT copy only, ADR 0001 decision 3).
+    # than an error. `roster_latest_json` is consumed by the `publish` job's
+    # commit step instead (an EXHIBIT copy only, ADR 0001 decision 3).
     outputs:
       roster_mode: ${{ steps.propose.outputs.roster_mode }}
       status: ${{ steps.propose.outputs.status }}
@@ -706,12 +706,13 @@ jobs:
       # The lease is what keeps that honest — a push that would discard a
       # commit this run has not seen fails rather than silently winning.
       #
-      # IT RUNS AFTER THE EVAL, deliberately. The eval must run on the
-      # committed roster with no GitHub write credential anywhere on the
-      # runner (the security header's fourth rule); this step holds one, so
-      # it sits after the bypassPermissions agent has finished. It does its
-      # git work in a WORKTREE under $RUNNER_TEMP so the main checkout is
-      # untouched for the badge/commit step that follows.
+      # IT RUNS IN ITS OWN JOB, deliberately (B1, rounds 3 and 4 on #209).
+      # The eval must run on the committed roster with no GitHub write
+      # credential anywhere on ITS runner (the security header's fourth
+      # rule); this step holds one, so it lives in the `roster` job, which
+      # never runs the agent and never `needs: eval`, on a runner the agent
+      # never touches. It does its git work in a WORKTREE under
+      # $RUNNER_TEMP so the job's own checkout stays untouched.
       #
       # Nothing here interpolates a GitHub Actions expression into the
       # shell. The run id, the repository and the server URL arrive through
@@ -725,7 +726,7 @@ jobs:
         id: propose
         working-directory: skills-evals
         env:
-          # Write auth lives only in this step and the commit step.
+          # Write auth lives only in this step of the `roster` job.
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
@@ -1539,8 +1540,10 @@ jobs:
       # a skill fixture, and for a guidance fixture the arms it names (five,
       # one per delivery mode, for the delivery canary).
       - name: Run the eval (both arms, judge)
-        # `id: eval` so the proposal step can say whether the eval ran (#203
-        # probe round 3): its `outcome` reaches that step through `env:`.
+        # `id: eval` (#203 probe round 3). Since B1 (round 3 on #209) the
+        # eval's outcome reaches the tracking-issue text through
+        # `needs.eval.result` in the `roster-pr` job, not through a step
+        # `outcome` in the `roster` job.
         id: eval
         # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
         # interpolated into a run: body.

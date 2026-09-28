@@ -225,7 +225,8 @@ WIF mint, then "Refresh the model roster" and "Propose a roster change"
 unchanged in substance. It must never `needs: eval` — the whole point is
 independence, not sequencing. `eval` keeps its own checkout, its own separate
 WIF mint (never shared with `roster`'s — two jobs, two runners, no credential
-in common), the fixture run and the badge/commit; `issues: write` came off
+in common), the fixture run and (as of round 3; moved to `publish` in
+round 4 below) the badge/commit; `issues: write` came off
 it since nothing here writes the tracking issue any more. `eval` DOES
 `needs: roster`, in one direction only, so its badge step can commit an
 EXHIBIT copy of `roster`'s own computed roster
@@ -335,6 +336,17 @@ run. `publish` runs `needs: [roster, eval]`, `if: !cancelled() &&
 needs.eval.result == 'success'`, reproducing the old `roster_only` skip
 structurally (a `roster_only` dispatch never runs `eval` at all, so
 `needs.eval.result` reads `skipped`, never `success`).
+
+**The armed-PR retarget attack.** Auto-merge is armed on the pull request,
+not on a head sha: whatever commit lands on `roster/proposal` next, and passes
+`test`, merges. While `eval` held `contents: write`, code planted by its agent
+could force-push a hostile `evals/roster.yml` onto `roster/proposal` while an
+EARLIER run's auto-merge was still armed, and the automation would merge it
+without `roster-pr`'s checks 1-3 ever running. Two changes close it together:
+`eval` holds no write scope, so it cannot push at all, and `disarm` turns any
+armed auto-merge off before the agent starts, so nothing stays armed for any
+other credential to exploit either. `roster-pr` re-arms only after verifying
+this run's own pushed head.
 
 **`disarm` closes the cancellation window the round-3 text above accepted.**
 It runs `needs: roster` ONLY, never `eval` — so it completes (or fails
