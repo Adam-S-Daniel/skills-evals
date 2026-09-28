@@ -630,8 +630,18 @@ of that job. `roster-pr` then re-arms it, but only for a proposal ITS OWN
 independent checks admit; on every run that does not (re-)enable auto-merge —
 a dirty probe, `roster_mode: proposal`, a rejected proposal, or a failed `gh`
 call partway through — the pull request's auto-merge is turned off again (or
-stays off), so nothing but a run whose proposal `roster-pr` itself verified
-can ever leave a head merging automatically. Set
+stays off). `roster-pr` also runs after `publish` (the one other job holding
+`contents: write`), since `--match-head-commit` is checked only when
+auto-merge is enabled. So, within a run, no job holding a write credential
+runs after `roster-pr` arms the pull request, and `disarm` clears any arming
+before the agent starts. Between arming and the merge (which waits on a green
+`test`, possibly for days), any other write-access actor that pushes
+`roster/proposal` retargets the armed pull request; that is outside what this
+workflow controls. The known instance is
+`.github/workflows/dependabot-auto-merge.yml`'s `auto-merge` job, which holds
+`contents: write` and keeps the default persisted checkout credential
+(pre-existing, unchanged here); a ruleset restricting updates to
+`refs/heads/roster/proposal` would close it and is not implemented. Set
 `roster_mode: proposal` to switch back; nothing else needs to change.
 
 Thresholds and the capability ladder live in

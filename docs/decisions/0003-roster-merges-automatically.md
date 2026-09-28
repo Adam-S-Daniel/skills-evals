@@ -344,9 +344,21 @@ could force-push a hostile `evals/roster.yml` onto `roster/proposal` while an
 EARLIER run's auto-merge was still armed, and the automation would merge it
 without `roster-pr`'s checks 1-3 ever running. Two changes close it together:
 `eval` holds no write scope, so it cannot push at all, and `disarm` turns any
-armed auto-merge off before the agent starts, so nothing stays armed for any
-other credential to exploit either. `roster-pr` re-arms only after verifying
-this run's own pushed head.
+armed auto-merge off before the agent starts, so no earlier arming is exposed
+to the agent's run. `roster-pr` re-arms only after verifying this run's own
+pushed head, and (round 5) `needs: [roster, eval, publish]`: `--match-head-commit`
+is checked only when auto-merge is enabled, so no job holding a write
+credential (`publish` holds `contents: write`) may still be running after the
+arming. That is the whole guarantee: within a run, no write-credential job
+runs after `roster-pr` arms the PR, and `disarm` clears it before the agent.
+Between arming and the merge (which waits on a green `test`, possibly for
+days) any other write-access actor that pushes `roster/proposal` retargets
+the armed PR, and that is outside what this workflow controls. The known
+instance is `.github/workflows/dependabot-auto-merge.yml`'s `auto-merge` job,
+which holds `contents: write` and whose checkout keeps the default persisted
+credential (pre-existing, not changed here). The optional hardening, a
+ruleset restricting updates to `refs/heads/roster/proposal`, is not
+implemented.
 
 **`disarm` closes the cancellation window the round-3 text above accepted.**
 It runs `needs: roster` ONLY, never `eval` — so it completes (or fails

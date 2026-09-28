@@ -3545,7 +3545,10 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
     def test_roster_pr_job_needs_eval_and_runs_unless_cancelled(self):
         doc = self._doc()
         job = doc["jobs"]["roster-pr"]
-        self.assertEqual(job.get("needs"), ["roster", "eval"])
+        # Round 5: `publish` (contents: write) too — `--match-head-commit`
+        # is checked only when auto-merge is ENABLED, so no in-run write
+        # holder may still be running once roster-pr has armed the PR.
+        self.assertEqual(job.get("needs"), ["roster", "eval", "publish"])
         # B1.4 (round 2): only on `main` — added to the original
         # `!cancelled()` gate, never replacing it.
         self.assertEqual(job.get("if"),
@@ -5598,6 +5601,17 @@ class TestB1Round4JobGraph(unittest.TestCase):
         self.assertEqual(publish.get("if"),
                          "${{ !cancelled() && needs.eval.result == 'success' }}")
 
+    def test_roster_pr_waits_for_publish_but_a_skipped_one_never_blocks_it(self):
+        # Round 5: `publish` holds `contents: write`; roster-pr arms
+        # auto-merge with `--match-head-commit`, checked only at enable
+        # time, so no write holder may run after the arming. The `if:`
+        # stays `!cancelled()`-shaped so a skipped (`roster_only`) or failed
+        # `publish` never blocks the roster pull request.
+        rp = self.jobs["roster-pr"]
+        self.assertEqual(self._needs(rp), ["eval", "publish", "roster"])
+        self.assertEqual(rp.get("if"),
+                         "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+
     def test_disarm_runs_on_main_only_after_roster(self):
         disarm = self.jobs["disarm"]
         self.assertEqual(self._needs(disarm), ["roster"])
@@ -6528,3 +6542,43 @@ class TestR10RenamedSeatCarriesItsSupersededReason(_RosterFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestProposalSentenceIsCoupledToRosterPrSed(_WeeklyLoop):
+    """Round 5 (mutant F): `render_summary` words a "differs" proposal, and
+    `roster-pr`'s `sed` rewrites that exact sentence for the AUTO pull
+    request's body. Two files, one string, no shared constant — so this
+    renders the real summary, pulls the real `sed` script out of the parsed
+    workflow step, runs real `sed`, and requires the human-merge clause to
+    be gone. Changing either side alone leaves the clause in place."""
+
+    CLAUSE = "Nothing changes until a human merges it"
+
+    @staticmethod
+    def _sed_script():
+        import shlex
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        run = doc["jobs"]["roster-pr"]["steps"][0]["run"]
+        # The step's shell text spells `sed \` and then its double-quoted
+        # script on the next line, closed by the `$( ... )` paren; shlex
+        # splits that one quoted word out exactly as the shell would,
+        # except that the shell also turns a double-quoted backslash-backtick into a bare
+        # backtick, which POSIX shlex leaves alone (and backslash-backtick is a GNU sed
+        # anchor, not a literal) — applied by hand below.
+        lines = run[run.index("| sed \\"):].splitlines()
+        script_line = lines[1].strip()
+        assert script_line.endswith('")'), script_line
+        argv = ["sed", *shlex.split(script_line[:-1])]
+        argv[1] = argv[1].replace("\\`", "`")
+        return argv[1]
+
+    @unittest.skipUnless(shutil.which("sed"), "needs sed")
+    def test_the_sed_rewrites_the_sentence_the_summary_actually_renders(self):
+        result = self._compute(defaults=self.DEFAULTS)[0]
+        result["proposal"] = {"status": "differs", "changes": []}
+        summary = roster.render_summary(result)
+        self.assertIn(self.CLAUSE, summary)
+        out = subprocess.run(["sed", self._sed_script()], input=summary,
+                             capture_output=True, text=True, check=True).stdout
+        self.assertNotIn(self.CLAUSE, out)
+        self.assertIn("merges automatically once `test` passes", out)

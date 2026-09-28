@@ -3462,7 +3462,7 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     if proposal.get("status") == "differs":
         lines += ["**This run proposes a change to the committed roster** "
                   "(`evals/roster.yml`). Nothing changes until a human merges "
-                  "it; the eval ran on the committed roster, as it always does.",
+                  "it; the eval runs on the committed roster, as it always does.",
                   ""]
         lines += ["| Change | Field | From | To | Why |",
                   "| --- | --- | --- | --- | --- |"]

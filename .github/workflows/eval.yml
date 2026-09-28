@@ -271,6 +271,16 @@ on:
 # common) for the preflight and the eval run. Nothing in this job ever
 # calls `gh pr`, `gh issue`, `gh workflow run`, or touches `eval-results`.
 #
+# Ordering (round 5 on #209): `roster-pr` runs after `publish`, never beside
+# it. Auto-merge is armed with `--match-head-commit`, which GitHub checks
+# only at enable time, so a write-credential job still running after the
+# arming could move `roster/proposal` under an armed PR unnoticed. Within a
+# run, then, no job holding a write credential runs after `roster-pr` arms
+# the PR (and `disarm` clears any earlier arming before the agent starts).
+# What this workflow cannot control: between arming and the merge (which
+# waits on a green `test`, possibly for days) any other write-access actor
+# that pushes `roster/proposal` retargets the armed PR — see ADR 0003.
+#
 # `publish` (contents: write): B1 (round 4 on #209, blocker). Everything
 # that used to be the `eval` job's own "Build the badge over the run
 # window, commit, and push" step, moved into a job with NO agent and a
@@ -869,7 +879,7 @@ jobs:
             roster_only=true
           fi
           if [ "$roster_only" = true ]; then
-            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
+            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval runs on the committed roster, no eval ran at all."
           else
             # S3 (round 4 on #209): "runs", not "ran" — this step writes
             # this sentence in the `roster` job, which never `needs:
@@ -1735,8 +1745,9 @@ jobs:
   # `eval`, so `pull-requests: write` and `actions: write` are never in
   # reach of the `eval` job's bypass-permissions agent (B1, round 3 on
   # #209: nor of anything the `roster` job's own runner might have been
-  # left carrying). Runs on EVERY eval run (`needs: [roster, eval]`, `if:
-  # !cancelled()`), `roster_mode: proposal` included and a failed "Propose
+  # left carrying). Runs on EVERY eval run (`needs: [roster, eval, publish]`
+  # — LAST, after `publish`'s `contents: write`, see the `needs:` comment
+  # below — `if: !cancelled()`), `roster_mode: proposal` included and a failed "Propose
   # a roster change" step (or the whole `roster` job) included (F3): a
   # stale `roster/proposal` PR's auto-merge must come off — or the PR must
   # be closed, if the committed roster no longer differs — whether or not
@@ -1745,7 +1756,13 @@ jobs:
   # See the workflow-level `permissions:` comment above for the job's own
   # scope and why it also carries `issues: write`.
   roster-pr:
-    needs: [roster, eval]
+    # Round 5: `publish` too. `publish` holds `contents: write`, and this job
+    # arms auto-merge with `--match-head-commit`, which GitHub checks only
+    # when auto-merge is ENABLED — so no job holding a write credential may
+    # still be running once the PR is armed. `if: !cancelled()` (below)
+    # means a skipped (`roster_only`) or failed `publish` never blocks this
+    # job; it only has to be FINISHED, not successful.
+    needs: [roster, eval, publish]
     # B1.4 (round 2, spec-roster-mode-r2.md): only on `main` — a dispatch on
     # any other ref never has a `$GITHUB_SHA` worth trusting as "the
     # committed policy", so this job (and the auto-merge surface it alone
@@ -1772,13 +1789,18 @@ jobs:
         # own hard constraint).
         #
         # ROUND 2 (spec-roster-mode-r2.md, B1, blocker), extended by B1
-        # (round 3 on #209): EVERYTHING the `roster` job produces — its
-        # outputs, the commit it pushed, its workspace — is untrusted; the
-        # `eval` job's bypass-permissions agent runs on a SEPARATE runner
-        # this job never shares with either of them. This step is the only
-        # place trust is established, from GitHub's own API and
-        # `$GITHUB_SHA` (the triggering commit on `main`, never the
-        # `roster` job's checkout).
+        # (round 3 on #209): the `roster` job is a TRUSTED job (no agent
+        # ever runs in it; the `eval` job's bypass-permissions agent runs on
+        # a SEPARATE runner this job never shares with it), so its outputs
+        # are trusted-job outputs — validated at the job boundary anyway, as
+        # defence in depth, never assumed clean. What this step establishes
+        # from GitHub's own API and `$GITHUB_SHA` (the triggering commit on
+        # `main`, never the `roster` job's checkout) is the auto decision
+        # and the IDENTITY of what gets armed: `verify_publish` checks
+        # identity (branch head == `$PUSHED_SHA`, the sha the trusted
+        # `roster` job pushed), shape (one commit ahead, none behind, exactly
+        # `evals/roster.yml` modified), and the commit's author and message —
+        # not content; content equality rests on that sha identity.
         # `ROSTER_MODE` below is therefore read but never trusted for the
         # auto decision — `roster_mode` (the decision variable) comes from
         # a fresh, independent read of `evals/roster-policy.yml` AT
@@ -1871,7 +1893,7 @@ jobs:
             roster_only=true
           fi
           if [ "$roster_only" = true ] || [ "$eval_result" = skipped ]; then
-            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
+            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval runs on the committed roster, no eval ran at all."
           elif [ "$eval_result" = success ]; then
             # B1 (round 4 on #209, blocker): publication moved off `eval`
             # onto `publish`, which only runs once `eval` itself succeeds.
@@ -1935,7 +1957,7 @@ jobs:
           # unmodified summary; its own surrounding text already says
           # whether a human or the automation is expected to act).
           auto_summary=$(printf '%s' "$roster_summary" | sed \
-            "s/Nothing changes until a human merges it; the eval ran on the committed roster, as it always does\\./This proposal merges automatically once \`test\` passes on it (\`roster_mode: auto\`); the eval always runs on the committed roster, never on this proposal./")
+            "s/Nothing changes until a human merges it; the eval runs on the committed roster, as it always does\\./This proposal merges automatically once \`test\` passes on it (\`roster_mode: auto\`); the eval always runs on the committed roster, never on this proposal./")
 
           # >>> policy-read (B1.1, round 2; N9, round 3 on #209): the
           # auto/proposal decision comes ONLY from the committed policy,
@@ -2065,11 +2087,13 @@ jobs:
               || compare_json=""
             # Should-fix 1 (round 3 on #209): the single commit's own
             # message and author must equal exactly what the propose step
-            # commits with — never trusted as free-form text otherwise, a
-            # hostile `render_roster_yaml.py` (or a commit-msg hook) inside
-            # the `eval` job's untrusted workspace could plant arbitrary
-            # content (a closing keyword, an `@mention`) into a commit this
-            # job then merges automatically.
+            # commits with — never accepted as free-form text otherwise. The
+            # propose step (and `render_roster_yaml.py`, and any commit-msg
+            # hook) runs in the trusted `roster` job, not in the `eval`
+            # job's agent workspace; this is defence in depth at the job
+            # boundary, so a closing keyword or an `@mention` cannot ride
+            # into a commit this job then merges automatically even if that
+            # trusted job's output were somehow wrong.
             ok=$(printf '%s' "$compare_json" | python3 -c '
           import json
           import os
