@@ -33,6 +33,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -60,15 +61,24 @@ import render_roster_yaml  # noqa: E402
 #: The variables a scrubbed probe environment may carry. `LC_CTYPE` is not
 #: the probe's: Python sets it itself at start-up when the locale is `C`
 #: (PEP 538 coercion), and the wrapper that records the environment is Python.
+#: The two switches the probe sets on purpose (#203 probe round 1, F5): no
+#: auto-update, no nonessential traffic. Fixed values, never a credential —
+#: and the only names allowed past `CREDENTIAL_NAME` below, by exact name.
+PROBE_FLAGS = {"DISABLE_AUTOUPDATER": "1",
+               "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
 PROBE_ENV_ALLOWED = {"PATH", "HOME", "LANG", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
-                     "XDG_DATA_HOME", "XDG_STATE_HOME", "LC_CTYPE"}
+                     "XDG_DATA_HOME", "XDG_STATE_HOME", "LC_CTYPE", *PROBE_FLAGS}
 CREDENTIAL_NAME = re.compile(r"^(ANTHROPIC_|CLAUDE_|AWS_|GOOGLE_)|TOKEN|KEY",
                              re.IGNORECASE)
 
 
-class TestProbeScript(unittest.TestCase):
-    """`scripts/probe_model_defaults.py` (#203): the vendor defaults come
-    from the freshly installed CLI, probed with NO credential."""
+def credential_like(names) -> list[str]:
+    """Every credential-shaped name except the probe's own fixed flags."""
+    return sorted(n for n in names if CREDENTIAL_NAME.search(n) and n not in PROBE_FLAGS)
+
+
+class _ProbeFixture(unittest.TestCase):
+    """Runs `scripts/probe_model_defaults.py` against the hermetic fake."""
 
     #: What the fake resolves the shipped ladder's aliases to.
     RESOLVED = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5",
@@ -78,7 +88,7 @@ class TestProbeScript(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
-    def _wrapper(self, mode="simulate", *, dump=None, version=None):
+    def _wrapper(self, mode="simulate", *, dump=None, version=None, extra_env=None):
         """A `claude` that records the environment it was given (one JSON
         line per call) and then runs the fake in `mode`. The mode cannot
         reach the fake through the environment: the probe scrubs it."""
@@ -99,6 +109,7 @@ class TestProbeScript(unittest.TestCase):
             f"    sys.stdout.write({version!r})\n"
             "    sys.exit(0)\n"
             f"os.environ['FAKE_INIT_MODE'] = {mode!r}\n"
+            f"os.environ.update({dict(extra_env or {})!r})\n"
             f"os.execv(sys.executable, [sys.executable, {str(FAKE_CLAUDE_INIT)!r}]"
             " + sys.argv[1:])\n", encoding="utf-8")
         path.chmod(0o755)
@@ -118,6 +129,11 @@ class TestProbeScript(unittest.TestCase):
         document = (json.loads(out.read_text(encoding="utf-8"))
                     if out.is_file() else None)
         return done, document
+
+
+class TestProbeScript(_ProbeFixture):
+    """`scripts/probe_model_defaults.py` (#203): the vendor defaults come
+    from the freshly installed CLI, probed with NO credential."""
 
     def test_the_shipped_ladder_resolves_four_and_skips_mythos(self):
         done, doc = self._probe(self._wrapper())
@@ -208,7 +224,9 @@ class TestProbeScript(unittest.TestCase):
         for record in records:
             names = set(record["env"])
             self.assertLessEqual(names, PROBE_ENV_ALLOWED, names - PROBE_ENV_ALLOWED)
-            self.assertEqual([n for n in names if CREDENTIAL_NAME.search(n)], [])
+            self.assertEqual(credential_like(names), [])
+            for flag, value in PROBE_FLAGS.items():
+                self.assertEqual(record["env"].get(flag), value, flag)
             home = record["env"]["HOME"]
             self.assertNotEqual(home, env["HOME"])
             self.assertTrue(record["home_is_dir"])
@@ -236,16 +254,26 @@ class TestProbeScript(unittest.TestCase):
         self.assertEqual(env["HOME"], "/tmp/probe-home")
         self.assertEqual(env["LANG"], "C")
         self.assertLessEqual(set(env), PROBE_ENV_ALLOWED - {"LC_CTYPE"})
+        # F5 (#203 probe round 1): no auto-update, no nonessential traffic,
+        # and still nothing credential-like past those two fixed flags.
+        for flag, value in PROBE_FLAGS.items():
+            self.assertEqual(env.get(flag), value, flag)
+        self.assertEqual(credential_like(env), [])
+        self.assertNotIn("/c", env.values())
 
-    def test_a_missing_binary_writes_out_with_the_class_only(self):
+    def test_a_missing_binary_is_a_usage_error(self):
+        # F7 (#203 probe round 1): `--claude` is resolved once, up front; a
+        # binary that is not there is the caller's mistake, said plainly,
+        # and no document is written (eval.yml writes its own stand-in, so
+        # the roster still freezes every family — see
+        # TestWorkflowProbeFallbackDocument).
         missing = self.tmp / "no-such-claude"
         policy = self._policy(["opus", "sonnet"])
         done, doc = self._probe(missing, "--policy", str(policy))
-        self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(doc["errors"], {"opus": "FileNotFoundError",
-                                         "sonnet": "FileNotFoundError"})
-        self.assertIsNone(doc["harness_version"])
-        self.assertNotIn(str(self.tmp), done.stdout + done.stderr)
+        self.assertEqual(done.returncode, 2, done.stderr)
+        self.assertIsNone(doc)
+        self.assertIn("--claude", done.stderr)
+        self.assertIn("no executable", done.stderr)
 
     def test_the_harness_version_is_sanitised_first_line(self):
         policy = self._policy(["opus"])
@@ -594,10 +622,8 @@ class TestSeatedDefaultCanRetire(_RosterFixture):
             self.assertNotIn("previous arm `claude-opus-5-5` is in it", entry["reason"])
 
 
-class TestPreviewArmGetsTheExitCheck(_RosterFixture):
-    """F2(b) (#203 round 1): a previous arm NEWER than its tier's default is
-    no longer retired on sight — it gets rule 3's exit check. It still
-    earns no NEW seat."""
+class _PreviewFixture(_RosterFixture):
+    """A catalogue with a model newer than the opus default (`opus-5-6`)."""
 
     WEEKS = [f"2026-W{n:02d}" for n in range(33, 42)]
     NOW_OCT = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
@@ -618,6 +644,12 @@ class TestPreviewArmGetsTheExitCheck(_RosterFixture):
         if opus56:
             counts["claude-opus-5-6"] = {w: opus56 for w in self.WEEKS}
         return {"generated_at": generated_at, "weeks": [], "counts": counts}
+
+
+class TestPreviewArmGetsTheExitCheck(_PreviewFixture):
+    """F2(b) (#203 round 1): a previous arm NEWER than its tier's default is
+    no longer retired on sight — it gets rule 3's exit check. It still
+    earns no NEW seat."""
 
     def test_a_heavily_used_preview_arm_is_held_not_retired(self):
         # The reviewer's a2.py: ~28% usage must not retire it.
@@ -659,11 +691,12 @@ class TestPreviewArmGetsTheExitCheck(_RosterFixture):
 
 
 class TestNoCarriedDefaults(_RosterFixture):
-    """#203: the carried-defaults machinery is gone. A probe that fails is a
-    CLI that cannot run the eval either, so there is nothing to carry: the
-    committed roster keeps no `defaults:` block, a failed probe falls back
-    to the usage rules for every tier, and a block an older committed roster
-    still has is never read."""
+    """#203: the carried-defaults machinery is gone — the owner's decision:
+    nothing is carried from one run to the next. The committed roster keeps
+    no `defaults:` block, and a block an older committed roster still has is
+    never read. A failed probe FREEZES its families for that one run
+    (#203 probe round 1; see TestFailedProbeFreezesItsFamily), which is not
+    a carry: nothing about the failure outlives the run."""
 
     OLD_BLOCK = {"source": "https://code.claude.com/docs/en/model-config.md",
                  "fetched_at": "2026-09-27T10:00:00Z",
@@ -674,15 +707,21 @@ class TestNoCarriedDefaults(_RosterFixture):
                        "fable": "no-init", "mythos": "no-init"}}
 
     def test_a_failed_probe_never_reads_a_committed_defaults_block(self):
+        with_block = {**self.PREVIOUS, "defaults": copy.deepcopy(self.OLD_BLOCK)}
+        # No document at all: byte for byte the roster without one.
         baseline, _ = self._compute()
-        for doc in (self.DOWN, None):
-            with self.subTest(doc=bool(doc)):
-                result, _ = self._compute(defaults=doc, previous={
-                    **self.PREVIOUS, "defaults": copy.deepcopy(self.OLD_BLOCK)})
-                self.assertNotIn("defaults", result)
-                self.assertNotIn("vendor default", json.dumps(result))
-                self.assertEqual(json.dumps(result, sort_keys=True),
-                                 json.dumps(baseline, sort_keys=True))
+        result, _ = self._compute(defaults=None, previous=with_block)
+        self.assertEqual(json.dumps(result, sort_keys=True),
+                         json.dumps(baseline, sort_keys=True))
+        # A failed probe: frozen, and the old block still decides nothing —
+        # the same roster the same failure computes without the block.
+        failed, _ = self._compute(defaults=self.DOWN)
+        result, _ = self._compute(defaults=self.DOWN, previous=with_block)
+        self.assertNotIn("defaults", result)
+        self.assertNotIn("vendor default for the", json.dumps(result))
+        self.assertNotIn("claude-opus-5-5", self._arms(result))
+        self.assertEqual(json.dumps(result, sort_keys=True),
+                         json.dumps(failed, sort_keys=True))
 
     def test_the_rendered_roster_has_no_defaults_block(self):
         result, _ = self._compute(defaults=self.DEFAULTS)
@@ -728,8 +767,11 @@ class TestNoCarriedDefaults(_RosterFixture):
 
 
 class TestUnresolvedDefaultsFallBack(_RosterFixture):
-    """Every way a default can fail to resolve leaves its tier on today's
-    rule — the cooling-off included — and says so in a warning."""
+    """Every way a default can fail to resolve FREEZES that family for the
+    run (#203 probe round 1): its previous arms are held, nothing of it is
+    newly seated — the cooling-off exclusion included — and a warning says
+    so. (The class name is historical: it used to fall back to the usage
+    rules, and a one-week probe failure then flipped seats.)"""
 
     @staticmethod
     def _policy(**overrides):
@@ -740,11 +782,18 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
         return _RosterFixture._policy(**{"cooling_off_days": 7, **overrides})
 
     def _assert_todays_opus_rule(self, result):
-        # opus-5 by usage; opus-5-5 a day old, so the cooling-off excludes it.
+        # opus-5 is a previous arm: held by the freeze, not by usage.
+        # opus-5-5 gets no new seat, and the freeze — not the cooling-off —
+        # is the reason given.
         self.assertIn("claude-opus-5", self._arms(result))
+        self.assertIn("vendor default for `opus` unknown this run",
+                      self._reason(result, "claude-opus-5"))
         self.assertNotIn("claude-opus-5-5", self._arms(result))
-        self.assertIn("cooling-off", self._reason(result, "claude-opus-5-5", "excluded"))
-        self.assertNotIn("opus", result["defaults"]["resolved"])
+        self.assertIn("vendor default for `opus` unknown this run",
+                      self._reason(result, "claude-opus-5-5", "excluded"))
+        self.assertIn("opus", result["defaults_failed"])
+        if "defaults" in result:
+            self.assertNotIn("opus", result["defaults"]["resolved"])
 
     def test_an_id_that_is_not_available(self):
         defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-9",
@@ -891,32 +940,51 @@ class TestPreflightWordingAtAPositiveCoolingOff(_RosterFixture):
 
 
 class TestNoDefaultsIsByteForByteUnchanged(_RosterFixture):
-    """A probe that failed entirely — or no probe at all — is the pre-#202
-    roster, byte for byte (#203: nothing is carried instead)."""
+    """No probe document at all is the pre-#202 roster, byte for byte. A
+    document that failed entirely is NOT (#203 probe round 1): it freezes
+    every family it could not vouch for — see
+    TestFailedProbeFreezesItsFamily."""
 
     FAILED = {"probed_at": "2026-09-27T10:00:00Z", "harness_version": None,
               "defaults": {}, "skipped": [],
               "errors": {"haiku": "timeout", "sonnet": "timeout",
                          "opus": "timeout", "fable": "timeout", "mythos": "timeout"}}
 
-    def test_absent_empty_and_failed_docs_change_nothing(self):
+    def test_no_doc_changes_nothing(self):
         baseline, _ = self._compute()
-        for doc in (None, {}, self.FAILED,
+        result, warnings = self._compute(defaults=None)
+        self.assertEqual(json.dumps(result, sort_keys=True),
+                         json.dumps(baseline, sort_keys=True))
+        self.assertNotIn("defaults_failed", result)
+        self.assertEqual(warnings, [])
+
+    def test_empty_and_failed_docs_freeze_rather_than_change_nothing(self):
+        baseline, _ = self._compute()
+        # Without a document, the usage rules seat opus-5-5 as newest in a
+        # qualifying tier; every failed document must hold the opus tier
+        # where it stands instead.
+        self.assertIn("claude-opus-5-5", self._arms(baseline))
+        for doc in ({}, self.FAILED,
                     {**self.DEFAULTS, "defaults": {}},
                     {**self.FAILED, "errors": {"opus": "FileNotFoundError"}},
                     {**self.DEFAULTS, "defaults": None},
                     "not a mapping"):
             with self.subTest(doc=str(doc)[:40]):
                 result, _ = self._compute(defaults=doc)
-                self.assertEqual(json.dumps(result, sort_keys=True),
-                                 json.dumps(baseline, sort_keys=True))
+                self.assertEqual(sorted(self._arms(result)),
+                                 ["claude-opus-5", "claude-sonnet-5"])
+                self.assertIn("opus", result["defaults_failed"])
+                self.assertIn("sonnet", result["defaults_failed"])
+                self.assertEqual(result["retired_since_last"], [])
 
     def test_a_failed_probe_says_so_in_one_warning(self):
         _, warnings = self._compute(defaults=self.FAILED)
         said = [w for w in warnings if "model defaults" in w]
         self.assertEqual(len(said), 1, warnings)
         self.assertIn("timeout", said[0])
-        self.assertIn("usage and newest-in-tier rules", said[0])
+        self.assertIn("held", said[0])
+        self.assertIn("no seat changes", said[0])
+        self.assertNotIn("usage and newest-in-tier rules", said[0])
 
 
 class TestSupersededExitWeeksPolicy(unittest.TestCase):
@@ -1020,8 +1088,9 @@ class TestWorkflowProbesDefaults(unittest.TestCase):
                   "ACTIONS_RUNTIME_TOKEN": "t", "CLAUDE_CODE_USE_BEDROCK": "1"}
         with mock.patch.dict(os.environ, parent, clear=True):
             env = probe_model_defaults.scrubbed_env(Path("/tmp/probe-home"))
-        self.assertEqual([k for k in env if CREDENTIAL_NAME.search(k)], [])
+        self.assertEqual(credential_like(env), [])
         self.assertNotIn("bearer", json.dumps(env))
+        self.assertNotIn("CLAUDE_CODE_USE_BEDROCK", env)
 
 
 class TestRosterOnlyDispatch(unittest.TestCase):
@@ -1325,9 +1394,14 @@ class TestRound2Nits(_RosterFixture):
                 lines = [ln for ln in stderr.splitlines() if "model defaults" in ln]
                 self.assertEqual(len(lines), 1, stderr)
                 self.assertIn("unreadable", lines[0])
-                self.assertIn("usage and newest-in-tier rules", lines[0])
+                self.assertIn("no seat changes", lines[0])
                 self.assertNotIn("carried", stderr)
                 self.assertNotIn("defaults", out)
+                # F1/F3 (#203 probe round 1): unreadable freezes every
+                # family on the ladder, and the published roster says so.
+                self.assertEqual(out["defaults_document_failed"], "unreadable")
+                self.assertEqual(set(out["defaults_failed"]),
+                                 set(roster.tier_words(self._policy())))
 
     def test_a_junk_harness_version_publishes_an_unknown_version(self):
         for junk in ("bad ::error:: `version`", 5, None, "x" * 200):
@@ -1342,6 +1416,535 @@ class TestRound2Nits(_RosterFixture):
         result, _ = self._compute(defaults={**self.DEFAULTS, "probed_at": "yesterday"})
         self.assertIsNone(result["defaults"]["probed_at"])
         self.assertIn("probed at an unknown time", self._reason(result, "claude-opus-5-5"))
+
+
+
+# --- #203 probe round 1 -------------------------------------------------------
+
+
+def _s5_usage(n):
+    """The reviewer's S5 fleet: the opus tier at a steady ~5% (between the
+    2% exit and 10% entry bars), switching from 5 to 5.5 in W40."""
+    return {"claude-sonnet-5": 900, "claude-haiku-4-5": 50, "claude-fable-5-1": 0,
+            "claude-opus-5": 0 if n >= 40 else 50,
+            "claude-opus-5-5": 50 if n >= 40 else 0}
+
+
+class TestFailedProbeFreezesItsFamily(_WeeklyLoop):
+    """F1 + F2 (#203 probe round 1): a family whose vendor default the probe
+    could not establish is FROZEN for that run — its previous arms keep
+    their seats, none of its models is newly seated, none is retired. Per
+    run only: nothing is carried to the next (the owner's decision)."""
+
+    HELD = ("vendor default for `opus` unknown this run (probe: timeout); held, "
+            "no seat changes on a failed probe")
+
+    def _failing(self, weeks, errors, defaults=None):
+        def docs(k):
+            doc = self._docs(k)
+            if k in weeks:
+                doc["defaults"] = dict(defaults or {})
+                doc["errors"] = dict(errors)
+            return doc
+        return docs
+
+    def test_flip_a_one_week_opus_failure_changes_no_opus_seat(self):
+        # The reviewer's flip.py: week 2's opus probe times out. Without the
+        # freeze the tier fell back to the usage rules, retired the seated
+        # default that week, and never seated it again.
+        out, _ = self._loop(_s5_usage, 6, self._failing(
+            {2}, {"opus": "timeout"}, {"sonnet": "claude-sonnet-5"}))
+        self.assertEqual(out[2]["result"]["retired_since_last"], [])
+        self.assertEqual(out[2]["result"]["added_since_last"], [])
+        week1 = self._arms(out[1]["result"])
+        self.assertIn("claude-opus-5-5", week1)
+        for k in range(2, 6):
+            self.assertEqual(self._arms(out[k]["result"]), week1, k)
+        self.assertEqual(self._reason(out[2]["result"], "claude-opus-5-5"), self.HELD)
+        self.assertEqual(out[2]["result"]["defaults_failed"], {"opus": "timeout"})
+        # The next week probes cleanly and decides as usual: nothing carried.
+        self.assertNotIn("defaults_failed", out[3]["result"])
+        self.assertIn("vendor default for the opus tier",
+                      self._reason(out[3]["result"], "claude-opus-5-5"))
+
+    def test_total_every_alias_failing_holds_every_previous_arm(self):
+        # The reviewer's total.py: every alias fails in week 2.
+        errors = {a: "no-init" for a in ("opus", "sonnet", "haiku", "fable")}
+        out, _ = self._loop(_s5_usage, 3, self._failing({2}, errors))
+        week2 = out[2]["result"]
+        self.assertEqual(week2["retired_since_last"], [])
+        self.assertEqual(week2["added_since_last"], [])
+        self.assertEqual(self._arms(week2), self._arms(out[1]["result"]))
+        self.assertEqual(week2["defaults_failed"], errors)
+        self.assertEqual(week2["defaults_document_failed"], "no-defaults")
+        for arm in week2["arms"]:
+            self.assertIn("unknown this run (probe: no-init)", arm["reason"])
+        # Nothing of a frozen family is newly seated: haiku and fable say why.
+        for model_id in ("claude-haiku-4-5", "claude-fable-5-1"):
+            self.assertIn("no new seat on a failed probe",
+                          self._reason(week2, model_id, "excluded"))
+        self.assertEqual(week2["proposal"]["status"], "same")
+
+    def test_a_skipped_family_is_not_frozen(self):
+        # mythos is `skipped` (not an alias of this CLI), so it was never a
+        # default to fail: a new mythos model is seated by the usage rules
+        # exactly as without a document.
+        models = list(self.BASE) + [self._model(
+            "claude-mythos-1", "Claude Mythos 1", "2026-09-20T00:00:00Z")]
+
+        def usage(n):
+            return {**_s5_usage(n), "claude-mythos-1": 400}
+
+        errors = {a: "no-init" for a in ("opus", "sonnet", "haiku", "fable")}
+        out, _ = self._loop(usage, 1, self._failing({0}, errors), models=models)
+        result = out[0]["result"]
+        self.assertIn("claude-mythos-1", self._arms(result))
+        self.assertIn("carries", self._reason(result, "claude-mythos-1"))
+        self.assertNotIn("mythos", result["defaults_failed"])
+        # Recorded as an error instead, mythos is frozen like the rest.
+        out, _ = self._loop(usage, 1, self._failing(
+            {0}, {**errors, "mythos": "no-init"}), models=models)
+        self.assertNotIn("claude-mythos-1", self._arms(out[0]["result"]))
+        self.assertIn("mythos", out[0]["result"]["defaults_failed"])
+
+    def test_an_unreadable_document_freezes_every_family(self):
+        warnings: list[str] = []
+        result = roster.compute_roster(
+            models_doc=self._models_doc(), census_doc=self._census(),
+            policy=self._policy(), previous=copy.deepcopy(self.PREVIOUS),
+            now=self.NOW, warn=warnings.append, defaults_doc=None,
+            defaults_problem="defaults.json is present but unreadable (ValueError)")
+        self.assertEqual(result["defaults_document_failed"], "unreadable")
+        self.assertEqual(result["defaults_failed"],
+                         {w: "unreadable" for w in roster.tier_words(self._policy())})
+        self.assertEqual(sorted(self._arms(result)), ["claude-opus-5", "claude-sonnet-5"])
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_a_frozen_family_retires_nothing_even_under_the_exit_bar(self):
+        # A previous opus arm at 0% for eight weeks would retire by rule 3;
+        # frozen, it is held.
+        weeks = [f"2026-W{n:02d}" for n in range(36, 50)]
+        census = {"generated_at": "2026-12-07T06:00:00Z", "weeks": [], "counts": {
+            "claude-sonnet-5": {w: 900 for w in weeks},
+            "claude-haiku-4-5": {w: 100 for w in weeks}}}
+        previous = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                              {"id": "claude-opus-5-5"}]}
+        doc = {**self.DEFAULTS, "defaults": {"sonnet": "claude-sonnet-5"},
+               "errors": {"opus": "timeout"}}
+        result, _ = self._compute(defaults=doc, previous=previous, census=census,
+                                  now=datetime(2026, 12, 8, 12, tzinfo=timezone.utc))
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        self.assertEqual(result["retired_since_last"], [])
+        self.assertEqual(self._reason(result, "claude-opus-5-5"), self.HELD)
+
+    def test_a_frozen_family_keeps_a_snapshot_arm_on_its_collapsed_alias(self):
+        # A previous arm published under a dated id whose undated alias the
+        # catalogue now lists is the same seat, renamed — not a new one.
+        models = self._models_doc(extra=[self._model(
+            "claude-opus-5-20260401", "Claude Opus 5", "2026-04-01T00:00:00Z")])
+        previous = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                              {"id": "claude-opus-5-20260401"}]}
+        doc = {**self.DEFAULTS, "defaults": {"sonnet": "claude-sonnet-5"},
+               "errors": {"opus": "timeout"}}
+        result, _ = self._compute(defaults=doc, previous=previous, models=models)
+        self.assertIn("claude-opus-5", self._arms(result))
+        self.assertNotIn("claude-opus-5-5", self._arms(result))
+
+    def test_any_unresolved_alias_freezes_its_family(self):
+        # An id the catalogue does not list, or one of another family: the
+        # default is still unknown this run, so the family is frozen, with a
+        # class naming why.
+        for defaults, cls in (({"opus": "claude-opus-9"}, "not-available"),
+                              ({"opus": "claude-sonnet-5"}, "wrong-tier")):
+            with self.subTest(cls=cls):
+                doc = {**self.DEFAULTS, "defaults": {**defaults,
+                                                     "sonnet": "claude-sonnet-5"}}
+                result, _ = self._compute(defaults=doc)
+                self.assertEqual(result["defaults_failed"], {"opus": cls})
+                self.assertNotIn("claude-opus-5-5", self._arms(result))
+                self.assertIn("claude-opus-5", self._arms(result))
+
+    def test_a_clean_probe_publishes_no_failure_keys(self):
+        result, _ = self._compute(defaults=self.DEFAULTS)
+        self.assertNotIn("defaults_failed", result)
+        self.assertNotIn("defaults_document_failed", result)
+
+
+class TestPreviewNotSeatedOnAFailedProbe(_PreviewFixture):
+    """F2 (#203 probe round 1), the reviewer's preview.py: a probe that
+    fails for one week must not seat the newer-than-default model, or the
+    next week's clean probe retires it again — a flip on no evidence."""
+
+    def test_preview_a_failed_week_adds_nothing_so_nothing_flips_back(self):
+        prev = {**self.PREV, "arms": [{"id": "claude-opus-5-5"},
+                                      {"id": "claude-sonnet-5"}]}
+        failed = {**self.D, "defaults": {"sonnet": "claude-sonnet-5"},
+                  "errors": {"opus": "timeout"}}
+        r1, _ = self._compute(defaults=failed, previous=prev, models=self._models(),
+                              census=self._census(), now=self.NOW_OCT)
+        self.assertEqual(r1["added_since_last"], [])
+        self.assertNotIn("claude-opus-5-6", self._arms(r1))
+        self.assertIn("no new seat on a failed probe",
+                      self._reason(r1, "claude-opus-5-6", "excluded"))
+        prev2 = {**prev, "arms": [{"id": a["id"]} for a in r1["arms"]]}
+        r2, _ = self._compute(defaults=self.D, previous=prev2, models=self._models(),
+                              census=self._census(), now=self.NOW_OCT)
+        self.assertEqual(r2["retired_since_last"], [])
+        self.assertEqual(self._arms(r2), self._arms(r1))
+
+
+class TestFailedProbeIsLoud(_WeeklyLoop):
+    """F3 (#203 probe round 1): the failure is in the published roster and
+    near the top of the summary, where the reviewer looks."""
+
+    def _failed(self, **overrides):
+        doc = {**self.DEFAULTS, "defaults": {"sonnet": "claude-sonnet-5"},
+               "errors": {"opus": "timeout", "fable": "no-init"}}
+        doc.update(overrides)
+        return self._compute(defaults=doc)[0]
+
+    def test_the_summary_names_the_frozen_families_near_the_top(self):
+        summary = roster.render_summary(self._failed())
+        head = summary.splitlines()[:4]
+        line = next((ln for ln in head if "probe" in ln), None)
+        self.assertIsNotNone(line, head)
+        self.assertIn("`fable` (no-init)", line)
+        self.assertIn("`opus` (timeout)", line)
+        self.assertIn("held", line)
+        self.assertNotIn("::", summary)
+
+    def test_a_whole_document_failure_names_its_class(self):
+        result = self._compute(defaults={**self.DEFAULTS, "defaults": {},
+                                         "errors": {}})[0]
+        self.assertEqual(result["defaults_document_failed"], "no-defaults")
+        head = "\n".join(roster.render_summary(result).splitlines()[:4])
+        self.assertIn("no-defaults", head)
+
+    def test_the_total_week_summary_is_loud(self):
+        errors = {a: "no-init" for a in ("opus", "sonnet", "haiku", "fable")}
+
+        def docs(k):
+            doc = self._docs(k)
+            if k == 2:
+                doc["defaults"], doc["errors"] = {}, dict(errors)
+            return doc
+
+        out, _ = self._loop(_s5_usage, 3, docs)
+        summary = roster.render_summary(out[2]["result"])
+        self.assertIn("probe failed", summary.lower())
+        for alias in errors:
+            self.assertIn(f"`{alias}` (no-init)", summary)
+
+    def test_a_clean_probe_adds_no_line(self):
+        summary = roster.render_summary(self._compute(defaults=self.DEFAULTS)[0])
+        self.assertNotIn("probe failed", summary.lower())
+
+
+class TestProposeStepOnAFailedProbe(unittest.TestCase):
+    """F3 (#203 probe round 1): eval.yml's "Propose a roster change" step
+    warns with a fixed text when the computed roster carries
+    `defaults_failed`, and keeps the tracking issue open even on "same"."""
+
+    START = "# >>> defaults-failed note"
+    END = "# <<< defaults-failed note"
+    WARNING = "::warning::vendor-default probe failed for {n} families; their seats were held"
+    MARKER = "<!-- skills-evals:roster-proposal -->"
+
+    def setUp(self):
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        self.run_body = next(s for s in doc["jobs"]["eval"]["steps"]
+                             if s.get("name") == "Propose a roster change")["run"]
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _fragment(self):
+        self.assertIn(self.START, self.run_body)
+        return self.run_body[self.run_body.index(self.START):self.run_body.index(self.END)]
+
+    def _latest(self, payload):
+        path = self.tmp / "latest.json"
+        path.write_text(payload if isinstance(payload, str) else json.dumps(payload),
+                        encoding="utf-8")
+        return path
+
+    def _run_fragment(self, payload):
+        script = ("set -euo pipefail\n" + f"computed={str(self._latest(payload))!r}\n"
+                  + self._fragment()
+                  + '\nprintf "COUNT=%s\\n" "$defaults_failed"'
+                  + '\nprintf "NOTE=%s\\n" "$probe_note"\n')
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                              timeout=30, env={"PATH": os.environ.get("PATH", "")})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_a_failed_probe_warns_with_the_fixed_text(self):
+        out = self._run_fragment({"proposal": {"status": "same"},
+                                  "defaults_failed": {"opus": "timeout",
+                                                      "sonnet": "no-init"}})
+        self.assertIn(self.WARNING.format(n=2) + "\n", out)
+        self.assertIn("COUNT=2\n", out)
+        self.assertIn("NOTE=**The vendor-default probe failed", out)
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_no_failure_or_a_junk_document_warns_nothing(self):
+        for payload in ({"proposal": {"status": "same"}},
+                        {"defaults_failed": ["opus"]},
+                        {"defaults_failed": "::error::x"},
+                        "{not json", "[1, 2]"):
+            with self.subTest(payload=str(payload)[:30]):
+                out = self._run_fragment(payload)
+                self.assertNotIn("::warning::", out)
+                self.assertIn("COUNT=0\n", out)
+                self.assertIn("NOTE=\n", out)
+
+    def test_the_fragment_interpolates_nothing(self):
+        fragment = self._fragment()
+        self.assertNotIn("${{", fragment)
+        # The warning's text is fixed: the only expansion in it is the count
+        # the fragment itself validated as digits.
+        line = next(ln for ln in fragment.splitlines() if "::warning::" in ln)
+        self.assertEqual(re.findall(r"\$\{?(\w+)", line), ["defaults_failed"])
+
+    def _run_step(self, latest, issues):
+        """The whole step body with a stub `gh`, from the tracker listing to
+        the "same" branch — which is as far as a "same" run goes."""
+        runner = self.tmp / "runner"
+        (runner / "roster").mkdir(parents=True)
+        (runner / "roster-inputs").mkdir()
+        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
+        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
+                                                            encoding="utf-8")
+        stub = self.tmp / "bin"
+        stub.mkdir()
+        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
+        gh = stub / "gh"
+        gh.write_text(
+            "#!/usr/bin/env bash\n"
+            f"printf '%s\\n' \"$*\" >> {str(self.tmp / 'gh.log')!r}\n"
+            f"if [ \"$1\" = api ]; then cat {str(self.tmp / 'issues.json')!r}; exit 0; fi\n"
+            "prev=''\n"
+            "for arg in \"$@\"; do\n"
+            f"  if [ \"$prev\" = --body-file ]; then cat \"$arg\" > {str(self.tmp / 'body.md')!r}; fi\n"
+            "  prev=\"$arg\"\n"
+            "done\n", encoding="utf-8")
+        gh.chmod(0o755)
+        event = self.tmp / "event.json"
+        event.write_text(json.dumps({"schedule": "0 7 * * 1"}), encoding="utf-8")
+        env = {"PATH": f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
+               "RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
+               "REPO": "example/skills-evals", "RUN_ID": "1",
+               "SERVER_URL": "https://github.example.com",
+               "GITHUB_TOKEN": "t", "GH_TOKEN": "t"}
+        done = subprocess.run(["bash", "-c", self.run_body], capture_output=True,
+                              text=True, timeout=60, env=env, cwd=self.tmp)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        log = (self.tmp / "gh.log").read_text(encoding="utf-8").splitlines()
+        body = ((self.tmp / "body.md").read_text(encoding="utf-8")
+                if (self.tmp / "body.md").exists() else None)
+        return done.stdout, [ln for ln in log if not ln.startswith("api ")], body
+
+    def _tracker(self):
+        return [{"number": 7, "user": {"login": "github-actions[bot]", "type": "Bot"},
+                 "body": self.MARKER}]
+
+    FAILED = {"proposal": {"status": "same", "changes": []},
+              "defaults_failed": {"opus": "timeout"}}
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_same_with_a_failed_probe_opens_the_issue(self):
+        out, calls, body = self._run_step(self.FAILED, [])
+        self.assertIn(self.WARNING.format(n=1), out)
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("issue create"), calls)
+        self.assertIn("probe failed", calls[0])
+        self.assertTrue(body.startswith(self.MARKER), body)
+        self.assertIn("The vendor-default probe failed for 1 families", body)
+        self.assertIn("### Model roster", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_same_with_a_failed_probe_keeps_an_open_issue_open(self):
+        out, calls, body = self._run_step(self.FAILED, self._tracker())
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("issue edit 7"), calls)
+        self.assertFalse(any(c.startswith("issue close") for c in calls), calls)
+        self.assertIn("probe failed", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_same_with_a_clean_probe_still_closes_the_issue(self):
+        out, calls, _ = self._run_step({"proposal": {"status": "same", "changes": []}},
+                                       self._tracker())
+        self.assertNotIn("::warning::", out)
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("issue close 7"), calls)
+
+    def test_the_differs_bodies_carry_the_probe_note(self):
+        tail = self.run_body[self.run_body.index(self.END):]
+        self.assertGreaterEqual(tail.count('"$probe_note"'), 3)
+
+
+class TestWorkflowProbeFallbackDocument(unittest.TestCase):
+    """A probe that exits non-zero writes no document; the roster step then
+    writes an empty one in its place, so the roster freezes every family
+    rather than reading "no probe at all" (F1 + F7, #203 probe round 1)."""
+
+    def test_a_failed_probe_leaves_a_document_that_freezes(self):
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        script = next(s for s in doc["jobs"]["eval"]["steps"]
+                      if "roster" in (s.get("name") or "").lower())["run"]
+        line = next(ln.strip() for ln in script.splitlines()
+                    if "scripts/probe_model_defaults.py" in ln
+                    and not ln.strip().startswith("#"))
+        self.assertIn("|| printf '{}\\n' > \"$work/defaults.json\"", line)
+        self.assertTrue(line.endswith("|| true"), line)
+        result = roster.compute_roster(
+            models_doc=_RosterFixture._models_doc(), census_doc=_RosterFixture._census(),
+            policy=_RosterFixture._policy(), previous=copy.deepcopy(_RosterFixture.PREVIOUS),
+            now=_RosterFixture.NOW, warn=lambda _m: None, defaults_doc={})
+        self.assertEqual(result["defaults_document_failed"], "no-defaults")
+
+
+class TestProbeKillsItsProcessGroup(_ProbeFixture):
+    """F4 (#203 probe round 1): whatever the leader does, `_stop` SIGKILLs
+    the whole process group — a child that ignores SIGTERM included."""
+
+    def test_a_sigterm_ignoring_child_in_the_group_is_killed(self):
+        pidfile = self.tmp / "child.pid"
+        wrapper = self._wrapper("init-orphan-child",
+                                extra_env={"FAKE_INIT_PIDFILE": str(pidfile)})
+        policy = self._policy(["opus"])
+
+        def gone(pid):
+            try:
+                os.kill(pid, 0)
+            except ProcessLookupError:
+                return True
+            try:  # reparented and killed but not yet reaped: a zombie is gone
+                stat = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+                return stat.rsplit(")", 1)[1].split()[0] in ("Z", "X")
+            except OSError:
+                return True
+
+        def reap():
+            if pidfile.exists():
+                with contextlib.suppress(ProcessLookupError, ValueError):
+                    os.kill(int(pidfile.read_text(encoding="utf-8")), 9)
+
+        self.addCleanup(reap)
+        done, doc = self._probe(wrapper, "--policy", str(policy), "--timeout", "120",
+                                timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], {"opus": self.RESOLVED["opus"]})
+        pid = int(pidfile.read_text(encoding="utf-8"))
+        # A short bounded wait on process state — the one sleep here, and
+        # it is in the test, not in product code: SIGKILL delivery to a
+        # reparented process is asynchronous.
+        for _ in range(100):
+            if gone(pid):
+                break
+            time.sleep(0.05)
+        self.assertTrue(gone(pid), f"the group child {pid} survived the probe")
+
+
+class TestProbeResolvesClaude(_ProbeFixture):
+    """F7 (#203 probe round 1): `--claude` is resolved once, in main(), with
+    `shutil.which` and then made absolute — so a relative path means what it
+    meant in the caller's directory, not in the probe's temporary HOME."""
+
+    def test_a_relative_claude_path_works(self):
+        wrapper = self._wrapper()
+        out = self.tmp / "defaults.json"
+        done = subprocess.run(
+            [sys.executable, str(PROBE), "--claude", f"./{wrapper.name}",
+             "--policy", str(self._policy(["opus"])), "--out", str(out)],
+            capture_output=True, text=True, timeout=120, cwd=self.tmp)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(doc["defaults"], {"opus": self.RESOLVED["opus"]})
+        self.assertEqual(doc["harness_version"], FAKE_VERSION_LINE)
+
+    def test_a_bare_name_resolves_on_path(self):
+        wrapper = self._wrapper()
+        env = dict(os.environ, PATH=f"{self.tmp}{os.pathsep}{os.environ.get('PATH', '')}")
+        done, doc = self._probe(wrapper.name, "--policy", str(self._policy(["opus"])),
+                                env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], {"opus": self.RESOLVED["opus"]})
+
+
+class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
+    """F6 (#203 probe round 1): an undated id the catalogue does not list
+    maps onto its ONE dated `<id>-YYYYMMDD`, mirroring the dated->undated
+    collapse; none is "not available", two or more is ambiguous — and both
+    of those freeze the family (F1)."""
+
+    def _catalogue(self, *dated):
+        return self._models_doc(drop=("claude-opus-5-5",), extra=[
+            self._model(i, "x", "2026-09-26T12:00:00Z") for i in dated])
+
+    def test_one_dated_candidate_resolves(self):
+        # The reviewer's snap.py, first case.
+        result, warnings = self._compute(
+            defaults=self.DEFAULTS, models=self._catalogue("claude-opus-5-5-20260926"))
+        self.assertEqual(result["defaults"]["resolved"]["opus"],
+                         "claude-opus-5-5-20260926")
+        self.assertEqual(result["defaults"]["unresolved"], [])
+        self.assertIn("claude-opus-5-5-20260926", self._arms(result))
+        self.assertIn("vendor default for the opus tier",
+                      self._reason(result, "claude-opus-5-5-20260926"))
+        self.assertNotIn("defaults_failed", result)
+
+    def test_no_dated_candidate_is_not_available(self):
+        result, _ = self._compute(defaults=self.DEFAULTS, models=self._catalogue())
+        self.assertEqual(result["defaults_failed"], {"opus": "not-available"})
+        self.assertIn("not an available model",
+                      result["defaults"]["unresolved"][0]["reason"])
+
+    def test_two_dated_candidates_are_ambiguous_and_freeze(self):
+        result, warnings = self._compute(defaults=self.DEFAULTS, models=self._catalogue(
+            "claude-opus-5-5-20260926", "claude-opus-5-5-20261001"))
+        self.assertEqual(result["defaults_failed"], {"opus": "ambiguous-snapshot"})
+        self.assertNotIn("opus", result["defaults"]["resolved"])
+        why = result["defaults"]["unresolved"][0]["reason"]
+        self.assertIn("2 dated snapshots", why)
+        self.assertEqual(sorted(self._arms(result)), ["claude-opus-5", "claude-sonnet-5"])
+
+    def test_a_dated_id_of_another_base_is_not_a_candidate(self):
+        # `claude-opus-5-20260101` is a snapshot of opus-5, not of opus-5-5.
+        result, _ = self._compute(defaults=self.DEFAULTS, models=self._catalogue(
+            "claude-opus-5-20260101"))
+        self.assertEqual(result["defaults_failed"], {"opus": "not-available"})
+
+
+class TestNetworkWording(unittest.TestCase):
+    """F5 (#203 probe round 1): the real CLI makes unauthenticated TLS
+    connections before and after init; the docs must not say nothing is
+    sent, and the "cannot run either" claim was false."""
+
+    FILES = ("README.md", "DESIGN.md",
+             "docs/decisions/0002-roster-follows-vendor-defaults.md",
+             "scripts/probe_model_defaults.py", ".github/workflows/eval.yml",
+             "evals/roster-policy.yml", "harness/roster.py")
+    STALE = ("nothing is sent", "sends nothing", "before it can try the api",
+             "never left to try the api", "cannot run either",
+             "eval cannot run", "carries nothing over")
+
+    def test_no_stale_claim_survives(self):
+        for rel in self.FILES:
+            flat = " ".join((REPO_ROOT / rel).read_text(encoding="utf-8").lower().split())
+            flat = re.sub(r"\s*#\s*", " ", flat)
+            for stale in self.STALE:
+                with self.subTest(file=rel, stale=stale):
+                    self.assertNotIn(stale, flat)
+
+    def test_the_docs_say_what_is_true_instead(self):
+        for rel in ("README.md", "DESIGN.md",
+                    "docs/decisions/0002-roster-follows-vendor-defaults.md",
+                    "scripts/probe_model_defaults.py"):
+            flat = " ".join((REPO_ROOT / rel).read_text(encoding="utf-8").split())
+            with self.subTest(file=rel):
+                self.assertIn("no credential", flat)
+                self.assertIn("frozen", flat.lower())
 
 
 if __name__ == "__main__":

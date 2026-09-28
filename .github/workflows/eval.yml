@@ -478,12 +478,15 @@ jobs:
       # resolves to, asked of the Claude Code CLI the install step above just
       # put on the runner at the npm latest, by scripts/probe_model_defaults.py.
       # It runs before the bearer is exported, and it scrubs the CLI's
-      # environment itself (PATH, a fresh temporary HOME, LANG=C and nothing
-      # else), so the probe carries no credential and sends nothing to a
-      # model: it reads the init event and terminates the CLI. It never fails
-      # the step. A probe that fails means the CLI is broken, and the eval
-      # cannot run either; roster.py then applies the usage and newest-in-tier
-      # rules to every tier it could not resolve, and says so in a warning.
+      # environment itself (PATH, a fresh temporary HOME, LANG=C and two fixed
+      # traffic switches), so no credential exists in the probe's environment:
+      # the CLI's own unauthenticated connections can bill nothing and leak
+      # nothing, and alias resolution is built into the binary, not fetched.
+      # It reads the init event and kills the CLI's process group. It never
+      # fails the step. A family the probe could not establish is FROZEN for
+      # this run by roster.py — its seats held, none added or retired — and
+      # the proposal step below warns and keeps the tracking issue open.
+      # Nothing is carried to the next run.
       #
       # NOT FATAL TO THE EVAL. The Models API read is still fatal to the
       # ROSTER — a half-read API is indistinguishable from a model retiring,
@@ -574,9 +577,11 @@ jobs:
             # no credential. Run BEFORE the bearer is exported so it never
             # sits in this process's environment (the probe scrubs the CLI's
             # environment regardless), and it cannot fail the step: a failed
-            # probe records its error classes and roster.py falls back to the
-            # usage and newest-in-tier rules, saying so in its warnings.
-            python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || true
+            # probe records its error classes and roster.py freezes those
+            # families for this run. A probe that exits non-zero writes no
+            # document, so an empty one stands in for it — read as a failed
+            # probe (every family frozen), never as "no probe at all".
+            python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || printf '{}\n' > "$work/defaults.json" || true
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
             # The published census comes off eval-results WITHOUT checking it
@@ -798,6 +803,22 @@ jobs:
           fi
           # <<< roster-only note
 
+          # >>> defaults-failed note
+          # A vendor-default probe that failed FROZE its families for this run
+          # (#203 probe round 1): their seats were held, so the proposal can
+          # read "same" for a reason a reviewer must see. The count is read
+          # from the computed roster by python at run time, never
+          # interpolated, and validated as digits; the warning's text is
+          # otherwise fixed.
+          defaults_failed=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); f=d.get("defaults_failed") if isinstance(d,dict) else None; print(len(f) if isinstance(f,dict) else 0)' "$computed" 2>/dev/null) || defaults_failed=0
+          case "$defaults_failed" in ''|*[!0-9]*) defaults_failed=0 ;; esac
+          probe_note=""
+          if [ "$defaults_failed" -gt 0 ]; then
+            echo "::warning::vendor-default probe failed for $defaults_failed families; their seats were held"
+            probe_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and no seat in them changed; the summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+          fi
+          # <<< defaults-failed note
+
           # The open tracking issue is owned by this workflow's bot account,
           # not by whoever copied a public marker into an issue body. Query
           # every page with GitHub's creator filter, then verify the creator
@@ -848,6 +869,31 @@ jobs:
             exit 0
           fi
 
+          # A failed probe keeps the tracking issue OPEN even on "same": the
+          # roster did not move because the probe could not say whether it
+          # should, and closing the issue would hide that.
+          if [ "$status" = "same" ] && [ "$defaults_failed" -gt 0 ]; then
+            body="$RUNNER_TEMP/proposal-body.md"
+            {
+              printf '%s\n\n' "$marker"
+              echo "This run proposes no change to the committed \`evals/roster.yml\`, but the vendor-default probe failed, so this issue stays open until a run probes cleanly."
+              echo
+              echo "$probe_note"
+              echo
+              echo "$eval_note"
+              echo
+              cat "$RUNNER_TEMP/roster-inputs/summary.md"
+            } > "$body"
+            if [ -n "$issue" ]; then
+              gh issue edit "$issue" --repo "$REPO" \
+                --title "Model roster: the vendor-default probe failed" --body-file "$body"
+              echo "updated the roster tracking issue #$issue"
+            else
+              gh issue create --repo "$REPO" \
+                --title "Model roster: the vendor-default probe failed" --body-file "$body"
+            fi
+            exit 0
+          fi
           if [ "$status" = "same" ]; then
             if [ -n "$issue" ]; then
               gh issue close "$issue" --repo "$REPO" \
@@ -904,6 +950,7 @@ jobs:
               echo
               echo "**Needs review before publication.** No proposal branch or compare link was updated."
               echo
+              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
               echo "$eval_note"
               echo
               echo "$rejection"
@@ -959,6 +1006,7 @@ jobs:
             echo "**Nothing has changed yet.** The harness runs on the committed file (ADR 0001); this is a proposal."
             echo "Open a pull request from \`roster/proposal\` and merge it after CI if the reasons below hold up."
             echo
+            [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
             echo "$eval_note"
             echo
             echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"

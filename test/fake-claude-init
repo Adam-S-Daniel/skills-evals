@@ -51,6 +51,11 @@ modes exist for the probe, each the shape of a real failure:
   init-then-hang     — the init event, then never exits (the real CLI goes on
                        to try the API); the probe must terminate it
   init-ignore-term   — the same, ignoring SIGTERM, so only SIGKILL ends it
+  init-orphan-child  — forks a child in the same process group that ignores
+                       SIGTERM and writes its pid to $FAKE_INIT_PIDFILE, then
+                       the init event and a hang; the leader dies on SIGTERM
+                       and only a group SIGKILL ends the child (#203 probe
+                       round 1, F4)
   junk-model         — an init event whose `model` is not an id at all
 """
 
@@ -214,6 +219,26 @@ def main() -> int:
 
     if MODE == "junk-model":
         init["model"] = "Opus 5.5\n::error::not an id"
+    if MODE == "init-orphan-child":
+        ready_r, ready_w = os.pipe()
+        if os.fork() == 0:
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            os.close(ready_r)
+            os.close(1)   # the probe's pipe belongs to the leader alone
+            pidfile = Path(os.environ["FAKE_INIT_PIDFILE"])
+            staged = pidfile.with_name(pidfile.name + ".partial")
+            staged.write_text(str(os.getpid()), encoding="utf-8")
+            staged.replace(pidfile)
+            os.write(ready_w, b"1")
+            os.close(ready_w)
+            time.sleep(HANG_SECONDS)
+            os._exit(0)
+        os.close(ready_w)
+        os.read(ready_r, 1)   # the pidfile exists before init is emitted
+        os.close(ready_r)
+        emit(init)
+        time.sleep(HANG_SECONDS)
+        return 0
     if MODE in ("init-then-hang", "init-ignore-term"):
         if MODE == "init-ignore-term":
             signal.signal(signal.SIGTERM, signal.SIG_IGN)

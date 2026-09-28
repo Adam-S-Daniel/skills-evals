@@ -536,10 +536,14 @@ says which degradation it was. No new threshold was added — rule 2 reads rule
 just installed at the npm latest which model each family alias on the tier
 ladder (`opus`, `sonnet`, `haiku`, `fable`, …) resolves to: it starts
 `claude -p --model <alias> --output-format stream-json --verbose` with **no
-credential** (a scrubbed environment: PATH, a fresh temporary HOME, LANG=C),
-reads the `model` of the first `system/init` event and terminates the CLI
-before it can try the API, so the probe costs nothing
-([#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)). A word the
+credential** (a scrubbed environment: PATH, a fresh temporary HOME, LANG=C,
+and `DISABLE_AUTOUPDATER=1`/`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`),
+reads the `model` of the first `system/init` event and kills the CLI's process
+group ([#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)). The
+CLI does open unauthenticated TLS connections of its own around that event,
+but no credential exists in the probe's environment, so nothing can be billed
+or leaked; and the alias table is built into the binary, so resolution does
+not depend on the network (the same ids come back with networking removed). A word the
 CLI echoes back unchanged (`mythos`) is not an alias and is skipped. The
 roster takes the reported id when it is one of this run's available models (a
 dated snapshot the catalogue collapses onto its alias stands for that alias)
@@ -561,11 +565,24 @@ weeks have passed since its successor's `created_at` **and** its share over
 those weeks is under the 2% exit bar, with a stale or too-thin census holding
 it as before. A model newer than the default earns no new seat; one that is
 already a previous arm gets the ordinary exit check rather than retiring on
-sight. **Nothing is carried over a failed probe**: the CLI it probes is the
-one the eval runs on, so if it cannot be probed the eval cannot run either. A
-tier whose default did not resolve — or every tier, when the probe failed
-entirely — keeps rules 1 and 2 verbatim, cooling-off included, and a
-`roster: ` warning says why. The committed `evals/roster.yml` keeps no
+sight. **A failed probe freezes its family for that run** (#203 probe round
+1): a family whose alias the probe recorded an error for, or whose answer did
+not resolve to an available model of that family (an undated id the
+catalogue lists only as exactly one dated `<id>-YYYYMMDD` does resolve to
+it), is frozen — or every family the probe did not skip, when the document
+is unreadable, junk or resolved nothing. A frozen family keeps every previous
+arm's seat, seats none of its models anew and retires none; falling back to
+the usage rules instead let one bad week retire a seated default or seat a
+preview that the next clean week then undid. The freeze is **per run —
+nothing is carried to the next** (the owner's decision): the probe is not
+the eval (the eval authenticates; the probe must not), so a probe failure
+does not stop the eval, and the next run's probe decides afresh. It is loud:
+the published roster carries `defaults_failed` (`{alias: class}`, plus
+`defaults_document_failed` for a whole-document failure), the step summary
+names the frozen families on its first lines, and the proposal step emits a
+`::warning::` and keeps the tracking issue open even when nothing else
+changed. With no `--defaults` document at all nothing is frozen and the
+roster is byte for byte the one computed without it. The committed `evals/roster.yml` keeps no
 `defaults` block; the published roster's `defaults` (source
 `claude-code-cli <version>`, `probed_at`, resolved and unresolved aliases)
 is there for the reviewer. The preflight pick applies the cooling-off either

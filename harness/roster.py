@@ -60,11 +60,12 @@ is subordinate to the first:
   nothing else putting its tier on the roster, is held while the TIER's
   combined share clears the exit bar (#203 round 2). A default governs the
   models of its own FAMILY word only, so a peer family in the same rung
-  (`[fable, mythos]`) keeps the two rules above. A probe that failed
-  carries nothing over (#203): the tiers it could not resolve keep the two
-  rules above, with a warning. See `_resolve_defaults` and
-  `_default_rung_decision`. Every other tier keeps the two rules above
-  verbatim.
+  (`[fable, mythos]`) keeps the two rules above. A family the probe could
+  not establish is FROZEN for that run (#203 probe round 1): its previous
+  arms keep their seats, none of its models is newly seated, none is
+  retired, and `defaults_failed` says so. Nothing is carried to the next
+  run. See `_resolve_defaults` and `_default_rung_decision`. Every other
+  tier keeps the two rules above verbatim.
 
 Inputs
   models_doc   {"fetched_at": ..., "models": [{id, created_at, ...}, ...]} —
@@ -82,8 +83,9 @@ Inputs
   defaults_doc {"probed_at", "harness_version", "defaults": {alias: model id},
                "skipped": [alias], "errors": {alias: class}} from
                scripts/probe_model_defaults.py. Optional and untrusted;
-               absent, unreadable, junk, or resolving no alias at all, and
-               the roster is byte-for-byte the one computed without it.
+               absent, and the roster is byte-for-byte the one computed
+               without it; unreadable, junk, or resolving no alias at all,
+               and every family it did not skip is frozen for the run.
   previous     THE COMMITTED `evals/roster.yml`. Trusted, and the source of
                the observation history (`catalogue_seen`). Present and
                unreadable is FATAL (`TrustedRosterUnreadable`): that is a
@@ -107,6 +109,8 @@ decision, plus `proposal`, which is what `eval.yml` acts on:
               resolved: {alias: id}, unresolved: [{alias, reason}]}
                                   -- only when a probe resolved an alias;
                                   published for the reviewer, never committed,
+   defaults_failed: {alias: class} -- only when a family is frozen this run,
+   defaults_document_failed: class -- only when the whole document failed,
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
    compared_to_previous: bool, previous_state: "compared"|"none",
@@ -1666,8 +1670,27 @@ DEFAULTS_MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,63}\Z")
 DEFAULTS_ERROR_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}\Z")
 #: The CLI's version line, as the probe and eval.yml's install step reduce it.
 DEFAULTS_VERSION_RE = re.compile(r"^[A-Za-z0-9._() -]{1,80}\Z")
-#: What a tier falls back to when its default does not resolve.
-FALLBACK_RULES = "the usage and newest-in-tier rules"
+#: What a family is when the probe could not establish its default (#203
+#: probe round 1): frozen for this run — its previous arms held, none of its
+#: models newly seated, none retired. Never carried to the next run.
+FROZEN_WORDS = "held this run, with no seat changes"
+
+#: The classes a family is frozen under when the probe answered but the
+#: answer did not resolve to a seat, and the document-level classes when
+#: the whole document was unusable. Each matches `DEFAULTS_ERROR_RE`, so
+#: none can carry `::` into a reason or a log.
+UNRESOLVED_NOT_AVAILABLE = "not-available"
+UNRESOLVED_AMBIGUOUS = "ambiguous-snapshot"
+UNRESOLVED_WRONG_TIER = "wrong-tier"
+UNRESOLVED_WRONG_FAMILY = "wrong-family"
+UNRESOLVED_NO_CREATED_AT = "no-created-at"
+UNRESOLVED_ERROR = "unrecognised-error"
+DOCUMENT_UNREADABLE = "unreadable"
+DOCUMENT_NOT_AN_OBJECT = "not-an-object"
+DOCUMENT_NO_DEFAULTS = "no-defaults"
+DOCUMENT_TOO_MANY = "too-many-aliases"
+DOCUMENT_NO_USABLE = "no-usable-defaults"
+DOCUMENT_RESOLVED_NOTHING = "resolved-nothing"
 
 
 def _defaults_provenance(document: dict) -> tuple[str, str | None]:
@@ -1688,9 +1711,10 @@ def _defaults_provenance(document: dict) -> tuple[str, str | None]:
 
 
 def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
-                             warn, *, fallback: str) -> tuple[dict, list]:
-    """(by_family, unresolved) from `(alias, rung, model | None, why)`
-    candidates — one per alias, `model` the match or None with `why`.
+                             warn) -> tuple[dict, list, dict]:
+    """(by_family, unresolved, failed) from `(alias, rung, model | None, why,
+    class)` candidates — one per alias, `model` the match or None with `why`
+    and its class.
 
     An alias resolves only to a model OF ITS OWN FAMILY WORD (R2-4, #203
     round 2): a rung can hold peer families (`[fable, mythos]`, a different
@@ -1698,70 +1722,105 @@ def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
     "older than" another family's models. So two peer aliases naming models
     of their own families both resolve, and a peer alias naming ANOTHER
     family's model is unresolved on its own, leaving every other alias
-    alone. `by_family` is also the published `resolved` map.
+    alone. `by_family` is also the published `resolved` map; `failed` maps
+    every unresolved alias to its class — the families frozen this run.
     """
     unresolved: list[dict] = []
+    failed: dict[str, str] = {}
 
-    def unresolve(alias, rung, why):
+    def unresolve(alias, why, cls):
         unresolved.append({"alias": alias, "reason": why})
-        warn(f"model default for `{alias}` not resolved: {why}; the "
-             f"{rung_label(rungs, rung)} tier {fallback}")
+        failed[alias] = cls
+        warn(f"model default for `{alias}` not resolved: {why}; the `{alias}` "
+             f"family is {FROZEN_WORDS}")
 
     by_family: dict[str, str] = {}
-    for alias, rung, model, why in candidates:
+    for alias, rung, model, why, cls in candidates:
         if model is None:
-            unresolve(alias, rung, why)
+            unresolve(alias, why, cls)
             continue
         found_rung = rung_of(model["id"], rungs)
         if found_rung != rung:
-            unresolve(alias, rung, f"`{model['id']}` sits in the "
-                                   f"{rung_label(rungs, found_rung)} tier, not "
-                                   f"the {rung_label(rungs, rung)} tier")
+            unresolve(alias, f"`{model['id']}` sits in the "
+                             f"{rung_label(rungs, found_rung)} tier, not the "
+                             f"{rung_label(rungs, rung)} tier", UNRESOLVED_WRONG_TIER)
             continue
         family = family_of(model["id"], rungs)
         if family != alias:
-            unresolve(alias, rung, f"`{model['id']}` is a model of the {family} "
-                                   f"family, not the {alias} family")
+            unresolve(alias, f"`{model['id']}` is a model of the {family} "
+                             f"family, not the {alias} family",
+                      UNRESOLVED_WRONG_FAMILY)
             continue
         if parse_ts(model.get("created_at")) is None:
-            unresolve(alias, rung, f"`{model['id']}` has no parseable created_at "
-                                   f"to start its predecessor's buffer from")
+            unresolve(alias, f"`{model['id']}` has no parseable created_at to "
+                             f"start its predecessor's buffer from",
+                      UNRESOLVED_NO_CREATED_AT)
             continue
         by_family[alias] = model["id"]
-    return dict(sorted(by_family.items())), unresolved
+    return dict(sorted(by_family.items())), unresolved, failed
+
+
+def _dated_candidates(model_id: str, available: list[dict]) -> list[str]:
+    """Every available `<model_id>-YYYYMMDD` (#203 probe round 1): the
+    mirror of the dated->undated collapse, for a CLI that answers with an
+    undated id the catalogue lists only in dated form."""
+    return sorted(m["id"] for m in available
+                  if (match := SNAPSHOT_SUFFIX.match(m["id"]))
+                  and match.group("base") == model_id)
 
 
 def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
                       rungs: list[list[str]], warn, *,
                       problem: str | None = None) -> dict | None:
     """The vendor-default model of each family the CLI probe resolved, as an
-    id (#202; `scripts/probe_model_defaults.py` since #203).
+    id (#202; `scripts/probe_model_defaults.py` since #203) — and the
+    families it could NOT establish, which are frozen for this run (#203
+    probe round 1).
 
-    None whenever the document is absent, unreadable, not an object, or
-    resolved no alias at all — the probe failed, so the CLI in CI is broken
-    and nothing is carried in its place: the roster is then BYTE-FOR-BYTE the
-    one computed without a document. Every case but a plain absence (a run
-    with no probe, e.g. locally) says so in one `roster: ` warning, naming
-    the probe's error classes and never the document's text. `problem` is
-    `main()`'s "the file is there and unreadable".
+    None only when there is no document at all and no problem reading one
+    (a run with no probe, e.g. locally): the roster is then BYTE-FOR-BYTE
+    the one computed without it. Otherwise a dict whose `failed` maps each
+    frozen family word to a class, and `document_failed` names a
+    document-level class when the whole document was unusable.
+
+    A FAMILY IS FROZEN when the probe attempted its alias and it did not
+    resolve — the probe recorded an error for it, or the id it answered is
+    not an available model of that family — or when the document as a whole
+    is unreadable, junk, or resolved no alias at all; then every family on
+    the ladder is frozen except an alias the probe listed as `skipped` (the
+    CLI echoed it back: not one of its aliases, so never a default to lose).
+    A ladder word the document does not mention at all is not frozen. The
+    freeze is per run: nothing about it is carried to the next.
 
     An alias resolves when its id is one of this run's available models —
     or a dated snapshot the catalogue collapses onto one, which then stands
-    for it — AND the family word in that id is the alias itself. Anything
-    else is recorded under `unresolved`, warned about, and only that family
-    falls back. An alias the probe recorded an error for is unresolved the
-    same way, with the error's class; an alias it `skipped` (the CLI echoed
-    it back: not one of its aliases) is not a default and is not listed.
+    for it, or an undated id the catalogue lists as exactly ONE dated
+    `<id>-YYYYMMDD` (two or more is ambiguous) — AND the family word in that
+    id is the alias itself. Every warning names classes and validated ids
+    only, never the document's text; `problem` is `main()`'s "the file is
+    there and unreadable".
     """
-    fallback = f"every tier keeps {FALLBACK_RULES}"
+    if defaults_doc is None and not problem:
+        return None
+    ladder = [word for rung in rungs for word in rung]
+    info = {"source": None, "probed_at": None, "by_family": {}, "resolved": {},
+            "unresolved": [], "failed": {}, "document_failed": None,
+            "published": False}
+
+    def whole_document(cls: str, said: str, errors: dict, skipped: set) -> dict:
+        warn(f"model defaults unavailable ({said}); every family on the tier "
+             f"ladder the probe did not skip is {FROZEN_WORDS}")
+        info["document_failed"] = cls
+        info["failed"] = {word: errors.get(word, cls) for word in ladder
+                          if word not in skipped}
+        return info
+
     if defaults_doc is None:
-        if problem:
-            warn("model defaults unavailable (the defaults file is present but "
-                 f"unreadable); {fallback}")
-        return None
+        return whole_document(DOCUMENT_UNREADABLE, "the defaults file is present "
+                              "but unreadable", {}, set())
     if not isinstance(defaults_doc, dict):
-        warn(f"model defaults document is not an object; {fallback}")
-        return None
+        return whole_document(DOCUMENT_NOT_AN_OBJECT, "the defaults document is "
+                              "not an object", {}, set())
     raw_errors = defaults_doc.get("errors")
     errors: dict[str, str] = {}
     if isinstance(raw_errors, dict) and len(raw_errors) <= DEFAULTS_MAX_ALIASES:
@@ -1769,18 +1828,22 @@ def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
             if isinstance(alias, str) and DEFAULTS_ALIAS_RE.match(alias):
                 errors[alias] = (error if isinstance(error, str)
                                  and DEFAULTS_ERROR_RE.match(error)
-                                 else "an error was recorded")
+                                 else UNRESOLVED_ERROR)
+    raw_skipped = defaults_doc.get("skipped")
+    skipped = ({a for a in raw_skipped if isinstance(a, str)
+                and DEFAULTS_ALIAS_RE.match(a) and a not in errors}
+               if isinstance(raw_skipped, list)
+               and len(raw_skipped) <= DEFAULTS_MAX_ALIASES else set())
     entries = defaults_doc.get("defaults")
     if not isinstance(entries, dict) or not entries:
         said = (", ".join(f"{a} {e}" for a, e in sorted(errors.items()))
                 or "no error recorded")
-        warn(f"model defaults unavailable (the Claude Code probe resolved no "
-             f"alias: {said}); {fallback}")
-        return None
+        return whole_document(DOCUMENT_NO_DEFAULTS, f"the Claude Code probe "
+                              f"resolved no alias: {said}", errors, skipped)
     if len(entries) > DEFAULTS_MAX_ALIASES:
-        warn(f"model defaults document names {len(entries)} aliases, past the "
-             f"{DEFAULTS_MAX_ALIASES}-alias bound; {fallback}")
-        return None
+        return whole_document(DOCUMENT_TOO_MANY, f"the defaults document names "
+                              f"{len(entries)} aliases, past the "
+                              f"{DEFAULTS_MAX_ALIASES}-alias bound", errors, skipped)
     ids: dict[str, str] = {}
     junk = 0
     for alias, model_id in entries.items():
@@ -1793,8 +1856,8 @@ def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
         warn(f"model defaults document: skipped {junk} entry/entries that are "
              f"not a family alias mapped to a model id")
     if not ids:
-        warn(f"model defaults document names no usable defaults; {fallback}")
-        return None
+        return whole_document(DOCUMENT_NO_USABLE, "the defaults document names no "
+                              "usable defaults", errors, skipped)
 
     source, probed_at = _defaults_provenance(defaults_doc)
     by_id = {m["id"]: m for m in available}
@@ -1809,20 +1872,45 @@ def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
                  f"tier ladder; ignored")
             continue
         if alias not in ids:
+            said = ("an error was recorded" if errors[alias] == UNRESOLVED_ERROR
+                    else errors[alias])
             candidates.append((alias, rung, None,
-                               f"the Claude Code probe failed ({errors[alias]})"))
+                               f"the Claude Code probe failed ({said})",
+                               errors[alias]))
             continue
         model_id = ids[alias]
         seat_id = snapshots.get(model_id, model_id)
         if seat_id not in by_id:
-            candidates.append((alias, rung, None,
-                               f"`{model_id}` is not an available model this run"))
-        else:
-            candidates.append((alias, rung, by_id[seat_id], None))
-    by_family, more = _seat_default_candidates(
-        candidates, rungs, warn, fallback=f"keeps {FALLBACK_RULES}")
-    return {"source": source, "probed_at": probed_at, "by_family": by_family,
-            "resolved": dict(by_family), "unresolved": unresolved + more}
+            dated = _dated_candidates(model_id, available)
+            if len(dated) == 1:
+                seat_id = dated[0]
+            elif dated:
+                candidates.append((alias, rung, None,
+                                   f"`{model_id}` is not an available model this "
+                                   f"run, and {len(dated)} dated snapshots of it "
+                                   f"are, so which one it means is ambiguous",
+                                   UNRESOLVED_AMBIGUOUS))
+                continue
+            else:
+                candidates.append((alias, rung, None,
+                                   f"`{model_id}` is not an available model this run",
+                                   UNRESOLVED_NOT_AVAILABLE))
+                continue
+        candidates.append((alias, rung, by_id[seat_id], None, None))
+    by_family, more, failed = _seat_default_candidates(candidates, rungs, warn)
+    info.update({"source": source, "probed_at": probed_at, "by_family": by_family,
+                 "resolved": dict(by_family), "unresolved": unresolved + more,
+                 "failed": failed, "published": True})
+    if not by_family:
+        # Present and well-formed, and still not one family resolved: the
+        # probe told this run nothing it can act on, so nothing moves.
+        warn(f"model defaults: the Claude Code probe resolved no family to an "
+             f"available model; every family on the tier ladder the probe did "
+             f"not skip is {FROZEN_WORDS}")
+        info["document_failed"] = DOCUMENT_RESOLVED_NOTHING
+        info["failed"] = {word: failed.get(word, DOCUMENT_RESOLVED_NOTHING)
+                          for word in ladder if word not in skipped}
+    return info
 
 
 def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
@@ -2374,16 +2462,26 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
 
     # --- vendor defaults (#202, ADR 0002; the CLI probe since #203) --------
     # A tier whose default resolved is seated by `_default_rung_decision`
-    # below and never reaches the usage/newest/hold-over rules; every other
-    # tier keeps them verbatim, cooling-off included. A probe that failed
-    # entirely, or no probe at all, leaves the map empty, and the roster is
-    # then byte for byte the one computed without a document: there is no
-    # carried fallback, because a CLI that cannot be probed cannot run the
-    # eval either.
+    # below and never reaches the usage/newest/hold-over rules. A family the
+    # probe could NOT establish is FROZEN for this run (#203 probe round 1):
+    # falling back to the usage rules for one bad week retired a seated
+    # default, or seated a preview, that the next clean week then had to
+    # undo — a flip on no evidence. Frozen, its previous arms are held, none
+    # of its models is newly seated and none is retired. Nothing is carried
+    # to the next run (the owner's decision). Every other family keeps the
+    # rules verbatim, cooling-off included; no document at all leaves the
+    # roster byte for byte the one computed without one.
     defaults_info = _resolve_defaults(defaults_doc, available, snapshots,
                                       rungs, warn, problem=defaults_problem)
     #: family word -> the id of that family's resolved vendor default.
     default_by_family = defaults_info["by_family"] if defaults_info else {}
+    #: family word -> the class its probe failed with: frozen this run.
+    frozen = defaults_info["failed"] if defaults_info else {}
+    #: A previous arm published under a dated id whose undated alias the
+    #: catalogue now lists is the same seat renamed, so a frozen family
+    #: holds it on the alias rather than losing it to "no new seat".
+    frozen_held_ids = set(previous_arms) | {snapshots[p] for p in previous_arms
+                                            if p in snapshots}
     #: Why a previous arm this rule dropped left, for `retired_since_last`
     #: and the proposal — and, for a superseded arm measured over its
     #: buffer weeks, which weeks its evidence covers.
@@ -2450,6 +2548,17 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         rung = rung_of(model_id, rungs)
         label = rung_label(rungs, rung)
         family = family_of(model_id, rungs)
+        if family in frozen:
+            unknown = (f"vendor default for `{family}` unknown this run (probe: "
+                       f"{frozen[family]})")
+            if model_id in frozen_held_ids:
+                arms.append({"id": model_id, "reason": (
+                    f"{unknown}; held, no seat changes on a failed probe")})
+            else:
+                excluded.append({"id": model_id, "reason": (
+                    f"excluded from the arm set: {unknown}; no new seat on a "
+                    f"failed probe")})
+            continue
         if family in default_by_family:
             if model_id == default_by_family[family]:
                 deferred_defaults.append(model)
@@ -2741,13 +2850,21 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             "admin_report_at": (admin_doc or {}).get("fetched_at") if admin_doc else None,
         },
     }
-    if defaults_info is not None:
+    if defaults_info is not None and defaults_info["published"]:
         # Only when a probe resolved or tried to resolve an alias: without one
         # the roster is the one this module has always published, key for
         # key. Published for the reviewer only — the committed roster keeps
         # no `defaults` block (#203).
         result["defaults"] = {key: defaults_info[key] for key in
                               ("source", "probed_at", "resolved", "unresolved")}
+    if frozen:
+        # LOUD, and even when nothing resolved (#203 probe round 1): the
+        # families frozen this run and why, read by `render_summary` and by
+        # eval.yml's proposal step, which warns and keeps the tracking issue
+        # open on it.
+        result["defaults_failed"] = dict(sorted(frozen.items()))
+    if defaults_info is not None and defaults_info["document_failed"]:
+        result["defaults_document_failed"] = defaults_info["document_failed"]
     result.update({
         "arms": arms,
         "judge": judge,
@@ -2929,6 +3046,15 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     numerator and denominator behind each seat.
     """
     lines = ["### Model roster", ""]
+    # FIRST, when a probe failed (#203 probe round 1): a frozen family is a
+    # roster that did not move for a reason the reviewer has to know about.
+    failed = roster.get("defaults_failed") or {}
+    if failed:
+        named = ", ".join(f"`{alias}` ({cls})" for alias, cls in sorted(failed.items()))
+        document = roster.get("defaults_document_failed")
+        whole = f" (document: {document})" if document else ""
+        lines += [f"**The vendor-default probe failed{whole}; frozen this run, "
+                  f"seats held and no seat changes:** {named}.", ""]
     changed = roster["added_since_last"] or roster["retired_since_last"]
     if previous_state == "auto":
         previous_state = (roster.get("previous_state") or
@@ -3065,9 +3191,10 @@ def main() -> int:
     # YAML OR JSON, and a problem here is FATAL (#147). This is the
     # committed roster on `main`, not a document off an unprotected branch.
     previous_doc, previous_problem = read_trusted_roster(args.previous)
-    # Absent or unreadable is not fatal: `compute_roster` falls back to the
-    # usage and newest-in-tier rules, and says so in ONE warning with the
-    # right cause (R2-5, #203 round 2) — so nothing is printed about it here.
+    # Absent or unreadable is not fatal. Absent changes nothing; unreadable
+    # freezes every family for the run, and `compute_roster` says so in ONE
+    # warning with the right cause (R2-5, #203 round 2; #203 probe round 1)
+    # — so nothing is printed about it here.
     defaults_doc, defaults_problem = read_json(args.defaults)
 
     try:

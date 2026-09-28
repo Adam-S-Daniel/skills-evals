@@ -10,12 +10,19 @@ ladder it starts
     claude -p <prompt> --model <alias> --output-format stream-json --verbose
 
 and reads the `model` field of the first `{"type": "system", "subtype":
-"init"}` event. The CLI resolves the alias before it emits that event and
-before it sends anything to a model, and it does so with NO credential
+"init"}` event. The CLI resolves the alias from a table built into its own
+binary, before it emits that event, and it does so with NO credential
 (measured 2026-09-28 on 2.1.283 with an empty environment and a fresh HOME:
-`apiKeySource` reported `none`). So the probe costs nothing: as soon as the
-init event is read the process is terminated (SIGTERM, then SIGKILL after
-`KILL_GRACE_SECONDS`), never left to try the API.
+`apiKeySource` reported `none`). Resolution does not depend on the network:
+with networking removed entirely the same ids come back.
+
+WHAT IT DOES SEND. The real CLI opens unauthenticated TLS connections of its
+own before and after the init event (measured with strace, #203 probe round
+1). No credential exists in the probe's environment, so nothing it sends can
+be billed to anyone or leak one; `DISABLE_AUTOUPDATER` and
+`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` cut what it does not need. As soon
+as the init event is read the process group is terminated — SIGTERM, then
+SIGKILL to the whole group whatever the leader did (`_stop`).
 
 A word the CLI does not know as an alias is echoed back unchanged in the
 init event (`mythos` on 2.1.283); it is recorded under `skipped`, not as a
@@ -23,10 +30,10 @@ default.
 
 THE ENVIRONMENT IS SCRUBBED, whatever the caller's holds. The CLI is given
 only PATH, a fresh temporary HOME per call (with the XDG directories inside
-it, removed afterwards), and LANG=C — never a credential, a config dir or a
-cloud-provider selector — with stdin from /dev/null and the temporary HOME as
-its working directory, so no project or user settings are read either. See
-`scrubbed_env`.
+it, removed afterwards), LANG=C and the two fixed traffic switches above —
+never a credential, a config dir or a cloud-provider selector — with stdin
+from /dev/null and the temporary HOME as its working directory, so no
+project or user settings are read either. See `scrubbed_env`.
 
   --out   {"probed_at": <ISO timestamp>,
            "harness_version": <first line of `claude --version`, sanitised,
@@ -38,9 +45,12 @@ its working directory, so no project or user settings are read either. See
 
 A FAILURE IS NOT FATAL. Whatever happens to one alias or all of them, --out
 is written and the exit status is 0; `harness/roster.py` decides what a
-missing default means (with none at all, every tier keeps the usage and
-newest-in-tier rules, and says so). Only a usage error — bad arguments, an
-unreadable --policy, an unwritable --out — exits non-zero.
+missing default means: that family is frozen for the run — its previous
+arms held, no seat of it added or retired — and the roster says so loudly.
+Nothing is carried to the next run. Only a usage error — bad arguments, a
+`--claude` that is not an executable, an unreadable --policy, an unwritable
+--out — exits non-zero (eval.yml then writes an empty document in its
+place, which the roster reads as a failed probe).
 
 The CLI's output is UNTRUSTED. Nothing it prints reaches this script's own
 output or --out except a model id that matches `MODEL_ID_RE` and a version
@@ -73,9 +83,10 @@ DEFAULT_POLICY = Path(__file__).resolve().parent.parent / "evals" / "roster-poli
 TIMEOUT_SECONDS = 60.0
 #: How long a CLI gets to exit after SIGTERM before it is killed.
 KILL_GRACE_SECONDS = 5.0
-#: What the CLI is asked. Nothing is sent to a model before the init event,
-#: and the process is terminated as soon as that event is read; the prompt
-#: only keeps a CLI that demands input from exiting before init.
+#: What the CLI is asked. It carries no credential, so no model can be
+#: billed for it, and the process group is terminated as soon as the init
+#: event is read; the prompt only keeps a CLI that demands input from
+#: exiting before init.
 PROMPT = "."
 #: A family word, as the ladder spells one.
 ALIAS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}\Z")
@@ -89,10 +100,17 @@ VERSION_MAX = 80
 MAX_BYTES = 4 * 1024 * 1024
 
 
+#: Fixed switches set on every probed CLI (#203 probe round 1): no
+#: auto-update, and none of the traffic resolving an alias does not need.
+TRAFFIC_SWITCHES = {"DISABLE_AUTOUPDATER": "1",
+                    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+
 def scrubbed_env(home: Path) -> dict[str, str]:
     """The whole environment a probed CLI gets. Built from nothing rather
-    than filtered from `os.environ`, so no ANTHROPIC_*, CLAUDE_*, AWS_*,
-    GOOGLE_* or *TOKEN*/*KEY* variable can reach it however it is spelled."""
+    than filtered from `os.environ`, so no ANTHROPIC_*, AWS_*, GOOGLE_* or
+    *TOKEN*/*KEY* variable — and no CLAUDE_* one but the fixed
+    `TRAFFIC_SWITCHES` — can reach it however it is spelled."""
     return {
         "PATH": os.environ.get("PATH", os.defpath),
         "HOME": str(home),
@@ -101,6 +119,7 @@ def scrubbed_env(home: Path) -> dict[str, str]:
         "XDG_DATA_HOME": str(home / ".local" / "share"),
         "XDG_STATE_HOME": str(home / ".local" / "state"),
         "LANG": "C",
+        **TRAFFIC_SWITCHES,
     }
 
 
@@ -143,7 +162,14 @@ def _signal_group(proc: subprocess.Popen, sig: int) -> None:
 
 
 def _stop(proc: subprocess.Popen) -> None:
-    """Terminate the CLI and anything it started: SIGTERM, then SIGKILL."""
+    """Terminate the CLI and anything it started: SIGTERM, then SIGKILL.
+
+    The group is SIGKILLed ALWAYS, once the leader is gone (#203 probe round
+    1): a leader that exits on SIGTERM — or before it — says nothing about a
+    child it left in its group, and one that ignores SIGTERM would otherwise
+    outlive the probe. The group id is the leader's pid (`start_new_session`)
+    and stays valid while any member lives; an empty group is
+    ProcessLookupError, which is the good outcome."""
     if proc.poll() is None:
         _signal_group(proc, signal.SIGTERM)
         try:
@@ -151,6 +177,10 @@ def _stop(proc: subprocess.Popen) -> None:
         except subprocess.TimeoutExpired:
             _signal_group(proc, signal.SIGKILL)
             proc.wait()
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
     if proc.stdout is not None:
         proc.stdout.close()
 
@@ -255,6 +285,13 @@ def main() -> int:
     args = parser.parse_args()
     if not args.timeout > 0:
         parser.error("--timeout must be positive")
+    # Resolved ONCE, here (#203 probe round 1): every CLI call runs with the
+    # temporary HOME as its working directory, where a relative path would
+    # name nothing. A binary that is not there is the caller's mistake.
+    found = shutil.which(args.claude)
+    if found is None:
+        parser.error("--claude: no executable found at that path or on PATH")
+    claude = str(Path(found).resolve())
 
     try:
         with open(args.policy, encoding="utf-8") as handle:
@@ -265,12 +302,12 @@ def main() -> int:
         return 2
 
     probed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-    version = harness_version(args.claude, args.timeout)
+    version = harness_version(claude, args.timeout)
     defaults: dict[str, str] = {}
     skipped: list[str] = []
     errors: dict[str, str] = {}
     for alias in aliases:
-        kind, value = probe_alias(args.claude, alias, args.timeout)
+        kind, value = probe_alias(claude, alias, args.timeout)
         if kind == "default":
             defaults[alias] = value
         elif kind == "skipped":

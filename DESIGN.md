@@ -516,8 +516,12 @@ roster follows the vendor's default version of each family rather than the
 fleet's usage of individual versions. `scripts/probe_model_defaults.py` asks
 the Claude Code CLI CI has just installed at the npm latest, with no
 credential and a scrubbed environment, which model each family alias on the
-ladder resolves to — the `model` of the first `system/init` event, read before
-anything is sent to a model, after which the CLI is terminated (#203); a word
+ladder resolves to — the `model` of the first `system/init` event, after
+which the CLI's process group is killed (#203). The CLI makes unauthenticated
+TLS connections of its own around that event; no credential exists in the
+probe's environment, so nothing can be billed or leaked, and alias resolution
+is built into the binary rather than fetched, so it does not depend on the
+network. A word
 the CLI echoes back is not an alias and is skipped. `roster.py` takes the
 reported id when it is an available model (a dated snapshot collapsed onto its
 alias stands for it) of the alias's own family. In such a tier usage has
@@ -538,12 +542,17 @@ superseded model gets no usage seat; a superseded previous arm is retired once
 bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
 applies to it). A model newer than the default earns no new seat, and a
 previous arm newer than it gets rule 3's exit check instead of retiring on
-sight. Nothing is carried over a failed probe (#203; a carried-defaults
-block with an expiry briefly stood here and is gone): the CLI the probe asks
-is the one the eval runs on, so a probe that fails means the eval cannot run
-either. Any failure to probe or resolve a default degrades that tier (or all
-of them) to rules 1 and 2, cooling-off included, loudly; with no usable
-defaults document the roster is byte-for-byte the one computed without it.
+sight. A failed probe freezes its family for that run (#203 probe round 1):
+a family whose alias the probe recorded an error for or could not resolve to
+an available model of that family — or every family the probe did not skip,
+when the document is unreadable, junk or resolved nothing — keeps every
+previous arm's seat, seats nothing new and retires nothing, and is named in
+the published `defaults_failed`, on the summary's first lines and in a
+`::warning::` that keeps the tracking issue open. Falling back to rules 1 and
+2 instead flipped seats on one bad week. The freeze is per run; nothing is
+carried to the next (a carried-defaults block with an expiry briefly stood
+here and is gone). With no defaults document at all the roster is
+byte-for-byte the one computed without it.
 The committed roster keeps no `defaults` block; the published one records
 the CLI version, `probed_at`, and the resolved and unresolved aliases.
 The preflight keeps its cooling-off, and the judge rule is unchanged.

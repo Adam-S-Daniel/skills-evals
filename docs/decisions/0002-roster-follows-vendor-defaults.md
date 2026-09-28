@@ -34,12 +34,18 @@ happened to accumulate usage on.
    for each family word on the policy's tier ladder,
    `claude -p --model <alias> --output-format stream-json --verbose` in a
    scrubbed environment — PATH, a fresh temporary HOME with its XDG
-   directories, LANG=C, stdin from `/dev/null`, and nothing else — and reads
-   the `model` of the first `{"type":"system","subtype":"init"}` event. The CLI
-   resolves the alias before that event and before it sends anything to a
-   model, so the probe needs no credential and costs nothing; the process is
-   terminated as soon as the event is read (SIGTERM, then SIGKILL after 5 s),
-   with a 60 s bound per alias. Measured 2026-09-28 on 2.1.283 with an empty
+   directories, LANG=C, `DISABLE_AUTOUPDATER=1` and
+   `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`, stdin from `/dev/null`, and
+   nothing else — and reads the `model` of the first
+   `{"type":"system","subtype":"init"}` event. The CLI resolves the alias from
+   a table built into its binary, so resolution does not depend on the
+   network (with networking removed the ids are identical). It does open
+   unauthenticated TLS connections of its own before and after init
+   (measured with strace, #203 probe round 1); no credential exists in the
+   probe's environment, so nothing can be billed or leaked. The process group
+   is terminated as soon as the event is read (SIGTERM, then SIGKILL after
+   5 s, then SIGKILL to the whole group regardless), with a 60 s bound per
+   alias. Measured 2026-09-28 on 2.1.283 with an empty
    environment: `opus`, `sonnet`, `haiku` and `fable` each resolved to a model
    id, `apiKeySource` was `none`, and `mythos` was echoed back unchanged — a
    word the CLI echoes back is not an alias and is recorded as skipped. The
@@ -93,18 +99,33 @@ happened to accumulate usage on.
    resolve; an alias naming another family's model is unresolved on its own;
    the one remaining conflict is two spellings of the same family word naming
    different models.
-6. **A failed probe carries nothing over (#203).** The CLI the probe asks is
-   the one the eval runs on, so a probe that fails means the eval cannot run
-   either; there is nothing to bridge. Every tier the probe did not resolve
-   keeps both usage rules, with a `roster: ` warning naming the failure
-   classes. The committed `evals/roster.yml` keeps no `defaults` block; the
-   published roster keeps one for the reviewer (source
+6. **A failed probe freezes its family for that run (#203 probe round 1).**
+   A family is frozen when a probe document was given and either the probe
+   attempted its alias and it did not resolve (an error class, or an answer
+   that is not an available model of that family — an undated id resolves to
+   its one dated `<id>-YYYYMMDD` when the catalogue lists only that, and two
+   or more are ambiguous), or the document is unreadable, junk, or resolved
+   nothing — then every family on the ladder except the aliases the probe
+   `skipped`. In a frozen family every previous arm keeps its seat ("vendor
+   default for `<alias>` unknown this run (probe: <class>); held, no seat
+   changes on a failed probe"), no model gets a new seat, and nothing is
+   retired. The earlier rule — fall back to both usage rules — flipped seats
+   on a one-week failure: a seated default retired, or a preview seated, and
+   the next clean probe undid it. The freeze is loud: `defaults_failed`
+   (`{alias: class}`, and `defaults_document_failed`) in the published
+   roster, a line at the top of the step summary, and a fixed `::warning::`
+   from the proposal step, which keeps the tracking issue open even when the
+   proposal is "same". It is **per run, never carried** (the owner's
+   decision): the next run's probe decides afresh. The probe is not the eval
+   — the eval authenticates and the probe must not — so a probe failure does
+   not stop the eval. The committed `evals/roster.yml` keeps no
+   `defaults` block; the published roster keeps one for the reviewer (source
    `claude-code-cli <version>`, `probed_at`, resolved, unresolved).
-7. **Unchanged:** a tier with no resolved default keeps both usage rules
-   verbatim, cooling-off included; the preflight pick keeps its cooling-off;
-   the judge rule is unchanged. With no usable defaults document — absent,
-   failed for every alias, empty or junk — the roster is byte-for-byte the one
-   computed without it.
+7. **Unchanged:** a family with no default in the document (never probed,
+   or `skipped`) keeps both usage rules verbatim, cooling-off included; the
+   preflight pick keeps its cooling-off; the judge rule is unchanged. With no
+   defaults document at all the roster is byte-for-byte the one computed
+   without it.
 
 ## Consequences
 
@@ -117,8 +138,9 @@ happened to accumulate usage on.
   moves on is no longer measured on it once the buffer has run.
 - **A broken CLI degrades loudly.** A probe that cannot read an init event,
   times out, or reads a model that is not an id records only that class,
-  never the CLI's output; the roster applies the usage rules to that tier and
-  warns. Nothing fails the workflow step. A wrong default is bounded by the
+  never the CLI's output; the roster freezes that family for the run and
+  says so in the summary, a `::warning::` and the tracking issue. Nothing
+  fails the workflow step. A wrong default is bounded by the
   catalogue check: an id that is not an available model of the alias's own
   family seats nothing.
 - **A tier between the bars keeps an arm across a version change**, because
@@ -152,9 +174,9 @@ happened to accumulate usage on.
   expiry `defaults_carry_max_age_days`, staleness drops and the loud
   `carried` signals (the former decisions 4a and 4b), and the display-name
   match — was removed. It
-  existed to bridge a docs outage; a probe failure means the CLI in CI is
-  broken, which no carried value can bridge, so the roster falls back to the
-  usage rules with a warning, as it did before #202.
+  existed to bridge a docs outage. A probe failure now freezes the families
+  it could not establish for that run only (decision 6, #203 probe round 1);
+  nothing is carried across runs.
 
 ## Alternatives considered
 
