@@ -11,3 +11,4 @@ __pycache__/
 # asymmetry work rather than silently dropping them.
 roster/
 usage/
+!/evals/usage/

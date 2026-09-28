@@ -2302,9 +2302,6 @@ class TestIssue97(unittest.TestCase):
     HARNESS_TIMEOUT_SINKS = {
         ("harness/guidance.py", "deliver", "subprocess.run", "timeout"):
             (1, (("default", "120"),)),
-        ("harness/propagation/account_store.py", "git_tracked",
-         "subprocess.run", "GIT_TIMEOUT_S"):
-            (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/propagation/arms.py", "_run_hook", "subprocess.run",
          "timeout"): (1, (("flag", "harness/run_propagation.py"),)),
         ("harness/propagation/arms.py", "arm_plugin_marketplace",
@@ -2312,8 +2309,6 @@ class TestIssue97(unittest.TestCase):
             (1, (("flag", "harness/run_propagation.py"),)),
         ("harness/propagation/init_probe.py", "probe", "<popen>.wait",
          "KILL_WAIT_TIMEOUT_S"): (1, (("constant", "KILL_WAIT_TIMEOUT_S"),)),
-        ("harness/run_account_audit.py", "registry_ref", "subprocess.run",
-         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/run_canary.py", "claude_version", "subprocess.run",
          "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         # Two callers, two sources: run_canary's own `--timeout`, and
@@ -2849,15 +2844,11 @@ class TestIssue97(unittest.TestCase):
     # cannot arrive with no direct-call coverage.
     SINK_DRIVERS = {
         ("harness/guidance.py", "deliver"): ("param", "timeout"),
-        ("harness/propagation/account_store.py", "git_tracked"):
-            ("const", "GIT_TIMEOUT_S"),
         ("harness/propagation/arms.py", "_run_hook"): ("param", "timeout"),
         ("harness/propagation/arms.py", "arm_plugin_marketplace"):
             ("ctx", "timeout"),
         ("harness/propagation/init_probe.py", "probe"):
             ("const", "KILL_WAIT_TIMEOUT_S"),
-        ("harness/run_account_audit.py", "registry_ref"):
-            ("const", "GIT_TIMEOUT_S"),
         ("harness/run_canary.py", "claude_version"):
             ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_canary.py", "run_leg"): ("param", "timeout"),

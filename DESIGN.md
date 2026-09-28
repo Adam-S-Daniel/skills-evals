@@ -399,7 +399,7 @@ yet" must stay distinguishable.)
 | `test-canary` | no A/B | delivery probe; covered by the propagation arms |
 | `sveltia-cms-playwright-demo` | skip | historical reference to retired tech |
 | `wj-next-break` | skip | wall-clock/calendar-bound; low value to freeze |
-| `launch-top-level-claude-session` (renamed from `launch-wsl-claude-session` on 2026-09-25, [adam-agentskills PR 27](https://github.com/Adam-S-Daniel/adam-agentskills/pull/27)), `sync-skills`, `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
+| `launch-top-level-claude-session` (renamed from `launch-wsl-claude-session` on 2026-09-25, [adam-agentskills PR 27](https://github.com/Adam-S-Daniel/adam-agentskills/pull/27)), `sync-cc-settings-between-wsl-and-windows`, `migrate-claude-memory`, `compare-pdfpairs`, `ocr-pdfs` | defer | machine-bound (WSL/WPF/browser surfaces); faking the surface costs more than the churn justifies today |
 | `windows-elevation-from-wsl` | Class B, covered | the one machine-bound skill whose surface is cheap to fake: `evals/windows-elevation-from-wsl/seed/bin/powershell.exe` answers reads, denies writes, refuses dodges, and logs; the fixture's `env:` block puts it on the arm's `PATH` |
 | `fastmail` bundle | defer | credentialed live service; a fixture may not carry real accounts, and a faked Fastmail is a harness project of its own |
 | `aws-bootstrap`, `preview-environments` | freshness lint | staleness is the failure mode, not procedure quality |
@@ -450,8 +450,8 @@ in, a roster dict out; no network, no clock, no environment — which is what
 makes the whole policy testable at the granularity of one threshold. The
 single network call in the feature is `scripts/refresh_models.py`; the usage
 side is `scripts/model_usage_census.py`, which runs on a durable machine (a CI
-runner has no transcripts) as a best-effort passenger on the Tier-3
-account-store Routine. Its output carries a `proposal` block —
+runner has no transcripts), scheduled by the owner via
+`scripts/publish_usage_census.sh` (see `evals/usage/CENSUS.md`). Its output carries a `proposal` block —
 `{status: "same"|"differs", changes: [...]}` — computed against the committed
 file, with every seat change carrying its numerator, its denominator and the
 share they make, in words.

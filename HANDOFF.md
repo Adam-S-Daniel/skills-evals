@@ -1123,3 +1123,23 @@ it.
    cleared; schedule the hourly wake; rewrite the board with a dated state.
 6. Keep one message to Adam per wave: merged, running, blocked on him, spend,
    next wave. Anything named gets its link.
+
+## 8. Note, 2026-09-28: the account-store audit is retired
+
+Owner decision (Adam, 2026-09-28): every surface takes this account's skills
+from repo-based marketplace plugins; he deleted every upload from the claude.ai
+account store and verified it, and deleted the account-audit Routine. Removed
+here, with history kept in git: the Tier-3 audit (`harness/run_account_audit.py`,
+`harness/propagation/account_store.py`), its drift issue workflow
+(`.github/workflows/account-store-drift.yml`, `harness/run_account_drift_issue.py`),
+the freshness gate in `propagation.yml` and `harness/run_propagation.py`
+(`--gate-only`, `--no-gate`, `--account-*`, `--now`), and
+`evals/propagation/ROUTINE.md`. The sections above that describe them are
+history, not current behaviour. Kept: the probe-leg isolation guards against the
+account channel (`~/.claude/skills/synced/`), because Anthropic's own skills
+still arrive through it.
+
+The usage census was a passenger on that Routine and now has its own home:
+`evals/usage/CENSUS.md` and `scripts/publish_usage_census.sh`, scheduled by the
+owner on his durable machine. Until he does, `harness/roster.py` degrades to
+"no fresh census" after 14 days and says so in every arm's reason.
