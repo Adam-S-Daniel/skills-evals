@@ -335,6 +335,52 @@ class TestCompleteWeeks(unittest.TestCase):
             datetime(2026, 10, 6, tzinfo=timezone.utc), 0), (4, []))
 
 
+class TestDefaultsProvenance(unittest.TestCase):
+    """Test _defaults_provenance function: it formats the source field and
+    probed_at timestamp from a defaults document, stripping "(Claude Code)"
+    suffix from the version if present."""
+
+    def test_version_with_claude_code_suffix_is_stripped(self):
+        """A version "2.1.283 (Claude Code)" should produce
+        "claude-code-cli 2.1.283"."""
+        source, probed_at = roster._defaults_provenance({
+            "harness_version": "2.1.283 (Claude Code)",
+            "probed_at": "2026-09-28T11:26:18Z"
+        })
+        self.assertEqual(source, "claude-code-cli 2.1.283")
+        self.assertEqual(probed_at, "2026-09-28T11:26:18Z")
+
+    def test_version_without_suffix_stays_the_same(self):
+        """A version "2.1.283" without the suffix should still produce
+        "claude-code-cli 2.1.283"."""
+        source, probed_at = roster._defaults_provenance({
+            "harness_version": "2.1.283",
+            "probed_at": "2026-09-28T11:26:18Z"
+        })
+        self.assertEqual(source, "claude-code-cli 2.1.283")
+        self.assertEqual(probed_at, "2026-09-28T11:26:18Z")
+
+    def test_non_matching_version_gives_version_unknown(self):
+        """A non-matching version value should give "claude-code-cli
+        (version unknown)"."""
+        source, probed_at = roster._defaults_provenance({
+            "harness_version": None,
+            "probed_at": "2026-09-28T11:26:18Z"
+        })
+        self.assertEqual(source, "claude-code-cli (version unknown)")
+        self.assertEqual(probed_at, "2026-09-28T11:26:18Z")
+
+    def test_claude_code_suffix_is_case_sensitive(self):
+        """Only exact " (Claude Code)" suffix (case-sensitive) is stripped."""
+        source, probed_at = roster._defaults_provenance({
+            "harness_version": "2.1.283 (claude code)",
+            "probed_at": "2026-09-28T11:26:18Z"
+        })
+        # Since the version matches the regex, it should be used as-is.
+        # The lowercase version does NOT match the suffix pattern.
+        self.assertEqual(source, "claude-code-cli 2.1.283 (claude code)")
+
+
 class _RosterFixture(unittest.TestCase):
     """Synthetic catalogue and census shaped like the 2026-09-22 census."""
 
@@ -397,7 +443,7 @@ class _RosterFixture(unittest.TestCase):
                 "defaults": {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"},
                 "skipped": ["mythos"], "errors": {}}
     #: What the published block and every reason name as the source.
-    SOURCE = "claude-code-cli 2.1.283 (Claude Code)"
+    SOURCE = "claude-code-cli 2.1.283"
 
     @staticmethod
     def _policy(**overrides):
