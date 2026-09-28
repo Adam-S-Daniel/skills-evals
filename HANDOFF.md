@@ -70,6 +70,15 @@ are present. See ADR 0002's decision 6 and third update.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.
+**Amended 2026-09-28 (Adam's decision, ADR 0003):** a differing proposal no
+longer necessarily waits for a human to open and merge the pull request.
+`roster_mode: auto` in `evals/roster-policy.yml` — the shipped setting — has
+the propose step open/update the `roster/proposal` PR itself, dispatch
+`ci.yml` on it, and enable auto-merge once `test` passes, but only on a run
+whose vendor-default probe was clean; a dirty probe, a rejected proposal, or
+any failed `gh` call along the way still leaves the human-merge flow above
+untouched. Set `roster_mode: proposal` to restore it everywhere, with no
+other change.
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 

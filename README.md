@@ -646,9 +646,28 @@ taken over — and a `main...roster/proposal` compare link. An invalid proposal
 does not update the branch or compare link; its tracking issue says it needs
 review and lists the admission failures. The paid eval result still publishes
 from the committed roster — except on a `roster_only` dispatch, where no eval
-runs and nothing is published to `eval-results`. A human opens the pull request for a valid proposal
-and merges it after CI. Nothing in CI writes `evals/roster.yml`. When the
-computed roster matches the committed one, that issue is closed.
+runs and nothing is published to `eval-results`. Nothing in CI writes
+`evals/roster.yml` directly — only a merged pull request does. When the
+computed roster matches the committed one, that issue (and, under
+`roster_mode: auto`, any open pull request) is closed.
+
+**Who merges the pull request depends on `roster_mode`** in
+`evals/roster-policy.yml` ([ADR 0003](docs/decisions/0003-roster-merges-automatically.md)).
+`roster_mode: proposal` (the flow above, unabridged) leaves the pull request
+for a human to open and merge after CI. `roster_mode: auto` — the shipped
+setting — instead opens or updates the pull request itself, dispatches
+`ci.yml` on `roster/proposal` so its `test` check reports on the pushed sha,
+and sets the PR to merge automatically once that check passes; it only does
+this on a run whose vendor-default probe was clean (no `defaults_failed`,
+no `defaults_mismatched`) — a dirty probe or a rejected proposal keeps the
+human-merge flow exactly, and says why in the tracking issue. Any `gh`
+failure along the way is a fixed warning, never a failed job, and degrades
+that run to the human-merge flow too. On every run that does not (re-)enable
+auto-merge — a dirty probe, `roster_mode: proposal`, a rejected proposal, or
+a failed `gh` call partway through — an already-open pull request has its
+auto-merge explicitly turned off, so a later push whose `test` happens to
+pass can never merge a head this run did not approve. Set
+`roster_mode: proposal` to switch back; nothing else needs to change.
 
 Thresholds and the capability ladder live in
 [`evals/roster-policy.yml`](evals/roster-policy.yml) — no model id appears in

@@ -4126,19 +4126,25 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         #
         # `issues: write` IS #147's ONE ADDITION and is pinned as such:
         # the roster proposal step upserts one tracking issue and closes it
-        # again. The set is asserted for EQUALITY, so a fourth scope reds
-        # this row whatever it is, and the two assertions below say
-        # separately that the two pre-existing scopes are unchanged — so a
-        # future widening cannot be smuggled in by rewriting the expected
-        # dict wholesale.
+        # again. `pull-requests: write` and `actions: write` are the
+        # roster-mode addition (Adam's decision of 2026-09-28): they exist
+        # only for `roster_mode: auto`'s PR create/edit/merge/close and its
+        # `gh workflow run ci.yml` dispatch. The set is asserted for
+        # EQUALITY, so a fifth scope reds this row whatever it is, and the
+        # two assertions below say separately that the two pre-existing
+        # scopes are unchanged — so a future widening cannot be smuggled in
+        # by rewriting the expected dict wholesale.
         doc = self._doc()
         self.assertEqual(
             doc.get("permissions"),
-            {"contents": "write", "id-token": "write", "issues": "write"},
+            {"contents": "write", "id-token": "write", "issues": "write",
+             "pull-requests": "write", "actions": "write"},
             "eval.yml's permissions must be exactly {contents: write, "
-            "id-token: write, issues: write} — the header states this is "
-            "the workflow's whole privilege set, and `issues: write` is the "
-            "only scope #147 added")
+            "id-token: write, issues: write, pull-requests: write, "
+            "actions: write} — the header states this is the workflow's "
+            "whole privilege set, and `issues: write` is #147's addition; "
+            "`pull-requests: write` and `actions: write` exist only for "
+            "roster_mode: auto")
         self.assertEqual(doc["permissions"]["contents"], "write")
         self.assertEqual(doc["permissions"]["id-token"], "write")
 
@@ -5721,6 +5727,11 @@ class TestIssue67(unittest.TestCase):
                          "a rung may name peers that rank identically")
         self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
                                   "sub-issue until the ADR itself exists")
+        # Adam's decision of 2026-09-28 (roster_mode): the shipped policy
+        # opts every run into fully automatic merging. roster.py itself
+        # never reads this key (only eval.yml's propose step does) but
+        # validate_policy below must still accept the file with it present.
+        self.assertEqual(policy["roster_mode"], "auto")
         roster.validate_policy(policy)  # the real policy file must validate
 
     #: Anything a maintainer marks with this on the SAME LINE is allowed to
@@ -5830,7 +5841,8 @@ class TestIssue67(unittest.TestCase):
         # and predates #147: this is the test nobody may delete.
         self.assertEqual(doc["permissions"],
                          {"contents": "write", "id-token": "write",
-                          "issues": "write"})
+                          "issues": "write", "pull-requests": "write",
+                          "actions": "write"})
         for step in doc["jobs"]["eval"]["steps"]:
             script = step.get("run") or ""
             self.assertNotIn("${{", script,

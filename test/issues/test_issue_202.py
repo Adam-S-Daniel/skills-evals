@@ -1792,6 +1792,29 @@ class _ProposeStepFixture(unittest.TestCase):
         self.assertIn(self.START, self.run_body)
         return self.run_body[self.run_body.index(self.START):self.run_body.index(self.END)]
 
+    MODE_START = "# >>> roster-mode"
+    MODE_END = "# <<< roster-mode"
+
+    def _mode_fragment(self):
+        self.assertIn(self.MODE_START, self.run_body)
+        return self.run_body[self.run_body.index(self.MODE_START):
+                             self.run_body.index(self.MODE_END)]
+
+    def _run_mode_fragment(self, cwd, policy_text=None):
+        """Run just the `roster_mode` fragment with `cwd` as the working
+        directory `evals/roster-policy.yml` is read from (the trusted `main`
+        checkout, per the design). `policy_text=None` means no such file at
+        all; any other value is written verbatim."""
+        if policy_text is not None:
+            (cwd / "evals").mkdir(parents=True, exist_ok=True)
+            (cwd / "evals" / "roster-policy.yml").write_text(policy_text, encoding="utf-8")
+        script = ("set -euo pipefail\n" + self._mode_fragment()
+                  + '\nprintf "MODE=%s\\n" "$roster_mode"\n')
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                              timeout=30, cwd=cwd, env={"PATH": os.environ.get("PATH", "")})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
     def _latest(self, payload):
         path = self.tmp / "latest.json"
         path.write_text(payload if isinstance(payload, str) else json.dumps(payload),
@@ -2986,11 +3009,16 @@ class TestProposeStepGhWritesWarn(_ProposeStepFixture):
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
     def test_a_failed_rejection_edit_warns_and_exits_zero(self):
-        # No scripts/ in the step's working directory: rendering is rejected.
+        # No scripts/ in the step's working directory: rendering is
+        # rejected. The rejection path now also looks up (and, if found,
+        # disables auto-merge on) an open PR before writing the issue —
+        # the parent fixture's stub `gh` has no special case for `pr list`,
+        # so it answers empty and no PR is found.
         self._gh_fail = "issue edit"
         out, calls, body = self._run_step(self.DIFFERS, self._tracker())
-        self.assertTrue(calls[0].startswith("issue edit 7"), calls)
-        self.assertIn("needs review", calls[0])
+        issue_calls = [c for c in calls if c.startswith("issue ")]
+        self.assertTrue(issue_calls[0].startswith("issue edit 7"), issue_calls)
+        self.assertIn("needs review", issue_calls[0])
         self.assertIn("::warning::could not update the roster tracking issue\n", out)
         self.assertNotIn("updated the blocked proposal issue", out)
 
@@ -2998,7 +3026,8 @@ class TestProposeStepGhWritesWarn(_ProposeStepFixture):
     def test_a_failed_rejection_create_warns_and_exits_zero(self):
         self._gh_fail = "issue create"
         out, calls, _ = self._run_step(self.DIFFERS, [])
-        self.assertTrue(calls[0].startswith("issue create"), calls)
+        issue_calls = [c for c in calls if c.startswith("issue ")]
+        self.assertTrue(issue_calls[0].startswith("issue create"), issue_calls)
         self.assertIn("::warning::could not create the roster tracking issue\n", out)
 
     def test_every_gh_issue_write_is_guarded(self):
@@ -3088,6 +3117,466 @@ class TestProposeStepDiffersBranchGhWrites(_ProposeStepFixture):
                 self.assertTrue(any("a change is proposed" in c for c in calls), calls)
                 self.assertIn(f"::warning::could not {verb} the roster tracking issue\n",
                               out)
+
+
+class TestRosterModeFragment(_ProposeStepFixture):
+    """`roster_mode` in `evals/roster-policy.yml`: `auto`/`proposal` pass
+    through, a missing key or file is silently `proposal`, and any other
+    value is a fixed warning plus `proposal` (spec-roster-mode.md #1)."""
+
+    def test_missing_key_is_silently_proposal(self):
+        d = self.tmp / "missing-key"; d.mkdir()
+        out = self._run_mode_fragment(d, "arm_enter_usage_pct: 10\n")
+        self.assertNotIn("::warning::", out)
+        self.assertIn("MODE=proposal\n", out)
+
+    def test_missing_file_is_silently_proposal(self):
+        d = self.tmp / "missing-file"; d.mkdir()
+        out = self._run_mode_fragment(d, None)
+        self.assertNotIn("::warning::", out)
+        self.assertIn("MODE=proposal\n", out)
+
+    def test_auto_passes_through(self):
+        d = self.tmp / "auto"; d.mkdir()
+        out = self._run_mode_fragment(d, "roster_mode: auto\n")
+        self.assertNotIn("::warning::", out)
+        self.assertIn("MODE=auto\n", out)
+
+    def test_proposal_passes_through(self):
+        d = self.tmp / "proposal"; d.mkdir()
+        out = self._run_mode_fragment(d, "roster_mode: proposal\n")
+        self.assertNotIn("::warning::", out)
+        self.assertIn("MODE=proposal\n", out)
+
+    def test_bad_value_warns_and_falls_back(self):
+        d = self.tmp / "bad"; d.mkdir()
+        out = self._run_mode_fragment(d, "roster_mode: yolo\n")
+        self.assertIn("::warning::roster_mode is not auto or proposal; using proposal\n",
+                      out)
+        self.assertIn("MODE=proposal\n", out)
+
+    def test_the_fragment_interpolates_nothing(self):
+        self.assertNotIn("${{", self._mode_fragment())
+
+
+class _AutoProposeStepFixture(_ProposeStepFixture):
+    """Extends the parent fixture's stub `gh` with the `roster_mode: auto`
+    surface (`gh pr list/create/edit/merge/close`, `gh workflow run`).
+    Every other command (issue create/edit/close, `gh api`, `--body-file`
+    capture) behaves exactly as `_ProposeStepFixture`'s stub."""
+
+    def setUp(self):
+        super().setUp()
+        #: `gh pr list ... --jq '.[0].number'`'s stdout — "" means no open PR.
+        self._pr_list_value = ""
+        #: the digits `gh pr create`'s printed URL ends with.
+        self._pr_create_number = "55"
+
+    def _write_policy(self, cwd, mode):
+        (cwd / "evals").mkdir(parents=True, exist_ok=True)
+        text = "" if mode is None else f"roster_mode: {mode}\n"
+        (cwd / "evals" / "roster-policy.yml").write_text(text, encoding="utf-8")
+
+    def _run_step(self, latest, issues, cwd=None):
+        runner = self.tmp / "runner"
+        (runner / "roster").mkdir(parents=True)
+        (runner / "roster-inputs").mkdir()
+        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
+        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
+                                                            encoding="utf-8")
+        stub = self.tmp / "bin"
+        stub.mkdir()
+        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
+        gh = stub / "gh"
+        gh.write_text(
+            "#!/usr/bin/env bash\n"
+            f"printf '%s\\n' \"$*\" >> {str(self.tmp / 'gh.log')!r}\n"
+            f"if [ \"$1\" = api ]; then cat {str(self.tmp / 'issues.json')!r}; exit 0; fi\n"
+            # R2-3: `_gh_fail` names one `gh <verb> <noun>` that fails —
+            # checked before the pr-command stand-ins below, so a failing
+            # `pr list`/`pr create`/etc. really fails rather than also
+            # printing a stand-in answer.
+            f"if [ \"$1 $2\" = {getattr(self, '_gh_fail', None) or '-'!r} ]; then "
+            "echo 'HTTP 502' >&2; exit 1; fi\n"
+            f"if [ \"$1 $2\" = 'pr list' ]; then printf '%s\\n' {self._pr_list_value!r}; exit 0; fi\n"
+            "if [ \"$1 $2\" = 'pr create' ]; then "
+            f"printf 'https://github.example.com/example/skills-evals/pull/%s\\n' {self._pr_create_number!r}; "
+            "exit 0; fi\n"
+            "prev=''\n"
+            "for arg in \"$@\"; do\n"
+            f"  if [ \"$prev\" = --body-file ]; then cat \"$arg\" > {str(self.tmp / 'body.md')!r}; fi\n"
+            "  prev=\"$arg\"\n"
+            "done\n", encoding="utf-8")
+        gh.chmod(0o755)
+        event = self.tmp / "event.json"
+        event.write_text(json.dumps({"schedule": "0 7 * * 1"}), encoding="utf-8")
+        env = {"PATH": f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
+               "RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
+               "REPO": "example/skills-evals", "RUN_ID": "1",
+               "SERVER_URL": "https://github.example.com",
+               "GITHUB_TOKEN": "t", "GH_TOKEN": "t"}
+        done = subprocess.run(["bash", "-c", self.run_body], capture_output=True,
+                              text=True, timeout=60, env=env, cwd=cwd or self.tmp)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        log = (self.tmp / "gh.log").read_text(encoding="utf-8").splitlines()
+        body = ((self.tmp / "body.md").read_text(encoding="utf-8")
+                if (self.tmp / "body.md").exists() else None)
+        return done.stdout, [ln for ln in log if not ln.startswith("api ")], body
+
+    def _repo(self, mode="auto", name="work"):
+        """A throwaway git repository (never a copy of this checkout — its
+        `origin` is a local bare repo created here) carrying enough of the
+        tree (`harness/`, `scripts/render_roster_yaml.py`, the committed
+        `evals/roster.yml`, and a written `evals/roster-policy.yml`) for the
+        "differs" branch's render + admission to pass."""
+        origin = self.tmp / f"{name}-origin.git"
+        work = self.tmp / name
+        git = ["git", "-c", "init.defaultBranch=main"]
+        subprocess.run(git + ["init", "-q", "--bare", str(origin)], check=True)
+        subprocess.run(git + ["init", "-q", str(work)], check=True)
+        shutil.copytree(REPO_ROOT / "harness", work / "harness",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (work / "scripts").mkdir()
+        shutil.copy2(SCRIPTS_DIR / "render_roster_yaml.py", work / "scripts")
+        (work / "evals").mkdir()
+        shutil.copy2(REPO_ROOT / "evals" / "roster.yml", work / "evals")
+        self._write_policy(work, mode)
+        ident = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *ident, "commit", "-q", "-m", "x"],
+                       check=True)
+        subprocess.run(["git", "-C", str(work), "remote", "add", "origin", str(origin)],
+                       check=True)
+        return work
+
+    def _differs(self, defaults_failed=None, defaults_mismatched=None):
+        committed = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(
+            encoding="utf-8"))
+        loop = _WeeklyLoop()
+        out, _ = loop._loop(lambda n: {"claude-sonnet-5": 500, "claude-opus-5": 300,
+                                       "claude-opus-5-5": 300}, 1,
+                            lambda k: loop._docs(k), previous=committed)
+        result = out[0]["result"]
+        self.assertEqual(result["proposal"]["status"], "differs")
+        if defaults_failed is not None:
+            result = dict(result); result["defaults_failed"] = defaults_failed
+        if defaults_mismatched is not None:
+            result = dict(result); result["defaults_mismatched"] = defaults_mismatched
+        return result
+
+    DIFFERS = {"proposal": {"status": "differs", "changes": []}}
+    SAME = {"proposal": {"status": "same", "changes": []}}
+
+
+class TestRosterModeAutoDiffers(_AutoProposeStepFixture):
+    """`roster_mode: auto` + a differs proposal that pushes cleanly + a
+    clean probe: the "Propose a roster change" step opens/updates a pull
+    request, dispatches `ci.yml` on its head, and enables auto-merge
+    (spec-roster-mode.md #3)."""
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_clean_auto_differs_opens_a_pr_and_enables_auto_merge(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_create_number = "77"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ") or c.startswith("workflow ")]
+        self.assertTrue(any(c.startswith("pr list") for c in pr_calls), pr_calls)
+        create = next((c for c in pr_calls if c.startswith("pr create")), None)
+        self.assertIsNotNone(create, pr_calls)
+        self.assertIn("--base main", create)
+        self.assertIn("--head roster/proposal", create)
+        self.assertIn("automatic update (run 1)", create)
+        self.assertTrue(any(c.startswith("workflow run ci.yml") and "--ref roster/proposal" in c
+                           for c in pr_calls), pr_calls)
+        merge = next((c for c in pr_calls if c.startswith("pr merge")), None)
+        self.assertIsNotNone(merge, pr_calls)
+        self.assertIn("77", merge)
+        self.assertIn("--auto", merge)
+        self.assertIn("--merge", merge)
+        self.assertIn("--match-head-commit", merge)
+        issue_calls = [c for c in calls if c.startswith("issue ")]
+        self.assertTrue(any("merging automatically" in c for c in issue_calls), issue_calls)
+        self.assertIn("Pull request #77", body)
+        self.assertIn("merges automatically once its `test` check passes", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_an_open_pr_is_edited_not_recreated(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_value = "12"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("pr create") for c in pr_calls), pr_calls)
+        edit = next((c for c in pr_calls if c.startswith("pr edit")), None)
+        self.assertIsNotNone(edit, pr_calls)
+        self.assertTrue(edit.startswith("pr edit 12"), edit)
+        self.assertIn("Pull request #12", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_non_digit_pr_number_is_treated_as_none(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_value = "null"
+        self._pr_create_number = "88"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertTrue(any(c.startswith("pr create") for c in pr_calls), pr_calls)
+        self.assertFalse(any(c.startswith("pr edit") for c in pr_calls), pr_calls)
+        self.assertIn("Pull request #88", body)
+
+
+class TestRosterModeProposalDiffers(_AutoProposeStepFixture):
+    """`roster_mode: proposal` on a differs proposal: no PR/workflow calls
+    at all, and the issue text is unchanged from before this feature
+    (spec-roster-mode.md's "proposal+differs" row)."""
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_proposal_mode_makes_no_pr_create_or_workflow_calls(self):
+        latest = self._differs()
+        work = self._repo("proposal")
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        # A `pr list` lookup DOES happen now (it also guards against a
+        # stale auto-merge — see the disable-auto test below), but nothing
+        # that creates, edits, dispatches or merges.
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            or c.startswith("pr merge") or c.startswith("workflow ")
+                            for c in calls), calls)
+        issue_calls = [c for c in calls if c.startswith("issue ")]
+        self.assertTrue(any("a change is proposed" in c for c in issue_calls), issue_calls)
+        self.assertIn("Open a pull request from `roster/proposal` and merge it after CI",
+                      body)
+        self.assertNotIn("roster_mode", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_proposal_mode_with_an_open_pr_disables_auto_merge(self):
+        # Review finding: a PR opened by an earlier `roster_mode: auto` run
+        # must not keep auto-merge once the mode is switched back to
+        # `proposal` — a later push whose `test` happens to pass would
+        # otherwise merge a head no run this time approved.
+        latest = self._differs()
+        work = self._repo("proposal")
+        self._pr_list_value = "34"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("pr create") for c in pr_calls), pr_calls)
+        disable = next((c for c in pr_calls
+                        if c.startswith("pr merge 34") and "--disable-auto" in c), None)
+        self.assertIsNotNone(disable, pr_calls)
+        self.assertIn("Pull request #34", body)
+        self.assertIn("turned off", body)
+        self.assertIn("roster_mode", body)
+
+
+class TestRosterModeAutoDirtyProbe(_AutoProposeStepFixture):
+    """`roster_mode: auto` with a probe that is not clean (`defaults_failed`
+    or `defaults_mismatched` > 0): today's behavior exactly, and the issue
+    says why auto was skipped (spec-roster-mode.md #2)."""
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_defaults_failed_skips_the_pr_and_says_why(self):
+        latest = self._differs(defaults_failed={"opus": "timeout"})
+        work = self._repo("auto")
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        # No PR is open, so the only new call is the lookup itself (which
+        # also guards against a stale auto-merge — see
+        # TestRosterModeUnclean/ProposalDisablesStaleAutoMerge below).
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            or c.startswith("pr merge") or c.startswith("workflow ")
+                            for c in calls), calls)
+        self.assertIn("roster_mode: auto", body)
+        self.assertIn("vendor-default probe was not clean", body)
+        self.assertIn("a human must", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_defaults_mismatched_skips_the_pr_and_says_why(self):
+        latest = self._differs(defaults_mismatched={
+            "opus": {"id": "claude-opus-9", "class": "not-available"}})
+        work = self._repo("auto")
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            or c.startswith("pr merge") or c.startswith("workflow ")
+                            for c in calls), calls)
+        self.assertIn("vendor-default probe was not clean", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_both_failed_and_mismatched_skip_the_pr(self):
+        latest = self._differs(defaults_failed={"opus": "timeout"},
+                               defaults_mismatched={
+                                   "sonnet": {"id": "claude-sonnet-9",
+                                             "class": "not-available"}})
+        work = self._repo("auto")
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            or c.startswith("pr merge") or c.startswith("workflow ")
+                            for c in calls), calls)
+        self.assertIn("vendor-default probe was not clean", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_unclean_probe_with_an_open_pr_disables_auto_merge(self):
+        # Review finding: an open PR from an EARLIER (clean) run must not
+        # keep auto-merge just because THIS run's probe went dirty — a
+        # later push whose `test` happens to pass would otherwise merge a
+        # head no run this time approved.
+        latest = self._differs(defaults_failed={"opus": "timeout"})
+        work = self._repo("auto")
+        self._pr_list_value = "21"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ") or c.startswith("workflow ")]
+        self.assertFalse(any(c.startswith("workflow run") for c in pr_calls), pr_calls)
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            for c in pr_calls), pr_calls)
+        self.assertFalse(any("--auto" in c for c in pr_calls), pr_calls)
+        disable = next((c for c in pr_calls
+                        if c.startswith("pr merge 21") and "--disable-auto" in c), None)
+        self.assertIsNotNone(disable, pr_calls)
+        self.assertIn("Pull request #21", body)
+        self.assertIn("turned off", body)
+        self.assertIn("vendor-default probe was not clean", body)
+
+
+class TestRosterModeAutoRejectedProposal(_AutoProposeStepFixture):
+    """`roster_mode: auto` with a proposal rejected before publication
+    (render or admission failure, before the branch is even pushed): no PR
+    calls, and the issue explains why auto was not reached
+    (spec-roster-mode.md #2, "a rejected proposal")."""
+
+    def test_rejected_proposal_makes_no_pr_calls(self):
+        d = self.tmp / "rejected"; d.mkdir()
+        self._write_policy(d, "auto")
+        out, calls, body = self._run_step(self.DIFFERS, [], cwd=d)
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            or c.startswith("pr merge") or c.startswith("workflow ")
+                            for c in calls), calls)
+        self.assertIn("no pull request was opened", body)
+        self.assertIn("roster_mode: auto", body)
+
+    def test_rejected_proposal_with_an_open_pr_disables_auto_merge(self):
+        # Review finding: a rejected proposal never touches the branch, so
+        # a PR an EARLIER run opened is still exactly as it was — but this
+        # run does not approve it either, so its auto-merge must come off.
+        d = self.tmp / "rejected-with-pr"; d.mkdir()
+        self._write_policy(d, "auto")
+        self._pr_list_value = "56"
+        out, calls, body = self._run_step(self.DIFFERS, [], cwd=d)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("pr create") or c.startswith("pr edit")
+                            for c in pr_calls), pr_calls)
+        disable = next((c for c in pr_calls
+                        if c.startswith("pr merge 56") and "--disable-auto" in c), None)
+        self.assertIsNotNone(disable, pr_calls)
+        self.assertIn("Pull request #56", body)
+        self.assertIn("turned off", body)
+
+
+class TestRosterModeAutoSame(_AutoProposeStepFixture):
+    """`roster_mode: auto` with a "same" status and an open `roster/proposal`
+    PR: the PR is closed alongside the tracking issue
+    (spec-roster-mode.md #4)."""
+
+    def test_an_open_pr_is_closed_alongside_the_issue(self):
+        d = self.tmp / "same"; d.mkdir()
+        self._write_policy(d, "auto")
+        self._pr_list_value = "9"
+        out, calls, body = self._run_step(self.SAME, self._tracker(), cwd=d)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertTrue(any(c.startswith("pr close 9") for c in pr_calls), pr_calls)
+        self.assertTrue(any(c.startswith("issue close 7") for c in calls), calls)
+
+    def test_no_open_pr_closes_nothing_but_still_closes_the_issue(self):
+        d = self.tmp / "same-nopr"; d.mkdir()
+        self._write_policy(d, "auto")
+        self._pr_list_value = ""
+        out, calls, body = self._run_step(self.SAME, self._tracker(), cwd=d)
+        self.assertFalse(any(c.startswith("pr close") for c in calls), calls)
+        self.assertTrue(any(c.startswith("issue close 7") for c in calls), calls)
+
+    def test_proposal_mode_same_makes_no_pr_calls(self):
+        d = self.tmp / "same-proposal"; d.mkdir()
+        self._write_policy(d, "proposal")
+        self._pr_list_value = "9"
+        out, calls, body = self._run_step(self.SAME, self._tracker(), cwd=d)
+        self.assertFalse(any(c.startswith("pr ") for c in calls), calls)
+        self.assertTrue(any(c.startswith("issue close 7") for c in calls), calls)
+
+
+class TestRosterModeGhFailuresDegradeToProposal(_AutoProposeStepFixture):
+    """Every `gh` call the auto path adds fails the same way: a fixed
+    `::warning::could not <verb> the roster pull request`, the step still
+    exits 0, and the issue degrades to proposal wording naming a human
+    (spec-roster-mode.md #3's last bullet)."""
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_each_failure_warns_and_degrades(self):
+        latest = self._differs()
+        cases = (("pr list", "could not find the roster pull request"),
+                 ("pr create", "could not create the roster pull request"),
+                 ("workflow run", "could not start checks for the roster pull request"),
+                 ("pr merge", "could not enable auto-merge for the roster pull request"))
+        for i, (fail, warning) in enumerate(cases):
+            with self.subTest(fail=fail):
+                work = self._repo("auto", name=f"gh-fail-{i}")
+                self._gh_fail = fail
+                self._pr_list_value = ""
+                (self.tmp / "gh.log").unlink(missing_ok=True)
+                (self.tmp / "body.md").unlink(missing_ok=True)
+                shutil.rmtree(self.tmp / "runner", ignore_errors=True)
+                shutil.rmtree(self.tmp / "bin", ignore_errors=True)
+                out, calls, body = self._run_step(latest, [], cwd=work)
+                self.assertIn(f"::warning::{warning}\n", out)
+                # Wording differs by whether a PR number was ever learned
+                # (a "pr list"/"pr create" failure never gets one; a
+                # "workflow run"/"pr merge" failure keeps the one `pr
+                # create` already returned) — "did not complete" and "a
+                # human must" are the two phrases common to both.
+                self.assertIn("did not complete", body)
+                self.assertIn("a human must", body)
+                self.assertNotIn("merging automatically", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_pr_edit_failure_warns_and_degrades(self):
+        latest = self._differs()
+        work = self._repo("auto", name="gh-fail-edit")
+        self._gh_fail = "pr edit"
+        self._pr_list_value = "3"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertIn("::warning::could not update the roster pull request\n", out)
+        self.assertIn("a human must", body)
+        self.assertIn("Pull request #3", body)
+        self.assertIn("turned off", body)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("workflow run") for c in calls), calls)
+        self.assertFalse(any("--auto" in c and "--merge" in c for c in pr_calls), pr_calls)
+        # The edit itself failed, but the safety net still turns off any
+        # auto-merge the PR might already be carrying from an earlier run.
+        disable = next((c for c in pr_calls
+                        if c.startswith("pr merge 3") and "--disable-auto" in c), None)
+        self.assertIsNotNone(disable, pr_calls)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_disable_auto_merge_failure_warns_and_exits_zero(self):
+        # (d) from the review finding: the disable-auto call itself can
+        # fail too, and degrades the same way every other gh call here
+        # does — a fixed warning, the step still exits 0.
+        latest = self._differs()
+        work = self._repo("proposal")
+        self._pr_list_value = "9"
+        self._gh_fail = "pr merge"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertIn("::warning::could not disable auto-merge for the roster pull request\n",
+                      out)
 
 
 class TestHarnessVersionNonZeroExit(_ProbeFixture):

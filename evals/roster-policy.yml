@@ -18,6 +18,28 @@
 # test/run_tests.py::TestIssue67::test_no_model_ids_are_hardcoded_outside_fixtures
 # is the guard.
 
+# `roster_mode` selects how `.github/workflows/eval.yml`'s "Propose a
+# roster change" step handles a proposal that differs from the committed
+# roster. `roster.py` never reads this key — it is machinery for the
+# workflow step alone. See
+# docs/decisions/0003-roster-merges-automatically.md.
+#
+#   auto     — the proposal is pushed to `roster/proposal` as today, AND
+#              (only when this run's vendor-default probe was clean: no
+#              `defaults_failed`, no `defaults_mismatched`) a pull request
+#              from that branch is opened or updated, `ci.yml` is dispatched
+#              on its head so the required `test` check reports there, and
+#              the PR is set to merge automatically once it passes. A
+#              tracking issue is still filed, linking the PR.
+#   proposal — today's flow: the branch is pushed and a tracking issue is
+#              filed; a human opens and merges the pull request. Set this to
+#              restore human approval without any other change.
+#
+# Missing entirely, or any value other than the two above, is treated as
+# `proposal` — silently when the key is simply absent, with a fixed
+# `::warning::` when it is present and wrong.
+roster_mode: auto
+
 # Capability ladder, weakest rung first. A model's tier is the WEAKEST rung
 # below whose word appears as a dash-separated token anywhere in its id —
 # `rung_of()` walks the ladder from the top of this list down and returns on
