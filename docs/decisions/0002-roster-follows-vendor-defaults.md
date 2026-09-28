@@ -102,37 +102,50 @@ happened to accumulate usage on.
    the one remaining conflict is two spellings of the same family word naming
    different models.
 6. **A failed probe freezes its family for that run (#203 probe round 1;
-   narrowed in probe round 2).** Only a PROBE FAILURE freezes: the probe
-   recorded an error class for the alias, or the document is unreadable,
-   junk, answered for no ladder alias, or is eval.yml's stand-in for a probe
-   script that exited non-zero (`probe-exited`, "the probe script exited
-   with an error") — then every family on the ladder except the aliases the
-   probe `skipped`. A `{}` from a probe that ran and resolved nothing stays
-   `no-defaults`. A CATALOGUE MISMATCH does not freeze: the probe answered,
-   but the id is not an available model of that alias's tier and family this
-   run (`not-available`, `ambiguous-snapshot` — an undated id resolves to its
-   one dated `<id>-YYYYMMDD` when the catalogue lists only that, and two or
-   more are ambiguous — `no-created-at`, `wrong-tier`, `wrong-family`). That
-   family follows rules 1 to 3 exactly as with no default, and the warning,
-   the summary and `defaults_mismatched` (`{alias: {id, class}}`) say "the
-   CLI's default `<id>` for `<alias>` is not in this run's catalogue
-   (<class>)" — not "probe failed". Freezing it instead held a bearer that
-   never lists the CLI's answer on the old seats for good. In a frozen family
-   every previous arm keeps its seat ("vendor default for `<alias>` unknown
-   this run (probe: <class>); held, no seat changes on a failed probe")
-   unless it has left the Models API, nothing is retired, and no model gets
-   a newest-in-tier seat — but a model that clears the usage entry bar
-   (rule 1) is seated as usual, with the failed probe named in its reason. A
-   freeze only ever adds usage-proven seats: without that, a CLI that never
-   initialises unauthenticated kept the roster on the old generation while
-   the fleet moved, and emptied it once the old models left the API. The
-   earlier rule — fall back to both usage rules — flipped seats on a one-week
-   failure: a seated default retired, or a preview seated, and the next clean
-   probe undid it. The freeze is loud: `defaults_failed`
+   narrowed in probe rounds 2 and 3).** Only a PROBE FAILURE freezes: the
+   probe recorded an error class for the alias, it answered with a model of
+   the wrong tier or family (`wrong-tier`, `wrong-family` — the CLI said
+   something nonsensical about its own alias, so it is treated as a failure,
+   probe round 3), or the document is unreadable, junk, answered for no
+   ladder alias, or is eval.yml's stand-in for a probe script that exited
+   non-zero (`probe-exited`, "the probe script exited with an error") — then
+   every family on the ladder except the aliases the probe `skipped`. A `{}`
+   from a probe that ran and resolved nothing stays `no-defaults`. A
+   CATALOGUE MISMATCH does not freeze: the probe answered, but the id is not
+   an available model this run (`not-available`, `ambiguous-snapshot` — an
+   undated id resolves to its one dated `<id>-YYYYMMDD` when the catalogue
+   lists only that, and two or more are ambiguous — `no-created-at`). That
+   family follows the usage rules for RETIREMENT and for rule-1 usage seats,
+   but gets NO newest-in-tier seat (probe round 3): the mismatch is one
+   run's disagreement, and a newest-in-tier seat granted on it was a seat
+   the next clean week retired. With no usable census and no seat of the
+   family still in the Models API it keeps the no-probe fallback, so the
+   family is never emptied. The warning, the summary and
+   `defaults_mismatched` (`{alias: {id, class}}`) say "the CLI's default
+   `<id>` for `<alias>` does not match this run's catalogue (<class>)" — not
+   "probe failed". Freezing it instead held a bearer that never lists the
+   CLI's answer on the old seats for good. In a frozen family every previous
+   arm keeps its seat ("vendor default for `<alias>` unknown this run
+   (probe: <class>); held; none retired on a failed probe") unless it has
+   left the Models API, and nothing else is retired. While the family still
+   holds a seat the Models API lists, it gets NO new seat at all (probe
+   round 3): a usage seat granted there was one the next clean week
+   retired. Only a family that would otherwise vanish from the roster — no
+   held arm left in the API — is seated: by the usage entry bar (rule 1,
+   probe round 2), with the failed probe named in its reason, or, when the
+   enter window is not usable, as the newest in its tier, exactly as the
+   no-probe fallback would seat it (probe round 3). Without that, a CLI
+   that never initialises unauthenticated emptied the roster once the old
+   models left the API. The earlier rule — fall back to both usage rules —
+   flipped seats on a one-week failure: a seated default retired, or a
+   preview seated, and the next clean probe undid it. The freeze is loud: `defaults_failed`
    (`{alias: class}`, and `defaults_document_failed`) in the published
    roster, a line at the top of the step summary, and a fixed `::warning::`
    from the proposal step, which keeps the tracking issue open even when the
-   proposal is "same". It is **per run, never carried** (the owner's
+   proposal is "same"; its eval sentence says whether the eval step
+   succeeded, failed or did not run (it runs before the step that publishes
+   to `eval-results`, so a successful eval's sentence says that step
+   publishes next). It is **per run, never carried** (the owner's
    decision): the next run's probe decides afresh. The probe is not the eval
    — the eval authenticates and the probe must not — so a probe failure does
    not stop the eval. The committed `evals/roster.yml` keeps no
@@ -159,11 +172,13 @@ happened to accumulate usage on.
   says so in the summary, a `::warning::` and the tracking issue. The
   proposal step that carries the warning and the issue runs unless the
   workflow is cancelled, so it fires even when the eval step before it
-  failed, and a failed `gh` write there is a `::warning::`, never a failed
-  job. Nothing fails the workflow step. A wrong default is bounded by the
-  catalogue check: an id that is not an available model of the alias's own
-  family seats nothing, and that family is decided by usage as if there were
-  no default.
+  failed, and a failed `gh issue` write there is a fixed `::warning::`,
+  never a failed job — but a failed `git push` of `roster/proposal` still
+  fails it, because the proposal branch must exist for review. A failed
+  probe fails no workflow step. A wrong
+  default is bounded by the catalogue check: an id that is not an available
+  model this run seats nothing, and that family is decided by usage with no
+  newest-in-tier seat; an id of the wrong tier or family freezes it.
 - **A tier between the bars keeps an arm across a version change**, because
   the seated default's exit check reads the tier's share; a tier the fleet
   genuinely leaves still retires it by the exit bar.

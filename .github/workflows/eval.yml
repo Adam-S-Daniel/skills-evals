@@ -484,11 +484,13 @@ jobs:
       # nothing, and alias resolution is built into the binary, not fetched.
       # It reads the init event and kills the CLI's process group. It never
       # fails the step. A family the probe FAILED for (an error recorded for
-      # its alias, or no usable document) is FROZEN for this run by
-      # roster.py — its seats held, none retired, none added but by the
-      # usage entry bar. A default the probe answered but this run's catalogue
-      # does not list is not frozen: that family follows the usage rules,
-      # and the summary says so. On a freeze the proposal step below warns
+      # its alias, an answer in the wrong tier or family, or no usable
+      # document) is FROZEN for this run by roster.py — its seats held, none
+      # retired except models gone from the Models API, none added unless the
+      # family holds no seat the Models API still lists. A default the probe
+      # answered but this run's catalogue does not match is not frozen: that
+      # family follows the usage rules for retirement and usage seats, with
+      # no newest-in-tier seat, and the summary says so. On a freeze the proposal step below warns
       # and keeps the tracking issue open; that step runs unless the workflow
       # is cancelled, so it fires even when the eval step failed. Nothing is
       # carried to the next run.
@@ -721,6 +723,9 @@ jobs:
       # a skill fixture, and for a guidance fixture the arms it names (five,
       # one per delivery mode, for the delivery canary).
       - name: Run the eval (both arms, judge)
+        # `id: eval` so the proposal step can say whether the eval ran (#203
+        # probe round 3): its `outcome` reaches that step through `env:`.
+        id: eval
         # Skipped by a roster_only dispatch (#202). An expression in `if:`, never
         # interpolated into a run: body.
         if: ${{ !inputs.roster_only }}
@@ -787,6 +792,10 @@ jobs:
           RUN_ID: ${{ github.run_id }}
           REPO: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
+          # The eval step's outcome (success, failure, skipped or cancelled),
+          # for the issue's eval sentence (#203 probe round 3). Read as a
+          # variable and matched against fixed words, never interpolated.
+          EVAL_OUTCOME: ${{ steps.eval.outcome }}
         run: |
           set -euo pipefail
           marker='<!-- skills-evals:roster-proposal -->'
@@ -800,18 +809,28 @@ jobs:
 
           # >>> roster-only note
           # What the issue says about the eval depends on whether one ran
-          # (#203 round 1). Read from the event payload with jq at run time,
-          # never interpolated into this block: a dispatch sends the boolean
-          # input as a boolean or as the string "true", and a scheduled run
-          # has no inputs at all.
+          # (#203 round 1) and how it ended (#203 probe round 3). roster_only
+          # is read from the event payload with jq at run time, never
+          # interpolated into this block: a dispatch sends the boolean input
+          # as a boolean or as the string "true", and a scheduled run has no
+          # inputs at all. The eval step's outcome arrives as EVAL_OUTCOME.
+          # THIS STEP RUNS BEFORE the badge step that publishes to
+          # `eval-results`, so whether that publish succeeds is not known
+          # here: a successful eval's sentence says the next step publishes,
+          # and a failed or skipped eval's says nothing was published (the
+          # badge step runs only when every step before it succeeded).
           roster_only=false
           if [ -f "${GITHUB_EVENT_PATH:-}" ] && jq -e '(.inputs.roster_only // false) | . == true or . == "true"' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; then
             roster_only=true
           fi
           if [ "$roster_only" = true ]; then
             eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
+          elif [ "${EVAL_OUTCOME:-}" = success ]; then
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the next step, which runs after this issue is written — if that step failed, this run's results were not published."
+          elif [ "${EVAL_OUTCOME:-}" = failure ]; then
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`, but the eval step failed; nothing from this run was published to \`eval-results\`."
           else
-            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` normally."
+            eval_note="No eval result: the eval step did not run; nothing from this run was published to \`eval-results\`."
           fi
           # <<< roster-only note
 
@@ -827,7 +846,7 @@ jobs:
           probe_note=""
           if [ "$defaults_failed" -gt 0 ]; then
             echo "::warning::vendor-default probe failed for $defaults_failed families; their seats were held"
-            probe_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and none retired; a model of theirs was newly seated only by clearing the usage entry bar. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+            probe_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
           fi
           # <<< defaults-failed note
 
@@ -897,7 +916,7 @@ jobs:
               cat "$RUNNER_TEMP/roster-inputs/summary.md"
             } > "$body"
             # A failed gh write warns and never fails the job (#203 probe
-            # round 2): the roster and the eval are already done.
+            # rounds 2 and 3): the roster and the eval are already done.
             if [ -n "$issue" ]; then
               if gh issue edit "$issue" --repo "$REPO" \
                 --title "Model roster: the vendor-default probe failed" --body-file "$body"; then
@@ -914,9 +933,12 @@ jobs:
           fi
           if [ "$status" = "same" ]; then
             if [ -n "$issue" ]; then
-              gh issue close "$issue" --repo "$REPO" \
-                --comment "This run proposes no change to the model roster (routine observation-date refreshes are not proposed). Closing until something changes."
-              echo "closed the stale proposal issue #$issue"
+              if gh issue close "$issue" --repo "$REPO" \
+                --comment "This run proposes no change to the model roster (routine observation-date refreshes are not proposed). Closing until something changes."; then
+                echo "closed the stale proposal issue #$issue"
+              else
+                echo "::warning::could not close the roster tracking issue"
+              fi
             else
               echo "nothing to propose and no open proposal issue"
             fi
@@ -976,12 +998,16 @@ jobs:
               cat "$RUNNER_TEMP/roster-inputs/summary.md"
             } > "$body"
             if [ -n "$issue" ]; then
-              gh issue edit "$issue" --repo "$REPO" \
-                --title "Model roster: proposal needs review" --body-file "$body"
-              echo "updated the blocked proposal issue #$issue"
+              if gh issue edit "$issue" --repo "$REPO" \
+                --title "Model roster: proposal needs review" --body-file "$body"; then
+                echo "updated the blocked proposal issue #$issue"
+              else
+                echo "::warning::could not update the roster tracking issue"
+              fi
             else
               gh issue create --repo "$REPO" \
-                --title "Model roster: proposal needs review" --body-file "$body"
+                --title "Model roster: proposal needs review" --body-file "$body" \
+                || echo "::warning::could not create the roster tracking issue"
             fi
             exit 0
           fi
@@ -1012,6 +1038,9 @@ jobs:
           # expected-value lease form can require that a destination is absent.
           git -c "http.$SERVER_URL/.extraheader=$auth" fetch origin \
             '+refs/heads/roster/proposal:refs/remotes/origin/roster/proposal' || true
+          # NOT wrapped, unlike the `gh issue` writes (#203 probe round 3): a
+          # proposal branch that failed to push does not exist for review, so
+          # the step fails here rather than filing an issue that links to it.
           git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \
             push --force-with-lease origin roster/proposal
           git worktree remove --force "$worktree"
@@ -1032,12 +1061,16 @@ jobs:
             cat "$RUNNER_TEMP/roster-inputs/summary.md"
           } > "$body"
           if [ -n "$issue" ]; then
-            gh issue edit "$issue" --repo "$REPO" \
-              --title "Model roster: a change is proposed" --body-file "$body"
-            echo "updated the proposal issue #$issue"
+            if gh issue edit "$issue" --repo "$REPO" \
+              --title "Model roster: a change is proposed" --body-file "$body"; then
+              echo "updated the proposal issue #$issue"
+            else
+              echo "::warning::could not update the roster tracking issue"
+            fi
           else
             gh issue create --repo "$REPO" \
-              --title "Model roster: a change is proposed" --body-file "$body"
+              --title "Model roster: a change is proposed" --body-file "$body" \
+              || echo "::warning::could not create the roster tracking issue"
           fi
 
       # Badge generation, commit and push are ONE step because the badge's

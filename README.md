@@ -567,23 +567,28 @@ those weeks is under the 2% exit bar, with a stale or too-thin census holding
 it as before. A model newer than the default earns no new seat; one that is
 already a previous arm gets the ordinary exit check rather than retiring on
 sight. **A failed probe freezes its family for that run** (#203 probe round
-1): a family whose alias the probe recorded an error for is frozen — or every
-family the probe did not skip, when the document is unreadable, junk,
-answered for no ladder alias, or is the workflow's `{"probe_exit":
-"nonzero"}` stand-in for a probe script that exited with an error
-(`probe-exited`). A default the probe **answered** but this run's catalogue
-does not match (not available — an undated id the catalogue lists only as
-exactly one dated `<id>-YYYYMMDD` does resolve to it — an ambiguous
-snapshot, no `created_at`, the wrong tier or family) is **not** a failure:
-that family follows rules 1 and 2 exactly as with no default, and the
-summary says "the CLI's default `<id>` for `<alias>` is not in this run's
-catalogue (<class>)" (#203 probe round 2). A frozen family keeps every
-previous arm's seat until it leaves the Models API, retires none, and gets
-no newest-in-tier seat — but a model of it that clears the usage entry bar
-is seated as usual, so a freeze only ever adds usage-proven seats (#203
-probe round 2); falling back to the usage rules instead let one bad week
-retire a seated default or seat a preview that the next clean week then
-undid. The freeze is **per run —
+1): a family whose alias the probe recorded an error for, or answered with
+a model of the wrong tier or family (nonsensical about its own alias, #203
+probe round 3), is frozen — or every family the probe did not skip, when
+the document is unreadable, junk, answered for no ladder alias, or is the
+workflow's `{"probe_exit": "nonzero"}` stand-in for a probe script that
+exited with an error (`probe-exited`). A default the probe **answered** but
+this run's catalogue does not match (not available — an undated id the
+catalogue lists only as exactly one dated `<id>-YYYYMMDD` does resolve to
+it — an ambiguous snapshot, no `created_at`) is **not** a failure: that
+family follows the usage rules for retirement and rule-1 usage seats, but
+gets **no newest-in-tier seat** (#203 probe round 3; with no usable census
+and no seat of it left in the Models API it keeps the no-probe fallback),
+and the summary says "the CLI's default `<id>` for `<alias>` does not match
+this run's catalogue (<class>)". A frozen family keeps every previous arm's
+seat until it leaves the Models API and retires none. While it still holds
+a seat the Models API lists it gets **no new seat at all** (#203 probe
+round 3); only a family that would otherwise vanish from the roster is
+seated — by the usage entry bar, or, with no usable census, as the newest
+in its tier exactly as with no probe. Falling back to the usage rules
+instead let one bad week retire a seated default or seat a preview that
+the next clean week then undid, and a usage seat granted during a freeze
+was one the next clean week retired. The freeze is **per run —
 nothing is carried to the next** (the owner's decision): the probe is not
 the eval (the eval authenticates; the probe must not), so a probe failure
 does not stop the eval, and the next run's probe decides afresh. It is loud:
@@ -592,8 +597,12 @@ the published roster carries `defaults_failed` (`{alias: class}`, plus
 names the frozen families on its first lines, and the proposal step emits a
 `::warning::` and keeps the tracking issue open even when nothing else
 changed; that step runs unless the workflow is cancelled, so it fires even
-when the eval failed, and a failed `gh` write in it is a warning, never a
-failed job. With no `--defaults` document at all nothing is frozen and the
+when the eval failed, and a failed `gh issue` write in it is a fixed
+`::warning::`, never a failed job, but a failed `git push` of
+`roster/proposal` still fails it, because the proposal branch must exist for review. Its issue says whether
+the eval step succeeded, failed or did not run; the step runs before the one
+that publishes to `eval-results`, so for a successful eval it says that
+step publishes next. With no `--defaults` document at all nothing is frozen and the
 roster is byte for byte the one computed without it. The committed `evals/roster.yml` keeps no
 `defaults` block; the published roster's `defaults` (source
 `claude-code-cli <version>`, `probed_at`, resolved and unresolved aliases)

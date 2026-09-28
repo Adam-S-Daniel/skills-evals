@@ -4154,9 +4154,14 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         self.assertNotIn("${{", step["run"])
         self.assertEqual(
             sorted(step.get("env") or {}),
-            ["GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID", "SERVER_URL"],
+            ["EVAL_OUTCOME", "GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID",
+             "SERVER_URL"],
             "every run-scoped value the proposal step reads arrives through "
             "env:, and the write credential is step-local")
+        # EVAL_OUTCOME is the eval step's outcome (#203 probe round 3), the
+        # sanctioned `${{ steps.<id>.outcome }}` form in `env:`.
+        self.assertEqual(step["env"]["EVAL_OUTCOME"], "${{ steps.eval.outcome }}")
+        self.assertIn("${EVAL_OUTCOME:-}", step["run"])
         for name in ("RUN_ID", "REPO", "SERVER_URL"):
             self.assertIn(f"${name}", step["run"])
 

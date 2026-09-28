@@ -55,8 +55,9 @@ project or user settings are read either. See `scrubbed_env`.
 A FAILURE IS NOT FATAL. Whatever happens to one alias or all of them, --out
 is written and the exit status is 0; `harness/roster.py` decides what a
 missing default means: that family is frozen for the run — its previous
-arms held, none retired, and none added but a model that clears the usage
-entry bar — and the roster says so loudly.
+arms held, none retired except models gone from the Models API, and none
+added unless the family holds no seat the Models API still lists — and the
+roster says so loudly.
 Nothing is carried to the next run. Only a usage error — bad arguments, a
 `--claude` that is not an executable, an unreadable --policy, an unwritable
 --out — exits non-zero (eval.yml then writes `{"probe_exit": "nonzero"}`
@@ -288,7 +289,8 @@ def _read_first_line(proc: subprocess.Popen, timeout: float) -> bytes | None:
 
 def harness_version(claude: str, timeout: float) -> str | None:
     """The first line of `claude --version`, cut and reduced to version
-    characters; None when it fails, times out, or leaves nothing.
+    characters; None when it fails (a non-zero exit, even after printing a
+    line), times out, or leaves nothing — and `main()` then warns.
 
     Through the same new-session Popen and `_stop` as `probe_alias` (#203
     probe round 2): `subprocess.run` waited for EOF, which a forked child
@@ -351,6 +353,11 @@ def main() -> int:
 
     probed_at = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     version = harness_version(claude, args.timeout)
+    if version is None:
+        # A fixed line (#203 probe round 3): the version is optional, so the
+        # document records null, but a reviewer reading the log should know.
+        print("probe_model_defaults: warning: `claude --version` gave no usable "
+              "version line; harness_version is null", file=sys.stderr)
     defaults: dict[str, str] = {}
     skipped: list[str] = []
     errors: dict[str, str] = {}
