@@ -771,9 +771,9 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
     resolved nothing — FREEZES that family for the run (#203 probe round 1):
     its previous arms are held, nothing of it is newly seated but by usage,
     and a warning says so. A CATALOGUE MISMATCH — the probe answered, but
-    this run's catalogue does not match the answer — does not freeze: the
-    family follows the usage rules exactly as with no default (#203 probe
-    round 2, R2-1)."""
+    this run's catalogue does not match the answer — does not freeze (#203
+    probe round 2, R2-1): the family is decided on an EFFECTIVE default
+    (#203 probe round 4, R4-1)."""
 
     @staticmethod
     def _policy(**overrides):
@@ -797,20 +797,23 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
         if "defaults" in result:
             self.assertNotIn("opus", result["defaults"]["resolved"])
 
-    def _assert_opus_on_the_usage_rules(self, result, cls):
-        # A catalogue mismatch (R2-1): opus-5 is seated by its own usage,
-        # opus-5-5 is excluded by the cooling-off — exactly the no-default
-        # roster — and nothing is frozen.
+    def _assert_opus_on_the_effective_default(self, result, cls):
+        # A catalogue mismatch (R2-1) is not frozen. Since R4-1 the family
+        # is decided on its effective default: opus-5, a listed previous arm
+        # clearing the entry bar, is seated, and opus-5-5, newer than it, is
+        # not.
         self.assertNotIn("defaults_failed", result)
         self.assertEqual(result["defaults_mismatched"]["opus"]["class"], cls)
-        self.assertIn("carries", self._reason(result, "claude-opus-5"))
-        self.assertIn("cooling-off", self._reason(result, "claude-opus-5-5", "excluded"))
+        self.assertIn("seat decided on `claude-opus-5`",
+                      self._reason(result, "claude-opus-5"))
+        self.assertIn("newer than `claude-opus-5`",
+                      self._reason(result, "claude-opus-5-5", "excluded"))
 
     def test_an_id_that_is_not_available(self):
         defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-9",
                                                   "sonnet": "claude-sonnet-5"}}
         result, warnings = self._compute(defaults=defaults)
-        self._assert_opus_on_the_usage_rules(result, "not-available")
+        self._assert_opus_on_the_effective_default(result, "not-available")
         self.assertTrue(any("`opus`" in w and "not an available model" in w
                             for w in warnings), warnings)
         self.assertEqual(result["defaults"]["unresolved"][0]["alias"], "opus")
@@ -1944,8 +1947,9 @@ class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
     """F6 (#203 probe round 1): an undated id the catalogue does not list
     maps onto its ONE dated `<id>-YYYYMMDD`, mirroring the dated->undated
     collapse; none is "not available", two or more is ambiguous — and both
-    of those are catalogue mismatches, which leave the family on the usage
-    rules rather than freezing it (R2-1, #203 probe round 2)."""
+    of those are catalogue mismatches, which decide the family on its
+    effective default rather than freezing it (R2-1, #203 probe round 2;
+    R4-1, round 4)."""
 
     def _catalogue(self, *dated):
         return self._models_doc(drop=("claude-opus-5-5",), extra=[
@@ -1970,7 +1974,7 @@ class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
         self.assertIn("not an available model",
                       result["defaults"]["unresolved"][0]["reason"])
 
-    def test_two_dated_candidates_are_ambiguous_and_use_the_usage_rules(self):
+    def test_two_dated_candidates_are_ambiguous_and_use_the_effective_default(self):
         models = self._catalogue("claude-opus-5-5-20260926", "claude-opus-5-5-20261001")
         result, warnings = self._compute(defaults=self.DEFAULTS, models=models)
         self.assertNotIn("defaults_failed", result)
@@ -1979,12 +1983,13 @@ class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
         self.assertNotIn("opus", result["defaults"]["resolved"])
         why = result["defaults"]["unresolved"][0]["reason"]
         self.assertIn("2 dated snapshots", why)
+        # Seated as a clean probe naming the effective default, opus-5 — a
+        # listed previous arm clearing the entry bar — would seat it (R4-1).
         baseline, _ = self._compute(defaults={**self.DEFAULTS, "defaults": {
-            "sonnet": "claude-sonnet-5"}}, models=models)
-        # As with no opus default, less its newest-in-tier seat (R3-2).
-        expected = _without_newest_seats(baseline["arms"], "opus")
-        self.assertNotEqual(expected, baseline["arms"])
-        self.assertEqual(result["arms"], expected)
+            "opus": "claude-opus-5", "sonnet": "claude-sonnet-5"}}, models=models)
+        self.assertEqual(self._arms(result), self._arms(baseline))
+        self.assertIn("seat decided on `claude-opus-5`",
+                      self._reason(result, "claude-opus-5"))
 
     def test_a_dated_id_of_another_base_is_not_a_candidate(self):
         # `claude-opus-5-20260101` is a snapshot of opus-5, not of opus-5-5.
@@ -2028,14 +2033,6 @@ class TestNetworkWording(unittest.TestCase):
 # --- #203 probe round 2 -------------------------------------------------------
 
 
-def _without_newest_seats(arms, family):
-    """`arms` less the newest-in-tier seats of `family`: what a catalogue
-    mismatch leaves of the no-default roster (#203 probe round 3, R3-2)."""
-    rungs = roster.tier_rungs(roster.load_policy(POLICY))
-    return [a for a in arms if not (roster.family_of(a["id"], rungs) == family
-                                    and a["reason"].startswith("newest model"))]
-
-
 def _mismatch_words(model_id, alias, cls):
     return (f"the CLI's default `{model_id}` for `{alias}` does not match this "
             f"run's catalogue ({cls})")
@@ -2044,25 +2041,28 @@ def _mismatch_words(model_id, alias, cls):
 class TestCatalogueMismatchDoesNotFreeze(_WeeklyLoop):
     """R2-1(a) (#203 probe round 2): the probe ANSWERED for an alias, but
     this run's Models API catalogue does not match the answer. That is not
-    a probe failure: the family follows the usage rules as with no default
-    — less any newest-in-tier seat (#203 probe round 3, R3-2) — and the
-    wording says what happened, never "probe failed" or "unknown". A
+    a probe failure: the family is decided on its EFFECTIVE default (#203
+    probe round 4, R4-1) — the arms a clean probe naming that model would
+    give — and the wording says what happened, never "probe failed" or
+    "unknown". A
     wrong-tier or wrong-family answer is a failure since R3-2: see
     TestMismatchGetsNoNewestInTierSeat."""
 
-    def _no_doc_baseline(self, **kwargs):
-        return self._compute(defaults=None, **kwargs)[0]
+    def _effective_baseline(self, **kwargs):
+        # A clean probe naming opus-5: the listed previous arm clearing the
+        # entry bar, and so the effective default of every case below.
+        return self._compute(defaults={**self.DEFAULTS, "skipped": [],
+                                       "defaults": {"opus": "claude-opus-5"}},
+                             **kwargs)[0]
 
-    def _assert_as_without_a_default(self, result, baseline, alias):
+    def _assert_as_with_the_effective_default(self, result, baseline, alias):
         self.assertNotIn("defaults_failed", result)
         self.assertNotIn("defaults_document_failed", result)
-        expected = _without_newest_seats(baseline["arms"], alias)
-        self.assertNotEqual(expected, baseline["arms"])
-        self.assertEqual(result["arms"], expected)
+        self.assertEqual(self._arms(result), self._arms(baseline))
         self.assertEqual(result["retired_since_last"], baseline["retired_since_last"])
         self.assertIn(alias, result["defaults_mismatched"])
 
-    def test_each_mismatch_class_follows_the_usage_rules(self):
+    def test_each_mismatch_class_decides_on_the_effective_default(self):
         opus6 = self._model("claude-opus-6", "Claude Opus 6", None)
         cases = (
             ("not-available", {"opus": "claude-opus-9"}, "opus", {}),
@@ -2075,11 +2075,11 @@ class TestCatalogueMismatchDoesNotFreeze(_WeeklyLoop):
         )
         for cls, defaults, alias, kwargs in cases:
             with self.subTest(cls=cls):
-                baseline = self._no_doc_baseline(**kwargs)
+                baseline = self._effective_baseline(**kwargs)
                 result, warnings = self._compute(
                     defaults={**self.DEFAULTS, "defaults": defaults,
                               "skipped": []}, **kwargs)
-                self._assert_as_without_a_default(result, baseline, alias)
+                self._assert_as_with_the_effective_default(result, baseline, alias)
                 self.assertEqual(result["defaults_mismatched"][alias]["class"], cls)
                 self.assertEqual(result["defaults_mismatched"][alias]["id"],
                                  defaults[alias])
@@ -2091,30 +2091,26 @@ class TestCatalogueMismatchDoesNotFreeze(_WeeklyLoop):
                 self.assertNotIn("probe failed", text.lower())
                 self.assertNotIn("unknown this run", text)
 
-    def test_scenario_a_opus_follows_the_usage_rules(self):
+    def test_scenario_a_opus_is_not_frozen_and_says_so(self):
         # The reviewer's loop.py A: the CLI says opus is an id this bearer
-        # never lists, while the fleet has moved to opus-5-5.
+        # never lists, while the fleet has moved to opus-5-5. Its weeks are
+        # TestMismatchUsesAnEffectiveDefault's (R4-1); here, the wording.
         def usage(n):
             return {"claude-sonnet-5": 900, "claude-haiku-4-5": 50,
                     "claude-fable-5-1": 0, "claude-opus-5": 0,
                     "claude-opus-5-5": 400}
 
-        out, _ = self._loop(usage, 3, lambda k: self._docs(
+        out, _ = self._loop(usage, 1, lambda k: self._docs(
             k, opus="claude-opus-6", sonnet="claude-sonnet-5",
             haiku="claude-haiku-4-5"))
         week0 = out[0]["result"]
         self.assertNotIn("defaults_failed", week0)
         self.assertIn("claude-opus-5-5", self._arms(week0))
-        self.assertIn("carries", self._reason(week0, "claude-opus-5-5"))
-        self.assertIn("below the 2% exit bar",
-                      self._reason(week0, "claude-opus-5", "retired_since_last"))
         said = _mismatch_words("claude-opus-6", "opus", "not-available")
+        self.assertIn(said, self._reason(week0, "claude-opus-5-5"))
         self.assertTrue(any(said in w for w in out[0]["warnings"]), out[0]["warnings"])
         head = "\n".join(roster.render_summary(week0).splitlines()[:4])
         self.assertIn(said, head)
-        for week in out[1:]:
-            self.assertEqual(self._arms(week["result"]), self._arms(week0))
-            self.assertEqual(week["result"]["retired_since_last"], [])
 
     def test_a_probe_error_still_freezes(self):
         doc = {**self.DEFAULTS, "defaults": {"sonnet": "claude-sonnet-5"},
@@ -2519,10 +2515,11 @@ class TestFrozenFamilyFallsBackWithNoCensus(_RosterFixture):
 
 
 class TestMismatchKeepsTheNoCensusFallback(_RosterFixture):
-    """R3-2 with R3-6's guard (#203 probe round 3): with no usable enter
-    window a mismatched family holding no seat the Models API still lists
-    keeps the no-probe fallback (its newest model), so a mismatch never
-    empties the family either; holding one, it gets no newest seat."""
+    """R3-6's guard, kept by R4-1 (#203 probe rounds 3 and 4): with no usable
+    enter window a mismatched family holding no seat the Models API still
+    lists keeps the no-probe fallback (its newest model), so a mismatch never
+    empties the family either; holding one, that seat is its effective
+    default and nothing newer is seated."""
 
     NOW5 = TestFrozenFamilyFallsBackWithNoCensus.NOW5
     PREV = TestFrozenFamilyFallsBackWithNoCensus.PREV
@@ -2549,15 +2546,16 @@ class TestMismatchKeepsTheNoCensusFallback(_RosterFixture):
         result = self._run(models, self.MISMATCH)
         self.assertIn("claude-opus-5", self._arms(result))
         self.assertNotIn("claude-opus-6", self._arms(result))
-        self.assertIn("no newest-in-tier seat",
+        self.assertIn("newer than `claude-opus-5`",
                       self._reason(result, "claude-opus-6", "excluded"))
 
 
 class TestMismatchGetsNoNewestInTierSeat(_WeeklyLoop):
-    """R3-2 (#203 probe round 3): a CATALOGUE MISMATCH (not-available,
-    no-created-at, ambiguous-snapshot) keeps its family on the usage rules
-    for retirement and rule-1 usage seats, but gives it NO newest-in-tier
-    seat — so a one-week mismatch adds nothing the next week retires."""
+    """R3-2 (#203 probe round 3), as decided since R4-1 (round 4): a
+    CATALOGUE MISMATCH (not-available, no-created-at, ambiguous-snapshot)
+    decides its family on an EFFECTIVE default, so a model newer than it —
+    the newest in the tier — gets no seat, and a one-week mismatch adds
+    nothing the next week retires."""
 
     @staticmethod
     def _usage(n):
@@ -2592,22 +2590,25 @@ class TestMismatchGetsNoNewestInTierSeat(_WeeklyLoop):
                 self.assertNotIn("defaults_failed", week1)
                 self.assertEqual(week1["added_since_last"], [])
                 self.assertEqual(out[2]["result"]["retired_since_last"], [])
-                newest = next(e for e in week1["excluded"]
-                              if e["reason"].startswith("excluded from the arm set: newest"))
-                self.assertIn("no newest-in-tier seat", newest["reason"])
-                self.assertIn(_mismatch_words(bad, "opus", cls), newest["reason"])
+                newer = [e for e in week1["excluded"] if e["reason"].startswith(
+                    "excluded from the arm set: newer than `claude-opus-5`")]
+                self.assertTrue(newer, week1["excluded"])
+                for entry in newer:
+                    self.assertIn(_mismatch_words(bad, "opus", cls), entry["reason"])
 
-    def test_a_mismatch_still_retires_and_seats_by_usage(self):
-        # Round 2's loop.py A: opus-5 at 0% retires, opus-5-5 at 40% seats.
+    def test_a_mismatch_seats_the_used_model_and_buffers_the_old_one(self):
+        # Round 2's loop.py A: opus-5-5 at 30% is the effective default and
+        # is seated; opus-5 at 0% is superseded by it and held in its buffer
+        # (R4-1), not retired on sight.
         def usage(n):
             return {"claude-sonnet-5": 900, "claude-opus-5": 0, "claude-opus-5-5": 400}
 
         out, _ = self._loop(usage, 1, lambda k: self._docs(
             k, opus="claude-opus-6", sonnet="claude-sonnet-5"))
         week0 = out[0]["result"]
-        self.assertIn("carries", self._reason(week0, "claude-opus-5-5"))
-        self.assertIn("below the 2% exit bar",
-                      self._reason(week0, "claude-opus-5", "retired_since_last"))
+        self.assertIn("seat decided on `claude-opus-5-5`",
+                      self._reason(week0, "claude-opus-5-5"))
+        self.assertIn("inside its 1-week buffer", self._reason(week0, "claude-opus-5"))
 
     def test_wrong_tier_is_a_probe_failure_and_freezes(self):
         base, _ = self._loop(self._usage, 3, self._clean)
@@ -2905,6 +2906,290 @@ class TestHarnessVersionNonZeroExit(_ProbeFixture):
         self.assertIn("claude-opus-5-5", json.dumps(doc["defaults"]))
         self.assertIn("probe_model_defaults: warning: `claude --version` gave no usable "
                       "version line; harness_version is null", done.stderr)
+
+
+# --- #203 probe round 4 -------------------------------------------------------
+
+
+def _effective_words(bad, alias, cls, effective):
+    return (f"{_mismatch_words(bad, alias, cls)}; seat decided on `{effective}`, the "
+            f"newest of the family's listed seats and usage-qualified models")
+
+
+def _families(result):
+    rungs = roster.tier_rungs(roster.load_policy(POLICY))
+    return {roster.family_of(a["id"], rungs) for a in result["arms"]}
+
+
+class TestMismatchUsesAnEffectiveDefault(_WeeklyLoop):
+    """R4-1 + R4-2 (#203 probe round 4): a CATALOGUE-MISMATCHED family is
+    decided by the vendor-default rules with an EFFECTIVE default in place
+    of the vendor's: the newest of the family's previous arms the Models API
+    still lists and its models clearing the usage entry bar. With neither,
+    the family falls back to newest-in-tier when the enter window is not
+    usable, and otherwise has no seat — as a clean run with the tier off the
+    roster."""
+
+    def test_r4_s3_a_one_week_mismatch_matches_the_clean_run(self):
+        # The reviewer's r4 s3.py: seated default opus-5-5 at ~1%, the
+        # superseded opus-5 at ~41%; week 2 answers an unlisted opus-7.
+        def usage(n):
+            return {"claude-sonnet-5": 500, "claude-opus-5": 400,
+                    "claude-opus-5-5": 10, "claude-haiku-4-5": 60}
+
+        prev = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5-5"}])
+
+        def clean(k):
+            return self._docs(k, opus="claude-opus-5-5", sonnet="claude-sonnet-5",
+                              haiku="claude-haiku-4-5")
+
+        def docs(k):
+            return (self._docs(k, opus="claude-opus-7", sonnet="claude-sonnet-5",
+                               haiku="claude-haiku-4-5") if k == 2 else clean(k))
+
+        base, _ = self._loop(usage, 5, clean, previous=prev)
+        out, _ = self._loop(usage, 5, docs, previous=prev)
+        expected = [["claude-sonnet-5", "claude-opus-5-5"]] * 5
+        self.assertEqual([self._arms(w["result"]) for w in base], expected)
+        self.assertEqual([self._arms(w["result"]) for w in out], expected)
+        week2 = out[2]["result"]
+        self.assertEqual(week2["defaults_mismatched"]["opus"]["class"], "not-available")
+        self.assertNotIn("defaults_failed", week2)
+        for week in out:
+            self.assertEqual(week["result"]["retired_since_last"], [])
+            self.assertEqual(week["result"]["added_since_last"], [])
+        self.assertTrue(self._reason(week2, "claude-opus-5-5").startswith(
+            _effective_words("claude-opus-7", "opus", "not-available",
+                             "claude-opus-5-5")), self._reason(week2, "claude-opus-5-5"))
+        self.assertIn("superseded by `claude-opus-5-5`",
+                      self._reason(week2, "claude-opus-5", "excluded"))
+
+    def test_r2_loop_a_a_persistent_mismatch_seats_the_used_model(self):
+        # Round 2's loop.py A: the CLI answers an unlisted opus every week;
+        # the fleet is on opus-5-5 (~30%), opus-5 at 0%.
+        def usage(n):
+            return {"claude-sonnet-5": 900, "claude-haiku-4-5": 50,
+                    "claude-fable-5-1": 0, "claude-opus-5": 0,
+                    "claude-opus-5-5": 400}
+
+        out, _ = self._loop(usage, 6, lambda k: self._docs(
+            k, opus="claude-opus-6", sonnet="claude-sonnet-5",
+            haiku="claude-haiku-4-5"))
+        weeks = [self._arms(w["result"]) for w in out]
+        for k, arms in enumerate(weeks):
+            self.assertIn("claude-opus-5-5", arms, k)
+        self.assertTrue(self._reason(out[0]["result"], "claude-opus-5-5").startswith(
+            _effective_words("claude-opus-6", "opus", "not-available",
+                             "claude-opus-5-5")))
+        # opus-5 is superseded by the effective default and leaves through
+        # the buffer, not on sight.
+        self.assertIn("claude-opus-5", weeks[0])
+        self.assertIn("buffer", self._reason(out[0]["result"], "claude-opus-5"))
+        retired_at = [k for k, w in enumerate(out)
+                      if any(r["id"] == "claude-opus-5"
+                             for r in w["result"]["retired_since_last"])]
+        self.assertEqual(len(retired_at), 1, retired_at)
+        why = next(r["reason"] for r in out[retired_at[0]]["result"]["retired_since_last"]
+                   if r["id"] == "claude-opus-5")
+        self.assertIn("superseded by `claude-opus-5-5`", why)
+        for arms in weeks[retired_at[0]:]:
+            self.assertEqual(arms, weeks[-1])
+        self.assertNotIn("claude-opus-5", weeks[-1])
+
+    #: BASE plus an older sonnet no rule seats, so the judge is never an arm
+    #: when the fallback seats every tier's newest.
+    THIN_MODELS = _WeeklyLoop.BASE + [_RosterFixture._model(
+        "claude-sonnet-4-6", "Claude Sonnet 4.6", "2025-11-24T00:00:00Z")]
+
+    def _one(self, usage, docs, prev):
+        now = self.START + timedelta(hours=12)
+        counts: dict = {}
+        for back in range(12, 0, -1):
+            label = timeweeks.iso_week(now - timedelta(weeks=back))
+            for model_id, n in usage(self._week_number(label)).items():
+                counts.setdefault(model_id, {})[label] = n
+        census = {"generated_at": (self.START + timedelta(hours=6))
+                  .strftime("%Y-%m-%dT%H:%M:%SZ"), "weeks": [], "counts": counts}
+        return roster.compute_roster(
+            models_doc={"fetched_at": now.isoformat(), "models": list(self.THIN_MODELS)},
+            census_doc=census, policy=self._policy(), previous=copy.deepcopy(prev),
+            now=now, warn=lambda _: None, defaults_doc=docs)
+
+    def test_r4_s2_s4_a_thin_enter_window_empties_no_family(self):
+        # The reviewer's r4 s2.py / s4.py: the census is fresh, the enter
+        # window is empty, the exit window is usable, and the previous
+        # sonnet-5/opus-5 arms sit at 0%.
+        prev = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"}, {"id": "claude-opus-5"}])
+        cases = {
+            "s2": (lambda n: {"claude-sonnet-5": 100 if n <= 35 else 0,
+                              "claude-haiku-4-5": 0, "claude-opus-5": 0},
+                   dict(opus="claude-opus-9", sonnet="claude-sonnet-5"),
+                   dict(opus="claude-opus-5-5", sonnet="claude-sonnet-5")),
+            "s4": (lambda n: {"claude-haiku-4-5": 100 if n <= 35 else 0,
+                              "claude-sonnet-5": 0, "claude-opus-5": 0},
+                   dict(haiku="claude-haiku-9", sonnet="claude-sonnet-9",
+                        opus="claude-opus-9", fable="claude-fable-9"),
+                   dict(haiku="claude-haiku-4-5", sonnet="claude-sonnet-5",
+                        opus="claude-opus-5-5", fable="claude-fable-5-1")),
+        }
+        for name, (usage, bad, good) in cases.items():
+            with self.subTest(case=name):
+                no_probe = self._one(usage, None, prev)
+                result = self._one(usage, self._docs(0, **bad), prev)
+                self.assertTrue(result["defaults_mismatched"])
+                self.assertIsNotNone(result["source"]["census_at"])
+                self.assertLessEqual(_families(no_probe), _families(result))
+                out, _ = self._loop(usage, 3, lambda k: self._docs(
+                    k, **(bad if k == 0 else good)), previous=prev,
+                    models=self.THIN_MODELS)
+                for k in range(1, 3):
+                    before = out[k - 1]["result"]
+                    after = out[k]["result"]
+                    added = {a["id"] for a in before["added_since_last"]}
+                    retired = {r["id"] for r in before["retired_since_last"]}
+                    self.assertFalse(added & {r["id"] for r in after["retired_since_last"]},
+                                     (k, added))
+                    self.assertFalse(retired & {a["id"] for a in after["added_since_last"]},
+                                     (k, retired))
+
+    def test_no_candidate_with_a_usable_enter_window_has_no_seat(self):
+        # Nothing of the family is a listed previous arm or clears the bar:
+        # the same as a clean run with the tier off the roster.
+        def usage(n):
+            return {"claude-sonnet-5": 900, "claude-opus-5": 0, "claude-opus-5-5": 0}
+
+        prev = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"}])
+        clean, _ = self._loop(usage, 1, lambda k: self._docs(
+            k, opus="claude-opus-5-5", sonnet="claude-sonnet-5"), previous=prev)
+        out, _ = self._loop(usage, 1, lambda k: self._docs(
+            k, opus="claude-opus-9", sonnet="claude-sonnet-5"), previous=prev)
+        result = out[0]["result"]
+        self.assertEqual(self._arms(result), self._arms(clean[0]["result"]))
+        self.assertNotIn("opus", _families(result))
+        said = _mismatch_words("claude-opus-9", "opus", "not-available")
+        self.assertIn(said, self._reason(result, "claude-opus-5-5", "excluded"))
+
+
+class TestFrozenFallbackKeysOnTheEnterWindow(_WeeklyLoop):
+    """R4-3 (#203 probe round 4): R3-6's fallback keys on the ENTER window,
+    not on the census as a whole — a fresh census whose enter window is under
+    the floors still falls back to newest-in-tier for a frozen family with
+    nothing listed."""
+
+    MODELS = [_RosterFixture._model("claude-haiku-5", "H5", "2026-09-01T00:00:00Z"),
+              _RosterFixture._model("claude-sonnet-6", "S6", "2026-09-01T00:00:00Z"),
+              # Not the newest opus, so never seated: the judge.
+              _RosterFixture._model("claude-opus-5-9", "O59", "2026-08-01T00:00:00Z"),
+              _RosterFixture._model("claude-opus-6", "O6", "2026-09-01T00:00:00Z")]
+
+    def test_a_fresh_census_with_a_thin_enter_window_falls_back(self):
+        def usage(n):
+            return {"claude-sonnet-6": 100 if n <= 35 else 0}
+
+        no_probe, _ = self._loop(usage, 1, lambda k: None, models=self.MODELS)
+        out, _ = self._loop(usage, 1, lambda k: _failed_doc(), models=self.MODELS)
+        result = out[0]["result"]
+        self.assertIsNotNone(result["source"]["census_at"])
+        self.assertIn("opus", result["defaults_failed"])
+        self.assertEqual(self._arms(result), self._arms(no_probe[0]["result"]))
+        self.assertIn("claude-opus-6", self._arms(result))
+        self.assertIn("falls back to newest per tier as with no probe",
+                      self._reason(result, "claude-opus-6"))
+
+    def test_the_docs_say_enter_window(self):
+        for rel in ("README.md", "DESIGN.md", "evals/roster-policy.yml",
+                    "docs/decisions/0002-roster-follows-vendor-defaults.md"):
+            flat = " ".join((REPO_ROOT / rel).read_text(encoding="utf-8").split())
+            flat = re.sub(r"\s*#\s*", " ", flat)
+            with self.subTest(file=rel):
+                self.assertIn("no usable enter window", flat)
+                self.assertNotIn("no usable census, as the newest", flat)
+                self.assertNotIn("With no usable census and no seat", flat)
+
+
+class TestFrozenFallbackMutants(_RosterFixture):
+    """R4-4 (#203 probe round 4): the three mutants round 4 left alive."""
+
+    NOW5 = TestFrozenFamilyFallsBackWithNoCensus.NOW5
+    PREV = TestFrozenFamilyFallsBackWithNoCensus.PREV
+
+    def _run(self, models, defaults, policy=None):
+        return roster.compute_roster(
+            models_doc={"fetched_at": self.NOW5.isoformat(), "models": models},
+            census_doc=None, policy=policy or self._policy(),
+            previous=copy.deepcopy(self.PREV), now=self.NOW5, warn=lambda _: None,
+            defaults_doc=defaults)
+
+    def test_a_only_the_newest_of_a_frozen_family_is_seated(self):
+        models = [self._model("claude-sonnet-6", "S6", "2026-09-01T00:00:00Z"),
+                  self._model("claude-opus-5-9", "O59", "2026-08-01T00:00:00Z"),
+                  self._model("claude-opus-6", "O6", "2026-09-01T00:00:00Z")]
+        no_probe = self._run(models, None)
+        failed = self._run(models, _failed_doc())
+        self.assertEqual(self._arms(failed), self._arms(no_probe))
+        self.assertIn("claude-opus-6", self._arms(failed))
+        self.assertNotIn("claude-opus-5-9", self._arms(failed))
+
+    def test_b_a_held_snapshot_on_its_collapsed_alias_blocks_a_usage_seat(self):
+        # The previous arm is the dated opus-5 snapshot; the catalogue lists
+        # its undated alias too, so the family still holds a listed seat and
+        # a heavily used opus-5-5 is NOT seated on the failed probe.
+        models = self._models_doc(extra=[self._model(
+            "claude-opus-5-20260401", "Claude Opus 5", "2026-04-01T00:00:00Z")])
+        previous = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                              {"id": "claude-opus-5-20260401"}]}
+        census = self._census(extra={"claude-opus-5-5": {w: 452 for w in self.ENTER}})
+        doc = {**self.DEFAULTS, "defaults": {"sonnet": "claude-sonnet-5"},
+               "errors": {"opus": "timeout"}}
+        result, _ = self._compute(defaults=doc, previous=previous, models=models,
+                                  census=census)
+        self.assertIn("claude-opus-5", self._arms(result))
+        self.assertNotIn("claude-opus-5-5", self._arms(result))
+        self.assertIn("while the family holds a seat the Models API still lists",
+                      self._reason(result, "claude-opus-5-5", "excluded"))
+
+    def test_c_a_positive_cooling_off_is_honoured_as_with_no_probe(self):
+        policy = self._policy(cooling_off_days=7)
+        models = [self._model("claude-sonnet-6", "S6", "2026-09-01T00:00:00Z"),
+                  self._model("claude-opus-5-9", "O59", "2026-08-01T00:00:00Z"),
+                  self._model("claude-opus-6", "O6", "2026-10-03T00:00:00Z")]
+        no_probe = self._run(models, None, policy)
+        failed = self._run(models, _failed_doc(), policy)
+        self.assertEqual(self._arms(failed), self._arms(no_probe))
+        self.assertNotIn("claude-opus-6", self._arms(failed))
+
+
+class TestRound4Docs(unittest.TestCase):
+    """R4-5 (#203 probe round 4): docs accuracy."""
+
+    ADR = REPO_ROOT / "docs" / "decisions" / "0002-roster-follows-vendor-defaults.md"
+
+    def _flat(self, path):
+        return " ".join(path.read_text(encoding="utf-8").split())
+
+    def test_a_the_frozen_zero_default_case_is_a_clean_runs_outcome(self):
+        self.assertIn("the same outcome a clean run gives", self._flat(self.ADR))
+        for rel in ("README.md", "DESIGN.md", "HANDOFF.md", "evals/roster-policy.yml",
+                    "docs/decisions/0002-roster-follows-vendor-defaults.md",
+                    "harness/roster.py", ".github/workflows/eval.yml"):
+            with self.subTest(file=rel):
+                self.assertNotIn("clean probe next week seats",
+                                 self._flat(REPO_ROOT / rel))
+
+    def test_b_a_freeze_usage_seat_can_outlast_the_freeze(self):
+        flat = self._flat(self.ADR)
+        self.assertIn("can outlast the freeze", flat)
+        self.assertIn("`superseded_exit_weeks` buffer", flat)
+
+    def test_c_the_success_sentence_covers_a_skipped_publish(self):
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        propose = next(s for s in doc["jobs"]["eval"]["steps"]
+                       if s.get("name") == "Propose a roster change")
+        line = next(ln for ln in propose["run"].splitlines()
+                    if "by the next step" in ln)
+        self.assertIn("if that step failed or was skipped", line)
+
 
 
 if __name__ == "__main__":

@@ -131,13 +131,14 @@ arm_enter_window_weeks: 4
 # arm's seat and retires nothing but a model gone from the Models API. While
 # it still holds a seat the Models API lists it seats nothing new (#203
 # probe round 3); only a family that would otherwise vanish is seated — by
-# the entry bar above, or, with no usable census, as the newest in its tier
-# as with no probe — and the roster says so loudly (`defaults_failed`, the
+# the entry bar above, or, with no usable enter window, as the newest in its
+# tier as with no probe — and the roster says so loudly (`defaults_failed`, the
 # summary's first lines, a `::warning::`). Falling back to the rules above
 # instead flipped seats on one bad week. A default the probe answered but
 # this run's catalogue does not match (not available, an ambiguous
-# snapshot, no created_at) is NOT a failure: that family follows the rules
-# above for retirement and usage seats, with no newest-in-tier seat.
+# snapshot, no created_at) is NOT a failure: that family is decided by the
+# vendor-default rules on an effective default, the newest of its listed
+# previous arms and models clearing the entry bar (#203 probe round 4).
 # Nothing is carried to the next run (the owner's decision of 2026-09-28):
 # the carried-defaults block and its expiry knob that briefly stood here are
 # gone.

@@ -115,12 +115,21 @@ happened to accumulate usage on.
    an available model this run (`not-available`, `ambiguous-snapshot` — an
    undated id resolves to its one dated `<id>-YYYYMMDD` when the catalogue
    lists only that, and two or more are ambiguous — `no-created-at`). That
-   family follows the usage rules for RETIREMENT and for rule-1 usage seats,
-   but gets NO newest-in-tier seat (probe round 3): the mismatch is one
-   run's disagreement, and a newest-in-tier seat granted on it was a seat
-   the next clean week retired. With no usable census and no seat of the
-   family still in the Models API it keeps the no-probe fallback, so the
-   family is never emptied. The warning, the summary and
+   family is decided by rules 1 to 4 above on an EFFECTIVE default (probe
+   round 4): the newest of its previous arms the Models API still lists and
+   its models clearing the usage entry bar. The effective default is seated
+   or held on the family's combined share, an older previous arm it
+   supersedes leaves through the `superseded_exit_weeks` buffer, and nothing
+   newer is seated — so a one-run mismatch changes no seat a clean run would
+   not. A family with neither falls back, with no usable enter window, to
+   its newest-in-tier model as with no probe; with a usable one it has no
+   seat, as a clean run gives a tier no model of which clears the entry
+   bar. (Probe round 3's rule — the usage rules less any newest-in-tier
+   seat — retired a seated default carrying little usage while its
+   superseded predecessor carried much, and emptied a family on a thin enter
+   window.) The reasons say "… does not match this run's catalogue
+   (<class>); seat decided on `<id>`, the newest of the family's listed
+   seats and usage-qualified models". The warning, the summary and
    `defaults_mismatched` (`{alias: {id, class}}`) say "the CLI's default
    `<id>` for `<alias>` does not match this run's catalogue (<class>)" — not
    "probe failed". Freezing it instead held a bearer that never lists the
@@ -132,11 +141,19 @@ happened to accumulate usage on.
    round 3): a usage seat granted there was one the next clean week
    retired. Only a family that would otherwise vanish from the roster — no
    held arm left in the API — is seated: by the usage entry bar (rule 1,
-   probe round 2), with the failed probe named in its reason, or, when the
-   enter window is not usable, as the newest in its tier, exactly as the
-   no-probe fallback would seat it (probe round 3). Without that, a CLI
-   that never initialises unauthenticated emptied the roster once the old
-   models left the API. The earlier rule — fall back to both usage rules —
+   probe round 2), with the failed probe named in its reason, or, with no
+   usable enter window — a missing or stale census, or a fresh one whose
+   enter window is under the ranked-usage floors — as the newest in its
+   tier, exactly as the no-probe fallback would seat it (probe round 3).
+   Without that, a CLI that never initialises unauthenticated emptied the
+   roster once the old models left the API. Such a family with a usable
+   enter window and no model clearing the entry bar (its default at 0%, for
+   instance) gets no seat: the same outcome a clean run gives, since a tier
+   no model of which clears the entry bar is not on the roster. A usage seat
+   granted during a freeze because the family would otherwise vanish can
+   outlast the freeze: once a clean probe names a newer default, that seat
+   is a superseded previous arm and leaves only through the
+   `superseded_exit_weeks` buffer. The earlier rule — fall back to both usage rules —
    flipped seats on a one-week failure: a seated default retired, or a
    preview seated, and the next clean probe undid it. The freeze is loud: `defaults_failed`
    (`{alias: class}`, and `defaults_document_failed`) in the published
@@ -177,8 +194,9 @@ happened to accumulate usage on.
   fails it, because the proposal branch must exist for review. A failed
   probe fails no workflow step. A wrong
   default is bounded by the catalogue check: an id that is not an available
-  model this run seats nothing, and that family is decided by usage with no
-  newest-in-tier seat; an id of the wrong tier or family freezes it.
+  model this run seats nothing, and that family is decided on an effective
+  default — its newest listed previous arm or usage-qualified model; an id
+  of the wrong tier or family freezes it.
 - **A tier between the bars keeps an arm across a version change**, because
   the seated default's exit check reads the tier's share; a tier the fleet
   genuinely leaves still retires it by the exit bar.

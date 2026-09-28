@@ -489,8 +489,9 @@ jobs:
       # retired except models gone from the Models API, none added unless the
       # family holds no seat the Models API still lists. A default the probe
       # answered but this run's catalogue does not match is not frozen: that
-      # family follows the usage rules for retirement and usage seats, with
-      # no newest-in-tier seat, and the summary says so. On a freeze the proposal step below warns
+      # family is decided on an effective default (its newest listed previous
+      # arm or usage-qualified model), and the summary says so. On a freeze
+      # the proposal step below warns
       # and keeps the tracking issue open; that step runs unless the workflow
       # is cancelled, so it fires even when the eval step failed. Nothing is
       # carried to the next run.
@@ -826,7 +827,7 @@ jobs:
           if [ "$roster_only" = true ]; then
             eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
           elif [ "${EVAL_OUTCOME:-}" = success ]; then
-            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the next step, which runs after this issue is written — if that step failed, this run's results were not published."
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` by the next step, which runs after this issue is written — if that step failed or was skipped, this run's results were not published."
           elif [ "${EVAL_OUTCOME:-}" = failure ]; then
             eval_note="The paid eval ran on the committed \`evals/roster.yml\`, but the eval step failed; nothing from this run was published to \`eval-results\`."
           else

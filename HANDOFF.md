@@ -54,9 +54,9 @@ for that run: previous arms held, none retired except models gone from the
 Models API, and none added unless the family holds no seat the Models API
 still lists, said loudly in the summary, a warning and the tracking issue.
 A default the probe answered but the run's catalogue does not match is not
-a failure: that family follows the usage rules for retirement and usage
-seats, with no newest-in-tier seat (#203 probe rounds 2 and 3); an answer
-in the wrong tier or family is a failure. See ADR 0002's decision 6 and second update.
+a failure: that family is decided on an effective default, the newest of its
+listed previous arms and usage-qualified models (#203 probe rounds 2 and 4);
+an answer in the wrong tier or family is a failure. See ADR 0002's decision 6 and second update.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.

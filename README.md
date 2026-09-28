@@ -576,16 +576,19 @@ exited with an error (`probe-exited`). A default the probe **answered** but
 this run's catalogue does not match (not available — an undated id the
 catalogue lists only as exactly one dated `<id>-YYYYMMDD` does resolve to
 it — an ambiguous snapshot, no `created_at`) is **not** a failure: that
-family follows the usage rules for retirement and rule-1 usage seats, but
-gets **no newest-in-tier seat** (#203 probe round 3; with no usable census
-and no seat of it left in the Models API it keeps the no-probe fallback),
-and the summary says "the CLI's default `<id>` for `<alias>` does not match
-this run's catalogue (<class>)". A frozen family keeps every previous arm's
+family is decided by the vendor-default rules on an **effective default** —
+the newest of its previous arms the Models API still lists and its models
+clearing the usage entry bar (#203 probe round 4); with neither, it keeps the
+no-probe fallback when there is no usable enter window and has no seat
+otherwise — and the summary says "the CLI's default `<id>` for `<alias>` does
+not match this run's catalogue (<class>)". A frozen family keeps every previous arm's
 seat until it leaves the Models API and retires none. While it still holds
 a seat the Models API lists it gets **no new seat at all** (#203 probe
 round 3); only a family that would otherwise vanish from the roster is
-seated — by the usage entry bar, or, with no usable census, as the newest
-in its tier exactly as with no probe. Falling back to the usage rules
+seated — by the usage entry bar, or, with no usable enter window (no fresh
+census, or one whose enter window is under the ranked-usage floors), as the
+newest in its tier exactly as with no probe; with a usable one and nothing
+clearing the bar it gets no seat, the same outcome a clean run gives. Falling back to the usage rules
 instead let one bad week retire a seated default or seat a preview that
 the next clean week then undid, and a usage seat granted during a freeze
 was one the next clean week retired. The freeze is **per run —

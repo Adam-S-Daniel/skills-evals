@@ -551,15 +551,21 @@ non-zero (`probe-exited`) — keeps every previous arm's seat and retires
 nothing but a model gone from the Models API. While it still holds a seat
 the Models API lists it gets no new seat at all (#203 probe round 3); only
 a family that would otherwise vanish is seated, by the usage entry bar or,
-with no usable census, as the newest in its tier as with no probe. It is
+with no usable enter window (no fresh census, or one whose enter window is
+under the ranked-usage floors), as the newest in its tier as with no probe;
+with a usable one and nothing clearing the bar it gets no seat, the same
+outcome a clean run gives. It is
 named in the published `defaults_failed`, on the summary's first lines and
 in a `::warning::` that keeps the tracking issue open (the proposal step
 runs unless the workflow is cancelled; its `gh issue` writes warn rather
 than fail, its `git push` does not). An answer this run's catalogue does
 not match (not available, an ambiguous snapshot, no `created_at`) is not a
-failure: that family keeps the usage rules for retirement and rule-1 usage
-seats but gets no newest-in-tier seat (#203 probe round 3), and
-`defaults_mismatched` says "does not match this run's catalogue". Falling back to
+failure: that family is decided by the vendor-default rules on an effective
+default — the newest of its previous arms the Models API still lists and its
+models clearing the usage entry bar (#203 probe round 4) — falling back, with
+neither, to newest-in-tier when there is no usable enter window and to no
+seat otherwise, and `defaults_mismatched` says "does not match this run's
+catalogue". Falling back to
 rules 1 and 2 instead flipped seats on one bad week. The freeze is per run; nothing is
 carried to the next (a carried-defaults block with an expiry briefly stood
 here and is gone). With no defaults document at all the roster is
