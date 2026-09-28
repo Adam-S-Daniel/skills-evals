@@ -53,10 +53,16 @@ carried-defaults machinery is gone, and a failed probe freezes its family
 for that run: previous arms held, none retired except models gone from the
 Models API, and none added unless the family holds no seat the Models API
 still lists, said loudly in the summary, a warning and the tracking issue.
-A default the probe answered but the run's catalogue does not match is not
-a failure: that family is decided on an effective default, the newest of its
-listed previous arms and usage-qualified models (#203 probe rounds 2 and 4);
-an answer in the wrong tier or family is a failure. See ADR 0002's decision 6 and second update.
+A default the probe answered but the run's catalogue does not otherwise
+match is not a failure: that family is decided on an effective default —
+only its listed previous arms when it has any, else usage-qualified models
+(#203 probe rounds 2, 4 and 5); an answer in the wrong tier or family, or one
+naming a model with no `created_at`, is a failure (probe round 5, R5-1). The
+governing guarantee (round 5, R5-2): a single run whose probe answer is a
+failure or a mismatch changes no seat a clean run would not — a persistent
+mismatch HOLDS a listed seat rather than seating a newer, more-used model
+the probe cannot corroborate, loudly. See ADR 0002's decision 6 and second
+update.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.

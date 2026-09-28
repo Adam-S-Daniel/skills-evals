@@ -127,20 +127,25 @@ arm_enter_window_weeks: 4
 #
 # A FAILED PROBE FREEZES ITS FAMILY FOR THAT RUN (#203 probe round 1). A
 # family the probe failed for (an error recorded for its alias, an answer in
-# the wrong tier or family, or no usable document) keeps every previous
-# arm's seat and retires nothing but a model gone from the Models API. While
-# it still holds a seat the Models API lists it seats nothing new (#203
-# probe round 3); only a family that would otherwise vanish is seated — by
-# the entry bar above, or, with no usable enter window, as the newest in its
-# tier as with no probe — and the roster says so loudly (`defaults_failed`, the
-# summary's first lines, a `::warning::`). Falling back to the rules above
-# instead flipped seats on one bad week. A default the probe answered but
-# this run's catalogue does not match (not available, an ambiguous
-# snapshot, no created_at) is NOT a failure: that family is decided by the
-# vendor-default rules on an effective default, the newest of its listed
-# previous arms and models clearing the entry bar (#203 probe round 4).
-# Nothing is carried to the next run (the owner's decision of 2026-09-28):
-# the carried-defaults block and its expiry knob that briefly stood here are
+# the wrong tier or family, a model with no `created_at` to start a
+# predecessor's buffer from (`no-created-at` — probe round 5, R5-1), or no
+# usable document) keeps every previous arm's seat and retires nothing but a
+# model gone from the Models API. While it still holds a seat the Models API
+# lists it seats nothing new (#203 probe round 3); only a family that would
+# otherwise vanish is seated — by the entry bar above, or, with no usable
+# enter window, as the newest in its tier as with no probe — and the roster
+# says so loudly (`defaults_failed`, the summary's first lines, a
+# `::warning::`). Falling back to the rules above instead flipped seats on
+# one bad week. A default the probe answered but this run's catalogue does
+# not otherwise match (not available, an ambiguous snapshot) is NOT a
+# failure: that family is decided by the vendor-default rules on an
+# effective default — ONLY its listed previous arms when it has any (probe
+# round 5, R5-2: the governing guarantee that a single run whose probe
+# answer is a failure or a mismatch changes no seat a clean run would not),
+# else models clearing the entry bar (#203 probe round 4). A persistent
+# mismatch that holds a listed seat is surfaced just as loudly. Nothing is
+# carried to the next run (the owner's decision of 2026-09-28): the
+# carried-defaults block and its expiry knob that briefly stood here are
 # gone.
 #
 # SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku

@@ -564,24 +564,33 @@ model the default supersedes earns no seat from its usage; a previous arm it
 supersedes keeps its seat until `superseded_exit_weeks` (1) complete ISO
 weeks have passed since its successor's `created_at` **and** its share over
 those weeks is under the 2% exit bar, with a stale or too-thin census holding
-it as before. A model newer than the default earns no new seat; one that is
-already a previous arm gets the ordinary exit check rather than retiring on
-sight. **A failed probe freezes its family for that run** (#203 probe round
-1): a family whose alias the probe recorded an error for, or answered with
-a model of the wrong tier or family (nonsensical about its own alias, #203
-probe round 3), is frozen — or every family the probe did not skip, when
-the document is unreadable, junk, answered for no ladder alias, or is the
-workflow's `{"probe_exit": "nonzero"}` stand-in for a probe script that
+it as before — held under its DATED id too (#203 probe round 5, R5-3): a
+previous arm published under `<base>-YYYYMMDD` is still a previous arm once
+`<base>` appears in the catalogue. A model newer than the default earns no
+new seat; one that is already a previous arm gets the ordinary exit check
+rather than retiring on sight. **A failed probe freezes its family for that
+run** (#203 probe round 1): a family whose alias the probe recorded an
+error for, answered with a model of the wrong tier or family (nonsensical
+about its own alias, #203 probe round 3), or answered with a model with no
+`created_at` to start a predecessor's buffer from (`no-created-at`, #203
+probe round 5, R5-1), is frozen — or every family the probe did not skip,
+when the document is unreadable, junk, answered for no ladder alias, or is
+the workflow's `{"probe_exit": "nonzero"}` stand-in for a probe script that
 exited with an error (`probe-exited`). A default the probe **answered** but
-this run's catalogue does not match (not available — an undated id the
-catalogue lists only as exactly one dated `<id>-YYYYMMDD` does resolve to
-it — an ambiguous snapshot, no `created_at`) is **not** a failure: that
-family is decided by the vendor-default rules on an **effective default** —
-the newest of its previous arms the Models API still lists and its models
-clearing the usage entry bar (#203 probe round 4); with neither, it keeps the
+this run's catalogue does not otherwise match (not available — an undated
+id the catalogue lists only as exactly one dated `<id>-YYYYMMDD` does
+resolve to it — an ambiguous snapshot) is **not** a failure: that family is
+decided by the vendor-default rules on an **effective default** — ONLY the
+newest of its previous arms the Models API still lists, when it has any
+(#203 probe round 5, R5-2 — the GOVERNING GUARANTEE: a single run whose
+probe answer is a failure or a mismatch changes no seat a clean run would
+not, which wins even over seating the model the fleet actually uses); a
+family with NO previous arm still listed decides on its models clearing the
+usage entry bar instead (#203 probe round 4); with neither, it keeps the
 no-probe fallback when there is no usable enter window and has no seat
 otherwise — and the summary says "the CLI's default `<id>` for `<alias>` does
-not match this run's catalogue (<class>)". A frozen family keeps every previous arm's
+not match this run's catalogue (<class>)", loudly, whether it holds a
+listed seat or seats by usage. A frozen family keeps every previous arm's
 seat until it leaves the Models API and retires none. While it still holds
 a seat the Models API lists it gets **no new seat at all** (#203 probe
 round 3); only a family that would otherwise vanish from the roster is

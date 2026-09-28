@@ -542,10 +542,14 @@ superseded model gets no usage seat; a superseded previous arm is retired once
 bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
 applies to it). A model newer than the default earns no new seat, and a
 previous arm newer than it gets rule 3's exit check instead of retiring on
-sight. A failed probe freezes its family for that run (#203 probe round 1):
-a family whose alias the probe recorded an error for, or answered with a
-model of the wrong tier or family (#203 probe round 3) — or every family
-the probe did not skip, when the document is unreadable, junk, answered for
+sight — held under its dated id too (#203 probe round 5, R5-3): a previous
+arm published under `<base>-YYYYMMDD` is still a previous arm once `<base>`
+appears in the catalogue. A failed probe freezes its family for that run
+(#203 probe round 1): a family whose alias the probe recorded an error for,
+answered with a model of the wrong tier or family (#203 probe round 3), or
+answered with a model with no `created_at` to start a predecessor's buffer
+from (`no-created-at`, #203 probe round 5, R5-1) — or every family the
+probe did not skip, when the document is unreadable, junk, answered for
 no ladder alias, or is the workflow's stand-in for a probe that exited
 non-zero (`probe-exited`) — keeps every previous arm's seat and retires
 nothing but a model gone from the Models API. While it still holds a seat
@@ -559,13 +563,18 @@ named in the published `defaults_failed`, on the summary's first lines and
 in a `::warning::` that keeps the tracking issue open (the proposal step
 runs unless the workflow is cancelled; its `gh issue` writes warn rather
 than fail, its `git push` does not). An answer this run's catalogue does
-not match (not available, an ambiguous snapshot, no `created_at`) is not a
+not otherwise match (not available, an ambiguous snapshot) is not a
 failure: that family is decided by the vendor-default rules on an effective
-default — the newest of its previous arms the Models API still lists and its
-models clearing the usage entry bar (#203 probe round 4) — falling back, with
-neither, to newest-in-tier when there is no usable enter window and to no
-seat otherwise, and `defaults_mismatched` says "does not match this run's
-catalogue". Falling back to
+default — ONLY the newest of its previous arms the Models API still lists,
+when it has any (#203 probe round 5, R5-2 — the governing guarantee: a
+single run whose probe answer is a failure or a mismatch changes no seat a
+clean run would not, which wins even over seating the model the fleet
+actually uses); a family with no previous arm still listed decides on its
+models clearing the usage entry bar instead (#203 probe round 4) — falling
+back, with neither, to newest-in-tier when there is no usable enter window
+and to no seat otherwise, and `defaults_mismatched` says "does not match
+this run's catalogue", loudly whether it holds a listed seat or seats by
+usage. Falling back to
 rules 1 and 2 instead flipped seats on one bad week. The freeze is per run; nothing is
 carried to the next (a carried-defaults block with an expiry briefly stood
 here and is gone). With no defaults document at all the roster is

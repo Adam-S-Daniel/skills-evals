@@ -102,26 +102,44 @@ happened to accumulate usage on.
    the one remaining conflict is two spellings of the same family word naming
    different models.
 6. **A failed probe freezes its family for that run (#203 probe round 1;
-   narrowed in probe rounds 2 and 3).** Only a PROBE FAILURE freezes: the
+   narrowed in probe rounds 2, 3 and 5).** Only a PROBE FAILURE freezes: the
    probe recorded an error class for the alias, it answered with a model of
    the wrong tier or family (`wrong-tier`, `wrong-family` — the CLI said
    something nonsensical about its own alias, so it is treated as a failure,
-   probe round 3), or the document is unreadable, junk, answered for no
-   ladder alias, or is eval.yml's stand-in for a probe script that exited
-   non-zero (`probe-exited`, "the probe script exited with an error") — then
-   every family on the ladder except the aliases the probe `skipped`. A `{}`
-   from a probe that ran and resolved nothing stays `no-defaults`. A
-   CATALOGUE MISMATCH does not freeze: the probe answered, but the id is not
-   an available model this run (`not-available`, `ambiguous-snapshot` — an
-   undated id resolves to its one dated `<id>-YYYYMMDD` when the catalogue
-   lists only that, and two or more are ambiguous — `no-created-at`). That
-   family is decided by rules 1 to 4 above on an EFFECTIVE default (probe
-   round 4): the newest of its previous arms the Models API still lists and
-   its models clearing the usage entry bar. The effective default is seated
-   or held on the family's combined share, an older previous arm it
-   supersedes leaves through the `superseded_exit_weeks` buffer, and nothing
+   probe round 3), it answered with a model that has no `created_at` to
+   start a predecessor's buffer from (`no-created-at` — round 5, R5-1: this
+   is a probe failure, not a catalogue mismatch, so the family freezes with
+   the same wording as any other probe failure), or the document is
+   unreadable, junk, answered for no ladder alias, or is eval.yml's
+   stand-in for a probe script that exited non-zero (`probe-exited`, "the
+   probe script exited with an error") — then every family on the ladder
+   except the aliases the probe `skipped`. A `{}` from a probe that ran and
+   resolved nothing stays `no-defaults`. A CATALOGUE MISMATCH does not
+   freeze: the probe answered, but the id is not an available model this
+   run (`not-available`, `ambiguous-snapshot` — an undated id resolves to
+   its one dated `<id>-YYYYMMDD` when the catalogue lists only that, and two
+   or more are ambiguous). That family is decided by rules 1 to 4 above on
+   an EFFECTIVE default (probe round 4, narrowed in round 5, R5-2): **when
+   the family has ANY previous arm the Models API still lists this run, the
+   candidate set is those listed arms only** — a persistent mismatch HOLDS
+   the listed seats rather than seating a newer, more-used model the probe
+   cannot corroborate. Only a family with NO previous arm still listed
+   decides on usage-qualified models instead (then the no-candidate
+   fallback below). This is the GOVERNING GUARANTEE (the owner's decision,
+   round 5): a single run whose probe answer is a failure or a catalogue
+   mismatch changes no seat that a clean run would not change. Where that
+   conflicts with "a persistent mismatch still seats the model the fleet
+   uses" — the model actually used has moved past every listed arm, but the
+   probe cannot corroborate it — the guarantee wins: the listed seat holds,
+   loudly (the mismatch's warning, summary line and open tracking issue),
+   and a human fixes the probe. The effective default is seated or held on
+   the family's combined share, an older previous arm it supersedes leaves
+   through the `superseded_exit_weeks` buffer — held under its DATED id too
+   (R5-3, round 5): a previous arm published under `<base>-YYYYMMDD` is
+   still a previous arm once `<base>` appears in the catalogue — and nothing
    newer is seated — so a one-run mismatch changes no seat a clean run would
-   not. A family with neither falls back, with no usable enter window, to
+   not. A family with neither a listed arm nor a usage-qualifying model
+   falls back, with no usable enter window, to
    its newest-in-tier model as with no probe; with a usable one it has no
    seat, as a clean run gives a tier no model of which clears the entry
    bar. (Probe round 3's rule — the usage rules less any newest-in-tier
