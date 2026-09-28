@@ -1405,6 +1405,14 @@ jobs:
         run: |
           set -uo pipefail
           export REPO
+          # >>> input-parsing (N1, round 2): every `needs.eval.outputs.*`
+          # value re-validated the moment it crosses the job boundary,
+          # before anything downstream reads it. Fragment-tested directly
+          # (`TestN1HostileValidation`'s fragment tests) rather than only
+          # through the higher-level attempt gate, since several of these
+          # are now ALSO defended in depth by B1's independent checks —
+          # testing the parse itself is what actually kills a mutation
+          # that a downstream check would otherwise mask.
           github_sha=""
           if [[ "${GITHUB_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then github_sha="$GITHUB_SHA"; fi
           status=""
@@ -1428,6 +1436,7 @@ jobs:
           esac
           rendered_identical=false
           case "${RENDERED_IDENTICAL:-}" in true) rendered_identical=true ;; esac
+          # <<< input-parsing
           marker='<!-- skills-evals:roster-proposal -->'
 
           # >>> text-allowlist (N2, round 2): `eval_note`/`probe_note` are
@@ -1680,10 +1689,23 @@ jobs:
           # status == differs, admitted, not byte-identical: the only case
           # that can enable auto-merge, and the only case whose tracking-
           # issue text this job constructs.
-          attempt=false
-          verify_fail=""
+          #
+          # >>> attempt-candidate (N1, round 2): split out from the
+          # `verify_publish` call itself so it can be fragment-tested on
+          # its own (`TestN1HostileValidation`'s M12/M17 tests) — B1's
+          # head/compare checks inside `verify_publish` would otherwise
+          # independently reject an empty `$pushed_sha` or a rejected
+          # proposal anyway, masking a dropped check HERE from a test that
+          # only observes the combined `attempt` outcome.
+          candidate=false
           if [ "$rejected" != true ] && [ "$roster_mode" = auto ] \
              && [ "$probe_clean" = true ] && [ -n "$pushed_sha" ] && [ -n "$github_sha" ]; then
+            candidate=true
+          fi
+          # <<< attempt-candidate
+          attempt=false
+          verify_fail=""
+          if [ "$candidate" = true ]; then
             if verify_fail=$(verify_publish); then
               attempt=true
             fi

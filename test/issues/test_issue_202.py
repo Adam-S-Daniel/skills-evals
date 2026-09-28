@@ -4086,14 +4086,103 @@ class TestB1RosterPrHelper(_AutoProposeStepFixture):
     IDENT = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
 
     def _candidate_env(self, **overrides):
-        """A baseline env that satisfies every precondition for `attempt`
-        EXCEPT whatever `overrides` deliberately breaks — `roster_mode`
-        comes from the policy at `$GITHUB_SHA`/`TEST_GIT_DIR`, never from
-        `ROSTER_MODE` here (B1.1), so it is left unset by default."""
+        """A baseline env that satisfies every precondition for the
+        `attempt-candidate` fragment EXCEPT whatever `overrides`
+        deliberately breaks — `roster_mode` comes from the policy at
+        `$GITHUB_SHA`/`TEST_GIT_DIR` in `_run_roster_pr_direct`, never from
+        `ROSTER_MODE` here (B1.1); `_run_candidate_fragment` instead sets
+        `$roster_mode` directly, so `GITHUB_SHA` here only needs to be
+        SYNTACTICALLY valid (hex, 40 chars) to satisfy the candidate
+        fragment's own `[ -n "$github_sha" ]` check."""
         env = {"STATUS": "differs", "PROBE_CLEAN": "true", "REJECTED": "false",
-               "PUSHED_SHA": "a" * 40}
+               "PUSHED_SHA": "a" * 40, "GITHUB_SHA": "b" * 40}
         env.update(overrides)
         return env
+
+    def _verified_repo(self):
+        """A `_repo("auto")` checkout with a REAL, legitimately-verifying
+        `roster/proposal` branch already built (one commit ahead, only
+        `evals/roster.yml` changed) — so a test can isolate ONE gate
+        (`rejected`, `pushed_sha`, …) on the `attempt` condition without
+        B1's independent head/compare checks masking it by failing for an
+        unrelated reason (the same trap that made M12/M17 survive against
+        a `work` with no real branch at all)."""
+        work = self._repo("auto")
+        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, check=True).stdout.strip()
+        subprocess.run(["git", "-C", str(work), "checkout", "-qb", "roster/proposal"],
+                       check=True)
+        (work / "evals" / "roster.yml").write_text(
+            (work / "evals" / "roster.yml").read_text() + "# changed\n")
+        subprocess.run(["git", "-C", str(work), "add", "-A"], check=True)
+        subprocess.run(["git", "-C", str(work), *self.IDENT, "commit", "-qm", "roster change"],
+                       check=True)
+        pushed_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        return work, main_sha, pushed_sha
+
+    PARSE_START = "# >>> input-parsing"
+    PARSE_END = "# <<< input-parsing"
+
+    def _parsing_fragment(self):
+        body = self.roster_pr_run_body
+        self.assertIn(self.PARSE_START, body)
+        return body[body.index(self.PARSE_START):body.index(self.PARSE_END)]
+
+    CANDIDATE_START = "# >>> attempt-candidate"
+    CANDIDATE_END = "# <<< attempt-candidate"
+
+    def _candidate_fragment(self):
+        body = self.roster_pr_run_body
+        self.assertIn(self.CANDIDATE_START, body)
+        return body[body.index(self.CANDIDATE_START):body.index(self.CANDIDATE_END)]
+
+    def _run_candidate_fragment(self, env, roster_mode="auto"):
+        """Run the initial parsing block, then set `$roster_mode` directly
+        (bypassing the policy-read API call entirely — irrelevant here)
+        and run ONLY the `attempt-candidate` fragment, printing `$candidate`
+        — isolates M12/M17 from `verify_publish`'s independent head/compare
+        checks, which would otherwise mask a dropped `rejected`/
+        `pushed_sha` check here from a test that only observes the
+        combined `attempt` outcome (real git calls, a real branch)."""
+        script = ("set -uo pipefail\n" + self._parsing_fragment() + "\n"
+                  f"roster_mode={roster_mode!r}\n" + self._candidate_fragment() + "\n"
+                  'printf "CANDIDATE_OUT=%s\\n" "$candidate"\n')
+        base = {"GITHUB_SHA": "", "STATUS": "", "PROBE_CLEAN": "", "ISSUE_NUMBER": "",
+                "PUSHED_SHA": "", "REJECTED": "", "REJECTION_REASON": "",
+                "RENDERED_IDENTICAL": ""}
+        base.update(env)
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                              timeout=30, env=dict(base, PATH=os.environ.get("PATH", "")))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    def _run_parsing_fragment(self, env):
+        """Run ONLY the initial `needs.eval.outputs.*` parsing block in
+        isolation and print every variable it sets — kills a mutation to
+        one field's validation directly, rather than only through
+        whatever the higher-level attempt gate happens to also block (N1,
+        round 2: B1's independent checks now mask some of these
+        downstream, so testing the parse itself is what actually catches
+        a regression there)."""
+        script = (
+            "set -uo pipefail\n" + self._parsing_fragment() + "\n"
+            'printf "GITHUB_SHA_OUT=%s\\n" "$github_sha"\n'
+            'printf "STATUS_OUT=%s\\n" "$status"\n'
+            'printf "PROBE_CLEAN_OUT=%s\\n" "$probe_clean"\n'
+            'printf "ISSUE_OUT=%s\\n" "$issue"\n'
+            'printf "PUSHED_SHA_OUT=%s\\n" "$pushed_sha"\n'
+            'printf "REJECTED_OUT=%s\\n" "$rejected"\n'
+            'printf "REJECTION_REASON_OUT=%s\\n" "$rejection_reason"\n'
+            'printf "RENDERED_IDENTICAL_OUT=%s\\n" "$rendered_identical"\n')
+        base = {"GITHUB_SHA": "", "STATUS": "", "PROBE_CLEAN": "", "ISSUE_NUMBER": "",
+                "PUSHED_SHA": "", "REJECTED": "", "REJECTION_REASON": "",
+                "RENDERED_IDENTICAL": ""}
+        base.update(env)
+        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
+                              timeout=30, env=dict(base, PATH=os.environ.get("PATH", "")))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
 
 
 class TestB1PolicyReadFromApi(TestB1RosterPrHelper):
@@ -4321,30 +4410,40 @@ class TestN1HostileValidation(TestB1RosterPrHelper):
     """N1 (round 2): feeding hostile/malformed values at each of `roster-
     pr`'s own validations. Kills mutants M2 (pushed_sha), M3/M9 (status),
     M4 (rejection_reason), M5 (issue), M11 (probe_clean), M12 (rejected),
-    M17 (attempt ignoring pushed_sha)."""
+    M15 (rendered_identical), M17 (attempt ignoring pushed_sha). M2-M5/M11/
+    M12/M17 are asserted directly on the relevant fragment
+    (`_run_parsing_fragment`/`_run_candidate_fragment`), never only through
+    the combined `attempt` outcome — B1's independent head/compare checks
+    inside `verify_publish` mask several of these downstream (an empty or
+    garbage value fails B1.2's head-equality check regardless of whether
+    its OWN validation ran), which is what made several of them survive an
+    earlier, end-to-end-only version of these tests."""
 
-    def test_non_hex_pushed_sha_never_reaches_match_head_commit(self):
-        # M2: a non-hex/wrong-length PUSHED_SHA must never end up quoted
-        # into `--match-head-commit`, nor treated as "a proposal exists".
-        work = self.tmp / "m2"; work.mkdir()
-        self._write_policy(work, "auto")
-        out, calls, body = self._run_roster_pr_direct(
-            self._candidate_env(GITHUB_SHA="a" * 40, PUSHED_SHA="not-a-sha"), work=work)
-        self.assertFalse(any("--match-head-commit not-a-sha" in c for c in calls), calls)
-        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+    def test_non_hex_pushed_sha_is_parsed_as_empty(self):
+        # M2: a non-hex/wrong-length PUSHED_SHA must be normalized to ""
+        # by the parse ITSELF — asserted directly on the fragment's own
+        # output, since B1.2's head-equality check would independently
+        # block a mismatched value downstream and so cannot be used to
+        # observe THIS validation's own regression.
+        out = self._run_parsing_fragment({"PUSHED_SHA": "not-a-sha"})
+        self.assertIn("PUSHED_SHA_OUT=\n", out)
+        out2 = self._run_parsing_fragment({"PUSHED_SHA": "a" * 39})  # one hex char short
+        self.assertIn("PUSHED_SHA_OUT=\n", out2)
+        out3 = self._run_parsing_fragment({"PUSHED_SHA": "a" * 40})  # the valid case
+        self.assertIn(f"PUSHED_SHA_OUT={'a' * 40}\n", out3)
 
-    def test_unknown_status_never_reaches_the_differs_branch(self):
-        # M3: an unrecognised STATUS must take the disable-only path, never
-        # the "differs" auto-merge attempt.
-        work = self.tmp / "m3"; work.mkdir()
-        self._write_policy(work, "auto")
-        self._pr_list_value = "12"
-        out, calls, body = self._run_roster_pr_direct(
-            self._candidate_env(GITHUB_SHA="a" * 40, STATUS="bogus"), work=work)
-        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
-        disable = next((c for c in calls
-                        if c.startswith("pr merge 12") and "--disable-auto" in c), None)
-        self.assertIsNotNone(disable, calls)
+    def test_unknown_status_is_parsed_as_empty(self):
+        # M3: an unrecognised STATUS must be normalized to "" by the parse
+        # itself, asserted directly (the higher-level "differs"/"same"
+        # branches treat "" and any other non-differs/non-same value
+        # identically, so they cannot distinguish this mutation on their
+        # own — see `test_unknown_status_still_disables_an_open_pr` below
+        # for the behavior that DOES differ, at the disable-only level).
+        out = self._run_parsing_fragment({"STATUS": "bogus"})
+        self.assertIn("STATUS_OUT=\n", out)
+        for good in ("same", "differs"):
+            out2 = self._run_parsing_fragment({"STATUS": good})
+            self.assertIn(f"STATUS_OUT={good}\n", out2)
 
     def test_unknown_status_still_disables_an_open_pr(self):
         # M9: the disable-on-unknown-status call must not be dropped.
@@ -4356,22 +4455,38 @@ class TestN1HostileValidation(TestB1RosterPrHelper):
                         if c.startswith("pr merge 13") and "--disable-auto" in c), None)
         self.assertIsNotNone(disable, calls)
 
-    def test_a_rejection_reason_off_the_allowlist_is_dropped(self):
+    def test_a_rejection_reason_off_the_allowlist_is_parsed_as_empty(self):
         # M4: only the two exact fixed sentences the `eval` job can emit
-        # are ever printed; anything else (a tool's own untrusted stderr)
-        # falls back to empty rather than being echoed into the issue.
+        # ever survive the parse; anything else (a tool's own untrusted
+        # stderr) is normalized to "" — asserted directly on the parse,
+        # then confirmed end to end that it is never echoed into the
+        # issue body either.
+        out = self._run_parsing_fragment(
+            {"REJECTION_REASON": "rm -rf / #pwned"})
+        self.assertIn("REJECTION_REASON_OUT=\n", out)
+        good = ("Rendering was rejected because the computed proposal could "
+                "not be rendered safely.")
+        out2 = self._run_parsing_fragment({"REJECTION_REASON": good})
+        self.assertIn(f"REJECTION_REASON_OUT={good}\n", out2)
+
         work = self.tmp / "m4"; work.mkdir()
-        out, calls, body = self._run_roster_pr_direct(
+        out3, calls, body = self._run_roster_pr_direct(
             {"GITHUB_SHA": "", "STATUS": "differs", "REJECTED": "true",
              "REJECTION_REASON": "rm -rf / #pwned"}, work=work)
         self.assertNotIn("rm -rf", body or "")
         self.assertNotIn("pwned", body or "")
 
-    def test_a_non_digit_issue_number_is_never_used_to_edit(self):
-        # M5: a non-digit ISSUE_NUMBER must be treated as "no known
-        # tracking issue" — never interpolated into `gh issue edit <n>`.
+    def test_a_non_digit_issue_number_is_parsed_as_empty(self):
+        # M5: a non-digit ISSUE_NUMBER must be normalized to "" by the
+        # parse itself, asserted directly, then confirmed end to end that
+        # it is never interpolated into `gh issue edit <n>`.
+        out = self._run_parsing_fragment({"ISSUE_NUMBER": "7; rm -rf /"})
+        self.assertIn("ISSUE_OUT=\n", out)
+        out2 = self._run_parsing_fragment({"ISSUE_NUMBER": "42"})
+        self.assertIn("ISSUE_OUT=42\n", out2)
+
         work = self.tmp / "m5"; work.mkdir()
-        out, calls, body = self._run_roster_pr_direct(
+        out3, calls, body = self._run_roster_pr_direct(
             {"GITHUB_SHA": "", "STATUS": "differs", "REJECTED": "true",
              "ISSUE_NUMBER": "7; rm -rf /",
              "REJECTION_REASON": "Rendering was rejected because the computed "
@@ -4380,28 +4495,40 @@ class TestN1HostileValidation(TestB1RosterPrHelper):
         self.assertFalse(any(c.startswith("issue edit") for c in calls), calls)
         self.assertTrue(any(c.startswith("issue create") for c in calls), calls)
 
-    def test_empty_probe_clean_is_never_treated_as_clean(self):
-        # M11: an empty/missing PROBE_CLEAN must never satisfy the
-        # `probe_clean = true` precondition for the auto-merge attempt.
+    def test_empty_probe_clean_is_parsed_as_not_clean(self):
+        # M11: an empty/missing PROBE_CLEAN must parse to `false`, not
+        # `true` — asserted directly on the fragment's own output, then
+        # confirmed end to end that it blocks the auto-merge attempt.
+        out = self._run_parsing_fragment({"PROBE_CLEAN": ""})
+        self.assertIn("PROBE_CLEAN_OUT=false\n", out)
+        out2 = self._run_parsing_fragment({"PROBE_CLEAN": "true"})
+        self.assertIn("PROBE_CLEAN_OUT=true\n", out2)
+
         work = self._repo("auto")
         main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
                                   capture_output=True, text=True, check=True).stdout.strip()
-        out, calls, body = self._run_roster_pr_direct(
+        out3, calls, body = self._run_roster_pr_direct(
             {"GITHUB_SHA": main_sha, "STATUS": "differs", "REJECTED": "false",
              "PROBE_CLEAN": "", "PUSHED_SHA": "a" * 40}, work=work)
         self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
         self.assertIn("vendor-default probe was not clean", body or "")
 
     def test_rejected_true_never_attempts_even_if_everything_else_looks_clean(self):
-        # M12: REJECTED must gate the attempt on its own — a rejected
-        # proposal never reaches the auto-merge step no matter what the
-        # other fields say.
-        work = self._repo("auto")
-        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
-                                  capture_output=True, text=True, check=True).stdout.strip()
-        out, calls, body = self._run_roster_pr_direct(
+        # M12: REJECTED must gate the `attempt-candidate` on its own —
+        # asserted directly on that fragment (isolated from
+        # `verify_publish`'s independent head/compare checks, which would
+        # otherwise mask a dropped `rejected` check here — the same trap
+        # M17 hit below), then confirmed end to end on a REAL verifying
+        # branch that no auto-merge is attempted.
+        out = self._run_candidate_fragment(self._candidate_env(REJECTED="true"))
+        self.assertIn("CANDIDATE_OUT=false\n", out)
+        out2 = self._run_candidate_fragment(self._candidate_env(REJECTED="false"))
+        self.assertIn("CANDIDATE_OUT=true\n", out2)
+
+        work, main_sha, pushed_sha = self._verified_repo()
+        out3, calls, body = self._run_roster_pr_direct(
             {"GITHUB_SHA": main_sha, "STATUS": "differs", "REJECTED": "true",
-             "PROBE_CLEAN": "true", "PUSHED_SHA": "a" * 40,
+             "PROBE_CLEAN": "true", "PUSHED_SHA": pushed_sha,
              "REJECTION_REASON": "Rendering was rejected because the computed "
                                  "proposal could not be rendered safely."},
             work=work)
@@ -4409,15 +4536,40 @@ class TestN1HostileValidation(TestB1RosterPrHelper):
         self.assertIn("no pull request was opened", body or "")
 
     def test_missing_pushed_sha_never_attempts(self):
-        # M17: an empty PUSHED_SHA must gate the attempt on its own, even
-        # with every other field looking clean.
-        work = self._repo("auto")
-        main_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
-                                  capture_output=True, text=True, check=True).stdout.strip()
+        # M17: an empty PUSHED_SHA must gate the `attempt-candidate` on its
+        # own — asserted directly on that fragment (B1.2's head-equality
+        # check would ALSO reject an empty pushed_sha downstream, which is
+        # exactly why testing only the combined `attempt` outcome against
+        # a real branch cannot kill this mutant: `actual_head` is never
+        # empty against a real branch, so it never equals an empty
+        # `$pushed_sha` either way — this is a real "defended in depth by
+        # B1" case, not a test gap, so the direct fragment assertion is
+        # the only way to observe THIS check's own regression).
+        out = self._run_candidate_fragment(self._candidate_env(PUSHED_SHA=""))
+        self.assertIn("CANDIDATE_OUT=false\n", out)
+        out2 = self._run_candidate_fragment(self._candidate_env(PUSHED_SHA="a" * 40))
+        self.assertIn("CANDIDATE_OUT=true\n", out2)
+
+    def test_rendered_identical_never_reaches_the_differs_branch(self):
+        # M15: `rendered_identical` must take the EARLY-RETURN disable-only
+        # path (`exit 0` right after the disable, no issue write, per F3),
+        # never fall through to the "differs" section further down. A
+        # disable-only `pr merge --disable-auto` call happens either way
+        # here (the "differs" section's own `attempt=false` branch calls
+        # the SAME disable), so asserting only on that call cannot observe
+        # this mutation — the real difference is that falling through
+        # would go on to construct and write a "change is proposed" issue,
+        # which the early return never does.
+        work = self.tmp / "m15"; work.mkdir()
+        self._pr_list_value = "14"
         out, calls, body = self._run_roster_pr_direct(
-            {"GITHUB_SHA": main_sha, "STATUS": "differs", "REJECTED": "false",
-             "PROBE_CLEAN": "true", "PUSHED_SHA": ""}, work=work)
+            {"GITHUB_SHA": "", "STATUS": "differs", "RENDERED_IDENTICAL": "true"},
+            work=work)
         self.assertFalse(any(c.startswith("pr merge") and "--auto" in c for c in calls), calls)
+        disable = next((c for c in calls
+                        if c.startswith("pr merge 14") and "--disable-auto" in c), None)
+        self.assertIsNotNone(disable, calls)
+        self.assertFalse(any(c.startswith("issue ") for c in calls), calls)
 
 
 class TestN2TextAllowlist(TestB1RosterPrHelper):
