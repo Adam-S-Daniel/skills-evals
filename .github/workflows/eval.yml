@@ -488,10 +488,10 @@ jobs:
       # document) is FROZEN for this run by roster.py — its seats held, none
       # retired except models gone from the Models API, none added unless the
       # family holds no seat the Models API still lists. A default the probe
-      # answered but this run's catalogue does not match is not frozen: that
-      # family is decided on an effective default (its newest listed previous
-      # arm or usage-qualified model), and the summary says so. On a freeze
-      # the proposal step below warns
+      # answered but this run's catalogue does not match FREEZES its family
+      # too, through the identical rule (#203 probe round 7) — only the
+      # wording says a mismatch rather than a failure, and the summary says
+      # so. On a freeze the proposal step below warns
       # and keeps the tracking issue open; that step runs unless the workflow
       # is cancelled, so it fires even when the eval step failed. Nothing is
       # carried to the next run.

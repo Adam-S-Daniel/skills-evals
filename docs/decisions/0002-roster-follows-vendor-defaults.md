@@ -101,10 +101,11 @@ happened to accumulate usage on.
    resolve; an alias naming another family's model is unresolved on its own;
    the one remaining conflict is two spellings of the same family word naming
    different models.
-6. **A failed probe freezes its family for that run (#203 probe round 1;
-   narrowed in probe rounds 2, 3 and 5).** Only a PROBE FAILURE freezes: the
-   probe recorded an error class for the alias, it answered with a model of
-   the wrong tier or family (`wrong-tier`, `wrong-family` — the CLI said
+6. **A failed probe, or a catalogue mismatch, freezes its family for that
+   run (#203 probe round 1; narrowed in probe rounds 2, 3 and 5; folded into
+   one freeze in round 7, R7-1).** A PROBE FAILURE freezes: the probe
+   recorded an error class for the alias, it answered with a model of the
+   wrong tier or family (`wrong-tier`, `wrong-family` — the CLI said
    something nonsensical about its own alias, so it is treated as a failure,
    probe round 3), it answered with a model that has no `created_at` to
    start a predecessor's buffer from (`no-created-at` — round 5, R5-1: this
@@ -114,54 +115,42 @@ happened to accumulate usage on.
    stand-in for a probe script that exited non-zero (`probe-exited`, "the
    probe script exited with an error") — then every family on the ladder
    except the aliases the probe `skipped`. A `{}` from a probe that ran and
-   resolved nothing stays `no-defaults`. A CATALOGUE MISMATCH does not
-   freeze: the probe answered, but the id is not an available model this
-   run (`not-available`, `ambiguous-snapshot` — an undated id resolves to
-   its one dated `<id>-YYYYMMDD` when the catalogue lists only that, and two
-   or more are ambiguous). That family is decided by rules 1 to 4 above on
-   an EFFECTIVE default (probe round 4, narrowed in round 5, R5-2): **when
-   the family has ANY previous arm the Models API still lists this run, the
-   candidate set is those listed arms only** — a persistent mismatch HOLDS
-   the listed seats rather than seating a newer, more-used model the probe
-   cannot corroborate. Only a family with NO previous arm still listed
-   decides on usage-qualified models instead (then the no-candidate
-   fallback below). This is the GOVERNING GUARANTEE (the owner's decision,
-   round 5): a single run whose probe answer is a failure or a catalogue
-   mismatch changes no seat that a clean run would not change. Where that
+   resolved nothing stays `no-defaults`. A CATALOGUE MISMATCH — the probe
+   answered, but the id is not an available model this run (`not-available`,
+   `ambiguous-snapshot` — an undated id resolves to its one dated
+   `<id>-YYYYMMDD` when the catalogue lists only that, and two or more are
+   ambiguous) — FREEZES its family too, through the identical rule below,
+   never through rules 1 to 4: only the wording says a mismatch rather than
+   a failure, in reasons, `defaults_mismatched` (`{alias: {id, class}}`)
+   rather than `defaults_failed`, and the warning and summary, so a human
+   can tell the two apart. This is the GOVERNING GUARANTEE (first stated as
+   the owner's decision in round 5, R5-2; made structural in round 7,
+   R7-1): a single run whose probe answer is a failure or a catalogue
+   mismatch changes no seat that a clean run would not change. Rounds 4
+   through 7 each tried a narrower carve-out instead — deciding the
+   mismatched family on a guessed "effective default" (its newest listed
+   previous arm, or a usage-qualified model with none listed) — and each
+   time a different branch of that guess retired or excluded a seat a clean
+   week keeps; round 7 replaced the guess with the identical freeze a probe
+   failure gets, closing every such branch at once. Where the guarantee
    conflicts with "a persistent mismatch still seats the model the fleet
    uses" — the model actually used has moved past every listed arm, but the
    probe cannot corroborate it — the guarantee wins: the listed seat holds,
    loudly (the mismatch's warning, summary line and open tracking issue),
-   and a human fixes the probe. The effective default is seated or held on
-   the family's combined share, and an older previous arm it supersedes is
-   HELD OUTRIGHT rather than run through the `superseded_exit_weeks` buffer
-   (round 6, R6-1): the effective default is itself a guess, possibly newer
-   than the vendor's real one, so one mismatch week must not retire a seat a
-   clean week keeps — held under its DATED id too (R5-3, round 5): a
-   previous arm published under `<base>-YYYYMMDD` is still a previous arm
-   once `<base>` appears in the catalogue — and nothing newer is seated — so
-   a one-run mismatch changes no seat a clean run would not. A family with neither a listed arm nor a usage-qualifying model
-   falls back, with no usable enter window, to
-   its newest-in-tier model as with no probe; with a usable one it has no
-   seat, as a clean run gives a tier no model of which clears the entry
-   bar. (Probe round 3's rule — the usage rules less any newest-in-tier
-   seat — retired a seated default carrying little usage while its
-   superseded predecessor carried much, and emptied a family on a thin enter
-   window.) The reasons say "… does not match this run's catalogue
-   (<class>); seat decided on `<id>`, the newest of the family's listed
-   seats and usage-qualified models". The warning, the summary and
-   `defaults_mismatched` (`{alias: {id, class}}`) say "the CLI's default
-   `<id>` for `<alias>` does not match this run's catalogue (<class>)" — not
-   "probe failed". Freezing it instead held a bearer that never lists the
-   CLI's answer on the old seats for good. In a frozen family every previous
-   arm keeps its seat ("vendor default for `<alias>` unknown this run
-   (probe: <class>); held; none retired on a failed probe") unless it has
-   left the Models API, and nothing else is retired. While the family still
-   holds a seat the Models API lists, it gets NO new seat at all (probe
-   round 3): a usage seat granted there was one the next clean week
-   retired. Only a family that would otherwise vanish from the roster — no
-   held arm left in the API — is seated: by the usage entry bar (rule 1,
-   probe round 2), with the failed probe named in its reason, or, with no
+   and a human fixes the probe. In a frozen family every previous arm keeps
+   its seat ("vendor default for `<alias>` unknown this run (probe:
+   <class>); held; none retired on a failed probe", or, on a mismatch,
+   "the CLI's default `<id>` for `<alias>` does not match this run's
+   catalogue (<class>); held; none retired on a catalogue mismatch") unless
+   it has left the Models API, and nothing else is retired — held under its
+   DATED id too (R5-3, round 5, and, for a SEATED vendor default, round 7's
+   R7-2: `_default_rung_decision`'s `model_id == default_id` branch had
+   missed the same alias collapse the superseded-arm buffer already used).
+   While the family still holds a seat the Models API lists, it gets NO new
+   seat at all (probe round 3): a usage seat granted there was one the next
+   clean week retired. Only a family that would otherwise vanish from the
+   roster — no held arm left in the API — is seated: by the usage entry bar
+   (rule 1, probe round 2), with the freeze named in its reason, or, with no
    usable enter window — a missing or stale census, or a fresh one whose
    enter window is under the ranked-usage floors — as the newest in its
    tier, exactly as the no-probe fallback would seat it (probe round 3).
@@ -172,11 +161,12 @@ happened to accumulate usage on.
    no model of which clears the entry bar is not on the roster. A usage seat
    granted during a freeze because the family would otherwise vanish can
    outlast the freeze: once a clean probe names a newer default, that seat
-   is a superseded previous arm and leaves only through the
-   `superseded_exit_weeks` buffer. The earlier rule — fall back to both usage rules —
-   flipped seats on a one-week failure: a seated default retired, or a
-   preview seated, and the next clean probe undid it. The freeze is loud: `defaults_failed`
-   (`{alias: class}`, and `defaults_document_failed`) in the published
+   is a superseded previous arm — the same as any used arm — and leaves
+   only through the `superseded_exit_weeks` buffer; it is not retired just
+   because the freeze ended. The earlier rule — fall back to both usage
+   rules — flipped seats on a one-week failure: a seated default retired,
+   or a preview seated, and the next clean probe undid it. The freeze is
+   loud: `defaults_failed` or `defaults_mismatched` in the published
    roster, a line at the top of the step summary, and a fixed `::warning::`
    from the proposal step, which keeps the tracking issue open even when the
    proposal is "same"; its eval sentence says whether the eval step
@@ -214,9 +204,9 @@ happened to accumulate usage on.
   fails it, because the proposal branch must exist for review. A failed
   probe fails no workflow step. A wrong
   default is bounded by the catalogue check: an id that is not an available
-  model this run seats nothing, and that family is decided on an effective
-  default — its newest listed previous arm or usage-qualified model; an id
-  of the wrong tier or family freezes it.
+  model this run freezes the family exactly like a probe failure (#203
+  probe round 7); an id of the wrong tier or family freezes it too, always
+  has.
 - **A tier between the bars keeps an arm across a version change**, because
   the seated default's exit check reads the tier's share; a tier the fleet
   genuinely leaves still retires it by the exit bar.
@@ -252,6 +242,18 @@ happened to accumulate usage on.
   it could not establish for that run only (decision 6, #203 probe round 1),
   and a freeze still seats a model that clears the usage entry bar (#203
   probe round 2); nothing is carried across runs.
+- **Update 2026-09-28 (#203 probe round 7, R7-1 and R7-2):** a catalogue
+  mismatch (`not-available`, `ambiguous-snapshot`) now freezes its family
+  through the identical rule a probe failure gets, rather than deciding it
+  on a guessed "effective default" — rounds 4 through 7 each found a
+  different branch of that guess retiring or excluding a seat a clean week
+  keeps, so the guess is gone and its machinery
+  (`effective_by_family`/`effective_words`) with it; only the wording
+  (`defaults_mismatched`, `mismatch_words`) still tells a mismatch from a
+  failure. Fixed in the same round: a seated vendor default held only under
+  its DATED id (`_default_rung_decision`'s `model_id == default_id` branch)
+  had missed the alias collapse the superseded-arm buffer already used, so
+  it wrongly read as excluded from the roster on a clean run.
 
 ## Alternatives considered
 

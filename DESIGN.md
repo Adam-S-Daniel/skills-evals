@@ -564,17 +564,13 @@ in a `::warning::` that keeps the tracking issue open (the proposal step
 runs unless the workflow is cancelled; its `gh issue` writes warn rather
 than fail, its `git push` does not). An answer this run's catalogue does
 not otherwise match (not available, an ambiguous snapshot) is not a
-failure: that family is decided by the vendor-default rules on an effective
-default — ONLY the newest of its previous arms the Models API still lists,
-when it has any (#203 probe round 5, R5-2 — the governing guarantee: a
-single run whose probe answer is a failure or a mismatch changes no seat a
-clean run would not, which wins even over seating the model the fleet
-actually uses); a family with no previous arm still listed decides on its
-models clearing the usage entry bar instead (#203 probe round 4) — falling
-back, with neither, to newest-in-tier when there is no usable enter window
-and to no seat otherwise, and `defaults_mismatched` says "does not match
-this run's catalogue", loudly whether it holds a listed seat or seats by
-usage. Falling back to
+probe failure, but it FREEZES the family exactly the same way (#203 probe
+round 7, R7-1 — the governing guarantee, first stated in round 5 as R5-2:
+a single run whose probe answer is a failure or a mismatch changes no seat
+a clean run would not, now structural rather than resting on a guessed
+"effective default"); only the wording differs, and `defaults_mismatched`
+says "does not match this run's catalogue", loudly whether it holds a
+listed seat or seats by usage. Falling back to
 rules 1 and 2 instead flipped seats on one bad week. The freeze is per run; nothing is
 carried to the next (a carried-defaults block with an expiry briefly stood
 here and is gone). With no defaults document at all the roster is

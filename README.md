@@ -579,19 +579,16 @@ the workflow's `{"probe_exit": "nonzero"}` stand-in for a probe script that
 exited with an error (`probe-exited`). A default the probe **answered** but
 this run's catalogue does not otherwise match (not available — an undated
 id the catalogue lists only as exactly one dated `<id>-YYYYMMDD` does
-resolve to it — an ambiguous snapshot) is **not** a failure: that family is
-decided by the vendor-default rules on an **effective default** — ONLY the
-newest of its previous arms the Models API still lists, when it has any
-(#203 probe round 5, R5-2 — the GOVERNING GUARANTEE: a single run whose
-probe answer is a failure or a mismatch changes no seat a clean run would
-not, which wins even over seating the model the fleet actually uses); a
-family with NO previous arm still listed decides on its models clearing the
-usage entry bar instead (#203 probe round 4); with neither, it keeps the
-no-probe fallback when there is no usable enter window and has no seat
-otherwise — and the summary says "the CLI's default `<id>` for `<alias>` does
-not match this run's catalogue (<class>)", loudly, whether it holds a
-listed seat or seats by usage. A frozen family keeps every previous arm's
-seat until it leaves the Models API and retires none. While it still holds
+resolve to it — an ambiguous snapshot) **freezes its family exactly like a
+failure** (#203 probe round 7, R7-1 — the GOVERNING GUARANTEE, first stated
+in round 5 as R5-2: a single run whose probe answer is a failure or a
+mismatch changes no seat a clean run would not, made structural in round 7
+rather than resting on a guessed "effective default"), only the summary
+and reason wording says "the CLI's default `<id>` for `<alias>` does not
+match this run's catalogue (<class>)" rather than "vendor default ...
+unknown this run", so a human can tell the two apart. A frozen family keeps
+every previous arm's seat until it leaves the Models API and retires none.
+While it still holds
 a seat the Models API lists it gets **no new seat at all** (#203 probe
 round 3); only a family that would otherwise vanish from the roster is
 seated — by the usage entry bar, or, with no usable enter window (no fresh

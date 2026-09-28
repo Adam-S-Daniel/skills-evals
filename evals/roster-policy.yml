@@ -137,13 +137,13 @@ arm_enter_window_weeks: 4
 # says so loudly (`defaults_failed`, the summary's first lines, a
 # `::warning::`). Falling back to the rules above instead flipped seats on
 # one bad week. A default the probe answered but this run's catalogue does
-# not otherwise match (not available, an ambiguous snapshot) is NOT a
-# failure: that family is decided by the vendor-default rules on an
-# effective default — ONLY its listed previous arms when it has any (probe
-# round 5, R5-2: the governing guarantee that a single run whose probe
-# answer is a failure or a mismatch changes no seat a clean run would not),
-# else models clearing the entry bar (#203 probe round 4). A persistent
-# mismatch that holds a listed seat is surfaced just as loudly. Nothing is
+# not otherwise match (not available, an ambiguous snapshot) FREEZES its
+# family too, through the identical rule (#203 probe round 7, R7-1 — the
+# governing guarantee, first stated in probe round 5 as R5-2: a single run
+# whose probe answer is a failure or a mismatch changes no seat a clean run
+# would not) — only the wording (`defaults_mismatched`) says a mismatch
+# rather than a failure. A persistent mismatch that holds a listed seat is
+# surfaced just as loudly. Nothing is
 # carried to the next run (the owner's decision of 2026-09-28): the
 # carried-defaults block and its expiry knob that briefly stood here are
 # gone.

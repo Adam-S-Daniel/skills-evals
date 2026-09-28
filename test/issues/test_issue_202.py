@@ -771,9 +771,9 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
     resolved nothing — FREEZES that family for the run (#203 probe round 1):
     its previous arms are held, nothing of it is newly seated but by usage,
     and a warning says so. A CATALOGUE MISMATCH — the probe answered, but
-    this run's catalogue does not match the answer — does not freeze (#203
-    probe round 2, R2-1): the family is decided on an EFFECTIVE default
-    (#203 probe round 4, R4-1)."""
+    this run's catalogue does not match the answer — freezes too, exactly
+    the same way, in its own wording (#203 probe round 2, R2-1; round 7,
+    R7-1)."""
 
     @staticmethod
     def _policy(**overrides):
@@ -797,23 +797,25 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
         if "defaults" in result:
             self.assertNotIn("opus", result["defaults"]["resolved"])
 
-    def _assert_opus_on_the_effective_default(self, result, cls):
-        # A catalogue mismatch (R2-1) is not frozen. Since R4-1 the family
-        # is decided on its effective default: opus-5, a listed previous arm
-        # clearing the entry bar, is seated, and opus-5-5, newer than it, is
-        # not.
+    def _assert_opus_frozen_on_a_mismatch(self, result, cls):
+        # A catalogue mismatch (R2-1) freezes exactly like a probe failure
+        # (R7-1, #203 probe round 7): opus-5, a listed previous arm, is
+        # held; opus-5-5 gets no new seat while it holds that seat.
         self.assertNotIn("defaults_failed", result)
         self.assertEqual(result["defaults_mismatched"]["opus"]["class"], cls)
-        self.assertIn("seat decided on `claude-opus-5`",
+        self.assertIn("claude-opus-5", self._arms(result))
+        self.assertIn("held; none retired on a catalogue mismatch",
                       self._reason(result, "claude-opus-5"))
-        self.assertIn("newer than `claude-opus-5`",
+        self.assertNotIn("claude-opus-5-5", self._arms(result))
+        self.assertIn("no new seat on a catalogue mismatch while the family "
+                      "holds a seat the Models API still lists",
                       self._reason(result, "claude-opus-5-5", "excluded"))
 
     def test_an_id_that_is_not_available(self):
         defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-9",
                                                   "sonnet": "claude-sonnet-5"}}
         result, warnings = self._compute(defaults=defaults)
-        self._assert_opus_on_the_effective_default(result, "not-available")
+        self._assert_opus_frozen_on_a_mismatch(result, "not-available")
         self.assertTrue(any("`opus`" in w and "not an available model" in w
                             for w in warnings), warnings)
         self.assertEqual(result["defaults"]["unresolved"][0]["alias"], "opus")
@@ -1947,9 +1949,9 @@ class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
     """F6 (#203 probe round 1): an undated id the catalogue does not list
     maps onto its ONE dated `<id>-YYYYMMDD`, mirroring the dated->undated
     collapse; none is "not available", two or more is ambiguous — and both
-    of those are catalogue mismatches, which decide the family on its
-    effective default rather than freezing it (R2-1, #203 probe round 2;
-    R4-1, round 4)."""
+    of those are catalogue mismatches, which freeze the family exactly like
+    a probe failure, in their own wording (R2-1, #203 probe round 2; R7-1,
+    round 7)."""
 
     def _catalogue(self, *dated):
         return self._models_doc(drop=("claude-opus-5-5",), extra=[
@@ -1974,7 +1976,7 @@ class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
         self.assertIn("not an available model",
                       result["defaults"]["unresolved"][0]["reason"])
 
-    def test_two_dated_candidates_are_ambiguous_and_use_the_effective_default(self):
+    def test_two_dated_candidates_are_ambiguous_and_freeze(self):
         models = self._catalogue("claude-opus-5-5-20260926", "claude-opus-5-5-20261001")
         result, warnings = self._compute(defaults=self.DEFAULTS, models=models)
         self.assertNotIn("defaults_failed", result)
@@ -1983,13 +1985,17 @@ class TestUndatedDefaultMapsOntoADatedId(_RosterFixture):
         self.assertNotIn("opus", result["defaults"]["resolved"])
         why = result["defaults"]["unresolved"][0]["reason"]
         self.assertIn("2 dated snapshots", why)
-        # Seated as a clean probe naming the effective default, opus-5 — a
-        # listed previous arm clearing the entry bar — would seat it (R4-1).
-        baseline, _ = self._compute(defaults={**self.DEFAULTS, "defaults": {
-            "opus": "claude-opus-5", "sonnet": "claude-sonnet-5"}}, models=models)
-        self.assertEqual(self._arms(result), self._arms(baseline))
-        self.assertIn("seat decided on `claude-opus-5`",
+        # Frozen exactly like a probe failure (R7-1, #203 probe round 7):
+        # opus-5, the listed previous arm, holds the seat; neither dated
+        # snapshot of opus-5-5 earns one while it does.
+        self.assertIn("claude-opus-5", self._arms(result))
+        self.assertIn("held; none retired on a catalogue mismatch",
                       self._reason(result, "claude-opus-5"))
+        for snap in ("claude-opus-5-5-20260926", "claude-opus-5-5-20261001"):
+            self.assertNotIn(snap, self._arms(result))
+            self.assertIn("no new seat on a catalogue mismatch while the family "
+                          "holds a seat the Models API still lists",
+                          self._reason(result, snap, "excluded"))
 
     def test_a_dated_id_of_another_base_is_not_a_candidate(self):
         # `claude-opus-5-20260101` is a snapshot of opus-5, not of opus-5-5.
@@ -2038,31 +2044,33 @@ def _mismatch_words(model_id, alias, cls):
             f"run's catalogue ({cls})")
 
 
-class TestCatalogueMismatchDoesNotFreeze(_WeeklyLoop):
-    """R2-1(a) (#203 probe round 2): the probe ANSWERED for an alias, but
-    this run's Models API catalogue does not match the answer. That is not
-    a probe failure: the family is decided on its EFFECTIVE default (#203
-    probe round 4, R4-1) — the arms a clean probe naming that model would
-    give — and the wording says what happened, never "probe failed" or
-    "unknown". A
+class TestCatalogueMismatchFreezesLikeAFailure(_WeeklyLoop):
+    """R2-1(a) (#203 probe round 2), superseded by R7-1 (round 7): the probe
+    ANSWERED for an alias, but this run's Models API catalogue does not
+    match the answer. That is not a probe FAILURE, but since round 7 it
+    FREEZES the family exactly the same way a failure does (the reviewer's
+    g2.py, g3.py: a mismatch week changes no seat a clean week would not),
+    replacing round 4's guessed "effective default". The wording still
+    says what happened, never "probe failed" or "unknown this run". A
     wrong-tier or wrong-family answer is a failure since R3-2: see
     TestMismatchGetsNoNewestInTierSeat."""
 
-    def _effective_baseline(self, **kwargs):
-        # A clean probe naming opus-5: the listed previous arm clearing the
-        # entry bar, and so the effective default of every case below.
+    def _clean_baseline(self, **kwargs):
+        # A clean probe naming opus-5 directly: the same listed previous
+        # arm the freeze below holds, so a one-week mismatch changes no
+        # seat this clean run would not (the governing guarantee, R7-1).
         return self._compute(defaults={**self.DEFAULTS, "skipped": [],
                                        "defaults": {"opus": "claude-opus-5"}},
                              **kwargs)[0]
 
-    def _assert_as_with_the_effective_default(self, result, baseline, alias):
+    def _assert_frozen_as_the_clean_run_would_seat(self, result, baseline, alias):
         self.assertNotIn("defaults_failed", result)
         self.assertNotIn("defaults_document_failed", result)
         self.assertEqual(self._arms(result), self._arms(baseline))
         self.assertEqual(result["retired_since_last"], baseline["retired_since_last"])
         self.assertIn(alias, result["defaults_mismatched"])
 
-    def test_each_mismatch_class_decides_on_the_effective_default(self):
+    def test_each_mismatch_class_freezes_like_the_clean_run_would_seat(self):
         # `no-created-at` is a PROBE FAILURE since R5-1 (#203 probe round
         # 5), not a mismatch class: see TestNoCreatedAtIsAProbeFailure.
         cases = (
@@ -2074,11 +2082,11 @@ class TestCatalogueMismatchDoesNotFreeze(_WeeklyLoop):
         )
         for cls, defaults, alias, kwargs in cases:
             with self.subTest(cls=cls):
-                baseline = self._effective_baseline(**kwargs)
+                baseline = self._clean_baseline(**kwargs)
                 result, warnings = self._compute(
                     defaults={**self.DEFAULTS, "defaults": defaults,
                               "skipped": []}, **kwargs)
-                self._assert_as_with_the_effective_default(result, baseline, alias)
+                self._assert_frozen_as_the_clean_run_would_seat(result, baseline, alias)
                 self.assertEqual(result["defaults_mismatched"][alias]["class"], cls)
                 self.assertEqual(result["defaults_mismatched"][alias]["id"],
                                  defaults[alias])
@@ -2086,6 +2094,8 @@ class TestCatalogueMismatchDoesNotFreeze(_WeeklyLoop):
                 self.assertTrue(any(said in w for w in warnings), warnings)
                 summary = roster.render_summary(result)
                 self.assertIn(said, summary)
+                self.assertIn("held; none retired on a catalogue mismatch",
+                              self._reason(result, "claude-opus-5"))
                 text = "\n".join(warnings) + summary
                 self.assertNotIn("probe failed", text.lower())
                 self.assertNotIn("unknown this run", text)
@@ -2517,11 +2527,11 @@ class TestFrozenFamilyFallsBackWithNoCensus(_RosterFixture):
 
 
 class TestMismatchKeepsTheNoCensusFallback(_RosterFixture):
-    """R3-6's guard, kept by R4-1 (#203 probe rounds 3 and 4): with no usable
-    enter window a mismatched family holding no seat the Models API still
-    lists keeps the no-probe fallback (its newest model), so a mismatch never
-    empties the family either; holding one, that seat is its effective
-    default and nothing newer is seated."""
+    """R3-6's guard, kept for a mismatch too (#203 probe rounds 3 and 7,
+    R7-1): with no usable enter window a mismatched family holding no seat
+    the Models API still lists keeps the no-probe fallback (its newest
+    model), so a mismatch never empties the family either; holding one, the
+    freeze holds that seat and nothing newer is seated."""
 
     NOW5 = TestFrozenFamilyFallsBackWithNoCensus.NOW5
     PREV = TestFrozenFamilyFallsBackWithNoCensus.PREV
@@ -2548,17 +2558,18 @@ class TestMismatchKeepsTheNoCensusFallback(_RosterFixture):
         result = self._run(models, self.MISMATCH)
         self.assertIn("claude-opus-5", self._arms(result))
         self.assertNotIn("claude-opus-6", self._arms(result))
-        self.assertIn("newer than `claude-opus-5`",
+        self.assertIn("no new seat on a catalogue mismatch while the family "
+                      "holds a seat the Models API still lists",
                       self._reason(result, "claude-opus-6", "excluded"))
 
 
 class TestMismatchGetsNoNewestInTierSeat(_WeeklyLoop):
-    """R3-2 (#203 probe round 3), as decided since R4-1 (round 4) and
+    """R3-2 (#203 probe round 3), as decided since R7-1 (round 7) and
     narrowed by R5-1 (round 5, `no-created-at` is now a probe failure, not a
     mismatch class): a CATALOGUE MISMATCH (not-available, ambiguous-snapshot)
-    decides its family on an EFFECTIVE default, so a model newer than it —
-    the newest in the tier — gets no seat, and a one-week mismatch adds
-    nothing the next week retires."""
+    FREEZES its family exactly like a probe failure, so a model newer than
+    the listed previous arm it holds gets no new seat, and a one-week
+    mismatch adds nothing the next week retires."""
 
     @staticmethod
     def _usage(n):
@@ -2593,8 +2604,11 @@ class TestMismatchGetsNoNewestInTierSeat(_WeeklyLoop):
                 self.assertNotIn("defaults_failed", week1)
                 self.assertEqual(week1["added_since_last"], [])
                 self.assertEqual(out[2]["result"]["retired_since_last"], [])
-                newer = [e for e in week1["excluded"] if e["reason"].startswith(
-                    "excluded from the arm set: newer than `claude-opus-5`")]
+                self.assertIn("held; none retired on a catalogue mismatch",
+                              self._reason(week1, "claude-opus-5"))
+                held_seat = ("no new seat on a catalogue mismatch while the family "
+                            "holds a seat the Models API still lists")
+                newer = [e for e in week1["excluded"] if held_seat in e["reason"]]
                 self.assertTrue(newer, week1["excluded"])
                 for entry in newer:
                     self.assertIn(_mismatch_words(bad, "opus", cls), entry["reason"])
@@ -2611,9 +2625,10 @@ class TestMismatchGetsNoNewestInTierSeat(_WeeklyLoop):
         out, _ = self._loop(usage, 1, lambda k: self._docs(
             k, opus="claude-opus-6", sonnet="claude-sonnet-5"))
         week0 = out[0]["result"]
-        self.assertIn("seat decided on `claude-opus-5`",
+        self.assertIn("held; none retired on a catalogue mismatch",
                       self._reason(week0, "claude-opus-5"))
-        self.assertIn("newer than `claude-opus-5`",
+        self.assertIn("no new seat on a catalogue mismatch while the family "
+                      "holds a seat the Models API still lists",
                       self._reason(week0, "claude-opus-5-5", "excluded"))
 
     def test_wrong_tier_is_a_probe_failure_and_freezes(self):
@@ -2917,21 +2932,16 @@ class TestHarnessVersionNonZeroExit(_ProbeFixture):
 # --- #203 probe round 4 -------------------------------------------------------
 
 
-def _effective_words(bad, alias, cls, effective):
-    return (f"{_mismatch_words(bad, alias, cls)}; seat decided on `{effective}`, the "
-            f"newest of the family's listed seats and usage-qualified models")
-
-
 def _families(result):
     rungs = roster.tier_rungs(roster.load_policy(POLICY))
     return {roster.family_of(a["id"], rungs) for a in result["arms"]}
 
 
-class TestMismatchUsesAnEffectiveDefault(_WeeklyLoop):
-    """R4-1 + R4-2 (#203 probe round 4): a CATALOGUE-MISMATCHED family is
-    decided by the vendor-default rules with an EFFECTIVE default in place
-    of the vendor's: the newest of the family's previous arms the Models API
-    still lists and its models clearing the usage entry bar. With neither,
+class TestMismatchFreezesInsteadOfAnEffectiveDefault(_WeeklyLoop):
+    """R4-1 + R4-2 (#203 probe round 4), superseded by R7-1 (round 7): a
+    CATALOGUE-MISMATCHED family FREEZES exactly like a probe failure —
+    every listed previous arm holds its seat outright — rather than being
+    decided on a guessed "effective default". With no previous arm listed,
     the family falls back to newest-in-tier when the enter window is not
     usable, and otherwise has no seat — as a clean run with the tier off the
     roster."""
@@ -2967,21 +2977,19 @@ class TestMismatchUsesAnEffectiveDefault(_WeeklyLoop):
         for week in out:
             self.assertEqual(week["result"]["retired_since_last"], [])
             self.assertEqual(week["result"]["added_since_last"], [])
-        self.assertTrue(self._reason(week2, "claude-opus-5-5").startswith(
-            _effective_words("claude-opus-7", "opus", "not-available",
-                             "claude-opus-5-5")), self._reason(week2, "claude-opus-5-5"))
-        self.assertIn("superseded by `claude-opus-5-5`",
+        self.assertIn("held; none retired on a catalogue mismatch",
+                      self._reason(week2, "claude-opus-5-5"))
+        self.assertIn("no new seat on a catalogue mismatch while the family "
+                      "holds a seat the Models API still lists",
                       self._reason(week2, "claude-opus-5", "excluded"))
 
     def test_r2_loop_a_a_persistent_mismatch_holds_the_listed_seat(self):
-        # Round 2's loop.py A, updated for R5-2 (#203 probe round 5): the
+        # Round 2's loop.py A, updated for R7-1 (#203 probe round 7): the
         # CLI answers an unlisted opus every week from week 0. opus-5 (the
-        # only previous arm `PREV0` lists) is the ONLY candidate for the
-        # family's effective default this run — the family has a listed
-        # seat, so usage-qualified models (opus-5-5, ~30%) are never
-        # considered — and it holds the seat every week; opus-5-5 earns
-        # none while it remains listed (the governing guarantee wins over
-        # "a persistent mismatch still seats the model the fleet uses").
+        # only previous arm `PREV0` lists) is frozen and holds the seat every
+        # week; opus-5-5 (~30%-used, not a previous arm) earns none while
+        # opus-5 remains listed (the governing guarantee wins over "a
+        # persistent mismatch still seats the model the fleet uses").
         def usage(n):
             return {"claude-sonnet-5": 900, "claude-haiku-4-5": 50,
                     "claude-fable-5-1": 0, "claude-opus-5": 0,
@@ -2998,7 +3006,8 @@ class TestMismatchUsesAnEffectiveDefault(_WeeklyLoop):
             self.assertEqual(out[k]["result"]["added_since_last"], [], k)
         self.assertTrue(self._reason(out[0]["result"], "claude-opus-5").startswith(
             _mismatch_words("claude-opus-6", "opus", "not-available")))
-        self.assertIn("newer than `claude-opus-5`",
+        self.assertIn("no new seat on a catalogue mismatch while the family "
+                      "holds a seat the Models API still lists",
                       self._reason(out[0]["result"], "claude-opus-5-5", "excluded"))
 
     def test_the_used_model_is_seated_once_no_previous_arm_of_the_family_is_listed(self):
@@ -3360,8 +3369,12 @@ class TestPreviousArmHeldUnderItsDatedId(_RosterFixture):
 
 class TestMismatchCandidateSurvivingMutants(_RosterFixture):
     """R5-4 (#203 probe round 5): three mutants that survived round 4's
-    mutation pass, now exercised directly against the effective-default
-    candidate selection."""
+    mutation pass. Round 4's candidate-selection machinery they targeted is
+    gone (R7-1, #203 probe round 7 — a mismatch freezes exactly like a
+    probe failure now), but the edge cases they pin — a share exactly at
+    the entry bar, a listed arm held only under its dated id, and a
+    `created_at`-less model that must not raise — are still real, so the
+    tests are converted to the freeze behavior rather than deleted."""
 
     def test_a_share_exactly_at_the_entry_bar_qualifies_with_no_listed_arm(self):
         # (a): no previous arm of the family is listed, so candidates come
@@ -3386,11 +3399,10 @@ class TestMismatchCandidateSurvivingMutants(_RosterFixture):
         # (b): the listed previous arm is published under its DATED id
         # only, and carries too little usage to qualify on its own; a
         # much newer, heavily used peer (opus-6) must still get NO seat —
-        # the effective-default candidate list holds the listed arm via the
-        # dated-alias collapse (`frozen_held_ids`), not just literal ids, so
-        # candidates is non-empty and usage-qualified models are never
-        # considered. Without the alias collapse, the dated id is not in
-        # `available` at all, held_here is empty, and opus-6 would wrongly
+        # `holds_listed_seat` sees the listed arm via the dated-alias
+        # collapse (`frozen_held_ids`), not just literal ids. Without the
+        # alias collapse, the dated id is not in `available` at all, the
+        # family looks like it holds no seat, and opus-6 would wrongly
         # qualify by usage instead.
         extra = [self._model("claude-opus-5-20260401", "Claude Opus 5",
                              "2026-04-01T00:00:00Z"),
@@ -3410,15 +3422,15 @@ class TestMismatchCandidateSurvivingMutants(_RosterFixture):
                                   census=census)
         self.assertIn("claude-opus-5", self._arms(result))
         self.assertNotIn("claude-opus-6", self._arms(result))
-        self.assertIn("newer than `claude-opus-5`",
+        self.assertIn("no new seat on a catalogue mismatch while the family "
+                      "holds a seat the Models API still lists",
                       self._reason(result, "claude-opus-6", "excluded"))
 
-    def test_c_an_effective_default_with_no_created_at_holds_its_superseded_arm(self):
-        # (c): the `and started` guard — an EFFECTIVE default (`claude-
-        # opus-7`) lacking `created_at`, superseding another listed arm
-        # (`claude-opus-6`) that also lacks one, must not raise, and leaves
-        # the superseded arm held (buffer not started) rather than granting
-        # an unearned exception.
+    def test_c_a_mismatched_model_with_no_created_at_does_not_raise(self):
+        # (c): the freeze branch holds a listed arm outright, with no need
+        # to read `created_at` at all — a listed arm lacking one (`claude-
+        # opus-6`) and another (`claude-opus-7`) must not raise, and both
+        # are simply held.
         opus6 = self._model("claude-opus-6", "Claude Opus 6", None)
         opus7 = self._model("claude-opus-7", "Claude Opus 7", None)
         models = self._models_doc(extra=[opus6, opus7],
@@ -3431,24 +3443,23 @@ class TestMismatchCandidateSurvivingMutants(_RosterFixture):
         result, _ = self._compute(defaults=doc, previous=prev, models=models)
         self.assertIn("claude-opus-7", self._arms(result))
         self.assertIn("claude-opus-6", self._arms(result))
-        # #203 round 6: an effective default holds every listed previous arm
-        # outright on a catalogue mismatch, rather than running it through
-        # the `superseded_exit_weeks` buffer — so no exception is raised and
-        # the arm is held, but not with the buffer's wording.
-        self.assertIn("held over from the previous roster",
+        # #203 round 7: the freeze holds every listed previous arm outright
+        # on a catalogue mismatch — no `created_at`, no buffer, no
+        # exception — exactly as it does on a failed probe.
+        self.assertIn("held; none retired on a catalogue mismatch",
                       self._reason(result, "claude-opus-6"))
-        self.assertIn("none retired on a catalogue mismatch",
-                      self._reason(result, "claude-opus-6"))
+        self.assertIn("held; none retired on a catalogue mismatch",
+                      self._reason(result, "claude-opus-7"))
 
 
 class TestMismatchWeekRetiresNothing(_WeeklyLoop):
-    """R6-1 (#203 probe round 6): the EFFECTIVE default is a guess — the CLI
-    default did not match this run's catalogue, so `_default_rung_decision`
-    fell back to the newest of the family's listed seats and usage-qualified
-    models. That guess may be newer than the vendor's real default, so a
-    single catalogue-mismatch week must not retire a listed previous arm it
-    happens to supersede: the arm holds its seat every week, mismatch or
-    not, identically to a run with no mismatch at all. The reviewer's
+    """R6-1 (#203 probe round 6), superseded by R7-1 (round 7): a
+    catalogue-mismatch week freezes its family exactly like a probe
+    failure — every listed previous arm is held outright, no exit check at
+    all — so a single mismatch week must not retire a listed previous arm
+    even when a real exit check that week would (opus-5 here, well under
+    the exit bar): the arm holds its seat every week, mismatch or not,
+    identically to a run with no mismatch at all. The reviewer's
     adv203-probe-r6 f1.py, run with the `_WeeklyLoop` week-by-week loop."""
 
     MODELS = [
@@ -3518,6 +3529,196 @@ class TestRound5Docs(unittest.TestCase):
         self.assertIn("changes no seat", flat)
         roster_flat = self._flat(REPO_ROOT / "harness" / "roster.py")
         self.assertIn("changes no seat", roster_flat)
+
+
+# --- #203 probe round 7 -------------------------------------------------------
+
+
+class TestRound7ProbeReproductions(_WeeklyLoop):
+    """R7-1 + R7-2 (#203 probe round 7): the reviewer's own reproductions,
+    each RED on HEAD f7e0ca8 — the effective-default machinery that round 7
+    deleted retired or excluded a listed seat a clean week keeps, through a
+    different branch each time; R7-2 is a plain clean-run bug, unrelated to
+    a mismatch. Verified red against f7e0ca8's `harness/roster.py` loaded as
+    its own module (never checked out into this working tree) before this
+    class was written; the failure each docstring names is what that run
+    showed."""
+
+    def test_g2_a_ramping_family_holds_its_seat_through_one_mismatch_week(self):
+        # g2.py: opus-5 carries no usage before week 39, then a steady 0.5%
+        # — never above the 2% exit bar. On f7e0ca8, the mismatch week ran
+        # opus-5 straight through the EFFECTIVE default's "seated or held on
+        # the tier's combined share" exit check and retired it on the spot
+        # (`retired_since_last == [{'id': 'claude-opus-5', ...}]`, arms ==
+        # `['claude-sonnet-5']`) — a seat the same week's CLEAN run (vendor
+        # default opus-5-5, opus-5 superseded but inside its buffer) does
+        # NOT retire. The freeze must retire no more than a clean week does
+        # that same week: nothing.
+        def usage(n):
+            return {"claude-sonnet-5": 1000, "claude-haiku-4-5": 50,
+                    "claude-fable-5-1": 0,
+                    "claude-opus-5": 5 if n >= 39 else 0,
+                    "claude-opus-5-5": 0}
+
+        def clean(k):
+            return self._docs(k)
+
+        def mismatch(k):
+            d = self._docs(k)
+            if k == 0:
+                d["defaults"]["opus"] = "claude-opus-6"
+            return d
+
+        base, _ = self._loop(usage, 6, clean)
+        out, _ = self._loop(usage, 6, mismatch)
+        week0 = out[0]["result"]
+        self.assertEqual(week0["retired_since_last"], [])
+        self.assertIn("claude-opus-5", self._arms(week0))
+        self.assertIn("held; none retired on a catalogue mismatch",
+                      self._reason(week0, "claude-opus-5"))
+        # From the week after the mismatch on, the two runs agree exactly —
+        # the family was never dropped by the one mismatch week.
+        self.assertEqual([self._arms(w["result"]) for w in out[1:]],
+                         [self._arms(w["result"]) for w in base[1:]])
+
+    def test_g3_a_family_held_only_under_its_dated_id_survives_a_mismatch(self):
+        # g3.py: the family's only listed arm is published under its DATED
+        # id, at 5.5% usage (between the 2% exit and 10% entry bars). On
+        # f7e0ca8, the mismatch week retired it outright
+        # (`retired_since_last == [{'id': 'claude-opus-5-20260401', ...}]`,
+        # arms == `['claude-sonnet-5']`) and NEVER RECOVERED — every later
+        # clean week still disagreed with the all-clean run
+        # (`weeks1..3 equal: False` in the reproduction). The freeze must
+        # hold it, and every week after the mismatch must match the
+        # all-clean run exactly.
+        M = self._model
+        MODELS = list(self.BASE) + [M("claude-opus-5-20260401", "Claude Opus 5",
+                                      "2026-04-01T00:00:00Z")]
+        PREV = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5-20260401"}])
+
+        def usage(n):
+            return {"claude-sonnet-5": 1000, "claude-haiku-4-5": 50,
+                    "claude-fable-5-1": 0, "claude-opus-5": 55,
+                    "claude-opus-5-5": 0}
+
+        def clean(k):
+            return self._docs(k)
+
+        def mismatch(k):
+            d = self._docs(k)
+            if k == 0:
+                d["defaults"]["opus"] = "claude-opus-6"
+            return d
+
+        base, _ = self._loop(usage, 4, clean, previous=PREV, models=MODELS)
+        out, _ = self._loop(usage, 4, mismatch, previous=PREV, models=MODELS)
+        week0 = out[0]["result"]
+        # The dated snapshot's own retirement is the alias collapse, not a
+        # real loss (its undated alias holds the seat instead); no OTHER
+        # retirement happens.
+        self.assertEqual([r["id"] for r in week0["retired_since_last"]],
+                         ["claude-opus-5-20260401"])
+        self.assertIn("which holds the seat",
+                      self._reason(week0, "claude-opus-5-20260401", "retired_since_last"))
+        self.assertIn("claude-opus-5", self._arms(week0))
+        self.assertIn("held; none retired on a catalogue mismatch",
+                      self._reason(week0, "claude-opus-5"))
+        self.assertEqual([self._arms(w["result"]) for w in out[1:]],
+                         [self._arms(w["result"]) for w in base[1:]])
+
+    def test_g4_a_seated_default_held_only_under_its_dated_id_at_5_percent(self):
+        # g4.py: a CLEAN run (no mismatch at all) — the vendor default names
+        # the alias `claude-opus-5` directly, and the only previous arm of
+        # that family is listed under its dated snapshot
+        # `claude-opus-5-20260401`. `_default_rung_decision`'s
+        # `model_id == default_id` branch checked `model_id in
+        # previous_arms` literally, which the dated form never satisfies, so
+        # on f7e0ca8 this genuine clean-run bug (R7-2) fell through to "the
+        # tier is not on the roster" and excluded it even at 5% usage
+        # (above the 2% exit bar) — `arms == ['claude-sonnet-5']`. Fixed by
+        # reading the alias-collapsed id set the superseded-arm buffer
+        # already used.
+        M = self._model
+        MODELS = list(self.BASE) + [M("claude-opus-5-20260401", "Claude Opus 5",
+                                      "2026-04-01T00:00:00Z")]
+        PREV = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5-20260401"}])
+
+        def usage(n):
+            return {"claude-sonnet-5": 1000, "claude-haiku-4-5": 50,
+                    "claude-fable-5-1": 0, "claude-opus-5": 55,
+                    "claude-opus-5-5": 0}
+
+        def clean(k):
+            return self._docs(k, opus="claude-opus-5", sonnet="claude-sonnet-5")
+
+        out, _ = self._loop(usage, 1, clean, previous=PREV, models=MODELS)
+        result = out[0]["result"]
+        self.assertIn("claude-opus-5", self._arms(result))
+
+    def test_g4b_the_same_seat_retires_correctly_at_half_a_percent(self):
+        # g4b.py: R7-2's fix must not paper over a genuine retirement — the
+        # same dated-only previous arm, now at 0.5% (under the 2% exit bar),
+        # still retires. The negative control: on f7e0ca8 the bug excluded
+        # it too, but for the WRONG reason ("the tier is not on the
+        # roster" unconditionally, never reaching a real exit check) —
+        # this assertion alone was already green there, which is why it is
+        # test_g4, not this one, that pins the bug.
+        M = self._model
+        MODELS = list(self.BASE) + [M("claude-opus-5-20260401", "Claude Opus 5",
+                                      "2026-04-01T00:00:00Z")]
+        PREV = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5-20260401"}])
+
+        def usage(n):
+            return {"claude-sonnet-5": 1000, "claude-haiku-4-5": 50,
+                    "claude-fable-5-1": 0, "claude-opus-5": 5,
+                    "claude-opus-5-5": 0}
+
+        def clean(k):
+            return self._docs(k, opus="claude-opus-5", sonnet="claude-sonnet-5")
+
+        out, _ = self._loop(usage, 1, clean, previous=PREV, models=MODELS)
+        result = out[0]["result"]
+        self.assertNotIn("claude-opus-5", self._arms(result))
+
+    def test_g5_a_mismatch_holds_both_a_dated_and_a_directly_listed_arm(self):
+        # g5.py: two previous arms of the same family — one held only under
+        # its dated id (`claude-opus-5-20260401`, collapsing onto
+        # `claude-opus-5`), one listed directly (`claude-opus-5-5`) — both
+        # under one mismatch week. On f7e0ca8 both stayed seated too (the
+        # effective default's candidate set is every listed arm, held_here
+        # non-empty), but through two DIFFERENT, effective-default-shaped
+        # reasons ("seat decided on `claude-opus-5-5`, the newest of the
+        # family's listed seats and usage-qualified models" for one, "held
+        # over from the previous roster: superseded by ... none retired on
+        # a catalogue mismatch" for the other) rather than the one freeze
+        # both now get.
+        M = self._model
+        MODELS = [m for m in self.BASE if m["id"] != "claude-opus-5-5"] + [
+            M("claude-opus-5-5", "Claude Opus 5.5", "2026-06-01T00:00:00Z"),
+            M("claude-opus-5-20260401", "Claude Opus 5", "2026-04-01T00:00:00Z")]
+        PREV = dict(self.PREV0, arms=[{"id": "claude-sonnet-5"},
+                                      {"id": "claude-opus-5-20260401"},
+                                      {"id": "claude-opus-5-5"}])
+
+        def usage(n):
+            return {"claude-sonnet-5": 1000, "claude-haiku-4-5": 50,
+                    "claude-opus-5": 5, "claude-opus-5-5": 300}
+
+        def mismatch(k):
+            d = self._docs(k)
+            d["defaults"]["opus"] = "claude-opus-6"
+            return d
+
+        out, _ = self._loop(usage, 1, mismatch, previous=PREV, models=MODELS)
+        result = out[0]["result"]
+        self.assertIn("claude-opus-5", self._arms(result))
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        for model_id in ("claude-opus-5", "claude-opus-5-5"):
+            self.assertIn("held; none retired on a catalogue mismatch",
+                          self._reason(result, model_id))
 
 
 if __name__ == "__main__":

@@ -61,10 +61,17 @@ is subordinate to the first:
   combined share clears the exit bar (#203 round 2). A default governs the
   models of its own FAMILY word only, so a peer family in the same rung
   (`[fable, mythos]`) keeps the two rules above. A family the probe FAILED
-  for is FROZEN for that run (#203 probe round 1): its previous arms keep
-  their seats, none is retired but a model gone from the Models API, and
-  `defaults_failed` says so. While it still holds a seat the Models API
-  lists, it gets no new seat at all (#203 probe round 3, R3-1); only a
+  for, OR one the probe ANSWERED for but this run's catalogue does not
+  otherwise match (not available, an ambiguous snapshot), is FROZEN for
+  that run (#203 probe round 1; round 7, R7-1, routed the mismatch case
+  through the identical freeze — the two used to diverge behind a guessed
+  "effective default", which rounds 4 through 7 each found a way to retire
+  or exclude a seat a clean week keeps; one path is sound): its previous
+  arms keep their seats, none is retired but a model gone from the Models
+  API, and `defaults_failed` (a failure) or `defaults_mismatched` (a
+  mismatch — its own wording throughout, never "probe failed", so a human
+  can tell the two apart) says so. While it still holds a seat the Models
+  API lists, it gets no new seat at all (#203 probe round 3, R3-1); only a
   family that would otherwise vanish from the roster is seated — by the
   usage entry bar (rule 1, #203 probe round 2), or, with no usable enter
   window, as the newest in its tier, as the no-probe fallback would (R3-6).
@@ -72,23 +79,17 @@ is subordinate to the first:
   too, as is one naming a model with no `created_at` to start its
   predecessor's buffer from (R3-2; R5-1, #203 probe round 5): the CLI said
   something nonsensical about its own alias, or named a model this run has
-  nothing to measure a buffer from. A default the probe answered but this
-  run's catalogue does not otherwise match (not available, an ambiguous
-  snapshot) is not a failure: that family is decided by the vendor-default
-  rules on an EFFECTIVE default — the newest of its previous arms the
-  Models API still lists, ONLY those when the family has any (R5-2, round
-  5: a persistent mismatch must not seat a newer, more-used model the
-  probe cannot corroborate while an older listed arm remains — the
-  governing guarantee that a single run whose probe answer is a failure or
-  a mismatch changes no seat a clean run would not), else its models
-  clearing the usage entry bar (#203 probe round 4, R4-1) — and, with
-  neither, falls back to newest-in-tier when there is no usable enter
-  window and otherwise has no seat; `defaults_mismatched` says so. A
+  nothing to measure a buffer from. THE GOVERNING GUARANTEE (R5-2, round 5;
+  made structural in round 7): a single run whose probe answer is a
+  failure or a mismatch changes no seat a clean run would not. A
   persistent mismatch that HOLDS a listed seat is surfaced loudly (a
   warning, a summary line, a tracking issue) so a human can fix the probe.
-  Nothing is carried to the next run. See `_resolve_defaults` and
-  `_default_rung_decision`. Every other tier keeps the two rules above
-  verbatim.
+  A previous arm held only under its DATED id still counts as that seat
+  (R5-3, round 5; fixed for a SEATED default too in round 7, R7-2: the
+  `model_id == default_id` branch had missed the same alias collapse the
+  superseded-arm buffer already used). Nothing about a freeze is carried to
+  the next run. See `_resolve_defaults` and `_default_rung_decision`. Every
+  other tier keeps the two rules above verbatim.
 
 Inputs
   models_doc   {"fetched_at": ..., "models": [{id, created_at, ...}, ...]} —
@@ -136,9 +137,11 @@ decision, plus `proposal`, which is what `eval.yml` acts on:
    defaults_failed: {alias: class} -- only when a family is frozen this run,
    defaults_document_failed: class -- only when the whole document failed,
    defaults_mismatched: {alias: {id, class}} -- only when the probe answered
-                                  an id this run's catalogue does not match
-                                  (not frozen: decided on an effective
-                                  default, R4-1),
+                                  an id this run's catalogue does not match;
+                                  that family is frozen exactly like a
+                                  failed probe (R7-1), kept in its own field
+                                  and wording so a human can tell the two
+                                  apart,
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
    compared_to_previous: bool, previous_state: "compared"|"none",
@@ -1706,19 +1709,13 @@ DEFAULTS_VERSION_RE = re.compile(r"^[A-Za-z0-9._() -]{1,80}\Z")
 FROZEN_WORDS = ("held this run: none retired except models gone from the "
                 "Models API, and none added unless the family holds no seat "
                 "the Models API still lists")
-#: What a catalogue-mismatched family does instead (#203 probe round 4,
-#: R4-1): the vendor-default rules, on an effective default.
-MISMATCH_RULES = ("the vendor-default rules this run on an effective default: "
-                  "the newest of its previous arms the Models API still lists "
-                  "and its models clearing the usage entry bar")
-
 #: The CATALOGUE-MISMATCH classes (#203 probe round 2, R2-1; narrowed in
 #: round 3, R3-2; narrowed again in round 5, R5-1): the probe answered for
 #: the alias, but this run's Models API catalogue does not match the answer
-#: — not available, an ambiguous snapshot. They do NOT freeze: that family
-#: is decided on an EFFECTIVE default (round 4, R4-1 — see
-#: `compute_roster`), so a one-week mismatch neither adds nor retires what a
-#: clean week would not.
+#: — not available, an ambiguous snapshot. They FREEZE exactly like a probe
+#: failure (round 7, R7-1 — see `compute_roster`), so a one-week mismatch
+#: neither adds nor retires what a clean week would not; only the wording
+#: (`mismatch_words`) says a mismatch rather than a failure.
 #: `wrong-tier`, `wrong-family` and `no-created-at` are PROBE FAILURES
 #: (R3-2; R5-1 for the last): the CLI said something nonsensical about its
 #: own alias, or named a model with nothing to start its predecessor's
@@ -1731,7 +1728,7 @@ UNRESOLVED_WRONG_TIER = "wrong-tier"
 UNRESOLVED_WRONG_FAMILY = "wrong-family"
 #: A PROBE FAILURE since R5-1 (#203 probe round 5): the CLI named a model
 #: with no `created_at` to start its predecessor's buffer from, so its
-#: family freezes rather than deciding on an effective default.
+#: family freezes with the failure's own wording, not a mismatch's.
 UNRESOLVED_NO_CREATED_AT = "no-created-at"
 UNRESOLVED_ERROR = "unrecognised-error"
 DOCUMENT_UNREADABLE = "unreadable"
@@ -1790,11 +1787,11 @@ def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
     of their own families both resolve, and a peer alias naming ANOTHER
     family's model is unresolved on its own, leaving every other alias
     alone. `by_family` is also the published `resolved` map; `failed` maps
-    every alias the PROBE failed for to its class — the families frozen this
-    run — and `mismatched` every alias the probe answered for but this run's
-    catalogue does not match to `{id, class}`: those families are decided on
-    an effective default (R2-1, #203 probe round 2; R4-1, round 4). An
-    answer naming a model of
+    every alias the PROBE failed for to its class, and `mismatched` every
+    alias the probe answered for but this run's catalogue does not match to
+    `{id, class}` — both name a family FROZEN this run (R2-1, #203 probe
+    round 2; folded into one freeze in round 7, R7-1), a mismatch keeping
+    only its own wording. An answer naming a model of
     the WRONG TIER or FAMILY is a failure, not a mismatch (R3-2): the CLI
     said something nonsensical about its own alias.
     """
@@ -1812,8 +1809,8 @@ def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
         said = f"{mismatch_words(answered, alias, cls)}: {why}"
         unresolved.append({"alias": alias, "reason": said})
         mismatched[alias] = {"id": answered, "class": cls}
-        warn(f"model default for `{alias}`: {said}; the `{alias}` family follows "
-             f"{MISMATCH_RULES}")
+        warn(f"model default for `{alias}`: {said}; the `{alias}` family is "
+             f"{FROZEN_WORDS}")
 
     by_family: dict[str, str] = {}
     for alias, rung, model, why, cls, answered in candidates:
@@ -1885,13 +1882,14 @@ def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
     does not mention at all is not frozen. The freeze is per run: nothing
     about it is carried to the next.
 
-    A CATALOGUE MISMATCH does not freeze: the probe answered, but the id is
-    not an available model this run (not available, an ambiguous snapshot).
-    `mismatched` names it, and the family is decided on an effective default
-    (R4-1, see `compute_roster`). An answer in the wrong tier or family, or
-    one with no `created_at`, is a FAILURE (R3-2; R5-1): the CLI said
-    something nonsensical about its own alias, or named a model with
-    nothing to start its predecessor's buffer from.
+    A CATALOGUE MISMATCH: the probe answered, but the id is not an available
+    model this run (not available, an ambiguous snapshot). `mismatched`
+    names it, and the family FREEZES exactly like a probe failure (R7-1,
+    see `compute_roster`), kept in its own field and wording so a human can
+    tell the two apart. An answer in the wrong tier or family, or one with
+    no `created_at`, is a FAILURE (R3-2; R5-1): the CLI said something
+    nonsensical about its own alias, or named a model with nothing to start
+    its predecessor's buffer from.
 
     An alias resolves when its id is one of this run's available models —
     or a dated snapshot the catalogue collapses onto one, which then stands
@@ -2016,9 +2014,10 @@ def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
     if not by_family and not mismatched:
         # Present and well-formed, and still the probe answered for no
         # ladder alias: it told this run nothing it can act on, so the
-        # ladder is frozen. (An answer the catalogue does not match is not
-        # this case: the probe worked, and R2-1/R4-1 decide that family on an
-        # effective default.)
+        # ladder is frozen with the DOCUMENT-level class. (An answer the
+        # catalogue does not match is not this case: the probe worked, and
+        # `mismatched` already freezes that family with its own wording,
+        # R2-1/R7-1.)
         warn(f"model defaults: the Claude Code probe resolved no family to an "
              f"available model; every family on the tier ladder the probe did "
              f"not skip is {FROZEN_WORDS}")
@@ -2034,27 +2033,24 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
                            catalogue_seen, census_doc, usable, stale_note,
                            enter_usable, enter_share, qualifier, holdover,
                            seated_in_tier, retire_notes, retire_windows,
-                           tier_holdover, family, previous_arm_ids=None,
-                           effective_words: str | None = None) -> tuple[str | None, str | None]:
+                           tier_holdover, family,
+                           previous_arm_ids=None) -> tuple[str | None, str | None]:
     """(arm reason, exclusion reason) for a model in a tier whose vendor
     default resolved — Adam's decision of 2026-09-27 (#202, ADR 0002).
 
-    `effective_words` is set for a CATALOGUE-MISMATCHED family (#203 probe
-    round 4, R4-1): `default_id` is then its EFFECTIVE default — the newest
-    of the family's previous arms the Models API still lists and its models
-    clearing the usage entry bar — and every reason says so in those words
-    rather than naming a vendor default the catalogue does not match.
+    Only reached for a family whose vendor default this run's catalogue
+    actually matches: a family the probe FAILED for, or one it answered for
+    but this run's catalogue does not match (not available, an ambiguous
+    snapshot), FREEZES instead — see `compute_roster` — and never calls this
+    function (#203 probe round 7, R7-1: the two used to diverge behind an
+    "effective default" guess; now every catalogue mismatch is routed
+    through the same freeze a probe failure gets).
 
     Usage keeps ONE job here: deciding whether the tier is on the roster.
     Inside it the seat goes to the default, at once and with no cooling-off;
     a model the default supersedes earns no seat from its usage, and a
     previous arm it supersedes keeps its seat only through the
-    `superseded_exit_weeks` buffer below — except while `effective_words` is
-    set: the EFFECTIVE default is itself a guess, possibly newer than the
-    vendor's real one, so a listed previous arm it supersedes is held
-    outright and never run through that buffer (#203 round 6, R6-1); a
-    single catalogue-mismatch week must not retire a seat a clean week
-    keeps. A model NEWER than the default is
+    `superseded_exit_weeks` buffer below. A model NEWER than the default is
     a preview the vendor has not made the default, and earns no new seat; a
     previous arm newer than it, and the default itself when nothing else puts
     its tier on the roster, get rule 3's exit check through `holdover`
@@ -2073,11 +2069,19 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
     by_id = {m["id"]: m for m in available}
     probed = (f"probed {defaults_info['probed_at']}" if defaults_info["probed_at"]
               else "probed at an unknown time")
-    default_words = (effective_words if effective_words is not None else
-                     f"vendor default for the {label} tier per "
+    default_words = (f"vendor default for the {label} tier per "
                      f"{defaults_info['source']} ({probed})")
     enter_bar = policy["arm_enter_usage_pct"]
     enter_span = f"over the last {policy['arm_enter_window_weeks']} weeks"
+    # A previous arm held under its DATED id (R5-3, #203 probe round 5) is
+    # still a previous arm once its undated alias appears in the catalogue:
+    # `previous_arm_ids` also names that alias, so both the check below and
+    # the superseded-arm buffer check use it rather than the literal
+    # `previous_arms` — R7-2 (#203 probe round 7): a seated vendor default
+    # held only under its dated id was missing this and so fell through to
+    # "the tier is not on the roster" although its own alias-collapsed seat
+    # cleared the exit bar.
+    held_arm_ids = previous_arm_ids if previous_arm_ids is not None else previous_arms
 
     if model_id == default_id:
         # "The tier is on the roster" never rests on the default's OWN
@@ -2100,7 +2104,7 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
                    f"no-census fallback" if not usable else
                    "the enter window holds too little rankable usage to qualify "
                    "any tier, so every tier is on the roster under the fallback")
-        elif model_id in previous_arms:
+        elif model_id in held_arm_ids:
             held = tier_holdover(model_id)
             if held is None:
                 return None, None
@@ -2114,18 +2118,9 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
                           f"carries {enter_bar}% of rankable census usage "
                           f"{enter_span} and no other previous {whose}arm in it "
                           f"is still seated")
-        if effective_words is not None:
-            return f"{default_words}; seated: {why}", None
         return f"{default_words}, seated with no cooling-off; {why}", None
 
     default_model = by_id[default_id]
-    if _rank(model, rungs) > _rank(default_model, rungs) and effective_words is not None:
-        # Newer than the family's effective default (R4-1): not a listed
-        # previous arm (the effective default is the newest of those) and
-        # clearing no entry bar, so it takes no seat, as a model newer than a
-        # vendor default takes none.
-        return None, (f"excluded from the arm set: newer than `{default_id}` — "
-                      f"{default_words} — so it takes no seat this run")
     if _rank(model, rungs) > _rank(default_model, rungs):
         if model_id in previous_arms:
             # A previous arm the vendor has not (or not yet, or no longer)
@@ -2143,23 +2138,7 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
                       f"has not made the default), so it takes no seat while the "
                       f"tier has a known default")
 
-    superseded = (f"superseded by `{default_id}` ({default_words})"
-                  if effective_words is not None else
-                  f"superseded by `{default_id}`, the {default_words}")
-    # A previous arm held under its DATED id (R5-3, #203 probe round 5) is
-    # still a previous arm once its undated alias appears in the catalogue:
-    # `previous_arm_ids` also names that alias, so it gets the
-    # `superseded_exit_weeks` buffer below rather than retiring on sight.
-    held_arm_ids = previous_arm_ids if previous_arm_ids is not None else previous_arms
-    if effective_words is not None and model_id in held_arm_ids:
-        # The effective default is a guess (R6-1, #203 probe round 6): with
-        # no vendor confirmation of which model is really the default, a
-        # catalogue-mismatch week must not retire a listed previous arm the
-        # guessed default happens to supersede — a clean week right after
-        # would just restore it. Hold it outright rather than running it
-        # through the `superseded_exit_weeks` buffer at all.
-        return (f"held over from the previous roster: {superseded}; none "
-                f"retired on a catalogue mismatch"), None
+    superseded = f"superseded by `{default_id}`, the {default_words}"
     if model_id not in held_arm_ids:
         share = enter_share.get(model_id)
         if share is not None and share >= enter_bar:
@@ -2176,8 +2155,6 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
         return None, None
     held = "held over from the previous roster"
     census_at = parse_ts((census_doc or {}).get("generated_at"))
-    # An effective default (R4-1) need not carry a created_at: with none,
-    # its buffer has not started, so the superseded arm is held.
     started = parse_ts(default_model.get("created_at"))
     try:
         complete, buffer_weeks = (
@@ -2618,22 +2595,27 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     # --- vendor defaults (#202, ADR 0002; the CLI probe since #203) --------
     # A tier whose default resolved is seated by `_default_rung_decision`
     # below and never reaches the usage/newest/hold-over rules. A family the
-    # probe FAILED for is FROZEN for this run (#203 probe round 1): falling
-    # back to the usage rules for one bad week retired a seated default, or
-    # seated a preview, that the next clean week then had to undo — a flip
-    # on no evidence. Frozen, its previous arms are held and none is
-    # retired. While the family still holds a seat the Models API lists, it
-    # gets NO new seat at all (#203 probe round 3, R3-1): a usage seat there
-    # was a seat the next clean week retired. Only a family that would
-    # otherwise vanish from the roster — no held arm left in the API — gets
-    # a seat: by the usage entry bar (#203 probe round 2), or, with no usable
-    # enter window, as the newest in its tier, exactly as the no-probe
-    # fallback seats it (R3-6). A catalogue mismatch is not a failure: it is
-    # decided on an effective default (R4-1, below). Nothing is carried to
-    # the next run (the
-    # owner's decision). Every other family keeps the rules verbatim,
-    # cooling-off included; no document at all leaves the roster byte for
-    # byte the one computed without one.
+    # probe FAILED for, OR one it answered for but this run's catalogue does
+    # not otherwise match (not available, an ambiguous snapshot), is FROZEN
+    # for this run (#203 probe round 1; round 7, R7-1, folded the mismatch
+    # case into the same freeze): falling back to the usage rules for one
+    # bad week retired a seated default, or seated a preview, that the next
+    # clean week then had to undo — a flip on no evidence. Frozen, its
+    # previous arms are held and none is retired. While the family still
+    # holds a seat the Models API lists, it gets NO new seat at all (#203
+    # probe round 3, R3-1): a usage seat there was a seat the next clean
+    # week retired. Only a family that would otherwise vanish from the
+    # roster — no held arm left in the API — gets a seat: by the usage entry
+    # bar (#203 probe round 2), or, with no usable enter window, as the
+    # newest in its tier, exactly as the no-probe fallback seats it (R3-6).
+    # A mismatch keeps its own wording throughout — `mismatch_words`, never
+    # "probe failed" — so a human can tell the two apart, but the seats
+    # follow the identical rule (round 7's governing simplification: a
+    # single run whose probe answer is a failure OR a mismatch changes no
+    # seat a clean run would not, through one path rather than two). Nothing
+    # is carried to the next run (the owner's decision). Every other family
+    # keeps the rules verbatim, cooling-off included; no document at all
+    # leaves the roster byte for byte the one computed without one.
     defaults_info = _resolve_defaults(defaults_doc, available, snapshots,
                                       rungs, warn, problem=defaults_problem)
     #: family word -> the id of that family's resolved vendor default.
@@ -2641,7 +2623,9 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
     #: family word -> the class its probe failed with: frozen this run.
     frozen = defaults_info["failed"] if defaults_info else {}
     #: family word -> {id, class}: the probe answered, the catalogue does not
-    #: match (R2-1). Not frozen: decided on an effective default (R4-1).
+    #: match (R2-1). Frozen exactly like a probe failure since R7-1, but
+    #: kept in its own field and its own wording (`mismatch_words`) so a
+    #: human can tell a failure from a mismatch.
     mismatched = defaults_info["mismatched"] if defaults_info else {}
     #: A previous arm published under a dated id whose undated alias the
     #: catalogue now lists is the same seat renamed, so a frozen family
@@ -2656,45 +2640,26 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         return any(m["id"] in frozen_held_ids for m in available
                    if family_of(m["id"], rungs) == family)
 
-    # R4-1 + R4-2 (#203 probe round 4), narrowed by R5-2 (#203 probe round
-    # 5): a catalogue-mismatched family is decided by the vendor-default
-    # rules with an EFFECTIVE default in place of the vendor's. When the
-    # family has ANY previous arm the Models API still lists this run
-    # (`frozen_held_ids` also names a dated arm's collapsed alias), the
-    # candidate set is those listed arms ONLY — a persistent mismatch HOLDS
-    # the listed seats rather than seating a newer, more-used model the
-    # probe cannot corroborate (the governing guarantee: a single run whose
-    # probe answer is a failure or a mismatch changes no seat a clean run
-    # would not). Only a family with NO previous arm still listed uses
-    # usage-qualified models instead. With neither, it falls back to
-    # newest-in-tier when the enter window is not usable (`mismatch_fallback`,
-    # as the no-probe fallback would), and otherwise has no seat this run —
-    # as a clean run with the tier off the roster.
-    enter_bar = policy["arm_enter_usage_pct"]
-    effective_by_family: dict[str, str] = {}
-    mismatch_fallback: set[str] = set()
-    for family in mismatched:
-        held_here = [m for m in available if family_of(m["id"], rungs) == family
-                     and m["id"] in frozen_held_ids]
-        candidates = held_here or [
-            m for m in available if family_of(m["id"], rungs) == family
-            and enter_share.get(m["id"], -1.0) >= enter_bar]
-        if candidates:
-            effective_by_family[family] = max(
-                candidates, key=lambda m: _rank(m, rungs))["id"]
-        elif not enter_usable:
-            mismatch_fallback.add(family)
+    def freeze_words(family: str) -> str:
+        """The diagnostic phrase for a frozen family — a probe failure's
+        "vendor default ... unknown this run", or a mismatch's own wording
+        (R7-1, #203 probe round 7) — never "probe failed" for a mismatch,
+        which answered."""
+        if family in mismatched:
+            entry = mismatched[family]
+            return mismatch_words(entry["id"], family, entry["class"])
+        return (f"vendor default for `{family}` unknown this run (probe: "
+                f"{frozen[family]})")
 
-    def effective_words(family: str) -> str | None:
-        if family not in effective_by_family:
-            return None
-        entry = mismatched[family]
-        return (f"{mismatch_words(entry['id'], family, entry['class'])}; seat "
-                f"decided on `{effective_by_family[family]}`, the newest of the "
-                f"family's listed seats and usage-qualified models")
-    #: family word -> the default its seats are decided on this run: the
-    #: vendor's, or a mismatched family's effective one.
-    decided_by_family = {**default_by_family, **effective_by_family}
+    def freeze_kind(family: str) -> str:
+        """"a failed probe" or "a catalogue mismatch" — the noun phrase every
+        freeze reason names itself by (R7-1)."""
+        return "a catalogue mismatch" if family in mismatched else "a failed probe"
+
+    #: family word -> the vendor default its seats are decided on this run.
+    #: A frozen or mismatched family never reaches `_default_rung_decision`
+    #: at all (R7-1): it is decided in the freeze branch below instead.
+    decided_by_family = default_by_family
 
     #: Why a previous arm this rule dropped left, for `retired_since_last`
     #: and the proposal — and, for a superseded arm measured over its
@@ -2751,8 +2716,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             seated_in_tier=seated_in_tier,
             retire_notes=retire_notes, retire_windows=retire_windows,
             tier_holdover=tier_holdover, family=family,
-            previous_arm_ids=frozen_held_ids,
-            effective_words=effective_words(family))
+            previous_arm_ids=frozen_held_ids)
 
     #: A tier's default is decided LAST (#203 round 1): whether its tier is
     #: on the roster can rest on another previous arm in it that is itself
@@ -2764,23 +2728,26 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         rung = rung_of(model_id, rungs)
         label = rung_label(rungs, rung)
         family = family_of(model_id, rungs)
-        if family in frozen:
-            unknown = (f"vendor default for `{family}` unknown this run (probe: "
-                       f"{frozen[family]})")
+        if family in frozen or family in mismatched:
+            # R7-1 (#203 probe round 7): a catalogue mismatch freezes its
+            # family exactly like a probe failure — one path, not two — and
+            # differs only in the words `freeze_words`/`freeze_kind` give.
+            unknown = freeze_words(family)
+            kind = freeze_kind(family)
             enter_bar = policy["arm_enter_usage_pct"]
             share = enter_share.get(model_id) if enter_usable else None
             created = parse_ts(model.get("created_at"))
             age_days = (now - created).days if created else None
             if model_id in frozen_held_ids:
                 arms.append({"id": model_id, "reason": (
-                    f"{unknown}; held; none retired on a failed probe")})
+                    f"{unknown}; held; none retired on {kind}")})
             elif holds_listed_seat(family):
                 # R3-1 (#203 probe round 3): the family is still on the
-                # roster, so a failed probe changes none of its seats — a
-                # usage seat here was one the next clean week retired.
+                # roster, so a freeze changes none of its seats — a usage
+                # seat here was one the next clean week retired.
                 excluded.append({"id": model_id, "reason": (
-                    f"excluded from the arm set: {unknown}; no new seat on a "
-                    f"failed probe while the family holds a seat the Models "
+                    f"excluded from the arm set: {unknown}; no new seat on "
+                    f"{kind} while the family holds a seat the Models "
                     f"API still lists")})
             elif share is not None and share >= enter_bar:
                 # The family holds no seat the API still lists, so without
@@ -2813,8 +2780,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                             "which cannot be measured this run, and it is not "
                             "the newest in its tier past the cooling-off")
                 excluded.append({"id": model_id, "reason": (
-                    f"excluded from the arm set: {unknown}; no new seat on a "
-                    f"failed probe but by the {enter_bar}% usage entry bar "
+                    f"excluded from the arm set: {unknown}; no new seat on "
+                    f"{kind} but by the {enter_bar}% usage entry bar "
                     f"(the family holds no seat the Models API still lists), "
                     f"{measured}")})
             continue
@@ -2834,22 +2801,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         is_newest = newest_by_rung.get(rung) == model_id
         old_enough = age_days is not None and age_days >= policy["cooling_off_days"]
         qualifier = qualifying_by_rung.get(rung)
-        # R4-1 (#203 probe round 4): a catalogue-mismatched family with an
-        # effective default was decided above. One with none — no listed
-        # previous arm, nothing clearing the entry bar — reaches here: with
-        # no usable enter window it keeps the no-probe fallback (its tier's
-        # newest, as with no probe); with one, it has no seat this run, as a
-        # clean run with the tier off the roster would give.
-        if family in mismatched and family not in mismatch_fallback:
-            said = mismatch_words(mismatched[family]["id"], family,
-                                  mismatched[family]["class"])
-            excluded.append({"id": model_id, "reason": (
-                f"excluded from the arm set: {said}; the family holds no seat "
-                f"the Models API still lists and no model of it carries "
-                f"{enter_bar}% of rankable census usage over the last "
-                f"{policy['arm_enter_window_weeks']} weeks, so it has no seat "
-                f"this run, as a tier not on the roster")})
-            continue
 
         reason = None
         if enter_usable:
@@ -2876,12 +2827,6 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                 reason = (newest_words if usable
                           else f"{stale_note}; fell back to newest per tier — "
                                f"{newest_words}")
-                if family in mismatch_fallback:
-                    said = mismatch_words(mismatched[family]["id"], family,
-                                          mismatched[family]["class"])
-                    reason += (f"; {said}, and the family holds no seat the "
-                               f"Models API still lists, so it falls back to "
-                               f"newest per tier as with no probe")
             elif qualifier is not None:
                 # THE RULE ADAM DECIDED ON 2026-09-22. The newest model in
                 # a tier is an arm only where the tier is one the fleet
@@ -3347,15 +3292,17 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
                   f"API, and none added unless the family holds no seat the "
                   f"Models API still lists:** {named}.", ""]
     # A catalogue mismatch is NOT a probe failure (#203 probe round 2): the
-    # probe answered, so it gets its own words and those families are decided
-    # on an effective default (R4-1).
+    # probe answered, so it keeps its own words — but it freezes exactly
+    # like one (#203 probe round 7, R7-1), so a human reads the same "seats
+    # held, none retired" sentence for either.
     mismatched = roster.get("defaults_mismatched") or {}
     if mismatched:
         said = "; ".join(mismatch_words(entry["id"], alias, entry["class"])
                          for alias, entry in sorted(mismatched.items()))
-        lines += [f"**Vendor default not matched:** {said}. Not frozen: "
-                  f"{'that family follows' if len(mismatched) == 1 else 'those families follow'} "
-                  f"{MISMATCH_RULES}.", ""]
+        lines += [f"**Vendor default not matched:** {said}. Frozen this run, "
+                  f"not a probe failure: seats held, none retired except "
+                  f"models gone from the Models API, and none added unless "
+                  f"the family holds no seat the Models API still lists.", ""]
     changed = roster["added_since_last"] or roster["retired_since_last"]
     if previous_state == "auto":
         previous_state = (roster.get("previous_state") or
