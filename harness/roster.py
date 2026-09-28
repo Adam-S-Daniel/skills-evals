@@ -1870,17 +1870,19 @@ def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
     frozen family word to a class, and `document_failed` names a
     document-level class when the whole document was unusable.
 
-    A FAMILY IS FROZEN only on a PROBE FAILURE (#203 probe round 2, R2-1):
-    the probe recorded an error for its alias, it answered with a model of
-    the wrong tier or family (R3-2, round 3), it answered with a model that
-    has no `created_at` to start a predecessor's buffer from (R5-1, round
-    5), or the document as a whole is unreadable, junk, the stand-in for a
-    probe that exited non-zero (`probe-exited`, R2-4), or answered for no
-    ladder alias at all; then every family on the ladder is frozen except an
-    alias the probe listed as `skipped` (the CLI echoed it back: not one of
-    its aliases, so never a default to lose). A ladder word the document
-    does not mention at all is not frozen. The freeze is per run: nothing
-    about it is carried to the next.
+    A FAMILY IS FROZEN on a PROBE FAILURE OR A CATALOGUE MISMATCH (#203
+    probe round 2, R2-1; folded into one freeze in round 7, R7-1). A PROBE
+    FAILURE freezes: the probe recorded an error for its alias, it answered
+    with a model of the wrong tier or family (R3-2, round 3), it answered
+    with a model that has no `created_at` to start a predecessor's buffer
+    from (R5-1, round 5), or the document as a whole is unreadable, junk,
+    the stand-in for a probe that exited non-zero (`probe-exited`, R2-4), or
+    answered for no ladder alias at all; then every family on the ladder is
+    frozen except an alias the probe listed as `skipped` (the CLI echoed it
+    back: not one of its aliases, so never a default to lose). A CATALOGUE
+    MISMATCH freezes too, through the identical rule, described next. A
+    ladder word the document does not mention at all is not frozen. The
+    freeze is per run: nothing about it is carried to the next.
 
     A CATALOGUE MISMATCH: the probe answered, but the id is not an available
     model this run (not available, an ambiguous snapshot). `mismatched`
@@ -2122,7 +2124,7 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
 
     default_model = by_id[default_id]
     if _rank(model, rungs) > _rank(default_model, rungs):
-        if model_id in previous_arms:
+        if model_id in held_arm_ids:
             # A previous arm the vendor has not (or not yet, or no longer)
             # made the default gets rule 3's exit check rather than an
             # immediate retirement (#203 round 1): a default that lags a
@@ -2656,10 +2658,10 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         freeze reason names itself by (R7-1)."""
         return "a catalogue mismatch" if family in mismatched else "a failed probe"
 
-    #: family word -> the vendor default its seats are decided on this run.
-    #: A frozen or mismatched family never reaches `_default_rung_decision`
-    #: at all (R7-1): it is decided in the freeze branch below instead.
-    decided_by_family = default_by_family
+    # `default_by_family` (family word -> the vendor default its seats are
+    # decided on this run) doubles as the set of families reaching
+    # `_default_rung_decision` at all: a frozen or mismatched family never
+    # does (R7-1) — it is decided in the freeze branch below instead.
 
     #: Why a previous arm this rule dropped left, for `retired_since_last`
     #: and the proposal — and, for a superseded arm measured over its
@@ -2706,7 +2708,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         rung = rung_of(model["id"], rungs)
         family = family_of(model["id"], rungs)
         return _default_rung_decision(
-            model, rung, rung_label(rungs, rung), decided_by_family[family],
+            model, rung, rung_label(rungs, rung), default_by_family[family],
             defaults_info, available=available, rungs=rungs, policy=policy,
             now=now, counts=counts, aliases=aliases, api_ids=api_ids,
             previous_arms=previous_arms, catalogue_seen=catalogue_seen,
@@ -2785,8 +2787,8 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                     f"(the family holds no seat the Models API still lists), "
                     f"{measured}")})
             continue
-        if family in decided_by_family:
-            if model_id == decided_by_family[family]:
+        if family in default_by_family:
+            if model_id == default_by_family[family]:
                 deferred_defaults.append(model)
                 continue
             seat, exclusion = default_rung_decision(model)
@@ -2846,7 +2848,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             # `arm_enter_usage_pct` of the fleet's usage gets no arm from
             # this rule, however new its newest model is. The `excluded`
             # entry below says so.
-        if reason is None and model_id in previous_arms:
+        if reason is None and model_id in frozen_held_ids:
             reason = holdover(model_id)
         if reason:
             arms.append({"id": model_id, "reason": reason})
@@ -2881,7 +2883,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
             family = family_of(model["id"], rungs)
             seated_in_tier = sorted(
                 p for p in previous_arms
-                if p in seated_ids and p != model["id"]
+                if snapshots.get(p, p) in seated_ids and p != model["id"]
                 and family_of(p, rungs) == family)
             seat, exclusion = default_rung_decision(
                 model, seated_in_tier=seated_in_tier)

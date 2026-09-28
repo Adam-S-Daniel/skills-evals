@@ -1680,6 +1680,21 @@ class TestFailedProbeIsLoud(_WeeklyLoop):
         self.assertNotIn("probe failed", summary.lower())
 
 
+class TestMismatchSummaryLineSaysNotAProbeFailure(_RosterFixture):
+    """R8-4 (#203 probe round 8): the mismatch summary line must say, in so
+    many words, that it is not a probe failure — the exact text a mutant
+    that dropped "; not a probe failure:" survived round 8's mutation pass
+    with no test pinning it."""
+
+    def test_the_mismatch_line_says_not_a_probe_failure(self):
+        defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-9",
+                                                  "sonnet": "claude-sonnet-5"}}
+        result, _ = self._compute(defaults=defaults)
+        summary = roster.render_summary(result)
+        self.assertIn("**Vendor default not matched:**", summary)
+        self.assertIn("Frozen this run, not a probe failure: seats held", summary)
+
+
 class _ProposeStepFixture(unittest.TestCase):
     """The "Propose a roster change" step body, run hermetically with a stub
     `gh`: shared by the #203 probe-round tests below. No test methods of its
@@ -1803,10 +1818,14 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
     def test_the_fragment_interpolates_nothing(self):
         fragment = self._fragment()
         self.assertNotIn("${{", fragment)
-        # The warning's text is fixed: the only expansion in it is the count
-        # the fragment itself validated as digits.
-        line = next(ln for ln in fragment.splitlines() if "::warning::" in ln)
-        self.assertEqual(re.findall(r"\$\{?(\w+)", line), ["defaults_failed"])
+        # Each warning's text is fixed: the only expansion in each line is
+        # the count that line's own case validated as digits — the failed
+        # count in the first ::warning:: line, the mismatched count in the
+        # second (R8-1, #203 probe round 8).
+        warning_lines = [ln for ln in fragment.splitlines() if "::warning::" in ln]
+        self.assertEqual(len(warning_lines), 2, warning_lines)
+        for line, var in zip(warning_lines, ("defaults_failed", "defaults_mismatched")):
+            self.assertEqual(re.findall(r"\$\{?(\w+)", line), [var], line)
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
     def test_same_with_a_failed_probe_opens_the_issue(self):
@@ -1851,6 +1870,59 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
         self.assertTrue(calls[0].startswith("issue edit 7"), calls)
         self.assertIn("::warning::could not update the roster tracking issue\n", out)
         self.assertNotIn("updated the roster tracking issue", out)
+
+
+class TestProposeStepOnAMismatch(_ProposeStepFixture):
+    """R8-1 (#203 probe round 8): a catalogue mismatch with no probe
+    failure is loud in the workflow exactly like a failure — its own fixed
+    `::warning::`, its own probe-note sentence, and an open tracking issue
+    even on "same" — but the issue's title and first line never say "probe
+    failed" for a mismatch-only run, and name both classes when both are
+    present. The reviewer's h1.py, h2.py and h3.py."""
+
+    MISMATCH_WARNING = ("::warning::vendor default not matched by this run's "
+                        "catalogue for {n} families; their seats were held")
+
+    MISMATCHED = {"proposal": {"status": "same", "changes": []},
+                 "defaults_mismatched": {"opus": {"id": "claude-opus-9",
+                                                  "class": "not-available"}}}
+    BOTH = {"proposal": {"status": "same", "changes": []},
+           "defaults_failed": {"sonnet": "timeout"},
+           "defaults_mismatched": {"opus": {"id": "claude-opus-9",
+                                            "class": "not-available"}}}
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_a_mismatch_only_same_with_no_issue_creates_one(self):
+        out, calls, body = self._run_step(self.MISMATCHED, [])
+        self.assertIn(self.MISMATCH_WARNING.format(n=1), out)
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("issue create"), calls)
+        self.assertNotIn("probe failed", calls[0])
+        self.assertIn("did not match", calls[0])
+        self.assertTrue(body.startswith(self.MARKER), body)
+        self.assertNotIn("probe failed", body)
+        self.assertIn("did not match this run's catalogue", body)
+        self.assertIn("### Model roster", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_a_mismatch_only_same_with_an_open_issue_edits_never_closes(self):
+        out, calls, body = self._run_step(self.MISMATCHED, self._tracker())
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("issue edit 7"), calls)
+        self.assertFalse(any(c.startswith("issue close") for c in calls), calls)
+        self.assertNotIn("probe failed", body)
+        self.assertIn("did not match this run's catalogue", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_both_classes_present_names_both_in_the_title_and_never_closes(self):
+        out, calls, body = self._run_step(self.BOTH, [])
+        self.assertIn(self.WARNING.format(n=1), out)
+        self.assertIn(self.MISMATCH_WARNING.format(n=1), out)
+        self.assertEqual(len(calls), 1, calls)
+        self.assertTrue(calls[0].startswith("issue create"), calls)
+        self.assertIn("probe failed", calls[0])
+        self.assertIn("did not match", calls[0])
+        self.assertFalse(any(c.startswith("issue close") for c in calls), calls)
 
 
 class TestWorkflowProbeFallbackDocument(unittest.TestCase):
@@ -3365,6 +3437,82 @@ class TestPreviousArmHeldUnderItsDatedId(_RosterFixture):
         ret = self._reason(result, "claude-opus-5-20260401", "retired_since_last")
         self.assertNotIn("which holds the seat", ret)
         self.assertIn("below the", ret)
+
+
+class TestR8DatedIdNewerThanDefault(_RosterFixture):
+    """R8-2 (#203 probe round 8): `_default_rung_decision`'s newer-than-
+    default branch checked literal `previous_arms` rather than the dated-
+    id-collapsing `held_arm_ids` every other branch in the function uses,
+    so a previous arm published only under its DATED id got no exit check
+    at all and was silently excluded, while the identical arm under its
+    undated form was correctly held. The reviewer's e1.py."""
+
+    def test_a_dated_previous_arm_newer_than_default_is_held_like_the_undated_form(self):
+        extra = [self._model("claude-opus-6", "Claude Opus 6", "2026-09-27T00:00:00Z"),
+                 self._model("claude-opus-6-20260927", "Claude Opus 6",
+                            "2026-09-27T00:00:00Z")]
+        models = self._models_doc(extra=extra)
+        census = self._census(extra={"claude-opus-6-20260927":
+                                     {w: 200 for w in self.ENTER}})
+        for label, prevarm in (("dated", "claude-opus-6-20260927"),
+                               ("undated", "claude-opus-6")):
+            with self.subTest(label=label):
+                prev = {**self.PREVIOUS,
+                       "arms": self.PREVIOUS["arms"] + [{"id": prevarm}]}
+                result, _ = self._compute(defaults=self.DEFAULTS, models=models,
+                                          census=census, previous=prev)
+                self.assertIn("claude-opus-6", self._arms(result))
+                why = self._reason(result, "claude-opus-6")
+                self.assertIn("newer than the vendor default `claude-opus-5-5`", why)
+
+
+class TestR8SeatedInTierDatedId(_RosterFixture):
+    """R8-3(a) (#203 probe round 8): `compute_roster`'s tier-on-roster check
+    for a deferred default (`seated_in_tier`) compared each previous arm id
+    LITERALLY against `seated_ids`, never folding it through `snapshots`
+    first — so a peer previous arm seated this run under its undated alias,
+    but held in the committed roster only under its dated id, made the
+    tier look empty of any other seated previous arm and the default got
+    no seat at all. The reviewer's e2.py (E3)."""
+
+    def test_a_dated_previous_peer_still_seats_the_tier_default(self):
+        census = self._census()
+        census["counts"]["claude-opus-5"] = {w: 50 for w in self.ENTER}
+        census["counts"]["claude-sonnet-5"] = {w: 850 for w in self.ENTER}
+        models = self._models_doc(extra=[self._model(
+            "claude-opus-5-20260401", "Claude Opus 5", "2026-04-01T00:00:00Z")])
+        for label, prevarm in (("dated", "claude-opus-5-20260401"),
+                               ("undated", "claude-opus-5")):
+            with self.subTest(label=label):
+                prev = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                                  {"id": prevarm}]}
+                result, _ = self._compute(defaults=self.DEFAULTS, models=models,
+                                          previous=prev, census=census)
+                self.assertIn("claude-opus-5-5", self._arms(result))
+                self.assertIn("the tier is on the roster because previous arm",
+                              self._reason(result, "claude-opus-5-5"))
+
+
+class TestR8GenericPathDatedId(_RosterFixture):
+    """R8-3(b) (#203 probe round 8): the no-default generic path
+    (`if reason is None and model_id in previous_arms: holdover(...)`)
+    also checked literal `previous_arms` rather than the collapsed held
+    set, so a family with no vendor default (haiku here) held a previous
+    arm published under its undated id but silently dropped the identical
+    arm published only under its dated id. The reviewer's e2.py (E2)."""
+
+    def test_a_dated_previous_arm_in_a_no_default_tier_is_still_held(self):
+        models = self._models_doc(extra=[self._model(
+            "claude-haiku-4-5-20251001", "Claude Haiku 4.5", "2025-10-01T00:00:00Z")])
+        for label, prevarm in (("dated", "claude-haiku-4-5-20251001"),
+                               ("undated", "claude-haiku-4-5")):
+            with self.subTest(label=label):
+                prev = {**self.PREVIOUS,
+                       "arms": self.PREVIOUS["arms"] + [{"id": prevarm}],
+                       "preflight": {"id": "claude-haiku-4-5"}}
+                result, _ = self._compute(defaults=self.DEFAULTS, models=models,
+                                          previous=prev)
+                self.assertIn("claude-haiku-4-5", self._arms(result))
 
 
 class TestMismatchCandidateSurvivingMutants(_RosterFixture):

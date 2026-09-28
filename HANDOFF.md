@@ -62,7 +62,11 @@ R5-1). The governing guarantee, now structural rather than a guessed
 "effective default": a single run whose probe answer is a failure or a
 mismatch changes no seat a clean run would not — a persistent mismatch
 HOLDS a listed seat rather than seating a newer, more-used model the probe
-cannot corroborate, loudly. See ADR 0002's decision 6 and third update.
+cannot corroborate, loudly: its own fixed `::warning::` and an open
+tracking issue on "same" too (#203 probe round 8, R8-1 — the workflow had
+read only `defaults_failed`), with a title that says "probe failed" only
+for a genuine failure and its own wording for a mismatch, both when both
+are present. See ADR 0002's decision 6 and third update.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.

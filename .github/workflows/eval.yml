@@ -844,10 +844,30 @@ jobs:
           # otherwise fixed.
           defaults_failed=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); f=d.get("defaults_failed") if isinstance(d,dict) else None; print(len(f) if isinstance(f,dict) else 0)' "$computed" 2>/dev/null) || defaults_failed=0
           case "$defaults_failed" in ''|*[!0-9]*) defaults_failed=0 ;; esac
+          # Also read `defaults_mismatched` (#203 probe round 8, R8-1): a
+          # catalogue mismatch freezes its family exactly like a probe
+          # failure (see harness/roster.py's compute_roster), so it must be
+          # just as loud here — its own fixed warning, its own probe-note
+          # sentence, and it keeps the tracking issue open on "same" too.
+          defaults_mismatched=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1],encoding="utf-8")); f=d.get("defaults_mismatched") if isinstance(d,dict) else None; print(len(f) if isinstance(f,dict) else 0)' "$computed" 2>/dev/null) || defaults_mismatched=0
+          case "$defaults_mismatched" in ''|*[!0-9]*) defaults_mismatched=0 ;; esac
           probe_note=""
+          failed_note=""
           if [ "$defaults_failed" -gt 0 ]; then
             echo "::warning::vendor-default probe failed for $defaults_failed families; their seats were held"
-            probe_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+            failed_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+          fi
+          mismatch_note=""
+          if [ "$defaults_mismatched" -gt 0 ]; then
+            echo "::warning::vendor default not matched by this run's catalogue for $defaults_mismatched families; their seats were held"
+            mismatch_note="**A vendor default did not match this run's catalogue for $defaults_mismatched families this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its mismatch class. Nothing is carried over: the next run's probe decides afresh."
+          fi
+          if [ -n "$failed_note" ] && [ -n "$mismatch_note" ]; then
+            probe_note=$(printf '%s\n\n%s' "$failed_note" "$mismatch_note")
+          elif [ -n "$failed_note" ]; then
+            probe_note="$failed_note"
+          elif [ -n "$mismatch_note" ]; then
+            probe_note="$mismatch_note"
           fi
           # <<< defaults-failed note
 
@@ -901,14 +921,28 @@ jobs:
             exit 0
           fi
 
-          # A failed probe keeps the tracking issue OPEN even on "same": the
-          # roster did not move because the probe could not say whether it
-          # should, and closing the issue would hide that.
-          if [ "$status" = "same" ] && [ "$defaults_failed" -gt 0 ]; then
+          # A failed probe, or a catalogue mismatch, keeps the tracking
+          # issue OPEN even on "same" (#203 probe round 8, R8-1 folded the
+          # mismatch case in): the roster did not move because the probe
+          # could not say whether it should, or could not corroborate the
+          # catalogue, and closing the issue would hide either one. The
+          # title and first line are chosen BY CLASS so a mismatch-only run
+          # never says "probe failed", and a run with both says both.
+          if [ "$status" = "same" ] && { [ "$defaults_failed" -gt 0 ] || [ "$defaults_mismatched" -gt 0 ]; }; then
+            if [ "$defaults_failed" -gt 0 ] && [ "$defaults_mismatched" -gt 0 ]; then
+              issue_title="Model roster: the vendor-default probe failed and a default did not match the catalogue"
+              first_line="This run proposes no change to the committed \`evals/roster.yml\`, but the vendor-default probe failed and a vendor default did not match this run's catalogue, so this issue stays open until a run probes cleanly with a matching catalogue."
+            elif [ "$defaults_failed" -gt 0 ]; then
+              issue_title="Model roster: the vendor-default probe failed"
+              first_line="This run proposes no change to the committed \`evals/roster.yml\`, but the vendor-default probe failed, so this issue stays open until a run probes cleanly."
+            else
+              issue_title="Model roster: a vendor default did not match this run's catalogue"
+              first_line="This run proposes no change to the committed \`evals/roster.yml\`, but a vendor default did not match this run's catalogue, so this issue stays open until a run's catalogue matches."
+            fi
             body="$RUNNER_TEMP/proposal-body.md"
             {
               printf '%s\n\n' "$marker"
-              echo "This run proposes no change to the committed \`evals/roster.yml\`, but the vendor-default probe failed, so this issue stays open until a run probes cleanly."
+              echo "$first_line"
               echo
               echo "$probe_note"
               echo
@@ -920,14 +954,14 @@ jobs:
             # rounds 2 and 3): the roster and the eval are already done.
             if [ -n "$issue" ]; then
               if gh issue edit "$issue" --repo "$REPO" \
-                --title "Model roster: the vendor-default probe failed" --body-file "$body"; then
+                --title "$issue_title" --body-file "$body"; then
                 echo "updated the roster tracking issue #$issue"
               else
                 echo "::warning::could not update the roster tracking issue"
               fi
             else
               gh issue create --repo "$REPO" \
-                --title "Model roster: the vendor-default probe failed" --body-file "$body" \
+                --title "$issue_title" --body-file "$body" \
                 || echo "::warning::could not create the roster tracking issue"
             fi
             exit 0

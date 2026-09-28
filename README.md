@@ -602,12 +602,17 @@ nothing is carried to the next** (the owner's decision): the probe is not
 the eval (the eval authenticates; the probe must not), so a probe failure
 does not stop the eval, and the next run's probe decides afresh. It is loud:
 the published roster carries `defaults_failed` (`{alias: class}`, plus
-`defaults_document_failed` for a whole-document failure), the step summary
-names the frozen families on its first lines, and the proposal step emits a
-`::warning::` and keeps the tracking issue open even when nothing else
-changed; that step runs unless the workflow is cancelled, so it fires even
-when the eval failed, and a failed `gh issue` write in it is a fixed
-`::warning::`, never a failed job, but a failed `git push` of
+`defaults_document_failed` for a whole-document failure) or, for a catalogue
+mismatch, `defaults_mismatched` (`{alias: {id, class}}`), the step summary
+names the frozen families on its first lines, and the proposal step emits its
+own fixed `::warning::` for each class present and keeps the tracking issue
+open even when nothing else changed — the issue's title and first line say
+"probe failed", "a vendor default did not match this run's catalogue", or
+both, by whichever class or classes are present, so a mismatch-only run
+never claims the probe failed; that step runs unless the workflow is
+cancelled, so it fires even when the eval failed, and a failed `gh issue`
+write in it is a fixed `::warning::`, never a failed job, but a failed
+`git push` of
 `roster/proposal` still fails it, because the proposal branch must exist for review. Its issue says whether
 the eval step succeeded, failed or did not run; the step runs before the one
 that publishes to `eval-results`, so for a successful eval it says that

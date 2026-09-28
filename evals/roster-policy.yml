@@ -143,7 +143,10 @@ arm_enter_window_weeks: 4
 # whose probe answer is a failure or a mismatch changes no seat a clean run
 # would not) — only the wording (`defaults_mismatched`) says a mismatch
 # rather than a failure. A persistent mismatch that holds a listed seat is
-# surfaced just as loudly. Nothing is
+# surfaced just as loudly: its own fixed `::warning::` in the proposal step
+# (#203 probe round 8, R8-1) and an open tracking issue on "same" too, whose
+# title says "probe failed" only for a genuine failure, its own wording for
+# a mismatch, or both when both are present in the same run. Nothing is
 # carried to the next run (the owner's decision of 2026-09-28): the
 # carried-defaults block and its expiry knob that briefly stood here are
 # gone.

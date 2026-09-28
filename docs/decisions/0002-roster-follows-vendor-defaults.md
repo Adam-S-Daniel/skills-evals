@@ -167,9 +167,14 @@ happened to accumulate usage on.
    rules — flipped seats on a one-week failure: a seated default retired,
    or a preview seated, and the next clean probe undid it. The freeze is
    loud: `defaults_failed` or `defaults_mismatched` in the published
-   roster, a line at the top of the step summary, and a fixed `::warning::`
-   from the proposal step, which keeps the tracking issue open even when the
-   proposal is "same"; its eval sentence says whether the eval step
+   roster, a line at the top of the step summary, and its own fixed
+   `::warning::` from the proposal step for each class present (#203 probe
+   round 8, R8-1 — the step had read only `defaults_failed`), which keeps
+   the tracking issue open even when the proposal is "same"; the issue's
+   title and first line say "probe failed" only for a genuine failure, a
+   mismatch's own wording, or both when both classes are present in the
+   same run, so a mismatch-only run never claims the probe failed; its eval
+   sentence says whether the eval step
    succeeded, failed or did not run (it runs before the step that publishes
    to `eval-results`, so a successful eval's sentence says that step
    publishes next). It is **per run, never carried** (the owner's

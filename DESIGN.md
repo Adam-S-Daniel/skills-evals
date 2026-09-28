@@ -570,7 +570,11 @@ a single run whose probe answer is a failure or a mismatch changes no seat
 a clean run would not, now structural rather than resting on a guessed
 "effective default"); only the wording differs, and `defaults_mismatched`
 says "does not match this run's catalogue", loudly whether it holds a
-listed seat or seats by usage. Falling back to
+listed seat or seats by usage — its own fixed `::warning::` (#203 probe
+round 8, R8-1) and, on "same", the tracking issue kept open exactly as a
+failure keeps it, with a title that says "probe failed" only when a probe
+genuinely failed, "did not match this run's catalogue" for a mismatch, or
+both when both classes are present in the same run. Falling back to
 rules 1 and 2 instead flipped seats on one bad week. The freeze is per run; nothing is
 carried to the next (a carried-defaults block with an expiry briefly stood
 here and is gone). With no defaults document at all the roster is
