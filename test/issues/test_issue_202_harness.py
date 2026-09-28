@@ -174,7 +174,10 @@ class TestHarnessInstallStep(unittest.TestCase):
         # version characters reach the summary's markdown code span.
         # A non-executable `claude` on PATH falls back to npm; a hanging
         # `--version` is bounded; an absurd line is capped before filtering.
-        self.assertIn('version="$(timeout 60 claude --version)" || {', script)
+        # `-k 10`: a CLI that ignores SIGTERM is killed 10 s later (#203
+        # round 1), the exact line rather than a substring.
+        self.assertIn('version="$(timeout -k 10 60 claude --version)" || '
+                      '{ echo "::error::claude --version failed"; exit 1; }', lines)
         self.assertIn('version="${version:0:80}"', script)
         self.assertIn('version="${version//[^A-Za-z0-9._() -]/}"', script)
         self.assertIn('[[ -n "$version" ]] || {', script)
@@ -426,6 +429,27 @@ class TestSkillArmsRecordVersions(_RunEvalEndToEnd):
         self.assertEqual(summary["judge_models_used"], [])
 
 
+class TestJudgeModelsOnTheExceptionPath(_RunEvalEndToEnd):
+    """F8 (#203 round 1): a judge CLI call that completed is recorded even
+    when `judge.score` then raises on its answer."""
+
+    def test_a_judge_that_answers_junk_still_records_its_model(self):
+        skill = run_eval.load_fixture(EVAL_DIR)["skill"]
+        judge_model = run_eval.load_fixture(EVAL_DIR)["judge"]["model"]
+        # Prose for every call: a fine transcript for the agent, and an
+        # answer judge.score cannot parse, AFTER the CLI call completed.
+        wrapper = _write_script(self.tmp / "cli", (
+            "import os, sys\n"
+            "os.environ['FAKE_CLAUDE_MODE'] = 'agent'\n"
+            f"os.execv({str(FAKE_CLAUDE)!r}, [{str(FAKE_CLAUDE)!r}] + sys.argv[1:])"))
+        proc = self._run(EVAL_DIR, "--arm", "without_skill",
+                         env_extra={"CLAUDE_BIN": str(wrapper)})
+        summary = json.loads((self._run_dir(skill) / "without_skill" /
+                              "summary.json").read_text(encoding="utf-8"))
+        self.assertIn("error", summary["judge"] or {}, proc.stdout + proc.stderr)
+        self.assertEqual(summary["judge_models_used"], [judge_model])
+
+
 class TestGuidanceArmsRecordVersions(unittest.TestCase):
     """The guidance path's `_write_summary` call sites, driven with the
     delivery, guard and agent patched so no hook or checkout is needed."""
@@ -482,6 +506,24 @@ class TestGuidanceArmsRecordVersions(unittest.TestCase):
         summary = self._summary()
         self.assertEqual(summary["harness"]["version"], "9.9.9 (Claude Code)")
         self.assertEqual(summary["models_used"], [])
+
+    def test_a_judge_that_raises_after_a_cli_call_still_records_its_model(self):
+        # F8 (#203 round 1), the guidance path's call site.
+        from scorers import judge
+
+        def score(*_args, **_kwargs):
+            for sink in judge._MODEL_SINKS:
+                sink.append({"modelUsage": {"fake-judge": {}}})
+            raise ValueError("unparseable judge answer")
+        self.args.no_judge = False
+        self.fixture = {"prompt": "do it", "judge_rubric": "r"}
+        with mock.patch.object(run_eval.judge, "score", score), \
+             mock.patch.object(run_eval, "_git", return_value=types.SimpleNamespace(
+                 stdout="", returncode=0)):
+            self._run()
+        summary = self._summary()
+        self.assertIn("error", summary["judge"])
+        self.assertEqual(summary["judge_models_used"], ["fake-judge"])
 
     def test_the_guidance_report_names_the_harness(self):
         report = run_eval._render_guidance_report(

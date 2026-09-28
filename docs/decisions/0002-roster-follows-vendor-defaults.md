@@ -39,13 +39,23 @@ happened to accumulate usage on.
    tier unresolved, with a `roster: ` warning.
 2. **New default → seat now.** In a tier whose default resolved, the default
    is an arm whenever the tier is on the roster — a model in it clears the
-   entry bar, a previous arm is in it, or the census is unusable (the existing
-   all-tiers fallback). **No cooling-off.** Its reason names the docs source
-   and fetch time and why the tier is on the roster.
+   entry bar, ANOTHER previous arm in it is itself still seated this run
+   (e.g. a superseded arm inside its buffer), or the census is unusable (the
+   existing all-tiers fallback). **No cooling-off.** Its reason names the
+   docs source and fetch time and why the tier is on the roster. The
+   default's OWN previous seat never puts its tier on the roster: when none
+   of those holds and the default is itself a previous arm, it gets the same
+   exit check as any previous arm — held on a stale or too-thin census, held
+   while at or above `arm_exit_usage_pct` over `arm_exit_window_weeks`, and
+   otherwise retired with that evidence (#203 round 1; before it, a seated
+   default could never retire).
 3. **Usage picks tiers, not versions.** Inside such a tier a superseded
    model earns no seat from its usage however large; its usage still counts
    toward qualifying the tier. A model newer than the default (a release the
-   vendor has not made the default) takes no seat.
+   vendor has not made the default) earns no NEW seat; one that is already a
+   previous arm gets the normal exit check rather than an immediate
+   retirement, so a docs read that lags a release by a run cannot seat it one
+   week and drop it, still heavily used, the next (#203 round 1).
 4. **Superseded → retire after a buffer.** A previous arm superseded by its
    tier's default keeps its seat until `superseded_exit_weeks` (new policy
    key, **1**) complete ISO weeks — Monday 00:00 UTC to Monday, beginning at
@@ -55,10 +65,25 @@ happened to accumulate usage on.
    window under either ranked-usage floor, holds it. `0` retires it on the
    first run that sees it superseded. The 8-week exit window does not apply
    to a superseded arm.
+4a. **A failed docs read uses the last defaults the roster resolved (#203
+   round 1).** The committed `evals/roster.yml` carries a `defaults:` block
+   (`source`, `fetched_at`, `resolved: {alias: id}`), rendered from the
+   proposal and reviewed like the rest of the file (ADR 0001), and
+   type-checked by the committed-roster contract. When a run's defaults
+   document is absent, errored or yields nothing usable, the roster uses that
+   block instead, re-validating each id against the run's own catalogue and
+   tier (an id no longer available, or in another tier, is dropped with a
+   warning and only its tier falls back). Such a seat's reason says the
+   default was "last read <fetched_at>" and names the failed read's class;
+   the published block records `carried: true`. Without it, one failed read
+   flipped every tier to rules 1 and 2 for a run — seating a release the
+   vendor had not made the default, and reseating a model the default had
+   already retired.
 5. **Unchanged:** a tier with no resolved default keeps both usage rules
    verbatim, cooling-off included; the preflight pick keeps its cooling-off;
-   the judge rule is unchanged. With no defaults document — absent, errored,
-   empty or junk — the roster is byte-for-byte the one computed without it.
+   the judge rule is unchanged. With no usable defaults document — absent,
+   errored, empty or junk — AND no `defaults` block in the committed roster,
+   the roster is byte-for-byte the one computed without it.
 
 ## Consequences
 
@@ -69,9 +94,10 @@ happened to accumulate usage on.
 - **Usage now only picks tiers.** A tier's version churn no longer re-weighs
   the arm set; a fleet that keeps using an old version after its default
   moves on is no longer measured on it once the buffer has run.
-- **A docs format change degrades loudly to today's rules.** A fetch or parse
-  failure writes `defaults: {}` with an HTTP status or exception class, never
-  a body; the roster then applies the usage rules to every tier and warns.
+- **A docs format change degrades loudly.** A fetch or parse failure writes
+  `defaults: {}` with an HTTP status or exception class, never a body; the
+  roster then uses the defaults the committed roster carries (4a), and with
+  none of those applies the usage rules to every tier, and warns either way.
   Nothing fails the workflow step. A silently wrong parse is bounded by the
   display-name match: a name that matches no model in its own tier seats
   nothing.
@@ -96,9 +122,11 @@ happened to accumulate usage on.
   CLI version is installed. Measured 2026-09-27 with an invalid key: CLI
   2.1.283 resolves `opus` → `claude-opus-5-5`, while 2.1.211, CI's pin at the
   time, resolves `opus` → `claude-opus-4-8` and `fable` → `claude-fable-5`.
-  The same PR drops the harness cooling-off and bumps CI to 2.1.283, but the
-  CLI stays pinned exact, so a probe would still lag every vendor change
-  until the next hand bump; the docs page does not.
+  The same PR drops the harness cooling-off and unpins the CLI (CI uses the
+  one on the runner, else `@latest`), so a probe would report whichever
+  version the runner happened to have that day rather than the vendor's
+  published default, and would still lag any runner image that trails a
+  release; the docs page names the default directly.
 - **Shorten the cooling-off.** Rejected: it would still seat by age rather
   than by what the vendor defaults to, and would also seat a preview the
   vendor has not made the default.

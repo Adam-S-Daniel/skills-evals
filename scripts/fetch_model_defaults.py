@@ -10,17 +10,20 @@ What comes out are display names ("Opus 5.5"); `harness/roster.py` matches
 them to ids through the Models API's `display_name`.
 
 Why the docs and not `claude --model <alias>`: the CLI resolves aliases
-itself, so a probe reports the defaults of whichever CLI version is
-installed, and CI's is pinned (ADR 0002 has the measured numbers).
+itself, so a probe reports the defaults of whichever CLI version happens
+to be installed on the runner that day, not the vendor's published default
+(ADR 0002 has the measured numbers).
 
   --out   {"fetched_at", "source", "defaults": {alias: display name},
            "error": null | "<HTTP status or exception class>"}
 
-A FAILURE IS NOT FATAL. A fetch or parse failure writes `defaults: {}` with
-a short `error`, prints one `fetch_model_defaults: ` line, and exits 0; the
-roster then falls back to its newest-in-tier rule for every tier and says
-so. Only a usage error (bad arguments, an unwritable `--out`) exits
-non-zero. What is printed or recorded is a status code or an exception
+A FAILURE IS NOT FATAL. Any fetch or parse failure — an HTTP status, a
+network or protocol error (`http.client.HTTPException`: `IncompleteRead`,
+`BadStatusLine`, ...), and as a last resort any other exception — writes
+`defaults: {}` with a short `error`, prints one `fetch_model_defaults: `
+line, and exits 0; the roster then falls back to the defaults the committed
+roster carries, or with none to its newest-in-tier rule, and says so. Only
+a usage error (bad arguments, an unwritable `--out`) exits non-zero. What is printed or recorded is a status code or an exception
 class name and nothing else — never a response body — the same discipline
 as `scripts/refresh_models.py`, for the same reason: this runs in a public
 CI log.
@@ -31,6 +34,7 @@ No credential is read or sent, and no model id appears in this file.
 from __future__ import annotations
 
 import argparse
+import http.client
 import json
 import re
 import sys
@@ -191,11 +195,18 @@ def main() -> int:
         error = f"HTTP {exc.code}"
     # OSError covers URLError and timeouts; ValueError the decode and the
     # size cap; RecursionError a pathologically nested page.
-    except (OSError, ValueError, RecursionError) as exc:
+    # HTTPException is not an OSError: a truncated body (IncompleteRead) or
+    # a malformed status line escaped as a traceback with no --out written
+    # (#203 round 1).
+    except (OSError, ValueError, RecursionError, http.client.HTTPException) as exc:
+        error = type(exc).__name__
+    # The last resort, so that --out is written on every path but a usage
+    # error. The class name only: an exception's text can carry the body.
+    except Exception as exc:  # noqa: BLE001
         error = type(exc).__name__
     if error:
         print(f"fetch_model_defaults: no vendor defaults read ({error}); the "
-              f"roster falls back to newest-in-tier for every tier",
+              f"roster falls back to the carried defaults, or newest-in-tier",
               file=sys.stderr)
 
     document = {"fetched_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),

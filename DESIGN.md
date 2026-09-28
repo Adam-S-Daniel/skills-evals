@@ -518,15 +518,26 @@ the Markdown model-config docs (the "Anthropic API" row of the alias table,
 and the `fable` resolution sentence); `roster.py` matches each display name to
 exactly one available model in the alias's own tier. In such a tier usage has
 one job left — putting the tier on the roster (a model clearing the entry bar,
-a previous arm in it, or the no-census fallback) — and the seat goes to the
-default with no cooling-off. A superseded model gets no usage seat; a
-superseded previous arm is retired once `superseded_exit_weeks` complete ISO
-weeks have passed since the default's `created_at` and its share over the most
-recent such weeks is under the exit bar (a stale or too-thin census holds it,
-and the 8-week exit rule no longer applies to it). A model newer than the
-default is excluded. Any failure to read or resolve a default degrades that
-tier (or all of them) to rules 1 and 2, cooling-off included, loudly; with no
-defaults document the roster is byte-for-byte the one computed without it.
+another previous arm in it that is still seated this run, or the no-census
+fallback) — and the seat goes to the default with no cooling-off. The
+default's own previous seat is not one of those: with none of them, a default
+that is a previous arm gets rule 3's exit check (held on a stale or thin
+census, held at or above the exit bar over the exit window, else retired). A
+superseded model gets no usage seat; a superseded previous arm is retired once
+`superseded_exit_weeks` complete ISO weeks have passed since the default's
+`created_at` and its share over the most recent such weeks is under the exit
+bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
+applies to it). A model newer than the default earns no new seat, and a
+previous arm newer than it gets rule 3's exit check instead of retiring on
+sight. A failed docs read falls back to the `defaults:` block the committed
+roster carries (the last resolved `{alias: id}`, re-validated against this
+run's catalogue and tier; reasons say "last read <fetched_at>" and name the
+failure class; the published block records `carried: true`), so one outage
+cannot flip every tier to rules 1 and 2 for a run and back. Any other failure
+to read or resolve a default degrades that tier (or all of them) to rules 1
+and 2, cooling-off included, loudly; with no usable defaults document and no
+carried block the roster is byte-for-byte the one computed without it
+(#203 round 1).
 The preflight keeps its cooling-off, and the judge rule is unchanged.
 
 **The cooling-off is 0 and the harness is unpinned (2026-09-27, the owner's

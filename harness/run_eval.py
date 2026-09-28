@@ -1300,6 +1300,10 @@ def claude_version() -> str | None:
                            guidance.SINK_TIMEOUT_REMEDY)
     why = None
     try:
+        # `subprocess.run(timeout=)` already does what the workflows' `timeout
+        # -k 10 60` does (#203 round 1): on expiry it SIGKILLs the child
+        # (`process.kill()` in its TimeoutExpired handler) and reaps it, so a
+        # CLI that ignores SIGTERM cannot outlive the probe.
         result = subprocess.run(
             [os.environ.get("CLAUDE_BIN", "claude"), "--version"],
             capture_output=True, text=True, timeout=VERSION_TIMEOUT_S)
@@ -1612,6 +1616,10 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
                 judge_cfg = fixture.get("judge", {})
+                # Bound before the `with`, and read AFTER the try: a judge
+                # CLI call that completed is recorded even when `score`
+                # then raises on its answer (#203 round 1).
+                judge_results: list = []
                 try:
                     with judge.collecting_models() as judge_results:
                         judge_result = judge.score(
@@ -1620,7 +1628,6 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                             timeout=judge_cfg.get("timeout_s", 120),
                             weights=judge_cfg.get("weights"),
                         )
-                    judge_models = models_used(*judge_results)
                 except guidance.GuidanceError:
                     # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
                     # error, not a judge result: recorded as `{"error": ...}`
@@ -1629,6 +1636,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                     raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
+                judge_models = models_used(*judge_results)
 
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
                        error, agent_summary, objective_checks, judge_result, raw,
@@ -2049,6 +2057,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 diff = _git("diff", "--cached", "--", ".", *excludes,
                             cwd=workspace).stdout
                 judge_cfg = fixture.get("judge", {})
+                # Read after the try, as in the skill path (#203 round 1).
+                judge_results: list = []
                 try:
                     with judge.collecting_models() as judge_results:
                         judge_result = judge.score(
@@ -2056,7 +2066,6 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                             diff, model=judge_cfg.get("model"),
                             timeout=judge_cfg.get("timeout_s", 120),
                             weights=judge_cfg.get("weights"))
-                    judge_models = models_used(*judge_results)
                 except guidance.GuidanceError:
                     # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
                     # error, not a judge result: recorded as `{"error": ...}`
@@ -2065,6 +2074,7 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                     raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
+                judge_models = models_used(*judge_results)
 
         _write_summary(args.results_dir, None, arm["name"], timestamp, error,
                        agent_summary, objective_checks, judge_result, raw,

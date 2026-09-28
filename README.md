@@ -305,7 +305,9 @@ with its `fixture` input (default `evals/workflow-path-audit`); the value is
 validated against the committed fixture set before any credential is minted.
 Set `roster_only` to refresh the model roster and file its proposal without
 the eval: the WIF preflight, the eval and the badge are skipped, so the only
-model-side call is the Models API read.
+model-side call is the Models API read. A roster_only run publishes nothing to
+`eval-results`; its only outputs are the `roster/proposal` branch and the
+tracking issue, whose text says that no eval ran.
 
 ## Guidance-bridge canary
 
@@ -535,17 +537,25 @@ says which degradation it was. No new threshold was added — rule 2 reads rule
 [model-config docs](https://code.claude.com/docs/en/model-config.md), and the
 roster matches that display name to an id through the Models API. In a tier
 whose default resolved, usage only decides whether the tier is on the roster
-(a model in it clears the entry bar, a previous arm is in it, or there is no
-usable census): the seat goes to the default **at once, with no cooling-off**,
-and rules 1 and 2 do not apply there. A model the default supersedes earns no
-seat from its usage; a previous arm it supersedes keeps its seat until
+(a model in it clears the entry bar, another previous arm in it is still
+seated this run, or there is no usable census): the seat goes to the default
+**at once, with no cooling-off**, and rules 1 and 2 do not apply there. The
+default's own previous seat does not keep its tier on the roster: once
+nothing else does, a seated default gets the ordinary exit check (2% over 8
+weeks) and can retire. A model the default supersedes earns no seat from its
+usage; a previous arm it supersedes keeps its seat until
 `superseded_exit_weeks` (1) complete ISO weeks have passed since its
 successor's `created_at` **and** its share over those weeks is under the 2%
 exit bar, with a stale or too-thin census holding it as before. A model newer
-than the default takes no seat. A tier whose default did not resolve — or
-every tier, when the docs cannot be read — keeps rules 1 and 2 verbatim,
-cooling-off included, and a `roster: ` warning says why. The preflight pick
-applies the cooling-off either way.
+than the default earns no new seat; one that is already a previous arm gets
+the ordinary exit check rather than retiring on sight. When the docs cannot be
+read, the roster uses the defaults the committed `evals/roster.yml` carries in
+its `defaults:` block (the last ones resolved, re-checked against this run's
+catalogue), and its reasons say when they were last read and that this run's
+read failed. A tier whose default did not resolve — or every tier, when the
+docs cannot be read and the committed roster carries no defaults — keeps rules
+1 and 2 verbatim, cooling-off included, and a `roster: ` warning says why. The
+preflight pick applies the cooling-off either way.
 
 **The cooling-off is 0 days** (the owner's decision of 2026-09-27, #202):
 `cooling_off_days: 0` in `evals/roster-policy.yml`, so rule 2 (in a tier
@@ -562,7 +572,8 @@ every seat's reason in words, with the numerator and denominator its share was
 taken over — and a `main...roster/proposal` compare link. An invalid proposal
 does not update the branch or compare link; its tracking issue says it needs
 review and lists the admission failures. The paid eval result still publishes
-from the committed roster. A human opens the pull request for a valid proposal
+from the committed roster — except on a `roster_only` dispatch, where no eval
+runs and nothing is published to `eval-results`. A human opens the pull request for a valid proposal
 and merges it after CI. Nothing in CI writes `evals/roster.yml`. When the
 computed roster matches the committed one, that issue is closed.
 

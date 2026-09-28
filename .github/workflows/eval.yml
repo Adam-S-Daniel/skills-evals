@@ -196,7 +196,9 @@ on:
         description: >-
           Refresh the model roster and file its proposal, then stop: skip the
           WIF preflight, the eval and the badge, so nothing is spent on a
-          model beyond the Models API read.
+          model beyond the Models API read. A roster_only run publishes
+          nothing to `eval-results`; its only outputs are the
+          `roster/proposal` branch and the tracking issue.
         type: boolean
         required: false
         default: false
@@ -306,7 +308,7 @@ jobs:
             npm install -g @anthropic-ai/claude-code@latest
             source="npm latest"
           fi
-          version="$(timeout 60 claude --version)" || { echo "::error::claude --version failed"; exit 1; }
+          version="$(timeout -k 10 60 claude --version)" || { echo "::error::claude --version failed"; exit 1; }
           # First line only, and only characters a version string needs: this
           # lands in a markdown code span in the step summary.
           version="${version%%$'\n'*}"
@@ -763,6 +765,23 @@ jobs:
           status=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("proposal") or {}).get("status")) or "")' "$computed")
           echo "proposal status: ${status:-unknown}"
 
+          # >>> roster-only note
+          # What the issue says about the eval depends on whether one ran
+          # (#203 round 1). Read from the event payload with jq at run time,
+          # never interpolated into this block: a dispatch sends the boolean
+          # input as a boolean or as the string "true", and a scheduled run
+          # has no inputs at all.
+          roster_only=false
+          if [ -f "${GITHUB_EVENT_PATH:-}" ] && jq -e '(.inputs.roster_only // false) | . == true or . == "true"' "$GITHUB_EVENT_PATH" > /dev/null 2>&1; then
+            roster_only=true
+          fi
+          if [ "$roster_only" = true ]; then
+            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval ran on the committed roster, no eval ran at all."
+          else
+            eval_note="The paid eval ran on the committed \`evals/roster.yml\`; its results are published to \`eval-results\` normally."
+          fi
+          # <<< roster-only note
+
           # The open tracking issue is owned by this workflow's bot account,
           # not by whoever copied a public marker into an issue body. Query
           # every page with GitHub's creator filter, then verify the creator
@@ -867,7 +886,9 @@ jobs:
               printf '%s\n\n' "$marker"
               echo "The weekly run computed a roster difference, but it was rejected before proposal publication."
               echo
-              echo "**Needs review before publication.** No proposal branch or compare link was updated. The paid eval ran on the committed \`evals/roster.yml\`; its results will still be published normally."
+              echo "**Needs review before publication.** No proposal branch or compare link was updated."
+              echo
+              echo "$eval_note"
               echo
               echo "$rejection"
               echo
@@ -921,6 +942,8 @@ jobs:
             echo
             echo "**Nothing has changed yet.** The harness runs on the committed file (ADR 0001); this is a proposal."
             echo "Open a pull request from \`roster/proposal\` and merge it after CI if the reasons below hold up."
+            echo
+            echo "$eval_note"
             echo
             echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
             echo

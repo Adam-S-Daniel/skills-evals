@@ -24,9 +24,12 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import http.client
 import io
 import json
+import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -50,6 +53,7 @@ import timeweeks  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
 import fetch_model_defaults  # noqa: E402
+import render_roster_yaml  # noqa: E402
 
 
 # The live page's relevant excerpt as of 2026-09-27, cell padding trimmed.
@@ -207,6 +211,39 @@ class TestFetchScript(unittest.TestCase):
         self.assertEqual((doc["defaults"], doc["error"]), ({}, "HTTP 503"))
         self.assertEqual(doc["source"], fetch_model_defaults.DOCS_URL)
         self.assertNotIn("secret", err.getvalue() + out.read_text(encoding="utf-8"))
+
+    def _raising(self, exc):
+        def boom(request, timeout=None):
+            raise exc
+        out = self.tmp / "defaults.json"
+        err = io.StringIO()
+        with mock.patch.object(sys, "argv", ["x", "--out", str(out)]), \
+             mock.patch("urllib.request.urlopen", boom), \
+             contextlib.redirect_stderr(err), \
+             contextlib.redirect_stdout(io.StringIO()):
+            rc = fetch_model_defaults.main()
+        return rc, out, err.getvalue()
+
+    def test_an_http_protocol_error_still_writes_out(self):
+        # F3 (#203 round 1): IncompleteRead is an HTTPException, not an
+        # OSError, and used to escape as a traceback with no --out written.
+        rc, out, err = self._raising(http.client.IncompleteRead(b"secret partial"))
+        self.assertEqual(rc, 0)
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual((doc["defaults"], doc["error"]), ({}, "IncompleteRead"))
+        self.assertIn("IncompleteRead", err)
+        self.assertNotIn("secret", err + out.read_text(encoding="utf-8"))
+
+    def test_any_other_exception_still_writes_out(self):
+        rc, out, err = self._raising(RuntimeError("secret detail"))
+        self.assertEqual(rc, 0)
+        doc = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual((doc["defaults"], doc["error"]), ({}, "RuntimeError"))
+        self.assertIn("RuntimeError", err)
+        self.assertNotIn("secret", err + out.read_text(encoding="utf-8"))
+
+    def test_the_docstring_no_longer_says_ci_pins_the_cli(self):
+        self.assertNotIn("CI's is pinned", fetch_model_defaults.__doc__)
 
     def test_a_fetched_page_is_parsed(self):
         class Response(io.BytesIO):
@@ -530,6 +567,264 @@ class TestVendorDefaultSeats(_RosterFixture):
         self.assertIn("2026-09-27T10:00:00Z", summary)
 
 
+class TestSeatedDefaultCanRetire(_RosterFixture):
+    """F1 (#203 round 1): a vendor default that is ALREADY an arm is not
+    kept forever by its own seat — it gets rule 3's exit check."""
+
+    WEEKS = [f"2026-W{n:02d}" for n in range(36, 50)]
+    NOW_DEC = datetime(2026, 12, 8, 12, tzinfo=timezone.utc)
+    PREV = {**_RosterFixture.PREVIOUS,
+            "arms": [{"id": "claude-sonnet-5"}, {"id": "claude-opus-5-5"}]}
+
+    def _census_no_opus(self, generated_at="2026-12-07T06:00:00Z"):
+        counts = {"claude-sonnet-5": {w: 900 for w in self.WEEKS},
+                  "claude-haiku-4-5": {w: 100 for w in self.WEEKS}}
+        return {"generated_at": generated_at, "weeks": [], "counts": counts}
+
+    def test_a_seated_default_with_no_usage_retires_by_the_exit_bar(self):
+        result, _ = self._compute(defaults=self.DEFAULTS, previous=self.PREV,
+                                  census=self._census_no_opus(), now=self.NOW_DEC)
+        self.assertNotIn("claude-opus-5-5", self._arms(result))
+        why = self._reason(result, "claude-opus-5-5", "retired_since_last")
+        self.assertIn("below the 2% exit bar for the last 8 weeks", why)
+        self.assertIn("0.0%", why)
+
+    def test_the_same_on_a_stale_census_is_held(self):
+        # Generated 2026-11-10: past the 14-day freshness window by 12-08.
+        result, _ = self._compute(defaults=self.DEFAULTS, previous=self.PREV,
+                                  census=self._census_no_opus("2026-11-10T06:00:00Z"),
+                                  now=self.NOW_DEC)
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        self.assertEqual(
+            [r for r in result["retired_since_last"] if r["id"] == "claude-opus-5-5"], [])
+
+    def test_a_seated_default_over_the_exit_bar_is_held(self):
+        census = self._census_no_opus()
+        census["counts"]["claude-opus-5-5"] = {w: 40 for w in self.WEEKS}
+        result, _ = self._compute(defaults=self.DEFAULTS, previous=self.PREV,
+                                  census=census, now=self.NOW_DEC)
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        why = self._reason(result, "claude-opus-5-5")
+        self.assertIn("at or above the 2% exit bar", why)
+        self.assertIn("vendor default for the opus tier", why)
+
+    def test_its_own_seat_is_not_a_previous_arm_in_the_tier(self):
+        result, _ = self._compute(defaults=self.DEFAULTS, previous=self.PREV,
+                                  census=self._census_no_opus(), now=self.NOW_DEC)
+        for entry in result["arms"] + result["excluded"]:
+            self.assertNotIn("previous arm `claude-opus-5-5` is in it", entry["reason"])
+
+
+class TestPreviewArmGetsTheExitCheck(_RosterFixture):
+    """F2(b) (#203 round 1): a previous arm NEWER than its tier's default is
+    no longer retired on sight — it gets rule 3's exit check. It still
+    earns no NEW seat."""
+
+    WEEKS = [f"2026-W{n:02d}" for n in range(33, 42)]
+    NOW_OCT = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
+    D = {**_RosterFixture.DEFAULTS, "defaults": {"opus": "Opus 5.5", "sonnet": "Sonnet 5"}}
+    PREV = {**_RosterFixture.PREVIOUS,
+            "arms": [{"id": "claude-opus-5-5"}, {"id": "claude-opus-5-6"},
+                     {"id": "claude-sonnet-5"}]}
+
+    def _models(self):
+        return self._models_doc(extra=[self._model(
+            "claude-opus-5-6", "Claude Opus 5.6", "2026-10-01T00:00:00Z")])
+
+    def _census(self, opus56=0, generated_at="2026-10-12T06:00:00Z"):
+        counts = {"claude-sonnet-5": {w: 500 for w in self.WEEKS},
+                  "claude-opus-5-5": {w: 450 for w in self.WEEKS},
+                  "claude-haiku-4-5": {w: 50 for w in self.WEEKS}}
+        if opus56:
+            counts["claude-opus-5-6"] = {w: opus56 for w in self.WEEKS}
+        return {"generated_at": generated_at, "weeks": [], "counts": counts}
+
+    def test_a_heavily_used_preview_arm_is_held_not_retired(self):
+        # The reviewer's a2.py: ~28% usage must not retire it.
+        result, _ = self._compute(defaults=self.D, previous=self.PREV,
+                                  models=self._models(), census=self._census(400),
+                                  now=self.NOW_OCT)
+        self.assertIn("claude-opus-5-6", self._arms(result))
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        why = self._reason(result, "claude-opus-5-6")
+        self.assertIn("held over from the previous roster", why)
+        self.assertIn("at or above the 2% exit bar", why)
+        self.assertEqual(result["retired_since_last"], [])
+
+    def test_an_unused_preview_arm_retires_by_the_exit_bar(self):
+        result, _ = self._compute(defaults=self.D, previous=self.PREV,
+                                  models=self._models(), census=self._census(),
+                                  now=self.NOW_OCT)
+        self.assertNotIn("claude-opus-5-6", self._arms(result))
+        why = self._reason(result, "claude-opus-5-6", "retired_since_last")
+        self.assertIn("below the 2% exit bar", why)
+
+    def test_a_stale_census_holds_a_preview_arm(self):
+        result, _ = self._compute(defaults=self.D, previous=self.PREV,
+                                  models=self._models(),
+                                  census=self._census(generated_at="2026-09-20T06:00:00Z"),
+                                  now=self.NOW_OCT)
+        self.assertIn("claude-opus-5-6", self._arms(result))
+        self.assertIn("no evidence to retire it", self._reason(result, "claude-opus-5-6"))
+
+    def test_a_preview_that_is_not_a_previous_arm_still_earns_no_seat(self):
+        previous = {**self.PREV, "arms": [{"id": "claude-opus-5-5"},
+                                          {"id": "claude-sonnet-5"}]}
+        result, _ = self._compute(defaults=self.D, previous=previous,
+                                  models=self._models(), census=self._census(400),
+                                  now=self.NOW_OCT)
+        self.assertNotIn("claude-opus-5-6", self._arms(result))
+        self.assertIn("newer than the vendor default",
+                      self._reason(result, "claude-opus-5-6", "excluded"))
+
+
+class TestCarriedDefaults(_RosterFixture):
+    """F2(a) (#203 round 1): the committed roster carries the last resolved
+    defaults, and a run whose docs read fails uses them instead of
+    flip-flopping to newest-in-tier."""
+
+    CARRIED = {"source": "https://code.claude.com/docs/en/model-config.md",
+               "fetched_at": "2026-09-27T10:00:00Z",
+               "resolved": {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"}}
+    DOWN = {**_RosterFixture.DEFAULTS, "defaults": {}, "error": "HTTP 503"}
+
+    def _previous(self, arms=("claude-sonnet-5", "claude-opus-5"), carried=None):
+        return {**self.PREVIOUS, "arms": [{"id": a} for a in arms],
+                "defaults": copy.deepcopy(self.CARRIED if carried is None else carried)}
+
+    def test_a_failed_read_uses_the_carried_defaults(self):
+        result, warnings = self._compute(defaults=self.DOWN, previous=self._previous())
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        why = self._reason(result, "claude-opus-5-5")
+        self.assertIn("last read 2026-09-27T10:00:00Z", why)
+        self.assertIn("HTTP 503", why)
+        self.assertIn("vendor default for the opus tier", why)
+        self.assertIs(result["defaults"]["carried"], True)
+        self.assertEqual(result["defaults"]["resolved"], self.CARRIED["resolved"])
+        self.assertEqual(result["defaults"]["fetched_at"], "2026-09-27T10:00:00Z")
+        self.assertTrue(any("carried" in w for w in warnings), warnings)
+        self.assertIn("this run's read failed", roster.render_summary(result))
+
+    def test_an_absent_doc_uses_the_carried_defaults(self):
+        result, _ = self._compute(defaults=None, previous=self._previous())
+        self.assertIn("claude-opus-5-5", self._arms(result))
+        self.assertIs(result["defaults"]["carried"], True)
+
+    def test_a_good_read_is_not_carried(self):
+        result, _ = self._compute(defaults=self.DEFAULTS, previous=self._previous())
+        self.assertNotIn("carried", result["defaults"])
+
+    def test_a_carried_id_no_longer_available_is_dropped(self):
+        result, warnings = self._compute(
+            defaults=self.DOWN, previous=self._previous(),
+            models=self._models_doc(drop=("claude-opus-5-5",)))
+        self.assertNotIn("opus", result["defaults"]["resolved"])
+        self.assertEqual(result["defaults"]["resolved"], {"sonnet": "claude-sonnet-5"})
+        self.assertTrue(any("`opus`" in w and "carried" in w for w in warnings), warnings)
+
+    def test_a_carried_id_in_another_tier_is_dropped(self):
+        carried = {**self.CARRIED, "resolved": {"opus": "claude-sonnet-5"}}
+        result, warnings = self._compute(defaults=self.DOWN,
+                                         previous=self._previous(carried=carried))
+        self.assertNotIn("opus", (result.get("defaults") or {}).get("resolved", {}))
+        self.assertTrue(any("`opus`" in w for w in warnings), warnings)
+
+    def test_a_docs_outage_after_a_retirement_does_not_reseat_it(self):
+        # The reviewer's a7.py: opus-5 retired with the docs up; the next
+        # run's docs outage must not bring it back by rule 1.
+        census = self._later_census(opus5_w40=5, opus55_w40=440)
+        first, _ = self._compute(
+            defaults=self.DEFAULTS, census=census, now=self.LATER,
+            previous={**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                                {"id": "claude-opus-5"},
+                                                {"id": "claude-opus-5-5"}]})
+        self.assertNotIn("claude-opus-5", self._arms(first))
+        committed = yaml.safe_load(render_roster_yaml.render(first, "1", "abc"))
+        self.assertEqual(roster.committed_roster_problems(committed), [])
+        second, _ = self._compute(defaults=self.DOWN, census=census,
+                                  now=self.LATER, previous=committed)
+        self.assertEqual(sorted(self._arms(second)),
+                         ["claude-opus-5-5", "claude-sonnet-5"])
+
+    def test_a_docs_outage_does_not_seat_an_unmade_default(self):
+        # The reviewer's a2.py week 1, with a carried block: opus-5-6 is
+        # newest but not the default, so it takes no seat.
+        models = self._models_doc(extra=[self._model(
+            "claude-opus-5-6", "Claude Opus 5.6", "2026-10-01T00:00:00Z")])
+        weeks = [f"2026-W{n:02d}" for n in range(33, 42)]
+        census = {"generated_at": "2026-10-12T06:00:00Z", "weeks": [], "counts": {
+            "claude-sonnet-5": {w: 500 for w in weeks},
+            "claude-opus-5-5": {w: 450 for w in weeks},
+            "claude-haiku-4-5": {w: 50 for w in weeks}}}
+        result, _ = self._compute(
+            defaults=self.DOWN, models=models, census=census,
+            now=datetime(2026, 10, 12, 12, tzinfo=timezone.utc),
+            previous=self._previous(arms=("claude-sonnet-5", "claude-opus-5-5")))
+        self.assertEqual(sorted(self._arms(result)),
+                         ["claude-opus-5-5", "claude-sonnet-5"])
+
+    def test_the_rendered_roster_carries_the_defaults_block(self):
+        result, _ = self._compute(defaults=self.DEFAULTS)
+        document = yaml.safe_load(render_roster_yaml.render(result, "1", "abc"))
+        self.assertEqual(document["defaults"],
+                         {"source": self.DEFAULTS["source"],
+                          "fetched_at": "2026-09-27T10:00:00Z",
+                          "resolved": {"opus": "claude-opus-5-5",
+                                       "sonnet": "claude-sonnet-5"}})
+        self.assertEqual(roster.committed_roster_problems(document), [])
+        carried, _ = self._compute(defaults=self.DOWN, previous={
+            **self.PREVIOUS, "defaults": document["defaults"]})
+        document = yaml.safe_load(render_roster_yaml.render(carried, "1", "abc"))
+        self.assertIs(document["defaults"]["carried"], True)
+        self.assertEqual(roster.committed_roster_problems(document), [])
+
+    def test_a_changed_resolution_is_a_material_proposal(self):
+        # Otherwise the block could never reach the committed roster on a
+        # run whose arms happen not to move.
+        prev = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                          {"id": "claude-opus-5-5"}]}
+        census = self._later_census(opus5_w40=5, opus55_w40=440)
+        result, _ = self._compute(defaults=self.DEFAULTS, previous=prev,
+                                  census=census, now=self.LATER)
+        change = [c for c in result["proposal"]["changes"]
+                  if c["field"] == "defaults.resolved"]
+        self.assertEqual(len(change), 1, result["proposal"]["changes"])
+        self.assertEqual(change[0]["to"], self.CARRIED["resolved"])
+        self.assertEqual(result["proposal"]["status"], "differs")
+        # The same resolution already committed proposes nothing about it.
+        result, _ = self._compute(defaults=self.DEFAULTS, census=census,
+                                  now=self.LATER,
+                                  previous={**prev, "defaults": self.CARRIED})
+        self.assertEqual([c for c in result["proposal"]["changes"]
+                          if c["field"] == "defaults.resolved"], [])
+
+    def test_no_doc_renders_no_defaults_block(self):
+        result, _ = self._compute()
+        self.assertNotIn("defaults:", render_roster_yaml.render(result, "1", "abc"))
+
+    def test_the_committed_block_is_type_checked(self):
+        base = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
+        good = {**base, "defaults": copy.deepcopy(self.CARRIED)}
+        self.assertEqual(roster.committed_roster_problems(good), [])
+        bad_blocks = {
+            "not a mapping": ["opus"],
+            "resolved not a mapping": {**self.CARRIED, "resolved": ["opus"]},
+            "alias off the ladder": {**self.CARRIED, "resolved": {"opusplan": "claude-opus-5-5"}},
+            "alias badly shaped": {**self.CARRIED, "resolved": {"Opus!": "claude-opus-5-5"}},
+            "id not an id": {**self.CARRIED, "resolved": {"opus": "Opus 5.5 ::error::"}},
+            "too many": {**self.CARRIED, "resolved": {f"a{i}": "claude-opus-5-5"
+                                                      for i in range(17)}},
+            "source junk": {**self.CARRIED, "source": "x::error::y"},
+            "fetched_at junk": {**self.CARRIED, "fetched_at": "yesterday"},
+            "carried not bool": {**self.CARRIED, "carried": "yes"},
+            "unknown key": {**self.CARRIED, "extra": 1},
+        }
+        for label, block in bad_blocks.items():
+            with self.subTest(label):
+                self.assertNotEqual(
+                    roster.committed_roster_problems({**base, "defaults": block}), [])
+
+
 class TestUnresolvedDefaultsFallBack(_RosterFixture):
     """Every way a default can fail to resolve leaves its tier on today's
     rule — the cooling-off included — and says so in a warning."""
@@ -594,6 +889,71 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
                 self.assertTrue(warnings)
                 self.assertFalse(any("::error::" in w for w in warnings), warnings)
                 self.assertNotIn("::error::", json.dumps(result))
+
+
+class TestAliasConflicts(_RosterFixture):
+    """F7 (#203 round 1): conflicting aliases leave their tier unresolved,
+    every one of them recorded and warned about."""
+
+    def test_a_peer_conflict_records_both_aliases(self):
+        defaults = {**self.DEFAULTS, "defaults": {"fable": "Fable 5.1",
+                                                  "mythos": "Fable 5"}}
+        result, warnings = self._compute(defaults=defaults)
+        self.assertEqual(result["defaults"]["resolved"], {})
+        self.assertEqual(sorted(u["alias"] for u in result["defaults"]["unresolved"]),
+                         ["fable", "mythos"])
+        for alias in ("fable", "mythos"):
+            self.assertTrue(any(f"`{alias}`" in w and "peer alias" in w
+                                for w in warnings), (alias, warnings))
+
+    def test_a_third_peer_naming_one_of_them_does_not_resolve_the_tier(self):
+        policy = self._policy(tiers=["haiku", "sonnet", "opus",
+                                     ["fable", "mythos", "fablex"]])
+        defaults = {**self.DEFAULTS, "defaults": {"fable": "Fable 5.1",
+                                                  "mythos": "Fable 5",
+                                                  "fablex": "Fable 5.1"}}
+        result, _ = self._compute(defaults=defaults, policy=policy)
+        self.assertEqual(result["defaults"]["resolved"], {})
+        self.assertEqual(sorted(u["alias"] for u in result["defaults"]["unresolved"]),
+                         ["fable", "fablex", "mythos"])
+
+    def test_case_duplicates_naming_different_models_conflict(self):
+        defaults = {**self.DEFAULTS, "defaults": {"OPUS": "Opus 5", "opus": "Opus 5.5"}}
+        result, warnings = self._compute(defaults=defaults)
+        self.assertNotIn("opus", result["defaults"]["resolved"])
+        self.assertIn("opus", [u["alias"] for u in result["defaults"]["unresolved"]])
+        self.assertTrue(any("`opus`" in w for w in warnings), warnings)
+        self.assertNotIn("vendor default", self._reason(result, "claude-opus-5-5"))
+
+    def test_case_duplicates_naming_the_same_model_dedupe_silently(self):
+        defaults = {**self.DEFAULTS, "defaults": {"OPUS": "Opus 5.5", "opus": "Opus 5.5"}}
+        result, warnings = self._compute(defaults=defaults)
+        self.assertEqual(result["defaults"]["resolved"], {"opus": "claude-opus-5-5"})
+        self.assertEqual(result["defaults"]["unresolved"], [])
+        self.assertEqual(warnings, [])
+
+
+class TestPreflightWordingAtAPositiveCoolingOff(_RosterFixture):
+    """F6 (#203 round 1): at a positive cooling-off the preflight reason is
+    origin/main's, word for word; only at 0 does the new wording apply."""
+
+    def test_a_positive_cooling_off_keeps_the_old_wording(self):
+        for days in (7, 3):
+            with self.subTest(days=days):
+                result, _ = self._compute(policy=self._policy(cooling_off_days=days))
+                self.assertEqual(
+                    result["preflight"]["reason"],
+                    f"newest model in the haiku tier that is past the {days}-day "
+                    f"cooling-off: the lowest tier the Models API still returns, "
+                    f"and this is its cheapest safely-invocable pick")
+
+    def test_zero_uses_the_new_wording(self):
+        result, _ = self._compute(policy=self._policy(cooling_off_days=0))
+        self.assertEqual(
+            result["preflight"]["reason"],
+            "newest model in the haiku tier (no cooling-off applies: "
+            "`cooling_off_days` is 0): the lowest tier the Models API still "
+            "returns, and this is its cheapest safely-invocable pick")
 
 
 class TestNoDefaultsIsByteForByteUnchanged(_RosterFixture):
@@ -729,9 +1089,73 @@ class TestRosterOnlyDispatch(unittest.TestCase):
                 self.assertNotIn("roster_only", str(self.steps[name].get("if", "")))
 
     def test_the_input_never_reaches_a_run_block(self):
+        # Never interpolated: the one run block that reads it does so from
+        # $GITHUB_EVENT_PATH with jq, at run time (#203 round 1).
         for name, step in self.steps.items():
             with self.subTest(step=name):
-                self.assertNotIn("inputs.roster_only", step.get("run", ""))
+                run = step.get("run", "")
+                self.assertNotIn("${{ inputs.roster_only", run)
+                self.assertNotIn("${{ !inputs.roster_only", run)
+                self.assertNotIn("github.event.inputs", run)
+                for line in run.splitlines():
+                    if "roster_only" in line and ".inputs.roster_only" in line:
+                        self.assertIn('"$GITHUB_EVENT_PATH"', line)
+
+    NOTE_START = "# >>> roster-only note"
+    NOTE_END = "# <<< roster-only note"
+
+    def _note_fragment(self):
+        run = self.steps["Propose a roster change"]["run"]
+        self.assertIn(self.NOTE_START, run)
+        start = run.index(self.NOTE_START)
+        end = run.index(self.NOTE_END)
+        return run[start:end]
+
+    def _eval_note(self, event):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "event.json").write_text(json.dumps(event), encoding="utf-8")
+        script = ("set -euo pipefail\n" + self._note_fragment()
+                  + '\nprintf "%s" "$eval_note"\n')
+        done = subprocess.run(["bash", "-c", script], capture_output=True,
+                              text=True, timeout=30,
+                              env={"PATH": os.environ.get("PATH", ""),
+                                   "GITHUB_EVENT_PATH": str(tmp / "event.json")})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout
+
+    @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
+    def test_a_roster_only_run_does_not_claim_an_eval_ran(self):
+        for value in (True, "true"):
+            with self.subTest(value=value):
+                note = self._eval_note({"inputs": {"roster_only": value}})
+                self.assertIn("no eval ran", note)
+                self.assertIn("nothing from this run is published to `eval-results`", note)
+                self.assertNotIn("results will still be published", note)
+
+    @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
+    def test_a_normal_run_says_the_eval_ran_on_the_committed_roster(self):
+        for event in ({"inputs": {"roster_only": False}},
+                      {"inputs": {"roster_only": "false"}},
+                      {"inputs": {"fixture": "evals/x"}}, {"schedule": "0 7 * * 1"}):
+            with self.subTest(event=event):
+                note = self._eval_note(event)
+                self.assertIn("ran on the committed", note)
+                self.assertNotIn("no eval ran", note)
+
+    def test_both_bodies_carry_the_note(self):
+        run = self.steps["Propose a roster change"]["run"]
+        self.assertNotIn("The paid eval ran on the committed", run.replace(
+            self._note_fragment(), ""))
+        self.assertGreaterEqual(run.count('"$eval_note"'), 2)
+
+    def test_the_input_and_readme_say_nothing_is_published(self):
+        spec = self.triggers["workflow_dispatch"]["inputs"]["roster_only"]
+        for text in (spec["description"],
+                     (REPO_ROOT / "README.md").read_text(encoding="utf-8")):
+            flat = " ".join(text.split())
+            self.assertIn("publishes nothing to `eval-results`", flat)
+            self.assertIn("`roster/proposal`", flat)
 
 
 if __name__ == "__main__":

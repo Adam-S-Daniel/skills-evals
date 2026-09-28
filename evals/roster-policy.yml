@@ -110,6 +110,17 @@ arm_enter_window_weeks: 4
 # the signal the cooling-off was standing in for. See `superseded_exit_weeks`
 # below and docs/decisions/0002-roster-follows-vendor-defaults.md.
 #
+# THREE REFINEMENTS (#203 round 1). (1) The default's OWN previous seat does
+# not keep its tier on the roster: with no qualifying usage, no other
+# still-seated previous arm in the tier and a usable census, a default that
+# is a previous arm gets the ordinary exit check below
+# (`arm_exit_usage_pct` over `arm_exit_window_weeks`) and can retire. (2) A
+# run whose docs read fails uses the defaults the committed roster carries in
+# its `defaults:` block, re-checked against this run's catalogue, rather
+# than dropping every tier back to the newest-in-tier rule for one run. (3) A
+# previous arm NEWER than its tier's default earns no new seat but is no
+# longer retired on sight: it gets the same exit check.
+#
 # SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku
 # and preflight." At 0 every model with a `created_at` is past the
 # cooling-off, so the newest-in-tier rule above (for a tier with no resolved
@@ -133,7 +144,11 @@ arm_exit_window_weeks: 8
 # recent such weeks is under `arm_exit_usage_pct`; a stale or too-thin census
 # holds it, as it holds any arm. One week lets the fleet's usage move to the
 # new default before the old one is dropped. 0 retires it on the first run
-# that sees it superseded — the "no buffer" setting.
+# that sees it superseded — the "no buffer" setting. This buffer is for an arm
+# OLDER than the default only (#203 round 1): the default itself, once seated,
+# and a previous arm NEWER than the default are measured by the 8-week exit
+# rule above, and on a docs outage the defaults carried in the committed
+# roster's `defaults:` block decide which is which.
 superseded_exit_weeks: 1
 
 # A census older than this is not evidence of anything current. Past it the
