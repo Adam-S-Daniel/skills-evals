@@ -4036,6 +4036,80 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
                       "scripts/, stashed before the eval-results branch "
                       "switch drops it, never from the downloaded artifact")
 
+    # Anything naming the downloaded artifact: its download path, the
+    # $RUNNER_TEMP snapshot the step copies it into, or that snapshot's
+    # variable.
+    _ARTIFACT_MARKERS = ("results", "$snap", "${snap", "eval-outputs")
+    _INTERPRETERS = {"python", "python3", "bash", "sh", "source", ".",
+                     "node", "perl", "ruby", "exec", "eval", "env",
+                     "xargs", "chmod"}
+    _CONTROL_WORDS = {"if", "then", "elif", "else", "fi", "do", "done",
+                      "while", "until", "!", "{", "}", "(", ")", "time"}
+
+    @classmethod
+    def _commands(cls, script: str) -> list[list[str]]:
+        """Each simple command's words in a `run:` body, one list per
+        command, with control words and leading VAR=value assignments
+        dropped — lexed with shlex (punctuation_chars splits `;`, `&&`,
+        `||`, `|`), never a regex over the raw line."""
+        commands = []
+        for line in script.splitlines():
+            lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lex.whitespace_split = True
+            lex.commenters = "#"
+            try:
+                tokens = list(lex)
+            except ValueError:
+                tokens = line.split()
+            current: list[str] = []
+            for token in tokens + [";"]:
+                if token and set(token) <= set(";&|()"):
+                    if current:
+                        commands.append(current)
+                    current = []
+                    continue
+                if not current and (token in cls._CONTROL_WORDS
+                                    or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", token)):
+                    continue
+                current.append(token)
+        return commands
+
+    def test_publish_executes_nothing_from_the_downloaded_artifact(self):
+        # B1 (round 4 on #209, blocker), item (e), second half: the
+        # downloaded `results/` is DATA, untrusted exactly like
+        # `eval-results`. No command in any `publish` step may be a path
+        # into it, or hand a path into it to an interpreter (`bash
+        # results/x.sh`, `python3 "$snap/results/y.py"`, `. results/env`) —
+        # the make_badge.py test above pins only that one invocation.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        steps = doc["jobs"]["publish"]["steps"]
+        download = [s for s in steps
+                    if (s.get("uses") or "").startswith("actions/download-artifact@")]
+        self.assertEqual(len(download), 1)
+        self.assertEqual((download[0].get("with") or {}).get("path"),
+                         "skills-evals/results",
+                         "the artifact must land in results/, the data "
+                         "directory this test treats as never-executable")
+
+        def names_artifact(word: str) -> bool:
+            return any(m in word for m in self._ARTIFACT_MARKERS)
+
+        for step in steps:
+            self.assertFalse(names_artifact(step.get("working-directory") or ""),
+                             f"step {step.get('name')!r} runs inside the artifact")
+            for words in self._commands(step.get("run") or ""):
+                with self.subTest(step=step.get("name"), command=" ".join(words)):
+                    self.assertFalse(
+                        names_artifact(words[0]),
+                        "a publish command may never BE a path into the "
+                        "downloaded artifact")
+                    if words[0] in self._INTERPRETERS:
+                        self.assertFalse(
+                            any(names_artifact(w) for w in words[1:]),
+                            "a publish command may never hand a path into "
+                            "the downloaded artifact to an interpreter")
+
 
 class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
     """eval.yml is the one workflow holding a live API key; the security
@@ -4165,6 +4239,15 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # not just the workflow) reds it too — that is exactly the defect
         # this test exists to catch.
         doc = self._doc()
+        # (c) The guard covers the workflow's jobs EXACTLY: a sixth job
+        # (with whatever scopes, or none declared) would otherwise slip
+        # past every per-job equality below, which only look up by name.
+        self.assertEqual(
+            sorted(doc["jobs"]),
+            ["disarm", "eval", "publish", "roster", "roster-pr"],
+            "eval.yml must have exactly these five jobs — a new job needs "
+            "its own exact-permissions row here and in "
+            "test_eval_workflow_keeps_its_security_posture")
         self.assertEqual(
             doc.get("permissions"), {},
             "eval.yml's workflow-level permissions must be {} — every scope "
@@ -6027,6 +6110,9 @@ class TestIssue67(unittest.TestCase):
         # `roster-pr` alone — so the bypass-permissions agent's own job
         # never widens.
         self.assertEqual(doc["permissions"], {})
+        # (c) Exactly five jobs, so a sixth can never go unguarded.
+        self.assertEqual(sorted(doc["jobs"]),
+                         ["disarm", "eval", "publish", "roster", "roster-pr"])
         self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "write", "id-token": "write",
                           "issues": "write"})

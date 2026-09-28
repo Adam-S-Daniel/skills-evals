@@ -1581,7 +1581,6 @@ jobs:
           if-no-files-found: ignore
           include-hidden-files: true
 
-  # F2 (adversarial round 1 on #209): everything that touches the
   # B1 (round 4 on #209, blocker): the badge/results commit-and-push,
   # relocated off the `eval` job to a runner the agent never touches. See
   # the header comment above for the full rationale.
