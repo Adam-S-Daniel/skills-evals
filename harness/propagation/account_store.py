@@ -97,6 +97,12 @@ MANIFEST_RELPATH = STORE_RELPATH / MANIFEST_NAME
 BUCKET_MARKER_PREFIX = ".bucket-"
 # Never compared: build detritus that no upload would ever carry.
 IGNORED_NAMES = ("__pycache__", ".git", ".DS_Store")
+# The registry's own record of what SHOULD be on the account store —
+# sync-skills' `--verify` reads the same file. Exactly one match is the
+# contract; zero (the ZIP channel retired) or more than one (which one is
+# authoritative?) means this audit cannot answer "declared but missing"
+# with confidence, so it refuses to run rather than guess.
+ACCOUNT_SKILLS_GLOB = "plugins/*/skills/sync-skills/account-skills.txt"
 
 
 class AuditError(RuntimeError):
@@ -198,6 +204,27 @@ def frontmatter(text: str) -> dict:
     if not isinstance(parsed, dict):
         raise AuditError(f"frontmatter parsed as {type(parsed).__name__}, not a mapping")
     return parsed
+
+
+def read_declared_skills(registry: Path) -> list:
+    """Names the registry says SHOULD be on the account store.
+
+    A name declared here but absent from the account manifest is drift —
+    the ZIP channel silently never delivered it — which a comparison driven
+    only by "what the manifest happens to list" can never see (a store with
+    nothing in its manifest audits as a vacuous pass otherwise). Zero or
+    more than one `ACCOUNT_SKILLS_GLOB` match means the declared list itself
+    cannot be read with confidence, so this raises rather than silently
+    treating "declared nothing" as "declared everything" or vice versa.
+    """
+    matches = sorted(registry.glob(ACCOUNT_SKILLS_GLOB))
+    if len(matches) != 1:
+        raise AuditError(
+            f"expected exactly one {ACCOUNT_SKILLS_GLOB} in the registry, "
+            f"found {len(matches)} — the audit cannot run")
+    lines = matches[0].read_text(encoding="utf-8").splitlines()
+    return [line.strip() for line in lines
+            if line.strip() and not line.strip().startswith("#")]
 
 
 def resolve_store(home: Path) -> Path:
@@ -303,9 +330,24 @@ def audit(home: Path, registry: Path) -> AuditResult:
     if not (registry / "plugins").is_dir():
         raise AuditError(f"{registry} does not look like an adam-agentskills checkout "
                          "(no plugins/ directory)")
+    declared = read_declared_skills(registry)
     result = AuditResult()
     store = resolve_store(home)
-    for record in read_manifest(store):
+    manifest_records = read_manifest(store)
+    manifest_names = {record["name"] for record in manifest_records}
+    for name in declared:
+        if name not in manifest_names:
+            # Declared, and the account manifest carries no entry for it at
+            # all -- a stronger absence than "the copy is missing" below
+            # (that one at least knows the manifest lists it), so it reuses
+            # the same finding kind: either way the account does not have
+            # what it is supposed to have.
+            result.findings.append(SkillFinding(
+                name, "account-copy-missing",
+                f"{name} is declared in the registry's account-skills.txt "
+                "but the account manifest has no entry for it at all"))
+
+    for record in manifest_records:
         name = record["name"]
         source = registry_skill_dir(registry, name)
         if source is None:
@@ -388,6 +430,14 @@ def audit(home: Path, registry: Path) -> AuditResult:
                 f"declares ({len(of_record)} vs {len(expected)} chars) — only "
                 "the description gates invocation, so this skill triggers "
                 "differently on claude.ai than everywhere else"))
+
+    if not result.checked:
+        # Nothing was actually content-compared. Left alone, `status` reads
+        # "pass" whenever `findings` is also empty -- a store with no
+        # registry-owned entries publishes a green result that checked
+        # nothing. This is a fault, not a clean bill of health, so it is
+        # reported the same way an unreadable store is: never published.
+        raise AuditError("vacuous: 0 skills checked")
     return result
 
 
