@@ -48,7 +48,11 @@ happened to accumulate usage on.
    exit check as any previous arm — held on a stale or too-thin census, held
    while at or above `arm_exit_usage_pct` over `arm_exit_window_weeks`, and
    otherwise retired with that evidence (#203 round 1; before it, a seated
-   default could never retire).
+   default could never retire). That exit check reads the TIER's combined
+   share — every model of the default's family, summed over the same
+   denominator — not the default's own (#203 round 2): measured on its own, a
+   tier steady at 5% lost its only arm the week after the fleet moved to the
+   new default. A retirement's evidence reports the tier share and says so.
 3. **Usage picks tiers, not versions.** Inside such a tier a superseded
    model earns no seat from its usage however large; its usage still counts
    toward qualifying the tier. A model newer than the default (a release the
@@ -79,6 +83,31 @@ happened to accumulate usage on.
    flipped every tier to rules 1 and 2 for a run — seating a release the
    vendor had not made the default, and reseating a model the default had
    already retired.
+4b. **A carry expires, and is loud (#203 round 2).** The block's `fetched_at`
+   is the last SUCCESSFUL read. A healthy run proposes refreshing it once the
+   committed value is more than half of `defaults_carry_max_age_days` (new
+   policy key, **14**) whole days old, and routinely before that, so a
+   healthy fleet is not re-proposed every week; a run that starts or stops
+   carrying proposes `carried` changing. A carry older than
+   `defaults_carry_max_age_days` is not used: every tier falls back to rules 1
+   and 2 and the run says the carry expired. Before that, a family in which a
+   model NEWER than the carried default clears the entry bar drops the
+   carried default (staleness evidence: the fleet moved on while the docs
+   were unreadable). A run that carried, or found the carry expired, records
+   `defaults.carried_reason` (failure class, last-read time, age in days) in
+   the published roster, leads the step summary with it, and `eval.yml`
+   emits a `::warning::` and keeps (or opens) the tracking issue even when
+   the proposal status is `same`.
+4c. **A default governs its own family (#203 round 2).** A rung can hold peer
+   families (`[fable, mythos]`, a different access programme). The vendor-
+   default rules apply only to models whose family word — the ladder word in
+   the id — is the resolved alias; a model of another peer family is decided
+   by rules 1 to 3 as before, neither superseded by nor "newer than" another
+   family's default, and its usage does not put that default's tier on the
+   roster. So two peer aliases naming models of their own families both
+   resolve; an alias naming another family's model is unresolved on its own;
+   the one remaining conflict is two spellings of the same family word naming
+   different models.
 5. **Unchanged:** a tier with no resolved default keeps both usage rules
    verbatim, cooling-off included; the preflight pick keeps its cooling-off;
    the judge rule is unchanged. With no usable defaults document — absent,
@@ -101,6 +130,18 @@ happened to accumulate usage on.
   Nothing fails the workflow step. A silently wrong parse is bounded by the
   display-name match: a name that matches no model in its own tier seats
   nothing.
+- **An outage is bounded and visible.** A docs outage longer than
+  `defaults_carry_max_age_days` ends in the usage rules rather than in a
+  default frozen at the last read; a release the fleet moves to during a
+  shorter one is seated as soon as its usage clears the entry bar. Either way
+  every affected run says so in the summary's first lines and in a warning,
+  and the tracking issue stays open. The cost is a `defaults.fetched_at`
+  refresh proposal every other week on a healthy fleet at the shipped 14 days.
+- **A tier between the bars keeps an arm across a version change**, because
+  the seated default's exit check reads the tier's share; a tier the fleet
+  genuinely leaves still retires it by the exit bar.
+- **Peer families are independent.** Documenting a `fable` default neither
+  unseats a heavily used `mythos` model nor changes the judge.
 - **The published roster records what it read** (`defaults`: source, fetch
   time, `{alias: id}`, and unresolved aliases with reasons), so a reviewer of
   a proposal can see why a seat appeared.

@@ -522,7 +522,12 @@ another previous arm in it that is still seated this run, or the no-census
 fallback) — and the seat goes to the default with no cooling-off. The
 default's own previous seat is not one of those: with none of them, a default
 that is a previous arm gets rule 3's exit check (held on a stale or thin
-census, held at or above the exit bar over the exit window, else retired). A
+census, held at or above the exit bar over the exit window, else retired),
+measured on its TIER's combined share — every model of its family, the same
+numerators over the same denominator — so a tier between the exit and entry
+bars is never left with no arm by a version change (#203 round 2). "Its tier"
+is its family: a default governs the models whose family word is its alias,
+and a peer family in the same rung keeps rules 1 to 3. A
 superseded model gets no usage seat; a superseded previous arm is retired once
 `superseded_exit_weeks` complete ISO weeks have passed since the default's
 `created_at` and its share over the most recent such weeks is under the exit
@@ -533,7 +538,14 @@ sight. A failed docs read falls back to the `defaults:` block the committed
 roster carries (the last resolved `{alias: id}`, re-validated against this
 run's catalogue and tier; reasons say "last read <fetched_at>" and name the
 failure class; the published block records `carried: true`), so one outage
-cannot flip every tier to rules 1 and 2 for a run and back. Any other failure
+cannot flip every tier to rules 1 and 2 for a run and back. The carry is
+bounded (#203 round 2): its age runs from the block's `fetched_at`, the last
+successful read, which a healthy run refreshes as a material change once it
+is more than half of `defaults_carry_max_age_days` old; past that age the
+block is not used, and before it a family whose newer model clears the entry
+bar drops its carried default as stale. Carrying (or an expired carry) is
+reported in `defaults.carried_reason`, the head of the step summary, a
+`::warning::`, and a tracking issue that a `same` run keeps open. Any other failure
 to read or resolve a default degrades that tier (or all of them) to rules 1
 and 2, cooling-off included, loudly; with no usable defaults document and no
 carried block the roster is byte-for-byte the one computed without it

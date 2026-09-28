@@ -121,6 +121,14 @@ arm_enter_window_weeks: 4
 # previous arm NEWER than its tier's default earns no new seat but is no
 # longer retired on sight: it gets the same exit check.
 #
+# THREE MORE (#203 round 2). (1) The exit check in refinement (1) reads the
+# TIER's combined share — every model of the default's family, over the same
+# denominator — not the default's own, so a tier between the exit and entry
+# bars keeps an arm while the fleet moves from one version to the next. (2) A
+# default governs the models of its own family word only: a peer family in
+# the same rung (`[fable, mythos]` below) keeps the rules above. (3) The
+# carry in refinement (2) expires: see `defaults_carry_max_age_days`.
+#
 # SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku
 # and preflight." At 0 every model with a `created_at` is past the
 # cooling-off, so the newest-in-tier rule above (for a tier with no resolved
@@ -150,6 +158,22 @@ arm_exit_window_weeks: 8
 # rule above, and on a docs outage the defaults carried in the committed
 # roster's `defaults:` block decide which is which.
 superseded_exit_weeks: 1
+
+# How long the vendor defaults carried in the committed roster's `defaults:`
+# block may stand in for a failed docs read (#203 round 2). The age is whole
+# days since that block's `fetched_at`, which is the last SUCCESSFUL read: a
+# healthy run refreshes it as a material change once the committed value is
+# more than half this old, and routinely before that, so a healthy fleet
+# proposes nothing extra most weeks. Past this age a carry is not used —
+# every tier falls back to the usage and newest-in-tier rules above and the
+# run says the carry expired. Before it, a carried default is still dropped
+# for its tier the moment a NEWER model of its family clears the entry bar
+# (the fleet has moved on without the docs saying so). Either way a run that
+# carried, or found the carry expired, is loud: `defaults.carried_reason` in
+# the computed roster, the first lines of the step summary, a ::warning::
+# from eval.yml, and a tracking issue kept open even when nothing else
+# changed. 14 days is two weekly runs of outage.
+defaults_carry_max_age_days: 14
 
 # A census older than this is not evidence of anything current. Past it the
 # roster falls back to "newest per tier" and says so, in words, in every arm's

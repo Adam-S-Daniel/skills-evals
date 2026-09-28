@@ -542,7 +542,12 @@ seated this run, or there is no usable census): the seat goes to the default
 **at once, with no cooling-off**, and rules 1 and 2 do not apply there. The
 default's own previous seat does not keep its tier on the roster: once
 nothing else does, a seated default gets the ordinary exit check (2% over 8
-weeks) and can retire. A model the default supersedes earns no seat from its
+weeks) and can retire — measured on the TIER's combined share, every model of
+the default's family in it, not its own, so a tier sitting between the 2% exit
+and 10% entry bars keeps an arm while the fleet moves from one version to the
+next (#203 round 2). A default governs the models of its own family word only:
+a peer family in the same rung (`[fable, mythos]`, a different access
+programme) keeps rules 1 and 2. A model the default supersedes earns no seat from its
 usage; a previous arm it supersedes keeps its seat until
 `superseded_exit_weeks` (1) complete ISO weeks have passed since its
 successor's `created_at` **and** its share over those weeks is under the 2%
@@ -552,7 +557,16 @@ the ordinary exit check rather than retiring on sight. When the docs cannot be
 read, the roster uses the defaults the committed `evals/roster.yml` carries in
 its `defaults:` block (the last ones resolved, re-checked against this run's
 catalogue), and its reasons say when they were last read and that this run's
-read failed. A tier whose default did not resolve — or every tier, when the
+read failed. That block's `fetched_at` is the last SUCCESSFUL read, and a
+carry expires `defaults_carry_max_age_days` (14) days after it — every tier
+then falls back to rules 1 and 2 — or sooner for one family, when a model of
+it newer than the carried default clears the entry bar. A healthy run
+refreshes the committed `fetched_at` once it is more than half that age, and
+a run that starts or stops carrying proposes that change. A run that carried,
+or found the carry expired, is loud: `defaults.carried_reason` in the
+published roster, the first lines of the step summary, a `::warning::`, and
+the tracking issue kept (or opened) even when nothing else changed
+([#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203) round 2). A tier whose default did not resolve — or every tier, when the
 docs cannot be read and the committed roster carries no defaults — keeps rules
 1 and 2 verbatim, cooling-off included, and a `roster: ` warning says why. The
 preflight pick applies the cooling-off either way.
