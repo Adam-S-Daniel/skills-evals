@@ -621,7 +621,10 @@ write in it is a fixed `::warning::`, never a failed job, but a failed
 the eval step succeeded, failed or did not run; the step runs before the one
 that publishes to `eval-results`, so for a successful eval it says that
 step publishes next. With no `--defaults` document at all nothing is frozen and the
-roster is byte for byte the one computed without it. The committed `evals/roster.yml` keeps no
+roster is the same one the pre-#202 code computes, with one exception: a
+previous arm whose listed spelling has switched between dated and undated
+since the previous run is still recognised as that arm, rather than reading
+as no longer returned and dropping its seat. The committed `evals/roster.yml` keeps no
 `defaults` block; the published roster's `defaults` (source
 `claude-code-cli <version>`, `probed_at`, resolved and unresolved aliases)
 is there for the reviewer. The preflight pick applies the cooling-off either

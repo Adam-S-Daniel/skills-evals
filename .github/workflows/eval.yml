@@ -856,13 +856,13 @@ jobs:
           if [ "$defaults_failed" -gt 0 ]; then
             failed_word="families"; [ "$defaults_failed" -eq 1 ] && failed_word="family"
             echo "::warning::vendor-default probe failed for $defaults_failed $failed_word; their seats were held"
-            failed_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+            failed_note="**The vendor-default probe failed for $defaults_failed $failed_word this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
           fi
           mismatch_note=""
           if [ "$defaults_mismatched" -gt 0 ]; then
             mismatched_word="families"; [ "$defaults_mismatched" -eq 1 ] && mismatched_word="family"
             echo "::warning::vendor default not matched by this run's catalogue for $defaults_mismatched $mismatched_word; their seats were held"
-            mismatch_note="**A vendor default did not match this run's catalogue for $defaults_mismatched families this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its mismatch class. Nothing is carried over: the next run's probe decides afresh."
+            mismatch_note="**A vendor default did not match this run's catalogue for $defaults_mismatched $mismatched_word this run.** Their seats were held and none retired except models gone from the Models API; a family of theirs gained a seat only if it held none the Models API still lists. The summary below names each family and its mismatch class. Nothing is carried over: the next run's probe decides afresh."
           fi
           if [ -n "$failed_note" ] && [ -n "$mismatch_note" ]; then
             probe_note=$(printf '%s\n\n%s' "$failed_note" "$mismatch_note")

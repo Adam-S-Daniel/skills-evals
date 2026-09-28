@@ -52,7 +52,12 @@ tiers:
 # run: a frozen family holds its previous arms under whichever spelling
 # this run's catalogue lists, and a seated default's tier stays on the
 # roster through another previous arm seated under either spelling (#203
-# probe round 9).
+# probe round 9). A dated snapshot replaced by a DIFFERENT dated snapshot
+# of the same base — the base itself never listed — is a different model,
+# not a rename: the old one retires as no longer returned by the Models
+# API, and, under a freeze that would otherwise leave the family with no
+# held arm left in the API, the new one may still be seated by usage, as a
+# family with no listed seat (#203 adversarial round 10, S1).
 
 # A since-retired model's usage still counts toward the denominator when
 # this harness's own history says it was once in the catalogue: the

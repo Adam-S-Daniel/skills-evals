@@ -154,6 +154,13 @@ happened to accumulate usage on.
    usable enter window — a missing or stale census, or a fresh one whose
    enter window is under the ranked-usage floors — as the newest in its
    tier, exactly as the no-probe fallback would seat it (probe round 3).
+   This is why a dated snapshot replaced by a DIFFERENT dated snapshot of
+   the same base — the base itself never listed — is a different model,
+   not a rename: the old snapshot retires as no longer returned by the
+   Models API rather than being held under the new one, and a freeze that
+   would otherwise leave the family with no held arm left in the API may
+   then seat the new snapshot by usage, as a family with no listed seat
+   (#203 adversarial round 10, S1).
    Without that, a CLI that never initialises unauthenticated emptied the
    roster once the old models left the API. Such a family with a usable
    enter window and no model clearing the entry bar (its default at 0%, for
@@ -186,8 +193,12 @@ happened to accumulate usage on.
 7. **Unchanged:** a family with no default in the document (never probed,
    or `skipped`) keeps both usage rules verbatim, cooling-off included; the
    preflight pick keeps its cooling-off; the judge rule is unchanged. With no
-   defaults document at all the roster is byte-for-byte the one computed
-   without it.
+   defaults document at all the roster is the same one the pre-#202 code
+   computes, with one exception (#203 adversarial round 10, N1): a previous
+   arm whose listed spelling has switched between dated and undated since
+   the previous run is still recognised as that arm — `_seated_form` is not
+   gated on a defaults document existing — rather than reading as no longer
+   returned by the Models API and dropping its seat outright.
 
 ## Consequences
 

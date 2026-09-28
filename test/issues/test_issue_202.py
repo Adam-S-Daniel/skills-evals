@@ -961,8 +961,14 @@ class TestPreflightWordingAtAPositiveCoolingOff(_RosterFixture):
 
 
 class TestNoDefaultsIsByteForByteUnchanged(_RosterFixture):
-    """No probe document at all is the pre-#202 roster, byte for byte. A
-    document that failed entirely is NOT (#203 probe round 1): it freezes
+    """No probe document at all is the same roster the pre-#202 code
+    computes, with one exception (N1, #203 adversarial round 10):
+    `_seated_form`'s recognition of a previous arm whose listed spelling
+    switched between dated and undated is not gated on a defaults document
+    existing, so a renamed previous arm is still held under its new
+    spelling rather than reading as "no longer returned" and dropping its
+    seat outright — see TestNoDocumentStillRecognizesARename. A document
+    that failed entirely is NOT unchanged (#203 probe round 1): it freezes
     every family it could not vouch for — see
     TestFailedProbeFreezesItsFamily."""
 
@@ -1008,6 +1014,24 @@ class TestNoDefaultsIsByteForByteUnchanged(_RosterFixture):
         self.assertIn("none added unless the family holds no seat the Models API "
                       "still lists", said[0])
         self.assertNotIn("usage and newest-in-tier rules", said[0])
+
+
+class TestNoDocumentStillRecognizesARename(_RosterFixture):
+    """N1 (#203 adversarial round 10): with NO defaults document at all,
+    a previous arm whose listed spelling switched between dated and
+    undated since the previous run is still recognized as that arm — the
+    one way the no-document roster is NOT byte-for-byte the pre-#202
+    code's, which just read the dated spelling as gone and dropped the
+    seat. The reviewer's nodoc.py ("dated->alias only")."""
+
+    def test_a_dated_previous_arm_collapses_onto_its_now_listed_alias(self):
+        previous = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                              {"id": "claude-opus-5-20260401"}]}
+        result, _ = self._compute(defaults=None, previous=previous)
+        self.assertIn("claude-opus-5", self._arms(result))
+        why = self._reason(result, "claude-opus-5-20260401", "retired_since_last")
+        self.assertIn("collapsed onto its undated alias `claude-opus-5`", why)
+        self.assertIn("which holds the seat", why)
 
 
 class TestSupersededExitWeeksPolicy(unittest.TestCase):
@@ -1821,6 +1845,36 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
                 self.assertIn("COUNT=0\n", out)
                 self.assertIn("NOTE=\n", out)
 
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_the_failed_note_reuses_the_singular_plural_word(self):
+        # N2 (adv round 10): `failed_note` used to hardcode "families" even
+        # at count 1; it now reuses `$failed_word`, same as the ::warning::.
+        out = self._run_fragment({"proposal": {"status": "same"},
+                                  "defaults_failed": {"opus": "timeout"}})
+        self.assertIn("NOTE=**The vendor-default probe failed for 1 family this run.**",
+                      out)
+        out = self._run_fragment({"proposal": {"status": "same"},
+                                  "defaults_failed": {"opus": "timeout",
+                                                      "sonnet": "no-init"}})
+        self.assertIn("NOTE=**The vendor-default probe failed for 2 families this "
+                      "run.**", out)
+
+    @unittest.skipUnless(shutil.which("bash"), "needs bash")
+    def test_the_mismatch_note_reuses_the_singular_plural_word(self):
+        out = self._run_fragment({"proposal": {"status": "same"},
+                                  "defaults_mismatched": {"opus": {
+                                      "id": "claude-opus-9", "class": "not-available"}}})
+        self.assertIn("NOTE=**A vendor default did not match this run's catalogue "
+                      "for 1 family this run.**", out)
+        out = self._run_fragment({"proposal": {"status": "same"},
+                                  "defaults_mismatched": {
+                                      "opus": {"id": "claude-opus-9",
+                                              "class": "not-available"},
+                                      "sonnet": {"id": "claude-sonnet-9",
+                                                "class": "not-available"}}})
+        self.assertIn("NOTE=**A vendor default did not match this run's catalogue "
+                      "for 2 families this run.**", out)
+
     def test_the_fragment_interpolates_nothing(self):
         fragment = self._fragment()
         self.assertNotIn("${{", fragment)
@@ -1849,7 +1903,10 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
         self.assertTrue(calls[0].startswith("issue create"), calls)
         self.assertIn("probe failed", calls[0])
         self.assertTrue(body.startswith(self.MARKER), body)
-        self.assertIn("The vendor-default probe failed for 1 families", body)
+        # N2 (adv round 10): the note body reuses `$failed_word` too, so
+        # the singular reads "1 family", never "1 families".
+        self.assertIn("The vendor-default probe failed for 1 family this run", body)
+        self.assertNotIn("for 1 families", body)
         self.assertIn("### Model roster", body)
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
@@ -3531,6 +3588,33 @@ class TestR8GenericPathDatedId(_RosterFixture):
                 self.assertIn("claude-haiku-4-5", self._arms(result))
 
 
+class TestR10SeatedInTierWordingNamesTheRename(_RosterFixture):
+    """N3 (adversarial round 10): when `seated_in_tier`'s previous arm is
+    held under a RENAMED spelling — the previous roster's own id
+    (`claude-opus-5`) is not what this run's catalogue lists; `_seated_form`
+    maps it onto the dated snapshot that is (`claude-opus-5-20260401`) — the
+    default's "the tier is on the roster because previous arm `X`" reason
+    named the renamed form `X` a "previous arm", which the previous roster
+    never called it by that spelling. The reviewer's c4.py."""
+
+    def test_the_reason_names_both_the_seated_form_and_the_previous_arm(self):
+        models = self._models_doc(
+            drop=["claude-opus-5"],
+            extra=[self._model("claude-opus-5-20260401", "Claude Opus 5",
+                               "2026-04-01T00:00:00Z")])
+        census = self._census(extra={"claude-opus-5": {w: 50 for w in self.ENTER}})
+        previous = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
+                                              {"id": "claude-opus-5"}]}
+        result, _ = self._compute(defaults=self.DEFAULTS, models=models,
+                                  census=census, previous=previous)
+        self.assertIn("claude-opus-5-20260401", self._arms(result))
+        why = self._reason(result, "claude-opus-5-5")
+        self.assertIn("the tier is on the roster because", why)
+        self.assertIn("`claude-opus-5-20260401` (previous arm `claude-opus-5`) "
+                      "is in it and still seated", why)
+        self.assertNotIn("previous arm `claude-opus-5-20260401`", why)
+
+
 class TestMismatchCandidateSurvivingMutants(_RosterFixture):
     """R5-4 (#203 probe round 5): three mutants that survived round 4's
     mutation pass. Round 4's candidate-selection machinery they targeted is
@@ -4008,6 +4092,39 @@ class TestR9RenamedArmFormSurvivesAFrozenFamily(_WeeklyLoop):
                 self.assertIn("claude-opus-5-20260401", self._arms(result))
                 self.assertIn("held; none retired on",
                               self._reason(result, "claude-opus-5-20260401"))
+
+
+class TestR10RenamedSeatCarriesItsSupersededReason(_RosterFixture):
+    """S2 (adversarial round 10): a previous arm listed under a spelling
+    this run's catalogue no longer carries (`_seated_form` maps it to the
+    id that DOES hold the seat) used to read "no longer returned by the
+    Models API" whenever that seated form had itself just retired this
+    run (e.g. superseded, `superseded_exit_weeks: 0`) — losing the real
+    reason, which lived in `retire_notes` keyed by the seated form, not by
+    the previous roster's old spelling. Fixed: when the seated form is not
+    an arm this run but IS in `retire_notes`, its reason is reused and
+    copied onto the previous roster's own id too."""
+
+    def test_a_renamed_dated_previous_arm_reads_the_same_reason_as_the_control(self):
+        # The previous roster lists the opus seat under a dated id this
+        # run's catalogue no longer lists at all (`claude-opus-5` — the
+        # undated alias — is what THIS run's catalogue has); a clean probe
+        # supersedes it with `claude-opus-5-5`, and `superseded_exit_weeks`
+        # is 0, so the seated form retires at once. The control keeps the
+        # previous arm listed under the literal id this run's catalogue
+        # still lists; both must read the identical "superseded by" reason.
+        policy = self._policy(superseded_exit_weeks=0)
+        renamed_previous = {**self.PREVIOUS, "arms": [
+            {"id": "claude-sonnet-5"}, {"id": "claude-opus-5-20260401"}]}
+        renamed, _ = self._compute(defaults=self.DEFAULTS, previous=renamed_previous,
+                                   policy=policy)
+        control, _ = self._compute(defaults=self.DEFAULTS, previous=self.PREVIOUS,
+                                   policy=policy)
+        control_reason = self._reason(control, "claude-opus-5", "retired_since_last")
+        self.assertIn("superseded by `claude-opus-5-5`", control_reason)
+        renamed_reason = self._reason(renamed, "claude-opus-5-20260401",
+                                      "retired_since_last")
+        self.assertEqual(renamed_reason, control_reason)
 
 
 if __name__ == "__main__":

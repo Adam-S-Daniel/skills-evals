@@ -2133,8 +2133,18 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
                    f"census usage {enter_span} (at or above the {enter_bar}% "
                    f"entry bar)")
         elif seated_in_tier:
-            why = (f"the tier is on the roster because previous arm "
-                   f"`{seated_in_tier[0]}` is in it and still seated")
+            seat, prev_arm, renamed = seated_in_tier[0]
+            # N3 (adversarial round 10): when the previous roster's own
+            # spelling `prev_arm` isn't in THIS run's catalogue at all —
+            # the Models API renamed it between runs, not the ordinary
+            # same-run dated/undated collapse the ASSUMPTION in
+            # roster-policy.yml already treats as one model — say so,
+            # instead of calling the renamed form `seat` itself a
+            # "previous arm", which the previous roster never spelled that
+            # way.
+            named = (f"`{seat}` (previous arm `{prev_arm}`)" if renamed else
+                    f"previous arm `{seat}`")
+            why = f"the tier is on the roster because {named} is in it and still seated"
         elif not enter_usable:
             why = (f"{stale_note}; every tier is on the roster under the "
                    f"no-census fallback" if not usable else
@@ -2924,7 +2934,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         for model in deferred_defaults:
             family = family_of(model["id"], rungs)
             seated_in_tier = sorted(
-                seat for p in previous_arms
+                (seat, p, p not in api_ids) for p in previous_arms
                 if p != model["id"] and family_of(p, rungs) == family
                 and (seat := _seated_form(
                     p, listed=listed, snapshots=snapshots,
@@ -3059,6 +3069,18 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                     noun = ("dated snapshot" if SNAPSHOT_SUFFIX.match(seat)
                             else "undated alias")
                     why = f"collapsed onto its {noun} `{seat}`, which holds the seat"
+                elif (seat is not None and seat != model_id
+                      and seat not in arm_ids and seat in retire_notes):
+                    # The renamed seat itself retired this run (e.g.
+                    # superseded, `superseded_exit_weeks: 0`) — its real
+                    # reason lives in `retire_notes` under the SEATED
+                    # spelling, not the previous roster's old one (S2,
+                    # adversarial round 10). Reuse it, and copy it onto
+                    # `model_id` too so a later `retire_notes[model_id]`
+                    # lookup (or a second renamed arm of the same seat)
+                    # sees the same reason.
+                    why = retire_notes[seat]
+                    retire_notes[model_id] = why
                 else:
                     why = "no longer returned by the Models API"
             elif model_id in unranked_ids:
