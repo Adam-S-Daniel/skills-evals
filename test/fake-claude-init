@@ -39,18 +39,39 @@ specific assertion fail, so that assertion is proven to be doing work:
                        plugin install or a stray project copy looks like)
   account-leak       — honest, plus $FAKE_INIT_ACCOUNT as a synced skill,
                        tagged with the ` (claude.ai sync)` suffix
+
+`--model <alias>` resolves the way the real CLI resolves a family alias
+(#203: `scripts/probe_model_defaults.py` reads that resolution off the init
+event): a word in `ALIASES` becomes its model id, and anything else — `mythos`,
+or an id the caller already spelled out — is echoed back unchanged, which is
+what the real CLI does with a word that is not one of its aliases. Four more
+modes exist for the probe, each the shape of a real failure:
+
+  probe-hang         — prints nothing and never exits (a CLI stuck before init)
+  init-then-hang     — the init event, then never exits (the real CLI goes on
+                       to try the API); the probe must terminate it
+  init-ignore-term   — the same, ignoring SIGTERM, so only SIGKILL ends it
+  junk-model         — an init event whose `model` is not an id at all
 """
 
 from __future__ import annotations
 
 import json
 import os
+import signal
 import sys
+import time
 from pathlib import Path
 
 MODE = os.environ.get("FAKE_INIT_MODE", "simulate")
 BUILTINS = ["fixture-builtin-a", "fixture-builtin-b"]
 ACCOUNT_SUFFIX = " (claude.ai sync)"
+#: What the real CLI resolved each family alias to, measured 2026-09-28 on
+#: 2.1.283 with no credential (#203). Test data: this file is not machinery.
+ALIASES = {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5",
+           "haiku": "claude-haiku-4-5-20251001", "fable": "claude-fable-5-1"}
+#: Long enough that a probe waiting for it would fail its caller's timeout.
+HANG_SECONDS = 600
 
 
 def emit(payload: dict) -> None:
@@ -153,6 +174,9 @@ def main() -> int:
     if MODE == "crash":
         print("fake-claude-init: simulated CLI failure", file=sys.stderr)
         return 1
+    if MODE == "probe-hang":
+        time.sleep(HANG_SECONDS)
+        return 0
 
     skills, plugins, commands = resolve()
 
@@ -175,7 +199,8 @@ def main() -> int:
             "claude_code_version": "0.0.0-fake", "apiKeySource": "none",
             # The real init event names the model the session runs on; the
             # run record copies it per arm (#202).
-            "model": (argv[argv.index("--model") + 1]
+            "model": (ALIASES.get(argv[argv.index("--model") + 1],
+                                  argv[argv.index("--model") + 1])
                       if "--model" in argv[:-1] else "fake-default-model"),
             "cwd": str(Path.cwd()), "tools": ["Read", "Bash"]}
     changed = {"type": "system", "subtype": "commands_changed", "commands": commands}
@@ -186,6 +211,15 @@ def main() -> int:
         init["skills"] = "fixture-alpha"
     elif MODE == "string-bait":
         init["skills"] = list(BUILTINS)
+
+    if MODE == "junk-model":
+        init["model"] = "Opus 5.5\n::error::not an id"
+    if MODE in ("init-then-hang", "init-ignore-term"):
+        if MODE == "init-ignore-term":
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        emit(init)
+        time.sleep(HANG_SECONDS)
+        return 0
 
     if MODE == "index-zero":
         # What the real CLI emits under a scrubbed environment: init FIRST.

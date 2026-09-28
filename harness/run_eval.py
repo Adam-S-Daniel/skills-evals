@@ -1263,9 +1263,9 @@ def _build_judge_diff(workspace: Path) -> str:
 
 # ---------------------------------------------------------------------------
 # What ran (#202). The owner's decision of 2026-09-27 unpinned the harness —
-# CI uses the Claude Code already on the runner, else installs the latest —
-# so every run records the version it actually got, and the model(s) that
-# actually served each arm, rather than leaving either to a pin or a flag.
+# CI now always installs the npm latest (#203, 2026-09-28) — so every run
+# records the version it actually got, and the model(s) that actually served
+# each arm, rather than leaving either to a pin or a flag.
 # ---------------------------------------------------------------------------
 
 HARNESS_NAME = "claude-code"

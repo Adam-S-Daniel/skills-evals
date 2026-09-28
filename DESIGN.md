@@ -513,10 +513,14 @@ of its own: it reads rule 1's entry bar, and every number stays in
 **Vendor defaults override both rules where they resolve (2026-09-27, Adam's
 decision, #202, ADR 0002).** Evals are valued going forward only, so the
 roster follows the vendor's default version of each family rather than the
-fleet's usage of individual versions. `scripts/fetch_model_defaults.py` parses
-the Markdown model-config docs (the "Anthropic API" row of the alias table,
-and the `fable` resolution sentence); `roster.py` matches each display name to
-exactly one available model in the alias's own tier. In such a tier usage has
+fleet's usage of individual versions. `scripts/probe_model_defaults.py` asks
+the Claude Code CLI CI has just installed at the npm latest, with no
+credential and a scrubbed environment, which model each family alias on the
+ladder resolves to — the `model` of the first `system/init` event, read before
+anything is sent to a model, after which the CLI is terminated (#203); a word
+the CLI echoes back is not an alias and is skipped. `roster.py` takes the
+reported id when it is an available model (a dated snapshot collapsed onto its
+alias stands for it) of the alias's own family. In such a tier usage has
 one job left — putting the tier on the roster (a model clearing the entry bar,
 another previous arm in it that is still seated this run, or the no-census
 fallback) — and the seat goes to the default with no cooling-off. The
@@ -534,22 +538,14 @@ superseded model gets no usage seat; a superseded previous arm is retired once
 bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
 applies to it). A model newer than the default earns no new seat, and a
 previous arm newer than it gets rule 3's exit check instead of retiring on
-sight. A failed docs read falls back to the `defaults:` block the committed
-roster carries (the last resolved `{alias: id}`, re-validated against this
-run's catalogue and tier; reasons say "last read <fetched_at>" and name the
-failure class; the published block records `carried: true`), so one outage
-cannot flip every tier to rules 1 and 2 for a run and back. The carry is
-bounded (#203 round 2): its age runs from the block's `fetched_at`, the last
-successful read, which a healthy run refreshes as a material change once it
-is more than half of `defaults_carry_max_age_days` old; past that age the
-block is not used, and before it a family whose newer model clears the entry
-bar drops its carried default as stale. Carrying (or an expired carry) is
-reported in `defaults.carried_reason`, the head of the step summary, a
-`::warning::`, and a tracking issue that a `same` run keeps open. Any other failure
-to read or resolve a default degrades that tier (or all of them) to rules 1
-and 2, cooling-off included, loudly; with no usable defaults document and no
-carried block the roster is byte-for-byte the one computed without it
-(#203 round 1).
+sight. Nothing is carried over a failed probe (#203; a carried-defaults
+block with an expiry briefly stood here and is gone): the CLI the probe asks
+is the one the eval runs on, so a probe that fails means the eval cannot run
+either. Any failure to probe or resolve a default degrades that tier (or all
+of them) to rules 1 and 2, cooling-off included, loudly; with no usable
+defaults document the roster is byte-for-byte the one computed without it.
+The committed roster keeps no `defaults` block; the published one records
+the CLI version, `probed_at`, and the resolved and unresolved aliases.
 The preflight keeps its cooling-off, and the judge rule is unchanged.
 
 **The cooling-off is 0 and the harness is unpinned (2026-09-27, the owner's
@@ -557,8 +553,10 @@ decision, #202, ADR 0002's update).** `cooling_off_days: 0` makes every model
 with a `created_at` "past" it, so rule 2 and the preflight pick take the
 newest model at once; the reasons say "no cooling-off applies" rather than
 "past the 0-day cooling-off", and the machinery stays so a positive value
-restores it. The CI install uses the Claude Code already on the runner, else
-`@latest`, still ahead of any credential; since a pin no longer names the
+restores it. The CI install always takes the npm latest (#203: never a CLI
+already on the runner, a plain `MAJOR.MINOR.PATCH` only, and a `claude` on
+PATH reporting any other version fails the step), still ahead of any
+credential; since a pin no longer names the
 version, each run records it — the step summary, and in every arm's
 `summary.json` `harness.version` beside `models_used` (the agent result's
 `modelUsage` keys) and `judge_models_used` (the judge's), all three present on

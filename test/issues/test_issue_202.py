@@ -3,16 +3,17 @@
 the version it superseded retires after a buffer of complete ISO weeks
 under the exit bar.
 
-Three pieces, each tested here: `scripts/fetch_model_defaults.py` (reads the
-Claude Code model-config docs page for which version each alias resolves
-to), `harness/roster.py`'s `defaults_doc`/`--defaults` (seats that default and
-retires what it superseded), and `harness/timeweeks.py`'s complete-week
-helper the buffer is counted with.
+Three pieces, each tested here: `scripts/probe_model_defaults.py` (asks the
+freshly installed Claude Code CLI, with no credential, which model each
+family alias resolves to — #203), `harness/roster.py`'s
+`defaults_doc`/`--defaults` (seats that default and retires what it
+superseded), and `harness/timeweeks.py`'s complete-week helper the buffer is
+counted with.
 
-Hermetic, like the rest of the suite: the docs parser is exercised on
-Markdown strings in this file, never a live fetch — `urlopen` is patched to
-raise wherever a test reaches the script's fetch path by accident — and every
-roster call runs on a frozen `now`.
+Hermetic, like the rest of the suite: the probe runs against
+`test/fake-claude-init` (through a small wrapper that fixes its mode, because
+the probe scrubs the environment it would otherwise be read from), never the
+real CLI, and every roster call runs on a frozen `now`.
 
 Discovered and run by test/run_tests.py (see `build_suite`/`DISCOVERY_DIR`
 there); also runnable on its own with `python3 test/issues/test_issue_202.py`,
@@ -24,16 +25,15 @@ from __future__ import annotations
 
 import contextlib
 import copy
-import http.client
 import io
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
-import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -46,259 +46,229 @@ HARNESS_DIR = REPO_ROOT / "harness"
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
 EVAL_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
+PROBE = SCRIPTS_DIR / "probe_model_defaults.py"
+FAKE_CLAUDE_INIT = TEST_DIR / "fake-claude-init"
+FAKE_VERSION_LINE = "fake-claude-init 0.0.0 (hermetic propagation stub)"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import roster  # noqa: E402
 import timeweeks  # noqa: E402
 
 sys.path.insert(0, str(SCRIPTS_DIR))
-import fetch_model_defaults  # noqa: E402
 import render_roster_yaml  # noqa: E402
 
-
-# The live page's relevant excerpt as of 2026-09-27, cell padding trimmed.
-# Two traps it carries on purpose: the `best` row's "[`fable` alias resolves
-# to](...)" sits inside a LINK with no name after it, and the `sonnet[1m]`
-# row's "`sonnet` already resolves to Sonnet 5" is not the alias sentence.
-LIVE_EXCERPT = """\
-### Model aliases
-
-Use a model alias to select model settings without remembering exact version numbers:
-
-| Model alias      | Behavior |
-| ---------------- | -------- |
-| **`default`**    | Special value that clears any model override and reverts to the [runtime default for your account](#default-model-setting). Not itself a model alias |
-| **`best`**       | Uses the model the [`fable` alias resolves to](#fable-alias-resolution) where Fable is available to you, otherwise the same model as `opus` |
-| **`fable`**      | Uses the [Fable model for your provider](#fable-alias-resolution) for your hardest and longest-running tasks |
-| **`sonnet`**     | Uses the latest Sonnet model for daily coding tasks |
-| **`opus`**       | Uses the latest Opus model for complex reasoning tasks |
-| **`haiku`**      | Uses the fast and efficient Haiku model for simple tasks |
-| **`sonnet[1m]`** | Uses Sonnet with a [1 million token context window](https://example.com/cw) for long sessions. No effect when `sonnet` already resolves to Sonnet 5 with its native 1M window |
-
-The version that the `opus` and `sonnet` aliases resolve to depends on the provider:
-
-| Provider                                             | `opus`   | `sonnet`   |
-| :--------------------------------------------------- | :------- | :--------- |
-| Anthropic API                                        | Opus 5.5 | Sonnet 5   |
-| [Claude Platform on AWS](/docs/en/claude-platform-on-aws) | Opus 5.5 | Sonnet 4.6 |
-| Amazon Bedrock, Google Cloud's Agent Platform        | Opus 5.5 | Sonnet 4.5 |
-| Microsoft Foundry                                    | Opus 4.6 | Sonnet 4.5 |
-
-<span id="fable-alias-resolution" />
-
-Unless you set `ANTHROPIC_DEFAULT_FABLE_MODEL`, the `fable` alias resolves to Fable 5.1, except in [Claude apps gateway](/docs/en/claude-apps-gateway) sessions, where `fable` and `best` resolve to Fable 5. Before v2.1.257, `fable` resolved to Fable 5 on every provider.
-
-Before v2.1.280, `opus` resolved to Opus 5 on the Anthropic API.
-"""
+#: The variables a scrubbed probe environment may carry. `LC_CTYPE` is not
+#: the probe's: Python sets it itself at start-up when the locale is `C`
+#: (PEP 538 coercion), and the wrapper that records the environment is Python.
+PROBE_ENV_ALLOWED = {"PATH", "HOME", "LANG", "XDG_CONFIG_HOME", "XDG_CACHE_HOME",
+                     "XDG_DATA_HOME", "XDG_STATE_HOME", "LC_CTYPE"}
+CREDENTIAL_NAME = re.compile(r"^(ANTHROPIC_|CLAUDE_|AWS_|GOOGLE_)|TOKEN|KEY",
+                             re.IGNORECASE)
 
 
-def _no_network(*_args, **_kwargs):
-    raise AssertionError("a hermetic test reached urllib.request.urlopen")
+class TestProbeScript(unittest.TestCase):
+    """`scripts/probe_model_defaults.py` (#203): the vendor defaults come
+    from the freshly installed CLI, probed with NO credential."""
 
-
-class TestParseDefaults(unittest.TestCase):
-    """`parse_defaults` — a real Markdown parse, never a line scan."""
-
-    def test_the_live_page_shape_gives_opus_sonnet_and_fable(self):
-        self.assertEqual(fetch_model_defaults.parse_defaults(LIVE_EXCERPT),
-                         {"opus": "Opus 5.5", "sonnet": "Sonnet 5",
-                          "fable": "Fable 5.1"})
-
-    def test_a_table_alone_is_enough(self):
-        text = ("| Provider | `opus` | `sonnet` |\n| --- | --- | --- |\n"
-                "| Anthropic API | Opus 6 | Sonnet 6.1 |\n")
-        self.assertEqual(fetch_model_defaults.parse_defaults(text),
-                         {"opus": "Opus 6", "sonnet": "Sonnet 6.1"})
-
-    def test_prose_alone_is_enough(self):
-        text = "Plainly, the `fable` alias resolves to Fable 6, everywhere.\n"
-        self.assertEqual(fetch_model_defaults.parse_defaults(text),
-                         {"fable": "Fable 6"})
-
-    def test_the_table_beats_the_prose_for_the_same_alias(self):
-        text = ("The `opus` alias resolves to Opus 4 on old versions.\n\n"
-                "| Provider | `opus` |\n| --- | --- |\n"
-                "| Anthropic API | Opus 5.5 |\n")
-        self.assertEqual(fetch_model_defaults.parse_defaults(text),
-                         {"opus": "Opus 5.5"})
-
-    def test_a_row_for_another_provider_is_ignored(self):
-        text = ("| Provider | `opus` |\n| --- | --- |\n"
-                "| Microsoft Foundry | Opus 4.6 |\n"
-                "| Anthropic API (legacy) | Opus 4 |\n")
-        self.assertEqual(fetch_model_defaults.parse_defaults(text), {})
-
-    def test_alias_columns_come_from_the_header_not_a_hardcoded_list(self):
-        text = ("| Provider | `haiku` | `opus` |\n| --- | --- | --- |\n"
-                "| Anthropic API | Haiku 5 | Opus 5.5 |\n")
-        self.assertEqual(fetch_model_defaults.parse_defaults(text),
-                         {"haiku": "Haiku 5", "opus": "Opus 5.5"})
-
-    def test_a_table_whose_first_header_is_not_provider_is_ignored(self):
-        text = ("| Vendor | `opus` |\n| --- | --- |\n"
-                "| Anthropic API | Opus 5.5 |\n")
-        self.assertEqual(fetch_model_defaults.parse_defaults(text), {})
-
-    def test_garbage_gives_an_empty_mapping(self):
-        for text in ("", "not markdown at all {]", "<html><body>503</body></html>",
-                     "| a | b |\n| - | - |\n| c | d |\n"):
-            with self.subTest(text=text[:20]):
-                self.assertEqual(fetch_model_defaults.parse_defaults(text), {})
-
-
-class TestFetchScript(unittest.TestCase):
-    """The CLI: writes the documented JSON, and a failure is not fatal."""
+    #: What the fake resolves the shipped ladder's aliases to.
+    RESOLVED = {"haiku": "claude-haiku-4-5-20251001", "sonnet": "claude-sonnet-5",
+                "opus": "claude-opus-5-5", "fable": "claude-fable-5-1"}
 
     def setUp(self):
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
-    def _main(self, *argv):
-        err = io.StringIO()
-        with mock.patch.object(sys, "argv", ["fetch_model_defaults.py", *argv]), \
-             mock.patch("urllib.request.urlopen", _no_network), \
-             contextlib.redirect_stderr(err), \
-             contextlib.redirect_stdout(io.StringIO()):
-            rc = fetch_model_defaults.main()
-        return rc, err.getvalue()
+    def _wrapper(self, mode="simulate", *, dump=None, version=None):
+        """A `claude` that records the environment it was given (one JSON
+        line per call) and then runs the fake in `mode`. The mode cannot
+        reach the fake through the environment: the probe scrubs it."""
+        path = self.tmp / f"claude-{mode}"
+        path.write_text(
+            f"#!{sys.executable}\n"
+            "import json, os, sys\n"
+            f"dump = {str(dump) if dump else None!r}\n"
+            "if dump:\n"
+            "    home = os.environ.get('HOME', '')\n"
+            "    record = {'env': dict(os.environ), 'cwd': os.getcwd(),\n"
+            "              'home_is_dir': os.path.isdir(home),\n"
+            "              'home_listing': sorted(os.listdir(home))\n"
+            "              if os.path.isdir(home) else None}\n"
+            "    with open(dump, 'a', encoding='utf-8') as f:\n"
+            "        f.write(json.dumps(record) + '\\n')\n"
+            f"if {version!r} is not None and '--version' in sys.argv:\n"
+            f"    sys.stdout.write({version!r})\n"
+            "    sys.exit(0)\n"
+            f"os.environ['FAKE_INIT_MODE'] = {mode!r}\n"
+            f"os.execv(sys.executable, [sys.executable, {str(FAKE_CLAUDE_INIT)!r}]"
+            " + sys.argv[1:])\n", encoding="utf-8")
+        path.chmod(0o755)
+        return path
 
-    def test_from_file_writes_the_documented_json(self):
-        page = self.tmp / "mc.md"
-        page.write_text(LIVE_EXCERPT, encoding="utf-8")
-        out = self.tmp / "defaults.json"
-        rc, _ = self._main("--from-file", str(page), "--out", str(out))
-        self.assertEqual(rc, 0)
-        doc = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual(sorted(doc), ["defaults", "error", "fetched_at", "source"])
-        self.assertEqual(doc["defaults"], {"opus": "Opus 5.5", "sonnet": "Sonnet 5",
-                                           "fable": "Fable 5.1"})
-        self.assertIsNone(doc["error"])
-        self.assertEqual(doc["source"], str(page))
-        self.assertIsNotNone(timeweeks.parse_ts(doc["fetched_at"]))
+    def _policy(self, tiers):
+        path = self.tmp / "policy.yml"
+        path.write_text(yaml.safe_dump({"tiers": tiers}), encoding="utf-8")
+        return path
 
-    def test_a_missing_file_is_not_fatal(self):
+    def _probe(self, claude, *extra, env=None, timeout=120):
         out = self.tmp / "defaults.json"
-        rc, err = self._main("--from-file", str(self.tmp / "absent.md"),
-                             "--out", str(out))
-        self.assertEqual(rc, 0)
-        doc = json.loads(out.read_text(encoding="utf-8"))
+        done = subprocess.run(
+            [sys.executable, str(PROBE), "--claude", str(claude), "--out", str(out),
+             *extra], capture_output=True, text=True, timeout=timeout,
+            env=env if env is not None else dict(os.environ))
+        document = (json.loads(out.read_text(encoding="utf-8"))
+                    if out.is_file() else None)
+        return done, document
+
+    def test_the_shipped_ladder_resolves_four_and_skips_mythos(self):
+        done, doc = self._probe(self._wrapper())
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], self.RESOLVED)
+        self.assertEqual(doc["skipped"], ["mythos"])
+        self.assertEqual(doc["errors"], {})
+        self.assertEqual(doc["harness_version"], FAKE_VERSION_LINE)
+        self.assertIsNotNone(timeweeks.parse_ts(doc["probed_at"]))
+        self.assertEqual(set(doc), {"probed_at", "harness_version", "defaults",
+                                    "skipped", "errors"})
+
+    def test_the_aliases_come_from_the_policy_ladder(self):
+        policy = self._policy(["haiku", ["opus", "zeta"]])
+        done, doc = self._probe(self._wrapper(), "--policy", str(policy))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], {"haiku": self.RESOLVED["haiku"],
+                                           "opus": self.RESOLVED["opus"]})
+        self.assertEqual(doc["skipped"], ["zeta"])
+
+    def test_a_cli_that_exits_before_init_is_no_init(self):
+        policy = self._policy(["opus", "sonnet"])
+        for mode in ("crash", "no-init"):
+            with self.subTest(mode=mode):
+                done, doc = self._probe(self._wrapper(mode), "--policy", str(policy))
+                self.assertEqual(done.returncode, 0, done.stderr)
+                self.assertEqual(doc["defaults"], {})
+                self.assertEqual(doc["errors"], {"opus": "no-init",
+                                                  "sonnet": "no-init"})
+
+    def test_a_cli_that_hangs_before_init_times_out(self):
+        policy = self._policy(["opus"])
+        done, doc = self._probe(self._wrapper("probe-hang"), "--policy", str(policy),
+                                "--timeout", "0.5", timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["errors"], {"opus": "timeout"})
         self.assertEqual(doc["defaults"], {})
-        self.assertEqual(doc["error"], "FileNotFoundError")
-        self.assertIn("fetch_model_defaults: ", err)
 
-    def test_a_page_with_nothing_in_it_records_no_defaults_found(self):
-        page = self.tmp / "mc.md"
-        page.write_text("# Nothing here\n", encoding="utf-8")
-        out = self.tmp / "defaults.json"
-        rc, _ = self._main("--from-file", str(page), "--out", str(out))
-        self.assertEqual(rc, 0)
-        doc = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual(doc, {**doc, "defaults": {}, "error": "no-defaults-found"})
+    def test_a_junk_model_is_bad_model_and_never_echoed(self):
+        policy = self._policy(["opus"])
+        done, doc = self._probe(self._wrapper("junk-model"), "--policy", str(policy))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["errors"], {"opus": "bad-model"})
+        self.assertEqual(doc["defaults"], {})
+        for text in (done.stdout, done.stderr, json.dumps(doc)):
+            self.assertNotIn("::error::", text)
+            self.assertNotIn("Opus 5.5", text)
 
-    def test_an_http_error_records_the_status_only_and_is_not_fatal(self):
-        def refuse(request, timeout=None):
-            raise urllib.error.HTTPError(request.full_url, 503, "secret body text",
-                                         {}, io.BytesIO(b"secret body text"))
-        out = self.tmp / "defaults.json"
-        err = io.StringIO()
-        with mock.patch.object(sys, "argv", ["x", "--out", str(out)]), \
-             mock.patch("urllib.request.urlopen", refuse), \
-             contextlib.redirect_stderr(err), \
-             contextlib.redirect_stdout(io.StringIO()):
-            rc = fetch_model_defaults.main()
-        self.assertEqual(rc, 0)
-        doc = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual((doc["defaults"], doc["error"]), ({}, "HTTP 503"))
-        self.assertEqual(doc["source"], fetch_model_defaults.DOCS_URL)
-        self.assertNotIn("secret", err.getvalue() + out.read_text(encoding="utf-8"))
+    def test_junk_lines_before_the_init_event_are_skipped(self):
+        policy = self._policy(["opus"])
+        done, doc = self._probe(self._wrapper("garbage-lines"), "--policy", str(policy))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], {"opus": self.RESOLVED["opus"]})
 
-    def _raising(self, exc):
-        def boom(request, timeout=None):
-            raise exc
-        out = self.tmp / "defaults.json"
-        err = io.StringIO()
-        with mock.patch.object(sys, "argv", ["x", "--out", str(out)]), \
-             mock.patch("urllib.request.urlopen", boom), \
-             contextlib.redirect_stderr(err), \
-             contextlib.redirect_stdout(io.StringIO()):
-            rc = fetch_model_defaults.main()
-        return rc, out, err.getvalue()
+    def test_the_cli_is_terminated_after_the_init_event(self):
+        # The fake hangs for 600 s after init; a probe that waited for it
+        # would blow this call's 60 s timeout long before its own 120 s one.
+        policy = self._policy(["opus", "sonnet"])
+        done, doc = self._probe(self._wrapper("init-then-hang"), "--policy",
+                                str(policy), "--timeout", "120", timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], {"opus": self.RESOLVED["opus"],
+                                           "sonnet": self.RESOLVED["sonnet"]})
 
-    def test_an_http_protocol_error_still_writes_out(self):
-        # F3 (#203 round 1): IncompleteRead is an HTTPException, not an
-        # OSError, and used to escape as a traceback with no --out written.
-        rc, out, err = self._raising(http.client.IncompleteRead(b"secret partial"))
-        self.assertEqual(rc, 0)
-        doc = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual((doc["defaults"], doc["error"]), ({}, "IncompleteRead"))
-        self.assertIn("IncompleteRead", err)
-        self.assertNotIn("secret", err + out.read_text(encoding="utf-8"))
+    def test_a_cli_that_ignores_sigterm_is_killed(self):
+        policy = self._policy(["opus"])
+        done, doc = self._probe(self._wrapper("init-ignore-term"), "--policy",
+                                str(policy), "--timeout", "120", timeout=60)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["defaults"], {"opus": self.RESOLVED["opus"]})
 
-    def test_any_other_exception_still_writes_out(self):
-        rc, out, err = self._raising(RuntimeError("secret detail"))
-        self.assertEqual(rc, 0)
-        doc = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual((doc["defaults"], doc["error"]), ({}, "RuntimeError"))
-        self.assertIn("RuntimeError", err)
-        self.assertNotIn("secret", err + out.read_text(encoding="utf-8"))
+    def test_the_environment_is_scrubbed_and_home_is_a_fresh_temp_dir(self):
+        dump = self.tmp / "env.jsonl"
+        env = dict(os.environ, ANTHROPIC_API_KEY="k", ANTHROPIC_AUTH_TOKEN="t",
+                   CLAUDE_CODE_OAUTH_TOKEN="t", AWS_SECRET_ACCESS_KEY="k",
+                   GOOGLE_APPLICATION_CREDENTIALS="/x", GH_TOKEN="t",
+                   SOME_API_KEY="k", HOME=str(self.tmp / "real-home"))
+        policy = self._policy(["opus", "sonnet"])
+        done, doc = self._probe(self._wrapper(dump=dump), "--policy", str(policy),
+                                env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(len(doc["defaults"]), 2)
+        records = [json.loads(line) for line in
+                   dump.read_text(encoding="utf-8").splitlines()]
+        # `--version` once, then one call per alias.
+        self.assertEqual(len(records), 3)
+        homes = set()
+        for record in records:
+            names = set(record["env"])
+            self.assertLessEqual(names, PROBE_ENV_ALLOWED, names - PROBE_ENV_ALLOWED)
+            self.assertEqual([n for n in names if CREDENTIAL_NAME.search(n)], [])
+            home = record["env"]["HOME"]
+            self.assertNotEqual(home, env["HOME"])
+            self.assertTrue(record["home_is_dir"])
+            self.assertEqual(record["home_listing"],
+                             sorted(p for p in record["home_listing"]
+                                    if p in (".config", ".cache", ".local")))
+            for key in ("XDG_CONFIG_HOME", "XDG_CACHE_HOME", "XDG_DATA_HOME",
+                        "XDG_STATE_HOME"):
+                self.assertTrue(record["env"][key].startswith(home + os.sep), key)
+            self.assertEqual(record["env"]["LANG"], "C")
+            self.assertEqual(record["cwd"], os.path.realpath(home))
+            homes.add(home)
+            # Removed afterwards.
+            self.assertFalse(Path(home).exists(), home)
+        self.assertEqual(len(homes), 3, "every CLI call gets its own fresh HOME")
 
-    def test_the_docstring_no_longer_says_ci_pins_the_cli(self):
-        self.assertNotIn("CI's is pinned", fetch_model_defaults.__doc__)
+    def test_scrubbed_env_keeps_nothing_from_the_parent(self):
+        import probe_model_defaults
+        parent = {"PATH": "/bin", "ANTHROPIC_API_KEY": "k", "CLAUDE_CONFIG_DIR": "/c",
+                  "AWS_PROFILE": "p", "GOOGLE_CLOUD_PROJECT": "g", "MY_TOKEN": "t",
+                  "DEPLOY_KEY": "k", "HOME": "/root", "USER": "u"}
+        with mock.patch.dict(os.environ, parent, clear=True):
+            env = probe_model_defaults.scrubbed_env(Path("/tmp/probe-home"))
+        self.assertEqual(env["PATH"], "/bin")
+        self.assertEqual(env["HOME"], "/tmp/probe-home")
+        self.assertEqual(env["LANG"], "C")
+        self.assertLessEqual(set(env), PROBE_ENV_ALLOWED - {"LC_CTYPE"})
 
-    def test_a_fetched_page_is_parsed(self):
-        class Response(io.BytesIO):
-            def __enter__(self):
-                return self
+    def test_a_missing_binary_writes_out_with_the_class_only(self):
+        missing = self.tmp / "no-such-claude"
+        policy = self._policy(["opus", "sonnet"])
+        done, doc = self._probe(missing, "--policy", str(policy))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["errors"], {"opus": "FileNotFoundError",
+                                         "sonnet": "FileNotFoundError"})
+        self.assertIsNone(doc["harness_version"])
+        self.assertNotIn(str(self.tmp), done.stdout + done.stderr)
 
-            def __exit__(self, *exc):
-                return False
-        seen = []
-
-        def serve(request, timeout=None):
-            seen.append(request.full_url)
-            return Response(LIVE_EXCERPT.encode("utf-8"))
-        out = self.tmp / "defaults.json"
-        with mock.patch.object(sys, "argv", ["x", "--url", "https://example.com/mc.md",
-                                             "--out", str(out)]), \
-             mock.patch("urllib.request.urlopen", serve), \
-             contextlib.redirect_stdout(io.StringIO()):
-            rc = fetch_model_defaults.main()
-        self.assertEqual(rc, 0)
-        self.assertEqual(seen, ["https://example.com/mc.md"])
-        doc = json.loads(out.read_text(encoding="utf-8"))
-        self.assertEqual(doc["defaults"]["opus"], "Opus 5.5")
-        self.assertEqual(doc["source"], "https://example.com/mc.md")
-
-    def test_the_request_names_its_own_user_agent(self):
-        # The docs host answers urllib's default `Python-urllib/3.x` agent with
-        # HTTP 403 and a named one with 200 (measured 2026-09-27), so without
-        # this header every CI run silently degrades to newest-in-tier.
-        seen = []
-
-        def capture(request, timeout=None):
-            seen.append(request.get_header("User-agent") or "")
-            raise OSError("stop after capturing the request")
-        out = self.tmp / "defaults.json"
-        with mock.patch.object(sys, "argv", ["x", "--out", str(out)]), \
-             mock.patch("urllib.request.urlopen", capture), \
-             contextlib.redirect_stdout(io.StringIO()), \
-             contextlib.redirect_stderr(io.StringIO()):
-            fetch_model_defaults.main()
-        self.assertEqual(len(seen), 1)
-        self.assertTrue(seen[0].startswith("skills-evals-roster"), seen[0])
-
-    def test_the_default_url_is_the_markdown_model_config_page(self):
-        self.assertEqual(fetch_model_defaults.DOCS_URL,
-                         "https://code.claude.com/docs/en/model-config.md")
+    def test_the_harness_version_is_sanitised_first_line(self):
+        policy = self._policy(["opus"])
+        done, doc = self._probe(self._wrapper(version="2.1.283 `(Claude Code)` ::x\n"
+                                                      "second line\n"),
+                                "--policy", str(policy))
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(doc["harness_version"], "2.1.283 (Claude Code) x")
+        done, doc = self._probe(self._wrapper(version="`::`\n"), "--policy", str(policy))
+        self.assertIsNone(doc["harness_version"])
 
     def test_an_unwritable_out_is_a_usage_error(self):
-        page = self.tmp / "mc.md"
-        page.write_text(LIVE_EXCERPT, encoding="utf-8")
-        blocker = self.tmp / "file"
-        blocker.write_text("", encoding="utf-8")
-        rc, _ = self._main("--from-file", str(page),
-                           "--out", str(blocker / "defaults.json"))
-        self.assertNotEqual(rc, 0)
+        blocker = self.tmp / "blocker"
+        blocker.write_text("x", encoding="utf-8")
+        done = subprocess.run(
+            [sys.executable, str(PROBE), "--claude", str(self._wrapper()),
+             "--policy", str(self._policy(["opus"])),
+             "--out", str(blocker / "defaults.json")],
+            capture_output=True, text=True, timeout=120)
+        self.assertNotEqual(done.returncode, 0)
+
+    def test_the_fetch_script_is_gone(self):
+        self.assertFalse((SCRIPTS_DIR / "fetch_model_defaults.py").exists())
 
 
 class TestCompleteWeeks(unittest.TestCase):
@@ -392,10 +362,14 @@ class _RosterFixture(unittest.TestCase):
                 "preflight": {"id": "claude-haiku-4-5"},
                 "catalogue_seen": []}
 
-    DEFAULTS = {"fetched_at": "2026-09-27T10:00:00Z",
-                "source": "https://code.claude.com/docs/en/model-config.md",
-                "defaults": {"opus": "Opus 5.5", "sonnet": "Sonnet 5"},
-                "error": None}
+    #: `scripts/probe_model_defaults.py`'s document (#203): model ids, read
+    #: off the unauthenticated CLI's init event.
+    DEFAULTS = {"probed_at": "2026-09-27T10:00:00Z",
+                "harness_version": "2.1.283 (Claude Code)",
+                "defaults": {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"},
+                "skipped": ["mythos"], "errors": {}}
+    #: What the published block and every reason name as the source.
+    SOURCE = "claude-code-cli 2.1.283 (Claude Code)"
 
     @staticmethod
     def _policy(**overrides):
@@ -432,8 +406,8 @@ class TestVendorDefaultSeats(_RosterFixture):
                          ["claude-opus-5", "claude-opus-5-5", "claude-sonnet-5"])
         new = self._reason(result, "claude-opus-5-5")
         self.assertIn("vendor default for the opus tier", new)
-        self.assertIn(self.DEFAULTS["source"], new)
-        self.assertIn("2026-09-27T10:00:00Z", new)
+        self.assertIn(self.SOURCE, new)
+        self.assertIn("probed 2026-09-27T10:00:00Z", new)
         self.assertIn("`claude-opus-5` carries 45.2%", new)
         self.assertIn("no cooling-off", new)
         self.assertNotIn("past the", new)
@@ -446,7 +420,10 @@ class TestVendorDefaultSeats(_RosterFixture):
         self.assertEqual(result["defaults"]["resolved"],
                          {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"})
         self.assertEqual(result["defaults"]["unresolved"], [])
-        self.assertEqual(result["defaults"]["source"], self.DEFAULTS["source"])
+        self.assertEqual(result["defaults"]["source"], self.SOURCE)
+        self.assertEqual(result["defaults"]["probed_at"], "2026-09-27T10:00:00Z")
+        self.assertEqual(set(result["defaults"]),
+                         {"source", "probed_at", "resolved", "unresolved"})
         self.assertEqual(result["proposal"]["status"], "differs")
         seat = next(c for c in result["proposal"]["changes"]
                     if c["to"] == "claude-opus-5-5")
@@ -517,7 +494,8 @@ class TestVendorDefaultSeats(_RosterFixture):
         self.assertIn("superseded", held)
 
     def test_a_preview_newer_than_the_default_takes_no_seat(self):
-        defaults = {**self.DEFAULTS, "defaults": {"opus": "Opus 5", "sonnet": "Sonnet 5"}}
+        defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-5",
+                                                  "sonnet": "claude-sonnet-5"}}
         # opus-5-5 is well past the cooling-off here, so today's rule would
         # seat it as newest in a qualifying tier.
         result, _ = self._compute(defaults=defaults, now=datetime(
@@ -529,9 +507,9 @@ class TestVendorDefaultSeats(_RosterFixture):
         self.assertIn("newer than the vendor default `claude-opus-5`", why)
 
     def test_a_default_in_a_tier_that_is_not_on_the_roster_takes_no_seat(self):
-        defaults = {**self.DEFAULTS, "defaults": {"opus": "Opus 5.5",
-                                                  "sonnet": "Sonnet 5",
-                                                  "fable": "Fable 5.1"}}
+        defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-5-5",
+                                                  "sonnet": "claude-sonnet-5",
+                                                  "fable": "claude-fable-5-1"}}
         result, _ = self._compute(defaults=defaults)
         self.assertNotIn("claude-fable-5-1", self._arms(result))
         self.assertEqual(result["defaults"]["resolved"]["fable"], "claude-fable-5-1")
@@ -547,7 +525,7 @@ class TestVendorDefaultSeats(_RosterFixture):
         previous = {**self.PREVIOUS, "arms": self.PREVIOUS["arms"]
                     + [{"id": "claude-haiku-4-5"}]}
         defaults = {**self.DEFAULTS, "defaults": {**self.DEFAULTS["defaults"],
-                                                  "haiku": "Haiku 5"}}
+                                                  "haiku": "claude-haiku-5"}}
         result, _ = self._compute(defaults=defaults, previous=previous, models=models)
         self.assertIn("claude-haiku-5", self._arms(result))
         self.assertIn("previous arm `claude-haiku-4-5`",
@@ -564,6 +542,7 @@ class TestVendorDefaultSeats(_RosterFixture):
         result, _ = self._compute(defaults=self.DEFAULTS)
         summary = roster.render_summary(result)
         self.assertIn("model defaults", summary)
+        self.assertIn(self.SOURCE, summary)
         self.assertIn("2026-09-27T10:00:00Z", summary)
 
 
@@ -622,7 +601,8 @@ class TestPreviewArmGetsTheExitCheck(_RosterFixture):
 
     WEEKS = [f"2026-W{n:02d}" for n in range(33, 42)]
     NOW_OCT = datetime(2026, 10, 12, 12, tzinfo=timezone.utc)
-    D = {**_RosterFixture.DEFAULTS, "defaults": {"opus": "Opus 5.5", "sonnet": "Sonnet 5"}}
+    D = {**_RosterFixture.DEFAULTS, "defaults": {"opus": "claude-opus-5-5",
+                                                 "sonnet": "claude-sonnet-5"}}
     PREV = {**_RosterFixture.PREVIOUS,
             "arms": [{"id": "claude-opus-5-5"}, {"id": "claude-opus-5-6"},
                      {"id": "claude-sonnet-5"}]}
@@ -678,155 +658,73 @@ class TestPreviewArmGetsTheExitCheck(_RosterFixture):
                       self._reason(result, "claude-opus-5-6", "excluded"))
 
 
-class TestCarriedDefaults(_RosterFixture):
-    """F2(a) (#203 round 1): the committed roster carries the last resolved
-    defaults, and a run whose docs read fails uses them instead of
-    flip-flopping to newest-in-tier."""
+class TestNoCarriedDefaults(_RosterFixture):
+    """#203: the carried-defaults machinery is gone. A probe that fails is a
+    CLI that cannot run the eval either, so there is nothing to carry: the
+    committed roster keeps no `defaults:` block, a failed probe falls back
+    to the usage rules for every tier, and a block an older committed roster
+    still has is never read."""
 
-    CARRIED = {"source": "https://code.claude.com/docs/en/model-config.md",
-               "fetched_at": "2026-09-27T10:00:00Z",
-               "resolved": {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"}}
-    DOWN = {**_RosterFixture.DEFAULTS, "defaults": {}, "error": "HTTP 503"}
+    OLD_BLOCK = {"source": "https://code.claude.com/docs/en/model-config.md",
+                 "fetched_at": "2026-09-27T10:00:00Z",
+                 "resolved": {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"}}
+    DOWN = {"probed_at": "2026-09-27T10:00:00Z", "harness_version": None,
+            "defaults": {}, "skipped": [],
+            "errors": {"haiku": "no-init", "sonnet": "no-init", "opus": "no-init",
+                       "fable": "no-init", "mythos": "no-init"}}
 
-    def _previous(self, arms=("claude-sonnet-5", "claude-opus-5"), carried=None):
-        return {**self.PREVIOUS, "arms": [{"id": a} for a in arms],
-                "defaults": copy.deepcopy(self.CARRIED if carried is None else carried)}
+    def test_a_failed_probe_never_reads_a_committed_defaults_block(self):
+        baseline, _ = self._compute()
+        for doc in (self.DOWN, None):
+            with self.subTest(doc=bool(doc)):
+                result, _ = self._compute(defaults=doc, previous={
+                    **self.PREVIOUS, "defaults": copy.deepcopy(self.OLD_BLOCK)})
+                self.assertNotIn("defaults", result)
+                self.assertNotIn("vendor default", json.dumps(result))
+                self.assertEqual(json.dumps(result, sort_keys=True),
+                                 json.dumps(baseline, sort_keys=True))
 
-    def test_a_failed_read_uses_the_carried_defaults(self):
-        result, warnings = self._compute(defaults=self.DOWN, previous=self._previous())
-        self.assertIn("claude-opus-5-5", self._arms(result))
-        why = self._reason(result, "claude-opus-5-5")
-        self.assertIn("last read 2026-09-27T10:00:00Z", why)
-        self.assertIn("HTTP 503", why)
-        self.assertIn("vendor default for the opus tier", why)
-        self.assertIs(result["defaults"]["carried"], True)
-        self.assertEqual(result["defaults"]["resolved"], self.CARRIED["resolved"])
-        self.assertEqual(result["defaults"]["fetched_at"], "2026-09-27T10:00:00Z")
-        self.assertTrue(any("carried" in w for w in warnings), warnings)
-        self.assertIn("this run's read failed", roster.render_summary(result))
-
-    def test_an_absent_doc_uses_the_carried_defaults(self):
-        result, _ = self._compute(defaults=None, previous=self._previous())
-        self.assertIn("claude-opus-5-5", self._arms(result))
-        self.assertIs(result["defaults"]["carried"], True)
-
-    def test_a_good_read_is_not_carried(self):
-        result, _ = self._compute(defaults=self.DEFAULTS, previous=self._previous())
-        self.assertNotIn("carried", result["defaults"])
-
-    def test_a_carried_id_no_longer_available_is_dropped(self):
-        result, warnings = self._compute(
-            defaults=self.DOWN, previous=self._previous(),
-            models=self._models_doc(drop=("claude-opus-5-5",)))
-        self.assertNotIn("opus", result["defaults"]["resolved"])
-        self.assertEqual(result["defaults"]["resolved"], {"sonnet": "claude-sonnet-5"})
-        self.assertTrue(any("`opus`" in w and "carried" in w for w in warnings), warnings)
-
-    def test_a_carried_id_in_another_tier_is_dropped(self):
-        carried = {**self.CARRIED, "resolved": {"opus": "claude-sonnet-5"}}
-        result, warnings = self._compute(defaults=self.DOWN,
-                                         previous=self._previous(carried=carried))
-        self.assertNotIn("opus", (result.get("defaults") or {}).get("resolved", {}))
-        self.assertTrue(any("`opus`" in w for w in warnings), warnings)
-
-    def test_a_docs_outage_after_a_retirement_does_not_reseat_it(self):
-        # The reviewer's a7.py: opus-5 retired with the docs up; the next
-        # run's docs outage must not bring it back by rule 1.
-        census = self._later_census(opus5_w40=5, opus55_w40=440)
-        first, _ = self._compute(
-            defaults=self.DEFAULTS, census=census, now=self.LATER,
-            previous={**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
-                                                {"id": "claude-opus-5"},
-                                                {"id": "claude-opus-5-5"}]})
-        self.assertNotIn("claude-opus-5", self._arms(first))
-        committed = yaml.safe_load(render_roster_yaml.render(first, "1", "abc"))
-        self.assertEqual(roster.committed_roster_problems(committed), [])
-        second, _ = self._compute(defaults=self.DOWN, census=census,
-                                  now=self.LATER, previous=committed)
-        self.assertEqual(sorted(self._arms(second)),
-                         ["claude-opus-5-5", "claude-sonnet-5"])
-
-    def test_a_docs_outage_does_not_seat_an_unmade_default(self):
-        # The reviewer's a2.py week 1, with a carried block: opus-5-6 is
-        # newest but not the default, so it takes no seat.
-        models = self._models_doc(extra=[self._model(
-            "claude-opus-5-6", "Claude Opus 5.6", "2026-10-01T00:00:00Z")])
-        weeks = [f"2026-W{n:02d}" for n in range(33, 42)]
-        census = {"generated_at": "2026-10-12T06:00:00Z", "weeks": [], "counts": {
-            "claude-sonnet-5": {w: 500 for w in weeks},
-            "claude-opus-5-5": {w: 450 for w in weeks},
-            "claude-haiku-4-5": {w: 50 for w in weeks}}}
-        result, _ = self._compute(
-            defaults=self.DOWN, models=models, census=census,
-            now=datetime(2026, 10, 12, 12, tzinfo=timezone.utc),
-            # Read a week earlier: CARRIED's own date is past the 14-day
-            # `defaults_carry_max_age_days` by 10-12 (#203 round 2).
-            previous=self._previous(arms=("claude-sonnet-5", "claude-opus-5-5"),
-                                    carried={**self.CARRIED,
-                                             "fetched_at": "2026-10-05T10:00:00Z"}))
-        self.assertEqual(sorted(self._arms(result)),
-                         ["claude-opus-5-5", "claude-sonnet-5"])
-
-    def test_the_rendered_roster_carries_the_defaults_block(self):
+    def test_the_rendered_roster_has_no_defaults_block(self):
         result, _ = self._compute(defaults=self.DEFAULTS)
-        document = yaml.safe_load(render_roster_yaml.render(result, "1", "abc"))
-        self.assertEqual(document["defaults"],
-                         {"source": self.DEFAULTS["source"],
-                          "fetched_at": "2026-09-27T10:00:00Z",
-                          "resolved": {"opus": "claude-opus-5-5",
-                                       "sonnet": "claude-sonnet-5"}})
-        self.assertEqual(roster.committed_roster_problems(document), [])
-        carried, _ = self._compute(defaults=self.DOWN, previous={
-            **self.PREVIOUS, "defaults": document["defaults"]})
-        document = yaml.safe_load(render_roster_yaml.render(carried, "1", "abc"))
-        self.assertIs(document["defaults"]["carried"], True)
+        self.assertIn("defaults", result)
+        text = render_roster_yaml.render(result, "1", "abc")
+        document = yaml.safe_load(text)
+        self.assertNotIn("defaults", document)
+        self.assertNotIn("defaults:", text)
         self.assertEqual(roster.committed_roster_problems(document), [])
 
-    def test_a_changed_resolution_is_a_material_proposal(self):
-        # Otherwise the block could never reach the committed roster on a
-        # run whose arms happen not to move.
+    def test_the_published_roster_keeps_the_block_for_the_reviewer(self):
+        result, _ = self._compute(defaults=self.DEFAULTS)
+        self.assertEqual(result["defaults"], {
+            "source": self.SOURCE, "probed_at": "2026-09-27T10:00:00Z",
+            "resolved": {"opus": "claude-opus-5-5", "sonnet": "claude-sonnet-5"},
+            "unresolved": []})
+
+    def test_no_change_kind_is_about_defaults(self):
         prev = {**self.PREVIOUS, "arms": [{"id": "claude-sonnet-5"},
-                                          {"id": "claude-opus-5-5"}]}
+                                          {"id": "claude-opus-5-5"}],
+                "defaults": copy.deepcopy(self.OLD_BLOCK)}
         census = self._later_census(opus5_w40=5, opus55_w40=440)
-        result, _ = self._compute(defaults=self.DEFAULTS, previous=prev,
-                                  census=census, now=self.LATER)
-        change = [c for c in result["proposal"]["changes"]
-                  if c["field"] == "defaults.resolved"]
-        self.assertEqual(len(change), 1, result["proposal"]["changes"])
-        self.assertEqual(change[0]["to"], self.CARRIED["resolved"])
-        self.assertEqual(result["proposal"]["status"], "differs")
-        # The same resolution already committed proposes nothing about it.
-        result, _ = self._compute(defaults=self.DEFAULTS, census=census,
-                                  now=self.LATER,
-                                  previous={**prev, "defaults": self.CARRIED})
-        self.assertEqual([c for c in result["proposal"]["changes"]
-                          if c["field"] == "defaults.resolved"], [])
+        for doc in (self.DEFAULTS, self.DOWN):
+            with self.subTest(doc=bool(doc["defaults"])):
+                result, _ = self._compute(defaults=doc, previous=prev,
+                                          census=census, now=self.LATER)
+                self.assertEqual([c for c in result["proposal"]["changes"]
+                                  if c["kind"] == "defaults"
+                                  or c["field"].startswith("defaults")], [])
 
     def test_no_doc_renders_no_defaults_block(self):
         result, _ = self._compute()
         self.assertNotIn("defaults:", render_roster_yaml.render(result, "1", "abc"))
 
-    def test_the_committed_block_is_type_checked(self):
-        base = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
-        good = {**base, "defaults": copy.deepcopy(self.CARRIED)}
-        self.assertEqual(roster.committed_roster_problems(good), [])
-        bad_blocks = {
-            "not a mapping": ["opus"],
-            "resolved not a mapping": {**self.CARRIED, "resolved": ["opus"]},
-            "alias off the ladder": {**self.CARRIED, "resolved": {"opusplan": "claude-opus-5-5"}},
-            "alias badly shaped": {**self.CARRIED, "resolved": {"Opus!": "claude-opus-5-5"}},
-            "id not an id": {**self.CARRIED, "resolved": {"opus": "Opus 5.5 ::error::"}},
-            "too many": {**self.CARRIED, "resolved": {f"a{i}": "claude-opus-5-5"
-                                                      for i in range(17)}},
-            "source junk": {**self.CARRIED, "source": "x::error::y"},
-            "fetched_at junk": {**self.CARRIED, "fetched_at": "yesterday"},
-            "carried not bool": {**self.CARRIED, "carried": "yes"},
-            "unknown key": {**self.CARRIED, "extra": 1},
-        }
-        for label, block in bad_blocks.items():
-            with self.subTest(label):
-                self.assertNotEqual(
-                    roster.committed_roster_problems({**base, "defaults": block}), [])
+    def test_the_carry_machinery_is_gone(self):
+        for name in ("_carried_defaults", "_drop_stale_carried",
+                     "_committed_defaults_problems", "COMMITTED_DEFAULTS_KEYS",
+                     "DEFAULTS_DOCS_URL", "DEFAULTS_NAME_RE"):
+            self.assertFalse(hasattr(roster, name), name)
+        self.assertFalse(hasattr(render_roster_yaml, "_defaults_lines"))
+        self.assertNotIn("carried", roster.render_summary(
+            self._compute(defaults=self.DEFAULTS)[0]))
 
 
 class TestUnresolvedDefaultsFallBack(_RosterFixture):
@@ -848,44 +746,54 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
         self.assertIn("cooling-off", self._reason(result, "claude-opus-5-5", "excluded"))
         self.assertNotIn("opus", result["defaults"]["resolved"])
 
-    def test_an_unmatched_display_name(self):
-        defaults = {**self.DEFAULTS, "defaults": {"opus": "Opus 9"}}
+    def test_an_id_that_is_not_available(self):
+        defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-9",
+                                                  "sonnet": "claude-sonnet-5"}}
         result, warnings = self._compute(defaults=defaults)
         self._assert_todays_opus_rule(result)
-        self.assertTrue(any("`opus`" in w and "no available model" in w
+        self.assertTrue(any("`opus`" in w and "not an available model" in w
                             for w in warnings), warnings)
         self.assertEqual(result["defaults"]["unresolved"][0]["alias"], "opus")
+        self.assertIn("claude-opus-9", result["defaults"]["unresolved"][0]["reason"])
 
-    def test_an_ambiguous_display_name(self):
-        models = self._models_doc(extra=[self._model(
-            "claude-opus-5-5-fast", "Claude Opus 5.5", "2026-09-26T12:00:00Z")])
-        result, warnings = self._compute(defaults={**self.DEFAULTS,
-                                                   "defaults": {"opus": "Opus 5.5"}},
-                                         models=models)
-        self.assertNotIn("claude-opus-5-5", self._arms(result))
-        self.assertNotIn("opus", result["defaults"]["resolved"])
-        self.assertTrue(any("`opus`" in w and "2 available models" in w
-                            for w in warnings), warnings)
-
-    def test_a_display_name_in_the_wrong_tier(self):
-        defaults = {**self.DEFAULTS, "defaults": {"opus": "Sonnet 5"}}
+    def test_an_id_in_the_wrong_tier(self):
+        defaults = {**self.DEFAULTS, "defaults": {"opus": "claude-sonnet-5"}}
         result, warnings = self._compute(defaults=defaults)
         self._assert_todays_opus_rule(result)
         self.assertTrue(any("`opus`" in w and "sonnet tier" in w for w in warnings),
                         warnings)
 
     def test_an_alias_off_the_ladder_is_ignored(self):
-        defaults = {**self.DEFAULTS, "defaults": {"opusplan": "Opus 5.5"}}
+        defaults = {**self.DEFAULTS, "defaults": {"opusplan": "claude-opus-5-5"}}
         result, warnings = self._compute(defaults=defaults)
         self._assert_todays_opus_rule(result)
         self.assertTrue(any("not a family word" in w for w in warnings), warnings)
+
+    def test_a_probe_error_leaves_that_alias_unresolved_with_its_class(self):
+        defaults = {**self.DEFAULTS, "defaults": {"sonnet": "claude-sonnet-5"},
+                    "errors": {"opus": "timeout", "haiku": "::error::x\ny"}}
+        result, warnings = self._compute(defaults=defaults)
+        self._assert_todays_opus_rule(result)
+        self.assertEqual(result["defaults"]["resolved"], {"sonnet": "claude-sonnet-5"})
+        reasons = {u["alias"]: u["reason"] for u in result["defaults"]["unresolved"]}
+        self.assertIn("timeout", reasons["opus"])
+        self.assertIn("an error was recorded", reasons["haiku"])
+        self.assertTrue(any("`opus`" in w and "timeout" in w for w in warnings), warnings)
+        self.assertNotIn("::error::", json.dumps(result) + "\n".join(warnings))
+
+    def test_a_skipped_alias_is_not_unresolved(self):
+        result, warnings = self._compute(defaults=self.DEFAULTS)
+        self.assertNotIn("mythos", [u["alias"] for u in result["defaults"]["unresolved"]])
+        self.assertFalse(any("mythos" in w for w in warnings), warnings)
 
     def test_junk_is_ignored_with_a_warning(self):
         for junk in ({"defaults": ["opus"]},
                      {"defaults": {"opus": 5}},
                      {"defaults": {"opus": "x" * 65}},
-                     {"defaults": {"opus": "Opus\n::error::5.5"}},
-                     {"defaults": {f"a{i}": "Opus 5.5" for i in range(17)}}):
+                     {"defaults": {"opus": "Opus 5.5"}},
+                     {"defaults": {"opus": "claude-opus-5-5\n::error::x"}},
+                     {"defaults": {"OPUS": "claude-opus-5-5"}},
+                     {"defaults": {f"a{i}": "claude-opus-5-5" for i in range(17)}}):
             with self.subTest(junk=str(junk)[:40]):
                 doc = {**self.DEFAULTS, **junk}
                 result, warnings = self._compute(defaults=doc)
@@ -895,16 +803,41 @@ class TestUnresolvedDefaultsFallBack(_RosterFixture):
                 self.assertNotIn("::error::", json.dumps(result))
 
 
+class TestSnapshotDefaults(_RosterFixture):
+    """#203: the CLI can resolve an alias to a DATED id (haiku did, on
+    2.1.283). Where the catalogue also lists the undated alias the roster
+    collapses the snapshot onto it, and the default resolves to that seat."""
+
+    def test_a_dated_default_resolves_onto_its_undated_alias(self):
+        models = self._models_doc(extra=[self._model(
+            "claude-haiku-4-5-20251001", "Claude Haiku 4.5", "2025-10-01T00:00:00Z")])
+        defaults = {**self.DEFAULTS, "defaults": {**self.DEFAULTS["defaults"],
+                                                  "haiku": "claude-haiku-4-5-20251001"}}
+        result, warnings = self._compute(defaults=defaults, models=models)
+        self.assertEqual(result["defaults"]["resolved"]["haiku"], "claude-haiku-4-5")
+        self.assertEqual(result["defaults"]["unresolved"], [])
+        self.assertFalse(any("haiku" in w for w in warnings), warnings)
+
+    def test_a_dated_default_alone_in_the_catalogue_stands_on_its_own(self):
+        models = self._models_doc(
+            extra=[self._model("claude-haiku-4-5-20251001", "Claude Haiku 4.5",
+                               "2025-10-01T00:00:00Z")],
+            drop=("claude-haiku-4-5",))
+        defaults = {**self.DEFAULTS, "defaults": {"haiku": "claude-haiku-4-5-20251001"}}
+        result, _ = self._compute(defaults=defaults, models=models)
+        self.assertEqual(result["defaults"]["resolved"],
+                         {"haiku": "claude-haiku-4-5-20251001"})
+
+
 class TestAliasConflicts(_RosterFixture):
     """F7 (#203 round 1), revised by R2-4 (#203 round 2): an alias resolves
     only to a model of its OWN family word. Two peer aliases in one rung
     (`fable`, `mythos`) are two families, not a conflict; a peer alias
-    naming another family's model is unresolved on its own. A conflict is
-    two spellings of the SAME family word naming different models."""
+    naming another family's model is unresolved on its own."""
 
     def test_a_peer_alias_naming_another_family_is_unresolved_alone(self):
-        defaults = {**self.DEFAULTS, "defaults": {"fable": "Fable 5.1",
-                                                  "mythos": "Fable 5"}}
+        defaults = {**self.DEFAULTS, "defaults": {"fable": "claude-fable-5-1",
+                                                  "mythos": "claude-fable-5"}}
         result, warnings = self._compute(defaults=defaults)
         self.assertEqual(result["defaults"]["resolved"], {"fable": "claude-fable-5-1"})
         self.assertEqual([u["alias"] for u in result["defaults"]["unresolved"]],
@@ -915,8 +848,8 @@ class TestAliasConflicts(_RosterFixture):
     def test_peer_aliases_naming_their_own_families_both_resolve(self):
         models = self._models_doc(extra=[self._model(
             "claude-mythos-1", "Claude Mythos 1", "2026-09-20T00:00:00Z")])
-        defaults = {**self.DEFAULTS, "defaults": {"fable": "Fable 5.1",
-                                                  "mythos": "Mythos 1"}}
+        defaults = {**self.DEFAULTS, "defaults": {"fable": "claude-fable-5-1",
+                                                  "mythos": "claude-mythos-1"}}
         result, _ = self._compute(defaults=defaults, models=models)
         self.assertEqual(result["defaults"]["resolved"],
                          {"fable": "claude-fable-5-1", "mythos": "claude-mythos-1"})
@@ -925,28 +858,13 @@ class TestAliasConflicts(_RosterFixture):
     def test_a_third_peer_off_its_family_does_not_block_the_others(self):
         policy = self._policy(tiers=["haiku", "sonnet", "opus",
                                      ["fable", "mythos", "fablex"]])
-        defaults = {**self.DEFAULTS, "defaults": {"fable": "Fable 5.1",
-                                                  "mythos": "Fable 5",
-                                                  "fablex": "Fable 5.1"}}
+        defaults = {**self.DEFAULTS, "defaults": {"fable": "claude-fable-5-1",
+                                                  "mythos": "claude-fable-5",
+                                                  "fablex": "claude-fable-5-1"}}
         result, _ = self._compute(defaults=defaults, policy=policy)
         self.assertEqual(result["defaults"]["resolved"], {"fable": "claude-fable-5-1"})
         self.assertEqual(sorted(u["alias"] for u in result["defaults"]["unresolved"]),
                          ["fablex", "mythos"])
-
-    def test_case_duplicates_naming_different_models_conflict(self):
-        defaults = {**self.DEFAULTS, "defaults": {"OPUS": "Opus 5", "opus": "Opus 5.5"}}
-        result, warnings = self._compute(defaults=defaults)
-        self.assertNotIn("opus", result["defaults"]["resolved"])
-        self.assertIn("opus", [u["alias"] for u in result["defaults"]["unresolved"]])
-        self.assertTrue(any("`opus`" in w for w in warnings), warnings)
-        self.assertNotIn("vendor default", self._reason(result, "claude-opus-5-5"))
-
-    def test_case_duplicates_naming_the_same_model_dedupe_silently(self):
-        defaults = {**self.DEFAULTS, "defaults": {"OPUS": "Opus 5.5", "opus": "Opus 5.5"}}
-        result, warnings = self._compute(defaults=defaults)
-        self.assertEqual(result["defaults"]["resolved"], {"opus": "claude-opus-5-5"})
-        self.assertEqual(result["defaults"]["unresolved"], [])
-        self.assertEqual(warnings, [])
 
 
 class TestPreflightWordingAtAPositiveCoolingOff(_RosterFixture):
@@ -973,23 +891,32 @@ class TestPreflightWordingAtAPositiveCoolingOff(_RosterFixture):
 
 
 class TestNoDefaultsIsByteForByteUnchanged(_RosterFixture):
+    """A probe that failed entirely — or no probe at all — is the pre-#202
+    roster, byte for byte (#203: nothing is carried instead)."""
 
-    def test_absent_empty_and_errored_docs_change_nothing(self):
+    FAILED = {"probed_at": "2026-09-27T10:00:00Z", "harness_version": None,
+              "defaults": {}, "skipped": [],
+              "errors": {"haiku": "timeout", "sonnet": "timeout",
+                         "opus": "timeout", "fable": "timeout", "mythos": "timeout"}}
+
+    def test_absent_empty_and_failed_docs_change_nothing(self):
         baseline, _ = self._compute()
-        for doc in (None, {},
-                    {**self.DEFAULTS, "defaults": {}, "error": "HTTP 503"},
-                    {**self.DEFAULTS, "error": "URLError"},
-                    {**self.DEFAULTS, "defaults": {}, "error": None},
+        for doc in (None, {}, self.FAILED,
+                    {**self.DEFAULTS, "defaults": {}},
+                    {**self.FAILED, "errors": {"opus": "FileNotFoundError"}},
+                    {**self.DEFAULTS, "defaults": None},
                     "not a mapping"):
             with self.subTest(doc=str(doc)[:40]):
                 result, _ = self._compute(defaults=doc)
                 self.assertEqual(json.dumps(result, sort_keys=True),
                                  json.dumps(baseline, sort_keys=True))
 
-    def test_an_errored_doc_says_so_in_a_warning(self):
-        _, warnings = self._compute(defaults={**self.DEFAULTS, "defaults": {},
-                                              "error": "HTTP 503"})
-        self.assertTrue(any("HTTP 503" in w for w in warnings), warnings)
+    def test_a_failed_probe_says_so_in_one_warning(self):
+        _, warnings = self._compute(defaults=self.FAILED)
+        said = [w for w in warnings if "model defaults" in w]
+        self.assertEqual(len(said), 1, warnings)
+        self.assertIn("timeout", said[0])
+        self.assertIn("usage and newest-in-tier rules", said[0])
 
 
 class TestSupersededExitWeeksPolicy(unittest.TestCase):
@@ -1046,28 +973,55 @@ class TestMainReadsDefaults(_RosterFixture):
         self.assertIn("claude-opus-5-5", [a["id"] for a in out["arms"]])
 
 
-class TestWorkflowFetchesDefaults(unittest.TestCase):
+class TestWorkflowProbesDefaults(unittest.TestCase):
+    """eval.yml's roster step probes the installed CLI (#203) before the
+    Models API bearer is exported, and the probe cannot fail the step."""
 
     def _roster_step(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         return next(s for s in doc["jobs"]["eval"]["steps"]
                     if "roster" in (s.get("name") or "").lower())["run"]
 
-    def test_the_roster_step_fetches_defaults_first_and_passes_them(self):
+    def test_the_roster_step_probes_defaults_first_and_passes_them(self):
         script = self._roster_step()
-        fetch_at = script.index("scripts/fetch_model_defaults.py")
+        self.assertNotIn("fetch_model_defaults", script)
+        probe_at = script.index("scripts/probe_model_defaults.py")
         roster_at = script.index("harness/roster.py")
-        self.assertLess(fetch_at, roster_at)
-        self.assertIn('--out "$work/defaults.json"', script[fetch_at:roster_at])
+        self.assertLess(probe_at, roster_at)
+        self.assertIn('--out "$work/defaults.json"', script[probe_at:roster_at])
         self.assertIn('--defaults "$work/defaults.json"', script[roster_at:])
         self.assertNotIn("${{", script)
 
-    def test_the_fetch_cannot_fail_the_step(self):
+    def test_the_probe_runs_before_the_bearer_is_exported(self):
+        lines = [ln.strip() for ln in self._roster_step().splitlines()]
+        probe = next(i for i, ln in enumerate(lines)
+                     if "scripts/probe_model_defaults.py" in ln
+                     and not ln.startswith("#"))
+        bearer = [i for i, ln in enumerate(lines)
+                  if "ANTHROPIC_AUTH_TOKEN" in ln and not ln.startswith("#")]
+        self.assertTrue(bearer)
+        self.assertLess(probe, min(bearer))
+
+    def test_the_probe_cannot_fail_the_step(self):
         script = self._roster_step()
         line = next(ln for ln in script.splitlines()
-                    if "scripts/fetch_model_defaults.py" in ln)
-        self.assertTrue(line.rstrip().endswith("|| true")
-                        or line.lstrip().startswith("if "), line)
+                    if "scripts/probe_model_defaults.py" in ln
+                    and not ln.strip().startswith("#"))
+        self.assertTrue(line.rstrip().endswith("|| true"), line)
+
+    def test_the_probe_scrubs_the_environment_regardless(self):
+        # Order in the step is one guard; this is the other. Even with the
+        # bearer (and every other credential shape) in the parent process,
+        # the CLI it starts sees none of it.
+        import probe_model_defaults
+        parent = {"PATH": "/usr/bin", "ANTHROPIC_AUTH_TOKEN": "bearer",
+                  "ANTHROPIC_API_KEY": "k", "ANTHROPIC_ADMIN_KEY": "k",
+                  "GITHUB_TOKEN": "t", "ACTIONS_ID_TOKEN_REQUEST_TOKEN": "t",
+                  "ACTIONS_RUNTIME_TOKEN": "t", "CLAUDE_CODE_USE_BEDROCK": "1"}
+        with mock.patch.dict(os.environ, parent, clear=True):
+            env = probe_model_defaults.scrubbed_env(Path("/tmp/probe-home"))
+        self.assertEqual([k for k in env if CREDENTIAL_NAME.search(k)], [])
+        self.assertNotIn("bearer", json.dumps(env))
 
 
 class TestRosterOnlyDispatch(unittest.TestCase):
@@ -1176,8 +1130,6 @@ class TestRosterOnlyDispatch(unittest.TestCase):
 
 # --- #203 round 2 ------------------------------------------------------------
 
-DOCS_URL = "https://code.claude.com/docs/en/model-config.md"
-
 
 class _WeeklyLoop(_RosterFixture):
     """The real week-by-week loop, inline and hermetic (#203 round 2): every
@@ -1202,8 +1154,6 @@ class _WeeklyLoop(_RosterFixture):
              "generated_at": "2026-09-21T00:00:00Z"}
     #: Monday of 2026-W40.
     START = datetime(2026, 9, 28, tzinfo=timezone.utc)
-    ERR = {"fetched_at": None, "source": DOCS_URL, "defaults": {},
-           "error": "HTTPError 503"}
 
     @staticmethod
     def _week_number(label):
@@ -1211,10 +1161,11 @@ class _WeeklyLoop(_RosterFixture):
         return (int(year) - 2026) * 53 + int(week)
 
     def _docs(self, k, **defaults):
-        fetched = (self.START + timedelta(weeks=k, hours=11)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        return {"fetched_at": fetched, "source": DOCS_URL,
-                "defaults": defaults or {"opus": "Opus 5.5", "sonnet": "Sonnet 5"},
-                "error": None}
+        probed = (self.START + timedelta(weeks=k, hours=11)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        return {"probed_at": probed, "harness_version": "2.1.283 (Claude Code)",
+                "defaults": defaults or {"opus": "claude-opus-5-5",
+                                         "sonnet": "claude-sonnet-5"},
+                "skipped": ["mythos"], "errors": {}}
 
     def _loop(self, usage, weeks, docs_for, previous=None, models=None):
         prev = copy.deepcopy(previous or self.PREV0)
@@ -1242,222 +1193,20 @@ class _WeeklyLoop(_RosterFixture):
         return out, prev
 
 
-class TestCarriedDefaultsExpire(_RosterFixture):
-    """R2-1 (#203 round 2): carried defaults expire after
-    `defaults_carry_max_age_days`, drop a tier on staleness evidence, and
-    are loud whenever they are used."""
+class TestNoCarryPolicyKey(unittest.TestCase):
+    """#203: `defaults_carry_max_age_days` went with the carry."""
 
-    CARRIED = TestCarriedDefaults.CARRIED
-    DOWN = TestCarriedDefaults.DOWN
-
-    def _previous(self, **block):
-        return {**self.PREVIOUS, "defaults": {**copy.deepcopy(self.CARRIED), **block}}
-
-    def test_the_shipped_policy_sets_fourteen_days_and_cites_203(self):
+    def test_the_shipped_policy_has_no_carry_key_and_validates(self):
         policy = roster.load_policy(POLICY)
-        self.assertEqual(policy["defaults_carry_max_age_days"], 14)
+        self.assertNotIn("defaults_carry_max_age_days", policy)
         roster.validate_policy(policy)
-        text = POLICY.read_text(encoding="utf-8")
-        at = text.index("defaults_carry_max_age_days:")
-        self.assertIn("#203", text[max(0, at - 1500):at])
+        self.assertNotIn("defaults_carry_max_age_days", POLICY.read_text(encoding="utf-8"))
 
-    def test_bad_max_age_values_fail_by_name(self):
-        base = roster.load_policy(POLICY)
-        for bad in ("missing", 0, -1, True, "14", 1.5, None):
-            policy = dict(base)
-            if bad == "missing":
-                del policy["defaults_carry_max_age_days"]
-            else:
-                policy["defaults_carry_max_age_days"] = bad
-            with self.subTest(bad=bad):
-                with self.assertRaises(ValueError) as ctx:
-                    roster.validate_policy(policy)
-                self.assertIn("defaults_carry_max_age_days", str(ctx.exception))
-
-    def test_a_carry_past_the_max_age_is_not_used(self):
-        now = datetime(2026, 10, 17, 12, tzinfo=timezone.utc)  # 20 days on
-        census = self._census(generated_at="2026-10-12T06:00:00Z")
-        result, warnings = self._compute(defaults=self.DOWN, previous=self._previous(),
-                                         census=census, now=now)
-        defaults = result["defaults"]
-        self.assertEqual(defaults["resolved"], {})
-        self.assertNotIn("carried", defaults)
-        self.assertIs(defaults["carried_expired"], True)
-        for part in ("HTTP 503", "2026-09-27T10:00:00Z", "20 days", "expired"):
-            self.assertIn(part, defaults["carried_reason"])
-        self.assertNotIn("vendor default", self._reason(result, "claude-opus-5-5"))
-        self.assertIn("newest model in the opus tier", self._reason(result, "claude-opus-5-5"))
-        expired = [w for w in warnings if "expired" in w]
-        self.assertEqual(len(expired), 1, warnings)
-        self.assertIn("2026-09-27T10:00:00Z", expired[0])
-        change = [c for c in result["proposal"]["changes"]
-                  if c["field"] == "defaults.resolved"]
-        self.assertEqual(len(change), 1)
-        self.assertIsNone(change[0]["to"])
-        self.assertIn("expired", change[0]["reason"])
-        self.assertEqual(result["proposal"]["status"], "differs")
-
-    def test_a_carry_exactly_at_the_max_age_is_still_used(self):
-        now = datetime(2026, 10, 11, 12, tzinfo=timezone.utc)  # 14 days, 2 hours
-        census = self._census(generated_at="2026-10-10T06:00:00Z")
-        result, _ = self._compute(defaults=self.DOWN, previous=self._previous(),
-                                  census=census, now=now)
-        self.assertIs(result["defaults"]["carried"], True)
-        self.assertIn("14 days", result["defaults"]["carried_reason"])
-
-    def test_a_newer_model_over_the_entry_bar_drops_the_carried_default(self):
-        models = self._models_doc(extra=[self._model(
-            "claude-opus-6", "Claude Opus 6", "2026-09-27T00:00:00Z")])
-        census = self._census(extra={"claude-opus-6": {w: 300 for w in self.ENTER}})
-        result, warnings = self._compute(defaults=self.DOWN, previous=self._previous(),
-                                         models=models, census=census)
-        self.assertEqual(result["defaults"]["resolved"], {"sonnet": "claude-sonnet-5"})
-        why = next(u["reason"] for u in result["defaults"]["unresolved"]
-                   if u["alias"] == "opus")
-        self.assertIn("claude-opus-6", why)
-        self.assertIn("claude-opus-6", self._arms(result))
-        self.assertNotIn("claude-opus-5-5", self._arms(result))
-        stale = [w for w in warnings if "claude-opus-6" in w and "claude-opus-5-5" in w]
-        self.assertEqual(len(stale), 1, warnings)
-        self.assertIs(result["defaults"]["carried"], True)
-
-    def test_a_fresh_read_is_not_dropped_by_a_newer_models_usage(self):
-        models = self._models_doc(extra=[self._model(
-            "claude-opus-6", "Claude Opus 6", "2026-09-27T00:00:00Z")])
-        census = self._census(extra={"claude-opus-6": {w: 300 for w in self.ENTER}})
-        result, _ = self._compute(defaults=self.DEFAULTS, models=models, census=census)
-        self.assertEqual(result["defaults"]["resolved"]["opus"], "claude-opus-5-5")
-        self.assertNotIn("claude-opus-6", self._arms(result))
-
-    def test_a_carried_run_says_so_first(self):
-        result, _ = self._compute(defaults=self.DOWN, previous=self._previous())
-        reason = result["defaults"]["carried_reason"]
-        self.assertIn("HTTP 503", reason)
-        self.assertIn("0 days", reason)
-        head = roster.render_summary(result).splitlines()[:4]
-        self.assertTrue(any(reason in line for line in head), head)
-
-    def test_a_healthy_or_absent_run_is_not_flagged(self):
-        for doc, prev in ((self.DEFAULTS, self._previous()), (None, self.PREVIOUS)):
-            with self.subTest(doc=bool(doc)):
-                result, _ = self._compute(defaults=doc, previous=prev)
-                self.assertNotIn("carried_reason", result.get("defaults") or {})
-                self.assertNotIn("carried", roster.render_summary(result).splitlines()[2])
-
-    def test_s3_a_newer_default_takes_the_fleet_during_an_outage(self):
-        # The reviewer's s3.py: docs good weeks 0-2, failing from week 3;
-        # the vendor makes Opus 6 (released W43) the default in week 4 and
-        # the fleet moves to it in W44.
-        loop = _WeeklyLoop("run")
-        models = loop.BASE + [self._model("claude-opus-6", "Claude Opus 6",
-                                          "2026-10-20T12:00:00Z")]
-
-        def usage(n):
-            return {"claude-sonnet-5": 450, "claude-haiku-4-5": 60,
-                    "claude-fable-5-1": 30,
-                    "claude-opus-5": 0 if n >= 41 else 450,
-                    "claude-opus-5-5": 0 if n >= 44 else (450 if n >= 41 else 0),
-                    "claude-opus-6": 450 if n >= 44 else 0}
-
-        out, _ = loop._loop(usage, 14, lambda k: loop._docs(k) if k < 3 else loop.ERR,
-                            models=models)
-        carried = [k for k, week in enumerate(out)
-                   if "defaults" in week["committed"] and k >= 3]
-        self.assertTrue(carried)
-        for k in carried:
-            defaults = out[k]["result"].get("defaults") or {}
-            self.assertTrue(defaults.get("carried_reason"), (k, defaults))
-            head = roster.render_summary(out[k]["result"]).splitlines()[:4]
-            self.assertTrue(any(defaults["carried_reason"] in line for line in head), k)
-        seated_at = next((k for k, week in enumerate(out)
-                          if "claude-opus-6" in self._arms(week["result"])), None)
-        self.assertIsNotNone(seated_at, "opus-6 was never seated")
-        expiry = next(k for k, week in enumerate(out)
-                      if (week["result"].get("defaults") or {}).get("carried_expired"))
-        self.assertLessEqual(seated_at, expiry)
-        for week in out[seated_at:]:
-            self.assertIn("claude-opus-6", self._arms(week["result"]))
-        self.assertNotIn("claude-opus-5-5", self._arms(out[-1]["result"]))
-
-
-class TestCommittedBlockRecordsTheLastGoodRead(_RosterFixture):
-    """R2-2 (#203 round 2): the committed `defaults.fetched_at` is the last
-    SUCCESSFUL read, refreshed often enough that the carry age means
-    something, and `carried` never outlives the outage."""
-
-    CARRIED = TestCarriedDefaults.CARRIED
-    DOWN = TestCarriedDefaults.DOWN
-
-    def _committed(self, **block):
-        first, _ = self._compute(defaults=self.DEFAULTS)
-        doc = yaml.safe_load(render_roster_yaml.render(first, "1", "abc"))
-        doc["defaults"].update(block)
-        return doc
-
-    def _again(self, days, defaults, committed):
-        now = self.NOW + timedelta(days=days)
-        doc = defaults
-        if defaults is self.DEFAULTS:
-            doc = {**self.DEFAULTS, "fetched_at": (now - timedelta(hours=1))
-                   .strftime("%Y-%m-%dT%H:%M:%SZ")}
-        census = self._census(generated_at="2026-10-03T06:00:00Z")
-        return self._compute(defaults=doc, previous=committed, now=now, census=census)
-
-    @staticmethod
-    def _fields(result):
-        return {c["field"] for c in result["proposal"]["changes"]}
-
-    def test_a_healthy_fresh_read_proposes_nothing(self):
-        committed = self._committed()
-        result, _ = self._again(7, self.DEFAULTS, committed)
-        self.assertEqual(result["proposal"]["status"], "same",
-                         result["proposal"]["changes"])
-
-    def test_a_healthy_read_past_half_the_max_age_refreshes_fetched_at(self):
-        committed = self._committed()
-        result, _ = self._again(8, self.DEFAULTS, committed)
-        self.assertEqual(result["proposal"]["status"], "differs")
-        self.assertIn("defaults.fetched_at", self._fields(result))
-        document = yaml.safe_load(render_roster_yaml.render(result, "1", "abc"))
-        self.assertEqual(document["defaults"]["fetched_at"], "2026-10-05T11:00:00Z")
-
-    def test_starting_to_carry_is_material(self):
-        result, _ = self._again(1, self.DOWN, self._committed())
-        self.assertEqual(result["proposal"]["status"], "differs")
-        self.assertIn("defaults.carried", self._fields(result))
-
-    def test_a_healthy_read_after_an_outage_clears_carried(self):
-        result, _ = self._again(1, self.DEFAULTS, self._committed(carried=True))
-        self.assertEqual(result["proposal"]["status"], "differs")
-        self.assertIn("defaults.carried", self._fields(result))
-        document = yaml.safe_load(render_roster_yaml.render(result, "1", "abc"))
-        self.assertIs(document["defaults"].get("carried", False), False)
-        self.assertEqual(document["defaults"]["fetched_at"], "2026-09-28T11:00:00Z")
-
-    def test_s8_a_later_outage_quotes_the_healthy_read(self):
-        # The reviewer's s8.py: outages in weeks 1-2 and 9, healthy between.
-        loop = _WeeklyLoop("run")
-
-        def usage(n):
-            return {"claude-sonnet-5": 450, "claude-haiku-4-5": 60,
-                    "claude-fable-5-1": 30,
-                    "claude-opus-5": 0 if n >= 41 else 450,
-                    "claude-opus-5-5": 450 if n >= 41 else 0}
-
-        out, final = loop._loop(usage, 10,
-                                lambda k: loop.ERR if k in (1, 2, 9) else loop._docs(k))
-        # After the first healthy read following the outage, the committed
-        # block is no longer `carried`.
-        self.assertIs(out[4]["committed"]["defaults"].get("carried", False), False)
-        last_good = out[9]["committed"]["defaults"]["fetched_at"]
-        self.assertGreaterEqual(last_good, "2026-10-19T11:00:00Z")
-        reason = out[9]["result"]["defaults"]["carried_reason"]
-        self.assertIn(last_good, reason)
-        seat = self._reason(out[9]["result"], "claude-opus-5-5")
-        self.assertIn(f"last read {last_good}", seat)
-        self.assertTrue(any(last_good in w for w in out[9]["warnings"]))
-        self.assertIs(final["defaults"]["carried"], True)
-        self.assertEqual(final["defaults"]["fetched_at"], last_good)
+    def test_the_eval_workflow_has_no_carried_defaults_note(self):
+        text = EVAL_WORKFLOW.read_text(encoding="utf-8")
+        for stale in ("carried-defaults note", "defaults_state", "carried_note",
+                      "defaults_carry_max_age_days", "vendor defaults carried"):
+            self.assertNotIn(stale, text)
 
 
 class TestSeatedDefaultHeldByItsTier(_WeeklyLoop):
@@ -1521,8 +1270,9 @@ class TestPeerFamilies(_RosterFixture):
             "claude-mythos-1": {w: 400 for w in weeks},
             "claude-opus-5-5": {w: 200 for w in weeks}}}
         now = datetime(2026, 10, 5, 12, tzinfo=timezone.utc)
-        docs = {**self.DEFAULTS, "defaults": {"opus": "Opus 5.5", "sonnet": "Sonnet 5",
-                                              "fable": "Fable 5.1"}}
+        docs = {**self.DEFAULTS, "defaults": {"opus": "claude-opus-5-5",
+                                              "sonnet": "claude-sonnet-5",
+                                              "fable": "claude-fable-5-1"}}
         with_docs, _ = self._compute(defaults=docs, models=models, census=census, now=now)
         without, _ = self._compute(defaults=None, models=models, census=census, now=now)
         self.assertIn("claude-mythos-1", self._arms(with_docs))
@@ -1535,22 +1285,9 @@ class TestPeerFamilies(_RosterFixture):
             if entry["id"] == "claude-mythos-1":
                 self.fail(entry["reason"])
 
-    def test_the_committed_block_admits_one_default_per_family(self):
-        base = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
-        block = {"source": DOCS_URL, "fetched_at": None,
-                 "resolved": {"fable": "claude-fable-5-1", "mythos": "claude-mythos-1"}}
-        self.assertEqual(roster.committed_roster_problems({**base, "defaults": block}), [])
-
 
 class TestRound2Nits(_RosterFixture):
-    """R2-5, R2-6, R2-7 (#203 round 2)."""
-
-    def test_eval_yml_no_longer_says_a_failed_read_degrades_to_newest_in_tier(self):
-        text = " ".join(EVAL_WORKFLOW.read_text(encoding="utf-8").split())
-        for stale in ("a failed read degrades every tier to the newest-in-tier rule",
-                      "roster.py falls back to newest-in-tier for every tier"):
-            self.assertNotIn(stale, text)
-        self.assertIn("carried in the committed roster", text)
+    """R2-5 and R2-6 (#203 round 2), as they stand after the probe."""
 
     def _main_stderr(self, defaults_text, previous):
         tmp = Path(tempfile.mkdtemp())
@@ -1580,103 +1317,31 @@ class TestRound2Nits(_RosterFixture):
         self.assertEqual(rc, 0)
         return err.getvalue(), json.loads((tmp / "out.json").read_text(encoding="utf-8"))
 
-    def test_an_unreadable_defaults_file_warns_once_with_the_carried_cause(self):
-        previous = {**self.PREVIOUS, "defaults": TestCarriedDefaults.CARRIED}
-        stderr, out = self._main_stderr("{not json", previous)
-        lines = [ln for ln in stderr.splitlines() if "model defaults" in ln]
-        self.assertEqual(len(lines), 1, stderr)
-        self.assertIn("unreadable", lines[0])
-        self.assertIn("carried", lines[0])
-        self.assertNotIn("newest-in-tier", stderr)
-        self.assertIs(out["defaults"]["carried"], True)
+    def test_an_unreadable_defaults_file_warns_once_and_names_the_real_fallback(self):
+        for previous in (self.PREVIOUS,
+                         {**self.PREVIOUS, "defaults": TestNoCarriedDefaults.OLD_BLOCK}):
+            with self.subTest(block="defaults" in previous):
+                stderr, out = self._main_stderr("{not json", previous)
+                lines = [ln for ln in stderr.splitlines() if "model defaults" in ln]
+                self.assertEqual(len(lines), 1, stderr)
+                self.assertIn("unreadable", lines[0])
+                self.assertIn("usage and newest-in-tier rules", lines[0])
+                self.assertNotIn("carried", stderr)
+                self.assertNotIn("defaults", out)
 
-    def test_an_unreadable_defaults_file_with_no_carry_names_the_real_fallback(self):
-        stderr, _ = self._main_stderr("{not json", self.PREVIOUS)
-        lines = [ln for ln in stderr.splitlines() if "model defaults" in ln]
-        self.assertEqual(len(lines), 1, stderr)
-        self.assertIn("unreadable", lines[0])
-        self.assertNotIn("every tier keeps the newest-in-tier rule", lines[0])
+    def test_a_junk_harness_version_publishes_an_unknown_version(self):
+        for junk in ("bad ::error:: `version`", 5, None, "x" * 200):
+            with self.subTest(junk=str(junk)[:20]):
+                result, _ = self._compute(defaults={**self.DEFAULTS,
+                                                    "harness_version": junk})
+                self.assertEqual(result["defaults"]["source"],
+                                 "claude-code-cli (version unknown)")
+                self.assertNotIn("::", json.dumps(result["defaults"]))
 
-    def test_a_junk_source_publishes_the_docs_url(self):
-        self.assertEqual(roster.DEFAULTS_DOCS_URL, fetch_model_defaults.DOCS_URL)
-        result, _ = self._compute(defaults={**self.DEFAULTS,
-                                            "source": "bad source with spaces"})
-        self.assertEqual(result["defaults"]["source"], fetch_model_defaults.DOCS_URL)
-        document = yaml.safe_load(render_roster_yaml.render(result, "1", "abc"))
-        self.assertEqual(roster.committed_roster_problems(document), [])
-
-    def test_a_committed_default_in_another_tier_is_rejected(self):
-        base = yaml.safe_load((REPO_ROOT / "evals" / "roster.yml").read_text(encoding="utf-8"))
-        block = {"source": DOCS_URL, "fetched_at": None,
-                 "resolved": {"opus": "claude-haiku-4-5"}}
-        problems = roster.committed_roster_problems({**base, "defaults": block})
-        self.assertTrue(any("`defaults.resolved.opus`" in p and "tier" in p
-                            for p in problems), problems)
-
-
-class TestWorkflowIsLoudAboutCarriedDefaults(unittest.TestCase):
-    """R2-1 (#203 round 2): the "Propose a roster change" step reads the
-    carried flag from the computed latest.json at run time, emits a
-    ::warning::, and keeps (or opens) the tracking issue on a `same` run."""
-
-    START = "# >>> carried-defaults note"
-    END = "# <<< carried-defaults note"
-
-    def setUp(self):
-        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        self.run_block = next(s for s in doc["jobs"]["eval"]["steps"]
-                              if s.get("name") == "Propose a roster change")["run"]
-
-    def _fragment(self):
-        self.assertIn(self.START, self.run_block)
-        return self.run_block[self.run_block.index(self.START):
-                              self.run_block.index(self.END)]
-
-    def _run(self, latest):
-        tmp = Path(tempfile.mkdtemp())
-        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
-        path = tmp / "latest.json"
-        path.write_text(latest if isinstance(latest, str) else json.dumps(latest),
-                        encoding="utf-8")
-        script = (f"set -euo pipefail\ncomputed='{path}'\n" + self._fragment()
-                  + '\nprintf "STATE=%s\\n" "$defaults_state"\n')
-        done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                              timeout=30, env={"PATH": os.environ.get("PATH", "")})
-        self.assertEqual(done.returncode, 0, done.stderr)
-        return done.stdout
-
-    @unittest.skipUnless(shutil.which("bash"), "needs bash")
-    def test_a_carried_roster_warns(self):
-        out = self._run({"defaults": {"carried": True,
-                                      "carried_reason": "HTTP 503 ::error::x"}})
-        self.assertIn("STATE=carried", out)
-        warning = [ln for ln in out.splitlines() if ln.startswith("::warning::")]
-        self.assertEqual(len(warning), 1, out)
-        self.assertNotIn("::error::", out)
-
-    @unittest.skipUnless(shutil.which("bash"), "needs bash")
-    def test_an_expired_carry_warns(self):
-        out = self._run({"defaults": {"carried_expired": True, "resolved": {}}})
-        self.assertIn("STATE=expired", out)
-        self.assertEqual(len([ln for ln in out.splitlines()
-                              if ln.startswith("::warning::")]), 1, out)
-
-    @unittest.skipUnless(shutil.which("bash"), "needs bash")
-    def test_a_healthy_or_junk_roster_is_quiet(self):
-        for latest in ({"defaults": {"resolved": {"opus": "x"}}}, {},
-                       {"defaults": {"carried": "true"}}, "[1, 2", "[]"):
-            with self.subTest(latest=str(latest)[:30]):
-                out = self._run(latest)
-                self.assertIn("STATE=\n", out)
-                self.assertNotIn("::warning::", out)
-
-    def test_a_same_run_keeps_the_issue_when_carried(self):
-        keep = self.run_block.index('if [ "$status" = "same" ] && [ -n "$defaults_state" ]; then')
-        close = self.run_block.index("gh issue close")
-        self.assertLess(self.run_block.index(self.END), keep)
-        self.assertLess(keep, close)
-        self.assertNotIn("${{", self._fragment())
-
+    def test_a_junk_probed_at_publishes_null(self):
+        result, _ = self._compute(defaults={**self.DEFAULTS, "probed_at": "yesterday"})
+        self.assertIsNone(result["defaults"]["probed_at"])
+        self.assertIn("probed at an unknown time", self._reason(result, "claude-opus-5-5"))
 
 
 if __name__ == "__main__":

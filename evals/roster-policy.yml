@@ -103,31 +103,33 @@ arm_enter_window_weeks: 4
 # only arms are previous ones held over the exit bar.
 #
 # SINCE #202 ALL OF THE ABOVE APPLIES ONLY TO A TIER WITH NO RESOLVED VENDOR
-# DEFAULT, and to the preflight pick. Where `scripts/fetch_model_defaults.py`
-# read the tier's default version off the Claude Code model-config docs and
-# it matched exactly one model, that model is the tier's seat the moment the
-# tier is on the roster — no cooling-off: the vendor making it the default is
-# the signal the cooling-off was standing in for. See `superseded_exit_weeks`
-# below and docs/decisions/0002-roster-follows-vendor-defaults.md.
+# DEFAULT, and to the preflight pick. Where `scripts/probe_model_defaults.py`
+# asked the freshly installed Claude Code CLI — with no credential — which
+# model the tier's family alias resolves to (#203), and that model is
+# available this run, it is the tier's seat the moment the tier is on the
+# roster — no cooling-off: the vendor making it the default is the signal the
+# cooling-off was standing in for. See `superseded_exit_weeks` below and
+# docs/decisions/0002-roster-follows-vendor-defaults.md.
 #
-# THREE REFINEMENTS (#203 round 1). (1) The default's OWN previous seat does
+# REFINEMENTS (#203 rounds 1 and 2). (1) The default's OWN previous seat does
 # not keep its tier on the roster: with no qualifying usage, no other
 # still-seated previous arm in the tier and a usable census, a default that
 # is a previous arm gets the ordinary exit check below
-# (`arm_exit_usage_pct` over `arm_exit_window_weeks`) and can retire. (2) A
-# run whose docs read fails uses the defaults the committed roster carries in
-# its `defaults:` block, re-checked against this run's catalogue, rather
-# than dropping every tier back to the newest-in-tier rule for one run. (3) A
-# previous arm NEWER than its tier's default earns no new seat but is no
-# longer retired on sight: it gets the same exit check.
+# (`arm_exit_usage_pct` over `arm_exit_window_weeks`) and can retire, and
+# that check reads the TIER's combined share — every model of the default's
+# family, over the same denominator — not the default's own, so a tier
+# between the exit and entry bars keeps an arm while the fleet moves from
+# one version to the next. (2) A previous arm NEWER than its tier's default
+# earns no new seat but is not retired on sight: it gets the same exit
+# check. (3) A default governs the models of its own family word only: a
+# peer family in the same rung (`[fable, mythos]` below) keeps the rules
+# above.
 #
-# THREE MORE (#203 round 2). (1) The exit check in refinement (1) reads the
-# TIER's combined share — every model of the default's family, over the same
-# denominator — not the default's own, so a tier between the exit and entry
-# bars keeps an arm while the fleet moves from one version to the next. (2) A
-# default governs the models of its own family word only: a peer family in
-# the same rung (`[fable, mythos]` below) keeps the rules above. (3) The
-# carry in refinement (2) expires: see `defaults_carry_max_age_days`.
+# A PROBE THAT FAILS CARRIES NOTHING OVER (#203, the owner's decision of
+# 2026-09-28). The CLI it probes is the one the eval runs on, so if it cannot
+# be probed the eval cannot run either: every tier it did not resolve keeps
+# the rules above, with a `roster: ` warning. The carried-defaults block and
+# its expiry knob that briefly stood here are gone.
 #
 # SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku
 # and preflight." At 0 every model with a `created_at` is past the
@@ -155,25 +157,8 @@ arm_exit_window_weeks: 8
 # that sees it superseded — the "no buffer" setting. This buffer is for an arm
 # OLDER than the default only (#203 round 1): the default itself, once seated,
 # and a previous arm NEWER than the default are measured by the 8-week exit
-# rule above, and on a docs outage the defaults carried in the committed
-# roster's `defaults:` block decide which is which.
+# rule above.
 superseded_exit_weeks: 1
-
-# How long the vendor defaults carried in the committed roster's `defaults:`
-# block may stand in for a failed docs read (#203 round 2). The age is whole
-# days since that block's `fetched_at`, which is the last SUCCESSFUL read: a
-# healthy run refreshes it as a material change once the committed value is
-# more than half this old, and routinely before that, so a healthy fleet
-# proposes nothing extra most weeks. Past this age a carry is not used —
-# every tier falls back to the usage and newest-in-tier rules above and the
-# run says the carry expired. Before it, a carried default is still dropped
-# for its tier the moment a NEWER model of its family clears the entry bar
-# (the fleet has moved on without the docs saying so). Either way a run that
-# carried, or found the carry expired, is loud: `defaults.carried_reason` in
-# the computed roster, the first lines of the step summary, a ::warning::
-# from eval.yml, and a tracking issue kept open even when nothing else
-# changed. 14 days is two weekly runs of outage.
-defaults_carry_max_age_days: 14
 
 # A census older than this is not evidence of anything current. Past it the
 # roster falls back to "newest per tier" and says so, in words, in every arm's

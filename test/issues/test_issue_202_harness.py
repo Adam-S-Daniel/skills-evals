@@ -8,10 +8,12 @@ Three pieces, each tested here:
 
   * `evals/roster-policy.yml` ships `cooling_off_days: 0`, and the roster's
     reasons read sensibly at 0 (no "past the 0-day cooling-off").
-  * `.github/workflows/eval.yml` and `propagation.yml` use the Claude Code
-    already on the runner, else install `@latest` — before any credential —
-    and record the version in the step summary. Parsed with `yaml`, never
-    matched out of the file as text.
+  * `.github/workflows/eval.yml` and `propagation.yml` ALWAYS install the
+    npm latest (#203, 2026-09-28) — never a preinstalled CLI, before any
+    credential — refuse an unusable npm answer or a shadowing `claude`, and
+    record the version in the step summary. Parsed with `yaml`, never matched
+    out of the file as text, and the body is executed against a fake `npm`
+    and `claude`.
   * `harness/run_eval.py` records `harness` and `models_used` (and the
     judge's `judge_models_used`) in every arm's summary.json and names them in
     report.md; `harness/run_propagation.py`'s `--json` record carries each
@@ -33,6 +35,7 @@ import io
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -129,12 +132,17 @@ class TestZeroCoolingOffWording(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-# 2. the harness install: preinstalled, else @latest; recorded
+# 2. the harness install: always the npm latest; recorded
 
 
 class TestHarnessInstallStep(unittest.TestCase):
+    """Both workflows ALWAYS install the npm latest (#203, the owner's
+    decision of 2026-09-28): never a preinstalled CLI, never a pin, and a
+    `claude` earlier on PATH that shadows the install fails the step."""
 
     PIN = re.compile(r"claude-code@\d")
+    BAD_LATEST = "::error::npm reported no usable latest Claude Code version"
+    SHADOWED = "::error::claude on PATH is not the npm latest just installed"
 
     @staticmethod
     def _steps(path, job):
@@ -150,30 +158,41 @@ class TestHarnessInstallStep(unittest.TestCase):
     def _references_a_secret(step):
         return "secrets." in json.dumps(step)
 
+    def _bodies(self):
+        return {"eval": self._steps(EVAL_WORKFLOW, "eval"),
+                "propagation": self._steps(PROPAGATION_WORKFLOW, "arms")}
+
+    def _body(self, which):
+        steps = self._bodies()[which]
+        return steps[self._install_index(steps)]["run"]
+
     def _assert_install_shape(self, script):
         self.assertIsNone(self.PIN.search(script),
                           "the Claude Code install is pinned again")
         self.assertNotIn("${{", script)
+        self.assertNotIn("command -v claude", script,
+                         "a preinstalled CLI must never be reused")
+        self.assertNotIn("preinstalled", script)
+        self.assertNotIn("@latest", script)
         lines = [ln.strip() for ln in script.splitlines()]
-        guard = next(i for i, ln in enumerate(lines)
-                     if ln.startswith('if [[ -x "$(command -v claude)" ]]'))
-        other = lines.index("else", guard)
-        end = lines.index("fi", other)
-        installs = [i for i, ln in enumerate(lines)
+        installs = [ln for ln in lines
                     if "npm install" in ln and "@anthropic-ai/claude-code" in ln]
-        self.assertEqual(len(installs), 1, installs)
-        self.assertTrue(other < installs[0] < end,
-                        "the @latest install must sit in the not-installed branch")
-        self.assertIn("@anthropic-ai/claude-code@latest", lines[installs[0]])
-        self.assertIn("claude --version", script)
+        self.assertEqual(installs, ['npm install -g "@anthropic-ai/claude-code@${latest}"'])
+        self.assertIn('latest="$(npm view @anthropic-ai/claude-code version)" || '
+                      '{ echo "::error::could not resolve the latest Claude Code '
+                      'version"; exit 1; }', lines)
+        self.assertIn('[[ "$latest" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]] || '
+                      f'{{ echo "{self.BAD_LATEST}"; exit 1; }}', lines)
+        self.assertNotIn("${latest//", script, "junk must be refused, not stripped")
+        self.assertIn('[[ "${version%% *}" == "$latest" ]] || '
+                      f'{{ echo "{self.SHADOWED}"; exit 1; }}', lines)
+        self.assertLess(lines.index(installs[0]),
+                        next(i for i, ln in enumerate(lines)
+                             if ln.startswith('[[ "${version%% *}"')))
         self.assertNotIn("| head", script,
                          "a pipe into head under pipefail can fail the step")
         self.assertIn("GITHUB_STEP_SUMMARY", script)
         self.assertIn("set -euo pipefail", script)
-        # A failing or empty `--version` fails the step by name, and only
-        # version characters reach the summary's markdown code span.
-        # A non-executable `claude` on PATH falls back to npm; a hanging
-        # `--version` is bounded; an absurd line is capped before filtering.
         # `-k 10`: a CLI that ignores SIGTERM is killed 10 s later (#203
         # round 1), the exact line rather than a substring.
         self.assertIn('version="$(timeout -k 10 60 claude --version)" || '
@@ -181,12 +200,17 @@ class TestHarnessInstallStep(unittest.TestCase):
         self.assertIn('version="${version:0:80}"', script)
         self.assertIn('version="${version//[^A-Za-z0-9._() -]/}"', script)
         self.assertIn('[[ -n "$version" ]] || {', script)
-        self.assertEqual(script.count("::error::"), 2)
+        self.assertEqual(script.count("::error::"), 5)
+
+    def test_both_bodies_have_the_always_latest_shape_and_match(self):
+        for which in ("eval", "propagation"):
+            with self.subTest(workflow=which):
+                self._assert_install_shape(self._body(which))
+        self.assertEqual(self._body("eval"), self._body("propagation"))
 
     def test_eval_installs_before_any_credential(self):
         steps = self._steps(EVAL_WORKFLOW, "eval")
         at = self._install_index(steps)
-        self._assert_install_shape(steps[at]["run"])
         mint = next(i for i, s in enumerate(steps)
                     if "token" in (s.get("name") or "").lower()
                     and "exchange" in (s.get("name") or "").lower())
@@ -198,11 +222,134 @@ class TestHarnessInstallStep(unittest.TestCase):
     def test_propagation_installs_before_the_probe_with_no_secret_ahead(self):
         steps = self._steps(PROPAGATION_WORKFLOW, "arms")
         at = self._install_index(steps)
-        self._assert_install_shape(steps[at]["run"])
         probe = next(i for i, s in enumerate(steps)
                      if s.get("name") == "Probe the arm")
         self.assertLess(at, probe)
         self.assertFalse(any(self._references_a_secret(s) for s in steps[:at + 1]))
+
+    # --- the body, executed against a fake npm and a fake claude ----------
+
+    def _tool(self, path, body):
+        path.write_text("#!/bin/bash\n" + body, encoding="utf-8")
+        path.chmod(0o755)
+
+    def _run(self, which, *, view="printf '2.1.290\\n'", view_rc=0, install_rc=0,
+             installed_version="2.1.290 (Claude Code)", shadow_version=None):
+        """Run one workflow's install body with PATH = [shadow] + fakes + the
+        coreutils it needs. The fake `npm install` writes the `claude` it
+        "installs" into the fakes dir; a `shadow` dir ahead of it on PATH
+        holds a stale one."""
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        fakes, tools, shadow = tmp / "fakes", tmp / "tools", tmp / "shadow"
+        for d in (fakes, tools, shadow):
+            d.mkdir()
+        for tool in ("timeout", "cp"):
+            (tools / tool).symlink_to(shutil.which(tool))
+        calls = tmp / "npm-calls.txt"
+        # What `npm install` puts on PATH: a claude whose `--version` has a
+        # second line, which the step must drop.
+        template = tmp / "claude.template"
+        self._tool(template, f"printf '%s\\nsecond line\\n' "
+                             f"{shlex.quote(installed_version)}\n")
+        self._tool(fakes / "npm", (
+            f'echo "$*" >> {shlex.quote(str(calls))}\n'
+            'if [ "$1" = view ]; then\n'
+            f'  {view}\n  exit {view_rc}\n'
+            'fi\n'
+            'if [ "$1" = install ]; then\n'
+            f'  [ {install_rc} -eq 0 ] || exit {install_rc}\n'
+            f'  cp {shlex.quote(str(template))} {shlex.quote(str(fakes / "claude"))}\n'
+            'fi\n'))
+        if shadow_version is not None:
+            self._tool(shadow / "claude",
+                       f"printf '%s\\n' {shlex.quote(shadow_version)}\n")
+        summary = tmp / "summary.md"
+        path = os.pathsep.join(str(d) for d in (shadow, fakes, tools))
+        done = subprocess.run(
+            [shutil.which("bash"), "-c", self._body(which)], capture_output=True,
+            text=True, timeout=60,
+            env={"PATH": path, "GITHUB_STEP_SUMMARY": str(summary)})
+        npm_calls = (calls.read_text(encoding="utf-8").splitlines()
+                     if calls.is_file() else [])
+        return done, (summary.read_text(encoding="utf-8")
+                      if summary.is_file() else ""), npm_calls
+
+    def _each(self):
+        for which in ("eval", "propagation"):
+            with self.subTest(workflow=which):
+                yield which
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout"),
+                         "needs bash and timeout")
+    def test_the_happy_path_installs_exactly_the_npm_latest(self):
+        for which in self._each():
+            done, summary, npm = self._run(which)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertEqual(npm, ["view @anthropic-ai/claude-code version",
+                                   "install -g @anthropic-ai/claude-code@2.1.290"])
+            self.assertIn("harness: Claude Code 2.1.290 (Claude Code) (npm latest)",
+                          done.stdout)
+            # A multi-line `--version` keeps line 1 only.
+            self.assertNotIn("second line", done.stdout + summary)
+            self.assertEqual(summary, "### Harness\nClaude Code "
+                                      "`2.1.290 (Claude Code)` (npm latest)\n")
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout"),
+                         "needs bash and timeout")
+    def test_a_failing_npm_view_fails_the_step_by_name(self):
+        for which in self._each():
+            done, _, npm = self._run(which, view="echo 'E404' >&2", view_rc=1)
+            self.assertNotEqual(done.returncode, 0)
+            self.assertIn("::error::could not resolve the latest Claude Code version",
+                          done.stdout)
+            self.assertFalse([c for c in npm if c.startswith("install")], npm)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout"),
+                         "needs bash and timeout")
+    def test_an_unusable_npm_answer_is_refused_not_stripped(self):
+        for answer in ("printf '2.2.0-beta.1\\n'", "printf '<html>\\n'", "true",
+                       "printf '2.1.3\\n2.1.4\\n'", "printf 'v2.1.3\\n'",
+                       "printf '2.1\\n'"):
+            for which in self._each():
+                with self.subTest(answer=answer):
+                    done, _, npm = self._run(which, view=answer)
+                    self.assertNotEqual(done.returncode, 0)
+                    self.assertIn(self.BAD_LATEST, done.stdout.splitlines())
+                    self.assertFalse([c for c in npm if c.startswith("install")], npm)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout"),
+                         "needs bash and timeout")
+    def test_a_failing_install_fails_the_step(self):
+        for which in self._each():
+            done, summary, _ = self._run(which, install_rc=3)
+            self.assertNotEqual(done.returncode, 0)
+            self.assertEqual(summary, "")
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout"),
+                         "needs bash and timeout")
+    def test_a_shadowing_claude_fails_the_step(self):
+        for shadow in ("2.1.200 (Claude Code)", "2.1.2900 (Claude Code)"):
+            for which in self._each():
+                with self.subTest(shadow=shadow):
+                    done, summary, _ = self._run(which, shadow_version=shadow)
+                    self.assertNotEqual(done.returncode, 0)
+                    self.assertIn(self.SHADOWED, done.stdout)
+                    self.assertEqual(summary, "")
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("timeout"),
+                         "needs bash and timeout")
+    def test_a_prefix_is_not_a_match(self):
+        # adam-agentskills#29: a stale 2.1.30 passed a prefix check for 2.1.3.
+        for which in self._each():
+            done, _, _ = self._run(which, view="printf '2.1.3\\n'",
+                                   installed_version="2.1.3 (Claude Code)",
+                                   shadow_version="2.1.30 (Claude Code)")
+            self.assertNotEqual(done.returncode, 0)
+            self.assertIn(self.SHADOWED, done.stdout)
+            ok, _, _ = self._run(which, view="printf '2.1.3\\n'",
+                                 installed_version="2.1.3 (Claude Code)")
+            self.assertEqual(ok.returncode, 0, ok.stdout + ok.stderr)
 
 
 # ---------------------------------------------------------------------------

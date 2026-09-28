@@ -532,44 +532,44 @@ says which degradation it was. No new threshold was added — rule 2 reads rule
 **A tier with a known vendor default follows the vendor** (Adam's decision,
 2026-09-27, [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202),
 [ADR 0002](docs/decisions/0002-roster-follows-vendor-defaults.md)).
-`scripts/fetch_model_defaults.py` reads which version each alias (`opus`,
-`sonnet`, `fable`, …) resolves to from the Claude Code
-[model-config docs](https://code.claude.com/docs/en/model-config.md), and the
-roster matches that display name to an id through the Models API. In a tier
-whose default resolved, usage only decides whether the tier is on the roster
-(a model in it clears the entry bar, another previous arm in it is still
-seated this run, or there is no usable census): the seat goes to the default
-**at once, with no cooling-off**, and rules 1 and 2 do not apply there. The
-default's own previous seat does not keep its tier on the roster: once
-nothing else does, a seated default gets the ordinary exit check (2% over 8
-weeks) and can retire — measured on the TIER's combined share, every model of
-the default's family in it, not its own, so a tier sitting between the 2% exit
-and 10% entry bars keeps an arm while the fleet moves from one version to the
-next (#203 round 2). A default governs the models of its own family word only:
-a peer family in the same rung (`[fable, mythos]`, a different access
-programme) keeps rules 1 and 2. A model the default supersedes earns no seat from its
-usage; a previous arm it supersedes keeps its seat until
-`superseded_exit_weeks` (1) complete ISO weeks have passed since its
-successor's `created_at` **and** its share over those weeks is under the 2%
-exit bar, with a stale or too-thin census holding it as before. A model newer
-than the default earns no new seat; one that is already a previous arm gets
-the ordinary exit check rather than retiring on sight. When the docs cannot be
-read, the roster uses the defaults the committed `evals/roster.yml` carries in
-its `defaults:` block (the last ones resolved, re-checked against this run's
-catalogue), and its reasons say when they were last read and that this run's
-read failed. That block's `fetched_at` is the last SUCCESSFUL read, and a
-carry expires `defaults_carry_max_age_days` (14) days after it — every tier
-then falls back to rules 1 and 2 — or sooner for one family, when a model of
-it newer than the carried default clears the entry bar. A healthy run
-refreshes the committed `fetched_at` once it is more than half that age, and
-a run that starts or stops carrying proposes that change. A run that carried,
-or found the carry expired, is loud: `defaults.carried_reason` in the
-published roster, the first lines of the step summary, a `::warning::`, and
-the tracking issue kept (or opened) even when nothing else changed
-([#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203) round 2). A tier whose default did not resolve — or every tier, when the
-docs cannot be read and the committed roster carries no defaults — keeps rules
-1 and 2 verbatim, cooling-off included, and a `roster: ` warning says why. The
-preflight pick applies the cooling-off either way.
+`scripts/probe_model_defaults.py` asks the Claude Code CLI the workflow has
+just installed at the npm latest which model each family alias on the tier
+ladder (`opus`, `sonnet`, `haiku`, `fable`, …) resolves to: it starts
+`claude -p --model <alias> --output-format stream-json --verbose` with **no
+credential** (a scrubbed environment: PATH, a fresh temporary HOME, LANG=C),
+reads the `model` of the first `system/init` event and terminates the CLI
+before it can try the API, so the probe costs nothing
+([#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)). A word the
+CLI echoes back unchanged (`mythos`) is not an alias and is skipped. The
+roster takes the reported id when it is one of this run's available models (a
+dated snapshot the catalogue collapses onto its alias stands for that alias)
+of the alias's own family. In a tier whose default resolved, usage only
+decides whether the tier is on the roster (a model in it clears the entry bar,
+another previous arm in it is still seated this run, or there is no usable
+census): the seat goes to the default **at once, with no cooling-off**, and
+rules 1 and 2 do not apply there. The default's own previous seat does not
+keep its tier on the roster: once nothing else does, a seated default gets
+the ordinary exit check (2% over 8 weeks) and can retire — measured on the
+TIER's combined share, every model of the default's family in it, not its
+own, so a tier sitting between the 2% exit and 10% entry bars keeps an arm
+while the fleet moves from one version to the next (#203 round 2). A default
+governs the models of its own family word only: a peer family in the same
+rung (`[fable, mythos]`, a different access programme) keeps rules 1 and 2. A
+model the default supersedes earns no seat from its usage; a previous arm it
+supersedes keeps its seat until `superseded_exit_weeks` (1) complete ISO
+weeks have passed since its successor's `created_at` **and** its share over
+those weeks is under the 2% exit bar, with a stale or too-thin census holding
+it as before. A model newer than the default earns no new seat; one that is
+already a previous arm gets the ordinary exit check rather than retiring on
+sight. **Nothing is carried over a failed probe**: the CLI it probes is the
+one the eval runs on, so if it cannot be probed the eval cannot run either. A
+tier whose default did not resolve — or every tier, when the probe failed
+entirely — keeps rules 1 and 2 verbatim, cooling-off included, and a
+`roster: ` warning says why. The committed `evals/roster.yml` keeps no
+`defaults` block; the published roster's `defaults` (source
+`claude-code-cli <version>`, `probed_at`, resolved and unresolved aliases)
+is there for the reviewer. The preflight pick applies the cooling-off either
+way.
 
 **The cooling-off is 0 days** (the owner's decision of 2026-09-27, #202):
 `cooling_off_days: 0` in `evals/roster-policy.yml`, so rule 2 (in a tier
@@ -683,14 +683,17 @@ as cms-platform's Decap CMS publish loop or dependabot auto-merge; see
 served raw from the default branch, so it can only change via a commit to
 this repo.
 
-**Which Claude Code, and which models.** The CLI is **not pinned** (the
-owner's decision of 2026-09-27,
-[#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202)): the
-workflow's "Install Claude Code CLI" step uses the `claude` already on the
-runner, else installs `@anthropic-ai/claude-code@latest` — before the OIDC
-token exchange, so no credential exists while it installs — and records the
-version it got, and whether it was preinstalled, in the job's step summary.
-`propagation.yml` does the same. Every arm's `summary.json` then records what
+**Which Claude Code, and which models.** The CLI is **not pinned, and always
+the latest** (the owner's decisions of 2026-09-27,
+[#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202), and
+2026-09-28, [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)):
+the workflow's "Install Claude Code CLI" step asks npm for the latest
+`@anthropic-ai/claude-code` version, refuses anything that is not a plain
+`MAJOR.MINOR.PATCH`, installs exactly that version — never reusing one already
+on the runner — and fails if the `claude` on PATH then reports a different
+version (another install shadowing it). It runs before the OIDC token
+exchange, so no credential exists while it installs, and records the version
+in the job's step summary. `propagation.yml` does the same. Every arm's `summary.json` then records what
 actually ran:
 
 | Field | What it holds |

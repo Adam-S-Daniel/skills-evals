@@ -1,8 +1,10 @@
 # ADR 0002: The roster seats each tier's vendor-default model at once and retires the version it superseded after a buffer
 
-- **Status:** accepted (2026-09-27)
-- **Issue:** [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202)
-- **Deciders:** Adam, 2026-09-27
+- **Status:** accepted (2026-09-27); decision 1 revised 2026-09-28 (see the
+  second update below)
+- **Issue:** [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202);
+  revision in [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203)
+- **Deciders:** Adam, 2026-09-27 and 2026-09-28
 
 ## Context
 
@@ -26,23 +28,35 @@ happened to accumulate usage on.
 
 ## Decision
 
-1. **Read the vendor defaults from the docs.**
-   `scripts/fetch_model_defaults.py` fetches the Markdown build of the Claude
-   Code model-config page (`https://code.claude.com/docs/en/model-config.md`)
-   and parses it with `markdown-it-py`: the "Anthropic API" row of the table
-   whose header is `Provider` plus backticked alias columns, and prose of the
-   form "the `<alias>` alias resolves to <Name> <version>". The table wins
-   where both name an alias. `harness/roster.py --defaults` matches each
-   display name ("Opus 5.5") to the one available model whose Models API
-   `display_name` is that name or `Claude <name>` and whose id is in the
-   alias's own tier. No match, several, or a match in another tier leaves that
-   tier unresolved, with a `roster: ` warning.
+1. **Read the vendor defaults from the freshly installed CLI, with no
+   credential.** CI installs the npm latest Claude Code on every run (never a
+   CLI already on the runner). `scripts/probe_model_defaults.py` then starts,
+   for each family word on the policy's tier ladder,
+   `claude -p --model <alias> --output-format stream-json --verbose` in a
+   scrubbed environment — PATH, a fresh temporary HOME with its XDG
+   directories, LANG=C, stdin from `/dev/null`, and nothing else — and reads
+   the `model` of the first `{"type":"system","subtype":"init"}` event. The CLI
+   resolves the alias before that event and before it sends anything to a
+   model, so the probe needs no credential and costs nothing; the process is
+   terminated as soon as the event is read (SIGTERM, then SIGKILL after 5 s),
+   with a 60 s bound per alias. Measured 2026-09-28 on 2.1.283 with an empty
+   environment: `opus`, `sonnet`, `haiku` and `fable` each resolved to a model
+   id, `apiKeySource` was `none`, and `mythos` was echoed back unchanged — a
+   word the CLI echoes back is not an alias and is recorded as skipped. The
+   document records the probe time, the CLI's sanitised version line, the
+   `{alias: id}` defaults, the skipped aliases, and a class per failed alias
+   (`no-init`, `timeout`, `bad-model`, or an exception class). `harness/
+   roster.py --defaults` takes an id when it is one of this run's available
+   models — a dated snapshot the catalogue collapses onto its undated alias
+   stands for that alias — AND the family word in it is the alias. Anything
+   else, and every alias the probe failed on, leaves that tier unresolved, with
+   a `roster: ` warning.
 2. **New default → seat now.** In a tier whose default resolved, the default
    is an arm whenever the tier is on the roster — a model in it clears the
    entry bar, ANOTHER previous arm in it is itself still seated this run
    (e.g. a superseded arm inside its buffer), or the census is unusable (the
    existing all-tiers fallback). **No cooling-off.** Its reason names the
-   docs source and fetch time and why the tier is on the roster. The
+   CLI version and probe time and why the tier is on the roster. The
    default's OWN previous seat never puts its tier on the roster: when none
    of those holds and the default is itself a previous arm, it gets the same
    exit check as any previous arm — held on a stale or too-thin census, held
@@ -58,7 +72,7 @@ happened to accumulate usage on.
    toward qualifying the tier. A model newer than the default (a release the
    vendor has not made the default) earns no NEW seat; one that is already a
    previous arm gets the normal exit check rather than an immediate
-   retirement, so a docs read that lags a release by a run cannot seat it one
+   retirement, so a default that lags a release by a run cannot seat it one
    week and drop it, still heavily used, the next (#203 round 1).
 4. **Superseded → retire after a buffer.** A previous arm superseded by its
    tier's default keeps its seat until `superseded_exit_weeks` (new policy
@@ -69,36 +83,7 @@ happened to accumulate usage on.
    window under either ranked-usage floor, holds it. `0` retires it on the
    first run that sees it superseded. The 8-week exit window does not apply
    to a superseded arm.
-4a. **A failed docs read uses the last defaults the roster resolved (#203
-   round 1).** The committed `evals/roster.yml` carries a `defaults:` block
-   (`source`, `fetched_at`, `resolved: {alias: id}`), rendered from the
-   proposal and reviewed like the rest of the file (ADR 0001), and
-   type-checked by the committed-roster contract. When a run's defaults
-   document is absent, errored or yields nothing usable, the roster uses that
-   block instead, re-validating each id against the run's own catalogue and
-   tier (an id no longer available, or in another tier, is dropped with a
-   warning and only its tier falls back). Such a seat's reason says the
-   default was "last read <fetched_at>" and names the failed read's class;
-   the published block records `carried: true`. Without it, one failed read
-   flipped every tier to rules 1 and 2 for a run — seating a release the
-   vendor had not made the default, and reseating a model the default had
-   already retired.
-4b. **A carry expires, and is loud (#203 round 2).** The block's `fetched_at`
-   is the last SUCCESSFUL read. A healthy run proposes refreshing it once the
-   committed value is more than half of `defaults_carry_max_age_days` (new
-   policy key, **14**) whole days old, and routinely before that, so a
-   healthy fleet is not re-proposed every week; a run that starts or stops
-   carrying proposes `carried` changing. A carry older than
-   `defaults_carry_max_age_days` is not used: every tier falls back to rules 1
-   and 2 and the run says the carry expired. Before that, a family in which a
-   model NEWER than the carried default clears the entry bar drops the
-   carried default (staleness evidence: the fleet moved on while the docs
-   were unreadable). A run that carried, or found the carry expired, records
-   `defaults.carried_reason` (failure class, last-read time, age in days) in
-   the published roster, leads the step summary with it, and `eval.yml`
-   emits a `::warning::` and keeps (or opens) the tracking issue even when
-   the proposal status is `same`.
-4c. **A default governs its own family (#203 round 2).** A rung can hold peer
+5. **A default governs its own family (#203 round 2).** A rung can hold peer
    families (`[fable, mythos]`, a different access programme). The vendor-
    default rules apply only to models whose family word — the ladder word in
    the id — is the resolved alias; a model of another peer family is decided
@@ -108,11 +93,18 @@ happened to accumulate usage on.
    resolve; an alias naming another family's model is unresolved on its own;
    the one remaining conflict is two spellings of the same family word naming
    different models.
-5. **Unchanged:** a tier with no resolved default keeps both usage rules
+6. **A failed probe carries nothing over (#203).** The CLI the probe asks is
+   the one the eval runs on, so a probe that fails means the eval cannot run
+   either; there is nothing to bridge. Every tier the probe did not resolve
+   keeps both usage rules, with a `roster: ` warning naming the failure
+   classes. The committed `evals/roster.yml` keeps no `defaults` block; the
+   published roster keeps one for the reviewer (source
+   `claude-code-cli <version>`, `probed_at`, resolved, unresolved).
+7. **Unchanged:** a tier with no resolved default keeps both usage rules
    verbatim, cooling-off included; the preflight pick keeps its cooling-off;
    the judge rule is unchanged. With no usable defaults document — absent,
-   errored, empty or junk — AND no `defaults` block in the committed roster,
-   the roster is byte-for-byte the one computed without it.
+   failed for every alias, empty or junk — the roster is byte-for-byte the one
+   computed without it.
 
 ## Consequences
 
@@ -123,30 +115,27 @@ happened to accumulate usage on.
 - **Usage now only picks tiers.** A tier's version churn no longer re-weighs
   the arm set; a fleet that keeps using an old version after its default
   moves on is no longer measured on it once the buffer has run.
-- **A docs format change degrades loudly.** A fetch or parse failure writes
-  `defaults: {}` with an HTTP status or exception class, never a body; the
-  roster then uses the defaults the committed roster carries (4a), and with
-  none of those applies the usage rules to every tier, and warns either way.
-  Nothing fails the workflow step. A silently wrong parse is bounded by the
-  display-name match: a name that matches no model in its own tier seats
-  nothing.
-- **An outage is bounded and visible.** A docs outage longer than
-  `defaults_carry_max_age_days` ends in the usage rules rather than in a
-  default frozen at the last read; a release the fleet moves to during a
-  shorter one is seated as soon as its usage clears the entry bar. Either way
-  every affected run says so in the summary's first lines and in a warning,
-  and the tracking issue stays open. The cost is a `defaults.fetched_at`
-  refresh proposal every other week on a healthy fleet at the shipped 14 days.
+- **A broken CLI degrades loudly.** A probe that cannot read an init event,
+  times out, or reads a model that is not an id records only that class,
+  never the CLI's output; the roster applies the usage rules to that tier and
+  warns. Nothing fails the workflow step. A wrong default is bounded by the
+  catalogue check: an id that is not an available model of the alias's own
+  family seats nothing.
 - **A tier between the bars keeps an arm across a version change**, because
   the seated default's exit check reads the tier's share; a tier the fleet
   genuinely leaves still retires it by the exit bar.
 - **Peer families are independent.** Documenting a `fable` default neither
   unseats a heavily used `mythos` model nor changes the judge.
-- **The published roster records what it read** (`defaults`: source, fetch
-  time, `{alias: id}`, and unresolved aliases with reasons), so a reviewer of
-  a proposal can see why a seat appeared.
-- **One more unauthenticated network read** in the roster step. It runs
-  before the Models API bearer is exported and carries no credential.
+- **The published roster records what it read** (`defaults`: the CLI
+  version, probe time, `{alias: id}`, and unresolved aliases with reasons), so
+  a reviewer of a proposal can see why a seat appeared.
+- **One CLI start per alias in the roster step, with no credential.** It runs
+  before the Models API bearer is exported, and the probe scrubs the CLI's
+  environment itself, so the bearer could not reach it even if the order
+  changed.
+- **The defaults are the installed CLI's**, and that is now the point: CI
+  installs the npm latest every run, so the probe reports what the fleet's
+  up-to-date CLIs will resolve the alias to.
 - **Update 2026-09-27 (the owner's decision, #202):** the model cooling-off
   is set to 0 (`cooling_off_days: 0`), so the tiers still on rules 1 and 2
   (e.g. haiku) and the preflight pick take the newest model at once; the knob
@@ -154,20 +143,35 @@ happened to accumulate usage on.
   Claude Code already on the runner, else installs the latest, and records
   the version per run (step summary; `harness.version`, `models_used` and
   `judge_models_used` in every arm's `summary.json`) instead of in a pin.
+- **Update 2026-09-28 (the owner's decisions, #203):** "always ensure latest"
+  — CI installs the npm latest Claude Code on every run instead of reusing one
+  on the runner, and fails if another `claude` on PATH shadows it. With the
+  installed CLI always current, decision 1 moved from the docs page to an
+  unauthenticated probe of that CLI, and the carried-defaults machinery that
+  the docs page had needed — the committed roster's `defaults:` block, its
+  expiry `defaults_carry_max_age_days`, staleness drops and the loud
+  `carried` signals (the former decisions 4a and 4b), and the display-name
+  match — was removed. It
+  existed to bridge a docs outage; a probe failure means the CLI in CI is
+  broken, which no carried value can bridge, so the roster falls back to the
+  usage rules with a warning, as it did before #202.
 
 ## Alternatives considered
 
-- **Probe `claude --model <alias>` and read the `system/init` event's
-  `model`.** Rejected. The probe works with an invalid key and costs nothing,
-  but the CLI resolves aliases itself, so it reports the defaults of whichever
-  CLI version is installed. Measured 2026-09-27 with an invalid key: CLI
-  2.1.283 resolves `opus` → `claude-opus-5-5`, while 2.1.211, CI's pin at the
-  time, resolves `opus` → `claude-opus-4-8` and `fable` → `claude-fable-5`.
-  The same PR drops the harness cooling-off and unpins the CLI (CI uses the
-  one on the runner, else `@latest`), so a probe would report whichever
-  version the runner happened to have that day rather than the vendor's
-  published default, and would still lag any runner image that trails a
-  release; the docs page names the default directly.
+- **Read the defaults off the Claude Code model-config docs page**
+  (decision 1 from 2026-09-27 to 2026-09-28). Dropped. The page names
+  display names ("Opus 5.5"), not ids, so it needed a match through the
+  Models API's `display_name`, and a docs outage needed a whole
+  carry-and-expiry mechanism (a committed `defaults:` block, a 14-day expiry,
+  staleness evidence, loud warnings and an issue kept open) to avoid flipping
+  every tier to the usage rules for a run. The probe gives ids directly, and
+  its failure mode needs no bridge.
+- **Probe a PINNED CLI.** Rejected. The CLI resolves aliases itself, so a
+  pinned one reports the defaults of its own release and lags every change
+  of default. Measured 2026-09-27 with an invalid key: CLI 2.1.283 resolves
+  `opus` to the newer model, while 2.1.211, CI's pin at the time, resolved
+  `opus` and `fable` to the previous generation. Installing the npm latest on
+  every run is what makes the probe authoritative.
 - **Shorten the cooling-off.** Rejected: it would still seat by age rather
   than by what the vendor defaults to, and would also seat a preview the
   vendor has not made the default.

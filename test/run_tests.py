@@ -5760,7 +5760,7 @@ class TestIssue67(unittest.TestCase):
         # here is machinery and may not name one.
         for rel in ("harness/roster.py", "harness/timeweeks.py",
                     "harness/run_eval.py", "scripts/refresh_models.py",
-                    "scripts/fetch_model_defaults.py",
+                    "scripts/probe_model_defaults.py",
                     "scripts/model_usage_census.py", "evals/roster-policy.yml",
                     ".github/workflows/eval.yml"):
             text = (REPO_ROOT / rel).read_text(encoding="utf-8")

@@ -15,7 +15,8 @@ A PURE FUNCTION OVER FILES. `compute_roster()` takes already-parsed documents
 and a frozen `now`, and returns the roster dict — no network, no clock, no
 environment. The network calls in the feature live in
 `scripts/refresh_models.py`, which produces this module's `models_doc`, and
-`scripts/fetch_model_defaults.py`, which produces `defaults_doc`.
+the one CLI call in `scripts/probe_model_defaults.py`, which produces
+`defaults_doc`.
 
 WHO IS AN ARM (Adam's decision, 2026-09-22). Two rules, and the second one
 is subordinate to the first:
@@ -50,22 +51,20 @@ is subordinate to the first:
   outcome, not a hole.
 
   VENDOR DEFAULTS OVERRIDE BOTH RULES WHERE THEY RESOLVE (Adam's decision,
-  2026-09-27, #202, ADR 0002). In a tier whose default version the docs name
-  and exactly one available model matches, usage only decides whether the
-  tier is on the roster; the seat goes to the default with no cooling-off,
-  and a previous arm it supersedes retires by `superseded_exit_weeks` rather
+  2026-09-27, #202, ADR 0002). In a tier whose default model the freshly
+  installed Claude Code CLI reports (#203) and that model is available this
+  run, usage only decides whether the tier is on the roster; the seat goes
+  to the default with no cooling-off, and a previous arm it supersedes retires by `superseded_exit_weeks` rather
   than the exit window. A previous arm newer than the default gets the
   ordinary exit check (#203 round 1); the default's own previous seat, with
   nothing else putting its tier on the roster, is held while the TIER's
   combined share clears the exit bar (#203 round 2). A default governs the
   models of its own FAMILY word only, so a peer family in the same rung
-  (`[fable, mythos]`) keeps the two rules above. A failed docs read uses the
-  defaults the committed roster carries, for at most
-  `defaults_carry_max_age_days` after their last successful read, dropping a
-  family whose newer model clears the entry bar, and says so loudly
-  (`defaults.carried_reason`). See `_default_rung_decision`,
-  `_carried_defaults` and `_drop_stale_carried`. Every other tier keeps the
-  two rules above verbatim.
+  (`[fable, mythos]`) keeps the two rules above. A probe that failed
+  carries nothing over (#203): the tiers it could not resolve keep the two
+  rules above, with a warning. See `_resolve_defaults` and
+  `_default_rung_decision`. Every other tier keeps the two rules above
+  verbatim.
 
 Inputs
   models_doc   {"fetched_at": ..., "models": [{id, created_at, ...}, ...]} —
@@ -80,13 +79,11 @@ Inputs
                empty over the window, and the roster falls back to "newest
                per tier" and says which of those it was in every reason.
   policy       evals/roster-policy.yml — every threshold, plus the tier ladder.
-  defaults_doc {"fetched_at", "source", "defaults": {alias: display name},
-               "error"} from scripts/fetch_model_defaults.py. Optional and
-               untrusted; absent, errored or junk, and the roster uses the
-               `defaults` block the committed roster carries (#203 round
-               1) while it is younger than `defaults_carry_max_age_days`
-               (#203 round 2) — and with none, is byte-for-byte the one
-               computed without it.
+  defaults_doc {"probed_at", "harness_version", "defaults": {alias: model id},
+               "skipped": [alias], "errors": {alias: class}} from
+               scripts/probe_model_defaults.py. Optional and untrusted;
+               absent, unreadable, junk, or resolving no alias at all, and
+               the roster is byte-for-byte the one computed without it.
   previous     THE COMMITTED `evals/roster.yml`. Trusted, and the source of
                the observation history (`catalogue_seen`). Present and
                unreadable is FATAL (`TrustedRosterUnreadable`): that is a
@@ -106,11 +103,10 @@ document decide how much work it does.
 Output — roster/latest.json on `eval-results`, an EXHIBIT read by no
 decision, plus `proposal`, which is what `eval.yml` acts on:
   {generated_at, source: {models_api_at, census_at, admin_report_at},
-   defaults: {source, fetched_at, resolved: {alias: id},
-              unresolved: [{alias, reason}], carried?: true,
-              carried_expired?: true, carried_reason?: str}
-                                  -- only when a document or a carried block was read;
-                                  `fetched_at` is the last SUCCESSFUL read,
+   defaults: {source: "claude-code-cli <version>", probed_at,
+              resolved: {alias: id}, unresolved: [{alias, reason}]}
+                                  -- only when a probe resolved an alias;
+                                  published for the reviewer, never committed,
    arms: [{id, reason}], judge: {id, reason, is_arm}, preflight: {id, reason},
    unranked: [{id, reason}], excluded: [{id, reason}],
    compared_to_previous: bool, previous_state: "compared"|"none",
@@ -180,7 +176,7 @@ def _stderr(message: str) -> None:
     print(f"roster: {message}", file=sys.stderr)
 
 
-def committed_roster_problems(document, policy: dict | None = None) -> list[str]:
+def committed_roster_problems(document) -> list[str]:
     """Return every violation of the reviewed roster-file contract.
 
     This is deliberately shared by CI's committed-file test and the proposal
@@ -250,70 +246,6 @@ def committed_roster_problems(document, policy: dict | None = None) -> list[str]
     if not (isinstance(document.get("generated_at"), str)
             and document["generated_at"].strip()):
         problems.append("`generated_at` is not a non-empty string")
-    if "defaults" in document:
-        problems += _committed_defaults_problems(document["defaults"], policy)
-    return problems
-
-
-#: The keys a committed `defaults` block may carry (#203 round 1).
-COMMITTED_DEFAULTS_KEYS = {"source", "fetched_at", "resolved", "carried"}
-
-
-def _committed_defaults_problems(block, policy: dict | None) -> list[str]:
-    """Violations of the committed `defaults` block's shape: the last vendor
-    defaults a run resolved, which a later run whose docs read fails falls
-    back to (#203 round 1). Reviewed like the rest of the file (ADR 0001),
-    and type-checked like an untrusted input all the same: bounded, every
-    alias a word on the tier ladder, every value shaped like a model id."""
-    if not isinstance(block, dict):
-        return ["`defaults` is not a mapping"]
-    problems: list[str] = []
-    unknown = sorted(str(k) for k in block if k not in COMMITTED_DEFAULTS_KEYS)
-    if unknown:
-        problems.append(f"`defaults` has {len(unknown)} unknown key(s)")
-    source = block.get("source")
-    if not (isinstance(source, str) and DEFAULTS_SOURCE_RE.match(source)):
-        problems.append("`defaults.source` is not a plain URL or path")
-    fetched_at = block.get("fetched_at")
-    if fetched_at is not None and not (isinstance(fetched_at, str)
-                                       and parse_ts(fetched_at) is not None):
-        problems.append("`defaults.fetched_at` is not null or a timestamp")
-    if "carried" in block and not isinstance(block["carried"], bool):
-        problems.append("`defaults.carried` is not a boolean")
-    resolved = block.get("resolved")
-    if not isinstance(resolved, dict):
-        problems.append("`defaults.resolved` is not a mapping")
-        return problems
-    if len(resolved) > DEFAULTS_MAX_ALIASES:
-        problems.append(f"`defaults.resolved` names {len(resolved)} aliases, "
-                        f"past the {DEFAULTS_MAX_ALIASES}-alias bound")
-        return problems
-    try:
-        rungs = tier_rungs(policy if policy is not None else load_policy(
-            Path(__file__).resolve().parent.parent / "evals" / "roster-policy.yml"))
-        words = {word for rung in rungs for word in rung}
-    except (OSError, yaml.YAMLError, KeyError, TypeError, AttributeError):
-        rungs, words = [], None
-        problems.append("`defaults.resolved` cannot be checked: the tier "
-                        "ladder is unreadable")
-    for alias, model_id in resolved.items():
-        if not (isinstance(alias, str) and DEFAULTS_ALIAS_RE.match(alias)):
-            problems.append("`defaults.resolved` has an alias that is not a "
-                            "lowercase family word")
-        elif words is not None and alias not in words:
-            problems.append(f"`defaults.resolved.{alias}` is not a family word "
-                            f"on the tier ladder")
-        if not (isinstance(model_id, str) and PREVIOUS_ARM_ID_RE.match(model_id)):
-            problems.append("`defaults.resolved` has a value that is not a model id")
-        elif (words is not None and isinstance(alias, str) and alias in words
-              and rung_of(model_id, rungs) != next(
-                  i for i, rung in enumerate(rungs) if alias in rung)):
-            # R2-7 (#203 round 2): a default names a model of its own tier.
-            problems.append(f"`defaults.resolved.{alias}` names a model that "
-                            f"is not in the {alias} tier")
-    # Duplicate YAML keys (two `opus:` lines) cannot be seen here: yaml's
-    # safe_load keeps the last one, and this repo has no duplicate-rejecting
-    # loader to use instead; review is what catches that one.
     return problems
 
 
@@ -339,7 +271,6 @@ _THRESHOLD_CHECKS = {
     "min_ranked_share": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v <= 1,
     "catalogue_seen_max_age_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
     "superseded_exit_weeks": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 0,
-    "defaults_carry_max_age_days": lambda v: isinstance(v, int) and not isinstance(v, bool) and v >= 1,
 }
 
 
@@ -1720,40 +1651,40 @@ def _census_verdict(census_doc, raw_total: int, ranked_total: int, policy, now,
     return True, "", CENSUS_FRESH
 
 
-#: Bounds on the vendor-defaults document (#202). It is written by
-#: `scripts/fetch_model_defaults.py` from a public docs page, so it is an
-#: untrusted input like the census: every field is type-checked, sized, and
-#: shape-checked before any of it can reach a reason — and so the Markdown
-#: `render_summary` prints to a log where `::` is a workflow command.
+#: Bounds on the vendor-defaults document (#202; the CLI probe since #203).
+#: It is written by `scripts/probe_model_defaults.py` from the output of a
+#: freshly installed CLI, so it is an untrusted input like the census: every
+#: field is type-checked, sized, and shape-checked before any of it can reach
+#: a reason — and so the Markdown `render_summary` prints to a log where `::`
+#: is a workflow command.
 DEFAULTS_MAX_ALIASES = 16
-DEFAULTS_NAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 .]{0,63}\Z")
 DEFAULTS_ALIAS_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}\Z")
-DEFAULTS_SOURCE_RE = re.compile(r"^(?!.*::)[A-Za-z0-9._/][A-Za-z0-9._~/:+-]{0,255}\Z")
-DEFAULTS_ERROR_RE = re.compile(r"^[A-Za-z0-9 ._:-]{1,64}\Z")
-#: `scripts/fetch_model_defaults.py`'s `DOCS_URL`, restated rather than
-#: imported so this module never imports the one that does network I/O; a
-#: test pins the two equal. It stands in for a source that is not a plain
-#: URL or path, so a published block always meets `DEFAULTS_SOURCE_RE`
-#: (R2-6, #203 round 2).
-DEFAULTS_DOCS_URL = "https://code.claude.com/docs/en/model-config.md"
+#: The probe's own model-id shape: lowercase letters, digits, dashes, dots.
+DEFAULTS_MODEL_RE = re.compile(r"^[a-z0-9][a-z0-9.-]{0,63}\Z")
+#: An error the probe recorded: one of its fixed classes or an exception's
+#: class name. No colon, so no `::` can reach a reason.
+DEFAULTS_ERROR_RE = re.compile(r"^[A-Za-z0-9._-]{1,64}\Z")
+#: The CLI's version line, as the probe and eval.yml's install step reduce it.
+DEFAULTS_VERSION_RE = re.compile(r"^[A-Za-z0-9._() -]{1,80}\Z")
 #: What a tier falls back to when its default does not resolve.
 FALLBACK_RULES = "the usage and newest-in-tier rules"
 
 
 def _defaults_provenance(document: dict) -> tuple[str, str | None]:
-    """(source, fetched_at) of a defaults document or a carried block,
-    shape-checked: a source that is not a plain URL or path, or a timestamp
-    that does not parse, never reaches a reason."""
-    source = document.get("source")
-    if not (isinstance(source, str) and DEFAULTS_SOURCE_RE.match(source)):
-        source = DEFAULTS_DOCS_URL
-    fetched = parse_ts(document.get("fetched_at"))
+    """(source, probed_at) of a defaults document, shape-checked: a version
+    that is not a plain version line, or a timestamp that does not parse,
+    never reaches a reason."""
+    version = document.get("harness_version")
+    if not (isinstance(version, str) and DEFAULTS_VERSION_RE.match(version)
+            and version.strip()):
+        version = "(version unknown)"
+    probed = parse_ts(document.get("probed_at"))
     try:
-        fetched_at = (fetched.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-                      if fetched else None)
+        probed_at = (probed.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+                     if probed else None)
     except (OverflowError, ValueError, OSError):
-        fetched_at = None
-    return source, fetched_at
+        probed_at = None
+    return f"claude-code-cli {version.strip()}", probed_at
 
 
 def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
@@ -1767,9 +1698,7 @@ def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
     "older than" another family's models. So two peer aliases naming models
     of their own families both resolve, and a peer alias naming ANOTHER
     family's model is unresolved on its own, leaving every other alias
-    alone. The one conflict left is two spellings of the same family word
-    naming different models, which the caller hands in with `model` None.
-    `by_family` is also the published `resolved` map.
+    alone. `by_family` is also the published `resolved` map.
     """
     unresolved: list[dict] = []
 
@@ -1785,14 +1714,14 @@ def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
             continue
         found_rung = rung_of(model["id"], rungs)
         if found_rung != rung:
-            unresolve(alias, rung, f"`{model['id']}` matches it but sits in the "
+            unresolve(alias, rung, f"`{model['id']}` sits in the "
                                    f"{rung_label(rungs, found_rung)} tier, not "
                                    f"the {rung_label(rungs, rung)} tier")
             continue
         family = family_of(model["id"], rungs)
         if family != alias:
-            unresolve(alias, rung, f"`{model['id']}` matches it but is a model of "
-                                   f"the {family} family, not the {alias} family")
+            unresolve(alias, rung, f"`{model['id']}` is a model of the {family} "
+                                   f"family, not the {alias} family")
             continue
         if parse_ts(model.get("created_at")) is None:
             unresolve(alias, rung, f"`{model['id']}` has no parseable created_at "
@@ -1802,85 +1731,76 @@ def _seat_default_candidates(candidates: list[tuple], rungs: list[list[str]],
     return dict(sorted(by_family.items())), unresolved
 
 
-def _resolve_defaults(defaults_doc, available: list[dict],
-                      rungs: list[list[str]], warn, *, failed: list | None = None,
-                      fallback: str | None = f"every tier keeps {FALLBACK_RULES}",
+def _resolve_defaults(defaults_doc, available: list[dict], snapshots: dict,
+                      rungs: list[list[str]], warn, *,
                       problem: str | None = None) -> dict | None:
-    """The vendor-default model of each family the docs name, as an id (#202).
+    """The vendor-default model of each family the CLI probe resolved, as an
+    id (#202; `scripts/probe_model_defaults.py` since #203).
 
-    None whenever the document is absent, errored, empty or junk, with the
-    failure's class appended to `failed` (never the document's text): the
-    caller then falls back to the defaults carried in the committed roster,
-    or — with none — to a roster BYTE-FOR-BYTE the one computed without it.
-    `problem` is `main()`'s "the file is there and unreadable", which is a
-    failure of its own rather than an absence. A whole-document failure is
-    warned about here only when `fallback` is given; with a carried block
-    to fall back to, the caller passes None and `_carried_defaults` says it
-    once, with the cause (R2-5, #203 round 2).
+    None whenever the document is absent, unreadable, not an object, or
+    resolved no alias at all — the probe failed, so the CLI in CI is broken
+    and nothing is carried in its place: the roster is then BYTE-FOR-BYTE the
+    one computed without a document. Every case but a plain absence (a run
+    with no probe, e.g. locally) says so in one `roster: ` warning, naming
+    the probe's error classes and never the document's text. `problem` is
+    `main()`'s "the file is there and unreadable".
 
-    A well-formed alias that cannot be resolved (no match, several matches,
-    a match in another tier or family, a case-duplicate naming a different
-    model) is recorded under `unresolved` and its family alone falls back.
-
-    A display name matches a model whose Models-API `display_name` is that
-    name or `Claude <name>`, case-insensitively, among `available` — so a
-    dated snapshot, collapsed onto its alias there, is never a second match.
+    An alias resolves when its id is one of this run's available models —
+    or a dated snapshot the catalogue collapses onto one, which then stands
+    for it — AND the family word in that id is the alias itself. Anything
+    else is recorded under `unresolved`, warned about, and only that family
+    falls back. An alias the probe recorded an error for is unresolved the
+    same way, with the error's class; an alias it `skipped` (the CLI echoed
+    it back: not one of its aliases) is not a default and is not listed.
     """
-    failed = failed if failed is not None else []
-
-    def fail(cls: str, message: str) -> None:
-        failed.append(cls)
-        if fallback is not None:
-            warn(f"{message}; {fallback}")
-
+    fallback = f"every tier keeps {FALLBACK_RULES}"
     if defaults_doc is None:
         if problem:
-            fail("unreadable", "model defaults unavailable (the defaults file is "
-                               "present but unreadable)")
-        else:
-            failed.append("absent")
+            warn("model defaults unavailable (the defaults file is present but "
+                 f"unreadable); {fallback}")
         return None
     if not isinstance(defaults_doc, dict):
-        fail("not-an-object", "model defaults document is not an object")
+        warn(f"model defaults document is not an object; {fallback}")
         return None
-    error = defaults_doc.get("error")
-    if error is not None:
-        said = (error if isinstance(error, str) and DEFAULTS_ERROR_RE.match(error)
-                else "an error was recorded")
-        fail(said, f"model defaults unavailable ({said})")
-        return None
+    raw_errors = defaults_doc.get("errors")
+    errors: dict[str, str] = {}
+    if isinstance(raw_errors, dict) and len(raw_errors) <= DEFAULTS_MAX_ALIASES:
+        for alias, error in raw_errors.items():
+            if isinstance(alias, str) and DEFAULTS_ALIAS_RE.match(alias):
+                errors[alias] = (error if isinstance(error, str)
+                                 and DEFAULTS_ERROR_RE.match(error)
+                                 else "an error was recorded")
     entries = defaults_doc.get("defaults")
     if not isinstance(entries, dict) or not entries:
-        fail("no-defaults", "model defaults document names no defaults")
+        said = (", ".join(f"{a} {e}" for a, e in sorted(errors.items()))
+                or "no error recorded")
+        warn(f"model defaults unavailable (the Claude Code probe resolved no "
+             f"alias: {said}); {fallback}")
         return None
     if len(entries) > DEFAULTS_MAX_ALIASES:
-        fail("too-many-aliases", f"model defaults document names {len(entries)} "
-                                 f"aliases, past the {DEFAULTS_MAX_ALIASES}-alias bound")
+        warn(f"model defaults document names {len(entries)} aliases, past the "
+             f"{DEFAULTS_MAX_ALIASES}-alias bound; {fallback}")
         return None
-    names: dict[str, set[str]] = {}
+    ids: dict[str, str] = {}
     junk = 0
-    for alias, name in entries.items():
-        if not (isinstance(alias, str) and DEFAULTS_ALIAS_RE.match(alias.lower())
-                and isinstance(name, str) and DEFAULTS_NAME_RE.match(name)):
+    for alias, model_id in entries.items():
+        if (isinstance(alias, str) and DEFAULTS_ALIAS_RE.match(alias)
+                and isinstance(model_id, str) and DEFAULTS_MODEL_RE.match(model_id)):
+            ids[alias] = model_id
+        else:
             junk += 1
-            continue
-        # Case duplicates ("OPUS" and "opus") collapse onto one alias: the
-        # same model twice is deduplicated silently, two different models
-        # are a conflict (#203 round 1).
-        spelled = name.lower()
-        spelled = spelled[len("claude "):] if spelled.startswith("claude ") else spelled
-        names.setdefault(alias.lower(), {})[spelled] = name
     if junk:
         warn(f"model defaults document: skipped {junk} entry/entries that are "
-             f"not a family alias mapped to a display name")
-    if not names:
-        fail("no-usable-defaults", "model defaults document names no usable defaults")
+             f"not a family alias mapped to a model id")
+    if not ids:
+        warn(f"model defaults document names no usable defaults; {fallback}")
         return None
 
-    source, fetched_at = _defaults_provenance(defaults_doc)
+    source, probed_at = _defaults_provenance(defaults_doc)
+    by_id = {m["id"]: m for m in available}
     candidates: list[tuple] = []
     unresolved: list[dict] = []
-    for alias in sorted(names):
+    for alias in sorted(set(ids) | set(errors)):
         rung = next((i for i, words in enumerate(rungs) if alias in words), None)
         if rung is None:
             unresolved.append({"alias": alias, "reason": "not a family word on "
@@ -1888,157 +1808,21 @@ def _resolve_defaults(defaults_doc, available: list[dict],
             warn(f"model default alias `{alias}` is not a family word on the "
                  f"tier ladder; ignored")
             continue
-        if len(names[alias]) > 1:
+        if alias not in ids:
             candidates.append((alias, rung, None,
-                               "the document names it more than once, as "
-                               "different models"))
+                               f"the Claude Code probe failed ({errors[alias]})"))
             continue
-        name = next(iter(names[alias].values()))
-        wanted = {name.lower(), f"claude {name}".lower()}
-        matches = [m for m in available
-                   if isinstance(m.get("display_name"), str)
-                   and m["display_name"].lower() in wanted]
-        if not matches:
+        model_id = ids[alias]
+        seat_id = snapshots.get(model_id, model_id)
+        if seat_id not in by_id:
             candidates.append((alias, rung, None,
-                               f"no available model's display name is "
-                               f"`{name}` or `Claude {name}`"))
-        elif len(matches) > 1:
-            candidates.append((alias, rung, None,
-                               f"{len(matches)} available models share that "
-                               f"display name"))
+                               f"`{model_id}` is not an available model this run"))
         else:
-            candidates.append((alias, rung, matches[0], None))
+            candidates.append((alias, rung, by_id[seat_id], None))
     by_family, more = _seat_default_candidates(
         candidates, rungs, warn, fallback=f"keeps {FALLBACK_RULES}")
-    return {"source": source, "fetched_at": fetched_at, "by_family": by_family,
+    return {"source": source, "probed_at": probed_at, "by_family": by_family,
             "resolved": dict(by_family), "unresolved": unresolved + more}
-
-
-def _days(count: int | None) -> str:
-    if count is None:
-        return "an unknown number of days"
-    return f"{count} day{'' if count == 1 else 's'}"
-
-
-def _carried_defaults(previous, available: list[dict], rungs: list[list[str]],
-                      warn, failure: str, *, now: datetime,
-                      max_age_days: int) -> dict | None:
-    """The defaults the COMMITTED roster carries, re-validated against THIS
-    run's catalogue, for a run whose own docs read failed (#203 round 1).
-
-    Without this, one failed read flipped every tier back to newest-in-tier
-    for a run — seating a release the vendor had not made the default, and
-    reseating a model the default had already retired — and the next good
-    read flipped it back. The block is a reviewed file (ADR 0001), but it is
-    still type-checked here: an alias off the ladder, an id no longer
-    available or one in another tier or family is dropped with a warning,
-    and only that family falls back.
-
-    A CARRY EXPIRES (R2-1, #203 round 2). Its age is measured from the
-    block's `fetched_at` — the last SUCCESSFUL read — and past
-    `max_age_days` whole days (or with no readable `fetched_at` at all) the
-    block is not used: every tier falls back to the usage and newest-in-tier
-    rules, and the result says `carried_expired`. Either way the result
-    carries a `carried_reason` for the loud signal.
-    """
-    block = previous.get("defaults") if isinstance(previous, dict) else None
-    if not isinstance(block, dict):
-        return None
-    resolved_in = block.get("resolved")
-    if not (isinstance(resolved_in, dict) and resolved_in
-            and len(resolved_in) <= DEFAULTS_MAX_ALIASES):
-        warn("the committed roster's `defaults` block resolves nothing usable; "
-             f"every tier keeps {FALLBACK_RULES}")
-        return None
-    source, fetched_at = _defaults_provenance(block)
-    read_at = parse_ts(fetched_at) if fetched_at else None
-    age = (now - read_at).days if read_at else None
-    last = (f"last read {fetched_at}, {_days(age)} ago" if fetched_at
-            else "last read at an unknown time")
-    if age is None or age > max_age_days:
-        reason = (f"this run's docs read failed ({failure}), and the vendor "
-                  f"defaults carried in the committed roster expired: {last}, "
-                  f"past the {max_age_days}-day `defaults_carry_max_age_days`, so "
-                  f"every tier falls back to {FALLBACK_RULES}")
-        warn(f"model defaults unavailable this run ({failure}); the defaults "
-             f"carried in the committed roster expired ({last}, past the "
-             f"{max_age_days}-day `defaults_carry_max_age_days`); every tier "
-             f"falls back to {FALLBACK_RULES}")
-        return {"source": source, "fetched_at": fetched_at, "by_family": {},
-                "resolved": {}, "unresolved": [], "carried_expired": True,
-                "failure": failure, "carried_reason": reason}
-    warn(f"model defaults unavailable this run ({failure}); using the defaults "
-         f"carried in the committed roster, {last}")
-    by_id = {m["id"]: m for m in available}
-    candidates: list[tuple] = []
-    unresolved: list[dict] = []
-    for alias in sorted(a for a in resolved_in if isinstance(a, str)):
-        model_id = resolved_in[alias]
-        rung = next((i for i, words in enumerate(rungs) if alias in words), None)
-        if rung is None or not DEFAULTS_ALIAS_RE.match(alias):
-            unresolved.append({"alias": alias if DEFAULTS_ALIAS_RE.match(alias)
-                               else "(malformed)",
-                               "reason": "carried alias is not a family word on "
-                                         "the tier ladder"})
-            warn("a carried model default names an alias that is not a family "
-                 "word on the tier ladder; ignored")
-            continue
-        if not (isinstance(model_id, str) and PREVIOUS_ARM_ID_RE.match(model_id)):
-            candidates.append((alias, rung, None,
-                               "the carried default is not a model id"))
-        elif model_id not in by_id:
-            candidates.append((alias, rung, None,
-                               f"the carried default `{model_id}` is no longer "
-                               f"an available model"))
-        else:
-            candidates.append((alias, rung, by_id[model_id], None))
-    by_family, more = _seat_default_candidates(
-        candidates, rungs, warn, fallback=f"keeps {FALLBACK_RULES} "
-                                          "(carried default dropped)")
-    if not by_family and not unresolved and not more:
-        return None
-    reason = (f"this run's docs read failed ({failure}); the roster used the "
-              f"vendor defaults carried in the committed roster, {last} (a "
-              f"carry expires after {max_age_days} days)")
-    return {"source": source, "fetched_at": fetched_at, "by_family": by_family,
-            "resolved": dict(by_family), "unresolved": unresolved + more,
-            "carried": True, "failure": failure, "carried_reason": reason}
-
-
-def _drop_stale_carried(defaults_info: dict, available: list[dict],
-                        rungs: list[list[str]], enter_share: dict, policy: dict,
-                        warn) -> None:
-    """STALENESS EVIDENCE (R2-1, #203 round 2). A carried default is a
-    fact about the docs as they were at the last successful read. Where a
-    model of the same family that is NEWER than it clears the entry bar,
-    the fleet has moved on without the docs being readable to say so: the
-    carried default for that family is dropped, with a warning naming
-    both, and the family falls back to the usage and newest-in-tier rules.
-    Never applied to a fresh read: there a newer model's usage is a preview
-    the vendor has not made the default (#202)."""
-    bar = policy["arm_enter_usage_pct"]
-    by_id = {m["id"]: m for m in available}
-    for alias, default_id in list(defaults_info["by_family"].items()):
-        default = by_id[default_id]
-        newer = [(enter_share[m["id"]], m["id"]) for m in available
-                 if family_of(m["id"], rungs) == alias
-                 and _rank(m, rungs) > _rank(default, rungs)
-                 and enter_share.get(m["id"], -1.0) >= bar]
-        if not newer:
-            continue
-        share, newer_id = max(newer)
-        words = (f"newer `{newer_id}` carries {_format_share(share, bar)}% of "
-                 f"rankable census usage over the last "
-                 f"{policy['arm_enter_window_weeks']} weeks (at or above the "
-                 f"{bar}% entry bar)")
-        del defaults_info["by_family"][alias]
-        del defaults_info["resolved"][alias]
-        defaults_info["unresolved"].append({
-            "alias": alias,
-            "reason": (f"the carried default `{default_id}` is stale: {words}, "
-                       f"so it is dropped")})
-        warn(f"carried model default `{default_id}` for `{alias}` dropped as "
-             f"stale: {words}; the {alias} family falls back to {FALLBACK_RULES}")
 
 
 def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
@@ -2072,14 +1856,10 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
     """
     model_id = model["id"]
     by_id = {m["id"]: m for m in available}
-    fetched = defaults_info['fetched_at'] or 'at an unknown time'
+    probed = (f"probed {defaults_info['probed_at']}" if defaults_info["probed_at"]
+              else "probed at an unknown time")
     default_words = (f"vendor default for the {label} tier per "
-                     f"{defaults_info['source']} (fetched {fetched})"
-                     if not defaults_info.get("carried") else
-                     f"vendor default for the {label} tier per "
-                     f"{defaults_info['source']} (last read {fetched}, carried "
-                     f"in the committed roster: this run's read failed, "
-                     f"{defaults_info['failure']})")
+                     f"{defaults_info['source']} ({probed})")
     enter_bar = policy["arm_enter_usage_pct"]
     enter_span = f"over the last {policy['arm_enter_window_weeks']} weeks"
 
@@ -2125,7 +1905,7 @@ def _default_rung_decision(model: dict, rung: int, label: str, default_id: str,
         if model_id in previous_arms:
             # A previous arm the vendor has not (or not yet, or no longer)
             # made the default gets rule 3's exit check rather than an
-            # immediate retirement (#203 round 1): a docs read that lags a
+            # immediate retirement (#203 round 1): a default that lags a
             # release by one run must not seat it one week and drop it,
             # still heavily used, the next.
             held = holdover(model_id)
@@ -2592,30 +2372,16 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         if best is None or share > best[1]:
             qualifying_by_family[family] = (model["id"], share)
 
-    # --- vendor defaults (#202, ADR 0002) ----------------------------------
+    # --- vendor defaults (#202, ADR 0002; the CLI probe since #203) --------
     # A tier whose default resolved is seated by `_default_rung_decision`
     # below and never reaches the usage/newest/hold-over rules; every other
-    # tier keeps them verbatim, cooling-off included. With no document the
-    # map is empty and nothing below changes.
-    #: A failed read falls back to the defaults the committed roster
-    #: carries (#203 round 1), and only with none of those to the
-    #: newest-in-tier rule — which is then, byte for byte, the roster
-    #: computed without a document.
-    carried_block = isinstance((previous or {}).get("defaults"), dict)
-    failed: list[str] = []
-    #: With a carried block to fall back to, a whole-document failure is
-    #: warned about ONCE, by `_carried_defaults`, with its cause (R2-5).
-    defaults_info = _resolve_defaults(
-        defaults_doc, available, rungs, warn, failed=failed,
-        fallback=None if carried_block else f"every tier keeps {FALLBACK_RULES}",
-        problem=defaults_problem)
-    if defaults_info is None and carried_block:
-        defaults_info = _carried_defaults(
-            previous, available, rungs, warn, failed[0] if failed else "absent",
-            now=now, max_age_days=policy["defaults_carry_max_age_days"])
-        if defaults_info is not None and defaults_info.get("carried"):
-            _drop_stale_carried(defaults_info, available, rungs, enter_share,
-                                policy, warn)
+    # tier keeps them verbatim, cooling-off included. A probe that failed
+    # entirely, or no probe at all, leaves the map empty, and the roster is
+    # then byte for byte the one computed without a document: there is no
+    # carried fallback, because a CLI that cannot be probed cannot run the
+    # eval either.
+    defaults_info = _resolve_defaults(defaults_doc, available, snapshots,
+                                      rungs, warn, problem=defaults_problem)
     #: family word -> the id of that family's resolved vendor default.
     default_by_family = defaults_info["by_family"] if defaults_info else {}
     #: Why a previous arm this rule dropped left, for `retired_since_last`
@@ -2976,18 +2742,12 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         },
     }
     if defaults_info is not None:
-        # Only when a document was read: without one the roster is the one
-        # this module has always published, key for key.
+        # Only when a probe resolved or tried to resolve an alias: without one
+        # the roster is the one this module has always published, key for
+        # key. Published for the reviewer only — the committed roster keeps
+        # no `defaults` block (#203).
         result["defaults"] = {key: defaults_info[key] for key in
-                              ("source", "fetched_at", "resolved", "unresolved")}
-        # THE LOUD SIGNAL (R2-1, #203 round 2): a run that used a carried
-        # block, or found it expired, says so in a field `eval.yml` reads
-        # and `render_summary` leads with.
-        for key in ("carried", "carried_expired"):
-            if defaults_info.get(key):
-                result["defaults"][key] = True
-        if defaults_info.get("carried_reason"):
-            result["defaults"]["carried_reason"] = defaults_info["carried_reason"]
+                              ("source", "probed_at", "resolved", "unresolved")}
     result.update({
         "arms": arms,
         "judge": judge,
@@ -3003,10 +2763,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
                               judge, preflight, catalogue_seen_entries,
                               evidence, now=now,
                               max_age_days=policy["catalogue_seen_max_age_days"],
-                              retire_notes=retire_notes,
-                              defaults_info=defaults_info,
-                              defaults_max_age_days=policy.get(
-                                  "defaults_carry_max_age_days")),
+                              retire_notes=retire_notes),
     })
     return result
 
@@ -3046,9 +2803,7 @@ def _proposal(previous: dict | None, previous_arms: list[str],
               previous_seen: list[dict], arms: list[dict], judge: dict,
               preflight: dict, catalogue_seen_entries: list[dict],
               evidence: dict, *, now: datetime, max_age_days: int,
-              retire_notes: dict | None = None,
-              defaults_info: dict | None = None,
-              defaults_max_age_days: int | None = None) -> dict:
+              retire_notes: dict | None = None) -> dict:
     """What this run would CHANGE about the committed roster, and why.
 
     THE OUTPUT OF THIS MODULE IS A PROPOSAL, NOT THE RUNNING SET (ADR
@@ -3085,16 +2840,8 @@ def _proposal(previous: dict | None, previous_arms: list[str],
     refresh has to land at least every `max_age_days / 2` or a model that
     leaves the API keeps less than half its intended history before it
     ages out.
-
-    `defaults.fetched_at` follows the same rule for the same reason (R2-2,
-    #203 round 2): a carried block's age is measured from it, so a healthy
-    read refreshes it materially once the committed value is more than half
-    of `defaults_carry_max_age_days` whole days old (or unreadable), and
-    routinely before that. A change of `defaults.carried` is always
-    material: an outage starting, and one ending.
     """
     changes: list[dict] = []
-    routine_defaults: set[int] = set()
     arm_ids = [a["id"] for a in arms]
     previous_arm_ids = list(previous_arms)
     for arm in arms:
@@ -3138,54 +2885,6 @@ def _proposal(previous: dict | None, previous_arms: list[str],
                 "catalogue_seen", "catalogue_seen.last_seen", before, after,
                 f"the Models API listed `{model_id}` this run, refreshing its "
                 "reviewed observation date"))
-    # THE CARRIED DEFAULTS (#203 round 1). A resolution that differs from
-    # the one `evals/roster.yml` carries is material on its own: otherwise
-    # the block a failed docs read falls back to could only ever reach the
-    # committed file on a run whose arms happened to move too.
-    if defaults_info is not None:
-        block = (previous or {}).get("defaults") if isinstance(previous, dict) else None
-        before = (block.get("resolved") if isinstance(block, dict)
-                  and isinstance(block.get("resolved"), dict) else {})
-        after = dict(sorted(defaults_info["resolved"].items()))
-        read = defaults_info["fetched_at"] or "at an unknown time"
-        if after != before:
-            if defaults_info.get("carried_expired"):
-                why = (f"the vendor defaults the committed roster carries "
-                       f"expired: {defaults_info['carried_reason']}; the block "
-                       f"is dropped until a docs read succeeds")
-            elif defaults_info.get("carried"):
-                why = ("a default the committed roster carries is no longer "
-                       "usable in its tier (no longer an available model, or "
-                       "stale by a newer model's usage), so it is dropped")
-            else:
-                why = (f"the vendor defaults resolved from {defaults_info['source']} "
-                       f"(read {read}) differ from the ones the committed roster "
-                       f"carries; a run whose docs read fails falls back to these")
-            changes.append(_change("defaults", "defaults.resolved",
-                                   before or None, after or None, why))
-        if isinstance(block, dict) and after:
-            was_carried = block.get("carried") is True
-            is_carried = bool(defaults_info.get("carried"))
-            if was_carried != is_carried:
-                changes.append(_change(
-                    "defaults", "defaults.carried", was_carried, is_carried,
-                    "this run's docs read failed and the committed defaults "
-                    "were carried" if is_carried else
-                    f"this run's docs read succeeded (read {read}); the "
-                    f"committed block no longer says it was carried"))
-            committed_at = block.get("fetched_at")
-            if (not is_carried and defaults_info["fetched_at"]
-                    and committed_at != defaults_info["fetched_at"]):
-                changes.append(_change(
-                    "defaults", "defaults.fetched_at", committed_at,
-                    defaults_info["fetched_at"],
-                    "the last successful docs read; a run whose read fails "
-                    "measures the carried defaults' age from it"))
-                committed_ts = (parse_ts(committed_at)
-                                if isinstance(committed_at, str) else None)
-                if (committed_ts is not None and defaults_max_age_days
-                        and (now - committed_ts).days <= defaults_max_age_days / 2):
-                    routine_defaults.add(len(changes) - 1)
     if previous_arm_ids != arm_ids and set(previous_arm_ids) == set(arm_ids):
         changes.append(_change(
             "seat", "arms.order", previous_arm_ids, arm_ids,
@@ -3201,10 +2900,9 @@ def _proposal(previous: dict | None, previous_arms: list[str],
     # ancient, the same fallback the eviction check already trusts.
     half_window = timedelta(days=max_age_days / 2)
     material = any(
-        index not in routine_defaults
-        and (change["field"] != "catalogue_seen.last_seen"
-             or (now - (parse_ts(change["from"]) or now)) >= half_window)
-        for index, change in enumerate(changes))
+        change["field"] != "catalogue_seen.last_seen"
+        or (now - (parse_ts(change["from"]) or now)) >= half_window
+        for change in changes)
     return {"status": "differs" if material else "same", "changes": changes}
 
 
@@ -3231,15 +2929,6 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     numerator and denominator behind each seat.
     """
     lines = ["### Model roster", ""]
-    # THE LOUD SIGNAL LEADS (R2-1, #203 round 2): a run that used the
-    # defaults carried in the committed roster, or found them expired, says
-    # so before anything else — not only in the collapsed warnings.
-    carried_reason = (roster.get("defaults") or {}).get("carried_reason")
-    if carried_reason:
-        headline = ("The carried vendor model defaults expired"
-                    if roster["defaults"].get("carried_expired") else
-                    "Vendor model defaults were carried from the committed roster")
-        lines += [f"> **{headline}.** {carried_reason}", ""]
     changed = roster["added_since_last"] or roster["retired_since_last"]
     if previous_state == "auto":
         previous_state = (roster.get("previous_state") or
@@ -3313,18 +3002,14 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     lines += [f"Models API `{source['models_api_at']}` · census "
                   f"`{source['census_at'] or 'none'}` · admin report "
                   f"`{source['admin_report_at'] or 'none'}`", ""]
-    # Only when a defaults document was read (#202), so a roster computed
-    # without one renders exactly as it always has.
+    # Only when a defaults document resolved something to report (#202), so
+    # a roster computed without one renders exactly as it always has.
     defaults = roster.get("defaults")
     if defaults:
         seated = ", ".join(f"`{alias}` → `{model_id}`" for alias, model_id
                            in sorted(defaults["resolved"].items())) or "none resolved"
-        carried = (" (carried in the committed roster: this run's read failed)"
-                   if defaults.get("carried") else
-                   " (the carried defaults expired: this run's read failed)"
-                   if defaults.get("carried_expired") else "")
-        lines += [f"Vendor model defaults from {defaults['source']} "
-                  f"`{defaults['fetched_at'] or 'unknown'}`{carried}: {seated}", ""]
+        lines += [f"Vendor model defaults from {defaults['source']}, probed "
+                  f"`{defaults['probed_at'] or 'unknown'}`: {seated}", ""]
         for entry in defaults["unresolved"]:
             lines += [f"- `{entry['alias']}` not resolved: {entry['reason']}"]
         if defaults["unresolved"]:
@@ -3347,7 +3032,7 @@ def main() -> int:
                              "computes a proposal against; YAML or JSON")
     parser.add_argument("--defaults", type=Path, default=None,
                         help="vendor model defaults from "
-                             "scripts/fetch_model_defaults.py; optional (#202)")
+                             "scripts/probe_model_defaults.py; optional (#202, #203)")
     parser.add_argument("--out", type=Path, required=True)
     args = parser.parse_args()
 
@@ -3381,9 +3066,8 @@ def main() -> int:
     # committed roster on `main`, not a document off an unprotected branch.
     previous_doc, previous_problem = read_trusted_roster(args.previous)
     # Absent or unreadable is not fatal: `compute_roster` falls back to the
-    # defaults the committed roster carries, or with none to the usage and
-    # newest-in-tier rules, and says which in ONE warning with the right
-    # cause (R2-5, #203 round 2) — so nothing is printed about it here.
+    # usage and newest-in-tier rules, and says so in ONE warning with the
+    # right cause (R2-5, #203 round 2) — so nothing is printed about it here.
     defaults_doc, defaults_problem = read_json(args.defaults)
 
     try:

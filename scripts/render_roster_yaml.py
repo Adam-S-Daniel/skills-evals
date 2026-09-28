@@ -71,39 +71,6 @@ def _block(text: str, indent: str) -> str:
     return ">-\n" + "\n".join(lines)
 
 
-def _defaults_lines(defaults) -> list[str]:
-    """The `defaults` block (#203 round 1): the vendor defaults this roster
-    resolved, carried so that a later run whose docs read fails seats the
-    same defaults instead of flipping every tier to newest-in-tier for a
-    run. `carried_reason`/`carried_expired` stay in the published JSON and
-    are never written here: the committed block records the last successful
-    read, not the run that failed to make one (#203 round 2). Absent when the proposal resolved none, so a roster computed
-    without a defaults document renders exactly as it always has. Every
-    key and value is double-quoted: an alias like `on` or `no` must not
-    read back as a boolean."""
-    if not isinstance(defaults, dict) or not defaults.get("resolved"):
-        return []
-    lines = [
-        "",
-        "# The vendor model defaults this roster seated (#202, ADR 0002),"
-        " carried",
-        "# so a run whose docs read fails falls back to them rather than to"
-        " newest-",
-        "# in-tier. `fetched_at` is their last SUCCESSFUL read; a carry"
-        " expires",
-        "# `defaults_carry_max_age_days` after it (#203 round 2).",
-        "defaults:",
-        f"  source: {_scalar(defaults.get('source'))}",
-        f"  fetched_at: {_scalar(defaults.get('fetched_at'))}",
-        "  resolved:",
-    ]
-    for alias, model_id in sorted(defaults["resolved"].items()):
-        lines.append(f"    {_scalar(alias)}: {_scalar(model_id)}")
-    if defaults.get("carried"):
-        lines.append("  carried: true")
-    return lines
-
-
 def render(roster: dict, run_id: str, eval_results_commit: str) -> str:
     """The proposed `evals/roster.yml`, as text.
 
@@ -150,9 +117,6 @@ def render(roster: dict, run_id: str, eval_results_commit: str) -> str:
         "preflight:",
         f"  id: {_scalar(preflight.get('id'))}",
         f"  reason: {_block(preflight.get('reason', ''), '    ')}",
-    ]
-    lines += _defaults_lines(roster.get("defaults"))
-    lines += [
         "",
         "# Every model id the Models API has been observed to list, with the"
         " date it",

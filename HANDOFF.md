@@ -42,10 +42,15 @@ once it merges, the next roster run proposes `claude-opus-5-5` immediately
 as the opus tier's vendor default, with no wait for 2026-09-29, and keeps
 `claude-opus-5` for a one-week buffer (`superseded_exit_weeks: 1`) before
 proposing its retirement.
-Also 2026-09-27: the model cooling-off is 0 and CI's Claude Code is unpinned
-(preinstalled, else latest), with the version and models recorded per arm in
-`summary.json` (`harness`, `models_used`, `judge_models_used`) — ADR 0002's
-update.
+Also 2026-09-27: the model cooling-off is 0 and CI's Claude Code is unpinned,
+with the version and models recorded per arm in `summary.json` (`harness`,
+`models_used`, `judge_models_used`) — ADR 0002's update.
+**Amended 2026-09-28 by [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203):**
+CI always installs the npm latest (never a preinstalled CLI), and the vendor
+defaults come from that CLI, probed with no credential
+(`scripts/probe_model_defaults.py`), instead of from the docs page; the
+carried-defaults machinery is gone, and a failed probe falls back to the
+usage rules with a warning. See ADR 0002's second update.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.

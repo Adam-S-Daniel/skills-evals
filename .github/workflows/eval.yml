@@ -284,8 +284,12 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # NOT PINNED, by the owner's decision of 2026-09-27 (#202): use the
-        # Claude Code already on the runner, else install the latest release.
+        # NOT PINNED, and ALWAYS THE LATEST (the owner's decisions of
+        # 2026-09-27, #202, and 2026-09-28, #203): every run installs the
+        # newest Claude Code release npm reports, never reusing one already
+        # on the runner, and fails if another `claude` on PATH shadows it.
+        # scripts/probe_model_defaults.py reads the vendor's alias defaults
+        # off this very CLI, so an older one would report older defaults.
         # The pin existed because this step feeds the key-bearing eval step
         # and an install is a supply-chain vector into whatever credential
         # the job later holds. What still bounds that: this step runs BEFORE
@@ -299,15 +303,16 @@ jobs:
         # `claude --version` is captured whole and cut to its first line in
         # the shell, not piped through `head`: under pipefail a `head` that
         # exits first can fail the step on the CLI's SIGPIPE. A failing or
-        # empty version fails the step by name.
+        # empty version, an unusable npm answer, or a shadowing CLI fails the
+        # step by name.
         run: |
           set -euo pipefail
-          if [[ -x "$(command -v claude)" ]]; then
-            source=preinstalled
-          else
-            npm install -g @anthropic-ai/claude-code@latest
-            source="npm latest"
-          fi
+          latest="$(npm view @anthropic-ai/claude-code version)" || { echo "::error::could not resolve the latest Claude Code version"; exit 1; }
+          # A plain MAJOR.MINOR.PATCH and nothing else: a prerelease, an error
+          # page, an empty answer or two lines is refused, never stripped
+          # into something that looks like a version.
+          [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::npm reported no usable latest Claude Code version"; exit 1; }
+          npm install -g "@anthropic-ai/claude-code@${latest}"
           version="$(timeout -k 10 60 claude --version)" || { echo "::error::claude --version failed"; exit 1; }
           # First line only, and only characters a version string needs: this
           # lands in a markdown code span in the step summary.
@@ -315,8 +320,12 @@ jobs:
           version="${version:0:80}"
           version="${version//[^A-Za-z0-9._() -]/}"
           [[ -n "$version" ]] || { echo "::error::claude --version printed no version"; exit 1; }
-          echo "harness: Claude Code ${version} (${source})"
-          { echo "### Harness"; echo "Claude Code \`${version}\` (${source})"; } >> "$GITHUB_STEP_SUMMARY"
+          # A different claude earlier on PATH would shadow the one just
+          # installed. Exact on the first token: a prefix match would pass a
+          # stale 2.1.30 for a latest of 2.1.3.
+          [[ "${version%% *}" == "$latest" ]] || { echo "::error::claude on PATH is not the npm latest just installed"; exit 1; }
+          echo "harness: Claude Code ${version} (npm latest)"
+          { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -465,14 +474,16 @@ jobs:
       # bearer minted above; ANTHROPIC_ADMIN_KEY is optional and its absence
       # produces a ::notice::, never a failure.
       #
-      # Vendor defaults (#202, ADR 0002): one unauthenticated GET of the
-      # public Claude Code model-config docs, by
-      # scripts/fetch_model_defaults.py, run before the bearer is exported.
-      # It never fails the step. A failed read uses the defaults carried in
-      # the committed roster's `defaults:` block, for at most the policy's
-      # `defaults_carry_max_age_days` since their last successful read (#203
-      # round 2); with no carried block, or an expired one, every tier keeps
-      # the usage and newest-in-tier rules. The roster says which, loudly.
+      # Vendor defaults (#202, ADR 0002; #203): which model each family alias
+      # resolves to, asked of the Claude Code CLI the install step above just
+      # put on the runner at the npm latest, by scripts/probe_model_defaults.py.
+      # It runs before the bearer is exported, and it scrubs the CLI's
+      # environment itself (PATH, a fresh temporary HOME, LANG=C and nothing
+      # else), so the probe carries no credential and sends nothing to a
+      # model: it reads the init event and terminates the CLI. It never fails
+      # the step. A probe that fails means the CLI is broken, and the eval
+      # cannot run either; roster.py then applies the usage and newest-in-tier
+      # rules to every tier it could not resolve, and says so in a warning.
       #
       # NOT FATAL TO THE EVAL. The Models API read is still fatal to the
       # ROSTER — a half-read API is indistinguishable from a model retiring,
@@ -558,14 +569,14 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           }
           refresh() {
-            # Vendor model defaults (#202): which version each alias resolves
-            # to, read off the public model-config docs. Run BEFORE the bearer
-            # is exported so it never sits in this process's environment, and
-            # it cannot fail the step: a failed read writes `defaults: {}` and
-            # roster.py uses the defaults carried in the committed roster (or,
-            # with none or an expired carry, the usage and newest-in-tier
-            # rules) and says so in its warnings and summary.
-            python3 scripts/fetch_model_defaults.py --out "$work/defaults.json" || true
+            # Vendor model defaults (#202, #203): which model each family
+            # alias resolves to, read off the installed CLI's init event with
+            # no credential. Run BEFORE the bearer is exported so it never
+            # sits in this process's environment (the probe scrubs the CLI's
+            # environment regardless), and it cannot fail the step: a failed
+            # probe records its error classes and roster.py falls back to the
+            # usage and newest-in-tier rules, saying so in its warnings.
+            python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || true
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
             # The published census comes off eval-results WITHOUT checking it
@@ -787,35 +798,6 @@ jobs:
           fi
           # <<< roster-only note
 
-          # >>> carried-defaults note
-          # A run that used the vendor defaults carried in the committed
-          # roster, or found them expired, is LOUD (#203 round 2): a
-          # ::warning:: here, and a tracking issue kept (or opened) even when
-          # the proposal status is `same`. The flag is read from the computed
-          # latest.json at run time, never interpolated; the python prints one
-          # of three fixed words, so nothing from the document reaches the
-          # log or the issue but the summary roster.py already sanitised.
-          defaults_state=$(python3 -c 'import json,sys
-          try:
-              d = json.load(open(sys.argv[1], encoding="utf-8"))
-          except Exception:
-              d = {}
-          x = d.get("defaults") if isinstance(d, dict) else None
-          x = x if isinstance(x, dict) else {}
-          print("expired" if x.get("carried_expired") is True else "carried" if x.get("carried") is True else "")' "$computed" 2>/dev/null) || defaults_state=""
-          case "$defaults_state" in
-            carried)
-              echo "::warning::the docs read for vendor model defaults failed; this roster used the defaults carried in the committed roster (see the step summary)"
-              carried_note="**Vendor model defaults were carried this run.** The docs read failed, so the roster used the defaults the committed \`evals/roster.yml\` carries; the summary below says when they were last read and when the carry expires." ;;
-            expired)
-              echo "::warning::the docs read for vendor model defaults failed and the defaults carried in the committed roster expired; every tier fell back to the usage and newest-in-tier rules (see the step summary)"
-              carried_note="**The carried vendor model defaults expired.** The docs read failed and the defaults the committed \`evals/roster.yml\` carries are past \`defaults_carry_max_age_days\`, so every tier fell back to the usage and newest-in-tier rules." ;;
-            *)
-              defaults_state=""
-              carried_note="" ;;
-          esac
-          # <<< carried-defaults note
-
           # The open tracking issue is owned by this workflow's bot account,
           # not by whoever copied a public marker into an issue body. Query
           # every page with GitHub's creator filter, then verify the creator
@@ -866,30 +848,6 @@ jobs:
             exit 0
           fi
 
-          if [ "$status" = "same" ] && [ -n "$defaults_state" ]; then
-            # Nothing to merge, but the carry is not something to close an
-            # issue over: keep (or open) it, saying so.
-            body="$RUNNER_TEMP/proposal-body.md"
-            {
-              printf '%s\n\n' "$marker"
-              echo "The weekly run proposes no change to the committed \`evals/roster.yml\`, but its vendor model defaults did not come from a docs read."
-              echo
-              echo "$carried_note"
-              echo
-              echo "$eval_note"
-              echo
-              cat "$RUNNER_TEMP/roster-inputs/summary.md"
-            } > "$body"
-            if [ -n "$issue" ]; then
-              gh issue edit "$issue" --repo "$REPO" \
-                --title "Model roster: vendor defaults carried" --body-file "$body"
-              echo "kept the proposal issue #$issue open: the defaults were carried"
-            else
-              gh issue create --repo "$REPO" \
-                --title "Model roster: vendor defaults carried" --body-file "$body"
-            fi
-            exit 0
-          fi
           if [ "$status" = "same" ]; then
             if [ -n "$issue" ]; then
               gh issue close "$issue" --repo "$REPO" \
@@ -948,7 +906,6 @@ jobs:
               echo
               echo "$eval_note"
               echo
-              if [ -n "$carried_note" ]; then echo "$carried_note"; echo; fi
               echo "$rejection"
               echo
               cat "$RUNNER_TEMP/roster-inputs/summary.md"
@@ -1004,7 +961,6 @@ jobs:
             echo
             echo "$eval_note"
             echo
-            if [ -n "$carried_note" ]; then echo "$carried_note"; echo; fi
             echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
             echo
             cat "$RUNNER_TEMP/roster-inputs/summary.md"
