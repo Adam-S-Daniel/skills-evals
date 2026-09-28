@@ -49,8 +49,12 @@ with the version and models recorded per arm in `summary.json` (`harness`,
 CI always installs the npm latest (never a preinstalled CLI), and the vendor
 defaults come from that CLI, probed with no credential
 (`scripts/probe_model_defaults.py`), instead of from the docs page; the
-carried-defaults machinery is gone, and a failed probe falls back to the
-usage rules with a warning. See ADR 0002's second update.
+carried-defaults machinery is gone, and a failed probe freezes its family
+for that run: previous arms held, none retired, and none added but a model
+that clears the usage entry bar, said loudly in the summary, a warning and
+the tracking issue. A default the probe answered but the run's catalogue
+does not list is not a failure: that family follows the usage rules
+(#203 probe round 2). See ADR 0002's decision 6 and second update.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.

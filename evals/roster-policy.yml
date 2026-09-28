@@ -126,19 +126,24 @@ arm_enter_window_weeks: 4
 # above.
 #
 # A FAILED PROBE FREEZES ITS FAMILY FOR THAT RUN (#203 probe round 1). A
-# family whose default the probe could not establish keeps every previous
-# arm's seat, seats nothing new and retires nothing, and the roster says so
-# loudly (`defaults_failed`, the summary's first lines, a `::warning::`).
-# Falling back to the rules above instead flipped seats on one bad week.
+# family the probe failed for (an error recorded for its alias, or no usable
+# document) keeps every previous arm's seat, retires nothing, and seats
+# nothing new but a model that clears the entry bar above (#203 probe round
+# 2) — never a newest-in-tier seat — and the roster says so loudly
+# (`defaults_failed`, the summary's first lines, a `::warning::`). Falling
+# back to the rules above instead flipped seats on one bad week. A default
+# the probe answered but this run's catalogue does not list is NOT a
+# failure: that family follows the rules above as with no default.
 # Nothing is carried to the next run (the owner's decision of 2026-09-28):
 # the carried-defaults block and its expiry knob that briefly stood here are
 # gone.
 #
 # SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku
 # and preflight." At 0 every model with a `created_at` is past the
-# cooling-off, so the newest-in-tier rule above (for a tier with no resolved
-# vendor default, e.g. haiku) and the preflight pick both take the newest
-# model at once. The knob and the machinery that reads it are kept, so a
+# cooling-off, so the newest-in-tier rule above (for a family with no
+# resolved vendor default: one the probe skips, e.g. mythos, or one whose
+# answer the catalogue does not list) and the preflight pick both take the
+# newest model at once. The knob and the machinery that reads it are kept, so a
 # positive value restores the cooling-off without a code change.
 cooling_off_days: 0
 

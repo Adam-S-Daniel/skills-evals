@@ -546,8 +546,9 @@ or leaked; and the alias table is built into the binary, so resolution does
 not depend on the network (the same ids come back with networking removed). A word the
 CLI echoes back unchanged (`mythos`) is not an alias and is skipped. The
 roster takes the reported id when it is one of this run's available models (a
-dated snapshot the catalogue collapses onto its alias stands for that alias)
-of the alias's own family. In a tier whose default resolved, usage only
+dated snapshot the catalogue collapses onto its alias stands for that alias,
+and so does a dated `<base>-YYYYMMDD` the catalogue does not list while it
+lists `<base>`) of the alias's own family. In a tier whose default resolved, usage only
 decides whether the tier is on the roster (a model in it clears the entry bar,
 another previous arm in it is still seated this run, or there is no usable
 census): the seat goes to the default **at once, with no cooling-off**, and
@@ -566,14 +567,23 @@ those weeks is under the 2% exit bar, with a stale or too-thin census holding
 it as before. A model newer than the default earns no new seat; one that is
 already a previous arm gets the ordinary exit check rather than retiring on
 sight. **A failed probe freezes its family for that run** (#203 probe round
-1): a family whose alias the probe recorded an error for, or whose answer did
-not resolve to an available model of that family (an undated id the
-catalogue lists only as exactly one dated `<id>-YYYYMMDD` does resolve to
-it), is frozen — or every family the probe did not skip, when the document
-is unreadable, junk or resolved nothing. A frozen family keeps every previous
-arm's seat, seats none of its models anew and retires none; falling back to
-the usage rules instead let one bad week retire a seated default or seat a
-preview that the next clean week then undid. The freeze is **per run —
+1): a family whose alias the probe recorded an error for is frozen — or every
+family the probe did not skip, when the document is unreadable, junk,
+answered for no ladder alias, or is the workflow's `{"probe_exit":
+"nonzero"}` stand-in for a probe script that exited with an error
+(`probe-exited`). A default the probe **answered** but this run's catalogue
+does not match (not available — an undated id the catalogue lists only as
+exactly one dated `<id>-YYYYMMDD` does resolve to it — an ambiguous
+snapshot, no `created_at`, the wrong tier or family) is **not** a failure:
+that family follows rules 1 and 2 exactly as with no default, and the
+summary says "the CLI's default `<id>` for `<alias>` is not in this run's
+catalogue (<class>)" (#203 probe round 2). A frozen family keeps every
+previous arm's seat until it leaves the Models API, retires none, and gets
+no newest-in-tier seat — but a model of it that clears the usage entry bar
+is seated as usual, so a freeze only ever adds usage-proven seats (#203
+probe round 2); falling back to the usage rules instead let one bad week
+retire a seated default or seat a preview that the next clean week then
+undid. The freeze is **per run —
 nothing is carried to the next** (the owner's decision): the probe is not
 the eval (the eval authenticates; the probe must not), so a probe failure
 does not stop the eval, and the next run's probe decides afresh. It is loud:
@@ -581,7 +591,9 @@ the published roster carries `defaults_failed` (`{alias: class}`, plus
 `defaults_document_failed` for a whole-document failure), the step summary
 names the frozen families on its first lines, and the proposal step emits a
 `::warning::` and keeps the tracking issue open even when nothing else
-changed. With no `--defaults` document at all nothing is frozen and the
+changed; that step runs unless the workflow is cancelled, so it fires even
+when the eval failed, and a failed `gh` write in it is a warning, never a
+failed job. With no `--defaults` document at all nothing is frozen and the
 roster is byte for byte the one computed without it. The committed `evals/roster.yml` keeps no
 `defaults` block; the published roster's `defaults` (source
 `claude-code-cli <version>`, `probed_at`, resolved and unresolved aliases)

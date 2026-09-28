@@ -483,10 +483,15 @@ jobs:
       # the CLI's own unauthenticated connections can bill nothing and leak
       # nothing, and alias resolution is built into the binary, not fetched.
       # It reads the init event and kills the CLI's process group. It never
-      # fails the step. A family the probe could not establish is FROZEN for
-      # this run by roster.py — its seats held, none added or retired — and
-      # the proposal step below warns and keeps the tracking issue open.
-      # Nothing is carried to the next run.
+      # fails the step. A family the probe FAILED for (an error recorded for
+      # its alias, or no usable document) is FROZEN for this run by
+      # roster.py — its seats held, none retired, none added but by the
+      # usage entry bar. A default the probe answered but this run's catalogue
+      # does not list is not frozen: that family follows the usage rules,
+      # and the summary says so. On a freeze the proposal step below warns
+      # and keeps the tracking issue open; that step runs unless the workflow
+      # is cancelled, so it fires even when the eval step failed. Nothing is
+      # carried to the next run.
       #
       # NOT FATAL TO THE EVAL. The Models API read is still fatal to the
       # ROSTER — a half-read API is indistinguishable from a model retiring,
@@ -579,9 +584,11 @@ jobs:
             # environment regardless), and it cannot fail the step: a failed
             # probe records its error classes and roster.py freezes those
             # families for this run. A probe that exits non-zero writes no
-            # document, so an empty one stands in for it — read as a failed
-            # probe (every family frozen), never as "no probe at all".
-            python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || printf '{}\n' > "$work/defaults.json" || true
+            # document, so a stand-in naming that is written in its place —
+            # read as its own class, `probe-exited` (every family frozen),
+            # never as "no probe at all" nor as a probe that ran and
+            # resolved nothing (`{}`, `no-defaults`).
+            python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || printf '{"probe_exit": "nonzero"}\n' > "$work/defaults.json" || true
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
             # The published census comes off eval-results WITHOUT checking it
@@ -767,6 +774,11 @@ jobs:
       # shell. The run id, the repository and the server URL arrive through
       # `env:` and are read as variables.
       - name: Propose a roster change
+        # Unless the workflow is cancelled (#203 probe round 2): the proposal
+        # and a failed probe's warning and tracking issue are the loud
+        # channels, so a failed eval step must not silence them. An
+        # expression in `if:`, never interpolated into a run: body.
+        if: ${{ !cancelled() }}
         working-directory: skills-evals
         env:
           # Write auth lives only in this step and the commit step.
@@ -815,7 +827,7 @@ jobs:
           probe_note=""
           if [ "$defaults_failed" -gt 0 ]; then
             echo "::warning::vendor-default probe failed for $defaults_failed families; their seats were held"
-            probe_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and no seat in them changed; the summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
+            probe_note="**The vendor-default probe failed for $defaults_failed families this run.** Their seats were held and none retired; a model of theirs was newly seated only by clearing the usage entry bar. The summary below names each family and its error class. Nothing is carried over: the next run's probe decides afresh."
           fi
           # <<< defaults-failed note
 
@@ -884,13 +896,19 @@ jobs:
               echo
               cat "$RUNNER_TEMP/roster-inputs/summary.md"
             } > "$body"
+            # A failed gh write warns and never fails the job (#203 probe
+            # round 2): the roster and the eval are already done.
             if [ -n "$issue" ]; then
-              gh issue edit "$issue" --repo "$REPO" \
-                --title "Model roster: the vendor-default probe failed" --body-file "$body"
-              echo "updated the roster tracking issue #$issue"
+              if gh issue edit "$issue" --repo "$REPO" \
+                --title "Model roster: the vendor-default probe failed" --body-file "$body"; then
+                echo "updated the roster tracking issue #$issue"
+              else
+                echo "::warning::could not update the roster tracking issue"
+              fi
             else
               gh issue create --repo "$REPO" \
-                --title "Model roster: the vendor-default probe failed" --body-file "$body"
+                --title "Model roster: the vendor-default probe failed" --body-file "$body" \
+                || echo "::warning::could not create the roster tracking issue"
             fi
             exit 0
           fi

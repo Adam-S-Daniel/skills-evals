@@ -22,7 +22,16 @@ own before and after the init event (measured with strace, #203 probe round
 be billed to anyone or leak one; `DISABLE_AUTOUPDATER` and
 `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC` cut what it does not need. As soon
 as the init event is read the process group is terminated — SIGTERM, then
-SIGKILL to the whole group whatever the leader did (`_stop`).
+SIGKILL to the whole group whatever the leader did (`_stop`). `claude
+--version` runs the same way (#203 probe round 2), so a child it forks that
+holds stdout open cannot stall the probe past its timeout or outlive it.
+
+THE LIMIT OF THAT KILL. Every CLI starts in a new session, and the kill
+reaches its process group. A child that calls `setsid()` itself starts a
+session and group of its own and so escapes the process-group kill; nothing
+short of a container or cgroup could follow it. It still has no credential
+in its environment — it inherits the same scrubbed one — so what it can do
+is what the CLI itself could: open unauthenticated connections.
 
 A word the CLI does not know as an alias is echoed back unchanged in the
 init event (`mythos` on 2.1.283); it is recorded under `skipped`, not as a
@@ -46,11 +55,13 @@ project or user settings are read either. See `scrubbed_env`.
 A FAILURE IS NOT FATAL. Whatever happens to one alias or all of them, --out
 is written and the exit status is 0; `harness/roster.py` decides what a
 missing default means: that family is frozen for the run — its previous
-arms held, no seat of it added or retired — and the roster says so loudly.
+arms held, none retired, and none added but a model that clears the usage
+entry bar — and the roster says so loudly.
 Nothing is carried to the next run. Only a usage error — bad arguments, a
 `--claude` that is not an executable, an unreadable --policy, an unwritable
---out — exits non-zero (eval.yml then writes an empty document in its
-place, which the roster reads as a failed probe).
+--out — exits non-zero (eval.yml then writes `{"probe_exit": "nonzero"}`
+in its place, which the roster reads as a failed probe of its own class,
+`probe-exited`; #203 probe round 2).
 
 The CLI's output is UNTRUSTED. Nothing it prints reaches this script's own
 output or --out except a model id that matches `MODEL_ID_RE` and a version
@@ -254,20 +265,57 @@ def probe_alias(claude: str, alias: str, timeout: float) -> tuple[str, str]:
     return "default", model
 
 
+def _read_first_line(proc: subprocess.Popen, timeout: float) -> bytes | None:
+    """The first line of the CLI's stdout (or all of it, at EOF), or None
+    on the timeout. Stops at the first newline rather than waiting for EOF:
+    a child the CLI forked can hold stdout open long after the leader
+    exits."""
+    deadline = time.monotonic() + timeout
+    fd = proc.stdout.fileno()
+    buffer = b""
+    with selectors.DefaultSelector() as selector:
+        selector.register(fd, selectors.EVENT_READ)
+        while b"\n" not in buffer and len(buffer) <= VERSION_MAX * 4:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0 or not selector.select(remaining):
+                return None
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            buffer += chunk
+    return buffer.split(b"\n", 1)[0]
+
+
 def harness_version(claude: str, timeout: float) -> str | None:
     """The first line of `claude --version`, cut and reduced to version
-    characters; None when it fails or leaves nothing."""
+    characters; None when it fails, times out, or leaves nothing.
+
+    Through the same new-session Popen and `_stop` as `probe_alias` (#203
+    probe round 2): `subprocess.run` waited for EOF, which a forked child
+    holding stdout delays past the leader's exit, and on its timeout it
+    killed the leader alone and left that child running."""
+    deadline = time.monotonic() + timeout
     with _Home() as home:
         try:
-            done = subprocess.run([claude, "--version"], stdin=subprocess.DEVNULL,
-                                  capture_output=True, cwd=home,
-                                  env=scrubbed_env(home), timeout=timeout)
+            proc = subprocess.Popen(
+                [claude, "--version"], stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, cwd=home,
+                env=scrubbed_env(home), start_new_session=True)
         except Exception:  # noqa: BLE001 -- a version is optional
             return None
-    if done.returncode != 0:
+        returncode = None
+        try:
+            line = _read_first_line(proc, timeout)
+            if line is not None:
+                returncode = proc.wait(max(deadline - time.monotonic(), 0.0))
+        except Exception:  # noqa: BLE001 -- a timeout, or anything else
+            line = None
+        finally:
+            _stop(proc)
+    if line is None or returncode != 0:
         return None
-    line = done.stdout.decode("utf-8", "replace").split("\n", 1)[0]
-    version = VERSION_CHARS.sub("", line[:VERSION_MAX]).strip()
+    text = line.decode("utf-8", "replace")
+    version = VERSION_CHARS.sub("", text[:VERSION_MAX]).strip()
     return version or None
 
 

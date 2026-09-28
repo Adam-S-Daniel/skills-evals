@@ -543,13 +543,19 @@ bar (a stale or too-thin census holds it, and the 8-week exit rule no longer
 applies to it). A model newer than the default earns no new seat, and a
 previous arm newer than it gets rule 3's exit check instead of retiring on
 sight. A failed probe freezes its family for that run (#203 probe round 1):
-a family whose alias the probe recorded an error for or could not resolve to
-an available model of that family — or every family the probe did not skip,
-when the document is unreadable, junk or resolved nothing — keeps every
-previous arm's seat, seats nothing new and retires nothing, and is named in
-the published `defaults_failed`, on the summary's first lines and in a
-`::warning::` that keeps the tracking issue open. Falling back to rules 1 and
-2 instead flipped seats on one bad week. The freeze is per run; nothing is
+a family whose alias the probe recorded an error for — or every family the
+probe did not skip, when the document is unreadable, junk, answered for no
+ladder alias, or is the workflow's stand-in for a probe that exited
+non-zero (`probe-exited`) — keeps every previous arm's seat, retires
+nothing, and gets no newest-in-tier seat, though a model of it that clears
+the usage entry bar is seated as usual (a freeze only ever adds
+usage-proven seats, #203 probe round 2); it is named in the published
+`defaults_failed`, on the summary's first lines and in a `::warning::` that
+keeps the tracking issue open (the proposal step runs unless the workflow
+is cancelled). An answer this run's catalogue does not match is not a
+failure: that family keeps rules 1 and 2 as with no default, and
+`defaults_mismatched` says "not in this run's catalogue". Falling back to
+rules 1 and 2 instead flipped seats on one bad week. The freeze is per run; nothing is
 carried to the next (a carried-defaults block with an expiry briefly stood
 here and is gone). With no defaults document at all the roster is
 byte-for-byte the one computed without it.

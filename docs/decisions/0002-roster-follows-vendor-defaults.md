@@ -54,9 +54,11 @@ happened to accumulate usage on.
    (`no-init`, `timeout`, `bad-model`, or an exception class). `harness/
    roster.py --defaults` takes an id when it is one of this run's available
    models — a dated snapshot the catalogue collapses onto its undated alias
-   stands for that alias — AND the family word in it is the alias. Anything
-   else, and every alias the probe failed on, leaves that tier unresolved, with
-   a `roster: ` warning.
+   stands for that alias, and so does a dated `<base>-YYYYMMDD` the catalogue
+   does not list while it lists `<base>` — AND the family word in it is the
+   alias. Anything else, and every alias the probe failed on, leaves that tier
+   unresolved, with a `roster: ` warning; decision 6 says which of those
+   freeze.
 2. **New default → seat now.** In a tier whose default resolved, the default
    is an arm whenever the tier is on the roster — a model in it clears the
    entry bar, ANOTHER previous arm in it is itself still seated this run
@@ -99,19 +101,34 @@ happened to accumulate usage on.
    resolve; an alias naming another family's model is unresolved on its own;
    the one remaining conflict is two spellings of the same family word naming
    different models.
-6. **A failed probe freezes its family for that run (#203 probe round 1).**
-   A family is frozen when a probe document was given and either the probe
-   attempted its alias and it did not resolve (an error class, or an answer
-   that is not an available model of that family — an undated id resolves to
-   its one dated `<id>-YYYYMMDD` when the catalogue lists only that, and two
-   or more are ambiguous), or the document is unreadable, junk, or resolved
-   nothing — then every family on the ladder except the aliases the probe
-   `skipped`. In a frozen family every previous arm keeps its seat ("vendor
-   default for `<alias>` unknown this run (probe: <class>); held, no seat
-   changes on a failed probe"), no model gets a new seat, and nothing is
-   retired. The earlier rule — fall back to both usage rules — flipped seats
-   on a one-week failure: a seated default retired, or a preview seated, and
-   the next clean probe undid it. The freeze is loud: `defaults_failed`
+6. **A failed probe freezes its family for that run (#203 probe round 1;
+   narrowed in probe round 2).** Only a PROBE FAILURE freezes: the probe
+   recorded an error class for the alias, or the document is unreadable,
+   junk, answered for no ladder alias, or is eval.yml's stand-in for a probe
+   script that exited non-zero (`probe-exited`, "the probe script exited
+   with an error") — then every family on the ladder except the aliases the
+   probe `skipped`. A `{}` from a probe that ran and resolved nothing stays
+   `no-defaults`. A CATALOGUE MISMATCH does not freeze: the probe answered,
+   but the id is not an available model of that alias's tier and family this
+   run (`not-available`, `ambiguous-snapshot` — an undated id resolves to its
+   one dated `<id>-YYYYMMDD` when the catalogue lists only that, and two or
+   more are ambiguous — `no-created-at`, `wrong-tier`, `wrong-family`). That
+   family follows rules 1 to 3 exactly as with no default, and the warning,
+   the summary and `defaults_mismatched` (`{alias: {id, class}}`) say "the
+   CLI's default `<id>` for `<alias>` is not in this run's catalogue
+   (<class>)" — not "probe failed". Freezing it instead held a bearer that
+   never lists the CLI's answer on the old seats for good. In a frozen family
+   every previous arm keeps its seat ("vendor default for `<alias>` unknown
+   this run (probe: <class>); held, no seat changes on a failed probe")
+   unless it has left the Models API, nothing is retired, and no model gets
+   a newest-in-tier seat — but a model that clears the usage entry bar
+   (rule 1) is seated as usual, with the failed probe named in its reason. A
+   freeze only ever adds usage-proven seats: without that, a CLI that never
+   initialises unauthenticated kept the roster on the old generation while
+   the fleet moved, and emptied it once the old models left the API. The
+   earlier rule — fall back to both usage rules — flipped seats on a one-week
+   failure: a seated default retired, or a preview seated, and the next clean
+   probe undid it. The freeze is loud: `defaults_failed`
    (`{alias: class}`, and `defaults_document_failed`) in the published
    roster, a line at the top of the step summary, and a fixed `::warning::`
    from the proposal step, which keeps the tracking issue open even when the
@@ -139,10 +156,14 @@ happened to accumulate usage on.
 - **A broken CLI degrades loudly.** A probe that cannot read an init event,
   times out, or reads a model that is not an id records only that class,
   never the CLI's output; the roster freezes that family for the run and
-  says so in the summary, a `::warning::` and the tracking issue. Nothing
-  fails the workflow step. A wrong default is bounded by the
+  says so in the summary, a `::warning::` and the tracking issue. The
+  proposal step that carries the warning and the issue runs unless the
+  workflow is cancelled, so it fires even when the eval step before it
+  failed, and a failed `gh` write there is a `::warning::`, never a failed
+  job. Nothing fails the workflow step. A wrong default is bounded by the
   catalogue check: an id that is not an available model of the alias's own
-  family seats nothing.
+  family seats nothing, and that family is decided by usage as if there were
+  no default.
 - **A tier between the bars keeps an arm across a version change**, because
   the seated default's exit check reads the tier's share; a tier the fleet
   genuinely leaves still retires it by the exit bar.
@@ -175,8 +196,9 @@ happened to accumulate usage on.
   `carried` signals (the former decisions 4a and 4b), and the display-name
   match — was removed. It
   existed to bridge a docs outage. A probe failure now freezes the families
-  it could not establish for that run only (decision 6, #203 probe round 1);
-  nothing is carried across runs.
+  it could not establish for that run only (decision 6, #203 probe round 1),
+  and a freeze still seats a model that clears the usage entry bar (#203
+  probe round 2); nothing is carried across runs.
 
 ## Alternatives considered
 
