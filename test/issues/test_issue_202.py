@@ -1781,12 +1781,100 @@ class _ProposeStepFixture(unittest.TestCase):
         the two `::warning::` lines must not read "for 1 families"."""
         return "family" if n == 1 else "families"
 
+    #: needs.eval.outputs.<key> -> the env var name the roster-pr job's step
+    #: reads it as (must match .github/workflows/eval.yml's `roster-pr` job
+    #: env: block exactly — TestRosterPrJobEnvMatchesOutputs asserts that).
+    OUTPUT_ENV = {
+        "roster_mode": "ROSTER_MODE", "status": "STATUS",
+        "probe_clean": "PROBE_CLEAN", "issue_number": "ISSUE_NUMBER",
+        "pushed_sha": "PUSHED_SHA", "rejected": "REJECTED",
+        "rejection_reason": "REJECTION_REASON",
+        "rendered_identical": "RENDERED_IDENTICAL", "eval_note": "EVAL_NOTE",
+        "probe_note": "PROBE_NOTE", "roster_summary": "ROSTER_SUMMARY",
+    }
+
     def setUp(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         self.run_body = next(s for s in doc["jobs"]["eval"]["steps"]
                              if s.get("name") == "Propose a roster change")["run"]
+        #: F2 (adversarial round 1 on #209): every `gh pr`/`gh workflow run`
+        #: call moved out of `self.run_body` into this second job's own
+        #: step, run second by `_run_two_jobs` below with the first job's
+        #: $GITHUB_OUTPUT threaded into it exactly as
+        #: `needs.eval.outputs.*` would be.
+        self.roster_pr_run_body = doc["jobs"]["roster-pr"]["steps"][0]["run"]
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    @staticmethod
+    def _parse_github_output(path):
+        """A minimal reader for the `$GITHUB_OUTPUT` file format: plain
+        `key=value` lines and `key<<DELIM` / ... / `DELIM` blocks (used here
+        for every multi-line value, with a delimiter chosen at random per
+        call — see eval.yml's `emit_ml`)."""
+        out = {}
+        lines = path.read_text(encoding="utf-8").splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if "<<" in line:
+                key, delim = line.split("<<", 1)
+                body = []
+                i += 1
+                while i < len(lines) and lines[i] != delim:
+                    body.append(lines[i])
+                    i += 1
+                out[key] = "\n".join(body)
+            elif "=" in line:
+                key, _, value = line.partition("=")
+                out[key] = value
+            i += 1
+        return out
+
+    def _run_two_jobs(self, gh_script, env, cwd):
+        """Run `self.run_body` (the `eval` job's propose step) then, unless
+        it exits before reaching the tracker-issue lookup at all in a way
+        that produces no outputs, `self.roster_pr_run_body` (the `roster-pr`
+        job's step) — both against the SAME stub `gh` on `PATH`, so `calls`
+        below is the full cross-job call log a real run would produce.
+        `env` is the base env dict; `RUNNER_TEMP` must already be a fresh
+        directory the propose step can write $GITHUB_OUTPUT into."""
+        stub = self.tmp / "bin"
+        stub.mkdir(exist_ok=True)
+        gh = stub / "gh"
+        gh.write_text(gh_script, encoding="utf-8")
+        gh.chmod(0o755)
+        gh_log = self.tmp / "gh.log"
+        gh_log.unlink(missing_ok=True)
+        (self.tmp / "body.md").unlink(missing_ok=True)
+        github_output = self.tmp / "github-output-1"
+        github_output.write_text("", encoding="utf-8")
+        env1 = dict(env, PATH=f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
+                   GITHUB_OUTPUT=str(github_output))
+        done1 = subprocess.run(["bash", "-c", self.run_body], capture_output=True,
+                               text=True, timeout=60, env=env1, cwd=cwd or self.tmp)
+        self.assertEqual(done1.returncode, 0, done1.stderr)
+        outputs = self._parse_github_output(github_output)
+        stdout = done1.stdout
+        # The roster-pr job runs unconditionally from here — `if:
+        # ${{ !cancelled() }}`, same as production (F3) — whether or not the
+        # propose step above reached far enough to write any output at all;
+        # missing outputs just mean empty/default env vars below.
+        github_output2 = self.tmp / "github-output-2"
+        env2 = dict(env, PATH=f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
+                   GITHUB_OUTPUT=str(github_output2))
+        for key, var in self.OUTPUT_ENV.items():
+            if key in outputs:
+                env2[var] = outputs[key]
+        done2 = subprocess.run(["bash", "-c", self.roster_pr_run_body],
+                               capture_output=True, text=True, timeout=60,
+                               env=env2, cwd=self.tmp)
+        self.assertEqual(done2.returncode, 0, done2.stderr)
+        stdout += done2.stdout
+        log = gh_log.read_text(encoding="utf-8").splitlines() if gh_log.exists() else []
+        body = ((self.tmp / "body.md").read_text(encoding="utf-8")
+                if (self.tmp / "body.md").exists() else None)
+        return stdout, [ln for ln in log if not ln.startswith("api ")], body
 
     def _fragment(self):
         self.assertIn(self.START, self.run_body)
@@ -1808,7 +1896,10 @@ class _ProposeStepFixture(unittest.TestCase):
         if policy_text is not None:
             (cwd / "evals").mkdir(parents=True, exist_ok=True)
             (cwd / "evals" / "roster-policy.yml").write_text(policy_text, encoding="utf-8")
-        script = ("set -euo pipefail\n" + self._mode_fragment()
+        # `emit` is defined once, ahead of this fragment, in the real step;
+        # a no-op stand-in here since this fragment now calls it and this
+        # test never reads $GITHUB_OUTPUT.
+        script = ("set -euo pipefail\nemit() { :; }\n" + self._mode_fragment()
                   + '\nprintf "MODE=%s\\n" "$roster_mode"\n')
         done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
                               timeout=30, cwd=cwd, env={"PATH": os.environ.get("PATH", "")})
@@ -1822,31 +1913,36 @@ class _ProposeStepFixture(unittest.TestCase):
         return path
 
     def _run_fragment(self, payload):
-        script = ("set -euo pipefail\n" + f"computed={str(self._latest(payload))!r}\n"
+        runner = self.tmp / "fragment-runner"
+        (runner / "roster-inputs").mkdir(parents=True, exist_ok=True)
+        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
+                                                              encoding="utf-8")
+        # `emit`/`emit_ml` are defined once, ahead of this fragment, in the
+        # real step; no-op stand-ins here since this fragment now calls
+        # them and this test never reads $GITHUB_OUTPUT.
+        script = ("set -euo pipefail\nemit() { :; }\nemit_ml() { cat >/dev/null; }\n"
+                  + "eval_note=''\n"
+                  + f"computed={str(self._latest(payload))!r}\n"
                   + self._fragment()
                   + '\nprintf "COUNT=%s\\n" "$defaults_failed"'
                   + '\nprintf "NOTE=%s\\n" "$probe_note"\n')
         done = subprocess.run(["bash", "-c", script], capture_output=True, text=True,
-                              timeout=30, env={"PATH": os.environ.get("PATH", "")})
+                              timeout=30, env={"PATH": os.environ.get("PATH", ""),
+                                              "RUNNER_TEMP": str(runner)})
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout
 
-    def _run_step(self, latest, issues, cwd=None):
-        """The whole step body with a stub `gh`, from the tracker listing to
-        the "same" branch — which is as far as a "same" run goes. `cwd` is
-        the step's working directory (default: the temp dir, which has no
-        `scripts/`, so a "differs" run is rejected before publication)."""
-        runner = self.tmp / "runner"
-        (runner / "roster").mkdir(parents=True)
-        (runner / "roster-inputs").mkdir()
-        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
-        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
-                                                            encoding="utf-8")
-        stub = self.tmp / "bin"
-        stub.mkdir()
-        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
-        gh = stub / "gh"
-        gh.write_text(
+    def _gh_script(self):
+        """The stub `gh` shared by every `_ProposeStepFixture` test: logs
+        every call, answers `gh api` from `issues.json`, fails the one verb
+        pair `self._gh_fail` names (R2-3), and captures any `--body-file`
+        argument to `body.md`. `_AutoProposeStepFixture` extends this with
+        `pr list`/`pr create` stand-ins; every other `gh pr`/`gh workflow`
+        call (F2's new job) falls through here unmatched, which succeeds
+        with empty stdout — "no PR found" / "nothing to report" — exactly
+        like a bare `gh` invocation nobody stubbed for would look wrong to
+        distinguish from in a test that predates the auto path."""
+        return (
             "#!/usr/bin/env bash\n"
             f"printf '%s\\n' \"$*\" >> {str(self.tmp / 'gh.log')!r}\n"
             f"if [ \"$1\" = api ]; then cat {str(self.tmp / 'issues.json')!r}; exit 0; fi\n"
@@ -1857,22 +1953,28 @@ class _ProposeStepFixture(unittest.TestCase):
             "for arg in \"$@\"; do\n"
             f"  if [ \"$prev\" = --body-file ]; then cat \"$arg\" > {str(self.tmp / 'body.md')!r}; fi\n"
             "  prev=\"$arg\"\n"
-            "done\n", encoding="utf-8")
-        gh.chmod(0o755)
+            "done\n")
+
+    def _run_step(self, latest, issues, cwd=None):
+        """The whole two-job round trip with a stub `gh`, from the tracker
+        listing to the "same" branch — which is as far as a "same" run
+        goes. `cwd` is the `eval` job's working directory (default: the temp
+        dir, which has no `scripts/`, so a "differs" run is rejected before
+        publication)."""
+        runner = self.tmp / "runner"
+        (runner / "roster").mkdir(parents=True)
+        (runner / "roster-inputs").mkdir()
+        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
+        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
+                                                            encoding="utf-8")
+        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
         event = self.tmp / "event.json"
         event.write_text(json.dumps({"schedule": "0 7 * * 1"}), encoding="utf-8")
-        env = {"PATH": f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
-               "RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
+        env = {"RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
                "REPO": "example/skills-evals", "RUN_ID": "1",
                "SERVER_URL": "https://github.example.com",
                "GITHUB_TOKEN": "t", "GH_TOKEN": "t"}
-        done = subprocess.run(["bash", "-c", self.run_body], capture_output=True,
-                              text=True, timeout=60, env=env, cwd=cwd or self.tmp)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        log = (self.tmp / "gh.log").read_text(encoding="utf-8").splitlines()
-        body = ((self.tmp / "body.md").read_text(encoding="utf-8")
-                if (self.tmp / "body.md").exists() else None)
-        return done.stdout, [ln for ln in log if not ln.startswith("api ")], body
+        return self._run_two_jobs(self._gh_script(), env, cwd)
 
     def _tracker(self):
         return [{"number": 7, "user": {"login": "github-actions[bot]", "type": "Bot"},
@@ -1995,8 +2097,12 @@ class TestProposeStepOnAFailedProbe(_ProposeStepFixture):
         self.assertTrue(calls[0].startswith("issue close 7"), calls)
 
     def test_the_differs_bodies_carry_the_probe_note(self):
+        # F2 moved the actual differs-branch body construction into the
+        # `roster-pr` job's own step; the `eval` job's tail past this
+        # fragment only forwards `probe_note` as a job output once.
         tail = self.run_body[self.run_body.index(self.END):]
-        self.assertGreaterEqual(tail.count('"$probe_note"'), 3)
+        self.assertGreaterEqual(tail.count('"$probe_note"')
+                                + self.roster_pr_run_body.count('"$probe_note"'), 3)
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
     def test_a_failed_create_warns_and_exits_zero(self):
@@ -3031,21 +3137,31 @@ class TestProposeStepGhWritesWarn(_ProposeStepFixture):
         self.assertIn("::warning::could not create the roster tracking issue\n", out)
 
     def test_every_gh_issue_write_is_guarded(self):
-        """Structural, over the whole body: every `gh issue` command is an
-        `if` condition or ends in `|| echo "::warning::could not ..."`."""
-        lines = self.run_body.splitlines()
-        commands = []
-        i = 0
-        while i < len(lines):
-            stripped = lines[i].strip()
-            if re.match(r"^(if )?gh issue ", stripped):
-                command = stripped
-                while command.endswith("\\"):
-                    i += 1
-                    command = command[:-1] + " " + lines[i].strip()
-                commands.append(command)
-            i += 1
-        self.assertGreaterEqual(len(commands), 7, commands)
+        """Structural, over BOTH fragments (F2 split the differs-branch gh
+        issue writes into the roster-pr job's `write_issue` helper — one
+        `edit`/`create` pair shared by its three call sites, rather than one
+        literal pair per call site as the pre-split script had): every `gh
+        issue` command is an `if` condition or ends in
+        `|| echo "::warning::could not ..."`."""
+        def find_commands(body):
+            lines = body.splitlines()
+            commands = []
+            i = 0
+            while i < len(lines):
+                stripped = lines[i].strip()
+                if re.match(r"^(if )?gh issue ", stripped):
+                    command = stripped
+                    while command.endswith("\\"):
+                        i += 1
+                        command = command[:-1] + " " + lines[i].strip()
+                    commands.append(command)
+                i += 1
+            return commands
+        commands = find_commands(self.run_body) + find_commands(self.roster_pr_run_body)
+        # eval job: frozen-same edit + create, clean-same close (3).
+        # roster-pr job: `write_issue`'s one edit + create pair, shared by
+        # its three call sites (2).
+        self.assertGreaterEqual(len(commands), 5, commands)
         for command in commands:
             with self.subTest(command=command[:40]):
                 guarded = (command.startswith("if gh issue") or re.search(
@@ -3119,6 +3235,41 @@ class TestProposeStepDiffersBranchGhWrites(_ProposeStepFixture):
                               out)
 
 
+class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
+    """F2 (adversarial round 1 on #209): the `roster-pr` job's step `env:`
+    must read every `needs.eval.outputs.<key>` the `eval` job actually
+    declares, under the SAME env var name `_ProposeStepFixture.OUTPUT_ENV`
+    stitches job 1's outputs into job 2's env for in every hermetic test
+    above — a rename on either side that drifts from the other would make
+    every one of those tests pass against a mapping the real workflow does
+    not use, which is exactly the gap this test closes."""
+
+    def _doc(self):
+        return yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+
+    def test_env_maps_every_declared_output_under_the_fixtures_names(self):
+        doc = self._doc()
+        eval_outputs = doc["jobs"]["eval"]["outputs"]
+        roster_pr_env = doc["jobs"]["roster-pr"]["steps"][0]["env"]
+        self.assertEqual(set(eval_outputs), set(_ProposeStepFixture.OUTPUT_ENV),
+                         "the eval job's outputs: keys must match "
+                         "_ProposeStepFixture.OUTPUT_ENV exactly")
+        for key, var in _ProposeStepFixture.OUTPUT_ENV.items():
+            with self.subTest(key=key):
+                self.assertEqual(eval_outputs[key],
+                                 "${{ steps.propose.outputs.%s }}" % key)
+                self.assertEqual(roster_pr_env.get(var),
+                                 "${{ needs.eval.outputs.%s }}" % key,
+                                 f"roster-pr job's env.{var} must read "
+                                 f"needs.eval.outputs.{key}")
+
+    def test_roster_pr_job_needs_eval_and_runs_unless_cancelled(self):
+        doc = self._doc()
+        job = doc["jobs"]["roster-pr"]
+        self.assertEqual(job.get("needs"), "eval")
+        self.assertEqual(job.get("if"), "${{ !cancelled() }}")
+
+
 class TestRosterModeFragment(_ProposeStepFixture):
     """`roster_mode` in `evals/roster-policy.yml`: `auto`/`proposal` pass
     through, a missing key or file is silently `proposal`, and any other
@@ -3167,8 +3318,16 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
 
     def setUp(self):
         super().setUp()
-        #: `gh pr list ... --jq '.[0].number'`'s stdout — "" means no open PR.
+        #: `gh pr list ... --jq '...'`'s stdout when `_pr_list_rows` is None
+        #: — "" means no open PR.
         self._pr_list_value = ""
+        #: F1: a list of {"number": int, "isCrossRepository": bool} rows,
+        #: filtered through the REAL `--jq` expression the command line
+        #: under test actually passes (via real `jq`, not a hardcoded
+        #: stand-in) — so a regression to the un-filtered `.[0].number`
+        #: form would make a fork row reappear here. None (the default)
+        #: keeps the plain `_pr_list_value` behavior above.
+        self._pr_list_rows = None
         #: the digits `gh pr create`'s printed URL ends with.
         self._pr_create_number = "55"
 
@@ -3177,18 +3336,25 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
         text = "" if mode is None else f"roster_mode: {mode}\n"
         (cwd / "evals" / "roster-policy.yml").write_text(text, encoding="utf-8")
 
-    def _run_step(self, latest, issues, cwd=None):
-        runner = self.tmp / "runner"
-        (runner / "roster").mkdir(parents=True)
-        (runner / "roster-inputs").mkdir()
-        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
-        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
-                                                            encoding="utf-8")
-        stub = self.tmp / "bin"
-        stub.mkdir()
-        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
-        gh = stub / "gh"
-        gh.write_text(
+    def _gh_script(self):
+        rows_file = ""
+        if self._pr_list_rows is not None:
+            rows_file = str(self.tmp / "pr-list-rows.json")
+            Path(rows_file).write_text(json.dumps(self._pr_list_rows), encoding="utf-8")
+        pr_list_rows_branch = (
+            "if [ \"$1 $2\" = 'pr list' ]; then\n"
+            f"  jqexpr=''; prev=''\n"
+            "  for arg in \"$@\"; do\n"
+            "    if [ \"$prev\" = --jq ]; then jqexpr=\"$arg\"; fi\n"
+            "    prev=\"$arg\"\n"
+            "  done\n"
+            f"  jq -r \"$jqexpr\" {rows_file!r}\n"
+            "  exit 0\n"
+            "fi\n"
+        ) if rows_file else (
+            f"if [ \"$1 $2\" = 'pr list' ]; then printf '%s\\n' {self._pr_list_value!r}; exit 0; fi\n"
+        )
+        return (
             "#!/usr/bin/env bash\n"
             f"printf '%s\\n' \"$*\" >> {str(self.tmp / 'gh.log')!r}\n"
             f"if [ \"$1\" = api ]; then cat {str(self.tmp / 'issues.json')!r}; exit 0; fi\n"
@@ -3198,7 +3364,7 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
             # printing a stand-in answer.
             f"if [ \"$1 $2\" = {getattr(self, '_gh_fail', None) or '-'!r} ]; then "
             "echo 'HTTP 502' >&2; exit 1; fi\n"
-            f"if [ \"$1 $2\" = 'pr list' ]; then printf '%s\\n' {self._pr_list_value!r}; exit 0; fi\n"
+            + pr_list_rows_branch +
             "if [ \"$1 $2\" = 'pr create' ]; then "
             f"printf 'https://github.example.com/example/skills-evals/pull/%s\\n' {self._pr_create_number!r}; "
             "exit 0; fi\n"
@@ -3206,22 +3372,23 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
             "for arg in \"$@\"; do\n"
             f"  if [ \"$prev\" = --body-file ]; then cat \"$arg\" > {str(self.tmp / 'body.md')!r}; fi\n"
             "  prev=\"$arg\"\n"
-            "done\n", encoding="utf-8")
-        gh.chmod(0o755)
+            "done\n")
+
+    def _run_step(self, latest, issues, cwd=None):
+        runner = self.tmp / "runner"
+        (runner / "roster").mkdir(parents=True)
+        (runner / "roster-inputs").mkdir()
+        (runner / "roster" / "latest.json").write_text(json.dumps(latest), encoding="utf-8")
+        (runner / "roster-inputs" / "summary.md").write_text("### Model roster\n",
+                                                            encoding="utf-8")
+        (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
         event = self.tmp / "event.json"
         event.write_text(json.dumps({"schedule": "0 7 * * 1"}), encoding="utf-8")
-        env = {"PATH": f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
-               "RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
+        env = {"RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
                "REPO": "example/skills-evals", "RUN_ID": "1",
                "SERVER_URL": "https://github.example.com",
                "GITHUB_TOKEN": "t", "GH_TOKEN": "t"}
-        done = subprocess.run(["bash", "-c", self.run_body], capture_output=True,
-                              text=True, timeout=60, env=env, cwd=cwd or self.tmp)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        log = (self.tmp / "gh.log").read_text(encoding="utf-8").splitlines()
-        body = ((self.tmp / "body.md").read_text(encoding="utf-8")
-                if (self.tmp / "body.md").exists() else None)
-        return done.stdout, [ln for ln in log if not ln.startswith("api ")], body
+        return self._run_two_jobs(self._gh_script(), env, cwd)
 
     def _repo(self, mode="auto", name="work"):
         """A throwaway git repository (never a copy of this checkout — its
@@ -3290,12 +3457,21 @@ class TestRosterModeAutoDiffers(_AutoProposeStepFixture):
         self.assertIn("automatic update (run 1)", create)
         self.assertTrue(any(c.startswith("workflow run ci.yml") and "--ref roster/proposal" in c
                            for c in pr_calls), pr_calls)
-        merge = next((c for c in pr_calls if c.startswith("pr merge")), None)
+        # N1: enabling is idempotent — a `pr merge ... --disable-auto` runs
+        # (and is ignored) BEFORE the `--auto` enable call itself, so the
+        # first "pr merge" call is that disable, not the enable.
+        merge_calls = [c for c in pr_calls if c.startswith("pr merge")]
+        self.assertGreaterEqual(len(merge_calls), 2, merge_calls)
+        self.assertIn("--disable-auto", merge_calls[0])
+        self.assertNotIn("--auto", merge_calls[0])
+        merge = next((c for c in merge_calls if "--auto" in c), None)
         self.assertIsNotNone(merge, pr_calls)
         self.assertIn("77", merge)
         self.assertIn("--auto", merge)
         self.assertIn("--merge", merge)
         self.assertIn("--match-head-commit", merge)
+        self.assertGreater(merge_calls.index(merge), 0,
+                           "N1: the disable-auto call must precede the enable call")
         issue_calls = [c for c in calls if c.startswith("issue ")]
         self.assertTrue(any("merging automatically" in c for c in issue_calls), issue_calls)
         self.assertIn("Pull request #77", body)
@@ -3577,6 +3753,109 @@ class TestRosterModeGhFailuresDegradeToProposal(_AutoProposeStepFixture):
         out, calls, body = self._run_step(latest, [], cwd=work)
         self.assertIn("::warning::could not disable auto-merge for the roster pull request\n",
                       out)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_disable_auto_merge_failure_never_claims_it_was_turned_off(self):
+        # F4 (adversarial round 1 on #209, repro R3): the tracking issue
+        # must say the disable FAILED, never "has been turned off", when
+        # the `gh pr merge --disable-auto` call itself failed.
+        latest = self._differs()
+        work = self._repo("proposal")
+        self._pr_list_value = "9"
+        self._gh_fail = "pr merge"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertIn("could NOT be turned off", body)
+        self.assertIn("disable it by hand on PR #9", body)
+        self.assertNotIn("has been turned off", body)
+
+
+class TestAdversarialRound1F1NeverMatchesAForkPr(_AutoProposeStepFixture):
+    """F1 (adversarial round 1 on #209, blocker): `gh pr list --head
+    roster/proposal` has no owner filter, so a fork's same-named branch can
+    match. `find_roster_pr` must filter on `isCrossRepository == false`
+    through the REAL `--jq` expression eval.yml sends (piped through actual
+    `jq` here, never a hardcoded stand-in), so a regression to the
+    unfiltered `.[0].number` form fails these."""
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_cross_repo_only_row_is_treated_as_no_open_pr(self):
+        latest = self.SAME
+        d = self.tmp / "fork-only"; d.mkdir()
+        self._write_policy(d, "auto")
+        self._pr_list_rows = [{"number": 101, "isCrossRepository": True}]
+        out, calls, body = self._run_step(latest, self._tracker(), cwd=d)
+        # "same" + roster_mode auto: the PR-close path runs, finds nothing
+        # (the fork row is filtered out), and closes no PR.
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("pr close") for c in pr_calls), pr_calls)
+        self.assertNotIn("101", " ".join(pr_calls))
+        self.assertNotIn("101", body or "")
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_cross_repo_row_never_reaches_the_auto_path(self):
+        # The auto path (create/edit + enable) never sees the fork's
+        # number: with only a cross-repo row open, it is found as if no PR
+        # were open at all, so a fresh one is created rather than the
+        # fork's PR being edited or merged.
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_rows = [{"number": 101, "isCrossRepository": True}]
+        self._pr_create_number = "202"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        self.assertFalse(any(c.startswith("pr edit 101") for c in pr_calls), pr_calls)
+        self.assertFalse(any("101" in c for c in pr_calls), pr_calls)
+        self.assertTrue(any(c.startswith("pr create") for c in pr_calls), pr_calls)
+        self.assertIn("Pull request #202", body)
+        self.assertNotIn("#101", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_cross_repo_row_newer_than_a_same_repo_row_uses_the_same_repo_number(self):
+        # gh's default order is newest-first: a fork PR opened after this
+        # repo's own must still lose to the same-repo one.
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_rows = [{"number": 102, "isCrossRepository": True},
+                              {"number": 55, "isCrossRepository": False}]
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pr_calls = [c for c in calls if c.startswith("pr ")]
+        edit = next((c for c in pr_calls if c.startswith("pr edit")), None)
+        self.assertIsNotNone(edit, pr_calls)
+        self.assertTrue(edit.startswith("pr edit 55"), edit)
+        self.assertFalse(any(c.startswith("pr create") for c in pr_calls), pr_calls)
+        self.assertIn("Pull request #55", body)
+        self.assertNotIn("#102", body)
+
+
+class TestAdversarialRound1F5MatchHeadCommit(_AutoProposeStepFixture):
+    """F5 (adversarial round 1 on #209, repro R4): `--match-head-commit`
+    must carry the sha actually pushed to origin's `roster/proposal`, never
+    the checkout's pre-commit HEAD (mutant M1) and never a sha read from
+    some other checkout (mutant M8)."""
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_match_head_commit_equals_the_actually_pushed_sha(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        pre_push_head = subprocess.run(
+            ["git", "-C", str(work), "rev-parse", "HEAD"],
+            capture_output=True, text=True, check=True).stdout.strip()
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        origin = self.tmp / "work-origin.git"
+        pushed = subprocess.run(
+            ["git", "--git-dir", str(origin), "rev-parse", "refs/heads/roster/proposal"],
+            capture_output=True, text=True, check=True).stdout.strip()
+        merge = next(c for c in calls if c.startswith("pr merge") and "--auto" in c)
+        self.assertIn(f"--match-head-commit {pushed}", merge)
+        # M1: never the pre-push checkout HEAD (a different commit — the
+        # worktree commit that follows it is what actually got pushed).
+        self.assertNotEqual(pushed, pre_push_head)
+        self.assertNotIn(f"--match-head-commit {pre_push_head}", merge)
 
 
 class TestHarnessVersionNonZeroExit(_ProbeFixture):

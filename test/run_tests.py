@@ -4119,34 +4119,44 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "be added, per the header's first rule")
 
     def test_permissions_are_exactly_the_three_the_header_names(self):
-        # "Single job, so this block is the whole workflow's privilege set"
-        # — the header's own claim. A widened `permissions:` block (an
-        # added scope, or contents: write turning into admin) would slip
-        # past every other test in this class.
-        #
-        # `issues: write` IS #147's ONE ADDITION and is pinned as such:
-        # the roster proposal step upserts one tracking issue and closes it
-        # again. `pull-requests: write` and `actions: write` are the
-        # roster-mode addition (Adam's decision of 2026-09-28): they exist
-        # only for `roster_mode: auto`'s PR create/edit/merge/close and its
-        # `gh workflow run ci.yml` dispatch. The set is asserted for
-        # EQUALITY, so a fifth scope reds this row whatever it is, and the
-        # two assertions below say separately that the two pre-existing
-        # scopes are unchanged — so a future widening cannot be smuggled in
-        # by rewriting the expected dict wholesale.
+        # F2 (adversarial round 1 on #209): the workflow-level block is now
+        # `{}` deliberately — each JOB carries its own least-privilege set,
+        # so the `eval` job (which runs the bypass-permissions agent) never
+        # sees `pull-requests: write`/`actions: write` at all; only the
+        # `roster-pr` job (F2's split-out PR/workflow-dispatch job) does.
+        # Both dicts are asserted for EQUALITY, so a fifth scope on either
+        # job reds this row whatever it is, and a scope moved from
+        # `roster-pr` onto `eval` (widening the agent's job, not just the
+        # workflow) reds it too — that is exactly the defect this test
+        # exists to catch.
         doc = self._doc()
         self.assertEqual(
-            doc.get("permissions"),
-            {"contents": "write", "id-token": "write", "issues": "write",
-             "pull-requests": "write", "actions": "write"},
-            "eval.yml's permissions must be exactly {contents: write, "
-            "id-token: write, issues: write, pull-requests: write, "
-            "actions: write} — the header states this is the workflow's "
-            "whole privilege set, and `issues: write` is #147's addition; "
-            "`pull-requests: write` and `actions: write` exist only for "
-            "roster_mode: auto")
-        self.assertEqual(doc["permissions"]["contents"], "write")
-        self.assertEqual(doc["permissions"]["id-token"], "write")
+            doc.get("permissions"), {},
+            "eval.yml's workflow-level permissions must be {} — every scope "
+            "lives at job level since F2's roster-pr split, so the "
+            "bypass-permissions `eval` job never inherits a PR/workflow "
+            "scope it does not itself declare")
+        self.assertEqual(
+            doc["jobs"]["eval"].get("permissions"),
+            {"contents": "write", "id-token": "write", "issues": "write"},
+            "the `eval` job's permissions must be exactly {contents: write, "
+            "id-token: write, issues: write} — unchanged from before the "
+            "roster-pr split (#147's `issues: write` addition); it must "
+            "never carry pull-requests/actions again, since it runs the "
+            "bypass-permissions agent")
+        self.assertEqual(
+            doc["jobs"]["roster-pr"].get("permissions"),
+            {"pull-requests": "write", "actions": "write", "issues": "write",
+             "contents": "read"},
+            "the `roster-pr` job's permissions must be exactly "
+            "{pull-requests: write, actions: write, issues: write, "
+            "contents: read} — this job (F2, adversarial round 1 on #209) "
+            "is the only one holding pull-requests/actions, for "
+            "roster_mode: auto's PR create/edit/merge/close and its "
+            "`gh workflow run ci.yml` dispatch; `issues: write` because it "
+            "finishes the tracking issue's PR-outcome-dependent text")
+        self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
+        self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
 
     def test_the_proposal_step_carries_no_expression_in_its_run_block(self):
         # The general rule is asserted over every step by
@@ -5839,19 +5849,29 @@ class TestIssue67(unittest.TestCase):
         # scope reds this row as well as its sibling in
         # EvalWorkflowSecurityHeaderTests — the duplication is deliberate
         # and predates #147: this is the test nobody may delete.
-        self.assertEqual(doc["permissions"],
+        #
+        # F2 (adversarial round 1 on #209): the workflow-level block is now
+        # {} and each job carries its own scopes — `eval` keeps exactly
+        # this same three-scope set at JOB level, and `pull-requests`/
+        # `actions` moved to the new `roster-pr` job alone, so the
+        # bypass-permissions agent's own job never widened.
+        self.assertEqual(doc["permissions"], {})
+        self.assertEqual(doc["jobs"]["eval"]["permissions"],
                          {"contents": "write", "id-token": "write",
-                          "issues": "write", "pull-requests": "write",
-                          "actions": "write"})
-        for step in doc["jobs"]["eval"]["steps"]:
-            script = step.get("run") or ""
-            self.assertNotIn("${{", script,
-                             f"step {step.get('name')!r} interpolates into a "
-                             "run: block; read inputs from $GITHUB_EVENT_PATH")
-            uses = step.get("uses")
-            if uses:
-                self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
-                                 "every uses: is a bare 40-hex SHA, no comment")
+                          "issues": "write"})
+        self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
+                         {"pull-requests": "write", "actions": "write",
+                          "issues": "write", "contents": "read"})
+        for job in doc["jobs"].values():
+            for step in job["steps"]:
+                script = step.get("run") or ""
+                self.assertNotIn("${{", script,
+                                 f"step {step.get('name')!r} interpolates into a "
+                                 "run: block; read inputs from $GITHUB_EVENT_PATH")
+                uses = step.get("uses")
+                if uses:
+                    self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
+                                     "every uses: is a bare 40-hex SHA, no comment")
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
         # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
@@ -29244,6 +29264,8 @@ elif 'worktree' in args and 'remove' in args:
             home.mkdir()
             config.mkdir()
             memory.write_text("", encoding="utf-8")
+            github_output = root / "github-output"
+            github_output.write_text("", encoding="utf-8")
             env = {"PATH": f"{tools}:/usr/bin:/bin", "HOME": str(home),
                    "CLAUDE_CONFIG_DIR": str(config),
                    "SKILLS_EVALS_USER_MEMORY": str(memory),
@@ -29254,9 +29276,40 @@ elif 'worktree' in args and 'remove' in args:
                    "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(workspace),
                    "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0",
                    "PROPOSAL_RESULTS_PUSH_ERROR": "1" if results_push_error else "0",
-                   "GITHUB_STEP_SUMMARY": str(temp / "summary")}
+                   "GITHUB_STEP_SUMMARY": str(temp / "summary"),
+                   "GITHUB_OUTPUT": str(github_output)}
             run = subprocess.run(["/bin/bash", "-c", script], cwd=workspace,
                                  env=env, capture_output=True, text=True, timeout=60)
+            # F2 (adversarial round 1 on #209): the `roster-pr` job's step
+            # now owns every `gh pr`/`gh workflow run` call and the
+            # differs-branch tracking-issue write, fed by the `eval` job's
+            # outputs above — run it too, against the SAME recording `gh`/
+            # `git` shims, so `calls` below is the full cross-job call log
+            # a real run would produce, exactly as it always was for a
+            # single-job workflow.
+            if run.returncode == 0:
+                outputs = self._parse_github_output(github_output)
+                roster_pr_script = next(
+                    step for step in document["jobs"]["roster-pr"]["steps"])
+                output_env = {
+                    "roster_mode": "ROSTER_MODE", "status": "STATUS",
+                    "probe_clean": "PROBE_CLEAN", "issue_number": "ISSUE_NUMBER",
+                    "pushed_sha": "PUSHED_SHA", "rejected": "REJECTED",
+                    "rejection_reason": "REJECTION_REASON",
+                    "rendered_identical": "RENDERED_IDENTICAL",
+                    "eval_note": "EVAL_NOTE", "probe_note": "PROBE_NOTE",
+                    "roster_summary": "ROSTER_SUMMARY"}
+                env2 = dict(env)
+                for key, var in output_env.items():
+                    if key in outputs:
+                        env2[var] = outputs[key]
+                run2 = subprocess.run(["/bin/bash", "-c", roster_pr_script["run"]],
+                                      cwd=workspace, env=env2, capture_output=True,
+                                      text=True, timeout=60)
+                self.assertEqual(run2.returncode, 0, run2.stdout + run2.stderr)
+                run = subprocess.CompletedProcess(
+                    run.args, run.returncode, run.stdout + run2.stdout,
+                    run.stderr + run2.stderr)
             results_run = None
             if run_results and run.returncode == 0:
                 results_script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
@@ -29267,6 +29320,30 @@ elif 'worktree' in args and 'remove' in args:
                 encoding="utf-8").splitlines()] if calls_path.exists() else []
             body = temp.joinpath("proposal-body.md")
             return run, calls, body.read_text(encoding="utf-8") if body.exists() else "", results_run
+
+    @staticmethod
+    def _parse_github_output(path):
+        """A minimal reader for the `$GITHUB_OUTPUT` file format: plain
+        `key=value` lines and `key<<DELIM` / ... / `DELIM` blocks (used for
+        every multi-line value — see eval.yml's `emit_ml`)."""
+        out = {}
+        lines = path.read_text(encoding="utf-8").splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if "<<" in line:
+                key, delim = line.split("<<", 1)
+                body = []
+                i += 1
+                while i < len(lines) and lines[i] != delim:
+                    body.append(lines[i])
+                    i += 1
+                out[key] = "\n".join(body)
+            elif "=" in line:
+                key, _, value = line.partition("=")
+                out[key] = value
+            i += 1
+        return out
 
     def test_proposal_step_uses_only_a_complete_bot_owned_tracker(self):
         marker = "<!-- skills-evals:roster-proposal -->"

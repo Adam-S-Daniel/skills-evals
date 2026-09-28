@@ -81,8 +81,26 @@ and approve pull requests" on this repo for this change.
    open PR from `roster/proposal` has `gh pr merge --disable-auto` run on
    it, wrapped the same way (`::warning::`, never a failed job), and the
    tracking issue says whose merge was turned off and why.
-5. **Permissions:** `eval.yml`'s `permissions:` gains `pull-requests: write`
-   and `actions: write`, used only by the auto path above.
+5. **Permissions:** `pull-requests: write` and `actions: write`, used only by
+   the auto path above. **Revised by the adversarial round 1 review on #209
+   (F2):** these two scopes live on a separate job, `roster-pr`
+   (`needs: eval`), never on `eval` itself — `eval` is the job that runs the
+   bypass-permissions agent, and giving the whole job a PR/workflow-dispatch
+   scope for one late step would have handed that scope to the agent too.
+   `roster-pr` runs `pull-requests: write, actions: write, issues: write,
+   contents: read`; `eval` keeps exactly its pre-#209 scopes
+   (`contents: write, id-token: write, issues: write`) and never calls `gh
+   pr`/`gh workflow run` at all. `roster-pr` needs `issues: write` too: the
+   tracking issue's final wording (a PR number, "merging automatically",
+   "could not be turned off") depends on what `roster-pr` did to the PR, so
+   it finishes editing the SAME issue the `eval` job's propose step found or
+   left with neutral text, rather than splitting one issue's text across two
+   writers with no shared view of the outcome. Workflow-level `permissions:`
+   is `{}`. `roster-pr` runs on EVERY eval run (`if: !cancelled()`),
+   `roster_mode: proposal` included — a stale `roster/proposal` PR's
+   auto-merge must come off, or the PR must be closed if the roster no
+   longer differs, whether or not this run's propose step reached the auto
+   path (F3, below).
 
 ## Consequences
 
@@ -98,6 +116,16 @@ and approve pull requests" on this repo for this change.
   do not re-trigger `on:` events by design, to prevent runaway recursion.
   Nothing in this repo currently depends on a `push`-to-`main` trigger for
   roster changes, so this is recorded rather than mitigated.
+- **A bot merge gets no `test` run on the merge commit itself** (N2,
+  adversarial round 1 on #209): the same `GITHUB_TOKEN`-does-not-retrigger
+  rule above means `main`'s post-merge sha never gets its own `test` run.
+  What actually satisfied the ruleset's required check is the `test` run
+  this workflow dispatched on the PR's HEAD (`roster/proposal`'s pushed
+  sha), which ran against `main` as it stood at the START of this run — not
+  against whatever else may have merged to `main` between this run starting
+  and GitHub performing the merge. That gap is the same one any PR merge
+  carries between its last CI run and the merge button; `roster_mode: auto`
+  does not widen it, it just removes the human who would otherwise notice.
 - **The toggle also lets Actions approve pull requests generally**, not only
   merge them, on this repo — a side effect of the one GitHub setting this
   depends on. Harmless at the ruleset's 0 required approvals: there is

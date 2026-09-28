@@ -116,12 +116,15 @@
 #   token-exchange failure output below is a separate pre-existing path.
 #
 # * All five checkouts use `persist-credentials: false`; push auth is injected
-#   only in the two steps that push — the roster-proposal step and the final
-#   commit step — and only in their own `env:`. Both sit AFTER the eval, so
-#   while the bypassPermissions agent is running, no GitHub write credential
-#   exists anywhere on the runner and no long-lived secret exists on the
-#   runner. What IS in reach differs by subject, because the two arms are
-#   built differently:
+#   only in the two steps of the `eval` job that push — the roster-proposal
+#   step and the final commit step — and only in their own `env:`. Both sit
+#   AFTER the eval, so while the bypassPermissions agent is running, no
+#   GitHub write credential exists anywhere on that job's runner and no
+#   long-lived secret exists on it. The `roster-pr` job (F2, adversarial
+#   round 1 on #209) gets its own fresh `${{ github.token }}`, scoped to
+#   that job's own `permissions:` block, never the `eval` job's token — the
+#   two jobs run on separate runners and share no credential. What IS in
+#   reach differs by subject, because the two arms are built differently:
 #
 #     - a SKILL arm's agent gets an ALLOWLIST too, since #81 (harness/
 #       run_eval.py's `_ALLOWED_ENV` + `_ALLOWED_ENV_PREFIXES`): PATH, HOME,
@@ -203,29 +206,36 @@ on:
         required: false
         default: false
 
-# Single job, so this block is the whole workflow's privilege set.
-# `contents: write` is required for the badge/results push; splitting eval and
-# commit into separate jobs would not shed it (the commit job still needs write
-# + the results artifact), it would only add an artifact hand-off surface.
-# `issues: write` is #147's one addition, for the roster-proposal tracking
-# issue. `pull-requests: write` and `actions: write` exist ONLY for
-# `roster_mode: auto` (Adam's decision of 2026-09-28,
-# docs/decisions/0003-roster-merges-automatically.md): they let the
-# "Propose a roster change" step open/edit/close a pull request from
-# `roster/proposal` and dispatch `ci.yml` on it so the `test` check lands
-# on its head sha. `roster_mode: proposal` never exercises either scope.
-# GITHUB_TOKEN here gets no other scopes.
-permissions:
-  contents: write
-  id-token: write
-  # #147: the roster proposal step upserts ONE tracking issue (marker
-  # `<!-- skills-evals:roster-proposal -->`) and closes it again when the
-  # computed roster matches the committed one. That is the ONLY new
-  # permission this workflow has taken; the `roster/proposal` branch push
-  # needs none, because the job already pushes `eval-results`.
-  issues: write
-  pull-requests: write
-  actions: write
+# TWO jobs, each least-privileged at JOB level (adversarial round 1 on #209,
+# F2). Workflow-level permissions is `{}` deliberately: the `eval` job runs
+# the bypass-permissions agent, and giving it `pull-requests: write` /
+# `actions: write` for the whole job — as a single-job shape once did — would
+# hand those scopes to that agent too, not just to the "Propose a roster
+# change" step. Each job below declares its own set instead.
+#
+# `eval` (contents: write, id-token: write, issues: write): unchanged from
+# before the split. `contents: write` is for the badge/results push and the
+# `roster/proposal` branch push (both happen from this job, since both need
+# only `contents`); `issues: write` is #147's roster-proposal tracking issue.
+# Nothing in this job ever calls `gh pr` or `gh workflow run`.
+#
+# `roster-pr` (pull-requests: write, actions: write, issues: write,
+# contents: read): everything that touches the pull request the `eval` job's
+# propose step pushed — find/create/edit/merge/close it, and dispatch
+# `ci.yml` on it so `test` lands on its head sha (`pull-requests: write`,
+# `actions: write`, Adam's decision of 2026-09-28,
+# docs/decisions/0003-roster-merges-automatically.md). It also carries
+# `issues: write`: the tracking issue's final wording depends on what this
+# job did to the PR (opened it, could not enable auto-merge, turned auto-
+# merge off, …), so this job edits/creates the SAME issue the `eval` job's
+# propose step found or left neutral, rather than splitting one issue's text
+# across two writers with no shared view of the outcome. `contents: read` is
+# the default this job would get anyway; it is named explicitly because it
+# reads no repository content at all (no checkout step) — it only calls
+# `gh`. This job runs on EVERY eval run, `roster_mode: proposal` included
+# (F3): a stale `roster/proposal` PR's auto-merge must come off even when
+# this run's proposal never reached the auto path.
+permissions: {}
 
 # Never let two runs (e.g. a manual dispatch during the weekly run) race the
 # badge commit; queue instead of cancelling so results are never half-written.
@@ -236,6 +246,12 @@ concurrency:
 jobs:
   eval:
     runs-on: ubuntu-latest
+    # Job-level, not workflow-level (F2) — this is exactly the eval.yml's
+    # pre-#209-review scope, never widened by the roster-pr split.
+    permissions:
+      contents: write
+      id-token: write
+      issues: write
     # 45 min covers the widest committed shape, not just the 2-arm skill
     # A/B: a guidance fixture spends (agent budget + guard budget) per
     # DECLARED arm, and the delivery canary declares five at 120 + 120 s. A
@@ -244,6 +260,23 @@ jobs:
     # test_every_guidance_fixture_fits_inside_the_workflow_job_timeout is
     # what catches that, over every guidance fixture under evals/.
     timeout-minutes: 45
+    # Consumed by the `roster-pr` job (needs: eval) — see that job's own
+    # comment for what each carries and how it is validated before use.
+    # Every one of these is written by the "Propose a roster change" step
+    # (id: propose); a value it never reaches stays the empty string, which
+    # `roster-pr` treats as "no action for this run" rather than an error.
+    outputs:
+      roster_mode: ${{ steps.propose.outputs.roster_mode }}
+      status: ${{ steps.propose.outputs.status }}
+      probe_clean: ${{ steps.propose.outputs.probe_clean }}
+      issue_number: ${{ steps.propose.outputs.issue_number }}
+      pushed_sha: ${{ steps.propose.outputs.pushed_sha }}
+      rejected: ${{ steps.propose.outputs.rejected }}
+      rejection_reason: ${{ steps.propose.outputs.rejection_reason }}
+      rendered_identical: ${{ steps.propose.outputs.rendered_identical }}
+      eval_note: ${{ steps.propose.outputs.eval_note }}
+      probe_note: ${{ steps.propose.outputs.probe_note }}
+      roster_summary: ${{ steps.propose.outputs.roster_summary }}
     steps:
       - name: Check out skills-evals
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -793,6 +826,7 @@ jobs:
         # channels, so a failed eval step must not silence them. An
         # expression in `if:`, never interpolated into a run: body.
         if: ${{ !cancelled() }}
+        id: propose
         working-directory: skills-evals
         env:
           # Write auth lives only in this step and the commit step.
@@ -807,6 +841,39 @@ jobs:
           EVAL_OUTCOME: ${{ steps.eval.outcome }}
         run: |
           set -euo pipefail
+          # GITHUB_OUTPUT always exists on a real runner; this default only
+          # protects a test harness that runs the script without it
+          # (`set -u` would otherwise turn every `emit`/`emit_ml` call
+          # below into an "unbound variable" failure) — output goes nowhere
+          # rather than the step dying on a harness gap unrelated to what
+          # it is testing.
+          : "${GITHUB_OUTPUT:=/dev/null}"
+          # `emit`/`emit_ml` write this step's job outputs, consumed by the
+          # `roster-pr` job (F2, adversarial round 1 on #209). `emit_ml`'s
+          # delimiter is RANDOM per call, never fixed: `roster_summary` below
+          # is harness/roster.py's own rendered text, shaped partly by the
+          # untrusted census (ADR 0003's own Consequences section), and a
+          # fixed `key<<EOF` delimiter could be spoofed by that text to
+          # smuggle extra `key=value` lines into $GITHUB_OUTPUT. Every OTHER
+          # value this step emits is either one of a small set of fixed
+          # literals this step itself chose (never the raw computed value)
+          # or digit/hex-validated before emit — see each call site below.
+          emit() { printf '%s=%s\n' "$1" "$2" >> "$GITHUB_OUTPUT"; }
+          emit_ml() {
+            # `content="$(cat)"` strips any trailing newline stdin has (or
+            # doesn't have) and the `printf '%s\n'` below always puts exactly
+            # one back — the delimiter line must never land glued onto the
+            # content's last line, whether or not the caller's own value
+            # ended with one.
+            local key="$1" delim content
+            delim="ghaout_$$_${RANDOM}${RANDOM}${RANDOM}"
+            content="$(cat)"
+            {
+              printf '%s<<%s\n' "$key" "$delim"
+              printf '%s\n' "$content"
+              printf '%s\n' "$delim"
+            } >> "$GITHUB_OUTPUT"
+          }
           marker='<!-- skills-evals:roster-proposal -->'
           computed="$RUNNER_TEMP/roster/latest.json"
           if [ ! -f "$computed" ]; then
@@ -815,6 +882,12 @@ jobs:
           fi
           status=$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(((d.get("proposal") or {}).get("status")) or "")' "$computed")
           echo "proposal status: ${status:-unknown}"
+          # `status` is not emitted yet — only once the tracker lookup below
+          # has actually resolved one issue (or confirmed there is none): if
+          # that lookup fails or is ambiguous, the roster-pr job must see an
+          # unknown/empty status (its disable-only path), exactly like today,
+          # never a "differs" it would then act on with no tracking issue to
+          # write to.
 
           # >>> roster-mode
           # `roster_mode` in `evals/roster-policy.yml` (Adam's decision of
@@ -828,6 +901,10 @@ jobs:
           # file behaves the same (the `except` below). Any other value is a
           # fixed warning, since it is a typo or drift rather than a
           # deliberate absence. roster.py itself never reads this key.
+          #
+          # `find_roster_pr` — used to live here too, but every `gh pr` call
+          # moved to the `roster-pr` job (F2, adversarial round 1 on #209):
+          # this job no longer looks the pull request up at all.
           roster_mode=$(python3 -c '
           import sys
           import yaml
@@ -848,25 +925,7 @@ jobs:
               ;;
           esac
           echo "roster_mode: $roster_mode"
-
-          # An open PR from `roster/proposal` onto `main`, if any, for
-          # `roster_mode: auto` — shared by the "same" (close it) and
-          # "differs" (find/create/edit it) branches below. Prints a
-          # digits-only PR number, or nothing when none is open; a
-          # non-digit answer from `gh` is treated exactly like none, so it
-          # is never interpolated into a later command. Returns 1 only when
-          # the `gh` call itself failed, never for "no open PR".
-          find_roster_pr() {
-            local raw
-            if ! raw=$(gh pr list --repo "$REPO" --head roster/proposal --base main \
-                        --json number --jq '.[0].number' 2>/dev/null); then
-              return 1
-            fi
-            case "$raw" in
-              ''|*[!0-9]*) printf '' ;;
-              *) printf '%s' "$raw" ;;
-            esac
-          }
+          emit roster_mode "$roster_mode"
           # <<< roster-mode
 
           # >>> roster-only note
@@ -932,6 +991,14 @@ jobs:
           elif [ -n "$mismatch_note" ]; then
             probe_note="$mismatch_note"
           fi
+          if [ "$defaults_failed" -eq 0 ] && [ "$defaults_mismatched" -eq 0 ]; then
+            emit probe_clean true
+          else
+            emit probe_clean false
+          fi
+          printf '%s' "$eval_note" | emit_ml eval_note
+          printf '%s' "$probe_note" | emit_ml probe_note
+          emit_ml roster_summary < "$RUNNER_TEMP/roster-inputs/summary.md"
           # <<< defaults-failed note
 
           # The open tracking issue is owned by this workflow's bot account,
@@ -983,6 +1050,19 @@ jobs:
             echo "::warning::could not identify one bot-owned roster tracking issue; the roster proposal was not filed"
             exit 0
           fi
+          case "$issue" in
+            ''|*[!0-9]*) : ;;
+            *) emit issue_number "$issue" ;;
+          esac
+          # Forwarded as one of these two fixed literals ONLY, never the raw
+          # value read above: `status` is partly shaped by the untrusted
+          # census, and the roster-pr job's shell reads this output straight
+          # into a variable it compares and interpolates.
+          case "$status" in
+            same) emit status same ;;
+            differs) emit status differs ;;
+            *) : ;;
+          esac
 
           # A failed probe, or a catalogue mismatch, keeps the tracking
           # issue OPEN even on "same" (#203 probe round 8, R8-1 folded the
@@ -991,6 +1071,12 @@ jobs:
           # catalogue, and closing the issue would hide either one. The
           # title and first line are chosen BY CLASS so a mismatch-only run
           # never says "probe failed", and a run with both says both.
+          #
+          # F3 (adversarial round 1 on #209): this "same" branch — frozen or
+          # not — never touches the roster pull request any more; the
+          # `roster-pr` job does that unconditionally from the `status`
+          # output above, whether or not the probe was clean, so an open
+          # automatic PR is closed here too even when the probe froze.
           if [ "$status" = "same" ] && { [ "$defaults_failed" -gt 0 ] || [ "$defaults_mismatched" -gt 0 ]; }; then
             if [ "$defaults_failed" -gt 0 ] && [ "$defaults_mismatched" -gt 0 ]; then
               issue_title="Model roster: the vendor-default probe failed and a default did not match the catalogue"
@@ -1030,22 +1116,6 @@ jobs:
             exit 0
           fi
           if [ "$status" = "same" ]; then
-            if [ "$roster_mode" = auto ]; then
-              # The committed roster no longer differs: an open automatic PR
-              # is stale and is closed, alongside the tracking issue below.
-              if same_pr=$(find_roster_pr); then
-                if [ -n "$same_pr" ]; then
-                  if gh pr close "$same_pr" --repo "$REPO" \
-                    --comment "This run proposes no change to the model roster; this pull request no longer differs from \`main\`. Closing."; then
-                    echo "closed the stale roster pull request #$same_pr"
-                  else
-                    echo "::warning::could not close the roster pull request"
-                  fi
-                fi
-              else
-                echo "::warning::could not find the roster pull request"
-              fi
-            fi
             if [ -n "$issue" ]; then
               if gh issue close "$issue" --repo "$REPO" \
                 --comment "This run proposes no change to the model roster (routine observation-date refreshes are not proposed). Closing until something changes."; then
@@ -1097,54 +1167,19 @@ jobs:
             rejection="Admission was rejected because the rendered proposal does not meet the committed-roster contract."
           fi
           if [ -n "$rejection" ]; then
-            # A pull request from an EARLIER run may still be open even
-            # though this run's proposal never reached publication (the
-            # branch was not touched). It must not be left with a stale
-            # auto-merge: a later push that happens to pass `test` must
-            # never merge a head this run did not approve.
-            rejection_pr=""
-            if rejection_pr=$(find_roster_pr); then
-              if [ -n "$rejection_pr" ]; then
-                if ! gh pr merge "$rejection_pr" --repo "$REPO" --disable-auto; then
-                  echo "::warning::could not disable auto-merge for the roster pull request"
-                fi
-              fi
-            else
-              rejection_pr=""
-              echo "::warning::could not find the roster pull request"
-            fi
-            body="$RUNNER_TEMP/proposal-body.md"
-            {
-              printf '%s\n\n' "$marker"
-              echo "The weekly run computed a roster difference, but it was rejected before proposal publication."
-              echo
-              echo "**Needs review before publication.** No proposal branch or compare link was updated."
-              if [ "$roster_mode" = auto ]; then
-                echo "\`roster_mode: auto\` is set, but no pull request was opened: a rejected proposal never reaches the automatic-merge step."
-              fi
-              if [ -n "$rejection_pr" ]; then
-                echo "Pull request #$rejection_pr from an earlier run is still open; its automatic merge has been turned off because this run's proposal was rejected before publication."
-              fi
-              echo
-              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
-              echo "$eval_note"
-              echo
-              echo "$rejection"
-              echo
-              cat "$RUNNER_TEMP/roster-inputs/summary.md"
-            } > "$body"
-            if [ -n "$issue" ]; then
-              if gh issue edit "$issue" --repo "$REPO" \
-                --title "Model roster: proposal needs review" --body-file "$body"; then
-                echo "updated the blocked proposal issue #$issue"
-              else
-                echo "::warning::could not update the roster tracking issue"
-              fi
-            else
-              gh issue create --repo "$REPO" \
-                --title "Model roster: proposal needs review" --body-file "$body" \
-                || echo "::warning::could not create the roster tracking issue"
-            fi
+            # F2 (adversarial round 1 on #209): this run's proposal never
+            # reached publication, so there is no branch for the `roster-pr`
+            # job to act on either — but an EARLIER run's PR may still be
+            # open, and that job disables its auto-merge unconditionally
+            # whenever this run did not (re-)enable one, from the `rejected`
+            # output alone. Nothing about any existing PR is decided here.
+            # `$rejection` is one of exactly two fixed sentences (never a
+            # rendered/admission tool's own untrusted stderr — those are
+            # captured to $RUNNER_TEMP files and never echoed), so it is
+            # safe as an ordinary single-line output.
+            emit rejected true
+            emit rejection_reason "$rejection"
+            echo "::notice::this run's roster proposal was rejected before publication: $rejection"
             exit 0
           fi
 
@@ -1157,6 +1192,7 @@ jobs:
           git -C "$worktree" add evals/roster.yml
           if git -C "$worktree" diff --cached --quiet; then
             echo "::notice::the proposal renders byte-identically to the committed roster; nothing pushed"
+            emit rendered_identical true
             git worktree remove --force "$worktree"
             exit 0
           fi
@@ -1168,6 +1204,15 @@ jobs:
             -c user.email="skills-evals@users.noreply.github.com" \
             commit -q -m "roster: proposed model roster (run $RUN_ID)"
           pushed_sha=$(git -C "$worktree" rev-parse HEAD)
+          # F5 (adversarial round 1 on #209): validated as a bare 40-hex sha
+          # — `git rev-parse HEAD` in the worktree just committed to, never
+          # `$base` (the checkout's HEAD before that commit, mutant M1) and
+          # never a sha read from any OTHER checkout (mutant M8) — before
+          # it becomes a job output the `roster-pr` job will pass straight
+          # to `--match-head-commit`.
+          if [[ "$pushed_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            emit pushed_sha "$pushed_sha"
+          fi
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
           # Fetch first so the implicit lease compares against the current
           # remote-tracking ref when the proposal branch already exists. A
@@ -1178,172 +1223,14 @@ jobs:
           # NOT wrapped, unlike the `gh issue` writes (#203 probe round 3): a
           # proposal branch that failed to push does not exist for review, so
           # the step fails here rather than filing an issue that links to it.
+          # A failure here means NO outputs below `pushed_sha` were written
+          # (the step dies here, mid-script) — the `roster-pr` job still
+          # runs (F3: it is gated on the workflow not being cancelled, and a
+          # failed step is not a cancelled job) and, seeing no `pushed_sha`,
+          # takes the same disable-only path as a rejected proposal.
           git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \
             push --force-with-lease origin roster/proposal
           git worktree remove --force "$worktree"
-
-          # >>> roster-mode auto attempt
-          # Auto-merging applies only after the proposal passed render +
-          # admission and the push above succeeded, AND this run's probe was
-          # clean — a probe failure or mismatch keeps today's behavior
-          # exactly (issue, human decides), same as `roster_mode: proposal`.
-          pr_number=""
-          pr_failed=""
-          auto_attempted=""
-          if [ "$roster_mode" = auto ] && [ "$defaults_failed" -eq 0 ] \
-             && [ "$defaults_mismatched" -eq 0 ]; then
-            auto_attempted=1
-            pr_body="$RUNNER_TEMP/pr-body.md"
-            {
-              echo "The weekly run computes a model roster that differs from the committed \`evals/roster.yml\`."
-              echo
-              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
-              echo "$eval_note"
-              echo
-              echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
-              echo
-              cat "$RUNNER_TEMP/roster-inputs/summary.md"
-              echo
-              echo "Merged automatically once \`test\` passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
-            } > "$pr_body"
-
-            if pr_number=$(find_roster_pr); then
-              if [ -n "$pr_number" ]; then
-                if ! gh pr edit "$pr_number" --repo "$REPO" \
-                  --title "roster: automatic update (run $RUN_ID)" --body-file "$pr_body"; then
-                  pr_failed=1
-                  echo "::warning::could not update the roster pull request"
-                fi
-              else
-                pr_url=$(gh pr create --repo "$REPO" --base main --head roster/proposal \
-                  --title "roster: automatic update (run $RUN_ID)" --body-file "$pr_body") \
-                  || pr_url=""
-                pr_number=$(printf '%s' "$pr_url" | grep -oE '[0-9]+$' || true)
-                case "$pr_number" in
-                  ''|*[!0-9]*)
-                    pr_number=""
-                    pr_failed=1
-                    echo "::warning::could not create the roster pull request"
-                    ;;
-                esac
-              fi
-            else
-              pr_number=""
-              pr_failed=1
-              echo "::warning::could not find the roster pull request"
-            fi
-
-            if [ -z "$pr_failed" ]; then
-              if ! gh workflow run ci.yml --repo "$REPO" --ref roster/proposal; then
-                pr_failed=1
-                echo "::warning::could not start checks for the roster pull request"
-              fi
-            fi
-            if [ -z "$pr_failed" ]; then
-              if ! gh pr merge "$pr_number" --repo "$REPO" --auto --merge \
-                   --match-head-commit "$pushed_sha"; then
-                pr_failed=1
-                echo "::warning::could not enable auto-merge for the roster pull request"
-              fi
-            fi
-            # The attempt above did not finish with auto-merge enabled on
-            # this run's head (a step after find/create failed) but DID
-            # learn a PR number: that PR must not be left carrying a stale
-            # auto-merge from an earlier run, so it is turned off here too.
-            if [ -n "$pr_failed" ] && [ -n "$pr_number" ]; then
-              if ! gh pr merge "$pr_number" --repo "$REPO" --disable-auto; then
-                echo "::warning::could not disable auto-merge for the roster pull request"
-              fi
-            fi
-          else
-            # `roster_mode: proposal`, or `auto` with a probe that was not
-            # clean: this run never attempts to enable auto-merge. An OPEN
-            # pull request from an earlier run must not keep one, or a
-            # later push whose `test` happens to pass would merge a head
-            # this run never approved.
-            if pr_number=$(find_roster_pr); then
-              if [ -n "$pr_number" ]; then
-                if ! gh pr merge "$pr_number" --repo "$REPO" --disable-auto; then
-                  pr_failed=1
-                  echo "::warning::could not disable auto-merge for the roster pull request"
-                fi
-              fi
-            else
-              pr_number=""
-              pr_failed=1
-              echo "::warning::could not find the roster pull request"
-            fi
-          fi
-          # <<< roster-mode auto attempt
-
-          body="$RUNNER_TEMP/proposal-body.md"
-          if [ -n "$auto_attempted" ] && [ -z "$pr_failed" ] && [ -n "$pr_number" ]; then
-            {
-              printf '%s\n\n' "$marker"
-              echo "The weekly run computed a roster difference and opened pull request #$pr_number from \`roster/proposal\`, which merges automatically once its \`test\` check passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
-              echo
-              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
-              echo "$eval_note"
-              echo
-              echo "[Pull request #$pr_number]($SERVER_URL/$REPO/pull/$pr_number)"
-              echo
-              cat "$RUNNER_TEMP/roster-inputs/summary.md"
-            } > "$body"
-            issue_title="Model roster: a change is merging automatically"
-          else
-            # WHY auto-merge is not on this run — empty means "it was never
-            # a candidate" (`roster_mode: proposal`), never printed alone;
-            # it is always paired below with either a PR reference or the
-            # plain "open a pull request" line.
-            why=""
-            if [ "$roster_mode" = auto ]; then
-              if [ "$defaults_failed" -gt 0 ] || [ "$defaults_mismatched" -gt 0 ]; then
-                why="this run's vendor-default probe was not clean"
-              else
-                why="this run's automatic-merge attempt did not complete"
-              fi
-            fi
-            if [ -n "$pr_number" ]; then
-              if [ -n "$why" ]; then
-                pr_line="Pull request #$pr_number is open from \`roster/proposal\`; a human must merge it after CI. Its automatic merge has been turned off because $why."
-              else
-                pr_line="Pull request #$pr_number is open from \`roster/proposal\`; merge it after CI if the reasons below hold up. Its automatic merge has been turned off because \`roster_mode\` is \`proposal\`."
-              fi
-            else
-              if [ -n "$why" ]; then
-                pr_line="\`roster_mode: auto\` is set, but $why, so the automatic merge was skipped this run — a human must open or merge the pull request from \`roster/proposal\`."
-              else
-                pr_line="Open a pull request from \`roster/proposal\` and merge it after CI if the reasons below hold up."
-              fi
-            fi
-            {
-              printf '%s\n\n' "$marker"
-              echo "The weekly run computes a model roster that differs from the committed \`evals/roster.yml\`."
-              echo
-              echo "**Nothing has changed yet.** The harness runs on the committed file (ADR 0001); this is a proposal."
-              echo "$pr_line"
-              echo
-              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
-              echo "$eval_note"
-              echo
-              echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
-              echo
-              cat "$RUNNER_TEMP/roster-inputs/summary.md"
-            } > "$body"
-            issue_title="Model roster: a change is proposed"
-          fi
-          if [ -n "$issue" ]; then
-            if gh issue edit "$issue" --repo "$REPO" \
-              --title "$issue_title" --body-file "$body"; then
-              echo "updated the proposal issue #$issue"
-            else
-              echo "::warning::could not update the roster tracking issue"
-            fi
-          else
-            gh issue create --repo "$REPO" \
-              --title "$issue_title" --body-file "$body" \
-              || echo "::warning::could not create the roster tracking issue"
-          fi
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
@@ -1433,3 +1320,366 @@ jobs:
           path: skills-evals/results/
           if-no-files-found: ignore
           include-hidden-files: true
+
+  # F2 (adversarial round 1 on #209): everything that touches the
+  # `roster/proposal` pull request — find/create/edit/close/merge it, and
+  # dispatch `ci.yml` on it — lives in this job, never in `eval`, so
+  # `pull-requests: write` and `actions: write` are never in reach of the
+  # `eval` job's bypass-permissions agent. Runs on EVERY eval run
+  # (`needs: eval`, `if: !cancelled()`), `roster_mode: proposal` included
+  # and a failed "Propose a roster change" step included (F3): a stale
+  # `roster/proposal` PR's auto-merge must come off — or the PR must be
+  # closed, if the committed roster no longer differs — whether or not this
+  # run's propose step reached the auto path, or reached anything at all.
+  # See the workflow-level `permissions:` comment above for the job's own
+  # scope and why it also carries `issues: write`.
+  roster-pr:
+    needs: eval
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pull-requests: write
+      actions: write
+      issues: write
+      contents: read
+    steps:
+      - name: Manage the roster pull request
+        # Nothing here interpolates a GitHub Actions expression into the
+        # shell; every `needs.eval.outputs.*` value arrives through `env:`
+        # and is re-validated below before this job's own shell reads it —
+        # the `eval` job already validated each before emitting it, but the
+        # boundary between two jobs is exactly where "validate again" earns
+        # its keep (adversarial round 1 on #209's own hard constraint).
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+          REPO: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+          ROSTER_MODE: ${{ needs.eval.outputs.roster_mode }}
+          STATUS: ${{ needs.eval.outputs.status }}
+          PROBE_CLEAN: ${{ needs.eval.outputs.probe_clean }}
+          ISSUE_NUMBER: ${{ needs.eval.outputs.issue_number }}
+          PUSHED_SHA: ${{ needs.eval.outputs.pushed_sha }}
+          REJECTED: ${{ needs.eval.outputs.rejected }}
+          REJECTION_REASON: ${{ needs.eval.outputs.rejection_reason }}
+          RENDERED_IDENTICAL: ${{ needs.eval.outputs.rendered_identical }}
+          EVAL_NOTE: ${{ needs.eval.outputs.eval_note }}
+          PROBE_NOTE: ${{ needs.eval.outputs.probe_note }}
+          ROSTER_SUMMARY: ${{ needs.eval.outputs.roster_summary }}
+        run: |
+          set -uo pipefail
+          roster_mode="proposal"
+          case "${ROSTER_MODE:-}" in auto) roster_mode="auto" ;; esac
+          status=""
+          case "${STATUS:-}" in same|differs) status="$STATUS" ;; esac
+          probe_clean=false
+          case "${PROBE_CLEAN:-}" in true) probe_clean=true ;; esac
+          issue=""
+          case "${ISSUE_NUMBER:-}" in ''|*[!0-9]*) : ;; *) issue="$ISSUE_NUMBER" ;; esac
+          pushed_sha=""
+          if [[ "${PUSHED_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then pushed_sha="$PUSHED_SHA"; fi
+          rejected=false
+          case "${REJECTED:-}" in true) rejected=true ;; esac
+          # One of exactly two fixed sentences the eval job's propose step
+          # can send (never arbitrary tool stderr); anything else falls
+          # back to empty rather than being trusted verbatim.
+          rejection_reason=""
+          case "${REJECTION_REASON:-}" in
+            "Rendering was rejected because the computed proposal could not be rendered safely."| \
+            "Admission was rejected because the rendered proposal does not meet the committed-roster contract.")
+              rejection_reason="$REJECTION_REASON" ;;
+          esac
+          rendered_identical=false
+          case "${RENDERED_IDENTICAL:-}" in true) rendered_identical=true ;; esac
+          eval_note="${EVAL_NOTE:-}"
+          probe_note="${PROBE_NOTE:-}"
+          roster_summary="${ROSTER_SUMMARY:-}"
+          marker='<!-- skills-evals:roster-proposal -->'
+
+          # F1 (blocker): never match a fork's same-named branch.
+          # `--head roster/proposal` alone has no owner filter — GitHub's
+          # GraphQL headRefName search matches ANY repo's `roster/proposal`
+          # — so a fork PR could otherwise be found, edited and named to
+          # humans as if it were this repo's own. `isCrossRepository` is
+          # asserted false before anything is taken off the list; a
+          # non-digit (or empty) answer is treated exactly like "no open
+          # PR", never interpolated further.
+          find_roster_pr() {
+            local raw
+            if ! raw=$(gh pr list --repo "$REPO" --head roster/proposal --base main \
+                        --json number,isCrossRepository \
+                        --jq '[.[] | select(.isCrossRepository == false)] | .[0].number // empty' \
+                        2>/dev/null); then
+              return 1
+            fi
+            case "$raw" in
+              ''|*[!0-9]*) printf '' ;;
+              *) printf '%s' "$raw" ;;
+            esac
+          }
+
+          # F4: track whether a disable actually succeeded — the tracking
+          # issue must never claim auto-merge is off when this call failed.
+          disable_auto() {
+            local n="$1"
+            if gh pr merge "$n" --repo "$REPO" --disable-auto; then
+              return 0
+            fi
+            echo "::warning::could not disable auto-merge for the roster pull request"
+            return 1
+          }
+
+          write_issue() {
+            local title="$1" body_file="$2"
+            if [ -n "$issue" ]; then
+              if gh issue edit "$issue" --repo "$REPO" \
+                --title "$title" --body-file "$body_file"; then
+                echo "updated the proposal issue #$issue"
+              else
+                echo "::warning::could not update the roster tracking issue"
+              fi
+            else
+              gh issue create --repo "$REPO" \
+                --title "$title" --body-file "$body_file" \
+                || echo "::warning::could not create the roster tracking issue"
+            fi
+          }
+
+          if [ "$status" = same ]; then
+            # F3 (repro R2): under `roster_mode: auto`, closes an open PR
+            # regardless of probe cleanliness — the committed roster no
+            # longer differs either way, so a stale automatic PR is stale
+            # either way. `roster_mode: proposal` never opened one through
+            # this automation to begin with, so it looks for none (unchanged
+            # from before the split). No issue write here either way: the
+            # `eval` job's propose step already finished the tracking
+            # issue's text for every "same" case (it never depends on the
+            # PR).
+            if [ "$roster_mode" = auto ]; then
+              if same_pr=$(find_roster_pr); then
+                if [ -n "$same_pr" ]; then
+                  if gh pr close "$same_pr" --repo "$REPO" \
+                    --comment "This run proposes no change to the model roster; this pull request no longer differs from \`main\`. Closing."; then
+                    echo "closed the stale roster pull request #$same_pr"
+                  else
+                    echo "::warning::could not close the roster pull request"
+                  fi
+                fi
+              else
+                echo "::warning::could not find the roster pull request"
+              fi
+            fi
+            exit 0
+          fi
+
+          if [ "$status" != differs ] || [ "$rendered_identical" = true ]; then
+            # F3: unknown/empty status (no roster computed, issue listing
+            # failed, an ambiguous tracker, an unrecognised proposal
+            # status, or the propose step failed before writing any
+            # output at all) and a "differs" that rendered byte-identically
+            # to the committed file (nothing to merge) get NO issue write
+            # either way — today's behavior for all of these — but an open
+            # PR from an EARLIER run must not be left carrying a stale
+            # auto-merge.
+            if pr_number=$(find_roster_pr); then
+              if [ -n "$pr_number" ]; then
+                disable_auto "$pr_number" || true
+              fi
+            else
+              echo "::warning::could not find the roster pull request"
+            fi
+            exit 0
+          fi
+
+          # status == differs, admitted, not byte-identical: the only case
+          # that can enable auto-merge, and the only case whose tracking-
+          # issue text this job constructs.
+          attempt=false
+          if [ "$rejected" != true ] && [ "$roster_mode" = auto ] \
+             && [ "$probe_clean" = true ] && [ -n "$pushed_sha" ]; then
+            attempt=true
+          fi
+
+          pr_number=""
+          pr_failed=""
+          disable_ok=""
+
+          if [ "$attempt" = true ]; then
+            pr_body="$RUNNER_TEMP/pr-body.md"
+            {
+              echo "The weekly run computes a model roster that differs from the committed \`evals/roster.yml\`."
+              echo
+              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
+              echo "$eval_note"
+              echo
+              echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
+              echo
+              printf '%s\n' "$roster_summary"
+              echo
+              echo "Merged automatically once \`test\` passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
+            } > "$pr_body"
+
+            if pr_number=$(find_roster_pr); then
+              if [ -n "$pr_number" ]; then
+                if ! gh pr edit "$pr_number" --repo "$REPO" \
+                  --title "roster: automatic update (run $RUN_ID)" --body-file "$pr_body"; then
+                  pr_failed=1
+                  echo "::warning::could not update the roster pull request"
+                fi
+              else
+                pr_url=$(gh pr create --repo "$REPO" --base main --head roster/proposal \
+                  --title "roster: automatic update (run $RUN_ID)" --body-file "$pr_body") \
+                  || pr_url=""
+                pr_number=$(printf '%s' "$pr_url" | grep -oE '[0-9]+$' || true)
+                case "$pr_number" in
+                  ''|*[!0-9]*)
+                    pr_number=""
+                    pr_failed=1
+                    echo "::warning::could not create the roster pull request"
+                    ;;
+                esac
+              fi
+            else
+              pr_number=""
+              pr_failed=1
+              echo "::warning::could not find the roster pull request"
+            fi
+
+            if [ -z "$pr_failed" ]; then
+              if ! gh workflow run ci.yml --repo "$REPO" --ref roster/proposal; then
+                pr_failed=1
+                echo "::warning::could not start checks for the roster pull request"
+              fi
+            fi
+            if [ -z "$pr_failed" ]; then
+              # N1: idempotent — a PR this job is EDITING (not creating
+              # fresh) may already carry auto-merge from an earlier run;
+              # disabling it first means the enable call below is never a
+              # no-op on a PR already in that state. Genuinely silent, not
+              # just unwrapped: a BRAND NEW pr create has no auto-merge to
+              # disable, and `--disable-auto` on one can itself answer with
+              # an error (GraphQL "Auto merge is not enabled") — that is an
+              # expected, harmless outcome here, never the "something a
+              # human should see" failure `disable_auto` warns about
+              # elsewhere in this job.
+              gh pr merge "$pr_number" --repo "$REPO" --disable-auto >/dev/null 2>&1 || true
+              if ! gh pr merge "$pr_number" --repo "$REPO" --auto --merge \
+                   --match-head-commit "$pushed_sha"; then
+                pr_failed=1
+                echo "::warning::could not enable auto-merge for the roster pull request"
+              fi
+            fi
+            if [ -n "$pr_failed" ] && [ -n "$pr_number" ]; then
+              # The attempt above did not finish with auto-merge enabled on
+              # this run's head but DID learn a PR number: that PR must not
+              # be left carrying a stale auto-merge from an earlier run (or
+              # from an earlier half of this same attempt).
+              if disable_auto "$pr_number"; then disable_ok=1; fi
+            fi
+          else
+            if pr_number=$(find_roster_pr); then
+              if [ -n "$pr_number" ]; then
+                if disable_auto "$pr_number"; then disable_ok=1; fi
+              fi
+            else
+              pr_number=""
+              pr_failed=1
+              echo "::warning::could not find the roster pull request"
+            fi
+          fi
+
+          body="$RUNNER_TEMP/proposal-body.md"
+          if [ "$attempt" = true ] && [ -z "$pr_failed" ] && [ -n "$pr_number" ]; then
+            {
+              printf '%s\n\n' "$marker"
+              echo "The weekly run computed a roster difference and opened pull request #$pr_number from \`roster/proposal\`, which merges automatically once its \`test\` check passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
+              echo
+              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
+              echo "$eval_note"
+              echo
+              echo "[Pull request #$pr_number]($SERVER_URL/$REPO/pull/$pr_number)"
+              echo
+              printf '%s\n' "$roster_summary"
+            } > "$body"
+            write_issue "Model roster: a change is merging automatically" "$body"
+            exit 0
+          fi
+
+          if [ "$rejected" = true ]; then
+            # F4: the "turned off" sentence is conditioned on $disable_ok,
+            # never printed because the call was merely attempted.
+            {
+              printf '%s\n\n' "$marker"
+              echo "The weekly run computed a roster difference, but it was rejected before proposal publication."
+              echo
+              echo "**Needs review before publication.** No proposal branch or compare link was updated."
+              if [ "$roster_mode" = auto ]; then
+                echo "\`roster_mode: auto\` is set, but no pull request was opened: a rejected proposal never reaches the automatic-merge step."
+              fi
+              if [ -n "$pr_number" ]; then
+                if [ "$disable_ok" = 1 ]; then
+                  echo "Pull request #$pr_number from an earlier run is still open; its automatic merge has been turned off because this run's proposal was rejected before publication."
+                else
+                  echo "Pull request #$pr_number from an earlier run is still open; its automatic merge could NOT be turned off — disable it by hand on PR #$pr_number."
+                fi
+              fi
+              echo
+              [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
+              echo "$eval_note"
+              echo
+              echo "$rejection_reason"
+              echo
+              printf '%s\n' "$roster_summary"
+            } > "$body"
+            write_issue "Model roster: proposal needs review" "$body"
+            exit 0
+          fi
+
+          # `roster_mode: proposal`, or `auto` with a probe that was not
+          # clean, or an attempt that started but failed partway.
+          why=""
+          if [ "$roster_mode" = auto ]; then
+            if [ "$probe_clean" != true ]; then
+              why="this run's vendor-default probe was not clean"
+            else
+              why="this run's automatic-merge attempt did not complete"
+            fi
+          fi
+          if [ -n "$pr_number" ]; then
+            # F4: WHY auto-merge is not on stays in the sentence either
+            # way — only whether the disable call itself succeeded changes.
+            off_reason="${why:-\`roster_mode\` is \`proposal\`}"
+            if [ "$disable_ok" = 1 ]; then
+              turned_off="its automatic merge has been turned off because ${off_reason}."
+            else
+              turned_off="its automatic merge could NOT be turned off because ${off_reason} — disable it by hand on PR #$pr_number."
+            fi
+            if [ -n "$why" ]; then
+              pr_line="Pull request #$pr_number is open from \`roster/proposal\`; a human must merge it after CI. ${turned_off^}"
+            else
+              pr_line="Pull request #$pr_number is open from \`roster/proposal\`; merge it after CI if the reasons below hold up. ${turned_off^}"
+            fi
+          else
+            if [ -n "$why" ]; then
+              pr_line="\`roster_mode: auto\` is set, but $why, so the automatic merge was skipped this run — a human must open or merge the pull request from \`roster/proposal\`."
+            else
+              pr_line="Open a pull request from \`roster/proposal\` and merge it after CI if the reasons below hold up."
+            fi
+          fi
+          {
+            printf '%s\n\n' "$marker"
+            echo "The weekly run computes a model roster that differs from the committed \`evals/roster.yml\`."
+            echo
+            echo "**Nothing has changed yet.** The harness runs on the committed file (ADR 0001); this is a proposal."
+            echo "$pr_line"
+            echo
+            [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
+            echo "$eval_note"
+            echo
+            echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
+            echo
+            printf '%s\n' "$roster_summary"
+          } > "$body"
+          write_issue "Model roster: a change is proposed" "$body"
