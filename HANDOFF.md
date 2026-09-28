@@ -123,9 +123,11 @@ carries the reasons and the compare link.
 (`claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5`,
 `claude-fable-5-1`) and judge `claude-fable-5`, every seat by the
 newest-per-tier fallback because **no usage census has ever been published**
-(`usage/latest.json` is absent on `eval-results`; the census is step 6 of the
-Tier-3 account-store Routine in `evals/propagation/ROUTINE.md` and needs a
-transcript-bearing machine). It was not merged: it would multiply the paid
+(`usage/latest.json` is absent on `eval-results`; the census now runs from
+`scripts/publish_usage_census.sh` on a transcript-bearing machine, see
+`evals/usage/CENSUS.md`; it was step 6 of the Tier-3 account-store Routine,
+which was retired 2026-09-28 by owner decision, see adam-agentskills ADR 0014,
+https://github.com/Adam-S-Daniel/adam-agentskills/pull/35). It was not merged: it would multiply the paid
 weekly run and raise the judge tier on no usage evidence, which is the human
 call ADR 0001 reserves. Two ways forward: publish the census first so the next
 Monday run proposes from usage, or open and merge a PR from `roster/proposal`
