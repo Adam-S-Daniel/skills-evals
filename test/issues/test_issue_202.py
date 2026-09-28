@@ -2067,6 +2067,9 @@ class _ProposeStepFixture(unittest.TestCase):
             '                  sha="0000000000000000000000000000000000000000"\n'
             '                fi\n'
             '              fi\n'
+            # S1 (round 4 on #209): a test may force what the API answers
+            # for `main`'s sha, to feed the step a malformed one.
+            '              if [ -n "${TEST_MAIN_REF_SHA:-}" ]; then sha="$TEST_MAIN_REF_SHA"; fi\n'
             "              resp=$(python3 -c '\n"
             'import json\n'
             'import sys\n'
@@ -4427,6 +4430,25 @@ class TestB1PolicyReadFromApi(TestB1RosterPrHelper):
             any(c.startswith("api ") and "roster-policy.yml?ref=main" in c for c in calls),
             calls)
 
+    def test_a_malformed_live_main_sha_is_never_read_and_falls_back_to_proposal(self):
+        # S1 (round 4 on #209): the resolved sha must be validated as 40
+        # hex before the policy is read at it. An answer that is a ref
+        # NAME (or any other junk) is treated as unresolved: nothing is
+        # read at it, and `auto` (which needs BOTH reads) is not reached.
+        work = self._repo("auto")
+        github_sha = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"],
+                                    capture_output=True, text=True, check=True).stdout.strip()
+        for junk in ("main", "refs/heads/main", github_sha[:39], github_sha.upper()):
+            with self.subTest(junk=junk):
+                out, calls, body = self._run_roster_pr_direct(
+                    {"GITHUB_SHA": github_sha, "STATUS": "same",
+                     "TEST_MAIN_REF_SHA": junk}, work=work)
+                self.assertIn("live main resolved to: <unresolved>", out)
+                self.assertIn("roster_mode (policy at $GITHUB_SHA): proposal", out)
+                self.assertFalse(
+                    any(c.startswith("api ") and "roster-policy.yml?ref=" in c
+                        and github_sha not in c for c in calls), calls)
+
     def test_a2_forged_eval_output_never_overrides_the_committed_policy(self):
         # A2 (repro, round 2): the eval job's own `ROSTER_MODE` output
         # claims `auto` (as a compromised eval job's forged
@@ -5474,6 +5496,190 @@ class TestB1Round4Disarm(unittest.TestCase):
         self.assertIn(
             "::warning::could not disable auto-merge for the roster pull "
             "request before the agent ran", done.stdout)
+
+
+class TestB1Round4DisarmLookupFilters(unittest.TestCase):
+    """B1 (round 4 on #209), item 3: `disarm` finds the PR with "the same
+    validated lookup roster-pr uses" — so it gets the same fork (F1) and
+    other-branch (N15) rows `TestAdversarialRound1F1NeverMatchesAForkPr`
+    feeds `roster-pr`, through the REAL `--jq` expression the step sends,
+    piped through actual `jq` with `REPO` exported exactly as the step's
+    `env:` provides it. The base class's stub ignores `--jq`, so dropping
+    either client-side re-check survived it."""
+
+    FOREIGN = {"number": 101, "head": {"repo": {"full_name": "attacker/skills-evals"},
+                                       "ref": "roster/proposal"}}
+    OWN_55 = {"number": 55, "head": {"repo": {"full_name": "example/skills-evals"},
+                                     "ref": "roster/proposal"}}
+    OWN_OTHER_BRANCH = {"number": 77, "head": {"repo": {"full_name": "example/skills-evals"},
+                                               "ref": "some-other-branch"}}
+
+    def setUp(self):
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        self.script = doc["jobs"]["disarm"]["steps"][0]["run"]
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+
+    def _run_rows(self, rows):
+        stub = self.tmp / "bin-rows"
+        stub.mkdir(exist_ok=True)
+        log = self.tmp / "gh-rows.log"
+        log.unlink(missing_ok=True)
+        data = self.tmp / "rows.json"
+        data.write_text(json.dumps(rows), encoding="utf-8")
+        gh = stub / "gh"
+        gh.write_text(
+            "#!/usr/bin/env bash\n"
+            f"printf '%s\\n' \"$*\" >> {str(log)!r}\n"
+            'if [ "$1" = api ]; then\n'
+            '  expr=""\n'
+            '  while [ $# -gt 0 ]; do\n'
+            '    if [ "$1" = --jq ]; then expr="$2"; shift; fi\n'
+            '    shift\n'
+            '  done\n'
+            f'  exec jq -r "$expr" {str(data)!r}\n'
+            "fi\n"
+            "exit 0\n",
+            encoding="utf-8")
+        gh.chmod(0o755)
+        env = {"PATH": f"{stub}{os.pathsep}{os.environ.get('PATH', '')}",
+               "REPO": "example/skills-evals", "GITHUB_TOKEN": "t", "GH_TOKEN": "t"}
+        done = subprocess.run(["bash", "-c", self.script], capture_output=True,
+                              text=True, timeout=30, env=env)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        lines = log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        return lines
+
+    def _merges(self, lines):
+        return [ln for ln in lines if ln.split(" ")[:2] == ["pr", "merge"]]
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_the_lookup_is_owner_filtered_server_side(self):
+        lines = self._run_rows([])
+        api = [ln for ln in lines if ln.startswith("api ")]
+        self.assertEqual(len(api), 1, lines)
+        self.assertIn("head=example:roster/proposal", api[0])
+        self.assertIn("state=open", api[0])
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_a_fork_row_is_never_disarmed(self):
+        self.assertEqual(self._merges(self._run_rows([self.FOREIGN])), [])
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_a_same_repo_row_from_another_branch_is_never_disarmed(self):
+        self.assertEqual(self._merges(self._run_rows([self.OWN_OTHER_BRANCH])), [])
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "needs bash and jq")
+    def test_the_own_row_is_disarmed_past_a_newer_fork_and_other_branch_row(self):
+        merges = self._merges(self._run_rows(
+            [self.FOREIGN, self.OWN_OTHER_BRANCH, self.OWN_55]))
+        self.assertEqual(merges, ["pr merge 55 --repo example/skills-evals --disable-auto"])
+
+
+class TestB1Round4JobGraph(unittest.TestCase):
+    """B1 (round 4 on #209): the job graph's gates, asserted on the PARSED
+    workflow. `publish` holds `contents: write` and must run only once the
+    `eval` job succeeded (the old in-job badge step's implicit success()
+    gate, which also skips it for `roster_only`); `disarm` runs only for
+    `main` and only after `roster`; `eval` waits for `disarm` but is never
+    blocked by it failing or being skipped."""
+
+    def setUp(self):
+        self.jobs = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+
+    @staticmethod
+    def _needs(job):
+        needs = job.get("needs") or []
+        return sorted([needs] if isinstance(needs, str) else needs)
+
+    def test_publish_runs_only_after_a_successful_eval(self):
+        publish = self.jobs["publish"]
+        self.assertEqual(self._needs(publish), ["eval", "roster"])
+        self.assertEqual(publish.get("if"),
+                         "${{ !cancelled() && needs.eval.result == 'success' }}")
+
+    def test_disarm_runs_on_main_only_after_roster(self):
+        disarm = self.jobs["disarm"]
+        self.assertEqual(self._needs(disarm), ["roster"])
+        self.assertEqual(disarm.get("if"),
+                         "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
+
+    def test_eval_waits_for_disarm_but_a_skipped_or_failed_one_never_blocks_it(self):
+        ev = self.jobs["eval"]
+        self.assertEqual(self._needs(ev), ["disarm", "roster"])
+        self.assertEqual(ev.get("if"), "${{ !cancelled() && !inputs.roster_only }}")
+
+
+class TestB1VerifyComparePredicate(unittest.TestCase):
+    """The compare predicate inside `roster-pr`'s `verify_publish`, run
+    directly on hand-built compare JSON. The git-history tests in
+    `TestB1PublishVerification` build that JSON from a REAL history, where
+    `ahead_by`, `len(commits)`, `behind_by` and `status` always agree —
+    so any one of those four clauses could be dropped while the others
+    still caught every history (round-3 mutants N1, N2, N5, N10, N11
+    survived round 4's sweep that way). Each case here violates exactly one
+    clause, so every clause is load-bearing on its own."""
+
+    GOOD = {"status": "ahead", "ahead_by": 1, "behind_by": 0,
+            "files": [{"filename": "evals/roster.yml", "status": "modified"}],
+            "commits": [{"commit": {"message": "roster: proposed model roster (run 7)",
+                                    "author": {"email": "skills-evals@users.noreply.github.com"}}}]}
+
+    @classmethod
+    def setUpClass(cls):
+        doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        body = doc["jobs"]["roster-pr"]["steps"][0]["run"]
+        block = body.split("# >>> publish-verify", 1)[1].split("# <<< publish-verify", 1)[0]
+        start = block.index("python3 -c '") + len("python3 -c '")
+        end = block.index("' 2>/dev/null) || ok=\"false\"", start)
+        cls.program = block[start:end]
+
+    def _verdict(self, compare):
+        # In-process, never a spawned interpreter: the program only reads
+        # stdin, `RUN_ID` from the environment, and prints one word.
+        out = io.StringIO()
+        with mock.patch("sys.stdin", io.StringIO(json.dumps(compare))), \
+                mock.patch.dict(os.environ, {"RUN_ID": "7"}), \
+                contextlib.redirect_stdout(out):
+            exec(compile(self.program, "<roster-pr verify_publish>", "exec"),
+                 {"__name__": "__verify__"})
+        return out.getvalue().strip()
+
+    def _with(self, **changes):
+        d = copy.deepcopy(self.GOOD)
+        d.update(changes)
+        return d
+
+    def test_the_honest_compare_verifies(self):
+        self.assertEqual(self._verdict(self.GOOD), "true")
+
+    def test_ahead_by_two_with_one_listed_commit_fails(self):
+        # N1 (clause dropped) and N11 (loosened to >= 1).
+        self.assertEqual(self._verdict(self._with(ahead_by=2)), "false")
+
+    def test_ahead_by_zero_fails(self):
+        self.assertEqual(self._verdict(self._with(ahead_by=0)), "false")
+
+    def test_behind_by_one_fails(self):
+        # N2: `behind_by == 0` dropped.
+        self.assertEqual(self._verdict(self._with(behind_by=1)), "false")
+
+    def test_a_non_ahead_status_fails(self):
+        # N5: `status == "ahead"` dropped.
+        for status in ("diverged", "identical", "behind", None):
+            with self.subTest(status=status):
+                self.assertEqual(self._verdict(self._with(status=status)), "false")
+
+    def test_two_listed_commits_with_ahead_by_one_fails(self):
+        # N10: `len(commits) == 1` loosened to `>= 1` (the second commit
+        # is itself a perfectly formed bot commit).
+        commits = self.GOOD["commits"] * 2
+        self.assertEqual(self._verdict(self._with(commits=commits)), "false")
+
+    def test_malformed_json_fails(self):
+        for compare in ([], "x", None, {}):
+            with self.subTest(compare=compare):
+                self.assertEqual(self._verdict(compare), "false")
 
 
 class TestN4RosterLatestJsonNewlineRoundTrip(unittest.TestCase):
