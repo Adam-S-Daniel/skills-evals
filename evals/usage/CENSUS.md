@@ -92,9 +92,60 @@ the `cron` service is started, so a laptop that sleeps will skip days; the
 14-day freshness window tolerates that. A systemd user timer that runs the same
 `bash …/publish_usage_census.sh` line is equivalent.
 
+### Option C: a Windows Task Scheduler task that runs `wsl.exe` invisibly
+
+On a Windows machine where Claude Code runs inside WSL, register the census
+alongside the other WSL tasks from
+[`wsl-automation`](https://github.com/Adam-S-Daniel/wsl-automation). Its
+`scripts\register-tasks.ps1` (elevated PowerShell 7) now adds a task named
+**Usage Census Publish** whose action is `wsl.exe` itself, with no PowerShell in
+between:
+
+```text
+C:\Windows\System32\wsl.exe --distribution Ubuntu --cd "<wsl-automation checkout>\scripts" --exec /bin/bash ./publish-usage-census.sh
+```
+
+- **Invisible.** The task runs as the owning user with an S4U logon ("run
+  whether the user is logged on or not", no stored password), so it runs in
+  session 0, where no console window can appear. It needs the "Log on as a
+  batch job" right, which wsl-automation's other background tasks already
+  require (`scripts\grant-keeper-batch-logon.ps1`).
+- **Always `main`.** `publish-usage-census.sh` shallow-clones skills-evals and
+  runs that clone's `publish_usage_census.sh`, so what runs does not depend on
+  which branch a local checkout happens to be on.
+- **Daily at 12:37**, with no catch-up: a day the machine sleeps through is
+  skipped, which the 14-day window and the 6-day re-publish absorb. A catch-up
+  at wake would land in WSL's post-wake transition window, and 12:37 stays
+  clear of the backup task's on-the-hour retries (`wsl --export` stops the
+  distro).
+- **Git credentials come from WSL.** An S4U logon has no stored password, so
+  do not count on a Windows-side credential helper such as Git Credential
+  Manager. `gh auth git-credential` with the token in `~/.config/gh/hosts.yml`
+  works.
+- **A log you can read.** Each run appends one line to `~/.cache/usage-census.log`
+  inside WSL: a UTC timestamp, the exit code and the script's summary line.
+
 ### Checking that it works
 
 `git ls-remote https://github.com/Adam-S-Daniel/skills-evals eval-results` should
 move after a run that found changed counts, and the branch's
 `usage/latest.json` carries the run's `generated_at`. The next roster run
 (`roster/latest.json`) reports the census timestamp in its `source.census_at`.
+
+For Option C, run it once on demand and read the result:
+
+```powershell
+Start-ScheduledTask -TaskName 'Usage Census Publish'
+(Get-ScheduledTaskInfo -TaskName 'Usage Census Publish').LastTaskResult   # 0 once it finishes
+wsl.exe -d Ubuntu -- tail -n 3 '~/.cache/usage-census.log'
+```
+
+`LastTaskResult` is `267009` while the task is still running. Quote the `~`:
+PowerShell 7 would otherwise expand it to the Windows home before `wsl.exe`
+sees it.
+
+## Known gap: Claude Code sessions run natively on Windows
+
+The census reads one transcript root: `~/.claude/projects` of whoever runs it.
+Under Options B and C that is the WSL home, so sessions run natively on Windows
+(`%USERPROFILE%\.claude\projects`) are not counted.
