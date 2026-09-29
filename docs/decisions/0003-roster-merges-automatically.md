@@ -1,6 +1,9 @@
 # ADR 0003: The roster proposal merges automatically, behind `roster_mode`
 
-- **Status:** accepted (2026-09-28)
+- **Status:** accepted (2026-09-28); amended 2026-09-29 by
+  [Round 6](#round-6-the-roster-pr-is-the-apps): the roster PR is opened,
+  reopened and armed by a dedicated GitHub App, and the `ci.yml` dispatch
+  in decision 3 is gone.
 - **Issue:** none filed; Adam's decision of 2026-09-28. Settings-as-code
   follow-up for the "Allow GitHub Actions to create and approve pull
   requests" repo setting this depends on:
@@ -42,7 +45,10 @@ fire `pull_request` workflows, so nothing dispatches `ci.yml` on
 `roster/proposal` unless this workflow does it itself, and a `GITHUB_TOKEN`
 `workflow_dispatch` does create a run whose `test` check lands on the head
 sha and satisfies the ruleset. Adam enabled "Allow GitHub Actions to create
-and approve pull requests" on this repo for this change.
+and approve pull requests" on this repo for this change. (Round 6, below:
+the last of those "facts" proved false on the first live run — a dispatched
+`test` does not count for the PR's required check, and the PR's own
+`pull_request` run is held for approval instead of not firing.)
 
 ## Decision
 
@@ -390,6 +396,103 @@ request's auto-merge needs no other scope. A failed lookup, or a failed
 `gh pr merge --disable-auto` call, is a fixed `::warning::`, exit 0 — this
 job must never fail the run, and a `disarm` failure must never block `eval`.
 
+## Round 6: the roster PR is the App's
+
+**The live finding (2026-09-29).** The first `roster_only` dispatch on
+`main` after #209,
+[run 36509251840](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/36509251840),
+succeeded and opened
+[PR #214](https://github.com/Adam-S-Daniel/skills-evals/pull/214) with
+`GITHUB_TOKEN`, auto-merge armed. It never merged:
+
+- the PR's own `pull_request` CI run,
+  [36509304069](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/36509304069),
+  went `action_required` — GitHub holds workflow runs on a pull request
+  `github-actions[bot]` opened until someone approves them;
+- the `test` run `roster-pr` dispatched,
+  [36509302288](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/36509302288),
+  passed on the same head sha, but a dispatched run is not the PR's check:
+  the PR's status rollup stayed empty and the PR stayed `BLOCKED` on the
+  ruleset's required `test`.
+
+So the Context section's claim that a dispatched `test` satisfies the
+ruleset, and decision 3's dispatch step built on it, were wrong.
+
+**Decision (Adam, 2026-09-29): a new, dedicated GitHub App** — installed on
+skills-evals only, with Contents read/write and Pull requests read/write,
+and NOT a ruleset bypass actor. Its client id is the repository variable
+`ROSTER_APP_CLIENT_ID`; its private key is the repository secret
+`ROSTER_APP_PRIVATE_KEY`.
+
+1. `roster-pr`'s first step mints an installation token with
+   `actions/create-github-app-token` (pinned to a full commit sha, v3.2.0),
+   for `Adam-S-Daniel/skills-evals` alone and exactly
+   `permission-contents: write` + `permission-pull-requests: write`, under
+   `continue-on-error: true`.
+2. Under `roster_mode: auto`, and only after checks 1–3 of round 2 pass for
+   this run's pushed sha, the App — never `GITHUB_TOKEN` — does every write
+   to the PR: with no open roster PR it runs `gh pr create`; with one open,
+   it edits it, then `gh pr close` and `gh pr reopen`s it. The reopen is
+   there because the `roster` job moved that PR's head with `GITHUB_TOKEN`,
+   and a `GITHUB_TOKEN` push fires no `synchronize` run; the App's reopen
+   fires a `reopened` `pull_request` event (ci.yml's bare `pull_request:`
+   trigger includes it) on the new head. Then the App runs
+   `gh pr merge --auto --merge --match-head-commit <pushed sha>`. The PR's
+   own `pull_request` run of `test` — the check the ruleset reads — is
+   therefore triggered by the App, and needs no approval.
+3. The `gh workflow run ci.yml` dispatch is deleted, and `actions: write`
+   with it. `roster-pr`'s `GITHUB_TOKEN` drops to
+   `{pull-requests: write, issues: write, contents: read}`: `pull-requests:
+   write` to turn a stale PR's auto-merge off and close a stale PR (paths
+   every mode reaches, `proposal` included), `issues: write` for the
+   tracking issue, `contents: read` for the policy/ref/compare reads.
+   `contents: write` (round 2's S2) moved to the App token with the arming.
+4. **No App token, no automatic PR.** If the mint step failed or produced
+   nothing under `roster_mode: auto`, `roster-pr` neither creates nor arms
+   a PR with `GITHUB_TOKEN`. It warns, turns off any open PR's auto-merge
+   with `GITHUB_TOKEN` as every non-arming path does, and the tracking issue
+   says the roster App token was unavailable and the proposal is on
+   `roster/proposal` for a human to open as a pull request. The job exits 0.
+   `roster_mode: proposal` never uses the App at all; `disarm` stays on
+   `GITHUB_TOKEN`, since disabling auto-merge needs only `pull-requests:
+   write`.
+5. **The key stays out of every job that runs untrusted code.** `roster`
+   (which installs the npm-latest CLI), `disarm`, `eval` (which runs the
+   agent) and `publish` never reference `ROSTER_APP_*` or the token;
+   `roster` keeps pushing `roster/proposal` with its own `GITHUB_TOKEN`
+   exactly as before. Inside `roster-pr`, only the mint step reads the key,
+   and the token reaches the managing step as `ROSTER_APP_TOKEN`, handed to
+   one `gh` call at a time — never as the step's `GH_TOKEN`, since an empty
+   `GH_TOKEN` makes `gh` fall back to `GITHUB_TOKEN` silently.
+   `TestRosterAppTokenIsConfined` pins all of this on the parsed workflow.
+
+**Why an App, and why a new one.**
+
+- *Not the dispatch:* run 36509302288 is the proof that it cannot satisfy
+  the required check.
+- *Not a weekly human approval of the held run:* that is `roster_mode:
+  proposal` with extra steps.
+- *Not a ruleset bypass actor:* nothing here needs to bypass anything. The
+  PR still needs a green `test` to merge; keeping the App off the bypass
+  list means its token cannot push to `main` either.
+- *Not an existing App:* the fleet's `agents-md-sync` App is an
+  always-bypass actor on every fleet repo, so its key here would be a
+  direct-push credential to every default branch; the `repo-settings` App
+  administers every repository; the CMS automation App's key would reach
+  the CMS site repos. Each would put a far wider credential in reach of this
+  repo's workflows than a PR in this one repo needs.
+
+**Residual.** The key is a stored secret now, readable by any workflow
+someone with write access adds to this repo — the same maintainer-only
+trust boundary the header of `eval.yml` already draws around the WIF
+binding. The App's token holds `contents: write` on skills-evals, so it can
+push any unprotected branch (`roster/proposal` included) and merge a PR
+that satisfies the ruleset — never `main` directly. `repo-settings`'
+`actions.can_approve_pull_request_reviews: true` override for skills-evals
+(repo-settings ADR 0003) is no longer needed once this lands, since
+`GITHUB_TOKEN` no longer creates pull requests; it will be reverted in
+repo-settings separately.
+
 ## Consequences
 
 - **The `roster` job installs the npm-latest Claude Code CLI while holding
@@ -412,7 +515,9 @@ job must never fail the run, and a `disarm` failure must never block `eval`.
   suite) but not the reviewer judgment ADR 0001 reserved. This is the
   decision's whole cost, and Adam took it knowingly rather than as an
   oversight.
-- **A bot merge on `main` does not trigger `push`-triggered workflows** the
+- **A bot merge on `main` does not trigger `push`-triggered workflows** (as
+  written for `GITHUB_TOKEN`; since Round 6 the App enables the merge, and
+  App-token events do trigger workflows — expected, not yet observed) the
   way a human's merge commit does, for the same reason a `GITHUB_TOKEN`-
   opened PR does not fire `pull_request` workflows: `GITHUB_TOKEN` actions
   do not re-trigger `on:` events by design, to prevent runaway recursion.
@@ -421,9 +526,11 @@ job must never fail the run, and a `disarm` failure must never block `eval`.
 - **A bot merge gets no `test` run on the merge commit itself** (N2,
   adversarial round 1 on #209): the same `GITHUB_TOKEN`-does-not-retrigger
   rule above means `main`'s post-merge sha never gets its own `test` run.
-  What actually satisfied the ruleset's required check is the `test` run
-  this workflow dispatched on the PR's HEAD (`roster/proposal`'s pushed
-  sha), which ran against `main` as it stood at the START of this run — not
+  What actually satisfies the ruleset's required check is the PR's own
+  `pull_request` run of `test` on its HEAD (`roster/proposal`'s pushed
+  sha) — since Round 6, the run the App's open or reopen triggers; the
+  dispatched run this bullet originally named never counted — which ran
+  against `main` as it stood when that run started — not
   against whatever else may have merged to `main` between this run starting
   and GitHub performing the merge. That gap is the same one any PR merge
   carries between its last CI run and the merge button; `roster_mode: auto`
@@ -431,7 +538,8 @@ job must never fail the run, and a `disarm` failure must never block `eval`.
 - **The toggle also lets Actions approve pull requests generally**, not only
   merge them, on this repo — a side effect of the one GitHub setting this
   depends on. Harmless at the ruleset's 0 required approvals: there is
-  nothing to approve away.
+  nothing to approve away. Since Round 6 nothing here depends on the
+  toggle; it is to be reverted in repo-settings.
 - **Switching back is one edit.** Setting `roster_mode: proposal` in
   `evals/roster-policy.yml` restores ADR 0001's human-merge flow exactly;
   no code path is deleted, so the switch is reversible without a revert.

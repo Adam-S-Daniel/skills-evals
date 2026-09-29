@@ -51,7 +51,8 @@
 #   exchange runs. The scheduled run passes no input and gets the default.
 #
 # * Auth: GitHub OIDC → Anthropic Workload Identity Federation. No stored
-#   secret exists. The Claude Code CLI does not resolve the
+#   Anthropic secret exists (the one stored secret in this workflow is the
+#   roster App's key, confined to the `roster-pr` job). The Claude Code CLI does not resolve the
 #   ANTHROPIC_FEDERATION_* env vars (it hangs credential-less — verified
 #   2026-07-17), so this workflow performs the RFC 7523 jwt-bearer exchange
 #   explicitly rather than delegating it to the CLI. The "Mint OIDC token
@@ -118,7 +119,10 @@
 # * All five checkouts use `persist-credentials: false`; push auth is
 #   injected only in the steps that push it — the `roster` job's
 #   roster-proposal step, the `disarm` and `roster-pr` jobs' `gh` calls, and
-#   the `publish` job's commit step — and only in their own `env:`. B1 (round
+#   the `publish` job's commit step — and only in their own `env:`. The one
+#   stored credential in this workflow, the roster App's private key
+#   (secrets.ROSTER_APP_PRIVATE_KEY), is read by exactly one step, in the
+#   `roster-pr` job, which runs no agent and no CLI; see that job. B1 (round
 #   4 on #209, blocker): the `eval` job itself holds no GitHub write credential of
 #   any kind, at any point, on any runner — not even step-scoped and not
 #   even after the bypassPermissions agent finishes, because a later step OF
@@ -302,12 +306,22 @@ on:
 # — the `roster` job's own computed roster — exactly as it did when this
 # logic lived in `eval` (ADR 0001 decision 3: read by no decision).
 #
-# `roster-pr` (pull-requests: write, actions: write, issues: write,
-# contents: write): everything that touches the pull request the `roster`
-# job's propose step pushed — find/create/edit/merge/close it, and
-# dispatch `ci.yml` on it so `test` lands on its head sha (`pull-requests:
-# write`, `actions: write`, Adam's decision of 2026-09-28,
-# docs/decisions/0003-roster-merges-automatically.md). `needs: [roster,
+# `roster-pr` (pull-requests: write, issues: write, contents: read, plus
+# the roster App's installation token): everything that touches the pull
+# request the `roster` job's propose step pushed — find/create/edit/close/
+# reopen/merge it (Adam's decisions of 2026-09-28 and 2026-09-29,
+# docs/decisions/0003-roster-merges-automatically.md). Round 6: under
+# `roster_mode: auto`, a verified proposal's PR is opened (or, if one is
+# already open, closed and reopened) and armed by a dedicated GitHub App
+# (vars.ROSTER_APP_CLIENT_ID / secrets.ROSTER_APP_PRIVATE_KEY, installed on
+# skills-evals only, Contents + Pull requests R/W, not a ruleset bypass
+# actor), so the PR's own `pull_request` run of `test` — the required
+# check — is the App's and needs no approval. GITHUB_TOKEN no longer
+# dispatches `ci.yml` (a dispatched run never satisfied the PR's required
+# check: run 36509251840 / PR #214) and no longer arms anything; it keeps
+# the disable/close/issue paths every mode reaches. No App token under
+# `auto` means no PR is opened or armed at all — the tracking issue says
+# the proposal is on `roster/proposal` for a human. `needs: [roster,
 # eval]` — the only job (besides `publish`) depending on both — because it
 # is the only place that can independently re-verify what `roster`
 # published (B1.1-B1.3 below) AND know what `eval` actually did
@@ -320,9 +334,9 @@ on:
 # edits/creates the SAME issue the `roster` job's propose step found or
 # left neutral, rather than splitting one issue's text across two writers
 # with no shared view of the outcome. `contents: write` (S2, round 2,
-# spec-roster-mode-r2.md) is needed by `enablePullRequestAutoMerge`/an
-# immediate merge even though this job performs no checkout and runs no
-# repository code — it only calls `gh`. This job runs on EVERY eval run,
+# spec-roster-mode-r2.md) for `enablePullRequestAutoMerge`/an immediate
+# merge now lives on the App token, not GITHUB_TOKEN; this job performs no
+# checkout and runs no repository code — it only calls `gh`. This job runs on EVERY eval run,
 # `roster_mode: proposal` included (F3) and `roster_only` included: a stale
 # `roster/proposal` PR's auto-merge must come off even when this run's
 # proposal never reached the auto path, or when the `eval` job did not run
@@ -1770,15 +1784,45 @@ jobs:
     if: ${{ !cancelled() && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # Round 6 (ADR 0003, "the roster PR is the App's"): GITHUB_TOKEN here
+    # no longer opens, reopens or arms anything — the roster App's
+    # installation token (the step below) does. What stays on GITHUB_TOKEN:
+    # `pull-requests: write` for turning a stale PR's auto-merge OFF and for
+    # closing a stale PR on "same" (both paths every mode reaches, proposal
+    # included); `issues: write` for the tracking issue; `contents: read`
+    # for the policy/ref/compare reads. `actions: write` went with the
+    # `gh workflow run ci.yml` dispatch (a dispatched `test` never satisfied
+    # the PR's required check), and `contents: write` went with arming
+    # auto-merge, which is the App's now.
     permissions:
       pull-requests: write
-      actions: write
       issues: write
-      # S2 (round 2): `enablePullRequestAutoMerge` and an immediate merge
-      # both need write access to contents, even though this job performs
-      # no checkout and runs no repository code — it only calls `gh`.
-      contents: write
+      contents: read
     steps:
+      # Round 6: a GitHub App installation token, minted ONLY in this job.
+      # The App (installed on skills-evals alone: Contents R/W, Pull
+      # requests R/W, NOT a ruleset bypass actor) is what opens, closes/
+      # reopens and arms the roster PR, so the PR's own `pull_request` run
+      # of `test` is triggered by the App — not by `github-actions[bot]`,
+      # whose PRs' runs GitHub holds for approval (run 36509304069,
+      # `action_required`). Its key must never be in a job that runs the
+      # npm-latest CLI or the agent: `roster`, `disarm`, `eval` and
+      # `publish` never reference it (TestRosterAppTokenIsConfined).
+      # `continue-on-error`: an App that is missing, uninstalled or
+      # misconfigured leaves `outputs.token` empty, and the step below then
+      # degrades to leaving the proposal on `roster/proposal` for a human —
+      # it never falls back to opening or arming the PR with GITHUB_TOKEN.
+      - name: Mint the roster App token
+        id: roster-app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1
+        with:
+          client-id: ${{ vars.ROSTER_APP_CLIENT_ID }}
+          private-key: ${{ secrets.ROSTER_APP_PRIVATE_KEY }}
+          owner: Adam-S-Daniel
+          repositories: skills-evals
+          permission-contents: write
+          permission-pull-requests: write
       - name: Manage the roster pull request
         # Nothing here interpolates a GitHub Actions expression into the
         # shell; every `needs.roster.outputs.*` value arrives through
@@ -1813,6 +1857,14 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
+          # Round 6: the App token, under its OWN name rather than as the
+          # step's GH_TOKEN. Step-wide, it would move every call here onto
+          # the App (which has no `issues` permission), and an EMPTY
+          # GH_TOKEN makes `gh` fall back to GITHUB_TOKEN silently — the one
+          # fallback this job must never take for create/reopen/arm. The
+          # script hands it to exactly the calls that need it, as a
+          # per-command GH_TOKEN (`app_gh` below).
+          ROSTER_APP_TOKEN: ${{ steps.roster-app-token.outputs.token }}
           RUN_ID: ${{ github.run_id }}
           REPO: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
@@ -1868,6 +1920,24 @@ jobs:
           rendered_identical=false
           case "${RENDERED_IDENTICAL:-}" in true) rendered_identical=true ;; esac
           # <<< input-parsing
+
+          # >>> app-token (round 6): the roster App's installation token,
+          # from the mint step above. Empty — the App is missing,
+          # uninstalled or misconfigured, and that step failed under
+          # `continue-on-error` — or anything but one plain token word,
+          # and it is treated as unavailable. `app_gh` is the ONLY way this
+          # script uses it: GH_TOKEN for that one command, GITHUB_TOKEN
+          # emptied beside it, so a call routed here can never quietly run
+          # as `github-actions[bot]` instead.
+          app_token=""
+          case "${ROSTER_APP_TOKEN:-}" in
+            ''|*[!A-Za-z0-9_.-]*) : ;;
+            *) app_token="$ROSTER_APP_TOKEN" ;;
+          esac
+          app_gh() {
+            GH_TOKEN="$app_token" GITHUB_TOKEN="" gh "$@"
+          }
+          # <<< app-token
           marker='<!-- skills-evals:roster-proposal -->'
 
           # >>> text-allowlist (N2, round 2): `eval_note`/`probe_note` are
@@ -2233,9 +2303,20 @@ jobs:
           # <<< attempt-candidate
           attempt=false
           verify_fail=""
+          app_missing=false
           if [ "$candidate" = true ]; then
             if verify_fail=$(verify_publish); then
-              attempt=true
+              # Round 6: a verified proposal is opened and armed by the
+              # roster App or not at all. With no App token this run
+              # degrades — the proposal stays on `roster/proposal` for a
+              # human — and never opens or arms the PR with GITHUB_TOKEN,
+              # whose PR's `pull_request` run GitHub holds for approval.
+              if [ -n "$app_token" ]; then
+                attempt=true
+              else
+                app_missing=true
+                echo "::warning::the roster App token was unavailable; no roster pull request was opened or armed"
+              fi
             fi
           fi
           verify_reason_text=""
@@ -2247,6 +2328,7 @@ jobs:
           pr_number=""
           pr_failed=""
           disable_ok=""
+          reopen_failed=""
 
           if [ "$attempt" = true ]; then
             pr_body="$RUNNER_TEMP/pr-body.md"
@@ -2265,13 +2347,33 @@ jobs:
 
             if pr_number=$(find_roster_pr); then
               if [ -n "$pr_number" ]; then
-                if ! gh pr edit "$pr_number" --repo "$REPO" \
+                if ! app_gh pr edit "$pr_number" --repo "$REPO" \
                   --title "roster: automatic update (run $RUN_ID)" --body-file "$pr_body"; then
                   pr_failed=1
                   echo "::warning::could not update the roster pull request"
                 fi
+                # Round 6: the `roster` job moved this PR's head with
+                # GITHUB_TOKEN, and a GITHUB_TOKEN push triggers no
+                # `synchronize` run — so `test` has not run on the new head.
+                # Closing and reopening it AS THE APP fires a `reopened`
+                # `pull_request` event (ci.yml's bare `pull_request:`
+                # trigger includes it) whose run needs no approval. Closing
+                # also clears any auto-merge an earlier run left armed. No
+                # `--comment` on either call: one more App write that can
+                # fail between the close and the reopen, and a failure
+                # there would leave the PR closed.
+                if [ -z "$pr_failed" ]; then
+                  if ! app_gh pr close "$pr_number" --repo "$REPO"; then
+                    pr_failed=1
+                    echo "::warning::could not close the roster pull request to re-run its checks"
+                  elif ! app_gh pr reopen "$pr_number" --repo "$REPO"; then
+                    pr_failed=1
+                    reopen_failed=1
+                    echo "::warning::could not reopen the roster pull request"
+                  fi
+                fi
               else
-                pr_url=$(gh pr create --repo "$REPO" --base main --head roster/proposal \
+                pr_url=$(app_gh pr create --repo "$REPO" --base main --head roster/proposal \
                   --title "roster: automatic update (run $RUN_ID)" --body-file "$pr_body") \
                   || pr_url=""
                 pr_number=$(printf '%s' "$pr_url" | grep -oE '[0-9]+$' || true)
@@ -2290,24 +2392,6 @@ jobs:
             fi
 
             if [ -z "$pr_failed" ]; then
-              # S1 (round 4 on #209): `--ref` stays a bare branch name.
-              # `gh workflow run`'s own source (pkg/cmd/workflow/run/
-              # run.go) passes `--ref` through to the dispatch API's `ref`
-              # field completely unvalidated and unqualified — it never
-              # itself accepts or requires a fully-qualified
-              # `refs/heads/...` form, and GitHub's own workflow-dispatch
-              # docs name only "a branch or tag name" for that field. The
-              # bare form is the one this workflow has always used and
-              # already verified working; switching to a fully-qualified
-              # ref would be an unverified change to a live-API surface
-              # this hermetic suite cannot exercise, for no documented
-              # benefit.
-              if ! gh workflow run ci.yml --repo "$REPO" --ref roster/proposal; then
-                pr_failed=1
-                echo "::warning::could not start checks for the roster pull request"
-              fi
-            fi
-            if [ -z "$pr_failed" ]; then
               # N1: idempotent — a PR this job is EDITING (not creating
               # fresh) may already carry auto-merge from an earlier run;
               # disabling it first means the enable call below is never a
@@ -2318,8 +2402,8 @@ jobs:
               # expected, harmless outcome here, never the "something a
               # human should see" failure `disable_auto` warns about
               # elsewhere in this job.
-              gh pr merge "$pr_number" --repo "$REPO" --disable-auto >/dev/null 2>&1 || true
-              if ! gh pr merge "$pr_number" --repo "$REPO" --auto --merge \
+              app_gh pr merge "$pr_number" --repo "$REPO" --disable-auto >/dev/null 2>&1 || true
+              if ! app_gh pr merge "$pr_number" --repo "$REPO" --auto --merge \
                    --match-head-commit "$pushed_sha"; then
                 pr_failed=1
                 echo "::warning::could not enable auto-merge for the roster pull request"
@@ -2329,8 +2413,15 @@ jobs:
               # The attempt above did not finish with auto-merge enabled on
               # this run's head but DID learn a PR number: that PR must not
               # be left carrying a stale auto-merge from an earlier run (or
-              # from an earlier half of this same attempt).
-              if disable_auto "$pr_number"; then disable_ok=1; fi
+              # from an earlier half of this same attempt). This disable is
+              # GITHUB_TOKEN's (`disable_auto`), not the App's, so it still
+              # works when the App call is what failed. A PR left CLOSED by
+              # a failed reopen carries no auto-merge at all.
+              if [ -n "$reopen_failed" ]; then
+                disable_ok=1
+              elif disable_auto "$pr_number"; then
+                disable_ok=1
+              fi
             fi
           else
             if pr_number=$(find_roster_pr); then
@@ -2400,6 +2491,8 @@ jobs:
               why="this run's vendor-default probe was not clean"
             elif [ -n "$verify_reason_text" ]; then
               why="this run's proposal needs review: $verify_reason_text"
+            elif [ "$app_missing" = true ]; then
+              why="the roster App token was unavailable"
             else
               why="this run's automatic-merge attempt did not complete"
             fi
@@ -2413,7 +2506,11 @@ jobs:
             else
               turned_off="its automatic merge could NOT be turned off because ${off_reason} — disable it by hand on PR #$pr_number."
             fi
-            if [ -z "$pushed_sha" ]; then
+            if [ -n "$reopen_failed" ]; then
+              pr_line="Pull request #$pr_number was closed so \`test\` could run on its new head, and could not be reopened — reopen it from \`roster/proposal\`; a human must merge it after CI."
+            elif [ "$app_missing" = true ]; then
+              pr_line="The roster App token was unavailable, so pull request #$pr_number (open from \`roster/proposal\`, now at this run's proposal) was not re-armed and \`test\` has not run on its new head — close and reopen it to run \`test\`; a human must merge it after CI. ${turned_off^}"
+            elif [ -z "$pushed_sha" ]; then
               # Should-fix 5 (round 3 on #209): this run's own push never
               # succeeded (or emitted nothing) — any open PR here is from
               # an EARLIER run's proposal, never this run's, so it must
@@ -2435,6 +2532,8 @@ jobs:
               pr_line="This run's proposal was not pushed; open a pull request from \`roster/proposal\` once a future run's push succeeds."
             elif [ -n "$verify_reason_text" ]; then
               pr_line="\`roster_mode: auto\` is set, but this run's proposal needs review — $verify_reason_text — so the automatic merge was skipped; inspect before merging."
+            elif [ "$app_missing" = true ]; then
+              pr_line="\`roster_mode: auto\` is set, but the roster App token was unavailable, so no pull request was opened or armed — the proposal is on \`roster/proposal\` for a human to open as a pull request and merge after CI."
             elif [ -n "$why" ]; then
               pr_line="\`roster_mode: auto\` is set, but $why, so the automatic merge was skipped this run — a human must open or merge the pull request from \`roster/proposal\`."
             else

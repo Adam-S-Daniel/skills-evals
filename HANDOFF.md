@@ -99,6 +99,17 @@ no write scope at all — the badge/results commit-and-push moved to a new
 turns off any already-armed `roster/proposal` auto-merge BEFORE `eval`'s
 agent starts, not only after it finishes. See
 [ADR 0003's round 4 section](docs/decisions/0003-roster-merges-automatically.md).
+**Amended 2026-09-29 (ADR 0003, round 6):** the first live `auto` run
+([run 36509251840](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/36509251840),
+[PR #214](https://github.com/Adam-S-Daniel/skills-evals/pull/214)) never
+merged — the PR's own `test` run was held for approval, and the dispatched one
+does not count for the required check. The roster PR is now opened, reopened
+and armed with a dedicated GitHub App's token (`ROSTER_APP_CLIENT_ID` /
+`ROSTER_APP_PRIVATE_KEY`, installed on skills-evals only, not a bypass actor);
+the `ci.yml` dispatch is gone. Without that token the run opens and arms
+nothing and says so in the tracking issue. repo-settings' override letting
+Actions create and approve pull requests on skills-evals is no longer needed
+and is to be reverted there.
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 
