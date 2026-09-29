@@ -618,9 +618,17 @@ computed roster matches the committed one, that issue (and, under
 `evals/roster-policy.yml` ([ADR 0003](docs/decisions/0003-roster-merges-automatically.md)).
 `roster_mode: proposal` (the flow above, unabridged) leaves the pull request
 for a human to open and merge after CI. `roster_mode: auto` — the shipped
-setting — instead opens or updates the pull request itself, dispatches
-`ci.yml` on `roster/proposal` so its `test` check reports on the pushed sha,
-and sets the PR to merge automatically once that check passes; it only does
+setting — instead opens the pull request itself (or, when one is already
+open, closes and reopens it so `test` runs on the new head) and sets it to
+merge automatically once `test` passes. All of that is done with a dedicated
+GitHub App's installation token (the repository variable
+`ROSTER_APP_CLIENT_ID` and secret `ROSTER_APP_PRIVATE_KEY`, minted only in the
+`roster-pr` job), never `GITHUB_TOKEN`: a pull request `github-actions[bot]`
+opens has its `pull_request` run held for approval, and a dispatched `test`
+does not count for the required check
+([ADR 0003, round 6](docs/decisions/0003-roster-merges-automatically.md#round-6-the-roster-pr-is-the-apps)).
+If that token is unavailable, nothing is opened or armed and the tracking
+issue says the proposal is on `roster/proposal` for a human. It only does
 this on a run whose vendor-default probe was clean (no `defaults_failed`,
 no `defaults_mismatched`) — a dirty probe or a rejected proposal keeps the
 human-merge flow exactly, and says why in the tracking issue. Any `gh`
