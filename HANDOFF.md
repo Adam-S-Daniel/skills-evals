@@ -110,6 +110,17 @@ the `ci.yml` dispatch is gone. Without that token the run opens and arms
 nothing and says so in the tracking issue. repo-settings' override letting
 Actions create and approve pull requests on skills-evals is no longer needed
 and is to be reverted there.
+**Amended 2026-09-29 (ADR 0003, round 7):** the same App now also publishes
+`roster/proposal` — the `roster` job renders and admits the proposal but no
+longer commits or pushes it (and no longer holds `contents: write`); the
+`roster-pr` job writes the commit through the git-data REST API on live
+`main`, in either `roster_mode`. That lets a ruleset on
+`refs/heads/roster/proposal` (creation, update, deletion, non-fast-forward;
+bypass: the roster App and repository admins only) be added in
+repo-settings, which closes the Dependabot-auto-merge retarget gap ADR 0003
+records. Merge this change BEFORE that ruleset, and verify it with a
+`roster_only` dispatch. Without the App token nothing is published and the
+tracking issue carries the rendered file.
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 

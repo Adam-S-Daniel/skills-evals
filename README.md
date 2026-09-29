@@ -578,9 +578,10 @@ open even when nothing else changed — the issue's title and first line say
 both, by whichever class or classes are present, so a mismatch-only run
 never claims the probe failed; that step runs unless the workflow is
 cancelled, so it fires even when the eval failed, and a failed `gh issue`
-write in it is a fixed `::warning::`, never a failed job, but a failed
-`git push` of
-`roster/proposal` still fails it, because the proposal branch must exist for review. Its issue says whether
+write in it is a fixed `::warning::`, never a failed job; it pushes nothing
+itself — `roster-pr` publishes `roster/proposal` with the roster App's token,
+and a failed publish there is a fixed `::warning::` too, which the tracking
+issue reports as a proposal that was not pushed. Its issue says whether
 the eval step succeeded, failed or did not run; the step runs before the one
 that publishes to `eval-results`, so for a successful eval it says that
 step publishes next. With no `--defaults` document at all nothing is frozen and the
@@ -602,8 +603,12 @@ knob and the code that applies it are kept; a positive value restores it.
 **But what it computes is a PROPOSAL.** When it differs from the committed
 file, the weekly run renders the proposed `evals/roster.yml`
 (`scripts/render_roster_yaml.py`) and checks it against the committed-roster
-contract. A valid proposal is pushed as one commit on the bot-owned branch
-`roster/proposal`, with one tracking issue carrying the rendered summary —
+contract. A valid proposal is published as one commit on the bot-owned branch
+`roster/proposal` — by the `roster-pr` job, with the roster App's token,
+parented on live `main`; if `main` changed `evals/roster.yml` after the run
+rendered its proposal, nothing is published and the next run re-proposes
+([ADR 0003, round 7](docs/decisions/0003-roster-merges-automatically.md#round-7-the-app-publishes-the-proposal-branch))
+— with one tracking issue carrying the rendered summary —
 every seat's reason in words, with the numerator and denominator its share was
 taken over — and a `main...roster/proposal` compare link. An invalid proposal
 does not update the branch or compare link; its tracking issue says it needs
@@ -627,8 +632,10 @@ GitHub App's installation token (the repository variable
 opens has its `pull_request` run held for approval, and a dispatched `test`
 does not count for the required check
 ([ADR 0003, round 6](docs/decisions/0003-roster-merges-automatically.md#round-6-the-roster-pr-is-the-apps)).
-If that token is unavailable, nothing is opened or armed and the tracking
-issue says the proposal is on `roster/proposal` for a human. It only does
+The same App token publishes `roster/proposal` itself, under either
+`roster_mode`. If that token is unavailable, nothing is published, opened or
+armed, and the tracking issue carries the rendered `evals/roster.yml` for a
+human to apply. It only does
 this on a run whose vendor-default probe was clean (no `defaults_failed`,
 no `defaults_mismatched`) — a dirty probe or a rejected proposal keeps the
 human-merge flow exactly, and says why in the tracking issue. Any `gh`
@@ -651,8 +658,11 @@ before the agent starts. Between arming and the merge (which waits on a green
 workflow controls. The known instance is
 `.github/workflows/dependabot-auto-merge.yml`'s `auto-merge` job, which holds
 `contents: write` and keeps the default persisted checkout credential
-(pre-existing, unchanged here); a ruleset restricting updates to
-`refs/heads/roster/proposal` would close it and is not implemented. Set
+(pre-existing, unchanged here). A ruleset restricting creation, update and
+deletion of `refs/heads/roster/proposal` to the roster App and repository
+admins closes it: since round 7 the App is the only thing this workflow
+pushes that branch with, so the ruleset (added in repo-settings) can leave
+`github-actions` out, and the gap is closed once that ruleset is live. Set
 `roster_mode: proposal` to switch back; nothing else needs to change.
 
 Thresholds and the capability ladder live in

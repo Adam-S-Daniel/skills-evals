@@ -116,10 +116,11 @@
 #   class name, and refresh_models.py is written to produce nothing else. The
 #   token-exchange failure output below is a separate pre-existing path.
 #
-# * All five checkouts use `persist-credentials: false`; push auth is
-#   injected only in the steps that push it — the `roster` job's
-#   roster-proposal step, the `disarm` and `roster-pr` jobs' `gh` calls, and
-#   the `publish` job's commit step — and only in their own `env:`. The one
+# * All five checkouts use `persist-credentials: false`; write auth is
+#   injected only in the steps that write — the `roster` job's
+#   roster-proposal step (its tracking issue only; since round 7 it pushes
+#   nothing), the `disarm` and `roster-pr` jobs' `gh` calls, and the
+#   `publish` job's commit step — and only in their own `env:`. The one
 #   stored credential in this workflow, the roster App's private key
 #   (secrets.ROSTER_APP_PRIVATE_KEY), is read by exactly one step, in the
 #   `roster-pr` job, which runs no agent and no CLI; see that job. B1 (round
@@ -221,14 +222,20 @@ on:
 # agent too, not just to a later step that happens to need them. Each job
 # below declares its own set instead.
 #
-# `roster` (contents: write, id-token: write, issues: write): computes,
-# renders, admits and pushes the roster proposal — EVERYTHING that decides
-# or publishes a roster change — in a job that NEVER runs the agent and
-# NEVER checks out the four fixture/registry repositories. `contents:
-# write` is for the `roster/proposal` branch push; `id-token: write` is its
-# own WIF mint for the Models API bearer; `issues: write` is #147's
-# roster-proposal tracking issue (this job still owns the "same"/frozen-
-# same cases directly — see its own steps' comments). This job MUST NOT
+# `roster` (contents: read, id-token: write, issues: write): computes,
+# renders and admits the roster proposal — EVERYTHING that decides a roster
+# change — in a job that NEVER runs the agent and NEVER checks out the four
+# fixture/registry repositories. Round 7 (ADR 0003, "the App publishes the
+# proposal branch"): it no longer pushes; it hands the rendered file (the
+# exact bytes, base64) and the sha it rendered against to `roster-pr` as
+# job outputs, and `roster-pr` publishes `roster/proposal` with the roster
+# App's token, so a ruleset can confine that ref to the App. `contents:
+# write` went with the push — which also takes the one write scope off the
+# runner the npm-latest CLI installs on (ADR 0003, N3). `contents: read` is
+# its checkout; `id-token: write` is its own WIF mint for the Models API
+# bearer; `issues: write` is #147's roster-proposal tracking issue (this job
+# still owns the "same"/frozen-same cases directly — see its own steps'
+# comments). This job MUST NOT
 # `needs: eval` — the whole point is that it runs on a runner the agent
 # never touches, before, after or alongside that job, never depending on
 # its outcome or its workspace.
@@ -248,11 +255,12 @@ on:
 # only to protect that run's auto-merge surface. This is what closes ADR
 # 0003's "cancellation window": an EARLIER run's still-armed auto-merge is
 # turned off before this run's agent so much as starts, rather than only
-# after `eval` finishes — the window that is left is `roster`'s own push
-# plus this job's run, not the whole `eval` job's duration. `roster-pr`
-# still re-arms auto-merge afterward, but only once ITS OWN independent
-# verification (B1.1-B1.3 below) passes for the sha this run actually
-# pushed.
+# after `eval` finishes — the window that is left is this job's own run,
+# not the whole `eval` job's duration (round 7: no job pushes
+# `roster/proposal` before this one any more; `roster-pr` publishes it
+# after). `roster-pr` still re-arms auto-merge afterward, but only once
+# ITS OWN independent verification (B1.1-B1.3 below) passes for the commit
+# it just published.
 #
 # `eval` (contents: read, id-token: write): runs the fixture (including the
 # bypass-permissions agent) and uploads its results as a build artifact.
@@ -284,6 +292,10 @@ on:
 # What this workflow cannot control: between arming and the merge (which
 # waits on a green `test`, possibly for days) any other write-access actor
 # that pushes `roster/proposal` retargets the armed PR — see ADR 0003.
+# Round 7 moved the only push this workflow makes to that branch onto the
+# roster App's token (`roster-pr`), so a ruleset that lets only the App
+# (and repository admins) create, update or delete `roster/proposal`
+# closes that gap once it is live; until then it stands.
 #
 # `publish` (contents: write): B1 (round 4 on #209, blocker). Everything
 # that used to be the `eval` job's own "Build the badge over the run
@@ -307,9 +319,11 @@ on:
 # logic lived in `eval` (ADR 0001 decision 3: read by no decision).
 #
 # `roster-pr` (pull-requests: write, issues: write, contents: read, plus
-# the roster App's installation token): everything that touches the pull
-# request the `roster` job's propose step pushed — find/create/edit/close/
-# reopen/merge it (Adam's decisions of 2026-09-28 and 2026-09-29,
+# the roster App's installation token): publishes the proposal the `roster`
+# job rendered to `roster/proposal` (round 7: with the App's token only,
+# through the git-data REST API, as one commit on live `main`, in every
+# `roster_mode`), and everything that touches its pull request —
+# find/create/edit/close/reopen/merge it (Adam's decisions of 2026-09-28 and 2026-09-29,
 # docs/decisions/0003-roster-merges-automatically.md). Round 6: under
 # `roster_mode: auto`, a verified proposal's PR is opened (or, if one is
 # already open, closed and reopened) and armed by a dedicated GitHub App
@@ -356,7 +370,7 @@ jobs:
     # roster proposal. NEVER runs the agent, NEVER checks out the fixture
     # registries, and NEVER `needs: eval` — see the header comment above.
     permissions:
-      contents: write
+      contents: read
       id-token: write
       issues: write
     timeout-minutes: 20
@@ -372,7 +386,8 @@ jobs:
       status: ${{ steps.propose.outputs.status }}
       probe_clean: ${{ steps.propose.outputs.probe_clean }}
       issue_number: ${{ steps.propose.outputs.issue_number }}
-      pushed_sha: ${{ steps.propose.outputs.pushed_sha }}
+      proposed_roster_b64: ${{ steps.propose.outputs.proposed_roster_b64 }}
+      base_sha: ${{ steps.propose.outputs.base_sha }}
       rejected: ${{ steps.propose.outputs.rejected }}
       rejection_reason: ${{ steps.propose.outputs.rejection_reason }}
       rendered_identical: ${{ steps.propose.outputs.rendered_identical }}
@@ -384,8 +399,8 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           path: skills-evals
-          # Full history so the push-race rebase below always has the commits
-          # it needs; this repo is small.
+          # Full history; this repo is small. (Round 7: this job no longer
+          # pushes, so nothing here needs the history for a lease or rebase.)
           fetch-depth: 0
           persist-credentials: false
 
@@ -706,11 +721,13 @@ jobs:
       # THE PROPOSAL (#147, ADR 0001 decision 2). The roster step above
       # computed what the roster SHOULD be; this step is what a human ever
       # sees of it. When it differs from the committed `evals/roster.yml`
-      # it pushes the proposed file as ONE commit on the bot-owned branch
-      # `roster/proposal` and upserts ONE tracking issue carrying the
-      # rendered summary and the compare link. When it does not differ it
-      # closes that issue, so a stale one never sits open claiming a change
-      # that has already landed or gone away.
+      # it renders and admits the proposed file and hands it to `roster-pr`
+      # (round 7), which publishes it as ONE commit on the bot-owned branch
+      # `roster/proposal` with the roster App's token and upserts ONE
+      # tracking issue carrying the rendered summary and the compare link.
+      # When it does not differ this step closes that issue, so a stale one
+      # never sits open claiming a change that has already landed or gone
+      # away.
       #
       # WHY A BRANCH AND AN ISSUE, AND NOT A PULL REQUEST. GitHub can create
       # approval-required runs for pull_request opened, synchronized, or
@@ -721,26 +738,27 @@ jobs:
       # a protected branch and never a ruleset bypass actor.
       #
       # `roster/proposal` IS BOT-OWNED AND IS NEVER SHARED. It is recreated
-      # from this run's checked-out `main` sha every run and force-pushed
-      # with `--force-with-lease`; nobody commits to it by hand and nothing
-      # else reads it. That is the one sanctioned exception to the fleet's
-      # "do not force-push a shared branch" rule, and it is sanctioned
-      # because the branch is not shared: a proposal computed against last
-      # week's `main` is not a thing to preserve, it is a thing to replace.
-      # The lease is what keeps that honest — a push that would discard a
-      # commit this run has not seen fails rather than silently winning.
+      # on live `main` every run and force-updated (round 7: by `roster-pr`,
+      # with the roster App's token, through the git-data REST API); nobody
+      # commits to it by hand and nothing else reads it. That is the one
+      # sanctioned exception to the fleet's "do not force-push a shared
+      # branch" rule, and it is sanctioned because the branch is not
+      # shared: a proposal computed against last week's `main` is not a
+      # thing to preserve, it is a thing to replace. What keeps that honest
+      # since round 7 is a ruleset (added in repo-settings) that lets only
+      # the roster App and repository admins create, update or delete the
+      # ref, so nothing else can write to it at all.
       #
       # IT RUNS IN ITS OWN JOB, deliberately (B1, rounds 3 and 4 on #209).
       # The eval must run on the committed roster with no GitHub write
       # credential anywhere on ITS runner (the security header's fourth
-      # rule); this step holds one, so it lives in the `roster` job, which
-      # never runs the agent and never `needs: eval`, on a runner the agent
-      # never touches. It does its git work in a WORKTREE under
-      # $RUNNER_TEMP so the job's own checkout stays untouched.
+      # rule); this step holds one (`issues: write`), so it lives in the
+      # `roster` job, which never runs the agent and never `needs: eval`, on
+      # a runner the agent never touches. It does no git writes at all.
       #
       # Nothing here interpolates a GitHub Actions expression into the
-      # shell. The run id, the repository and the server URL arrive through
-      # `env:` and are read as variables.
+      # shell. The run id and the repository arrive through `env:` and are
+      # read as variables.
       - name: Propose a roster change
         # Unless the workflow is cancelled (#203 probe round 2): the proposal
         # and a failed probe's warning and tracking issue are the loud
@@ -750,12 +768,12 @@ jobs:
         id: propose
         working-directory: skills-evals
         env:
-          # Write auth lives only in this step of the `roster` job.
-          GITHUB_TOKEN: ${{ github.token }}
+          # The tracking issue's `gh issue` calls (`issues: write`) are the
+          # only writes this step makes; round 7 took the branch push, and
+          # with it `contents: write`, off this job entirely.
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
           REPO: ${{ github.repository }}
-          SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
           # GITHUB_OUTPUT always exists on a real runner; this default only
@@ -1131,63 +1149,49 @@ jobs:
             exit 0
           fi
 
-          base=$(git rev-parse HEAD)
-          worktree="$RUNNER_TEMP/proposal-worktree"
-          rm -rf "$worktree"
-          git worktree add --detach "$worktree" "$base"
-          cp "$RUNNER_TEMP/proposed-roster.yml" "$worktree/evals/roster.yml"
-          git -C "$worktree" checkout -B roster/proposal
-          git -C "$worktree" add evals/roster.yml
-          if git -C "$worktree" diff --cached --quiet; then
-            echo "::notice::the proposal renders byte-identically to the committed roster; nothing pushed"
+          # >>> proposal-handoff
+          # Round 7 (ADR 0003, "the App publishes the proposal branch"):
+          # this job no longer commits or pushes anything. It hands the
+          # rendered, admitted file to `roster-pr` as a job output — the
+          # EXACT bytes, base64 — plus the sha it was rendered against, and
+          # `roster-pr` publishes the commit to `roster/proposal` with the
+          # roster App's token through the git-data REST API. That is what
+          # lets a ruleset confine updates of `refs/heads/roster/proposal`
+          # to the App: `GITHUB_TOKEN` here is the same `github-actions`
+          # identity as dependabot-auto-merge.yml's persisted checkout
+          # credential, so it could never be the ruleset's bypass actor
+          # without letting that job retarget an armed PR too.
+          #
+          # Byte-identical to the committed file: nothing to publish. The
+          # comparison is against THIS checkout (the run's own `main` sha),
+          # the same base the old worktree diff used.
+          if cmp -s "$RUNNER_TEMP/proposed-roster.yml" evals/roster.yml; then
+            echo "::notice::the proposal renders byte-identically to the committed roster; nothing to publish"
             emit rendered_identical true
-            git worktree remove --force "$worktree"
             exit 0
           fi
-          # `-c user.*` rather than `git config`: a worktree shares the
-          # parent checkout's config, so `git config` here would rewrite
-          # the identity of the checkout the next step commits from.
-          git -C "$worktree" \
-            -c user.name="skills-evals real-eval bot" \
-            -c user.email="skills-evals@users.noreply.github.com" \
-            commit -q -m "roster: proposed model roster (run $RUN_ID)"
-          pushed_sha=$(git -C "$worktree" rev-parse HEAD)
-          # F5 (adversarial round 1 on #209): validated as a bare 40-hex sha
-          # — `git rev-parse HEAD` in the worktree just committed to, never
-          # `$base` (the checkout's HEAD before that commit, mutant M1) and
-          # never a sha read from any OTHER checkout (mutant M8) — before
-          # it becomes a job output the `roster-pr` job will pass straight
-          # to `--match-head-commit`. S1 (round 2, spec-roster-mode-r2.md):
-          # the `emit` itself waits until AFTER the push below actually
-          # succeeds — "a proposal was published" must never be claimed for
-          # a commit that only exists on this runner's local worktree. A
-          # failed push therefore emits no `pushed_sha` at all (the step
-          # dies at the push line, under `set -euo pipefail`, before
-          # reaching the `emit` that used to sit here) and the `roster-pr`
-          # job takes the same disable-only path as a rejected proposal.
-          pushed_sha_valid=false
-          if [[ "$pushed_sha" =~ ^[0-9a-f]{40}$ ]]; then pushed_sha_valid=true; fi
-          auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          # Fetch first so the implicit lease compares against the current
-          # remote-tracking ref when the proposal branch already exists. A
-          # missing ref is not a plain-force permission; Git's explicit
-          # expected-value lease form can require that a destination is absent.
-          git -c "http.$SERVER_URL/.extraheader=$auth" fetch origin \
-            '+refs/heads/roster/proposal:refs/remotes/origin/roster/proposal' || true
-          # NOT wrapped, unlike the `gh issue` writes (#203 probe round 3): a
-          # proposal branch that failed to push does not exist for review, so
-          # the step fails here rather than filing an issue that links to it.
-          # A failure here means NO outputs below `pushed_sha` were written
-          # (the step dies here, mid-script) — the `roster-pr` job still
-          # runs (F3: it is gated on the workflow not being cancelled, and a
-          # failed step is not a cancelled job) and, seeing no `pushed_sha`,
-          # takes the same disable-only path as a rejected proposal.
-          git -C "$worktree" -c "http.$SERVER_URL/.extraheader=$auth" \
-            push --force-with-lease origin roster/proposal
-          if [ "$pushed_sha_valid" = true ]; then
-            emit pushed_sha "$pushed_sha"
+          # Validated as a bare 40-hex sha before it becomes an output;
+          # `roster-pr` re-validates it at its own job boundary.
+          base=$(git rev-parse HEAD) || base=""
+          if ! [[ "$base" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::warning::could not resolve this run's checkout sha; the roster proposal was not handed on"
+            exit 0
           fi
-          git worktree remove --force "$worktree"
+          # A size cap far below the 1 MB job-outputs limit (the file is a
+          # few KB) and below GitHub's 65536-character issue body, which
+          # the tracking issue may inline it into. Over the cap is "no
+          # proposal": nothing is handed on, and `roster-pr` reports the
+          # proposal as not published rather than publishing a truncation.
+          max_roster_bytes=32768
+          size=$(wc -c < "$RUNNER_TEMP/proposed-roster.yml" | tr -d '[:space:]') || size=""
+          case "$size" in ''|*[!0-9]*) size=$((max_roster_bytes + 1)) ;; esac
+          if [ "$size" -eq 0 ] || [ "$size" -gt "$max_roster_bytes" ]; then
+            echo "::warning::the rendered roster is empty or larger than $max_roster_bytes bytes; the roster proposal was not handed on"
+            exit 0
+          fi
+          emit base_sha "$base"
+          emit proposed_roster_b64 "$(base64 -w0 < "$RUNNER_TEMP/proposed-roster.yml")"
+          # <<< proposal-handoff
 
   # B1 (round 4 on #209, blocker): disarms any EARLIER run's still-armed
   # `roster/proposal` auto-merge before the `eval` job's agent starts —
@@ -1790,7 +1794,8 @@ jobs:
     # `pull-requests: write` for turning a stale PR's auto-merge OFF and for
     # closing a stale PR on "same" (both paths every mode reaches, proposal
     # included); `issues: write` for the tracking issue; `contents: read`
-    # for the policy/ref/compare reads. `actions: write` went with the
+    # for the policy/ref/compare/tree reads (round 7: the publish's writes
+    # are the App's, never GITHUB_TOKEN's). `actions: write` went with the
     # `gh workflow run ci.yml` dispatch (a dispatched `test` never satisfied
     # the PR's required check), and `contents: write` went with arming
     # auto-merge, which is the App's now.
@@ -1801,8 +1806,10 @@ jobs:
     steps:
       # Round 6: a GitHub App installation token, minted ONLY in this job.
       # The App (installed on skills-evals alone: Contents R/W, Pull
-      # requests R/W, NOT a ruleset bypass actor) is what opens, closes/
-      # reopens and arms the roster PR, so the PR's own `pull_request` run
+      # requests R/W, NOT a bypass actor of `main`'s ruleset) is what
+      # publishes `roster/proposal` (round 7; the one bypass actor, beside
+      # repository admins, of the ruleset that confines that ref) and what
+      # opens, closes/reopens and arms the roster PR, so the PR's own `pull_request` run
       # of `test` is triggered by the App — not by `github-actions[bot]`,
       # whose PRs' runs GitHub holds for approval (run 36509304069,
       # `action_required`). Its key must never be in a job that runs the
@@ -1810,8 +1817,9 @@ jobs:
       # `publish` never reference it (TestRosterAppTokenIsConfined).
       # `continue-on-error`: an App that is missing, uninstalled or
       # misconfigured leaves `outputs.token` empty, and the step below then
-      # degrades to leaving the proposal on `roster/proposal` for a human —
-      # it never falls back to opening or arming the PR with GITHUB_TOKEN.
+      # publishes nothing and puts the rendered file in the tracking issue
+      # for a human — it never falls back to publishing, opening or arming
+      # with GITHUB_TOKEN.
       - name: Mint the roster App token
         id: roster-app-token
         continue-on-error: true
@@ -1841,17 +1849,18 @@ jobs:
         # from GitHub's own API and `$GITHUB_SHA` (the triggering commit on
         # `main`, never the `roster` job's checkout) is the auto decision
         # and the IDENTITY of what gets armed: `verify_publish` checks
-        # identity (branch head == `$PUSHED_SHA`, the sha the trusted
-        # `roster` job pushed), shape (one commit ahead, none behind, exactly
-        # `evals/roster.yml` modified), and the commit's author and message —
-        # not content; content equality rests on that sha identity.
+        # identity (branch head == `$pushed_sha`, the commit this job's own
+        # publish created — round 7), shape (one commit ahead of its parent,
+        # live `main`, none behind, exactly `evals/roster.yml` modified), and
+        # the commit's author and message — not content; content equality
+        # rests on that sha identity.
         # `ROSTER_MODE` below is therefore read but never trusted for the
         # auto decision — `roster_mode` (the decision variable) comes from
         # a fresh, independent read of `evals/roster-policy.yml` AT
-        # `$GITHUB_SHA` via the contents API (B1.1); the pushed branch's
+        # `$GITHUB_SHA` via the contents API (B1.1); the published branch's
         # actual head is re-read from the API and required to equal
-        # `$PUSHED_SHA` (B1.2); and `$GITHUB_SHA...$PUSHED_SHA` must compare
-        # as exactly one commit ahead, none behind, touching only
+        # `$pushed_sha` (B1.2); and `$publish_base...$pushed_sha` must
+        # compare as exactly one commit ahead, none behind, touching only
         # `evals/roster.yml` (B1.3) before this job will enable auto-merge.
         # B1.4's main-ref gate lives on the job itself, above.
         env:
@@ -1873,7 +1882,10 @@ jobs:
           STATUS: ${{ needs.roster.outputs.status }}
           PROBE_CLEAN: ${{ needs.roster.outputs.probe_clean }}
           ISSUE_NUMBER: ${{ needs.roster.outputs.issue_number }}
-          PUSHED_SHA: ${{ needs.roster.outputs.pushed_sha }}
+          # Round 7: the rendered file (base64 of its exact bytes) and the
+          # sha it was rendered against — this job publishes the commit.
+          PROPOSED_ROSTER_B64: ${{ needs.roster.outputs.proposed_roster_b64 }}
+          BASE_SHA: ${{ needs.roster.outputs.base_sha }}
           REJECTED: ${{ needs.roster.outputs.rejected }}
           REJECTION_REASON: ${{ needs.roster.outputs.rejection_reason }}
           RENDERED_IDENTICAL: ${{ needs.roster.outputs.rendered_identical }}
@@ -1904,8 +1916,15 @@ jobs:
           case "${PROBE_CLEAN:-}" in true) probe_clean=true ;; esac
           issue=""
           case "${ISSUE_NUMBER:-}" in ''|*[!0-9]*) : ;; *) issue="$ISSUE_NUMBER" ;; esac
+          # Round 7: the sha the `roster` job rendered against. The
+          # proposal's own bytes (PROPOSED_ROSTER_B64) are validated where
+          # they are decoded, in publish-proposal below.
+          base_sha=""
+          if [[ "${BASE_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then base_sha="$BASE_SHA"; fi
+          # Set ONLY by this job's own publish below, to the commit the
+          # roster App's token created and pointed `roster/proposal` at —
+          # never read from another job.
           pushed_sha=""
-          if [[ "${PUSHED_SHA:-}" =~ ^[0-9a-f]{40}$ ]]; then pushed_sha="$PUSHED_SHA"; fi
           rejected=false
           case "${REJECTED:-}" in true) rejected=true ;; esac
           # One of exactly two fixed sentences the eval job's propose step
@@ -2074,14 +2093,24 @@ jobs:
           # like the single-ref design before N9 (test_no_github_sha_falls_
           # back_to_proposal_without_reading_anything).
           policy_mode_main=""
+          # S1 (round 4 on #209): resolve live `main` to an explicit,
+          # validated sha before reading anything at it, rather than
+          # trusting the contents API's own `?ref=main` resolution
+          # silently — the resolved sha is echoed, so a run's log names
+          # exactly which commit its "live main" read came from. Round 7:
+          # the same resolved sha is the parent of the proposal commit this
+          # job publishes below (resolved there if this read never ran).
+          resolve_live_main() {
+            local sha
+            sha=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha 2>/dev/null) || sha=""
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then sha=""; fi
+            printf '%s' "$sha"
+          }
+          main_sha=""
+          main_resolved=false
           if [ "$policy_mode_sha" = auto ]; then
-            # S1 (round 4 on #209): resolve live `main` to an explicit,
-            # validated sha before reading the policy at it, rather than
-            # trusting the contents API's own `?ref=main` resolution
-            # silently — the resolved sha is echoed, so a run's log names
-            # exactly which commit its "live main" read came from.
-            main_sha=$(gh api "repos/$REPO/git/ref/heads/main" --jq .object.sha 2>/dev/null) || main_sha=""
-            if ! [[ "$main_sha" =~ ^[0-9a-f]{40}$ ]]; then main_sha=""; fi
+            main_sha=$(resolve_live_main) || main_sha=""
+            main_resolved=true
             echo "live main resolved to: ${main_sha:-<unresolved>}"
             policy_mode_main=$(read_policy_mode "$main_sha") || policy_mode_main=""
             echo "roster_mode (policy at live main): raw=${policy_mode_main:-<empty>}"
@@ -2141,9 +2170,12 @@ jobs:
           }
 
           # >>> publish-verify (B1.2 + B1.3, round 2): re-derive, from the
-          # API alone, that `$PUSHED_SHA` really is `roster/proposal`'s
-          # current head and really is exactly one commit ahead of the
-          # trusted `$GITHUB_SHA`, changing only `evals/roster.yml`.
+          # API alone, that `$pushed_sha` really is `roster/proposal`'s
+          # current head and really is exactly one commit ahead of
+          # `$publish_base`, changing only `evals/roster.yml`. Round 7: both
+          # are this job's own — the commit its publish created and the live
+          # `main` it was parented on — so this now catches anything that
+          # moved the ref or shaped the commit between that write and here.
           verify_publish() {
             local actual_head compare_json ok
             actual_head=$(gh api "repos/$REPO/git/ref/heads/roster/proposal" \
@@ -2153,17 +2185,18 @@ jobs:
               printf 'head'
               return 1
             fi
-            compare_json=$(gh api "repos/$REPO/compare/$github_sha...$pushed_sha" 2>/dev/null) \
+            # Round 7: against the parent this job itself published on
+            # (`$publish_base`, live `main` resolved and validated above),
+            # not `$GITHUB_SHA` — the commit is built on live `main` now.
+            compare_json=$(gh api "repos/$REPO/compare/$publish_base...$pushed_sha" 2>/dev/null) \
               || compare_json=""
             # Should-fix 1 (round 3 on #209): the single commit's own
-            # message and author must equal exactly what the propose step
-            # commits with — never accepted as free-form text otherwise. The
-            # propose step (and `render_roster_yaml.py`, and any commit-msg
-            # hook) runs in the trusted `roster` job, not in the `eval`
-            # job's agent workspace; this is defence in depth at the job
-            # boundary, so a closing keyword or an `@mention` cannot ride
-            # into a commit this job then merges automatically even if that
-            # trusted job's output were somehow wrong.
+            # message and author must equal exactly what the publish below
+            # commits with (round 7: this job's own git-data commit, no
+            # longer the `roster` job's) — never accepted as free-form text
+            # otherwise. Defence in depth, so a closing keyword or an
+            # `@mention` cannot ride into a commit this job then merges
+            # automatically.
             ok=$(printf '%s' "$compare_json" | python3 -c '
           import json
           import os
@@ -2284,6 +2317,147 @@ jobs:
             exit 0
           fi
 
+          # >>> publish-proposal (round 7, ADR 0003 "the App publishes the
+          # proposal branch"): the `roster` job rendered and admitted the
+          # proposal but no longer pushes it; this job publishes it, with
+          # the roster App's token ONLY, as one commit on `roster/proposal`
+          # through the git-data REST API (no checkout): blob -> tree (live
+          # `main`'s tree plus `evals/roster.yml`, mode 100644) -> commit
+          # (parent: live `main`; the exact author and message
+          # `verify_publish` checks) -> the ref, force-updated if it exists,
+          # created if not. Every mode, `proposal` included: once a ruleset
+          # confines `roster/proposal` to the App, nothing else can update
+          # it. A rejected proposal publishes nothing, as before.
+          #
+          # The payload crosses a job boundary, so it is re-validated here
+          # before anything is written: canonical base64 no longer than the
+          # cap allows, decoding to 1..$max_roster_bytes bytes of UTF-8 with
+          # no NUL that parses as a YAML mapping.
+          max_roster_bytes=32768
+          proposal_file="$RUNNER_TEMP/proposed-roster.yml"
+          rm -f "$proposal_file"
+          proposal_ok=false
+          publish_fail=""
+          publish_base=""
+          proposed_b64="${PROPOSED_ROSTER_B64:-}"
+          if [ "$rejected" != true ] && [ -n "$proposed_b64" ] \
+             && [ "${#proposed_b64}" -le $(( (max_roster_bytes + 2) / 3 * 4 )) ] \
+             && [[ "$proposed_b64" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] \
+             && printf '%s' "$proposed_b64" | base64 -d > "$proposal_file" 2>/dev/null \
+             && python3 - "$proposal_file" "$max_roster_bytes" > /dev/null 2>&1 <<'PY'
+          import sys
+
+          import yaml
+
+          path, cap = sys.argv[1], int(sys.argv[2])
+          with open(path, "rb") as handle:
+              data = handle.read()
+          if not 0 < len(data) <= cap or b"\0" in data:
+              raise SystemExit(1)
+          doc = yaml.safe_load(data.decode("utf-8", errors="strict"))
+          if not isinstance(doc, dict):
+              raise SystemExit(1)
+          PY
+          then
+            proposal_ok=true
+          fi
+          if [ "$proposal_ok" != true ]; then rm -f "$proposal_file"; fi
+          # The one value this job ever writes into a commit message:
+          # digits only, or nothing is published.
+          run_id=""
+          case "${RUN_ID:-}" in ''|*[!0-9]*) : ;; *) run_id="$RUN_ID" ;; esac
+
+          # The blob sha of `evals/roster.yml` at a ref, validated; empty
+          # when the file or the ref cannot be read.
+          roster_blob_at() {
+            local sha
+            sha=$(gh api "repos/$REPO/contents/evals/roster.yml?ref=$1" --jq .sha 2>/dev/null) || sha=""
+            if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then sha=""; fi
+            printf '%s' "$sha"
+          }
+          # One App write through the git-data API; prints the created
+          # object's sha, validated, or fails.
+          app_write() {
+            local url="$1" method="$2" input="$3" sha
+            sha=$(app_gh api "$url" -X "$method" --input "$input" --jq "${4:-.sha}" 2>/dev/null) || return 1
+            [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+            printf '%s' "$sha"
+          }
+          publish_proposal() {
+            local main_tree blob tree commit existing req="$RUNNER_TEMP/roster-git-request.json"
+            main_tree=$(gh api "repos/$REPO/git/commits/$publish_base" --jq .tree.sha 2>/dev/null) || main_tree=""
+            [[ "$main_tree" =~ ^[0-9a-f]{40}$ ]] || return 1
+            jq -n --arg content "$(base64 -w0 < "$proposal_file")" \
+              '{content: $content, encoding: "base64"}' > "$req" || return 1
+            blob=$(app_write "repos/$REPO/git/blobs" POST "$req") || return 1
+            jq -n --arg base "$main_tree" --arg blob "$blob" \
+              '{base_tree: $base, tree: [{path: "evals/roster.yml", mode: "100644", type: "blob", sha: $blob}]}' \
+              > "$req" || return 1
+            tree=$(app_write "repos/$REPO/git/trees" POST "$req") || return 1
+            jq -n --arg tree "$tree" --arg parent "$publish_base" \
+              --arg message "roster: proposed model roster (run $run_id)" \
+              '{message: $message, tree: $tree, parents: [$parent],
+                author: {name: "skills-evals real-eval bot",
+                         email: "skills-evals@users.noreply.github.com"}}' \
+              > "$req" || return 1
+            commit=$(app_write "repos/$REPO/git/commits" POST "$req") || return 1
+            existing=$(gh api "repos/$REPO/git/ref/heads/roster/proposal" --jq .object.sha 2>/dev/null) || existing=""
+            if [[ "$existing" =~ ^[0-9a-f]{40}$ ]]; then
+              jq -n --arg sha "$commit" '{sha: $sha, force: true}' > "$req" || return 1
+              app_write "repos/$REPO/git/refs/heads/roster/proposal" PATCH "$req" .object.sha > /dev/null || return 1
+            else
+              jq -n --arg sha "$commit" '{ref: "refs/heads/roster/proposal", sha: $sha}' > "$req" || return 1
+              app_write "repos/$REPO/git/refs" POST "$req" .object.sha > /dev/null || return 1
+            fi
+            printf '%s' "$commit"
+          }
+
+          if [ "$rejected" = true ]; then
+            : # a rejected proposal is never published; see its branch below
+          elif [ "$proposal_ok" != true ] || [ -z "$base_sha" ] || [ -z "$run_id" ]; then
+            publish_fail=payload
+            echo "::warning::the roster proposal handed on by the roster job did not validate; it was not published"
+          elif [ -z "$app_token" ]; then
+            publish_fail=app
+            echo "::warning::the roster App token was unavailable; the roster proposal was not published, and no roster pull request was opened or armed"
+          else
+            if [ "$main_resolved" != true ]; then
+              main_sha=$(resolve_live_main) || main_sha=""
+              echo "live main resolved to: ${main_sha:-<unresolved>}"
+            fi
+            if [ -z "$main_sha" ]; then
+              publish_fail=api
+              echo "::warning::could not resolve live main; the roster proposal was not published"
+            else
+              # Rendered against a stale base: if `main` changed
+              # `evals/roster.yml` since, publishing this file on live
+              # `main` could silently revert that change, so nothing is
+              # published and the next run re-proposes. Anything else that
+              # moved on `main` is kept: the commit's parent is live `main`.
+              if [ "$base_sha" != "$main_sha" ]; then
+                base_blob=$(roster_blob_at "$base_sha")
+                main_blob=$(roster_blob_at "$main_sha")
+                if [ -z "$base_blob" ] || [ "$base_blob" != "$main_blob" ]; then
+                  publish_fail=moved
+                  echo "::notice::main changed evals/roster.yml after this run rendered its proposal; it was not published"
+                fi
+              fi
+              if [ -z "$publish_fail" ]; then
+                publish_base="$main_sha"
+                if created=$(publish_proposal); then
+                  pushed_sha="$created"
+                  echo "published the roster proposal as $pushed_sha on roster/proposal (parent $publish_base)"
+                else
+                  publish_fail=api
+                  echo "::warning::could not publish the roster proposal to roster/proposal"
+                fi
+              fi
+            fi
+          fi
+          app_missing=false
+          if [ "$publish_fail" = app ]; then app_missing=true; fi
+          # <<< publish-proposal
+
           # status == differs, admitted, not byte-identical: the only case
           # that can enable auto-merge, and the only case whose tracking-
           # issue text this job constructs.
@@ -2303,19 +2477,15 @@ jobs:
           # <<< attempt-candidate
           attempt=false
           verify_fail=""
-          app_missing=false
           if [ "$candidate" = true ]; then
             if verify_fail=$(verify_publish); then
               # Round 6: a verified proposal is opened and armed by the
-              # roster App or not at all. With no App token this run
-              # degrades — the proposal stays on `roster/proposal` for a
-              # human — and never opens or arms the PR with GITHUB_TOKEN,
-              # whose PR's `pull_request` run GitHub holds for approval.
+              # roster App or not at all — never with GITHUB_TOKEN, whose
+              # PR's `pull_request` run GitHub holds for approval. Round 7:
+              # only the App publishes, so a `$pushed_sha` implies the
+              # token; checked again here regardless.
               if [ -n "$app_token" ]; then
                 attempt=true
-              else
-                app_missing=true
-                echo "::warning::the roster App token was unavailable; no roster pull request was opened or armed"
               fi
             fi
           fi
@@ -2352,13 +2522,15 @@ jobs:
                   pr_failed=1
                   echo "::warning::could not update the roster pull request"
                 fi
-                # Round 6: the `roster` job moved this PR's head with
-                # GITHUB_TOKEN, and a GITHUB_TOKEN push triggers no
-                # `synchronize` run — so `test` has not run on the new head.
-                # Closing and reopening it AS THE APP fires a `reopened`
-                # `pull_request` event (ci.yml's bare `pull_request:`
-                # trigger includes it) whose run needs no approval. Closing
-                # also clears any auto-merge an earlier run left armed. No
+                # Round 6: closing and reopening it AS THE APP fires a
+                # `reopened` `pull_request` event (ci.yml's bare
+                # `pull_request:` trigger includes it) whose run needs no
+                # approval. Round 7: the App's own ref update above is an
+                # App push, so it fires `synchronize` too; the cycle is
+                # kept because closing also clears any auto-merge an
+                # earlier run left armed, and a second `test` run on the
+                # same head cancels nothing (ci.yml declares no
+                # `concurrency` group). No
                 # `--comment` on either call: one more App write that can
                 # fail between the close and the reopen, and a failure
                 # there would leave the PR closed.
@@ -2493,6 +2665,8 @@ jobs:
               why="this run's proposal needs review: $verify_reason_text"
             elif [ "$app_missing" = true ]; then
               why="the roster App token was unavailable"
+            elif [ "$publish_fail" = moved ]; then
+              why="\`main\` changed \`evals/roster.yml\` after this run rendered its proposal"
             else
               why="this run's automatic-merge attempt did not complete"
             fi
@@ -2509,7 +2683,11 @@ jobs:
             if [ -n "$reopen_failed" ]; then
               pr_line="Pull request #$pr_number was closed so \`test\` could run on its new head, and could not be reopened — reopen it from \`roster/proposal\`; a human must merge it after CI."
             elif [ "$app_missing" = true ]; then
-              pr_line="The roster App token was unavailable, so pull request #$pr_number (open from \`roster/proposal\`, now at this run's proposal) was not re-armed and \`test\` has not run on its new head — close and reopen it to run \`test\`; a human must merge it after CI. ${turned_off^}"
+              # Round 7: no App token, no publish — the open PR still
+              # holds an EARLIER run's proposal.
+              pr_line="The roster App token was unavailable, so this run's proposal was not published and PR #$pr_number still holds an earlier proposal — review before merging; this run's rendered file is below. ${turned_off^}"
+            elif [ "$publish_fail" = moved ]; then
+              pr_line="\`main\` changed \`evals/roster.yml\` after this run rendered its proposal, so it was not published and PR #$pr_number still holds an earlier proposal — review before merging; the next run re-proposes. ${turned_off^}"
             elif [ -z "$pushed_sha" ]; then
               # Should-fix 5 (round 3 on #209): this run's own push never
               # succeeded (or emitted nothing) — any open PR here is from
@@ -2528,12 +2706,14 @@ jobs:
               pr_line="Pull request #$pr_number is open from \`roster/proposal\`; merge it after CI if the reasons below hold up. ${turned_off^}"
             fi
           else
-            if [ -z "$pushed_sha" ]; then
+            if [ "$app_missing" = true ]; then
+              pr_line="The roster App token was unavailable, so this run's proposal could not be published to \`roster/proposal\` and no pull request was opened or armed. The rendered \`evals/roster.yml\` is below: a human can apply it in a pull request, or the next run publishes it."
+            elif [ "$publish_fail" = moved ]; then
+              pr_line="\`main\` changed \`evals/roster.yml\` after this run rendered its proposal, so the proposal was not published; the next run re-proposes against the new \`main\`."
+            elif [ -z "$pushed_sha" ]; then
               pr_line="This run's proposal was not pushed; open a pull request from \`roster/proposal\` once a future run's push succeeds."
             elif [ -n "$verify_reason_text" ]; then
               pr_line="\`roster_mode: auto\` is set, but this run's proposal needs review — $verify_reason_text — so the automatic merge was skipped; inspect before merging."
-            elif [ "$app_missing" = true ]; then
-              pr_line="\`roster_mode: auto\` is set, but the roster App token was unavailable, so no pull request was opened or armed — the proposal is on \`roster/proposal\` for a human to open as a pull request and merge after CI."
             elif [ -n "$why" ]; then
               pr_line="\`roster_mode: auto\` is set, but $why, so the automatic merge was skipped this run — a human must open or merge the pull request from \`roster/proposal\`."
             else
@@ -2553,5 +2733,28 @@ jobs:
             echo "[Compare \`main...roster/proposal\`]($SERVER_URL/$REPO/compare/main...roster/proposal)"
             echo
             printf '%s\n' "$roster_summary"
+            # Round 7: with no App token nothing was published, so the
+            # rendered file itself goes into the issue, fenced longer than
+            # any backtick run it contains, for a human to apply by hand.
+            if [ "$app_missing" = true ] && [ -s "$proposal_file" ]; then
+              fence=$(python3 -c '
+          import re
+          import sys
+          with open(sys.argv[1], encoding="utf-8") as handle:
+              text = handle.read()
+          runs = [len(m) for m in re.findall(r"`+", text)]
+          print("`" * max(3, max(runs, default=0) + 1))
+          ' "$proposal_file" 2>/dev/null) || fence=""
+              if [ -n "$fence" ]; then
+                echo
+                echo "The rendered \`evals/roster.yml\` this run could not publish:"
+                echo
+                echo "${fence}yaml"
+                cat "$proposal_file"
+                # A file without a final newline must not glue the fence on.
+                [ -z "$(tail -c 1 "$proposal_file")" ] || echo
+                echo "$fence"
+              fi
+            fi
           } > "$body"
           write_issue "Model roster: a change is proposed" "$body"

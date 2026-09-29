@@ -4256,14 +4256,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "inherits a scope it does not itself declare")
         self.assertEqual(
             doc["jobs"]["roster"].get("permissions"),
-            {"contents": "write", "id-token": "write", "issues": "write"},
+            {"contents": "read", "id-token": "write", "issues": "write"},
             "the `roster` job's permissions must be exactly {contents: "
-            "write, id-token: write, issues: write} — contents for the "
-            "roster/proposal branch push, id-token for its own WIF mint, "
-            "issues for #147's tracking issue (B1, round 3 on #209: this "
-            "job computes, renders, admits and pushes the proposal, and "
-            "must never carry pull-requests/actions, and must never "
-            "`needs: eval` or run the agent)")
+            "read, id-token: write, issues: write} — contents: read for its "
+            "checkout, id-token for its own WIF mint, issues for #147's "
+            "tracking issue. Round 7 (ADR 0003): it no longer pushes "
+            "`roster/proposal` — `roster-pr` publishes it with the roster "
+            "App's token — so `contents: write` is gone, which also takes "
+            "the write scope off the runner the npm-latest CLI installs on "
+            "(B1, round 3 on #209: this job computes, renders and admits "
+            "the proposal, must never carry pull-requests/actions, and must "
+            "never `needs: eval` or run the agent)")
         self.assertEqual(
             doc["jobs"]["disarm"].get("permissions"),
             {"pull-requests": "write", "contents": "read"},
@@ -4306,7 +4309,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "read")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
         self.assertNotEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
-        self.assertEqual(doc["jobs"]["roster"]["permissions"]["contents"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["contents"], "read")
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["id-token"], "write")
         self.assertEqual(doc["jobs"]["roster"]["permissions"]["issues"], "write")
 
@@ -4405,12 +4408,15 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         step = next(s for s in self._steps()
                     if (s.get("name") or "") == "Propose a roster change")
         self.assertNotIn("${{", step["run"])
+        # Round 7 (ADR 0003): the step no longer pushes, so the push
+        # credential (GITHUB_TOKEN) and the push URL (SERVER_URL) are gone;
+        # GH_TOKEN stays for the tracking issue's `gh issue` calls.
         self.assertEqual(
             sorted(step.get("env") or {}),
-            ["GH_TOKEN", "GITHUB_TOKEN", "REPO", "RUN_ID", "SERVER_URL"],
+            ["GH_TOKEN", "REPO", "RUN_ID"],
             "every run-scoped value the proposal step reads arrives through "
             "env:, and the write credential is step-local")
-        for name in ("RUN_ID", "REPO", "SERVER_URL"):
+        for name in ("RUN_ID", "REPO"):
             self.assertIn(f"${name}", step["run"])
 
     def test_no_workflow_or_job_level_env(self):
@@ -6115,8 +6121,9 @@ class TestIssue67(unittest.TestCase):
         # (c) Exactly five jobs, so a sixth can never go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
                          ["disarm", "eval", "publish", "roster", "roster-pr"])
+        # Round 7 (ADR 0003): `roster` no longer pushes, so contents: read.
         self.assertEqual(doc["jobs"]["roster"]["permissions"],
-                         {"contents": "write", "id-token": "write",
+                         {"contents": "read", "id-token": "write",
                           "issues": "write"})
         self.assertEqual(doc["jobs"]["disarm"]["permissions"],
                          {"pull-requests": "write", "contents": "read"})
@@ -30205,6 +30212,9 @@ elif 'worktree' in args and 'remove' in args:
                    "GITHUB_OUTPUT": str(github_output)}
             run = subprocess.run(["/bin/bash", "-c", script], cwd=workspace,
                                  env=env, capture_output=True, text=True, timeout=60)
+            # Round 7 (ADR 0003): what the `roster` job handed on — the
+            # rendered file for `roster-pr` to publish — for a test to read.
+            self._proposal_outputs = self._parse_github_output(github_output)
             # F2 (adversarial round 1 on #209): the `roster-pr` job's step
             # now owns every `gh pr` call and the
             # differs-branch tracking-issue write, fed by the `eval` job's
@@ -30226,7 +30236,8 @@ elif 'worktree' in args and 'remove' in args:
                 output_env = {
                     "roster_mode": "ROSTER_MODE", "status": "STATUS",
                     "probe_clean": "PROBE_CLEAN", "issue_number": "ISSUE_NUMBER",
-                    "pushed_sha": "PUSHED_SHA", "rejected": "REJECTED",
+                    "proposed_roster_b64": "PROPOSED_ROSTER_B64",
+                    "base_sha": "BASE_SHA", "rejected": "REJECTED",
                     "rejection_reason": "REJECTION_REASON",
                     "rendered_identical": "RENDERED_IDENTICAL",
                     "probe_note": "PROBE_NOTE",
@@ -30362,8 +30373,11 @@ elif 'worktree' in args and 'remove' in args:
         valid = self._ordinary_computed_roster(multi_arm=True)
         run, calls, _body, _results = self._run_proposal_step("differs", [[]], computed=valid)
         self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
-        self.assertTrue(any(call[:2] == ["git", "-C"] and "push" in call
-                            for call in calls), calls)
+        # Round 7 (ADR 0003): a valid proposal is HANDED ON to `roster-pr`
+        # (which publishes it with the roster App's token), never pushed by
+        # the `roster` job itself.
+        self.assertTrue(self._proposal_outputs.get("proposed_roster_b64"), calls)
+        self.assertFalse(any(call[0] == "git" and "push" in call for call in calls), calls)
         self.assertTrue(any(call[:3] == ["gh", "issue", "create"] for call in calls), calls)
 
         mature_ids = ["claude-haiku-4-5", "claude-haiku-5", "claude-sonnet-5",
@@ -30387,6 +30401,7 @@ elif 'worktree' in args and 'remove' in args:
                 self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                 self.assertFalse(any(call[0] == "git" and "push" in call
                                      for call in calls), calls)
+                self.assertNotIn("proposed_roster_b64", self._proposal_outputs)
                 blocked_edit = next((call for call in calls
                                      if call[:4] == ["gh", "issue", "edit", "17"]), None)
                 self.assertIsNotNone(blocked_edit, calls)
@@ -30423,7 +30438,10 @@ elif 'worktree' in args and 'remove' in args:
         corrupted = copy.deepcopy(self._ordinary_computed_roster(multi_arm=True))
         corrupted["arms"] = []
         valid = self._ordinary_computed_roster(multi_arm=True)
-        for label, candidate, reason, proposal_push in (
+        # Round 7 (ADR 0003): `proposal_handed_on` — the `roster` job never
+        # pushes `roster/proposal` any more; a valid proposal is handed on
+        # to `roster-pr` as an output instead, and a rejected one is not.
+        for label, candidate, reason, proposal_handed_on in (
                 ("valid proposal", valid, None, True),
                 ("renderable admission rejection", renderable, "Admission was rejected", False),
                 ("renderer rejection", corrupted, "Rendering was rejected", False)):
@@ -30434,7 +30452,9 @@ elif 'worktree' in args and 'remove' in args:
                 self.assertIsNotNone(results_run)
                 self.assertEqual(results_run.returncode, 0, results_run.stdout + results_run.stderr)
                 pushes = [call for call in calls if call[0] == "git" and "push" in call]
-                self.assertEqual(any("roster/proposal" in call for call in pushes), proposal_push, calls)
+                self.assertFalse(any("roster/proposal" in call for call in pushes), calls)
+                self.assertEqual(bool(self._proposal_outputs.get("proposed_roster_b64")),
+                                 proposal_handed_on, calls)
                 self.assertTrue(any("eval-results" in call for call in pushes), calls)
                 self.assertTrue(any(
                     call[:3] == ["git", "commit", "-m"]
