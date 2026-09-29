@@ -362,9 +362,11 @@ days) any other write-access actor that pushes `roster/proposal` retargets
 the armed PR, and that is outside what this workflow controls. The known
 instance is `.github/workflows/dependabot-auto-merge.yml`'s `auto-merge` job,
 which holds `contents: write` and whose checkout keeps the default persisted
-credential (pre-existing, not changed here). The optional hardening, a
-ruleset restricting updates to `refs/heads/roster/proposal`, is not
-implemented.
+credential (pre-existing, not changed here). The hardening is a ruleset
+restricting updates to `refs/heads/roster/proposal`; round 7 below makes it
+possible (the roster App, not `GITHUB_TOKEN`, now pushes that branch), and
+this gap is **closed once that ruleset is live** in repo-settings (link to be
+added by the repo-settings PR). Until then it stands as written here.
 
 **`disarm` closes the cancellation window the round-3 text above accepted.**
 It runs `needs: roster` ONLY, never `eval` — so it completes (or fails
@@ -460,7 +462,8 @@ and NOT a ruleset bypass actor. Its client id is the repository variable
    (which installs the npm-latest CLI), `disarm`, `eval` (which runs the
    agent) and `publish` never reference `ROSTER_APP_*` or the token;
    `roster` keeps pushing `roster/proposal` with its own `GITHUB_TOKEN`
-   exactly as before. Inside `roster-pr`, only the mint step reads the key,
+   exactly as before (until round 7, below, moved that push onto the App).
+   Inside `roster-pr`, only the mint step reads the key,
    and the token reaches the managing step as `ROSTER_APP_TOKEN`, handed to
    one `gh` call at a time — never as the step's `GH_TOKEN`, since an empty
    `GH_TOKEN` makes `gh` fall back to `GITHUB_TOKEN` silently.
@@ -493,6 +496,88 @@ that satisfies the ruleset — never `main` directly. `repo-settings`'
 `GITHUB_TOKEN` no longer creates pull requests; it will be reverted in
 repo-settings separately.
 
+## Round 7: the App publishes the proposal branch
+
+**Why.** The residual gap recorded in rounds 4–6 (see "The armed-PR retarget
+attack" above): between `roster-pr` arming the PR and GitHub merging it, any
+write-access actor that pushes `roster/proposal` retargets the armed PR. The
+known instance is `dependabot-auto-merge.yml`'s `auto-merge` job, whose
+persisted checkout credential is `GITHUB_TOKEN` with `contents: write`. The
+fix is a ruleset on `refs/heads/roster/proposal` (rules: creation, update,
+deletion, non-fast-forward) whose only bypass actors are the roster App
+(`adam-s-daniel-skills-evals-roster`, App id 5116415) and the repository
+admin role. But the `roster` job pushed that branch with its own
+`GITHUB_TOKEN` — the same `github-actions` identity as the Dependabot job's
+credential — so `github-actions` could not be left out of the bypass list
+without breaking the roster, and could not be put on it without letting the
+Dependabot job through too. So the push moves to the App.
+
+**Decision (Adam, 2026-09-29).**
+
+1. **`roster` no longer commits or pushes.** It still renders
+   (`render_roster_yaml.py`) and admission-checks the proposal and still
+   owns the "same"/frozen-same issue text, but it hands the rendered file to
+   `roster-pr` as a job output — `proposed_roster_b64`, base64 of the exact
+   bytes, capped at 32768 bytes (far under the 1 MB outputs limit and
+   GitHub's 65536-character issue body; over the cap, or empty, fails closed
+   to no proposal) — plus `base_sha`, the validated sha it rendered
+   against. A byte-identical render still emits `rendered_identical` and
+   nothing else. Its permissions drop to
+   `{contents: read, id-token: write, issues: write}`, and its propose step
+   loses `GITHUB_TOKEN`/`SERVER_URL` and the push-auth header.
+2. **`roster-pr` publishes, with the App token only.** On a "differs" that
+   was not rejected and not byte-identical, it re-validates the payload at
+   its own job boundary (canonical base64 within the cap, 1–32768 bytes,
+   UTF-8, no NUL, parses as a YAML mapping) and a digits-only run id, then
+   through the git-data REST API — no checkout — creates a blob, a tree
+   (live `main`'s tree plus `evals/roster.yml`, mode `100644`), a commit
+   (parent: live `main`, resolved and validated as round 4's S1 does; the
+   exact author `skills-evals real-eval bot
+   <skills-evals@users.noreply.github.com>` and message
+   `roster: proposed model roster (run <run id>)` that verification
+   checks), and then `PATCH`es `refs/heads/roster/proposal` with
+   `force: true`, or `POST`s it when the ref does not exist. Every write is
+   an `app_gh` call; reads stay on `GITHUB_TOKEN`. The created commit is
+   `$pushed_sha`: `verify_publish` (head equals it; one commit ahead of its
+   parent, none behind, exactly `evals/roster.yml` modified, author and
+   message) and `--match-head-commit` both use it. The compare base is now
+   that parent, live `main`, rather than `$GITHUB_SHA`.
+3. **A stale base never reverts `main`.** If `base_sha` is not live `main`
+   and `evals/roster.yml` differs between the two (or cannot be read at
+   either), nothing is published: publishing a file rendered against the
+   old base on top of the new `main` could silently revert a concurrent
+   change to it. The tracking issue says `main` moved and the next run
+   re-proposes. If `main` moved without touching `evals/roster.yml`, the
+   commit is parented on live `main` and everything else proceeds.
+4. **Every mode publishes through the App.** Under `roster_mode: proposal`
+   the App pushes the branch too (the ruleset will refuse `GITHUB_TOKEN`),
+   but never touches the PR — no create, no arm; the human-merge flow is
+   otherwise unchanged. Under `auto` the round-6 flow follows: create, or
+   edit/close/reopen, then arm. The App's ref update is itself an App push,
+   so an open PR also gets a `synchronize` run; the close/reopen is kept
+   because it clears any stale arming, and a second `test` run on the same
+   head cancels nothing (ci.yml declares no `concurrency` group).
+5. **No App token, nothing published.** In any mode: nothing is pushed —
+   never with `GITHUB_TOKEN` instead — the job warns and exits 0, and the
+   tracking issue says the proposal could not be published because the
+   roster App token was unavailable and carries the rendered file inline,
+   fenced longer than any backtick run in it, for a human to apply.
+6. **Unchanged:** `disarm`, and the rule that `eval`, `publish`, `disarm`
+   and `roster` never reference `ROSTER_APP_*` or the App's token
+   (`TestRosterAppTokenIsConfined`).
+
+**What it closes, and what it does not.** Once the repo-settings ruleset is
+live, nothing but the App and an admin can move `roster/proposal`, so the
+Dependabot job — and any other `GITHUB_TOKEN` holder — can no longer
+retarget an armed PR. An admin can still push the branch; that is the same
+trust as an admin's push to `main`. It also narrows N3 (Consequences): the
+`roster` job, which installs the npm-latest CLI, no longer holds any write
+scope on the repository's contents. A side effect: no job pushes
+`roster/proposal` before `disarm` runs any more, so the window `disarm`
+leaves is its own run alone. Merge this change before the ruleset, and
+verify it with a `roster_only` dispatch; it works with or without the
+ruleset in place.
+
 ## Consequences
 
 - **The `roster` job installs the npm-latest Claude Code CLI while holding
@@ -501,9 +586,9 @@ repo-settings separately.
   runs (the owner's decisions of 2026-09-27/28, #202/#203) — it runs BEFORE
   the WIF mint, so nothing it installs runs with a credential in the
   environment at install time (same guarantee `eval`'s copy already has),
-  but `roster` still goes on to hold `contents: write`/`id-token: write`/
-  `issues: write` for the rest of its own steps, on the SAME runner that
-  install just ran on. This is the owner's existing unpinned-CLI decision,
+  but `roster` still goes on to hold `id-token: write`/`issues: write`
+  (and, until round 7, `contents: write`) for the rest of its own steps, on
+  the SAME runner that install just ran on. This is the owner's existing unpinned-CLI decision,
   extended by inheritance to a second job rather than reconsidered by this
   round. Optional hardening — a separate CLI-install job with no write
   scope, feeding `roster` only the resolved version string — is noted here,
@@ -550,5 +635,6 @@ repo-settings separately.
 ## How to switch back
 
 Set `roster_mode: proposal` in `evals/roster-policy.yml` and merge that one-
-line change. The next differing proposal is pushed to `roster/proposal` and
-filed as a tracking issue exactly as before this ADR; nothing else changes.
+line change. The next differing proposal is published to `roster/proposal`
+(by the roster App, since round 7) and filed as a tracking issue exactly as
+before this ADR; nothing else changes.
