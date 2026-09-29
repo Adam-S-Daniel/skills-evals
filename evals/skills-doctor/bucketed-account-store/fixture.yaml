@@ -45,7 +45,7 @@
 # changes nothing at all) and destroyed the evidence.
 
 skill: skills-doctor
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 model: claude-sonnet-5
 
@@ -88,7 +88,7 @@ objective_checks:
     type: file_matches
     paths: ["FINDINGS.md"]
     must_match:
-      - '29094e6a-eeb7-4d76-982e-84e62238e605_d11d9c2e-1772-4767-9197-f59d6fe0ab5a'
+      - '00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002'
       - '(?i)\bdocx\b'
 
   - id: the-duplicated-skill-is-named-with-its-two-sources
@@ -135,8 +135,8 @@ objective_checks:
       - "session/skills/adam-writing-style/SKILL.md"
       - "session/skills/.skills-bootstrap-installed.json"
       - "session/skills.lock"
-      - "session/skills/synced/29094e6a-eeb7-4d76-982e-84e62238e605_d11d9c2e-1772-4767-9197-f59d6fe0ab5a/writing-adrs/SKILL.md"
-      - "session/skills/synced/29094e6a-eeb7-4d76-982e-84e62238e605_d11d9c2e-1772-4767-9197-f59d6fe0ab5a/manifest.json"
+      - "session/skills/synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/writing-adrs/SKILL.md"
+      - "session/skills/synced/00000000-0000-4000-8000-000000000001_00000000-0000-4000-8000-000000000002/manifest.json"
       - "registry/plugins/adam/skills/writing-adrs/SKILL.md"
 
 judge_rubric: >

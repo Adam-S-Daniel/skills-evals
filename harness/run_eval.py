@@ -238,7 +238,7 @@ def _layout_parts(layout: str) -> list[str]:
 
 def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
     """harness/registries.yml: [{name, url, layout}, ...] — this harness's own
-    record of registry name/URL/layout, kept in step by hand with agentskills'
+    record of registry name/URL/layout, kept in step by hand with adam-agentskills'
     scripts/skills_registries.yml (see test/run_tests.py::TestIssue63) rather
     than importing that file at run time: this harness must resolve using
     only its own checkout plus the registry under test.
@@ -307,10 +307,11 @@ def _load_registries_config(path: Path = REGISTRIES_YML) -> list[dict]:
 
 def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
     """Repeatable --registry NAME=PATH entries. A bare PATH (no "=") is the
-    pre-#63 single-path form and is taken as the agentskills entry, so the
-    legacy invocation (`--registry ../agentskills`) keeps working unchanged.
-    An empty PATH (`--registry agentskills=`, or a bare empty string) is
-    rejected here rather than silently resolving to the current directory.
+    pre-#63 single-path form and is taken as the adam-agentskills entry, so
+    the legacy invocation (`--registry ../adam-agentskills`) keeps working
+    unchanged. An empty PATH (`--registry adam-agentskills=`, or a bare empty
+    string) is rejected here rather than silently resolving to the current
+    directory.
     A NAME repeated across two flags (bare or explicit) is rejected too —
     silently taking the last one made a copy-pasted or re-ordered invocation
     "work" while quietly dropping the first flag's registry.
@@ -328,8 +329,8 @@ def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
             if not value:
                 raise ValueError(
                     "--registry '': empty value — expected NAME=PATH, or a "
-                    "bare PATH (legacy, taken as the agentskills entry)")
-            key = "agentskills"
+                    "bare PATH (legacy, taken as the adam-agentskills entry)")
+            key = "adam-agentskills"
             path = value
         if key in out:
             raise ValueError(
@@ -342,8 +343,8 @@ def _parse_registry_flags(values: list[str] | None) -> dict[str, str]:
 
 def _parse_registry_env(value: str | None) -> dict[str, str]:
     """$SKILLS_EVALS_REGISTRIES: the same NAME=PATH shape, comma-separated. A
-    bare entry (no "=") is taken as the agentskills entry too, the same as
-    the --registry flag's legacy bare-PATH form (see _parse_registry_flags)
+    bare entry (no "=") is taken as the adam-agentskills entry too, the same
+    as the --registry flag's legacy bare-PATH form (see _parse_registry_flags)
     — previously this silently dropped a bare entry instead, which was the
     one shape the CLI flag treats as meaningful. A NAME repeated across two
     entries (bare or explicit) is rejected too, the same as
@@ -364,7 +365,7 @@ def _parse_registry_env(value: str | None) -> dict[str, str]:
                     f"after '=' for registry {name!r}")
             key = name
         else:
-            key = "agentskills"
+            key = "adam-agentskills"
             path = item
         if key in out:
             raise ValueError(
@@ -380,14 +381,15 @@ def resolve_registries(cli_values: list[str] | None, env_value: str | None,
     """Map every registry named in harness/registries.yml to a local checkout.
 
     Sources, in order: a --registry NAME=PATH flag (repeatable; a bare PATH
-    means agentskills) merged BY NAME with $SKILLS_EVALS_REGISTRIES (same
+    means adam-agentskills) merged BY NAME with $SKILLS_EVALS_REGISTRIES (same
     shape; a flag wins over an env entry naming the same registry, but an env
     entry for a DIFFERENT registry still applies even when a flag is also
-    given), then `agentskills_dir` for the agentskills entry specifically
-    (the harness's pre-#63 override — callers pass $AGENTSKILLS_DIR), then a
-    sibling-directory default `../<name>` next to `base_dir` — the same
-    convention agentskills' own skills_registries.yml uses for the registries
-    it doesn't live in.
+    given), then `agentskills_dir` for the adam-agentskills entry specifically
+    (the harness's pre-#63 override — callers pass $AGENTSKILLS_DIR, whose
+    name outlived the agentskills -> adam-agentskills rename since renaming a
+    public env var is out of scope), then a sibling-directory default
+    `../<name>` next to `base_dir` — the same convention adam-agentskills'
+    own skills_registries.yml uses for the registries it doesn't live in.
 
     An override naming a registry not listed in harness/registries.yml
     (a typo'd `--registry cms_platform=...`, say) is rejected here rather
@@ -416,7 +418,7 @@ def resolve_registries(cli_values: list[str] | None, env_value: str | None,
         elif name in overrides_env:
             path = Path(overrides_env[name]).expanduser().resolve()
             source = "$SKILLS_EVALS_REGISTRIES"
-        elif name == "agentskills" and agentskills_dir:
+        elif name == "adam-agentskills" and agentskills_dir:
             path = Path(agentskills_dir).expanduser().resolve()
             source = "$AGENTSKILLS_DIR"
         else:
@@ -433,7 +435,7 @@ def _validate_registry_paths(registries: dict[str, dict]) -> None:
     is not a directory — a typo'd override is a config mistake worth catching
     before any arm spends agent budget, not several minutes later as a
     confusing skill_not_found. Sibling-default entries are left alone here:
-    most of registries.yml (e.g. agentskills-private) is never checked out
+    most of registries.yml (e.g. adam-agentskills-private) is never checked out
     locally and is fine to stay unresolved unless a fixture actually needs
     it — that path is checked lazily, per-arm, in _run_arm instead.
     """
@@ -932,11 +934,11 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
         except ValueError as exc:
             return {"error": "invalid_skill_name", "detail": str(exc)}
         registry = arm["registry"]
-        # Registry layouts vary (agentskills' plugins/<bundle>/skills/<skill>/,
+        # Registry layouts vary (adam-agentskills' plugins/<bundle>/skills/<skill>/,
         # cms-platform's flat skills/<skill>/, adamdaniel.ai's
         # .claude/skills/<skill>/ — see harness/registries.yml). `layout`
         # carries the glob for the registry under test, defaulting to
-        # agentskills' shape for callers that predate #63. Globs for the
+        # adam-agentskills' shape for callers that predate #63. Globs for the
         # SKILL.md FILE (not the containing directory) and takes its parent,
         # so a skill directory with no SKILL.md — a stub left by a rename, a
         # bundle mid-migration — fails closed as skill_not_found instead of
@@ -1259,17 +1261,123 @@ def _build_judge_diff(workspace: Path) -> str:
     return diff
 
 
+# ---------------------------------------------------------------------------
+# What ran (#202). The owner's decision of 2026-09-27 unpinned the harness —
+# CI now always installs the npm latest (#203, 2026-09-28) — so every run
+# records the version it actually got, and the model(s) that actually served
+# each arm, rather than leaving either to a pin or a flag.
+# ---------------------------------------------------------------------------
+
+HARNESS_NAME = "claude-code"
+# The bound on the `--version` probe. Named rather than inlined so the sink
+# check and the `timeout=` argument are provably the same value.
+VERSION_TIMEOUT_S = 30
+#: A version string longer than this is cut: it is the CLI's own output,
+#: recorded into a summary.json the public eval-results branch carries.
+VERSION_MAX_CHARS = 64
+#: Every character a version string needs — the same set the workflows'
+#: install step keeps (`${version//[^A-Za-z0-9._() -]/}`). Anything else is
+#: dropped: the version lands in a markdown code span in report.md, where a
+#: backtick or a link would be rendered, not recorded.
+_VERSION_JUNK = re.compile(r"[^A-Za-z0-9._() -]")
+#: `models_used` validation: model ids are short strings, and a result is
+#: served by a handful of them. Anything else is junk and is ignored.
+MODEL_ID_MAX_CHARS = 128
+MODELS_USED_MAX = 16
+
+
+def claude_version() -> str | None:
+    """The first line of `<CLAUDE_BIN or claude> --version`, reduced to
+    version characters, stripped, capped at VERSION_MAX_CHARS — or None, with
+    a one-line warning on stderr naming only an exit status or an exception
+    class, never the CLI's output.
+
+    Never raises for the CLI's sake: a run whose version could not be read
+    still runs and records `null`. (The timeout predicate raises before the
+    spawn, like every sink's, and that is a configuration error.)
+    """
+    guidance.check_timeout(VERSION_TIMEOUT_S, "run_eval.claude_version(timeout=)",
+                           guidance.SINK_TIMEOUT_REMEDY)
+    why = None
+    try:
+        # `subprocess.run(timeout=)` already does what the workflows' `timeout
+        # -k 10 60` does (#203 round 1): on expiry it SIGKILLs the child
+        # (`process.kill()` in its TimeoutExpired handler) and reaps it, so a
+        # CLI that ignores SIGTERM cannot outlive the probe.
+        result = subprocess.run(
+            [os.environ.get("CLAUDE_BIN", "claude"), "--version"],
+            capture_output=True, text=True, timeout=VERSION_TIMEOUT_S)
+        if result.returncode != 0:
+            why = f"exit {result.returncode}"
+        else:
+            # The whole stdout, first line taken here: no shell pipe, so no
+            # `head` closing the pipe under the CLI.
+            lines = (result.stdout or "").splitlines()
+            first = _VERSION_JUNK.sub("", lines[0]) if lines else ""
+            version = first.strip()[:VERSION_MAX_CHARS].strip()
+            if version:
+                return version
+            why = "no version in its output"
+    except Exception as exc:  # noqa: BLE001 — record null, never crash the run
+        why = type(exc).__name__
+    print(f"warning: harness: could not read the Claude Code version ({why}); "
+          "recording null", file=sys.stderr)
+    return None
+
+
+def models_used(*results) -> list[str]:
+    """The sorted model ids that served one or more CLI results.
+
+    Each result is the CLI's `--output-format json` object; its `modelUsage`
+    is keyed by the model id that served the turns. Only string keys of
+    1..MODEL_ID_MAX_CHARS printable characters count — no whitespace, and no
+    backtick or pipe, which would break report.md's line — and at most
+    MODELS_USED_MAX are kept; an absent or malformed `modelUsage`
+    contributes nothing.
+    """
+    found: set[str] = set()
+    for result in results:
+        usage = result.get("modelUsage") if isinstance(result, dict) else None
+        if not isinstance(usage, dict):
+            continue
+        found.update(key for key in usage if _is_model_id(key))
+    return sorted(found)[:MODELS_USED_MAX]
+
+
+def _is_model_id(key) -> bool:
+    return (isinstance(key, str) and 0 < len(key) <= MODEL_ID_MAX_CHARS
+            and key.isprintable() and not any(c.isspace() for c in key)
+            and "`" not in key and "|" not in key)
+
+
+def _harness_line(harness_version: str | None, arm_summaries: list[dict]) -> str:
+    """report.md's one line naming the harness and each arm's models."""
+    models = "; ".join(
+        f"{s['arm']}={', '.join(s.get('models_used') or []) or 'none recorded'}"
+        for s in arm_summaries)
+    version = f"`{harness_version}`" if harness_version else "version unknown"
+    return f"- Harness: Claude Code {version}; models used: {models}"
+
+
 def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
                    timestamp: str, error: dict | None, agent: dict | None,
                    objective_checks: list | None, judge_result: dict | None,
                    raw: dict | None, key: str | None = None,
-                   extra: dict | None = None) -> None:
+                   extra: dict | None = None, *,
+                   harness_version: str | None = None,
+                   models: list | None = None,
+                   judge_models: list | None = None) -> None:
     """One arm's summary.json (+ raw transcript).
 
     `key` is the results-tree path for this subject — a skill's own name, or
     `guidance/<section id>` — and defaults to `skill`, which is what every
     skill arm has always written. `extra` carries the guidance subject's own
     fields (subject/section/mode/bytes/delivery/guard).
+
+    Every summary, error paths included, records `harness` (the CLI version
+    read once per run, or null) and `models_used` / `judge_models_used`
+    (`models_used()` of the agent's and the judge's results; empty when that
+    call never ran) — #202.
     """
     arm_dir = results_dir / (key or skill) / timestamp / arm_name
     arm_dir.mkdir(parents=True, exist_ok=True)
@@ -1283,6 +1391,9 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
         "agent": agent,
         "objective_checks": objective_checks,
         "judge": judge_result,
+        "harness": {"name": HARNESS_NAME, "version": harness_version},
+        "models_used": list(models or []),
+        "judge_models_used": list(judge_models or []),
     })
     if extra:
         summary.update(extra)
@@ -1300,12 +1411,14 @@ def _write_summary(results_dir: Path, skill: str | None, arm_name: str,
 _REPORT_CELL_CHARS = 200
 
 
-def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[dict]) -> str:
+def _render_report(skill: str, prompt: str, timestamp: str, arm_summaries: list[dict],
+                   harness_version: str | None = None) -> str:
     lines = [
         f"# Eval report: {skill}",
         "",
         f"- Prompt: {prompt.strip()}",
         f"- Timestamp: {timestamp}",
+        _harness_line(harness_version, arm_summaries),
         "",
         "| Arm | Objective | Judge overall | Cost (USD) | Turns | Duration (ms) | Error |",
         "| --- | --- | --- | --- | --- | --- | --- |",
@@ -1360,6 +1473,9 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     """
     agent_model, roster_judge_model, selection_error = (
         selection if selection is not None else select_models(fixture, args))
+    # Read once per run by main() (#202); a caller that built its own
+    # Namespace without it records null rather than probing the CLI here.
+    harness_version = getattr(args, "harness_version", None)
     if selection_error:
         # A runner-level error, recorded on the arm exactly like an agent
         # failure, so it leaves through main()'s existing exit-2 path instead
@@ -1369,9 +1485,10 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         # init/add/commit only to shutil.rmtree it two lines later.
         error = {"type": "model-selection", "detail": selection_error}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       error, None, None, None, None)
+                       error, None, None, None, None,
+                       harness_version=harness_version)
         return {"arm": arm_name, "error": error, "agent": None,
-                "objective_checks": None, "judge": None}
+                "objective_checks": None, "judge": None, "models_used": []}
 
     # run_setup (inside materialize_workspace, before the bookkeeping commit)
     # can fail — a fixture's `setup:` script (e.g. disarm-inherited-reach's)
@@ -1388,10 +1505,11 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
     except SetupFailedError as exc:
         error = {"type": exc.detail["error"], "detail": exc.detail.get("detail", "")}
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       error, None, None, None, None)
+                       error, None, None, None, None,
+                       harness_version=harness_version)
         shutil.rmtree(exc.workspace, ignore_errors=True)
         return {"arm": arm_name, "error": error, "agent": None,
-                "objective_checks": None, "judge": None}
+                "objective_checks": None, "judge": None, "models_used": []}
     try:
         assert_stand_ins_on_path(workspace, agent_env(workspace, fixture.get("env")),
                                  fixture.get("env"))
@@ -1459,6 +1577,11 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
         objective_checks = None
         judge_result = None
         raw = result.get("raw")
+        # Only a run that produced a result can say what served it; an
+        # errored agent call records none (an `agent_error` result's raw
+        # object is not trusted to be a complete one).
+        agent_models = [] if "error" in result else models_used(raw)
+        judge_models: list = []
 
         if "error" in result:
             error = {"type": result["error"], "detail": result.get("detail", "")}
@@ -1483,21 +1606,28 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
             except objective.FixtureError as exc:
                 error = {"type": "invalid_fixture", "detail": str(exc)}
                 _write_summary(args.results_dir, fixture["skill"], arm_name,
-                               timestamp, error, agent_summary, None, None, raw)
+                               timestamp, error, agent_summary, None, None, raw,
+                               harness_version=harness_version,
+                               models=agent_models)
                 return {"arm": arm_name, "error": error,
                         "agent": agent_summary, "objective_checks": None,
-                        "judge": None}
+                        "judge": None, "models_used": agent_models}
 
             if not args.no_judge:
                 diff = _build_judge_diff(workspace)
                 judge_cfg = fixture.get("judge", {})
+                # Bound before the `with`, and read AFTER the try: a judge
+                # CLI call that completed is recorded even when `score`
+                # then raises on its answer (#203 round 1).
+                judge_results: list = []
                 try:
-                    judge_result = judge.score(
-                        fixture["judge_rubric"], result.get("transcript") or "", diff,
-                        model=roster_judge_model,
-                        timeout=judge_cfg.get("timeout_s", 120),
-                        weights=judge_cfg.get("weights"),
-                    )
+                    with judge.collecting_models() as judge_results:
+                        judge_result = judge.score(
+                            fixture["judge_rubric"], result.get("transcript") or "",
+                            diff, model=roster_judge_model,
+                            timeout=judge_cfg.get("timeout_s", 120),
+                            weights=judge_cfg.get("weights"),
+                        )
                 except guidance.GuidanceError:
                     # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
                     # error, not a judge result: recorded as `{"error": ...}`
@@ -1506,12 +1636,16 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                     raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
+                judge_models = models_used(*judge_results)
 
         _write_summary(args.results_dir, fixture["skill"], arm_name, timestamp,
-                       error, agent_summary, objective_checks, judge_result, raw)
+                       error, agent_summary, objective_checks, judge_result, raw,
+                       harness_version=harness_version, models=agent_models,
+                       judge_models=judge_models)
 
         return {"arm": arm_name, "error": error, "agent": agent_summary,
-                "objective_checks": objective_checks, "judge": judge_result}
+                "objective_checks": objective_checks, "judge": judge_result,
+                "models_used": agent_models}
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -1525,6 +1659,9 @@ def _write_pre_run_error(args: argparse.Namespace, fixture: dict,
     only to whoever watched it happen. The report and one summary.json per
     arm carry the named error instead, in the shape `_render_report` and
     `_write_summary` already use for an arm that failed.
+
+    The harness version is recorded as null here: a pre-run refusal never
+    invokes the CLI, so it does not spawn one just to ask its version.
     """
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     error = {"type": error_type, "detail": detail}
@@ -1783,6 +1920,7 @@ def _guard_error(guard: dict) -> dict:
 def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                       args: argparse.Namespace, timestamp: str) -> dict:
     """Materialize a scratch dir, deliver, guard, invoke, score, clean up."""
+    harness_version = getattr(args, "harness_version", None)
     scratch = Path(tempfile.mkdtemp(
         prefix=f"{ARM_WORKSPACE_PREFIX}{arm['name']}-"))
     try:
@@ -1840,10 +1978,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                          "guard call was made and no score is written")}
             _write_summary(args.results_dir, None, arm["name"], timestamp,
                            error, None, None, None, None,
-                           key=ctx["key"], extra=extra)
+                           key=ctx["key"], extra=extra,
+                           harness_version=harness_version)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
-                    "guard": None, "inconclusive": True}
+                    "guard": None, "inconclusive": True, "models_used": []}
 
         setting_sources = guidance.SETTING_SOURCES[delivery]
         # The guard's preflight model: the fixture's own `model:` pin when it
@@ -1866,10 +2005,11 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
             error = _guard_error(guard)
             _write_summary(args.results_dir, None, arm["name"], timestamp,
                            error, None, None, None, None,
-                           key=ctx["key"], extra=extra)
+                           key=ctx["key"], extra=extra,
+                           harness_version=harness_version)
             return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                     "agent": None, "objective_checks": None, "judge": None,
-                    "guard": guard, "inconclusive": True}
+                    "guard": guard, "inconclusive": True, "models_used": []}
 
         arm_config = {
             "name": arm["name"],
@@ -1885,6 +2025,8 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
         objective_checks = None
         judge_result = None
         raw = result.get("raw")
+        agent_models = [] if "error" in result else models_used(raw)
+        judge_models: list = []
 
         if "error" in result:
             error = {"type": result["error"], "detail": result.get("detail", "")}
@@ -1915,12 +2057,15 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                 diff = _git("diff", "--cached", "--", ".", *excludes,
                             cwd=workspace).stdout
                 judge_cfg = fixture.get("judge", {})
+                # Read after the try, as in the skill path (#203 round 1).
+                judge_results: list = []
                 try:
-                    judge_result = judge.score(
-                        fixture["judge_rubric"], result.get("transcript") or "",
-                        diff, model=judge_cfg.get("model"),
-                        timeout=judge_cfg.get("timeout_s", 120),
-                        weights=judge_cfg.get("weights"))
+                    with judge.collecting_models() as judge_results:
+                        judge_result = judge.score(
+                            fixture["judge_rubric"], result.get("transcript") or "",
+                            diff, model=judge_cfg.get("model"),
+                            timeout=judge_cfg.get("timeout_s", 120),
+                            weights=judge_cfg.get("weights"))
                 except guidance.GuidanceError:
                     # S1-a-2. A sink's own timeout refusal is a CONFIGURATION
                     # error, not a judge result: recorded as `{"error": ...}`
@@ -1929,20 +2074,25 @@ def _run_guidance_arm(arm: dict, fixture: dict, seed: Path, ctx: dict,
                     raise
                 except Exception as exc:  # noqa: BLE001 — record, never crash the run
                     judge_result = {"error": str(exc)}
+                judge_models = models_used(*judge_results)
 
         _write_summary(args.results_dir, None, arm["name"], timestamp, error,
                        agent_summary, objective_checks, judge_result, raw,
-                       key=ctx["key"], extra=extra)
+                       key=ctx["key"], extra=extra,
+                       harness_version=harness_version, models=agent_models,
+                       judge_models=judge_models)
         return {"arm": arm["name"], "mode": arm["mode"], "error": error,
                 "agent": agent_summary, "objective_checks": objective_checks,
-                "judge": judge_result, "guard": guard, "inconclusive": False}
+                "judge": judge_result, "guard": guard, "inconclusive": False,
+                "models_used": agent_models}
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
 
 
 def _render_guidance_report(section: str, prompt: str, timestamp: str,
                             delivery: str, arm_bytes: dict,
-                            arm_summaries: list[dict]) -> str:
+                            arm_summaries: list[dict],
+                            harness_version: str | None = None) -> str:
     """The guidance report. Its header names the MODE PAIR, because "with vs
     without" is meaningless here without it — `section` vs `none` and `full`
     vs `full-minus-section` are different questions about the same section.
@@ -1955,6 +2105,7 @@ def _render_guidance_report(section: str, prompt: str, timestamp: str,
         f"- Delivery: {delivery}",
         f"- Prompt: {prompt.strip()}",
         f"- Timestamp: {timestamp}",
+        _harness_line(harness_version, arm_summaries),
         "",
         "| Arm | Mode | Bytes | Guard | Objective | Judge overall | Cost (USD) | Error |",
         "| --- | --- | --- | --- | --- | --- | --- | --- |",
@@ -2060,6 +2211,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
 
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     try:
+        # Once per run, before any arm (#202), as the skill path does.
+        args.harness_version = claude_version()
         arm_summaries = [_run_guidance_arm(arm, fixture, seed, ctx, args, timestamp)
                          for arm in arms]
     except guidance.GuidanceError as exc:
@@ -2077,7 +2230,8 @@ def _run_guidance(args: argparse.Namespace, fixture: dict) -> int:
         with open(summary_path, encoding="utf-8") as f:
             arm_bytes[arm["arm"]] = json.load(f)["bytes"]
     report = _render_guidance_report(section, fixture["prompt"], timestamp,
-                                     args.delivery, arm_bytes, arm_summaries)
+                                     args.delivery, arm_bytes, arm_summaries,
+                                     args.harness_version)
     with open(report_dir / REPORT_NAME, "w", encoding="utf-8") as f:
         f.write(report)
 
@@ -2134,13 +2288,14 @@ def main() -> int:
     parser.add_argument("--registry", action="append", default=None,
                         help="registry checkout, repeatable: NAME=PATH (name from "
                              "harness/registries.yml), or a bare PATH (legacy) taken "
-                             "as the agentskills entry; unknown names and empty "
+                             "as the adam-agentskills entry; unknown names and empty "
                              "paths are rejected. Merges by name with "
                              "$SKILLS_EVALS_REGISTRIES (same NAME=PATH,NAME=PATH "
                              "shape; a bare entry there is also taken as "
-                             "agentskills), then $AGENTSKILLS_DIR for agentskills "
-                             "specifically, then a sibling checkout ../<name> next "
-                             "to this repo for any name still unresolved")
+                             "adam-agentskills), then $AGENTSKILLS_DIR (name kept "
+                             "unchanged) for adam-agentskills specifically, then a "
+                             "sibling checkout ../<name> next to this repo for any "
+                             "name still unresolved")
     parser.add_argument("--model", default=None,
                         help="override the fixture's model for the agent")
     parser.add_argument("--roster", type=Path, default=None,
@@ -2391,6 +2546,10 @@ def main() -> int:
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     arm_names = ["with_skill", "without_skill"] if args.arm == "both" else [args.arm]
     try:
+        # Read once per run, before any arm (#202): every arm's summary.json
+        # records the same version, and a run whose version could not be
+        # read still runs and records null.
+        args.harness_version = claude_version()
         # Resolved once: one trusted-roster read, one model choice, both arms.
         selection = select_models(fixture, args)
         arm_summaries = [_run_arm(name, fixture, seed, registries, args,
@@ -2404,7 +2563,8 @@ def main() -> int:
         print(f"configuration error: {exc}")
         return 2
 
-    report = _render_report(fixture["skill"], fixture["prompt"], timestamp, arm_summaries)
+    report = _render_report(fixture["skill"], fixture["prompt"], timestamp,
+                            arm_summaries, args.harness_version)
     report_path = args.results_dir / fixture["skill"] / timestamp / REPORT_NAME
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with open(report_path, "w", encoding="utf-8") as f:

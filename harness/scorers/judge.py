@@ -19,6 +19,7 @@ See DESIGN.md — "Open decisions".
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import math
@@ -127,6 +128,32 @@ def _weighted_overall(dimensions: list, weights: dict) -> float:
     return sum(scores) / len(scores) if scores else 0.0
 
 
+#: The open `collecting_models()` blocks. Each is a list every judge CLI call
+#: made inside that block appends `{"modelUsage": <its result's, raw>}` to
+#: (#202).
+_MODEL_SINKS: list[list] = []
+
+
+@contextlib.contextmanager
+def collecting_models():
+    """Collect the raw `modelUsage` of every judge CLI call in this block.
+
+    The judge runs through the same Claude Code CLI as the agent, so its
+    result names the model(s) that served it; `run_eval.py` records their
+    keys as an arm's `judge_models_used` (#202). A context manager rather
+    than a new `score()` keyword, so the call site keeps the shape it has
+    always had and both judge modes — one CLI call or several — are covered
+    by the one place a judge call is spelled. Values are recorded raw and
+    unvalidated: the caller validates.
+    """
+    sink: list = []
+    _MODEL_SINKS.append(sink)
+    try:
+        yield sink
+    finally:
+        _MODEL_SINKS.remove(sink)
+
+
 def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
     """Run the judge CLI on `prompt` and return its `result` text.
 
@@ -187,6 +214,9 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
             f"judge CLI produced invalid JSON: {result.stdout[:500]!r}: {e}"
         ) from e
 
+    for sink in _MODEL_SINKS:
+        sink.append({"modelUsage": data.get("modelUsage")}
+                    if isinstance(data, dict) else None)
     return data.get("result", "")
 
 

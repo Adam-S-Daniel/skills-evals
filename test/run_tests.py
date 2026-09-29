@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import atexit
 import contextlib
 import copy
 import fnmatch
@@ -32,6 +33,7 @@ import textwrap
 import unicodedata
 import unittest
 import urllib.error
+from collections.abc import Mapping
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -54,6 +56,7 @@ DISARM_DIR = REPO_ROOT / "evals" / "disarm-inherited-reach"
 GHA_SHA_PINNING_DIR = REPO_ROOT / "evals" / "github-actions-sha-pinning"
 POST_FAILURE_COMMENT_DIR = REPO_ROOT / "evals" / "post-failure-comment"
 RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
+VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import roster  # noqa: E402
@@ -66,6 +69,40 @@ import make_badge  # noqa: E402
 import model_usage_census  # noqa: E402
 import refresh_models  # noqa: E402
 import render_roster_yaml  # noqa: E402
+
+#: The roster policy this repository SHIPS. Read directly only by tests about
+#: the shipped file itself.
+SHIPPED_POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+
+#: The cooling-off the roster tests below were written against. The shipped
+#: value is 0 since the owner's decision of 2026-09-27 (#202), but the
+#: machinery that applies a positive one is kept, so its coverage is too:
+#: those tests read POSITIVE_COOLING_OFF_POLICY instead of the shipped file.
+TEST_COOLING_OFF_DAYS = 7
+
+
+def _write_positive_cooling_off_policy() -> Path:
+    """The shipped policy, byte for byte, but for `cooling_off_days`.
+
+    Derived from the shipped file at import rather than committed as a copy,
+    so every other threshold — and every comment a test reads — can never
+    drift from what ships. Written once per process into a private temp dir
+    that is removed at exit.
+    """
+    text = SHIPPED_POLICY.read_text(encoding="utf-8")
+    pattern = re.compile(r"^cooling_off_days: \d+$", re.MULTILINE)
+    if len(pattern.findall(text)) != 1:
+        raise RuntimeError(f"{SHIPPED_POLICY} does not carry exactly one "
+                           "`cooling_off_days:` line to substitute")
+    tmp = Path(tempfile.mkdtemp(prefix="roster-policy-"))
+    atexit.register(shutil.rmtree, tmp, ignore_errors=True)
+    path = tmp / "roster-policy.yml"
+    path.write_text(pattern.sub(f"cooling_off_days: {TEST_COOLING_OFF_DAYS}", text),
+                    encoding="utf-8")
+    return path
+
+
+POSITIVE_COOLING_OFF_POLICY = _write_positive_cooling_off_policy()
 
 
 class WithSkillInstallTests(unittest.TestCase):
@@ -3940,9 +3977,13 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
 
     def _steps(self) -> list[dict]:
         # Structured formats go through a real parser, never a line scanner.
+        # B1 (round 4 on #209, blocker): the badge/commit/push logic moved
+        # off the agent-running `eval` job onto the agent-free `publish`
+        # job, which downloads `eval`'s uploaded results artifact instead
+        # of inheriting its workspace.
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        return doc["jobs"]["publish"]["steps"]
 
     def test_badge_is_built_after_the_eval_results_checkout(self):
         steps = self._steps()
@@ -3968,6 +4009,106 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
                 "make_badge.py must run after `git checkout -B eval-results` "
                 "and after the results/ restore, or its window sees only the "
                 "run that just finished and the badge always reports n=1")
+
+    def test_make_badge_always_runs_from_the_publish_jobs_own_checkout(self):
+        # B1 (round 4 on #209, blocker), item (e): `publish` downloads the
+        # `eval` job's raw output as a build artifact into `results/` —
+        # untrusted content, exactly like everything else `eval-results`
+        # already carries. `make_badge.py` must be invoked from THIS job's
+        # own fresh checkout (stashed at `$RUNNER_TEMP/make_badge.py`
+        # before the branch switch), never from any path under the
+        # downloaded artifact directory — a hostile artifact could
+        # otherwise substitute its own copy of the very script that builds
+        # the badge.
+        steps = self._steps()
+        building = [s for s in steps if self._invocation_lines(s.get("run") or "")]
+        self.assertEqual(len(building), 1)
+        script = building[0]["run"]
+        for line in script.splitlines():
+            if "make_badge.py" in line and "python" in line.split("make_badge.py")[0]:
+                self.assertIn('"$RUNNER_TEMP/make_badge.py"', line,
+                             f"make_badge.py must be invoked as "
+                             f"$RUNNER_TEMP/make_badge.py, never a path "
+                             f"under the downloaded results/ artifact: {line!r}")
+                self.assertNotIn("results/", line)
+        self.assertIn("cp scripts/make_badge.py \"$RUNNER_TEMP/\"", script,
+                      "the script must come from this job's OWN checkout of "
+                      "scripts/, stashed before the eval-results branch "
+                      "switch drops it, never from the downloaded artifact")
+
+    # Anything naming the downloaded artifact: its download path, the
+    # $RUNNER_TEMP snapshot the step copies it into, or that snapshot's
+    # variable.
+    _ARTIFACT_MARKERS = ("results", "$snap", "${snap", "eval-outputs")
+    _INTERPRETERS = {"python", "python3", "bash", "sh", "source", ".",
+                     "node", "perl", "ruby", "exec", "eval", "env",
+                     "xargs", "chmod"}
+    _CONTROL_WORDS = {"if", "then", "elif", "else", "fi", "do", "done",
+                      "while", "until", "!", "{", "}", "(", ")", "time"}
+
+    @classmethod
+    def _commands(cls, script: str) -> list[list[str]]:
+        """Each simple command's words in a `run:` body, one list per
+        command, with control words and leading VAR=value assignments
+        dropped — lexed with shlex (punctuation_chars splits `;`, `&&`,
+        `||`, `|`), never a regex over the raw line."""
+        commands = []
+        for line in script.splitlines():
+            lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+            lex.whitespace_split = True
+            lex.commenters = "#"
+            try:
+                tokens = list(lex)
+            except ValueError:
+                tokens = line.split()
+            current: list[str] = []
+            for token in tokens + [";"]:
+                if token and set(token) <= set(";&|()"):
+                    if current:
+                        commands.append(current)
+                    current = []
+                    continue
+                if not current and (token in cls._CONTROL_WORDS
+                                    or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", token)):
+                    continue
+                current.append(token)
+        return commands
+
+    def test_publish_executes_nothing_from_the_downloaded_artifact(self):
+        # B1 (round 4 on #209, blocker), item (e), second half: the
+        # downloaded `results/` is DATA, untrusted exactly like
+        # `eval-results`. No command in any `publish` step may be a path
+        # into it, or hand a path into it to an interpreter (`bash
+        # results/x.sh`, `python3 "$snap/results/y.py"`, `. results/env`) —
+        # the make_badge.py test above pins only that one invocation.
+        import yaml
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        steps = doc["jobs"]["publish"]["steps"]
+        download = [s for s in steps
+                    if (s.get("uses") or "").startswith("actions/download-artifact@")]
+        self.assertEqual(len(download), 1)
+        self.assertEqual((download[0].get("with") or {}).get("path"),
+                         "skills-evals/results",
+                         "the artifact must land in results/, the data "
+                         "directory this test treats as never-executable")
+
+        def names_artifact(word: str) -> bool:
+            return any(m in word for m in self._ARTIFACT_MARKERS)
+
+        for step in steps:
+            self.assertFalse(names_artifact(step.get("working-directory") or ""),
+                             f"step {step.get('name')!r} runs inside the artifact")
+            for words in self._commands(step.get("run") or ""):
+                with self.subTest(step=step.get("name"), command=" ".join(words)):
+                    self.assertFalse(
+                        names_artifact(words[0]),
+                        "a publish command may never BE a path into the "
+                        "downloaded artifact")
+                    if words[0] in self._INTERPRETERS:
+                        self.assertFalse(
+                            any(names_artifact(w) for w in words[1:]),
+                            "a publish command may never hand a path into "
+                            "the downloaded artifact to an interpreter")
 
 
 class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
@@ -4083,28 +4224,172 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "be added, per the header's first rule")
 
     def test_permissions_are_exactly_the_three_the_header_names(self):
-        # "Single job, so this block is the whole workflow's privilege set"
-        # — the header's own claim. A widened `permissions:` block (an
-        # added scope, or contents: write turning into admin) would slip
-        # past every other test in this class.
-        #
-        # `issues: write` IS #147's ONE ADDITION and is pinned as such:
-        # the roster proposal step upserts one tracking issue and closes it
-        # again. The set is asserted for EQUALITY, so a fourth scope reds
-        # this row whatever it is, and the two assertions below say
-        # separately that the two pre-existing scopes are unchanged — so a
-        # future widening cannot be smuggled in by rewriting the expected
-        # dict wholesale.
+        # B1 (round 3 on #209, blocker; extended round 4, blocker),
+        # extending F2 (adversarial round 1 on #209): the workflow-level
+        # block is `{}` deliberately — each of the FIVE jobs carries its
+        # own least-privilege set, so the `eval` job (which runs the
+        # bypass-permissions agent) never sees `pull-requests: write`/
+        # `issues: write` at all (and no job holds `actions: write` since
+        # round 6 dropped the `ci.yml` dispatch), never reaches the
+        # roster-decision scopes B1 round 3 moved onto `roster`, and — B1
+        # round 4 — holds NO write scope of any kind: the badge/results
+        # commit-and-push moved to a new `publish` job with a fresh
+        # checkout and no agent. Every dict is asserted for EQUALITY, so a
+        # fifth scope on any job reds this row whatever it is, and a scope
+        # moved onto `eval` from any other job (widening the agent's job,
+        # not just the workflow) reds it too — that is exactly the defect
+        # this test exists to catch.
         doc = self._doc()
+        # (c) The guard covers the workflow's jobs EXACTLY: a sixth job
+        # (with whatever scopes, or none declared) would otherwise slip
+        # past every per-job equality below, which only look up by name.
         self.assertEqual(
-            doc.get("permissions"),
+            sorted(doc["jobs"]),
+            ["disarm", "eval", "publish", "roster", "roster-pr"],
+            "eval.yml must have exactly these five jobs — a new job needs "
+            "its own exact-permissions row here and in "
+            "test_eval_workflow_keeps_its_security_posture")
+        self.assertEqual(
+            doc.get("permissions"), {},
+            "eval.yml's workflow-level permissions must be {} — every scope "
+            "lives at job level, so the bypass-permissions `eval` job never "
+            "inherits a scope it does not itself declare")
+        self.assertEqual(
+            doc["jobs"]["roster"].get("permissions"),
             {"contents": "write", "id-token": "write", "issues": "write"},
-            "eval.yml's permissions must be exactly {contents: write, "
-            "id-token: write, issues: write} — the header states this is "
-            "the workflow's whole privilege set, and `issues: write` is the "
-            "only scope #147 added")
-        self.assertEqual(doc["permissions"]["contents"], "write")
-        self.assertEqual(doc["permissions"]["id-token"], "write")
+            "the `roster` job's permissions must be exactly {contents: "
+            "write, id-token: write, issues: write} — contents for the "
+            "roster/proposal branch push, id-token for its own WIF mint, "
+            "issues for #147's tracking issue (B1, round 3 on #209: this "
+            "job computes, renders, admits and pushes the proposal, and "
+            "must never carry pull-requests/actions, and must never "
+            "`needs: eval` or run the agent)")
+        self.assertEqual(
+            doc["jobs"]["disarm"].get("permissions"),
+            {"pull-requests": "write", "contents": "read"},
+            "the `disarm` job's permissions must be exactly "
+            "{pull-requests: write, contents: read} — B1 (round 4 on #209, "
+            "blocker): it disables an earlier run's still-armed roster "
+            "pull request's auto-merge BEFORE the `eval` job's agent "
+            "starts, and needs no other scope to do it")
+        self.assertEqual(
+            doc["jobs"]["eval"].get("permissions"),
+            {"contents": "read", "id-token": "write"},
+            "the `eval` job's permissions must be exactly {contents: read, "
+            "id-token: write} — B1 (round 4 on #209, blocker): this job "
+            "runs the bypass-permissions agent and must hold NO write "
+            "scope of any kind; contents: read is only for its checkout "
+            "steps, and id-token: write is its OWN separate WIF mint "
+            "(never shared with `roster`'s). The badge/results commit and "
+            "push moved to the `publish` job, and `issues: write` moved to "
+            "`roster` back in round 3")
+        self.assertEqual(
+            doc["jobs"]["publish"].get("permissions"),
+            {"contents": "write"},
+            "the `publish` job's permissions must be exactly "
+            "{contents: write} — B1 (round 4 on #209, blocker): this is "
+            "the only write scope the badge/results commit and push "
+            "needs, on a job with no agent and a fresh checkout")
+        self.assertEqual(
+            doc["jobs"]["roster-pr"].get("permissions"),
+            {"pull-requests": "write", "issues": "write", "contents": "read"},
+            "the `roster-pr` job's permissions must be exactly "
+            "{pull-requests: write, issues: write, contents: read} — round 6 "
+            "(ADR 0003): opening, reopening and arming the roster PR moved "
+            "to the roster App's own token, so GITHUB_TOKEN here keeps only "
+            "`pull-requests: write` to turn a stale auto-merge off and close "
+            "a stale PR, `issues: write` for the tracking issue's "
+            "PR-outcome-dependent text, and `contents: read` for its "
+            "policy/ref/compare reads. `actions: write` went with the "
+            "`gh workflow run ci.yml` dispatch, `contents: write` with "
+            "arming auto-merge")
+        self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "read")
+        self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
+        self.assertNotEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["contents"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["id-token"], "write")
+        self.assertEqual(doc["jobs"]["roster"]["permissions"]["issues"], "write")
+
+    def test_eval_job_holds_no_write_scope_but_id_token_and_no_step_gets_a_token(self):
+        # B1 (round 4 on #209, blocker), replacing the reviewer's badge-repro:
+        # the agent can plant code that a later step of the SAME job runs, so
+        # what matters is what that job can reach. GITHUB_TOKEN's scope is
+        # exactly the job's `permissions:`, so (1) no write scope other than
+        # `id-token` may exist on `eval`, and (2) no job-level or step-level
+        # `env:` of `eval` may hand any step a token at all (GITHUB_TOKEN,
+        # GH_TOKEN, or anything built from `github.token` / `secrets.*`),
+        # and no `with:` input may either (a checkout's `token:` would
+        # persist one). Parsed YAML, never a text scan.
+        doc = self._doc()
+        job = doc["jobs"]["eval"]
+        perms = job.get("permissions")
+        self.assertIsInstance(perms, dict)
+        self.assertEqual(
+            {k: v for k, v in perms.items() if v == "write"},
+            {"id-token": "write"},
+            "eval may hold no write scope except id-token")
+        self.assertEqual(doc.get("permissions"), {},
+                         "no workflow-level scope may leak into eval")
+
+        def carries_token(mapping):
+            found = []
+            for key, value in (mapping or {}).items():
+                text = str(value)
+                if (key.upper() in {"GITHUB_TOKEN", "GH_TOKEN", "TOKEN"}
+                        or "github.token" in text
+                        or "secrets." in text):
+                    found.append(key)
+            return found
+
+        self.assertEqual(carries_token(job.get("env")), [],
+                         "eval's job-level env must carry no token")
+        for step in job["steps"]:
+            with self.subTest(step=step.get("name")):
+                self.assertEqual(carries_token(step.get("env")), [],
+                                 "no eval step may receive a token in env")
+                self.assertEqual(carries_token(step.get("with")), [],
+                                 "no eval step may receive a token via with:")
+        # And the write-scoped jobs never run the agent or a checkout of the
+        # fixture registries: the jobs that DO get a write token are exactly
+        # the four that run no agent.
+        writers = sorted(
+            name for name, j in doc["jobs"].items()
+            if any(v == "write" and k != "id-token"
+                   for k, v in (j.get("permissions") or {}).items()))
+        self.assertEqual(writers, ["disarm", "publish", "roster", "roster-pr"])
+        for name in writers:
+            for step in doc["jobs"][name]["steps"]:
+                self.assertNotIn("run_eval.py", step.get("run") or "")
+
+    def test_roster_job_has_exactly_one_checkout_and_never_runs_the_eval(self):
+        # S2 (round 4 on #209): the `roster` job (B1, round 3) must never
+        # check out the fixture/registry repositories or run the eval
+        # itself — it computes, renders, admits and pushes the roster
+        # proposal ONLY, on a runner the agent never touches. This kills
+        # `roster_runs_eval` (a sneaky step running harness/run_eval.py)
+        # and `roster_checks_out_registry` (an extra `actions/checkout`
+        # with a `repository:` input) — adv209-r4/mutate4.py's two
+        # survivors from the pre-fix workflow.
+        doc = self._doc()
+        roster_steps = doc["jobs"]["roster"]["steps"]
+        checkouts = [s for s in roster_steps
+                    if (s.get("uses") or "").startswith("actions/checkout@")]
+        self.assertEqual(len(checkouts), 1,
+                         f"the `roster` job must have exactly one checkout "
+                         f"step; found {[s.get('name') for s in checkouts]}")
+        self.assertNotIn("repository", checkouts[0].get("with") or {},
+                        "the `roster` job's one checkout must be of THIS "
+                        "repo — a `repository:` input names some other one")
+        for step in roster_steps:
+            run = step.get("run") or ""
+            with self.subTest(step=step.get("name")):
+                self.assertNotIn("run_eval.py", run,
+                                 "the `roster` job must never run the eval "
+                                 "itself — that is the `eval` job's job alone")
+                self.assertNotIn("adam-agentskills", run)
+                self.assertNotIn("cms-platform", run)
+                self.assertNotIn("adamdaniel.ai", run)
+                self.assertNotIn("_agent-guidance", run)
 
     def test_the_proposal_step_carries_no_expression_in_its_run_block(self):
         # The general rule is asserted over every step by
@@ -4113,6 +4398,10 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # holds a write credential AND reads run-scoped values (the run
         # id, the repository, the server URL). Those arrive through `env:`
         # and are read as shell variables.
+        # B1 (round 3 on #209): EVAL_OUTCOME is gone from this step's env —
+        # it moved (as EVAL_RESULT, from `needs.eval.result`) to the
+        # `roster-pr` job, the only one with a `needs` relationship to
+        # `eval` (see TestEvalNoteKnowsTheOutcome in test/issues/test_issue_202.py).
         step = next(s for s in self._steps()
                     if (s.get("name") or "") == "Propose a roster change")
         self.assertNotIn("${{", step["run"])
@@ -4159,8 +4448,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # the header prose said. Scoped to just the file's LEADING comment
         # block (the run of lines at the top that start with '#' or are
         # blank) instead, and matched against the registry's basename
-        # (`agentskills`, not `Adam-S-Daniel/agentskills`) — the spelling
-        # the header prose actually uses.
+        # (`adam-agentskills`, not `Adam-S-Daniel/adam-agentskills`) — the
+        # spelling the header prose actually uses.
         lines = self.WORKFLOW.read_text(encoding="utf-8").splitlines()
         header_lines = list(itertools.takewhile(
             lambda line: line.strip() == "" or line.lstrip().startswith("#"),
@@ -4171,10 +4460,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
 
         checkout_steps = [s for s in self._steps()
                           if (s.get("uses") or "").startswith("actions/checkout@")]
-        count = len(checkout_steps)
+        # B1 (round 3 on #209): the header's "All N checkouts" counts
+        # DISTINCT repositories in the trust boundary, not raw
+        # `actions/checkout@` steps — `skills-evals` is now checked out
+        # once per job (`roster` and `eval` each need their own), which
+        # doubles the step count without adding a repository.
+        repo_keys = {(step.get("with") or {}).get("repository") or "self"
+                    for step in checkout_steps}
+        count = len(repo_keys)
         number_words = {2: "two", 3: "three", 4: "four", 5: "five"}
         self.assertIn(count, number_words,
-                      f"unexpected number of checkout steps: {count}")
+                      f"unexpected number of distinct checked-out repositories: {count}")
         self.assertIn(
             f"All {number_words[count]} checkouts", header,
             f"the header must say 'All {number_words[count]} checkouts' — "
@@ -4217,7 +4513,7 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # whether that checkout's `repository:` is the repo registries.yml
         # actually names for that flag's NAME — so a NAME/PATH pair
         # transposed between two registries (e.g.
-        # `--registry agentskills=../cms-platform`) stayed green here and
+        # `--registry adam-agentskills=../cms-platform`) stayed green here and
         # died at runtime with skill_not_found. Now built from
         # {with.path: with.repository} and cross-checked against each
         # registry's own url in harness/registries.yml.
@@ -4507,16 +4803,17 @@ class CiDispatchTests(unittest.TestCase):
 
     def test_checks_out_agentskills_side_by_side_for_the_agreement_test(self):
         # TestIssue63::test_registries_agree_with_agentskills_own_file skips
-        # (with a printed reason) when no agentskills checkout is present —
-        # which was EVERY run in CI, since ci.yml checked out only this repo.
-        # A side-by-side checkout, matching eval.yml's and propagation.yml's
-        # own pattern, is what lets that test actually execute here.
+        # (with a printed reason) when no adam-agentskills checkout is
+        # present — which was EVERY run in CI, since ci.yml checked out only
+        # this repo. A side-by-side checkout, matching eval.yml's and
+        # propagation.yml's own pattern, is what lets that test actually
+        # execute here.
         import yaml
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
         steps = doc["jobs"]["test"]["steps"]
         # Identified by with.path == "skills-evals", not positionally — a
         # reordering of the checkout steps must not make this compare the
-        # agentskills checkout's SHA against itself and pass vacuously.
+        # adam-agentskills checkout's SHA against itself and pass vacuously.
         own_checkout = next(s for s in steps
                             if (s.get("uses") or "").startswith("actions/checkout@")
                             and (s.get("with") or {}).get("path") == "skills-evals")
@@ -4525,16 +4822,16 @@ class CiDispatchTests(unittest.TestCase):
         agentskills_checkouts = [
             s for s in steps
             if (s.get("uses") or "").startswith("actions/checkout@")
-            and (s.get("with") or {}).get("repository") == "Adam-S-Daniel/agentskills"]
+            and (s.get("with") or {}).get("repository") == "Adam-S-Daniel/adam-agentskills"]
         self.assertEqual(len(agentskills_checkouts), 1,
-                         "expected exactly one agentskills checkout step")
+                         "expected exactly one adam-agentskills checkout step")
         step = agentskills_checkouts[0]
         with_block = step.get("with") or {}
-        self.assertEqual(with_block.get("path"), "agentskills")
+        self.assertEqual(with_block.get("path"), "adam-agentskills")
         self.assertIs(with_block.get("persist-credentials"), False)
         self.assertEqual(step["uses"].split("@", 1)[1], own_sha,
-                         "the agentskills checkout must pin the same bare "
-                         "40-hex SHA as ci.yml's own checkout")
+                         "the adam-agentskills checkout must pin the same "
+                         "bare 40-hex SHA as ci.yml's own checkout")
 
     # -- always-run + early-skip shape (cms-platform#437) -------------------
 
@@ -4605,6 +4902,47 @@ class CiDispatchTests(unittest.TestCase):
         self.assertEqual(steps[-1], skip_steps[0],
                          "the no-salient-change notice must be the LAST step, "
                          "so it always runs when the suite is skipped")
+
+    # -- pytest-xdist fan-out (#182) ----------------------------------------
+
+    def test_run_step_uses_jobs_and_the_install_step_pins_match_the_runner(self):
+        # shlex, never a regex: `run:` is a shell command line, and a regex
+        # over it cannot tell an actual `--jobs 4` argument from the same
+        # text sitting inside a comment or a string. Bare pytest here would
+        # skip main()'s run-wide memory guard and collection cross-check, so
+        # this pins the RUNNER's own flag, never `pytest` invoked directly.
+        steps = self._doc()["jobs"]["test"]["steps"]
+        run_step = next(s for s in steps if s.get("name") == "Run tests")
+        run_argv = shlex.split(run_step["run"])
+        self.assertIn("python3", run_argv)
+        self.assertIn("test/run_tests.py", run_argv)
+        jobs_value = None
+        for flag in ("--jobs", "-j"):
+            if flag in run_argv:
+                jobs_value = run_argv[run_argv.index(flag) + 1]
+                break
+        self.assertIsNotNone(jobs_value,
+                             f"no --jobs/-j in the Run tests step: {run_argv}")
+        # "auto" (one worker per CPU, fleet-consistent with agentskills#179's
+        # `-n auto`) or an explicit int > 1 — either actually parallelises.
+        if jobs_value != "auto":
+            self.assertGreater(int(jobs_value), 1,
+                               f"--jobs must be 'auto' or > 1 to actually "
+                               f"parallelise: {run_argv}")
+
+        install_step = next(s for s in steps
+                            if s.get("name") == "Install dependencies")
+        install_argv = shlex.split(install_step["run"])
+        for pin in PARALLEL_PINS:
+            self.assertIn(pin, install_argv,
+                         f"{pin} must be pinned exact (==) in the Install "
+                         f"dependencies step: {install_argv}")
+        # PARALLEL_PINS is what main()'s own ImportError message names, so an
+        # install step that drifts from it would tell an operator to
+        # `pip install` a version CI does not actually run.
+        self.assertTrue(set(PARALLEL_PINS).issubset(install_argv),
+                        "PARALLEL_PINS must equal the exact versions "
+                        f"pip-installed in ci.yml: {install_argv}")
 
 
 class CiSalientDetectionTests(unittest.TestCase):
@@ -5151,7 +5489,10 @@ class TestIssue67(unittest.TestCase):
     W = ["2026-W36", "2026-W35", "2026-W34", "2026-W33",
          "2026-W32", "2026-W31", "2026-W30", "2026-W29"]
 
-    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+    # The shipped policy with a POSITIVE cooling-off (#202): see
+    # POSITIVE_COOLING_OFF_POLICY. Every class below that takes
+    # `TestIssue67.POLICY` inherits it.
+    POLICY = POSITIVE_COOLING_OFF_POLICY
 
     # --- fixture builders -------------------------------------------------
 
@@ -5619,9 +5960,10 @@ class TestIssue67(unittest.TestCase):
     # --- policy file + the no-hardcoded-ids guard ------------------------
 
     def test_policy_file_carries_the_thresholds_and_the_adr_placeholder(self):
-        raw = self.POLICY.read_text(encoding="utf-8")
-        policy = self._policy()
-        self.assertEqual(policy["cooling_off_days"], 7)
+        raw = SHIPPED_POLICY.read_text(encoding="utf-8")
+        policy = roster.load_policy(SHIPPED_POLICY)
+        # 0 since the owner's decision of 2026-09-27 (#202).
+        self.assertEqual(policy["cooling_off_days"], 0)
         self.assertEqual(policy["arm_enter_usage_pct"], 10)
         self.assertEqual(policy["arm_enter_window_weeks"], 4)
         self.assertEqual(policy["arm_exit_usage_pct"], 2)
@@ -5634,6 +5976,11 @@ class TestIssue67(unittest.TestCase):
                          "a rung may name peers that rank identically")
         self.assertIn("#73", raw, "roster-policy.yml must point at the ADR "
                                   "sub-issue until the ADR itself exists")
+        # Adam's decision of 2026-09-28 (roster_mode): the shipped policy
+        # opts every run into fully automatic merging. roster.py itself
+        # never reads this key (only eval.yml's propose step does) but
+        # validate_policy below must still accept the file with it present.
+        self.assertEqual(policy["roster_mode"], "auto")
         roster.validate_policy(policy)  # the real policy file must validate
 
     #: Anything a maintainer marks with this on the SAME LINE is allowed to
@@ -5678,6 +6025,7 @@ class TestIssue67(unittest.TestCase):
         # here is machinery and may not name one.
         for rel in ("harness/roster.py", "harness/timeweeks.py",
                     "harness/run_eval.py", "scripts/refresh_models.py",
+                    "scripts/probe_model_defaults.py",
                     "scripts/model_usage_census.py", "evals/roster-policy.yml",
                     ".github/workflows/eval.yml"):
             text = (REPO_ROOT / rel).read_text(encoding="utf-8")
@@ -5709,22 +6057,30 @@ class TestIssue67(unittest.TestCase):
             path.read_text(encoding="utf-8"))
 
     def test_eval_workflow_refreshes_the_roster_before_running_the_eval(self):
+        # B1 (round 3 on #209): the refresh step moved into a SEPARATE
+        # `roster` job the `eval` job now `needs:` — "before" is a job
+        # dependency, not a step index within one list any more. B1 (round
+        # 4 on #209, blocker): `eval` now also needs `disarm`, so `roster`
+        # is checked for membership, not exact equality.
         _, doc = self._eval_workflow()
-        steps = doc["jobs"]["eval"]["steps"]
-        names = [s.get("name", "") for s in steps]
+        eval_needs = doc["jobs"]["eval"].get("needs")
+        self.assertIn("roster", eval_needs if isinstance(eval_needs, list) else [eval_needs])
+        roster_steps = doc["jobs"]["roster"]["steps"]
+        names = [s.get("name", "") for s in roster_steps]
         refresh = next(i for i, n in enumerate(names) if "roster" in n.lower())
-        run = next(i for i, n in enumerate(names) if n.startswith("Run the eval"))
-        self.assertLess(refresh, run,
-                        "the roster has to exist before the eval reads it")
-        script = steps[refresh]["run"]
+        eval_names = [s.get("name", "") for s in doc["jobs"]["eval"]["steps"]]
+        self.assertTrue(any(n.startswith("Run the eval") for n in eval_names))
+        script = roster_steps[refresh]["run"]
         self.assertIn("GITHUB_STEP_SUMMARY", script,
                       "#67: the computed roster is called out in the job summary")
         self.assertIn("roster.py", script)
         self.assertIn("refresh_models.py", script)
 
     def test_eval_workflow_commits_the_roster(self):
+        # B1 (round 4 on #209, blocker): this logic lives in the `publish`
+        # job now, not `eval` — see that job's own comment.
         _, doc = self._eval_workflow()
-        commit = next(s for s in doc["jobs"]["eval"]["steps"]
+        commit = next(s for s in doc["jobs"]["publish"]["steps"]
                       if "git checkout -B eval-results" in (s.get("run") or ""))
         self.assertIn("roster", commit["run"],
                       "roster/ is published on eval-results alongside the badge")
@@ -5740,18 +6096,47 @@ class TestIssue67(unittest.TestCase):
         # scope reds this row as well as its sibling in
         # EvalWorkflowSecurityHeaderTests — the duplication is deliberate
         # and predates #147: this is the test nobody may delete.
-        self.assertEqual(doc["permissions"],
+        #
+        # F2 (adversarial round 1 on #209), extended by B1 (round 3, then
+        # round 4, on #209, blocker): the workflow-level block is {} and
+        # each of the FIVE jobs carries its own scopes — `roster` (never
+        # `eval`) holds the roster-decision scopes (contents/id-token/
+        # issues); `disarm` holds only pull-requests/contents-read to turn
+        # off an armed auto-merge BEFORE the agent runs; `eval` keeps only
+        # contents-READ/id-token — no write scope of any kind, since B1
+        # round 4 moved the badge commit/push off this job entirely;
+        # `publish` (contents: write only) does that commit/push instead,
+        # with no agent on its runner; `pull-requests` stays on `roster-pr`
+        # (and `disarm`, to turn auto-merge off) — so the bypass-permissions
+        # agent's own job never widens. Round 6: `roster-pr` holds no
+        # `actions` or `contents: write` any more; the roster App's token
+        # opens and arms the PR.
+        self.assertEqual(doc["permissions"], {})
+        # (c) Exactly five jobs, so a sixth can never go unguarded.
+        self.assertEqual(sorted(doc["jobs"]),
+                         ["disarm", "eval", "publish", "roster", "roster-pr"])
+        self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "write", "id-token": "write",
                           "issues": "write"})
-        for step in doc["jobs"]["eval"]["steps"]:
-            script = step.get("run") or ""
-            self.assertNotIn("${{", script,
-                             f"step {step.get('name')!r} interpolates into a "
-                             "run: block; read inputs from $GITHUB_EVENT_PATH")
-            uses = step.get("uses")
-            if uses:
-                self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
-                                 "every uses: is a bare 40-hex SHA, no comment")
+        self.assertEqual(doc["jobs"]["disarm"]["permissions"],
+                         {"pull-requests": "write", "contents": "read"})
+        self.assertEqual(doc["jobs"]["eval"]["permissions"],
+                         {"contents": "read", "id-token": "write"})
+        self.assertEqual(doc["jobs"]["publish"]["permissions"],
+                         {"contents": "write"})
+        self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
+                         {"pull-requests": "write", "issues": "write",
+                          "contents": "read"})
+        for job in doc["jobs"].values():
+            for step in job["steps"]:
+                script = step.get("run") or ""
+                self.assertNotIn("${{", script,
+                                 f"step {step.get('name')!r} interpolates into a "
+                                 "run: block; read inputs from $GITHUB_EVENT_PATH")
+                uses = step.get("uses")
+                if uses:
+                    self.assertRegex(uses, r"^[\w.\-/]+@[0-9a-f]{40}$",
+                                     "every uses: is a bare 40-hex SHA, no comment")
         self.assertNotIn("ANTHROPIC_API_KEY", raw,
                          "auth is WIF-derived; no stored key shape is added")
         # The bare-SHA rule is LEXICAL and yaml.safe_load strips comments, so
@@ -5763,11 +6148,14 @@ class TestIssue67(unittest.TestCase):
             if re.match(r"^\s*(?:-\s+)?uses:", line):
                 self.assertRegex(line, r"^\s*(?:-\s+)?uses:\s*\S+@[0-9a-f]{40}\s*$",
                                  "a `uses:` pin carries a trailing comment")
-        for step in doc["jobs"]["eval"]["steps"]:
-            if (step.get("uses") or "").startswith("actions/checkout@"):
-                self.assertIs((step.get("with") or {}).get("persist-credentials"),
-                              False, f"checkout step {step.get('name')!r} keeps a "
-                                     "GitHub credential on the runner")
+        # B1 (round 3 on #209): the `roster` job now checks out
+        # skills-evals too, so this scans every job, not just `eval`.
+        for job in doc["jobs"].values():
+            for step in job["steps"]:
+                if (step.get("uses") or "").startswith("actions/checkout@"):
+                    self.assertIs((step.get("with") or {}).get("persist-credentials"),
+                                  False, f"checkout step {step.get('name')!r} keeps a "
+                                         "GitHub credential on the runner")
         self.assertEqual(doc["concurrency"],
                          {"group": "real-eval", "cancel-in-progress": False},
                          "the badge commit races itself without this lane")
@@ -6409,7 +6797,7 @@ class TestIssue67Review(unittest.TestCase):
         (eval_dir / "seed").mkdir(parents=True)
         (eval_dir / "seed" / "README.md").write_text("seed\n", encoding="utf-8")
         fixture = {"skill": "a-skill", "prompt": "do the thing",
-                   "registry": "https://github.com/Adam-S-Daniel/agentskills",
+                   "registry": "https://github.com/Adam-S-Daniel/adam-agentskills",
                    "judge_rubric": "grade it",
                    "arms": {"without_skill": {"install": "none"}}}
         if pinned:
@@ -6558,13 +6946,17 @@ class TestIssue67Review(unittest.TestCase):
             results = Path(tmp) / "results"
             argv = ["run_eval.py", str(eval_dir), "--arm", "both",
                     "--roster", str(path), "--results-dir", str(results),
-                    "--registry", f"agentskills={tmp}"]
+                    "--registry", f"adam-agentskills={tmp}"]
 
             def fake_run_agent(workspace, prompt, arm):
                 return {"transcript": "done", "usage": {}, "cost_usd": 0.0,
                         "num_turns": 1, "duration_ms": 1, "raw": {}}
 
+            # claude_version patched too (#202): main() reads the CLI's
+            # version once per run, and with no CLAUDE_BIN that would be
+            # whatever `claude` is on this machine's PATH.
             with mock.patch.object(run_eval, "read_roster", counting), \
+                 mock.patch.object(run_eval, "claude_version", lambda: None), \
                  mock.patch.object(run_eval, "run_agent", fake_run_agent), \
                  mock.patch.object(run_eval.judge, "score",
                                    lambda *a, **k: {"dimensions": [], "overall": 1.0}), \
@@ -6579,19 +6971,33 @@ class TestIssue67Review(unittest.TestCase):
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        # B1 (round 3 on #209): "Refresh the model roster"/"Propose a
+        # roster change" moved to the `roster` job; "WIF auth preflight"
+        # and everything else named here stayed in `eval`. Concatenated so
+        # `_step_named` still finds either by substring regardless of
+        # which job actually holds it.
+        return doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]
 
     def _step_named(self, needle):
         return next(s for s in self._steps()
                     if needle.lower() in (s.get("name") or "").lower())
 
     def test_the_roster_is_refreshed_before_the_preflight_that_consumes_it(self):
-        names = [s.get("name", "") for s in self._steps()]
-        roster_at = next(i for i, n in enumerate(names) if "roster" in n.lower())
-        preflight_at = next(i for i, n in enumerate(names) if "preflight" in n.lower())
-        self.assertLess(roster_at, preflight_at,
-                        "the preflight takes its model from the roster, so the "
-                        "roster has to exist first")
+        # B1 (round 3 on #209): "before" is now a JOB dependency
+        # (`eval` needs: roster) rather than step order within one job's
+        # list — "Refresh the model roster" lives in the `roster` job,
+        # "WIF auth preflight" in `eval`. B1 (round 4 on #209, blocker):
+        # `eval` now also needs `disarm`, so `roster` alone is no longer
+        # the exact value — `in` rather than `==`.
+        doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
+        eval_needs = doc["jobs"]["eval"].get("needs")
+        self.assertIn("roster", eval_needs if isinstance(eval_needs, list) else [eval_needs],
+                     "the preflight takes its model from the roster, so "
+                     "the `eval` job must depend on `roster`")
+        roster_names = [s.get("name", "") for s in doc["jobs"]["roster"]["steps"]]
+        eval_names = [s.get("name", "") for s in doc["jobs"]["eval"]["steps"]]
+        self.assertTrue(any("roster" in n.lower() for n in roster_names))
+        self.assertTrue(any("preflight" in n.lower() for n in eval_names))
 
     def test_the_preflight_takes_its_model_from_the_roster(self):
         script = self._step_named("preflight")["run"]
@@ -6648,7 +7054,7 @@ class TestIssue67Review(unittest.TestCase):
         stub_args = ("import sys, json, argparse\n"
                      "p = argparse.ArgumentParser()\n"
                      "for f in ('--models','--policy','--census',"
-                     "'--admin-report','--previous','--out'):\n"
+                     "'--admin-report','--previous','--defaults','--out'):\n"
                      "    p.add_argument(f)\n"
                      "a = p.parse_args()\n")
         (tmp / "scripts" / "refresh_models.py").write_text(
@@ -6865,7 +7271,12 @@ class TestIssue67Review2(unittest.TestCase):
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        # B1 (round 3 on #209): "Refresh the model roster"/"Propose a
+        # roster change" moved to the `roster` job; "WIF auth preflight"
+        # and everything else named here stayed in `eval`. Concatenated so
+        # `_step_named` still finds either by substring regardless of
+        # which job actually holds it.
+        return doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]
 
     def _step_named(self, needle):
         return next(s for s in self._steps()
@@ -8833,7 +9244,7 @@ class TestIssue84Review(Issue84Fixture, unittest.TestCase):
 
 class TestIssue63(unittest.TestCase):
     """Issue #63: resolve the with_skill arm's skill dir against any registry
-    layout named in harness/registries.yml, not just agentskills'
+    layout named in harness/registries.yml, not just adam-agentskills'
     plugins/*/skills/*/SKILL.md — cms-platform's flat skills/*/SKILL.md and
     adamdaniel.ai's .claude/skills/*/SKILL.md must resolve too, and an
     unknown registry: URL must fail loudly naming the file to fix.
@@ -8931,7 +9342,7 @@ class TestIssue63(unittest.TestCase):
 
     def test_flat_layout_missing_skill_names_the_skills_path(self):
         # A non-plugins layout's skill_not_found detail must name the actual
-        # glob searched (skills/<skill>/SKILL.md), not agentskills' own
+        # glob searched (skills/<skill>/SKILL.md), not adam-agentskills' own
         # plugins/*/skills/<skill> shape.
         with tempfile.TemporaryDirectory() as tmp:
             registry = self._fake_registry(tmp, "skills/some-skill/SKILL.md")
@@ -8998,7 +9409,7 @@ class TestIssue63(unittest.TestCase):
             # The pre-#63 form: one bare path, no NAME= prefix.
             registries = run_eval.resolve_registries([str(registry)], None, REPO_ROOT)
             entry = run_eval.registry_for_url(
-                registries, "https://github.com/Adam-S-Daniel/agentskills")
+                registries, "https://github.com/Adam-S-Daniel/adam-agentskills")
             self.assertEqual(entry["path"], registry)
             self.assertEqual(entry["layout"], "plugins/*/skills/*/SKILL.md")
 
@@ -9043,19 +9454,21 @@ class TestIssue63(unittest.TestCase):
 
     def test_registries_agree_with_agentskills_own_file(self):
         # Routed through resolve_registries (rather than a hardcoded
-        # "../agentskills") so $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES can
-        # steer which checkout this compares against, same as a real run.
+        # "../adam-agentskills") so $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES
+        # can steer which checkout this compares against, same as a real run.
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
             os.environ.get("AGENTSKILLS_DIR"))
-        agentskills_file = registries["agentskills"]["path"] / "scripts" / "skills_registries.yml"
+        agentskills_file = registries["adam-agentskills"]["path"] / "scripts" / "skills_registries.yml"
         if not agentskills_file.is_file():
-            reason = (f"no agentskills checkout at {agentskills_file} — "
+            reason = (f"no adam-agentskills checkout at {agentskills_file} — "
                       "skipping the cross-repo registries.yml agreement check")
-            # ci.yml runs this suite as `python3 test/run_tests.py`, no -v —
-            # skipTest's reason is otherwise never printed anywhere, which
-            # registries.yml's own header promises never happens ("skips
-            # with a printed reason, never silently").
+            # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
+            # pytest's `-rfEs` prints skip reasons in its own summary; this
+            # print() is what still covers the plain serial run, which has
+            # no -v and nothing else that would surface skipTest's reason —
+            # registries.yml's own header promises this never happens
+            # silently, on either path.
             print(reason)
             self.skipTest(reason)
         import yaml
@@ -9064,6 +9477,33 @@ class TestIssue63(unittest.TestCase):
         ours = {e["name"]: e["layout"] for e in
                yaml.safe_load(self.REGISTRIES_YML.read_text(encoding="utf-8"))["registries"]}
         self.assertEqual(ours, theirs)
+
+    def test_parallel_pins_agree_with_agentskills_requirements(self):
+        # ci.yml checks adam-agentskills out side by side for this run
+        # ("Check out adam-agentskills registry (side-by-side)"), so this
+        # test runs on every CI run, not just when someone happens to touch
+        # --jobs. A pin bump landing in adam-agentskills' requirements-dev.txt
+        # first (agentskills#179's own -n auto run) turns THIS red until
+        # skills-evals' PARALLEL_PINS follows — deliberate: the owner wants
+        # the two repos' pins drifting apart to be loud, not silent (#182).
+        registries = run_eval.resolve_registries(
+            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
+            os.environ.get("AGENTSKILLS_DIR"))
+        requirements_file = registries["adam-agentskills"]["path"] / "requirements-dev.txt"
+        if not requirements_file.is_file():
+            reason = (f"no requirements-dev.txt at {requirements_file} — "
+                      "skipping the cross-repo parallel-pins agreement check")
+            print(reason)
+            self.skipTest(reason)
+        problems = parallel_pin_disagreements(
+            PARALLEL_PINS, requirements_file.read_text(encoding="utf-8"))
+        self.assertEqual(
+            problems, [],
+            "PARALLEL_PINS (test/run_tests.py, also pip-installed in "
+            "ci.yml's Install dependencies step) disagrees with "
+            f"{requirements_file}: {problems} — bump both repos together. "
+            "See https://github.com/Adam-S-Daniel/skills-evals/issues/182 "
+            "and https://github.com/Adam-S-Daniel/agentskills/pull/179.")
 
     # --- Review round 3, item B: a TRUTHY non-string skill:/prompt:/
     # registry: must never reach re/subprocess/.strip() and crash with an
@@ -9168,7 +9608,7 @@ class TestIssue63(unittest.TestCase):
     def test_repeated_bare_env_entry_raises(self):
         with self.assertRaises(ValueError) as ctx:
             run_eval.resolve_registries(None, "/a,/b", REPO_ROOT)
-        self.assertIn("agentskills", str(ctx.exception))
+        self.assertIn("adam-agentskills", str(ctx.exception))
 
     # --- Review round 3, item G: a `**` layout segment passes the
     # "ends in '*/SKILL.md'" load-time check but lets a recursive glob at
@@ -9188,6 +9628,48 @@ class TestIssue63(unittest.TestCase):
             self.assertIn("**", str(ctx.exception))
 
 
+class TestParallelPinAgreement(unittest.TestCase):
+    """`parallel_pin_disagreements` in isolation (#182) — no sibling
+    checkout, no filesystem. TestIssue63's own
+    test_parallel_pins_agree_with_agentskills_requirements exercises it
+    against the real adam-agentskills requirements-dev.txt when one is
+    checked out; these pin the parsing rules the way build_suite() and CI
+    never would on their own.
+    """
+
+    def test_matching_pins_return_no_disagreements(self):
+        text = ("# dev-only deps\n"
+               "pyyaml==6.0.2\n"
+               "\n"
+               "pytest==9.1.1\n"
+               "pytest-xdist==3.8.0 # parallel runner\n")
+        self.assertEqual(parallel_pin_disagreements(PARALLEL_PINS, text), [])
+
+    def test_different_version_names_both_versions(self):
+        text = "pytest==9.1.1\npytest-xdist==3.7.0\n"
+        problems = parallel_pin_disagreements(PARALLEL_PINS, text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("3.7.0", problems[0])
+        self.assertIn("3.8.0", problems[0])
+
+    def test_missing_package_is_one_disagreement(self):
+        text = "pytest==9.1.1\n"
+        problems = parallel_pin_disagreements(PARALLEL_PINS, text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("pytest-xdist", problems[0])
+
+    def test_underscore_and_hyphen_spellings_are_the_same_package(self):
+        # PEP 503: pytest_xdist and pytest-xdist name the same package.
+        text = "pytest==9.1.1\npytest_xdist==3.8.0\n"
+        self.assertEqual(parallel_pin_disagreements(PARALLEL_PINS, text), [])
+
+    def test_non_exact_pin_is_a_disagreement(self):
+        text = "pytest>=9.1.1\npytest-xdist==3.8.0\n"
+        problems = parallel_pin_disagreements(PARALLEL_PINS, text)
+        self.assertEqual(len(problems), 1, problems)
+        self.assertIn("pytest", problems[0])
+
+
 class TestIssue63Review(unittest.TestCase):
     """Review round 1 on PR #128 (issue #63): should-fix items from two opus
     reviews (a code review and an adversarial pass over the key-bearing
@@ -9205,7 +9687,7 @@ class TestIssue63Review(unittest.TestCase):
         msg = str(ctx.exception)
         self.assertIn("cms_platform", msg)
         self.assertIn("harness/registries.yml", msg)
-        for name in ("agentskills", "cms-platform", "adamdaniel.ai"):
+        for name in ("adam-agentskills", "cms-platform", "adamdaniel.ai"):
             self.assertIn(name, msg)
 
     def test_unknown_env_override_name_is_rejected(self):
@@ -9213,27 +9695,27 @@ class TestIssue63Review(unittest.TestCase):
             run_eval.resolve_registries(None, "not-a-real-registry=/x", REPO_ROOT)
         self.assertIn("not-a-real-registry", str(ctx.exception))
 
-    def test_bare_env_entry_is_taken_as_agentskills_like_the_cli_flag(self):
+    def test_bare_env_entry_is_taken_as_adam_agentskills_like_the_cli_flag(self):
         # A bare $SKILLS_EVALS_REGISTRIES entry (no "=") used to be silently
         # dropped, even though a bare --registry PATH is the documented
-        # legacy agentskills shorthand. The two are now consistent.
+        # legacy adam-agentskills shorthand. The two are now consistent.
         with tempfile.TemporaryDirectory() as tmp:
             registry = Path(tmp) / "registry"
             registry.mkdir()
             registries = run_eval.resolve_registries(None, str(registry), REPO_ROOT)
-        self.assertEqual(registries["agentskills"]["path"], registry.resolve())
-        self.assertEqual(registries["agentskills"]["source"], "$SKILLS_EVALS_REGISTRIES")
+        self.assertEqual(registries["adam-agentskills"]["path"], registry.resolve())
+        self.assertEqual(registries["adam-agentskills"]["source"], "$SKILLS_EVALS_REGISTRIES")
 
     def test_empty_path_after_equals_is_rejected_at_parse_time(self):
-        # --registry agentskills= used to resolve Path("") == the current
-        # working directory, silently.
+        # --registry adam-agentskills= used to resolve Path("") == the
+        # current working directory, silently.
         with self.assertRaises(ValueError) as ctx:
-            run_eval.resolve_registries(["agentskills="], None, REPO_ROOT)
-        self.assertIn("agentskills", str(ctx.exception))
+            run_eval.resolve_registries(["adam-agentskills="], None, REPO_ROOT)
+        self.assertIn("adam-agentskills", str(ctx.exception))
 
     def test_empty_env_path_after_equals_is_rejected_at_parse_time(self):
         with self.assertRaises(ValueError):
-            run_eval.resolve_registries(None, "agentskills=", REPO_ROOT)
+            run_eval.resolve_registries(None, "adam-agentskills=", REPO_ROOT)
 
     def test_nonexistent_explicit_override_is_rejected_before_any_arm_runs(self):
         bad_path = REPO_ROOT / "does-not-exist-anywhere"
@@ -9252,40 +9734,40 @@ class TestIssue63Review(unittest.TestCase):
         self.assertNotIn("does-not-exist-anywhere", msg)
 
     def test_unoverridden_sibling_default_is_not_eagerly_validated(self):
-        # agentskills-private has no sibling checkout in this environment and
-        # no fixture references it — validating every registries.yml entry
-        # unconditionally would make eval.yml's real run (which never checks
-        # it out) fail on every dispatch.
+        # adam-agentskills-private has no sibling checkout in this
+        # environment and no fixture references it — validating every
+        # registries.yml entry unconditionally would make eval.yml's real
+        # run (which never checks it out) fail on every dispatch.
         #
         # Issue #142: the original version of this test resolved the
         # sibling default against REPO_ROOT (this repo's own checkout) and
         # asserted the resulting path is NOT a directory — an environment
         # fact, not a property of the code. It fails on any machine that
-        # happens to have the real fleet repo `agentskills-private` cloned
-        # beside `skills-evals` (this account's own workstation does).
+        # happens to have the real fleet repo `adam-agentskills-private`
+        # cloned beside `skills-evals` (this account's own workstation does).
         # Hermetic fix, mirroring `test_registry_not_found_ends_via_exit_2_
         # with_message_naming_path` above: resolve against a throwaway
         # base_dir instead of REPO_ROOT, and prove
         # `_validate_registry_paths` doesn't raise regardless of whether
         # that base_dir's sibling exists — by creating, then removing, a
-        # real `agentskills-private` directory beside a throwaway copy
+        # real `adam-agentskills-private` directory beside a throwaway copy
         # (never beside the real checkout).
         with tempfile.TemporaryDirectory() as tmp:
             tmp_root = Path(tmp)
             fake_repo_root = tmp_root / "skills-evals"
             fake_repo_root.mkdir()
-            sibling = tmp_root / "agentskills-private"
+            sibling = tmp_root / "adam-agentskills-private"
 
             # Condition 1: no sibling checkout present.
             self.assertFalse(sibling.is_dir())
             registries = run_eval.resolve_registries(None, None, fake_repo_root)
-            self.assertEqual(registries["agentskills-private"]["path"], sibling.resolve())
+            self.assertEqual(registries["adam-agentskills-private"]["path"], sibling.resolve())
             run_eval._validate_registry_paths(registries)  # must not raise
 
             # Condition 2: a real sibling checkout now exists.
             sibling.mkdir()
             registries = run_eval.resolve_registries(None, None, fake_repo_root)
-            self.assertTrue(registries["agentskills-private"]["path"].is_dir())
+            self.assertTrue(registries["adam-agentskills-private"]["path"].is_dir())
             run_eval._validate_registry_paths(registries)  # must not raise either way
 
             # Tear back down to condition 1, proving removal doesn't matter.
@@ -9308,14 +9790,14 @@ class TestIssue63Review(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with mock.patch.dict(os.environ, {"AGENTSKILLS_DIR": tmp}):
                 registries = run_eval.resolve_registries(None, None, REPO_ROOT)
-        self.assertEqual(registries["agentskills"]["source"], "sibling default")
+        self.assertEqual(registries["adam-agentskills"]["source"], "sibling default")
 
     def test_registry_url_match_normalizes_slash_git_suffix_and_case(self):
         registries = run_eval.resolve_registries(None, None, REPO_ROOT)
         for variant in (
-            "https://github.com/Adam-S-Daniel/agentskills/",
-            "https://github.com/Adam-S-Daniel/agentskills.git",
-            "https://GITHUB.COM/adam-s-daniel/AgentSkills",
+            "https://github.com/Adam-S-Daniel/adam-agentskills/",
+            "https://github.com/Adam-S-Daniel/adam-agentskills.git",
+            "https://GITHUB.COM/adam-s-daniel/Adam-AgentSkills",
         ):
             with self.subTest(url=variant):
                 entry = run_eval.registry_for_url(registries, variant)
@@ -9409,7 +9891,7 @@ class TestIssue63Review(unittest.TestCase):
             path.mkdir(parents=True)
             (path / "fixture.yaml").write_text(yaml.safe_dump(
                 {"skill": "a-skill", "prompt": "do the thing",
-                 "registry": "https://github.com/Adam-S-Daniel/agentskills"},
+                 "registry": "https://github.com/Adam-S-Daniel/adam-agentskills"},
                 sort_keys=False), encoding="utf-8")
         found = self._fixture_dirs(evals_root)
         self.assertIn(planted["nested"] / "fixture.yaml", found,
@@ -9530,8 +10012,8 @@ class TestIssue63Review(unittest.TestCase):
     def test_real_registries_yml_passes_shape_validation(self):
         entries = run_eval._load_registries_config()
         names = {e["name"] for e in entries}
-        self.assertEqual(names, {"agentskills", "cms-platform", "adamdaniel.ai",
-                                 "agentskills-private"})
+        self.assertEqual(names, {"adam-agentskills", "cms-platform", "adamdaniel.ai",
+                                 "adam-agentskills-private"})
 
 
 class TestIssue63Round2(unittest.TestCase):
@@ -9700,7 +10182,7 @@ class TestIssue63Round2(unittest.TestCase):
             seed_dir.mkdir(parents=True)
             (seed_dir / "placeholder.txt").write_text("x\n", encoding="utf-8")
             fixture = {"skill": "some-skill",
-                      "registry": "https://github.com/Adam-S-Daniel/agentskills"}
+                      "registry": "https://github.com/Adam-S-Daniel/adam-agentskills"}
             import yaml
             (eval_dir / "fixture.yaml").write_text(yaml.safe_dump(fixture), encoding="utf-8")
 
@@ -9740,13 +10222,14 @@ class TestIssue63Round2(unittest.TestCase):
 
     def test_registry_not_found_ends_via_exit_2_with_message_naming_path(self):
         # Review round 3, item D: the original version of this test asserted
-        # the SIBLING DEFAULT for "agentskills-private" specifically
-        # (../agentskills-private next to THIS repo's own checkout) does not
-        # resolve to a directory — which fails on entirely correct code for
-        # any maintainer who has that real fleet repo cloned beside
+        # the SIBLING DEFAULT for "adam-agentskills-private" specifically
+        # (../adam-agentskills-private next to THIS repo's own checkout) does
+        # not resolve to a directory — which fails on entirely correct code
+        # for any maintainer who has that real fleet repo cloned beside
         # skills-evals (`with_skill` then resolves it and hits
         # skill_not_found instead of registry_not_found; verified locally by
-        # creating a sibling `agentskills-private/` next to this checkout).
+        # creating a sibling `adam-agentskills-private/` next to this
+        # checkout).
         #
         # Hermetic fix: run a COPY of the harness rooted inside a fresh tmp
         # directory, with its own scratch registries.yml naming a registry
@@ -9885,7 +10368,7 @@ class TestIssue63Round2(unittest.TestCase):
     def test_repeated_bare_legacy_flag_raises(self):
         with self.assertRaises(ValueError) as ctx:
             run_eval.resolve_registries(["/a", "/b"], None, REPO_ROOT)
-        self.assertIn("agentskills", str(ctx.exception))
+        self.assertIn("adam-agentskills", str(ctx.exception))
 
     # --- N5: registry resolution/validation must abort BEFORE any arm
     # starts, including --arm objective-only ---
@@ -9903,7 +10386,7 @@ class TestIssue67Review3(unittest.TestCase):
     class-per-review-round convention (TestIssue67Review, TestIssue67Review2)."""
 
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "eval.yml"
-    POLICY = REPO_ROOT / "evals" / "roster-policy.yml"
+    POLICY = POSITIVE_COOLING_OFF_POLICY  # see TestIssue67.POLICY (#202)
 
     # --- shared with TestIssue67Review: same step, same stub shape, one
     # definition (item 9, #129 review round 4 — this file's existing
@@ -9914,7 +10397,12 @@ class TestIssue67Review3(unittest.TestCase):
 
     def _steps(self):
         doc = yaml.safe_load(self.WORKFLOW.read_text(encoding="utf-8"))
-        return doc["jobs"]["eval"]["steps"]
+        # B1 (round 3 on #209): "Refresh the model roster"/"Propose a
+        # roster change" moved to the `roster` job; "WIF auth preflight"
+        # and everything else named here stayed in `eval`. Concatenated so
+        # `_step_named` still finds either by substring regardless of
+        # which job actually holds it.
+        return doc["jobs"]["roster"]["steps"] + doc["jobs"]["eval"]["steps"]
 
     def _step_named(self, needle):
         return next(s for s in self._steps()
@@ -10866,7 +11354,8 @@ class TestIssue67Review5(unittest.TestCase):
     def test_roster_policy_is_the_single_source_of_thresholds(self):
         base = dict(self._policy())
         for key in ("min_ranked_turns", "min_ranked_share", "cooling_off_days",
-                   "arm_enter_usage_pct", "arm_exit_window_weeks"):
+                   "arm_enter_usage_pct", "arm_exit_window_weeks",
+                   "superseded_exit_weeks"):
             for bad, label in ((None, "missing"), ("20", "string"),
                               (-5, "negative"), (None, "None")):
                 policy = dict(base)
@@ -11572,19 +12061,24 @@ class TestIssue81(unittest.TestCase):
 
     def _skill_md(self) -> str | None:
         """The skill's own SKILL.md text, or None (with a printed reason)
-        when no agentskills checkout is reachable.
+        when no adam-agentskills-private checkout is reachable.
 
-        Routed through resolve_registries, same as
-        TestIssue63::test_registries_agree_with_agentskills_own_file, so
-        $AGENTSKILLS_DIR / $SKILLS_EVALS_REGISTRIES steer which checkout this
-        reads — and so CI's side-by-side checkout (ci.yml) makes it run for
-        real rather than skip.
+        adam-writing-style lives in the PRIVATE registry, not the public one
+        (it is no longer shipped by any public registry) — so this is routed
+        through resolve_registries' `adam-agentskills-private` entry, unlike
+        TestIssue63::test_registries_agree_with_agentskills_own_file, which
+        reads the public one. $SKILLS_EVALS_REGISTRIES can still steer which
+        checkout this reads, but there is no dedicated env var for the
+        private entry the way $AGENTSKILLS_DIR covers the public one, and
+        CI's public-repo token cannot clone the private repo at all — so this
+        skips (with a printed reason) rather than running for real there,
+        same as every other private-registry-dependent check in this suite.
         """
         registries = run_eval.resolve_registries(
-            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
-            os.environ.get("AGENTSKILLS_DIR"))
-        skill_md = (registries["agentskills"]["path"] / "plugins" / "adam"
-                    / "skills" / "adam-writing-style" / "SKILL.md")
+            None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT, None)
+        skill_md = (registries["adam-agentskills-private"]["path"] / "plugins"
+                    / "adam-private-anything-anywhere" / "skills"
+                    / "adam-writing-style" / "SKILL.md")
         if not skill_md.is_file():
             return None
         return skill_md.read_text(encoding="utf-8")
@@ -11632,10 +12126,13 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the avoid-list drift "
-                      "check")
-            # `python3 test/run_tests.py` runs without -v, so skipTest's own
-            # reason is never printed; print it, same as TestIssue63 does.
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the avoid-list "
+                      "drift check")
+            # CI now runs `python3 test/run_tests.py --jobs auto` (#182), where
+            # pytest's `-rfEs` prints skip reasons; the serial run still has no
+            # -v of its own, so skipTest's reason is never printed there —
+            # print it, same as TestIssue63 does.
             print(reason)
             self.skipTest(reason)
         terms = self._quoted_terms(skill_md, "Avoid (almost always)")
@@ -11666,7 +12163,8 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the avoid-list "
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the avoid-list "
                       "leftover check")
             print(reason)
             self.skipTest(reason)
@@ -11689,7 +12187,8 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the use-freely check")
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the use-freely check")
             print(reason)
             self.skipTest(reason)
         terms = self._quoted_terms(skill_md, "Use freely")
@@ -13581,6 +14080,15 @@ class TestIssue81(unittest.TestCase):
                 encoding="utf-8")
             fixture = copy.deepcopy(self._fixture("recruiter-reply"))
             registries = run_eval.resolve_registries(None, None, REPO_ROOT)
+            # recruiter-reply's registry is adam-agentskills-private, which CI
+            # has no token to clone, so `_run_arm` would stop at
+            # registry_not_found before the seed cap under test. run_agent is
+            # stubbed below, so any existing directory satisfies the checkout
+            # test.
+            private_stub = Path(tmp) / "adam-agentskills-private"
+            private_stub.mkdir()
+            registries["adam-agentskills-private"] = dict(
+                registries["adam-agentskills-private"], path=private_stub)
             args = argparse.Namespace(model=None, timeout=30,
                                       results_dir=Path(tmp) / "results",
                                       no_judge=True)
@@ -15138,7 +15646,8 @@ class TestIssue81(unittest.TestCase):
         skill_md = self._skill_md()
         if skill_md is None:
             reason = ("no adam-writing-style SKILL.md in the resolved "
-                      "agentskills checkout — skipping the register check")
+                      "adam-agentskills-private checkout (CI has no token "
+                      "for the private repo) — skipping the register check")
             print(reason)
             self.skipTest(reason)
         self.assertRegex(skill_md, self.CONTRACTION_RE)
@@ -16008,8 +16517,12 @@ class TestIssue81(unittest.TestCase):
         # pre-#81 shape.
         self.assertTrue(calls, "no judge call site in run_eval.py at all — "
                                "this pin must not pass vacuously")
-        self.assertEqual(sorted({node.func.attr for node in calls}), ["score"],
+        # `collecting_models` (#202) records which model served the judge; it
+        # wraps the `score()` call and changes nothing about its shape.
+        self.assertEqual(sorted({node.func.attr for node in calls}),
+                         ["collecting_models", "score"],
                          "run_eval.py's judge call site moved")
+        calls = [call for call in calls if call.func.attr == "score"]
         for call in calls:
             with self.subTest(line=call.lineno):
                 self.assertEqual(sorted(kw.arg for kw in call.keywords),
@@ -17663,9 +18176,9 @@ Non-obvious decisions live in [`docs/decisions/`](docs/decisions/README.md)
         registries = run_eval.resolve_registries(
             None, os.environ.get("SKILLS_EVALS_REGISTRIES"), REPO_ROOT,
             os.environ.get("AGENTSKILLS_DIR"))
-        entry = registries["agentskills"]
+        entry = registries["adam-agentskills"]
         if not entry["path"].is_dir():
-            reason = (f"no agentskills checkout at {entry['path']} — skipping "
+            reason = (f"no adam-agentskills checkout at {entry['path']} — skipping "
                       "the live-template drift check")
             print(reason)
             self.skipTest(reason)
@@ -20622,6 +21135,601 @@ class TestIssue85(unittest.TestCase):
                                msg="the fixture's own weights no longer intend 6.80")
         self.assertAlmostEqual(judge._weighted_overall(dimensions, weights),
                                expected, places=6)
+
+
+class TestVendorReleaseImpactPublishTimesCheck(unittest.TestCase):
+    """evals/vendor-release-impact-issues fixture.yaml,
+    `publish-times-source-and-version-bound` (formerly
+    `publish-times-are-github-publish-not-tag-or-npm` — the id changed with
+    the semantics; see the fixture's own comment): tests the release-time
+    SOURCE (never a tag/created_at or npm time), the version BINDING (a
+    correct time attached to the wrong version's number or release link
+    fails), and the two prescribed stamp FORMS (SKILL.md's "Release publish
+    times" — attribution `published <time>`/fenced-header `<version>
+    (published <time>):`, and prose-marker `<version> [<time>]`). Coverage —
+    which versions got cited at all — is deliberately NOT this check's job;
+    it is the judge's Hygiene dimension (see the fixture's judge_rubric).
+
+    Loads the check straight out of the real fixture.yaml (never a copy of
+    its patterns) and runs the real `objective.file_matches` against a
+    seed-copy workspace carrying synthetic issues/*.md files, the same
+    pattern TestIssue85 uses for github-actions-sha-pinning.
+    """
+
+    CHECK_ID = "publish-times-source-and-version-bound"
+
+    def _seed_copy(self, tmp: str) -> Path:
+        ws = Path(tmp) / "ws"
+        shutil.copytree(VENDOR_RELEASE_DIR / "seed", ws)
+        return ws
+
+    def _write_issue(self, ws: Path, name: str, body: str) -> None:
+        issues = ws / "issues"
+        issues.mkdir(exist_ok=True)
+        (issues / name).write_text(body, encoding="utf-8")
+
+    def _check_result(self, ws: Path) -> dict:
+        fixture = run_eval.load_fixture(VENDOR_RELEASE_DIR)
+        checks = [c for c in fixture["objective_checks"]
+                 if c["id"] == self.CHECK_ID]
+        self.assertEqual(len(checks), 1, fixture["objective_checks"])
+        seed = str(VENDOR_RELEASE_DIR / "seed")
+        [result] = objective.run_checks({"objective_checks": checks}, str(ws), seed)
+        return result
+
+    def _run(self, body: str) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            ws = self._seed_copy(tmp)
+            self._write_issue(ws, "01-example.md", body)
+            return self._check_result(ws)
+
+    # -- synthetic partial-coverage case: two versions, both correctly ------
+    # -- stamped, in two different prescribed forms --------------------------
+
+    def test_two_versions_each_correctly_stamped_in_a_different_form_passes(self):
+        """A synthetic case, not a claim about any real run: 4.2.0 gets a
+        full attribution quote and 4.1.0 is named only in prose-stamp form.
+        Coverage of all three versions is the judge's job, not this check's
+        — it must pass when each version present is correctly (and
+        unambiguously) stamped, even if not every version appears.
+        """
+        body = (
+            "# Hook source rename affects the startup|resume matcher\n\n"
+            "> Changed session hooks to report source \"fork\" for forked "
+            "sessions\n>\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0), published 2026-07-14T09:47Z\n\n"
+            "Also relevant: 4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # -- PASS: attribution alone, on the version's own release link ----------
+
+    def test_attribution_alone_on_its_own_release_link_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0), published 2026-07-14T09:47Z\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # -- PASS: prose stamp alone ----------------------------------------------
+
+    def test_prose_stamp_form_alone_on_4_1_0_passes(self):
+        body = "# Some finding\n\nSee 4.1.0 [2026-06-02T14:03Z] for detail.\n"
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_prose_stamp_form_alone_on_4_2_0_passes(self):
+        body = "# Some finding\n\nSee 4.2.0 [2026-07-14T09:47Z] for detail.\n"
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # -- PASS: fenced-quote header alone --------------------------------------
+
+    def test_fenced_header_form_alone_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "4.3.0 (published 2026-08-25T02:16Z):\n"
+            "```text\nSupport plugin manifests.\n```\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # -- PASS: a complete, correct issue covering all three versions ---------
+
+    def test_all_three_versions_correctly_stamped_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.1.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.1.0), published 2026-06-02T14:03Z\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nChanged session hooks.\n```\n\n"
+            "Also 4.3.0 [2026-08-25T02:16Z] added a stderr warning.\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # -- FAIL: correct stamp plus a tag/created_at time elsewhere -------------
+
+    def test_correct_stamp_plus_tag_time_elsewhere_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "The commit was tagged 2026-07-14T09:46Z.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: correct stamp plus a wrong-source (npm) time elsewhere ---------
+
+    def test_correct_stamp_plus_npm_time_elsewhere_fails(self):
+        """4.1.0's own npm time, `2026-06-02T14:08Z`, beside its correct stamp."""
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "npm shows 2026-06-02T14:08Z for the same release.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_correct_time_plus_npm_time_elsewhere_on_4_2_0_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "npm shows 2026-07-14T09:52Z for the same release.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: 4.3.0's correct time, attached to 4.2.0's number ---------------
+
+    def test_correct_time_attached_to_the_wrong_version_number_fails(self):
+        body = "# Some finding\n\nThe matcher broke in 4.2.0 [2026-08-25T02:16Z].\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: 4.1.0's correct time, attached to 4.2.0's release link ---------
+
+    def test_correct_time_attached_to_the_wrong_release_link_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0), published 2026-06-02T14:03Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: an npm time with seconds, next to a correct stamp --------------
+
+    def test_npm_time_with_seconds_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "npm shows 2026-07-14T09:52:00Z for the same release.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: a tag time in space-separated format, next to a correct stamp --
+
+    def test_tag_time_in_space_format_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "The tag was cut 2026-07-14 09:46 UTC.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: a correct time with neither prescribed prefix ------------------
+
+    def test_correct_time_with_neither_prefix_fails(self):
+        """Ties the check to the skill's two prescribed forms specifically —
+        a correct time written some other way (no `published ` attribution,
+        no `[` prose-stamp bracket) must not satisfy it. `unpublished` (a
+        real word a wrong-cased edit could introduce) must not count as
+        `published` either — `\\b` is what keeps that substring out.
+        """
+        body = "# Some finding\n\nThis release is unpublished 2026-07-14T09:47Z.\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: an attribution line with no stamp at all, beside a correct -----
+    # -- prose stamp elsewhere ------------------------------------------------
+
+    def test_attribution_link_with_no_stamp_fails_even_with_a_correct_stamp_elsewhere(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0)\n\n"
+            "Also 4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: a tag/created_at time, no correct time -------------------------
+
+    def test_tag_time_with_no_correct_time_fails(self):
+        body = "# Some finding\n\nTagged at 2026-07-14T09:46Z.\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # -- FAIL: no time at all --------------------------------------------------
+
+    def test_no_time_at_all_fails(self):
+        body = "# Some finding\n\nNo version time cited here.\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # == round 3 (review #2 REWORK): the unstamped-attribution ban only ======
+    # == fires on a real ATTRIBUTION line (one that opens with a dash), ======
+    # == and accepts the stamp on the very next quoted line ===================
+
+    def test_attribution_em_dash_before_published_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0) — published 2026-07-14T09:47Z\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_attribution_two_spaces_before_published_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0),  published 2026-07-14T09:47Z\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_attribution_parenthesized_published_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0) (published 2026-07-14T09:47Z)\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_attribution_stamp_on_next_quoted_line_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0)\n"
+            "> published 2026-07-14T09:47Z\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_quoted_releases_md_link_line_then_correct_attribution_passes(self):
+        """A quoted RELEASES.md link line (no leading dash — not an
+        attribution at all) must not itself be read as an unstamped
+        attribution, even though it names a release path.
+        """
+        body = (
+            "# Some finding\n\n"
+            "> [https://github.com/example-vendor/example-cli/releases/tag/v4.3.0]"
+            "(https://github.com/example-vendor/example-cli/releases/tag/v4.3.0)\n"
+            ">\n"
+            "> — [v4.3.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.3.0), published 2026-08-25T02:16Z\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_quoted_vendor_bullet_with_release_link_then_correct_attribution_passes(self):
+        body = (
+            "# Some finding\n\n"
+            "> Fixed a bug documented at https://github.com/example-vendor/"
+            "example-cli/releases/tag/v4.1.0 affecting resolvers.\n"
+            ">\n"
+            "> — [v4.1.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.1.0), published 2026-06-02T14:03Z\n"
+        )
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # == round 3: version-PROXIMITY bans — a wrong time bound to a version ===
+    # == regardless of exactly which shape it is written in ===================
+
+    def test_proximity_bare_comma_form_fails(self):
+        body = "# Some finding\n\n4.2.0, published 2026-06-02T14:03Z, changed hooks.\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_outside_blockquote_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "— [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0) (published 2026-06-02T14:03Z)\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_trailing_slash_in_blockquote_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0/), published 2026-06-02T14:03Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_bracket_wrapped_published_word_fails(self):
+        body = "# Some finding\n\n4.2.0 [published 2026-06-02T14:03Z]\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_dash_no_parens_fails(self):
+        body = "# Some finding\n\nv4.2.0 - published 2026-06-02T14:03Z:\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_published_with_colon_fails(self):
+        """This exact text fails independently of any must_not_match ban:
+        the colon in "published:" breaks must_match's own `\\bpublished `
+        literal (no bracket form either), so the check already lacks
+        must_match here regardless of which bans exist. Kept because it is
+        one of the review's literal instructed cases and it does correctly
+        report FAIL; `test_proximity_4_3_0_anchor_fails` below is the actual
+        isolator for the 4.3.0 proximity ban, added after the per-pattern
+        deletion table showed this one never depends on it (see the final
+        report's finding on this).
+        """
+        body = "# Some finding\n\n4.3.0 (published: 2026-07-14T09:47Z):\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_4_3_0_anchor_fails(self):
+        """A clean isolator for the 4.3.0 proximity ban: 4.2.0's correct
+        time, bound to 4.3.0's number in bare-comma form (no parens, no
+        brackets, no release-link URL), next to a correct stamp elsewhere so
+        must_match is independently satisfied.
+        """
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "4.3.0, published 2026-07-14T09:47Z, changed something else.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # == round 4 (review #3 SHIP-WITH-FIXES): a timezone-confused time is =====
+    # == still a WRONG time bound to a version, even though it isn't one of ==
+    # == the two literal "other version's correct time" strings the round-3 =
+    # == proximity bans enumerated ============================================
+
+    def test_timezone_confused_time_bare_comma_form_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] pins CI.\n\n"
+            "4.2.0, published 2026-07-14T05:47Z, changed hooks.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_timezone_confused_time_fenced_header_colon_form_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] pins CI.\n\n"
+            "4.2.0 (published: 2026-07-14T05:47Z):\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_reference_style_link_fails(self):
+        body = "# Some finding\n\n> — [v4.2.0][r], published 2026-06-02T14:03Z\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_proximity_4_1_0_anchor_fails(self):
+        """None of the seven cases above anchor on 4.1.0 itself, so this adds
+        the one the version-proximity ban for 4.1.0 needs to have any test
+        depend on it at all: 4.2.0's correct time, bound to 4.1.0's number.
+        """
+        body = "# Some finding\n\n4.1.0, published 2026-07-14T09:47Z, fixed a crash.\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_version_range_each_own_correct_time_passes(self):
+        body = "# Some finding\n\nFrom 4.1.0 [2026-06-02T14:03Z] to 4.3.0 [2026-08-25T02:16Z] things changed.\n"
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    def test_unrelated_trailing_timestamp_on_the_same_line_passes(self):
+        """round 4: the general `\\d{4}-\\d\\d-\\d\\d[T ]\\d\\d:\\d\\d` tail
+        must not fire on some OTHER, unrelated timestamp later on the same
+        line that is not itself in a `published`/`[` position relative to
+        the version — a CI status note, not a mis-bound release stamp.
+        """
+        body = "# Some finding\n\n4.2.0 [2026-07-14T09:47Z]; CI last green 2026-09-01T12:00Z\n"
+        result = self._run(body)
+        self.assertTrue(result["passed"], result["detail"])
+
+    # == round 3: one isolator per pattern that had no dedicated test =========
+
+    def test_prose_bracket_mismatch_4_1_0_fails(self):
+        body = "# Some finding\n\n4.1.0 [2026-08-25T02:16Z]\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_prose_bracket_mismatch_4_3_0_fails(self):
+        body = "# Some finding\n\n4.3.0 [2026-06-02T14:03Z]\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_attribution_link_mismatch_4_1_0_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.1.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.1.0), published 2026-07-14T09:47Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_attribution_link_mismatch_4_3_0_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "> — [v4.3.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.3.0), published 2026-06-02T14:03Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_fenced_header_mismatch_4_1_0_fails(self):
+        body = "# Some finding\n\n4.1.0 (published 2026-07-14T09:47Z):\n```text\nx\n```\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_fenced_header_mismatch_4_2_0_fails(self):
+        body = "# Some finding\n\n4.2.0 (published 2026-08-25T02:16Z):\n```text\nx\n```\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_fenced_header_mismatch_4_3_0_fails(self):
+        body = "# Some finding\n\n4.3.0 (published 2026-06-02T14:03Z):\n```text\nx\n```\n"
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_correct_stamp_plus_4_1_0_tag_time_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "The 4.1.0 tag commit was made 2026-06-02T14:02Z.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_correct_stamp_plus_4_3_0_tag_time_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "The 4.3.0 tag commit was made 2026-08-25T02:15Z.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_correct_stamp_plus_4_3_0_npm_time_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "npm shows 2026-08-25T02:21Z for 4.3.0.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    # == round 4: isolators for the three version-binding bans, one per ======
+    # == version per form, now using a TIMEZONE-CONFUSED variant of that ====
+    # == version's own correct time (UTC-4: 2026-06-02T10:03Z, ===============
+    # == 2026-07-14T05:47Z, 2026-08-24T22:16Z) rather than an arbitrary fake =
+    # == date — round 3's per-form bans are gone (subsumed by the general ===
+    # == version-binding bans), so what these isolate now is simply "this ===
+    # == version's own binding ban still fires on a wrong time that doesn't =
+    # == happen to be one of the other two real versions' literal correct ===
+    # == times", next to a correct stamp elsewhere so must_match is =========
+    # == independently satisfied. ==============================================
+
+    def test_prose_bracket_mismatch_4_1_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "Also 4.1.0 [2026-06-02T10:03Z] is unrelated filler.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_prose_bracket_mismatch_4_2_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "Also 4.2.0 [2026-07-14T05:47Z] is unrelated filler.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_prose_bracket_mismatch_4_3_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "Also 4.3.0 [2026-08-24T22:16Z] is unrelated filler.\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_attribution_link_mismatch_4_1_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "> — [v4.1.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.1.0), published 2026-06-02T10:03Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_attribution_link_mismatch_4_2_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "> — [v4.2.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.2.0), published 2026-07-14T05:47Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_attribution_link_mismatch_4_3_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "> — [v4.3.0](https://github.com/example-vendor/example-cli/"
+            "releases/tag/v4.3.0), published 2026-08-24T22:16Z\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_fenced_header_mismatch_4_1_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.2.0 (published 2026-07-14T09:47Z):\n"
+            "```text\nSupport plugin manifests.\n```\n\n"
+            "4.1.0 (published 2026-06-02T10:03Z):\n"
+            "```text\nx\n```\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_fenced_header_mismatch_4_2_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "4.2.0 (published 2026-07-14T05:47Z):\n"
+            "```text\nx\n```\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
+
+    def test_fenced_header_mismatch_4_3_0_isolated_fails(self):
+        body = (
+            "# Some finding\n\n"
+            "4.1.0 [2026-06-02T14:03Z] fixed a resolver crash.\n\n"
+            "4.3.0 (published 2026-08-24T22:16Z):\n"
+            "```text\nx\n```\n"
+        )
+        result = self._run(body)
+        self.assertFalse(result["passed"], result["detail"])
 
 
 class TestIssue86(unittest.TestCase):
@@ -28521,6 +29629,14 @@ class TestIssue147(unittest.TestCase):
             ("catalogue_seen bad date",
              mutate(catalogue_seen=[{"id": "claude-opus-4-8",
                                      "last_seen": "yesterday"}]), "ISO"),
+            # B2 (adversarial round 3 on #209): a planted `last_seen` later
+            # than `generated_at` never ages out under
+            # `_update_catalogue_seen` (its computed age is negative
+            # forever); caught here instead.
+            ("catalogue_seen last_seen after generated_at",
+             mutate(catalogue_seen=[{"id": "claude-opus-4-8",
+                                     "last_seen": "2099-12-31"}]),
+             "is later than `generated_at`"),
             ("duplicate ids",
              mutate(arms=[{"id": "claude-sonnet-5", "reason": "a"},
                           {"id": "claude-sonnet-5", "reason": "b"}]),
@@ -28542,6 +29658,32 @@ class TestIssue147(unittest.TestCase):
         # The negative control: the unmutated document must still be clean,
         # or every row above passes for the wrong reason.
         self.assertEqual(self._lint(good), [])
+
+    def test_b2_last_seen_equal_to_generated_at_passes_one_day_later_fails(self):
+        # N1 (round 4 on #209): the general "catalogue_seen after
+        # generated_at" row above uses a value (2099-12-31) so far in the
+        # future that a mutant which only shifts the boundary by a day
+        # (`last_seen_date > generated_at_date` → `> generated_at_date +
+        # timedelta(days=1)`, B2_ge, adv209-r4/mutate4.py) still gets
+        # caught the same way and SURVIVES. Pinning the exact boundary
+        # kills it: `last_seen == generated_at` must pass, and exactly one
+        # day later must fail.
+        good = self._committed()
+        generated = good["generated_at"][:10]
+        same_day = copy.deepcopy(good)
+        same_day["catalogue_seen"] = [{"id": good["arms"][0]["id"], "last_seen": generated}]
+        self.assertEqual(self._lint(same_day), [],
+                         "last_seen == generated_at must be accepted, not "
+                         "just anything short of it")
+        next_day = (datetime.strptime(generated, "%Y-%m-%d").date()
+                    + timedelta(days=1)).isoformat()
+        one_day_later = copy.deepcopy(good)
+        one_day_later["catalogue_seen"] = [{"id": good["arms"][0]["id"], "last_seen": next_day}]
+        problems = self._lint(one_day_later)
+        self.assertTrue(any("is later than `generated_at`" in p for p in problems),
+                        f"last_seen one day after generated_at must be "
+                        f"rejected; got {problems!r}")
+
     # --- item 2: selection reads the committed file, and only it ---------
 
     def test_the_default_roster_path_is_the_committed_file(self):
@@ -28654,21 +29796,25 @@ class TestIssue147(unittest.TestCase):
         doc = yaml.safe_load(
             (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
                 encoding="utf-8"))
-        for step in doc["jobs"]["eval"]["steps"]:
-            script = step.get("run") or ""
-            code = "\n".join(line for line in script.splitlines()
-                              if not line.lstrip().startswith("#"))
-            with self.subTest(step=step.get("name")):
-                self.assertNotIn(
-                    "EVAL_ROSTER", code,
-                    "eval.yml must not point selection at anything off "
-                    "eval-results; the committed evals/roster.yml is the "
-                    "roster the harness runs on (ADR 0001)")
-                self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
-                self.assertNotIn(
-                    "roster/latest.json > ", code,
-                    "the previous roster is the committed file now, not a "
-                    "copy materialised from the untrusted branch")
+        # B1 (round 3 on #209): scans every job — the property is
+        # workflow-wide, not `eval`-job-specific, and the roster logic this
+        # rule is about now lives in the `roster` job.
+        for job_name, job in doc["jobs"].items():
+            for step in job["steps"]:
+                script = step.get("run") or ""
+                code = "\n".join(line for line in script.splitlines()
+                                  if not line.lstrip().startswith("#"))
+                with self.subTest(job=job_name, step=step.get("name")):
+                    self.assertNotIn(
+                        "EVAL_ROSTER", code,
+                        "eval.yml must not point selection at anything off "
+                        "eval-results; the committed evals/roster.yml is the "
+                        "roster the harness runs on (ADR 0001)")
+                    self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
+                    self.assertNotIn(
+                        "roster/latest.json > ", code,
+                        "the previous roster is the committed file now, not a "
+                        "copy materialised from the untrusted branch")
         self.assertNotIn("EVAL_ROSTER", (doc.get("env") or {}))
 
     def test_eval_yml_preflight_reads_the_committed_file(self):
@@ -28690,7 +29836,9 @@ class TestIssue147(unittest.TestCase):
 
     @classmethod
     def _policy(cls):
-        return roster.load_policy(REPO_ROOT / "evals" / "roster-policy.yml")
+        # A positive cooling-off (#202): the "unseated fresh opus judge
+        # candidate" below is unseated BY it.
+        return roster.load_policy(POSITIVE_COOLING_OFF_POLICY)
 
     @staticmethod
     def _model(model_id, created="2026-01-01T00:00:00Z"):
@@ -28790,6 +29938,77 @@ class TestIssue147(unittest.TestCase):
         self.assertIn("claude-sonnet-5",
                       [entry["id"] for entry in later["catalogue_seen"]])
 
+    def test_routine_last_seen_refresh_within_half_window_says_same(self):
+        """Regression for #200: a week's worth of `last_seen` churn alone
+        used to file a tracking issue every time, even though nothing a
+        reviewer would act on had changed. A committed date well within
+        half the observation window is routine — recorded, not proposed."""
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=7)).date().isoformat()
+        observed = self._compute(models=models, census=census, previous=previous)
+        refreshes = [change for change in observed["proposal"]["changes"]
+                     if change["field"] == "catalogue_seen.last_seen"]
+        self.assertEqual(observed["proposal"]["status"], "same",
+                         observed["proposal"]["changes"])
+        self.assertEqual(len(refreshes), len(previous["catalogue_seen"]))
+
+    def test_last_seen_refresh_is_material_at_exactly_half_the_window(self):
+        """The cut is "at least half the window old", not "more than" —
+        exactly half is already material, one day younger is still
+        routine. `_update_catalogue_seen` measures a departed model's
+        eviction from this same committed date, so waiting past half the
+        window to refresh it would let a departed model's remaining
+        runway fall below half of `catalogue_seen_max_age_days`."""
+        half = self._policy()["catalogue_seen_max_age_days"] // 2
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=half)).date().isoformat()
+        at_half = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(at_half["proposal"]["status"], "differs",
+                         at_half["proposal"]["changes"])
+
+        younger_previous = copy.deepcopy(previous)
+        for entry in younger_previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=half - 1)).date().isoformat()
+        younger = self._compute(models=models, census=census,
+                                previous=younger_previous)
+        self.assertEqual(younger["proposal"]["status"], "same",
+                         younger["proposal"]["changes"])
+
+    def test_routine_refresh_rides_along_with_a_material_change(self):
+        """A routine date refresh does not vanish from `changes` just
+        because a material change also fired in the same run — the table
+        and the rendered file still carry every refresh riding along."""
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=7)).date().isoformat()
+        models = copy.deepcopy(models)
+        models["models"].append(self._model("claude-new-model-1",
+                                            "2026-09-12T00:00:00Z"))
+        observed = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(observed["proposal"]["status"], "differs",
+                         observed["proposal"]["changes"])
+        refreshes = [c for c in observed["proposal"]["changes"]
+                     if c["field"] == "catalogue_seen.last_seen"]
+        additions = [c for c in observed["proposal"]["changes"]
+                     if c["field"] == "catalogue_seen"
+                     and c["to"] == "claude-new-model-1"]
+        self.assertEqual(len(refreshes), len(previous["catalogue_seen"]))
+        self.assertEqual(len(additions), 1)
+
+    def test_render_summary_notes_routine_refreshes_left_for_next_proposal(self):
+        models, census, previous = self._steady_state()
+        for entry in previous["catalogue_seen"]:
+            entry["last_seen"] = (self.NOW - timedelta(days=7)).date().isoformat()
+        observed = self._compute(models=models, census=census, previous=previous)
+        self.assertEqual(observed["proposal"]["status"], "same",
+                         observed["proposal"]["changes"])
+        summary = roster.render_summary(observed)
+        self.assertIn("Nothing to propose", summary)
+        self.assertIn("catalogue_seen.last_seen", summary)
+        self.assertIn("left for the next material proposal", summary)
+
     def test_arm_order_is_a_reviewable_proposal_change(self):
         proposal = roster._proposal(
             {"judge": {"id": "judge"}, "preflight": {"id": "arm-a"}},
@@ -28797,7 +30016,8 @@ class TestIssue147(unittest.TestCase):
             [{"id": "arm-a", "reason": "first"},
              {"id": "arm-b", "reason": "second"}],
             {"id": "judge", "reason": "judge"},
-            {"id": "arm-a", "reason": "preflight"}, [], {})
+            {"id": "arm-a", "reason": "preflight"}, [], {},
+            now=self.NOW, max_age_days=self._policy()["catalogue_seen_max_age_days"])
         self.assertEqual(proposal["status"], "differs")
         self.assertEqual(
             [change["field"] for change in proposal["changes"]], ["arms.order"])
@@ -28883,7 +30103,7 @@ class TestIssue147(unittest.TestCase):
         document = yaml.safe_load(
             (source / ".github" / "workflows" / "eval.yml").read_text(
                 encoding="utf-8"))
-        script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+        script = next(step["run"] for step in document["jobs"]["roster"]["steps"]
                       if step.get("name") == "Propose a roster change")
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -28969,6 +30189,8 @@ elif 'worktree' in args and 'remove' in args:
             home.mkdir()
             config.mkdir()
             memory.write_text("", encoding="utf-8")
+            github_output = root / "github-output"
+            github_output.write_text("", encoding="utf-8")
             env = {"PATH": f"{tools}:/usr/bin:/bin", "HOME": str(home),
                    "CLAUDE_CONFIG_DIR": str(config),
                    "SKILLS_EVALS_USER_MEMORY": str(memory),
@@ -28979,19 +30201,88 @@ elif 'worktree' in args and 'remove' in args:
                    "PROPOSAL_PAGES": str(pages_path), "PROPOSAL_SOURCE": str(workspace),
                    "PROPOSAL_LISTING_ERROR": "1" if listing_error else "0",
                    "PROPOSAL_RESULTS_PUSH_ERROR": "1" if results_push_error else "0",
-                   "GITHUB_STEP_SUMMARY": str(temp / "summary")}
+                   "GITHUB_STEP_SUMMARY": str(temp / "summary"),
+                   "GITHUB_OUTPUT": str(github_output)}
             run = subprocess.run(["/bin/bash", "-c", script], cwd=workspace,
                                  env=env, capture_output=True, text=True, timeout=60)
+            # F2 (adversarial round 1 on #209): the `roster-pr` job's step
+            # now owns every `gh pr` call and the
+            # differs-branch tracking-issue write, fed by the `eval` job's
+            # outputs above — run it too, against the SAME recording `gh`/
+            # `git` shims, so `calls` below is the full cross-job call log
+            # a real run would produce, exactly as it always was for a
+            # single-job workflow.
+            if run.returncode == 0:
+                outputs = self._parse_github_output(github_output)
+                # Round 6: the App's token-mint step comes first now; the
+                # script is the step found by name.
+                roster_pr_script = next(
+                    step for step in document["jobs"]["roster-pr"]["steps"]
+                    if step.get("name") == "Manage the roster pull request")
+                # B1 (round 3 on #209): `eval_note` is NOT here — it is
+                # computed inside `roster-pr` itself, from `needs.eval.result`
+                # (env2's EVAL_RESULT, left unset here, reads as "no eval
+                # result").
+                output_env = {
+                    "roster_mode": "ROSTER_MODE", "status": "STATUS",
+                    "probe_clean": "PROBE_CLEAN", "issue_number": "ISSUE_NUMBER",
+                    "pushed_sha": "PUSHED_SHA", "rejected": "REJECTED",
+                    "rejection_reason": "REJECTION_REASON",
+                    "rendered_identical": "RENDERED_IDENTICAL",
+                    "probe_note": "PROBE_NOTE",
+                    "roster_summary": "ROSTER_SUMMARY"}
+                env2 = dict(env)
+                for key, var in output_env.items():
+                    if key in outputs:
+                        env2[var] = outputs[key]
+                run2 = subprocess.run(["/bin/bash", "-c", roster_pr_script["run"]],
+                                      cwd=workspace, env=env2, capture_output=True,
+                                      text=True, timeout=60)
+                self.assertEqual(run2.returncode, 0, run2.stdout + run2.stderr)
+                run = subprocess.CompletedProcess(
+                    run.args, run.returncode, run.stdout + run2.stdout,
+                    run.stderr + run2.stderr)
             results_run = None
             if run_results and run.returncode == 0:
-                results_script = next(step["run"] for step in document["jobs"]["eval"]["steps"]
+                # B1 (round 4 on #209, blocker): this step lives in the
+                # `publish` job now, not `eval` — see that job's own
+                # comment. It reads the fixture key from `needs.eval.
+                # outputs.eval_key` (via `EVAL_KEY` in `env:`) rather than
+                # a `$RUNNER_TEMP` file, since `publish` runs on a
+                # different runner from the one that wrote that file.
+                results_script = next(step["run"] for step in document["jobs"]["publish"]["steps"]
                                       if step.get("name") == "Build the badge over the run window, commit, and push")
+                env3 = dict(env, EVAL_KEY="workflow-path-audit")
                 results_run = subprocess.run(["/bin/bash", "-c", results_script], cwd=workspace,
-                                             env=env, capture_output=True, text=True, timeout=60)
+                                             env=env3, capture_output=True, text=True, timeout=60)
             calls = [json.loads(line) for line in calls_path.read_text(
                 encoding="utf-8").splitlines()] if calls_path.exists() else []
             body = temp.joinpath("proposal-body.md")
             return run, calls, body.read_text(encoding="utf-8") if body.exists() else "", results_run
+
+    @staticmethod
+    def _parse_github_output(path):
+        """A minimal reader for the `$GITHUB_OUTPUT` file format: plain
+        `key=value` lines and `key<<DELIM` / ... / `DELIM` blocks (used for
+        every multi-line value — see eval.yml's `emit_ml`)."""
+        out = {}
+        lines = path.read_text(encoding="utf-8").splitlines()
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            if "<<" in line:
+                key, delim = line.split("<<", 1)
+                body = []
+                i += 1
+                while i < len(lines) and lines[i] != delim:
+                    body.append(lines[i])
+                    i += 1
+                out[key] = "\n".join(body)
+            elif "=" in line:
+                key, _, value = line.partition("=")
+                out[key] = value
+            i += 1
+        return out
 
     def test_proposal_step_uses_only_a_complete_bot_owned_tracker(self):
         marker = "<!-- skills-evals:roster-proposal -->"
@@ -29775,15 +31066,18 @@ elif 'worktree' in args and 'remove' in args:
         raw = (REPO_ROOT / ".github" / "workflows" / "eval.yml").read_text(
             encoding="utf-8")
         doc = yaml.safe_load(raw)
-        for step in doc["jobs"]["eval"]["steps"]:
-            script = step.get("run") or ""
-            code = "\n".join(line for line in script.splitlines()
-                             if not line.lstrip().startswith("#"))
-            with self.subTest(step=step.get("name")):
-                for verb in ("> evals/roster.yml", ">> evals/roster.yml",
-                             "cp \"$RUNNER_TEMP/proposed-roster.yml\" evals/roster.yml"):
-                    self.assertNotIn(verb, code,
-                                     "no step may write the committed roster")
+        # B1 (round 3 on #209): scans every job — the rendering/push logic
+        # this claim is about now lives in the `roster` job, not `eval`.
+        for job_name, job in doc["jobs"].items():
+            for step in job["steps"]:
+                script = step.get("run") or ""
+                code = "\n".join(line for line in script.splitlines()
+                                 if not line.lstrip().startswith("#"))
+                with self.subTest(job=job_name, step=step.get("name")):
+                    for verb in ("> evals/roster.yml", ">> evals/roster.yml",
+                                 "cp \"$RUNNER_TEMP/proposed-roster.yml\" evals/roster.yml"):
+                        self.assertNotIn(verb, code,
+                                         "no step may write the committed roster")
         self.assertIn("roster/proposal", raw)
         self.assertIn("<!-- skills-evals:roster-proposal -->", raw)
 # ---------------------------------------------------------------------------
@@ -29801,8 +31095,22 @@ elif 'worktree' in args and 'remove' in args:
 DISCOVERY_DIR = TEST_DIR / "issues"
 DISCOVERY_PATTERN = "test_issue_*.py"
 
+# `$SKILLS_EVALS_DISCOVERY_DIR` exists for one reason, the same as
+# `$SKILLS_EVALS_USER_MEMORY`: so the two #97 planting pins can plant a probe
+# module in a SCRATCH discovery dir instead of writing into the real
+# test/issues/, which a concurrently running child suite (a parallel run,
+# #182) would otherwise discover.
+DISCOVERY_ENV = "SKILLS_EVALS_DISCOVERY_DIR"
 
-def build_suite(discovery_dir: Path | None = None) -> unittest.TestSuite:
+
+def discovery_dir() -> Path:
+    """DISCOVERY_DIR, or `$SKILLS_EVALS_DISCOVERY_DIR` when that is set and
+    non-empty."""
+    override = os.environ.get(DISCOVERY_ENV)
+    return Path(override) if override else DISCOVERY_DIR
+
+
+def build_suite(discovery: Path | None = None) -> unittest.TestSuite:
     """This module's own classes plus every discovered test/issues/ module.
 
     `top_level_dir` is the discovery dir itself, so a discovered module is
@@ -29811,19 +31119,22 @@ def build_suite(discovery_dir: Path | None = None) -> unittest.TestSuite:
     skipped: unittest turns it into a synthetic failing test, which is exactly
     the loud behaviour a broken new file should get.
 
-    `discovery_dir` defaults to DISCOVERY_DIR and is a parameter for one
-    reason: so the coverage assertion below can be driven against a SCRATCH
-    tree with a module planted in it, and prove its own failure message
-    without planting anything in the repo.
+    `discovery` defaults to `discovery_dir()` — DISCOVERY_DIR, or
+    `$SKILLS_EVALS_DISCOVERY_DIR` when that is set — and is a parameter for
+    one reason: so the coverage assertion below can be driven against a
+    SCRATCH tree with a module planted in it, and prove its own failure
+    message without planting anything in the repo. (Named `discovery`, not
+    `discovery_dir`, so this parameter cannot shadow the module-level
+    `discovery_dir()` function this default calls.)
     """
     loader = unittest.TestLoader()
     suite = unittest.TestSuite()
     suite.addTests(loader.loadTestsFromModule(sys.modules[__name__]))
-    discovery_dir = DISCOVERY_DIR if discovery_dir is None else discovery_dir
-    if discovery_dir.is_dir():
+    discovery = discovery_dir() if discovery is None else discovery
+    if discovery.is_dir():
         suite.addTests(loader.discover(
-            str(discovery_dir), pattern=DISCOVERY_PATTERN,
-            top_level_dir=str(discovery_dir)))
+            str(discovery), pattern=DISCOVERY_PATTERN,
+            top_level_dir=str(discovery)))
     return suite
 
 
@@ -29834,6 +31145,20 @@ def flatten_suite(suite: unittest.TestSuite):
             yield from flatten_suite(item)
         else:
             yield item
+
+
+def _jobs_arg(value: str) -> int | str:
+    """`-j/--jobs`'s own argparse type: an int, or the literal `"auto"`
+    pytest-xdist accepts for `-n auto` — one worker per CPU. #182 measured
+    `auto` equal to `-n 4` on this fleet's 4-vCPU hosted runners, and
+    agentskills#179 pins the same spelling for the same reason."""
+    if value == "auto":
+        return "auto"
+    try:
+        return int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid --jobs value {value!r}: expected an integer or 'auto'")
 
 
 def parse_argv(argv: list[str]) -> argparse.Namespace:
@@ -29865,6 +31190,12 @@ def parse_argv(argv: list[str]) -> argparse.Namespace:
                         help="run only tests whose id matches PATTERN "
                              "(substring, or fnmatch when it carries a *); "
                              "repeatable, and the run says it was narrowed")
+    parser.add_argument("-j", "--jobs", type=_jobs_arg, default=1,
+                        metavar="N|auto",
+                        help="run the whole suite across N worker processes "
+                             "via pytest-xdist, or 'auto' for one worker per "
+                             "CPU (needs pytest and pytest-xdist installed; "
+                             "the memory guard still spans the run)")
     parser.add_argument("targets", nargs="*", metavar="TestClass.test_name",
                         help="a targeted run through unittest.main, which "
                              "addresses this file's own classes only")
@@ -32334,6 +33665,130 @@ class TestTheRunnerItself(unittest.TestCase):
             f"never read as a full-suite pass\n{output[-3000:]}")
 
 
+class TestParallelJobs(unittest.TestCase):
+    """`-j/--jobs` (#182): argv parsing, the rejected combinations, and the
+    collection cross-check that catches pytest-xdist collecting a different
+    test set than build_suite() would.
+
+    Deterministic and network-free throughout: the collection-mismatch pair
+    below fakes `pytest.main` itself rather than actually distributing work
+    across workers, so nothing here spawns a process or waits on one.
+    """
+
+    def test_parse_argv_jobs_defaults_to_one(self):
+        self.assertEqual(parse_argv([]).jobs, 1)
+        self.assertEqual(parse_argv(["-j", "4"]).jobs, 4)
+        self.assertEqual(parse_argv(["--jobs", "4"]).jobs, 4)
+        self.assertEqual(parse_argv(["-j", "auto"]).jobs, "auto")
+        self.assertEqual(parse_argv(["--jobs", "auto"]).jobs, "auto")
+
+    def test_dash_j_rejects_zero_a_target_and_a_pattern(self):
+        # None of these three may reach pytest.main at all: main() rejects
+        # them before the `import pytest` line, so no worker — real or
+        # faked — ever runs. Calling main() in-process here is fine: every
+        # rejected combination is read-only, so the memory guard it runs
+        # under has nothing to catch.
+        for argv in (["-j", "0"],
+                     ["-j", "4", "-k", "TestParallelJobs"],
+                     ["-j", "4", "TestParallelJobs.test_parse_argv_jobs_defaults_to_one"]):
+            with self.subTest(argv=argv):
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    status = main(argv)
+                out = buf.getvalue()
+                self.assertEqual(status, 2, out)
+                self.assertIn("FAILED", out)
+                self.assertNotIn("(pytest-xdist)", out,
+                                 "a rejected --jobs combination must never "
+                                 f"reach the pytest-xdist run\n{out}")
+
+    def test_dash_j_collection_mismatch_fails_and_the_matching_set_passes(self):
+        # _expected_test_ids() only calls build_suite() — constructing test
+        # objects, never running one — so this is as cheap as any other test
+        # here that calls build_suite() directly.
+        try:
+            import pytest  # noqa: F401
+        except ImportError:
+            reason = ("pytest not installed — skipping the --jobs "
+                      "collection cross-check")
+            print(reason)
+            self.skipTest(reason)
+
+        expected = _expected_test_ids()
+        self.assertTrue(expected, "build_suite() carried no tests at all")
+        nodeids = [f"{module}.py::{cls}::{method}"
+                  for module, cls, method in expected]
+
+        # Two fake worker nodes, each reporting the SAME collected set — real
+        # xdist's default load scheduling has every worker collect the whole
+        # suite and only RUN its assigned share, so this is what two real
+        # `-j 2` workers would report too.
+        def fake_main_missing_one(args, plugins):
+            for node in ("gw0", "gw1"):
+                plugins[0].pytest_xdist_node_collection_finished(
+                    node=node, ids=nodeids[1:])
+            return 0
+
+        buf = io.StringIO()
+        with mock.patch("pytest.main", side_effect=fake_main_missing_one), \
+                contextlib.redirect_stdout(buf):
+            status = main(["-j", "2"])
+        out = buf.getvalue()
+        self.assertEqual(status, 1, out)
+        self.assertIn("FAILED", out)
+        self.assertIn(f"Ran {len(expected) - 1} tests across 2 workers", out)
+
+        def fake_main_matching(args, plugins):
+            for node in ("gw0", "gw1"):
+                plugins[0].pytest_xdist_node_collection_finished(
+                    node=node, ids=nodeids)
+            return 0
+
+        buf = io.StringIO()
+        with mock.patch("pytest.main", side_effect=fake_main_matching), \
+                contextlib.redirect_stdout(buf):
+            status = main(["-j", "2"])
+        out = buf.getvalue()
+        self.assertEqual(status, 0, out)
+        self.assertNotIn("FAILED", out)
+        self.assertIn(f"Ran {len(expected)} tests across 2 workers", out)
+
+    def test_dash_j_auto_reports_the_resolved_worker_count(self):
+        # `--jobs auto` requests the literal string "auto", never a count —
+        # the printed "Ran N tests across <k> workers" line must name how
+        # many workers xdist actually resolved that to, not echo "auto"
+        # back, since the whole point is to see what ran.
+        try:
+            import pytest  # noqa: F401
+        except ImportError:
+            reason = "pytest not installed — skipping the --jobs auto test"
+            print(reason)
+            self.skipTest(reason)
+
+        expected = _expected_test_ids()
+        nodeids = [f"{module}.py::{cls}::{method}"
+                  for module, cls, method in expected]
+
+        def fake_main_three_workers(args, plugins):
+            self.assertIn("-n", args)
+            self.assertEqual(args[args.index("-n") + 1], "auto",
+                             "--jobs auto must pass -n auto through to xdist")
+            for node in ("gw0", "gw1", "gw2"):
+                plugins[0].pytest_xdist_node_collection_finished(
+                    node=node, ids=nodeids)
+            return 0
+
+        buf = io.StringIO()
+        with mock.patch("pytest.main", side_effect=fake_main_three_workers), \
+                contextlib.redirect_stdout(buf):
+            status = main(["-j", "auto"])
+        out = buf.getvalue()
+        self.assertEqual(status, 0, out)
+        self.assertIn(f"Ran {len(expected)} tests across 3 workers", out,
+                      f"expected the RESOLVED worker count (3), not the "
+                      f"literal 'auto'\n{out}")
+
+
 # ----------------------------------------------------------------------
 # The run-wide user-memory guard (issue #97, S2)
 #
@@ -32398,6 +33853,290 @@ def memory_guard(memory: Path, before: str, status: int) -> int:
     return 1
 
 
+# ----------------------------------------------------------------------
+# `-j/--jobs` — the whole suite fanned out across pytest-xdist workers
+# (#182). Bare pytest would bypass main()'s run-wide memory guard and the
+# build_suite() collection cross-check, so the fan-out lives INSIDE this
+# runner: `main()` still snapshots user memory around the whole run, still
+# builds the expected test set from build_suite(), and now also proves
+# pytest's workers collected exactly that set before trusting their result.
+# ----------------------------------------------------------------------
+
+# Read by both the ImportError message in main() and CiDispatchTests' pin on
+# ci.yml's Install dependencies step, so a version bump is one edit instead
+# of two copies drifting apart.
+PARALLEL_PINS = ("pytest==9.1.1", "pytest-xdist==3.8.0")
+
+_PIN_OPERATORS = ("==", ">=", "<=", "~=", "!=", ">", "<")
+
+
+def _normalise_pin_name(name: str) -> str:
+    """PEP 503: a package name compares case-insensitively with `_` and `-`
+    interchangeable, so `pytest_xdist` and `pytest-xdist` name the same
+    package.
+    """
+    return name.strip().lower().replace("_", "-")
+
+
+def _parse_requirement_line(line: str) -> tuple[str, str | None, str | None]:
+    """`(normalised_name, operator, version)` for one already-stripped,
+    non-blank, non-comment requirements-dev.txt line. `operator`/`version`
+    come back `None` when the line names a package with no version
+    specifier at all — still a "not exact ==" disagreement, not a parse
+    failure.
+    """
+    for op in _PIN_OPERATORS:
+        idx = line.find(op)
+        if idx != -1:
+            return (_normalise_pin_name(line[:idx]), op,
+                    line[idx + len(op):].strip())
+    return _normalise_pin_name(line), None, None
+
+
+def parallel_pin_disagreements(ours: tuple[str, ...],
+                               requirements_text: str) -> list[str]:
+    """Where `ours` (PARALLEL_PINS-shaped `name==version` entries) disagrees
+    with a sibling requirements-dev.txt's pins for the same packages — []
+    when every one of `ours` is pinned there too, exact, at the same
+    version. A lexical, line-by-line parse of the requirements file (strip;
+    drop blank lines and `#`-comment lines; drop a trailing ` #...` inline
+    comment; PEP 503 name-fold), which is fine per house style — this is
+    text, not code or YAML shape, so plain string ops are the right tool,
+    not an AST.
+    """
+    theirs: dict[str, tuple[str | None, str | None]] = {}
+    for raw_line in requirements_text.splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        line = line.split(" #", 1)[0].rstrip()
+        if not line:
+            continue
+        name, op, version = _parse_requirement_line(line)
+        theirs[name] = (op, version)
+
+    problems = []
+    for pin in ours:
+        name, _, version = pin.partition("==")
+        key = _normalise_pin_name(name)
+        if key not in theirs:
+            problems.append(
+                f"{pin}: {name} is not pinned at all in their "
+                "requirements-dev.txt")
+            continue
+        their_op, their_version = theirs[key]
+        if their_op != "==":
+            problems.append(
+                f"{pin}: theirs pins {name}{their_op or ''}"
+                f"{their_version or ''} — not an exact == pin")
+        elif their_version != version:
+            problems.append(
+                f"{pin}: theirs pins {name}=={their_version}, ours pins "
+                f"{name}=={version}")
+    return problems
+
+
+def _expected_test_ids() -> set[tuple[str, str, str]]:
+    """`(module_stem, Class, method)` for every test build_suite() carries.
+
+    `_normalise_nodeid` derives the same triple from a pytest nodeid, so the
+    two sets are comparable no matter which side collected the test. A class
+    defined in THIS file has `__module__ == "__main__"` when run as a script
+    (`python3 test/run_tests.py --jobs N`), which pytest's nodeid never
+    says — its path is always `test/run_tests.py`, stem `run_tests` — so
+    that one spelling is normalised to SUITE_RUNNER_MODULE here.
+    """
+    ids = set()
+    for test in flatten_suite(build_suite()):
+        module = test.__class__.__module__
+        if module == "__main__":
+            module = SUITE_RUNNER_MODULE
+        ids.add((module, test.__class__.__name__, test._testMethodName))
+    return ids
+
+
+def _normalise_nodeid(nodeid: str) -> tuple[str, str, str]:
+    """A pytest nodeid (`path::Class::method`) as the triple above."""
+    path_part, cls, method = nodeid.split("::")
+    return (Path(path_part).stem, cls, method)
+
+
+class _XdistCollector:
+    """Every test id an xdist WORKER actually collected, summed over all, plus
+    how many distinct workers reported in.
+
+    `pytest_collection_modifyitems` runs once per WORKER process under `-n
+    N`, never in the controller — verified empirically running this file: a
+    controller-side instance of this plugin recorded nothing.
+    `pytest_xdist_node_collection_finished` does fire in the controller, once
+    per worker, with that worker's own collected nodeids (the whole suite,
+    under xdist's default load scheduling — a worker collects everything and
+    only RUNS its assigned share), so summing it over every worker call gives
+    exactly the set `_expected_test_ids()` does. `self.workers` — the distinct
+    `node` values seen — is how `main()` reports the RESOLVED worker count
+    for `--jobs auto`, whose requested value is the literal string "auto",
+    never a count.
+    """
+
+    def __init__(self) -> None:
+        self.collected: set[tuple[str, str, str]] = set()
+        self.workers: set = set()
+
+    def pytest_xdist_node_collection_finished(self, node, ids) -> None:
+        self.workers.add(node)
+        self.collected.update(_normalise_nodeid(nodeid) for nodeid in ids)
+
+
+# ----------------------------------------------------------------------
+# git auto-maintenance, disabled run-wide (CI run 36036939626)
+#
+# `--jobs auto`, 4 workers, git 2.55: TestIssue77's
+# test_reaper_in_a_nested_dir_sharing_checkouts_basename_passes and
+# test_reaper_ran_in_standalone_repo_recorded_facts_match_through_a_symlink
+# both failed inside `shutil.rmtree(...)` with `FileNotFoundError:
+# 'maintenance.lock'`.
+# evals/disarm-inherited-reach/seed/repo-content/scripts/reaper.sh runs `git
+# commit`, which spawns a DETACHED `git maintenance run --auto` — it creates
+# and removes maintenance.lock inside the same throwaway repo the test's own
+# rmtree is walking. A latent race, made LIKELY by parallel CPU contention;
+# any test in this suite that commits and then deletes a repo is exposed the
+# same way, not just TestIssue77's two. The fixture stays untouched on
+# purpose: it's eval content an agent runs (evals/ is off limits to this
+# fix), and the race belongs to the harness — deleting a repo out from under
+# a background git process IT spawned — not to the script being evaluated.
+# ----------------------------------------------------------------------
+
+def without_git_auto_maintenance(environ: Mapping[str, str]) -> dict[str, str]:
+    """A copy of `environ` with `maintenance.auto=false` appended via git's
+    own env-injection protocol (`GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_N`/
+    `GIT_CONFIG_VALUE_N`) — no config file involved, so it survives a blanked
+    `GIT_CONFIG_GLOBAL` the same way
+    test_build_is_deterministic_under_hostile_ambient_git_config's hostile
+    injection does.
+
+    Appends at the first free index rather than touching any existing
+    `GIT_CONFIG_KEY_N`/`GIT_CONFIG_VALUE_N` — a pre-existing injection (a
+    caller's own ambient config, or this same function applied earlier by a
+    parent process) is never clobbered. Idempotent: if `maintenance.auto` is
+    already injected as `false` anywhere in `environ`, returns an unchanged
+    copy instead of appending a second, redundant entry — this is what lets
+    a `--jobs` execnet worker or a test's own subprocess inherit an
+    already-patched environment and apply this again for free. A
+    `GIT_CONFIG_COUNT` that isn't a valid non-negative integer is left alone
+    entirely: appending under a bad count wouldn't disable maintenance, it
+    would just make git itself error on every single invocation, which is
+    worse than not applying the fix at all.
+    """
+    result = dict(environ)
+    try:
+        count = int(result.get("GIT_CONFIG_COUNT", "0"))
+    except ValueError:
+        return result
+    if count < 0:
+        return result
+    for i in range(count):
+        if (result.get(f"GIT_CONFIG_KEY_{i}") == "maintenance.auto"
+                and result.get(f"GIT_CONFIG_VALUE_{i}") == "false"):
+            return result
+    result[f"GIT_CONFIG_KEY_{count}"] = "maintenance.auto"
+    result[f"GIT_CONFIG_VALUE_{count}"] = "false"
+    result["GIT_CONFIG_COUNT"] = str(count + 1)
+    return result
+
+
+class TestWithoutGitAutoMaintenance(unittest.TestCase):
+    """without_git_auto_maintenance() — CI run 36036939626's fix for the
+    detached `git maintenance run --auto` vs. `shutil.rmtree` race (see the
+    block comment above the function). Deterministic and network-free: only
+    the behavioural test below touches a real git repo, and that repo is a
+    fresh tempdir this test creates and tears down itself.
+    """
+
+    def test_appends_to_an_empty_environ(self):
+        self.assertEqual(without_git_auto_maintenance({}), {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
+        })
+
+    def test_appends_after_existing_entries_without_touching_them(self):
+        environ = {
+            "GIT_CONFIG_COUNT": "2",
+            "GIT_CONFIG_KEY_0": "core.fileMode", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "true",
+        }
+        result = without_git_auto_maintenance(environ)
+        self.assertEqual(result, {
+            "GIT_CONFIG_COUNT": "3",
+            "GIT_CONFIG_KEY_0": "core.fileMode", "GIT_CONFIG_VALUE_0": "false",
+            "GIT_CONFIG_KEY_1": "core.autocrlf", "GIT_CONFIG_VALUE_1": "true",
+            "GIT_CONFIG_KEY_2": "maintenance.auto", "GIT_CONFIG_VALUE_2": "false",
+        })
+
+    def test_idempotent_when_already_present(self):
+        environ = {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "maintenance.auto",
+            "GIT_CONFIG_VALUE_0": "false",
+        }
+        self.assertEqual(without_git_auto_maintenance(environ), environ)
+
+    def test_unchanged_copy_on_a_garbage_count(self):
+        not_a_number = {"GIT_CONFIG_COUNT": "not-a-number", "PATH": "/usr/bin"}
+        self.assertEqual(without_git_auto_maintenance(not_a_number),
+                         not_a_number)
+        negative = {"GIT_CONFIG_COUNT": "-1"}
+        self.assertEqual(without_git_auto_maintenance(negative), negative)
+
+    def test_does_not_mutate_its_input(self):
+        environ = {"GIT_CONFIG_COUNT": "0"}
+        without_git_auto_maintenance(environ)
+        self.assertEqual(environ, {"GIT_CONFIG_COUNT": "0"})
+
+    def test_git_honours_the_injected_config(self):
+        # The behavioural proof, not just a shape check: a real git repo, in
+        # an env carrying only this helper's injection on top of whatever
+        # `git init`/`commit` themselves need, reports maintenance.auto=false
+        # back — proving git actually reads the env-injected config, not
+        # just that this function built the right-looking dict.
+        repo = Path(tempfile.mkdtemp(prefix="without-git-auto-maintenance-"))
+        self.addCleanup(shutil.rmtree, repo, ignore_errors=True)
+        env = without_git_auto_maintenance(os.environ)
+        subprocess.run(["git", "init", "-q"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"],
+                       cwd=repo, env=env, check=True)
+        subprocess.run(["git", "config", "user.name", "Test"],
+                       cwd=repo, env=env, check=True)
+        (repo / "f.txt").write_text("x", encoding="utf-8")
+        subprocess.run(["git", "add", "f.txt"], cwd=repo, env=env, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "x"], cwd=repo, env=env,
+                       check=True)
+        result = subprocess.run(
+            ["git", "config", "--get", "maintenance.auto"],
+            cwd=repo, env=env, capture_output=True, text=True, check=True)
+        self.assertEqual(result.stdout.strip(), "false")
+
+    def test_main_applies_it_to_os_environ(self):
+        # main(["-j", "0"]) returns 2 early (test_dash_j_rejects_zero_a_
+        # target_and_a_pattern above) without ever reaching pytest — cheap
+        # enough to call in-process. The assertion has to run INSIDE the
+        # patch.dict block: patch.dict restores os.environ to its pre-call
+        # state on exit, so nothing leaks into a test that runs after this
+        # one.
+        with mock.patch.dict(os.environ, {}, clear=False):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                status = main(["-j", "0"])
+            self.assertEqual(status, 2)
+            count = int(os.environ["GIT_CONFIG_COUNT"])
+            found = any(
+                os.environ.get(f"GIT_CONFIG_KEY_{i}") == "maintenance.auto"
+                and os.environ.get(f"GIT_CONFIG_VALUE_{i}") == "false"
+                for i in range(count))
+            self.assertTrue(found, f"GIT_CONFIG_COUNT={count} did not carry "
+                            "an injected maintenance.auto=false entry")
+
+
 def main(argv: list[str] | None = None) -> int:
     """Exit status, always from the runner result and the memory guard.
 
@@ -32405,6 +34144,22 @@ def main(argv: list[str] | None = None) -> int:
     `unittest.main` exits the process itself. The status is computed here now,
     on every path.)
     """
+    # Disable git's background auto-maintenance for the WHOLE run, before
+    # anything else — including argv parsing, so a rejected `--jobs`
+    # combination that returns early still leaves it set for any subprocess
+    # a test spawns afterwards. See without_git_auto_maintenance() above for
+    # the race this closes (CI run 36036939626). `os.environ[key] = value`
+    # per changed key, never `os.environ.clear(); os.environ.update(...)` —
+    # that would drop every OTHER variable a CI runner or a developer's own
+    # shell set. Applying it here, once, is what makes it universal: a
+    # `--jobs` execnet worker inherits the controller's environment, and
+    # every subprocess a test spawns inherits its parent's — so one edit
+    # here covers the serial path, every worker, and every child process.
+    before_env = dict(os.environ)
+    after_env = without_git_auto_maintenance(before_env)
+    for key, value in after_env.items():
+        if before_env.get(key) != value:
+            os.environ[key] = value
     opts = parse_argv(list(sys.argv[1:] if argv is None else argv))
     # The snapshot comes BEFORE the targeted-run branch, not after it. It used
     # to sit below, so `python3 test/run_tests.py TestFoo.test_bar` returned
@@ -32414,6 +34169,75 @@ def main(argv: list[str] | None = None) -> int:
     # goes through memory_guard().
     memory = user_memory_path()
     before = user_memory_fingerprint(memory)
+    override = os.environ.get(DISCOVERY_ENV)
+    if override:
+        print(f"DISCOVERY OVERRIDE: ${DISCOVERY_ENV}={override} — "
+              "test/issues/ is NOT what this run discovered.")
+    if opts.jobs != 1:
+        if isinstance(opts.jobs, int) and opts.jobs < 1:
+            print(f"FAILED: --jobs {opts.jobs} is not a positive worker "
+                  "count.")
+            return memory_guard(memory, before, 2)
+        if opts.targets or opts.patterns:
+            print("FAILED: --jobs runs the WHOLE suite across pytest-xdist "
+                  "workers and cannot be combined with a targeted run or "
+                  "-k.")
+            return memory_guard(memory, before, 2)
+        try:
+            import pytest
+            # pytest-xdist's import NAME is `xdist`, not `pytest_xdist`
+            # (#182) — checked here alongside pytest itself so a missing
+            # xdist gets this same FAILED message and exit 2, rather than
+            # pytest rejecting `-n` on its own and the run surfacing as a
+            # confusing zero-collected mismatch below.
+            import xdist  # noqa: F401
+        except ImportError:
+            print("FAILED: --jobs needs pytest and pytest-xdist installed "
+                  f"— pip install {' '.join(PARALLEL_PINS)}")
+            return memory_guard(memory, before, 2)
+        expected = _expected_test_ids()
+        collector = _XdistCollector()
+        # Named `pytest_argv`, not the generic `args` this file's helpers use
+        # everywhere for an arbitrary *args passthrough: the suite-fork scan
+        # (test_every_suite_forking_test_in_this_repo_stands_down_in_a_child)
+        # resolves this list's static value, sees `test/run_tests.py` in it,
+        # and registers whatever NAME it is assigned to as "names the
+        # runner" file-wide — a bare `args` would then make every unrelated
+        # helper that forwards an `args` parameter to `gh`/`pwsh` look like a
+        # suite spawner too.
+        # `-rfEs`, never a bare `-rs`: pytest's `-r` REPLACES the default
+        # `fE`, so `-rs` alone drops failures and errors from the short
+        # summary (observed in agentskills, run 35949072744; agentskills#179
+        # uses `-rfEs` for the same reason).
+        pytest_argv = [str(TEST_DIR / SUITE_RUNNER_NAME), str(discovery_dir()),
+                      "-n", str(opts.jobs), "-p", "no:cacheprovider", "-rfEs"]
+        if opts.verbose:
+            pytest_argv.append("-v")
+        if opts.quiet:
+            pytest_argv.append("-q")
+        if opts.failfast:
+            pytest_argv.append("-x")
+        rc = pytest.main(pytest_argv, plugins=[collector])
+        collected = collector.collected
+        if collected != expected:
+            missing = sorted(expected - collected)[:10]
+            extra = sorted(collected - expected)[:10]
+            print(f"FAILED: pytest-xdist collected {len(collected)} tests, "
+                  f"build_suite() expected {len(expected)}. missing (up to "
+                  f"10): {missing} extra (up to 10): {extra}")
+            status = 1
+        else:
+            status = 0 if rc == 0 else 1
+        # The RESOLVED worker count — how many distinct xdist worker nodes
+        # actually reported in — not the requested `opts.jobs`: with
+        # `--jobs auto` the requested value is the literal string "auto",
+        # never a count. Falls back to `opts.jobs` only if no worker
+        # reported at all, which the collection mismatch above already
+        # failed the run for.
+        worker_count = len(collector.workers) or opts.jobs
+        print(f"Ran {len(collected)} tests across {worker_count} workers "
+              "(pytest-xdist)")
+        return memory_guard(memory, before, status)
     if opts.targets:
         # A targeted run (`python3 test/run_tests.py SomeClass.test_x`) goes
         # through unittest.main, which addresses only this module's own
@@ -34405,6 +36229,230 @@ class TestNewestPerQualifyingTier(unittest.TestCase):
         # the restriction retires nothing on its own.
         self.assertIn("claude-fable-5-1", self._arm_ids(result))
         self.assertEqual(result["retired_since_last"], [])
+
+
+class TestPublishUsageCensus(unittest.TestCase):
+    """scripts/publish_usage_census.sh, end to end against a LOCAL bare repo.
+
+    The script clones skills-evals, runs the census against a fake
+    `~/.claude/projects`, and pushes usage/latest.json to the `eval-results`
+    branch. Here `origin` is a bare repository in a temp dir reached over
+    `file://`, the clock is `CENSUS_NOW`, git's global and system config are
+    switched off, and `HOME` is a scratch dir: no network, no real gh, no
+    wall-clock, and nothing from the developer's machine reaches the script.
+    """
+
+    NOW = TestIssue67.NOW
+    SCRIPT = REPO_ROOT / "scripts" / "publish_usage_census.sh"
+    SUBJECT = "propagation: usage census [skip ci]"
+    SECRET_PATH = "/home/example/repos/private-client-work"
+    SECRET_TEXT = "the merger closes on Tuesday"
+    ARN = ("arn:aws:bedrock:us-east-1:123456789012:"
+           "application-inference-profile/abcd1234")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.origin = self.tmp / "origin.git"
+        self.url = self.origin.as_uri()
+        self.env = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(self.home),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "SKILLS_EVALS_URL": self.url,
+            "CENSUS_NOW": self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        self._seed_origin()
+        self.projects = self._fake_projects()
+
+    def git(self, *args, cwd=None, check=True):
+        env = dict(self.env, GIT_AUTHOR_NAME="Fixture", GIT_COMMITTER_NAME="Fixture",
+                   GIT_AUTHOR_EMAIL="fixture@example.com",
+                   GIT_COMMITTER_EMAIL="fixture@example.com")
+        return subprocess.run(["git", *args], cwd=cwd, env=env, check=check,
+                              capture_output=True, text=True).stdout.strip()
+
+    def _seed_origin(self):
+        """main = the census script and what it imports; eval-results = one
+        unrelated commit, the way the real branch starts."""
+        self.git("init", "--bare", "--quiet", "-b", "main", str(self.origin))
+        seed = self.tmp / "seed"
+        seed.mkdir()
+        self.git("init", "--quiet", "-b", "main", cwd=seed)
+        (seed / "scripts").mkdir()
+        shutil.copy(REPO_ROOT / "scripts" / "model_usage_census.py",
+                    seed / "scripts")
+        shutil.copytree(HARNESS_DIR, seed / "harness",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (seed / "evals").mkdir()
+        shutil.copy(REPO_ROOT / "evals" / "roster-policy.yml", seed / "evals")
+        self.git("add", ".", cwd=seed)
+        self.git("commit", "--quiet", "-m", "seed", cwd=seed)
+        self.git("remote", "add", "origin", self.url, cwd=seed)
+        self.git("push", "--quiet", "origin", "main", cwd=seed)
+        self.git("checkout", "--quiet", "--orphan", "eval-results", cwd=seed)
+        self.git("rm", "-rfq", ".", cwd=seed)
+        (seed / "roster.txt").write_text("unrelated\n", encoding="utf-8")
+        self.git("add", ".", cwd=seed)
+        self.git("commit", "--quiet", "-m", "results seed", cwd=seed)
+        self.git("push", "--quiet", "origin", "eval-results", cwd=seed)
+
+    def _fake_projects(self) -> Path:
+        """The census's own leak fixture: hostile `message.model` values, a
+        project path in the directory name and in `cwd`, prose in the content."""
+        projects = self.tmp / "fake-claude" / "projects"
+        entries = [
+            {"type": "user", "cwd": self.SECRET_PATH,
+             "sessionId": "11111111-2222-4333-8444-555555555555",
+             "timestamp": "2026-09-03T10:00:00Z",
+             "message": {"role": "user", "content": self.SECRET_TEXT}},
+            {"type": "assistant", "cwd": self.SECRET_PATH,
+             "timestamp": "2026-09-03T10:00:01Z",
+             "message": {"role": "assistant", "model": "claude-opus-5",
+                         "content": [{"type": "text", "text": self.SECRET_TEXT}]}},
+            {"type": "assistant", "timestamp": "2026-08-27T09:00:00Z",
+             "message": {"role": "assistant", "model": "claude-haiku-4-5"}},
+        ] + [{"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+              "message": {"role": "assistant", "model": value}}
+             for value in (self.ARN, self.SECRET_PATH, self.SECRET_TEXT,
+                           {"id": "claude-opus-5"}, 7)]
+        TestIssue67Review._write_transcript(
+            projects / "-home-example-repos-private-client-work" / "s.jsonl",
+            entries, self.NOW)
+        return projects
+
+    def run_script(self, *args, projects=None, extra_env=None):
+        env = dict(self.env, CENSUS_PROJECTS=str(projects or self.projects),
+                   **(extra_env or {}))
+        return subprocess.run(["bash", str(self.SCRIPT), *args], env=env,
+                              capture_output=True, text=True, timeout=120)
+
+    def head(self, branch="eval-results") -> str:
+        return self.git("rev-parse", branch, cwd=self.origin)
+
+    def published(self) -> dict:
+        return json.loads(self.git("show", "eval-results:usage/latest.json",
+                                   cwd=self.origin))
+
+    def test_the_script_is_executable_and_strict(self):
+        self.assertTrue(os.access(self.SCRIPT, os.X_OK))
+        self.assertIn("set -euo pipefail", self.SCRIPT.read_text(encoding="utf-8"))
+
+    def test_a_dry_run_pushes_nothing(self):
+        before = self.head()
+        proc = self.run_script("--dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.head(), before)
+        self.assertIn("dry run", proc.stdout)
+        self.assertNotIn("usage/latest.json",
+                         self.git("ls-tree", "-r", "--name-only", "eval-results",
+                                  cwd=self.origin))
+
+    def test_a_real_run_pushes_exactly_the_one_file_and_verifies_it(self):
+        before = self.head()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        after = self.head()
+        self.assertNotEqual(before, after)
+        self.assertEqual(self.git("rev-list", "--count", f"{before}..{after}",
+                                  cwd=self.origin), "1")
+        self.assertEqual(self.git("diff", "--name-only", before, after,
+                                  cwd=self.origin), "usage/latest.json")
+        self.assertEqual(self.git("log", "-1", "--format=%s", "eval-results",
+                                  cwd=self.origin), self.SUBJECT)
+        # Nothing else on the branch moved, and main was never written to.
+        self.assertEqual(self.git("show", "eval-results:roster.txt",
+                                  cwd=self.origin), "unrelated")
+        self.assertEqual(self.git("rev-list", "--count", "main", cwd=self.origin), "1")
+        self.assertIn("published", proc.stdout)
+
+    def test_the_published_file_is_only_model_week_counts_and_metadata(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        document = self.published()
+        self.assertEqual(sorted(document), ["counts", "generated_at", "weeks"])
+        self.assertEqual(document["counts"]["claude-opus-5"], {"2026-W36": 1})
+        self.assertEqual(document["counts"]["claude-haiku-4-5"], {"2026-W35": 1})
+        self.assertEqual(document["counts"]["other"], {"2026-W36": 5})
+        self.assertEqual(sorted(document["counts"]),
+                         ["claude-haiku-4-5", "claude-opus-5", "other"])
+        blob = self.git("show", "eval-results:usage/latest.json", cwd=self.origin)
+        for leaked in (self.SECRET_PATH, self.SECRET_TEXT, "123456789012",
+                       "private-client-work", "s.jsonl",
+                       "11111111-2222-4333-8444-555555555555"):
+            self.assertNotIn(leaked, blob)
+
+    def test_an_unchanged_census_makes_no_commit(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.head()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.head(), first)
+        self.assertIn("unchanged", proc.stdout)
+
+    def test_an_unchanged_census_is_still_refreshed_before_it_goes_stale(self):
+        """The roster calls a census older than 14 days "no fresh census", so
+        identical counts must not stop the timestamp moving forever."""
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.head()
+        clone = self.tmp / "aged"
+        self.git("clone", "--quiet", "--branch", "eval-results", self.url, str(clone))
+        path = clone / "usage" / "latest.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc["generated_at"] = "2026-08-20T12:00:00Z"   # 15 days before NOW
+        path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8")
+        self.git("commit", "--quiet", "-am", "age it", cwd=clone)
+        self.git("push", "--quiet", "origin", "eval-results", cwd=clone)
+        aged = self.head()
+        self.assertNotEqual(aged, first)
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotEqual(self.head(), aged)
+        self.assertEqual(self.published()["generated_at"], "2026-09-04T12:00:00Z")
+
+    def test_changed_counts_are_published_again(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.head()
+        extra = self.projects / "-home-example-other" / "t.jsonl"
+        TestIssue67Review._write_transcript(extra, [
+            {"type": "assistant", "timestamp": "2026-09-03T11:00:00Z",
+             "message": {"role": "assistant", "model": "claude-opus-5"}}],
+            self.NOW)
+        self.assertEqual(self.run_script().returncode, 0)
+        self.assertNotEqual(self.head(), first)
+        self.assertEqual(self.published()["counts"]["claude-opus-5"],
+                         {"2026-W36": 2})
+
+    def test_the_summary_line_is_totals_only(self):
+        proc = self.run_script()
+        printed = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, printed)
+        self.assertEqual(len(proc.stdout.strip().splitlines()), 1)
+        self.assertIn("3 models, 7 assistant turns", printed)
+        for forbidden in (str(self.home), str(self.tmp), self.SECRET_PATH,
+                          "private-client-work", "claude-opus-5",
+                          "claude-haiku-4-5"):
+            self.assertNotIn(forbidden, printed)
+
+    def test_no_transcript_directory_fails_and_publishes_nothing(self):
+        before = self.head()
+        proc = self.run_script(projects=self.tmp / "nowhere")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(self.head(), before)
+
+    def test_an_unknown_argument_is_refused_before_any_work(self):
+        proc = self.run_script("--push-everything")
+        self.assertEqual(proc.returncode, 2)
+
+    def test_the_script_handles_no_credential_of_its_own(self):
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        for token in ("GH_TOKEN", "GITHUB_TOKEN", "gh auth", "curl", "wget"):
+            self.assertNotIn(token, text)
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

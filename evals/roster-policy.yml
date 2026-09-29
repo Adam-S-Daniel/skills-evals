@@ -18,6 +18,28 @@
 # test/run_tests.py::TestIssue67::test_no_model_ids_are_hardcoded_outside_fixtures
 # is the guard.
 
+# `roster_mode` selects how `.github/workflows/eval.yml`'s "Propose a
+# roster change" step handles a proposal that differs from the committed
+# roster. `roster.py` never reads this key — it is machinery for the
+# workflow step alone. See
+# docs/decisions/0003-roster-merges-automatically.md.
+#
+#   auto     — the proposal is pushed to `roster/proposal` as today, AND
+#              (only when this run's vendor-default probe was clean: no
+#              `defaults_failed`, no `defaults_mismatched`) a pull request
+#              from that branch is opened or updated, `ci.yml` is dispatched
+#              on its head so the required `test` check reports there, and
+#              the PR is set to merge automatically once it passes. A
+#              tracking issue is still filed, linking the PR.
+#   proposal — today's flow: the branch is pushed and a tracking issue is
+#              filed; a human opens and merges the pull request. Set this to
+#              restore human approval without any other change.
+#
+# Missing entirely, or any value other than the two above, is treated as
+# `proposal` — silently when the key is simply absent, with a fixed
+# `::warning::` when it is present and wrong.
+roster_mode: auto
+
 # Capability ladder, weakest rung first. A model's tier is the WEAKEST rung
 # below whose word appears as a dash-separated token anywhere in its id —
 # `rung_of()` walks the ladder from the top of this list down and returns on
@@ -46,6 +68,18 @@ tiers:
 # two census keys, halving both shares. The collapse only happens when the
 # undated alias is itself in the catalogue; a catalogue that publishes only
 # dated ids has nothing to collapse onto and every id stands on its own.
+# A PREVIOUS ARM whose listed form switches between dated and undated from
+# one run to the next — the Models API is free to do that — is still that
+# same arm, whether or not the family's vendor-default probe succeeded this
+# run: a frozen family holds its previous arms under whichever spelling
+# this run's catalogue lists, and a seated default's tier stays on the
+# roster through another previous arm seated under either spelling (#203
+# probe round 9). A dated snapshot replaced by a DIFFERENT dated snapshot
+# of the same base — the base itself never listed — is a different model,
+# not a rename: the old one retires as no longer returned by the Models
+# API, and, under a freeze that would otherwise leave the family with no
+# held arm left in the API, the new one may still be seated by usage, as a
+# family with no listed seat (#203 adversarial round 10, S1).
 
 # A since-retired model's usage still counts toward the denominator when
 # this harness's own history says it was once in the catalogue: the
@@ -101,7 +135,64 @@ arm_enter_window_weeks: 4
 # tier with. A usable census that simply names no model at the entry bar is a
 # different thing: that is evidence, and it says no tier qualifies, so the
 # only arms are previous ones held over the exit bar.
-cooling_off_days: 7
+#
+# SINCE #202 ALL OF THE ABOVE APPLIES ONLY TO A TIER WITH NO RESOLVED VENDOR
+# DEFAULT, and to the preflight pick. Where `scripts/probe_model_defaults.py`
+# asked the freshly installed Claude Code CLI — with no credential — which
+# model the tier's family alias resolves to (#203), and that model is
+# available this run, it is the tier's seat the moment the tier is on the
+# roster — no cooling-off: the vendor making it the default is the signal the
+# cooling-off was standing in for. See `superseded_exit_weeks` below and
+# docs/decisions/0002-roster-follows-vendor-defaults.md.
+#
+# REFINEMENTS (#203 rounds 1 and 2). (1) The default's OWN previous seat does
+# not keep its tier on the roster: with no qualifying usage, no other
+# still-seated previous arm in the tier and a usable census, a default that
+# is a previous arm gets the ordinary exit check below
+# (`arm_exit_usage_pct` over `arm_exit_window_weeks`) and can retire, and
+# that check reads the TIER's combined share — every model of the default's
+# family, over the same denominator — not the default's own, so a tier
+# between the exit and entry bars keeps an arm while the fleet moves from
+# one version to the next. (2) A previous arm NEWER than its tier's default
+# earns no new seat but is not retired on sight: it gets the same exit
+# check. (3) A default governs the models of its own family word only: a
+# peer family in the same rung (`[fable, mythos]` below) keeps the rules
+# above.
+#
+# A FAILED PROBE FREEZES ITS FAMILY FOR THAT RUN (#203 probe round 1). A
+# family the probe failed for (an error recorded for its alias, an answer in
+# the wrong tier or family, a model with no `created_at` to start a
+# predecessor's buffer from (`no-created-at` — probe round 5, R5-1), or no
+# usable document) keeps every previous arm's seat and retires nothing but a
+# model gone from the Models API. While it still holds a seat the Models API
+# lists it seats nothing new (#203 probe round 3); only a family that would
+# otherwise vanish is seated — by the entry bar above, or, with no usable
+# enter window, as the newest in its tier as with no probe — and the roster
+# says so loudly (`defaults_failed`, the summary's first lines, a
+# `::warning::`). Falling back to the rules above instead flipped seats on
+# one bad week. A default the probe answered but this run's catalogue does
+# not otherwise match (not available, an ambiguous snapshot) FREEZES its
+# family too, through the identical rule (#203 probe round 7, R7-1 — the
+# governing guarantee, first stated in probe round 5 as R5-2: a single run
+# whose probe answer is a failure or a mismatch changes no seat a clean run
+# would not) — only the wording (`defaults_mismatched`) says a mismatch
+# rather than a failure. A persistent mismatch that holds a listed seat is
+# surfaced just as loudly: its own fixed `::warning::` in the proposal step
+# (#203 probe round 8, R8-1) and an open tracking issue on "same" too, whose
+# title says "probe failed" only for a genuine failure, its own wording for
+# a mismatch, or both when both are present in the same run. Nothing is
+# carried to the next run (the owner's decision of 2026-09-28): the
+# carried-defaults block and its expiry knob that briefly stood here are
+# gone.
+#
+# SET TO 0 BY THE OWNER ON 2026-09-27 (#202): "Removing cool off from haiku
+# and preflight." At 0 every model with a `created_at` is past the
+# cooling-off, so the newest-in-tier rule above (for a family with no
+# resolved vendor default: one the probe skips, e.g. mythos) and the
+# preflight pick both take the
+# newest model at once. The knob and the machinery that reads it are kept, so a
+# positive value restores the cooling-off without a code change.
+cooling_off_days: 0
 
 # An arm keeps its seat until it falls under this share for the whole trailing
 # window (or disappears from the Models API, which is immediate). Hysteresis,
@@ -110,6 +201,19 @@ cooling_off_days: 7
 # comparison is against a different arm.
 arm_exit_usage_pct: 2
 arm_exit_window_weeks: 8
+
+# A previous arm whose tier's vendor default is now a NEWER model (#202,
+# Adam's decision of 2026-09-27) is not measured over the 8-week window
+# above. It keeps its seat until at least this many complete ISO weeks have
+# passed since its successor's `created_at` AND its share over the most
+# recent such weeks is under `arm_exit_usage_pct`; a stale or too-thin census
+# holds it, as it holds any arm. One week lets the fleet's usage move to the
+# new default before the old one is dropped. 0 retires it on the first run
+# that sees it superseded — the "no buffer" setting. This buffer is for an arm
+# OLDER than the default only (#203 round 1): the default itself, once seated,
+# and a previous arm NEWER than the default are measured by the 8-week exit
+# rule above.
+superseded_exit_weeks: 1
 
 # A census older than this is not evidence of anything current. Past it the
 # roster falls back to "newest per tier" and says so, in words, in every arm's
