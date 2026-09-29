@@ -83,6 +83,21 @@ roster/census work to close, not something this change decided.
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.
+**Amended 2026-09-28 (Adam's decision, ADR 0003):** a differing proposal no
+longer necessarily waits for a human to open and merge the pull request.
+`roster_mode: auto` in `evals/roster-policy.yml` — the shipped setting — has
+the propose step open/update the `roster/proposal` PR itself, dispatch
+`ci.yml` on it, and enable auto-merge once `test` passes, but only on a run
+whose vendor-default probe was clean; a dirty probe, a rejected proposal, or
+any failed `gh` call along the way still leaves the human-merge flow above
+untouched. Set `roster_mode: proposal` to restore it everywhere, with no
+other change.
+**Amended further (adversarial round 4 on #209):** the `eval` job now holds
+no write scope at all — the badge/results commit-and-push moved to a new
+`publish` job with a fresh checkout and no agent, and a new `disarm` job
+turns off any already-armed `roster/proposal` auto-merge BEFORE `eval`'s
+agent starts, not only after it finishes. See
+[ADR 0003's round 4 section](docs/decisions/0003-roster-merges-automatically.md).
 
 ## 0B. Session of 2026-09-21 — RESUME HERE
 

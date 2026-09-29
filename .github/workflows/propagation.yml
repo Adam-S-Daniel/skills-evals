@@ -362,11 +362,12 @@ jobs:
           caused it and nothing external can repair it.
 
           A failing **arm** is usually caused by something outside this
-          repository. The arms' one unpinned input is the adam-agentskills
-          registry, which they check out at main, so a red arm most likely
-          means a change there rather than a change here. The other is the
-          Claude Code CLI, which installs at npm latest; the run records the
-          version it used.
+          repository. The arms have two unpinned inputs: the adam-agentskills
+          registry, which they check out at main, and the Claude Code CLI,
+          which every run installs at the npm latest tag and records in the
+          step summary. A red arm most likely means a change in one of those
+          rather than a change here; compare the CLI version the failing run
+          recorded with the last green run's.
           EOF
           cat > "$RUNNER_TEMP/propagation-recovered.md" <<EOF
           The scheduled propagation probes are green again — gate: $GATE_RESULT,

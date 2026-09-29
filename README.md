@@ -606,9 +606,43 @@ taken over — and a `main...roster/proposal` compare link. An invalid proposal
 does not update the branch or compare link; its tracking issue says it needs
 review and lists the admission failures. The paid eval result still publishes
 from the committed roster — except on a `roster_only` dispatch, where no eval
-runs and nothing is published to `eval-results`. A human opens the pull request for a valid proposal
-and merges it after CI. Nothing in CI writes `evals/roster.yml`. When the
-computed roster matches the committed one, that issue is closed.
+runs and nothing is published to `eval-results`. Nothing in CI writes
+`evals/roster.yml` directly — only a merged pull request does. When the
+computed roster matches the committed one, that issue (and, under
+`roster_mode: auto`, any open pull request) is closed.
+
+**Who merges the pull request depends on `roster_mode`** in
+`evals/roster-policy.yml` ([ADR 0003](docs/decisions/0003-roster-merges-automatically.md)).
+`roster_mode: proposal` (the flow above, unabridged) leaves the pull request
+for a human to open and merge after CI. `roster_mode: auto` — the shipped
+setting — instead opens or updates the pull request itself, dispatches
+`ci.yml` on `roster/proposal` so its `test` check reports on the pushed sha,
+and sets the PR to merge automatically once that check passes; it only does
+this on a run whose vendor-default probe was clean (no `defaults_failed`,
+no `defaults_mismatched`) — a dirty probe or a rejected proposal keeps the
+human-merge flow exactly, and says why in the tracking issue. Any `gh`
+failure along the way is a fixed warning, never a failed job, and degrades
+that run to the human-merge flow too. A dedicated `disarm` job
+(B1, adversarial round 4 on #209) turns off any already-open pull request's
+auto-merge FIRST, before the `eval` job's agent ever starts — never after —
+so an earlier run's still-armed auto-merge cannot sit exposed for the length
+of that job. `roster-pr` then re-arms it, but only for a proposal ITS OWN
+independent checks admit; on every run that does not (re-)enable auto-merge —
+a dirty probe, `roster_mode: proposal`, a rejected proposal, or a failed `gh`
+call partway through — the pull request's auto-merge is turned off again (or
+stays off). `roster-pr` also runs after `publish` (the one other job holding
+`contents: write`), since `--match-head-commit` is checked only when
+auto-merge is enabled. So, within a run, no job holding a write credential
+runs after `roster-pr` arms the pull request, and `disarm` clears any arming
+before the agent starts. Between arming and the merge (which waits on a green
+`test`, possibly for days), any other write-access actor that pushes
+`roster/proposal` retargets the armed pull request; that is outside what this
+workflow controls. The known instance is
+`.github/workflows/dependabot-auto-merge.yml`'s `auto-merge` job, which holds
+`contents: write` and keeps the default persisted checkout credential
+(pre-existing, unchanged here); a ruleset restricting updates to
+`refs/heads/roster/proposal` would close it and is not implemented. Set
+`roster_mode: proposal` to switch back; nothing else needs to change.
 
 Thresholds and the capability ladder live in
 [`evals/roster-policy.yml`](evals/roster-policy.yml) — no model id appears in

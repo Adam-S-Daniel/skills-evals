@@ -5,11 +5,16 @@ running against today.
 IT DOES NOT DECIDE WHAT RUNS. The roster the harness runs on is
 `evals/roster.yml`, committed on `main` — ruleset-protected and
 pull-request-only, so a seat or a `catalogue_seen` entry cannot appear
-there or vanish from there without a reviewed commit. See
+there or vanish from there without a commit that went through a pull
+request: a human review and merge under `roster_mode: proposal`, or the
+same branch protection plus a passing `test` check under `roster_mode:
+auto` (ADR 0003) — never a direct push either way. See
 docs/decisions/0001-roster-trusted-on-main.md. What this module produces is
 a DIFF against that file, published with every seat's reason in words and
-its numerator and denominator beside it, for a human to merge or not.
-`run_eval.select_models` never reads this module's output.
+its numerator and denominator beside it, for a human to merge or not
+(`roster_mode: proposal`) or for the automation to merge once CI passes
+(`roster_mode: auto`). `run_eval.select_models` never reads this module's
+output.
 
 A PURE FUNCTION OVER FILES. `compute_roster()` takes already-parsed documents
 and a frozen `now`, and returns the roster dict — no network, no clock, no
@@ -247,6 +252,20 @@ def committed_roster_problems(document) -> list[str]:
         if isinstance(judge_entry.get("id"), str) and judge_entry["id"] in arm_ids:
             problems.append("the judge id is also an arm; a model must not "
                             "grade its own run")
+    # B2 (adversarial round 3 on #209): `generated_at`'s own DATE (its first
+    # 10 characters, e.g. "2026-09-28T00:00:00Z" -> "2026-09-28"), read once
+    # here so every `catalogue_seen` entry below can be checked against it.
+    # A missing/unparseable `generated_at` skips this comparison (its own
+    # absence is already a separate problem, appended below); it never
+    # raises here.
+    generated_at_raw = document.get("generated_at")
+    generated_at_date = None
+    if isinstance(generated_at_raw, str) and generated_at_raw.strip():
+        try:
+            generated_at_date = datetime.strptime(
+                generated_at_raw[:10], "%Y-%m-%d").date()
+        except ValueError:
+            generated_at_date = None
     seen = document.get("catalogue_seen")
     if not isinstance(seen, list):
         problems.append("`catalogue_seen` is not a list")
@@ -259,10 +278,20 @@ def committed_roster_problems(document) -> list[str]:
                                 f"{{id, last_seen}} with string values")
                 continue
             try:
-                datetime.strptime(entry["last_seen"], "%Y-%m-%d")
+                last_seen_date = datetime.strptime(
+                    entry["last_seen"], "%Y-%m-%d").date()
             except ValueError:
                 problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
                                 "is not an ISO YYYY-MM-DD date")
+                continue
+            # A planted `last_seen` later than this document's own
+            # `generated_at` can never age out under `_update_catalogue_seen`
+            # (its computed age against `now` is negative forever) — caught
+            # here instead, at the one gate every proposal and every
+            # committed file must pass (B2, round 3 on #209).
+            if generated_at_date is not None and last_seen_date > generated_at_date:
+                problems.append(f"`catalogue_seen[{index}]`'s `last_seen` "
+                                "is later than `generated_at`")
     seen_ids = [e["id"] for e in (seen if isinstance(seen, list) else [])
                 if isinstance(e, dict) and isinstance(e.get("id"), str)]
     for label, ids in (("arms", arm_ids), ("catalogue_seen", seen_ids)):
@@ -1238,8 +1267,11 @@ def _clean_counts(counts, warn) -> dict:
 #
 # THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING. The lists they
 # bounded come from `evals/roster.yml`, and a line cannot appear there
-# without a reviewed commit on a ruleset-protected branch. So the input
-# the caps bounded is bounded by review, and every remaining effect of a
+# without a commit that went through a pull request on a ruleset-protected
+# branch — human-reviewed under `roster_mode: proposal`, or merged by the
+# automation only once CI passes under `roster_mode: auto` (ADR 0003); never
+# a direct push either way. So the input the caps bounded is bounded by
+# that PR gate, and every remaining effect of a
 # cap was on HONEST data: a repository with more than 500 genuinely
 # observed models would have had its own reviewed history evicted, by an
 # order chosen to defeat an attacker who can no longer write the file.
@@ -1522,8 +1554,11 @@ def _update_catalogue_seen(api_ids, previous_entries: list[dict], now: datetime,
             #
             # THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING: this
             # history is `evals/roster.yml`'s `catalogue_seen`, committed
-            # on a ruleset-protected branch. A `last_seen` here is a date
-            # a reviewer merged, so "the record was tampered with" is no
+            # on a ruleset-protected branch through a pull request. A
+            # `last_seen` here is a date that passed that PR gate — a
+            # human reviewer's merge under `roster_mode: proposal`, or the
+            # automation's merge once CI passed under `roster_mode: auto`
+            # (ADR 0003) — so "the record was tampered with" is no
             # longer one of the two readings of an old date — the only
             # remaining reading is the true one, that this harness has not
             # observed the model in that long. The census-names-it
@@ -3427,7 +3462,7 @@ def render_summary(roster: dict, previous_state: str = "auto") -> str:
     if proposal.get("status") == "differs":
         lines += ["**This run proposes a change to the committed roster** "
                   "(`evals/roster.yml`). Nothing changes until a human merges "
-                  "it; the eval ran on the committed roster, as it always does.",
+                  "it; the eval runs on the committed roster, as it always does.",
                   ""]
         lines += ["| Change | Field | From | To | Why |",
                   "| --- | --- | --- | --- | --- |"]

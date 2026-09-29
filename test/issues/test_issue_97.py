@@ -3821,8 +3821,10 @@ class TestIssue97(unittest.TestCase):
         event_path = tmp / "event.json"
         event_path.write_text(json.dumps(event if event is not None else {}),
                               encoding="utf-8")
+        # A real runner always provides GITHUB_OUTPUT (the step writes the
+        # `eval_key` job output there for the `publish` job, B1 round 4).
         env = dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
-                   RUNNER_TEMP=str(tmp))
+                   RUNNER_TEMP=str(tmp), GITHUB_OUTPUT=str(tmp / "gh-output"))
         proc = subprocess.run(["bash", "-c", self._validation_script()],
                               cwd=str(cwd or REPO_ROOT), env=env,
                               capture_output=True, text=True, timeout=300)
@@ -3830,6 +3832,8 @@ class TestIssue97(unittest.TestCase):
             if (tmp / "eval-fixture").is_file() else None
         proc.key = (tmp / "eval-key").read_text(encoding="utf-8") \
             if (tmp / "eval-key").is_file() else None
+        proc.output = (tmp / "gh-output").read_text(encoding="utf-8") \
+            if (tmp / "gh-output").is_file() else ""
         return proc
 
     def test_the_validation_step_accepts_every_committed_fixture(self):
@@ -3841,6 +3845,10 @@ class TestIssue97(unittest.TestCase):
                 proc = self._run_validation({"inputs": {"fixture": fixture}})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(proc.selected, fixture)
+                # B1 (round 4 on #209): the job output `publish` reads for
+                # its commit message is exactly the validated key, one line.
+                self.assertEqual(
+                    proc.output, f"eval_key={fixture[len('evals/'):]}\n")
 
     def test_the_validation_step_defaults_when_the_event_carries_no_input(self):
         # The scheduled run: no `inputs` in the event payload at all.

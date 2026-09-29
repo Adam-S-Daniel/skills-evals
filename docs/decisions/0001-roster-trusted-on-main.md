@@ -1,6 +1,6 @@
 # ADR 0001: The roster the harness runs on is committed on `main`; a computed roster is a proposal
 
-- **Status:** accepted (2026-09-13)
+- **Status:** accepted (2026-09-13); amended by [ADR 0003](0003-roster-merges-automatically.md) (2026-09-28)
 - **Issue:** [#147](https://github.com/Adam-S-Daniel/skills-evals/issues/147), superseding the fix-round approach on [#67](https://github.com/Adam-S-Daniel/skills-evals/issues/67) / [PR #129](https://github.com/Adam-S-Daniel/skills-evals/pull/129)
 - **Deciders:** the evals orchestrator session, under Adam's decision 11 (redesign the denominator around a trusted history)
 
