@@ -72,6 +72,17 @@ CREDENTIAL_NAME = re.compile(r"^(ANTHROPIC_|CLAUDE_|AWS_|GOOGLE_)|TOKEN|KEY",
                              re.IGNORECASE)
 
 
+#: The `roster-pr` job's step that manages the pull request. Round 6 put
+#: the roster App's token-mint step ahead of it, so it is found by name,
+#: never by position.
+MANAGE_STEP = "Manage the roster pull request"
+
+
+def _manage_step(doc):
+    return next(s for s in doc["jobs"]["roster-pr"]["steps"]
+                if s.get("name") == MANAGE_STEP)
+
+
 def credential_like(names) -> list[str]:
     """Every credential-shaped name except the probe's own fixed flags."""
     return sorted(n for n in names if CREDENTIAL_NAME.search(n) and n not in PROBE_FLAGS)
@@ -1818,6 +1829,12 @@ class _ProposeStepFixture(unittest.TestCase):
         "probe_note": "PROBE_NOTE", "roster_summary": "ROSTER_SUMMARY",
     }
 
+    #: Round 6: the roster App's installation token, as the `roster-pr`
+    #: step receives it (`ROSTER_APP_TOKEN`). Present by default so the
+    #: auto path is reachable; a test sets `self._app_token = ""` to model
+    #: the mint step failing under `continue-on-error`.
+    _app_token = "app-token-fake"
+
     def setUp(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         self.run_body = next(s for s in doc["jobs"]["roster"]["steps"]
@@ -1827,7 +1844,7 @@ class _ProposeStepFixture(unittest.TestCase):
         #: step, run second by `_run_two_jobs` below with the first job's
         #: $GITHUB_OUTPUT threaded into it exactly as
         #: `needs.eval.outputs.*` would be.
-        self.roster_pr_run_body = doc["jobs"]["roster-pr"]["steps"][0]["run"]
+        self.roster_pr_run_body = _manage_step(doc)["run"]
         self.tmp = Path(tempfile.mkdtemp())
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
@@ -1887,6 +1904,7 @@ class _ProposeStepFixture(unittest.TestCase):
         gh.chmod(0o755)
         gh_log = self.tmp / "gh.log"
         gh_log.unlink(missing_ok=True)
+        (self.tmp / "gh-auth.log").unlink(missing_ok=True)
         (self.tmp / "body.md").unlink(missing_ok=True)
         github_output = self.tmp / "github-output-1"
         github_output.write_text("", encoding="utf-8")
@@ -1922,6 +1940,8 @@ class _ProposeStepFixture(unittest.TestCase):
         for key, var in self.OUTPUT_ENV.items():
             if key in outputs:
                 env2[var] = outputs[key]
+        # Round 6: only the `roster-pr` job ever holds the App token.
+        env2["ROSTER_APP_TOKEN"] = self._app_token
         done2 = subprocess.run(["bash", "-c", self.roster_pr_run_body],
                                capture_output=True, text=True, timeout=60,
                                env=env2, cwd=self.tmp)
@@ -2158,6 +2178,11 @@ class _ProposeStepFixture(unittest.TestCase):
         return (
             "#!/usr/bin/env bash\n"
             f"printf '%s\\n' \"$*\" >> {str(self.tmp / 'gh.log')!r}\n"
+            # Round 6: which credential each call ran with — `gh` itself
+            # reads GH_TOKEN first, then GITHUB_TOKEN, so this records the
+            # one it would actually use.
+            "tok=\"${GH_TOKEN:-${GITHUB_TOKEN:-}}\"\n"
+            f"printf '%s\\t%s\\n' \"$tok\" \"$*\" >> {str(self.tmp / 'gh-auth.log')!r}\n"
             # R2-3: `_gh_fail` names a SUBSTRING of the full argument line
             # that fails — checked before any stand-in below, so a failing
             # api/pr/issue call really fails rather than also answering.
@@ -3275,7 +3300,7 @@ class TestEvalNoteKnowsTheOutcome(unittest.TestCase):
 
     def setUp(self):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        self.roster_pr_step = doc["jobs"]["roster-pr"]["steps"][0]
+        self.roster_pr_step = _manage_step(doc)
 
     def _note(self, outcome, event=None):
         run = self.roster_pr_step["run"]
@@ -3509,7 +3534,7 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
     def test_env_maps_every_declared_output_under_the_fixtures_names(self):
         doc = self._doc()
         roster_outputs = doc["jobs"]["roster"]["outputs"]
-        roster_pr_env = doc["jobs"]["roster-pr"]["steps"][0]["env"]
+        roster_pr_env = _manage_step(doc)["env"]
         # `roster_latest_json` is the one output NOT read by `roster-pr`
         # (B1, round 3 on #209): it goes to the `eval` job's badge step
         # instead, checked separately below.
@@ -3633,6 +3658,15 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
         #: the digits `gh pr create`'s printed URL ends with.
         self._pr_create_number = "55"
 
+    def _auth_calls(self):
+        """(token, argument line) for every stub `gh` call of the last
+        run — every runner resets `gh-auth.log` alongside `gh.log`."""
+        path = self.tmp / "gh-auth.log"
+        if not path.exists():
+            return []
+        return [tuple(ln.split("\t", 1)) for ln in
+                path.read_text(encoding="utf-8").splitlines()]
+
     def _write_policy(self, cwd, mode):
         (cwd / "evals").mkdir(parents=True, exist_ok=True)
         text = "" if mode is None else f"roster_mode: {mode}\n"
@@ -3653,6 +3687,11 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
         return (
             "#!/usr/bin/env bash\n"
             f"printf '%s\\n' \"$*\" >> {str(self.tmp / 'gh.log')!r}\n"
+            # Round 6: which credential each call ran with — `gh` itself
+            # reads GH_TOKEN first, then GITHUB_TOKEN, so this records the
+            # one it would actually use.
+            "tok=\"${GH_TOKEN:-${GITHUB_TOKEN:-}}\"\n"
+            f"printf '%s\\t%s\\n' \"$tok\" \"$*\" >> {str(self.tmp / 'gh-auth.log')!r}\n"
             # R2-3: `_gh_fail` names a SUBSTRING of the full argument line
             # that fails — checked before the api routing and the pr-
             # command stand-ins below, so a failing api/`pr create`/etc.
@@ -3754,8 +3793,10 @@ class TestRosterModeAutoDiffers(_AutoProposeStepFixture):
         self.assertIn("--base main", create)
         self.assertIn("--head roster/proposal", create)
         self.assertIn("automatic update (run 1)", create)
-        self.assertTrue(any(c.startswith("workflow run ci.yml") and "--ref roster/proposal" in c
-                           for c in pr_calls), pr_calls)
+        # Round 6: no `ci.yml` dispatch — a dispatched `test` never
+        # satisfied the PR's required check (run 36509251840, PR #214);
+        # the App-opened PR's own `pull_request` run does.
+        self.assertFalse(any(c.startswith("workflow ") for c in pr_calls), pr_calls)
         # N1: enabling is idempotent — a `pr merge ... --disable-auto` runs
         # (and is ignored) BEFORE the `--auto` enable call itself, so the
         # first "pr merge" call is that disable, not the enable.
@@ -4005,7 +4046,6 @@ class TestRosterModeGhFailuresDegradeToProposal(_AutoProposeStepFixture):
         latest = self._differs()
         cases = (("pulls?state=open", "could not find the roster pull request"),
                  ("pr create", "could not create the roster pull request"),
-                 ("workflow run", "could not start checks for the roster pull request"),
                  ("pr merge", "could not enable auto-merge for the roster pull request"))
         for i, (fail, warning) in enumerate(cases):
             with self.subTest(fail=fail):
@@ -4020,8 +4060,8 @@ class TestRosterModeGhFailuresDegradeToProposal(_AutoProposeStepFixture):
                 self.assertIn(f"::warning::{warning}\n", out)
                 # Wording differs by whether a PR number was ever learned
                 # (a "pr list"/"pr create" failure never gets one; a
-                # "workflow run"/"pr merge" failure keeps the one `pr
-                # create` already returned) — "did not complete" and "a
+                # "pr merge" failure keeps the one `pr create` already
+                # returned) — "did not complete" and "a
                 # human must" are the two phrases common to both.
                 self.assertIn("did not complete", body)
                 self.assertIn("a human must", body)
@@ -4208,6 +4248,7 @@ class TestB1RosterPrHelper(_AutoProposeStepFixture):
             "REPO": "example/skills-evals", "RUN_ID": "1",
             "SERVER_URL": "https://github.example.com",
             "GITHUB_TOKEN": "t", "GH_TOKEN": "t",
+            "ROSTER_APP_TOKEN": self._app_token,
             "RUNNER_TEMP": str(runner_temp),
             "TEST_GIT_DIR": str(work) if work else "",
             "GITHUB_SHA": "", "ROSTER_MODE": "", "STATUS": "", "PROBE_CLEAN": "",
@@ -4223,6 +4264,7 @@ class TestB1RosterPrHelper(_AutoProposeStepFixture):
         gh.chmod(0o755)
         gh_log = self.tmp / "gh.log"
         gh_log.unlink(missing_ok=True)
+        (self.tmp / "gh-auth.log").unlink(missing_ok=True)
         (self.tmp / "body.md").unlink(missing_ok=True)
         env = dict(base, PATH=f"{stub}{os.pathsep}{os.environ.get('PATH', '')}")
         done = subprocess.run(["bash", "-c", self.roster_pr_run_body], capture_output=True,
@@ -4496,7 +4538,8 @@ class TestB1PublishVerification(_AutoProposeStepFixture):
         runner_temp.mkdir(parents=True)
         base = {"REPO": "example/skills-evals", "RUN_ID": "1",
                 "SERVER_URL": "https://github.example.com", "GITHUB_TOKEN": "t",
-                "GH_TOKEN": "t", "RUNNER_TEMP": str(runner_temp),
+                "GH_TOKEN": "t", "ROSTER_APP_TOKEN": self._app_token,
+                "RUNNER_TEMP": str(runner_temp),
                 "TEST_GIT_DIR": str(work), "ROSTER_MODE": "", "ISSUE_NUMBER": "",
                 "REJECTION_REASON": "", "RENDERED_IDENTICAL": "", "EVAL_NOTE": "",
                 "PROBE_NOTE": "", "ROSTER_SUMMARY": ""}
@@ -4504,6 +4547,7 @@ class TestB1PublishVerification(_AutoProposeStepFixture):
         stub = self.tmp / "bin3"; stub.mkdir(exist_ok=True)
         gh = stub / "gh"; gh.write_text(self._gh_script(), encoding="utf-8"); gh.chmod(0o755)
         gh_log = self.tmp / "gh.log"; gh_log.unlink(missing_ok=True)
+        (self.tmp / "gh-auth.log").unlink(missing_ok=True)
         (self.tmp / "body.md").unlink(missing_ok=True)
         proc_env = dict(base, PATH=f"{stub}{os.pathsep}{os.environ.get('PATH', '')}")
         done = subprocess.run(["bash", "-c", self.roster_pr_run_body], capture_output=True,
@@ -5642,7 +5686,7 @@ class TestB1VerifyComparePredicate(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        body = doc["jobs"]["roster-pr"]["steps"][0]["run"]
+        body = _manage_step(doc)["run"]
         block = body.split("# >>> publish-verify", 1)[1].split("# <<< publish-verify", 1)[0]
         start = block.index("python3 -c '") + len("python3 -c '")
         end = block.index("' 2>/dev/null) || ok=\"false\"", start)
@@ -5797,7 +5841,7 @@ class TestRound4Docs(unittest.TestCase):
         # succeeded, only that `publish` was allowed to attempt it; this
         # sentence still has to name that "if that job failed" case.
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        roster_pr = doc["jobs"]["roster-pr"]["steps"][0]
+        roster_pr = _manage_step(doc)
         line = next(ln for ln in roster_pr["run"].splitlines()
                     if "by the \\`publish\\` job" in ln)
         self.assertIn("if that job failed", line)
@@ -6558,7 +6602,7 @@ class TestProposalSentenceIsCoupledToRosterPrSed(_WeeklyLoop):
     def _sed_script():
         import shlex
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
-        run = doc["jobs"]["roster-pr"]["steps"][0]["run"]
+        run = _manage_step(doc)["run"]
         # The step's shell text spells `sed \` and then its double-quoted
         # script on the next line, closed by the `$( ... )` paren; shlex
         # splits that one quoted word out exactly as the shell would,
@@ -6582,3 +6626,269 @@ class TestProposalSentenceIsCoupledToRosterPrSed(_WeeklyLoop):
                              capture_output=True, text=True, check=True).stdout
         self.assertNotIn(self.CLAUSE, out)
         self.assertIn("merges automatically once `test` passes", out)
+
+
+# --- Round 6: the roster PR is the App's (ADR 0003) ---------------------------
+
+
+APP_TOKEN_ACTION = ("actions/create-github-app-token@"
+                    "bcd2ba49218906704ab6c1aa796996da409d3eb1")
+APP_TOKEN_STEP_ID = "roster-app-token"
+
+
+class TestRosterAppTokenIsConfined(unittest.TestCase):
+    """Round 6 (live finding 2026-09-29: run 36509251840 opened PR #214 with
+    GITHUB_TOKEN; its `pull_request` run 36509304069 sat `action_required`,
+    and the `test` it dispatched, run 36509302288, never counted for the
+    PR). The roster PR is opened, reopened and armed by a dedicated GitHub
+    App instead — and that App's key and token exist in the `roster-pr`
+    job ONLY, never beside the npm-latest CLI or the agent. Parsed YAML
+    throughout, never a text match on the workflow."""
+
+    def setUp(self):
+        self.doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
+        self.job = self.doc["jobs"]["roster-pr"]
+
+    def test_the_mint_step_comes_first_pinned_bare_with_exact_inputs(self):
+        step = self.job["steps"][0]
+        self.assertEqual(step.get("id"), APP_TOKEN_STEP_ID)
+        self.assertEqual(step.get("uses"), APP_TOKEN_ACTION,
+                         "pinned to v3.2.0's full commit sha, never a tag")
+        self.assertIs(step.get("continue-on-error"), True,
+                      "a missing or broken App must degrade, not fail the job")
+        self.assertIsNone(step.get("run"))
+        self.assertIsNone(step.get("env"))
+        self.assertEqual(step.get("with"), {
+            "client-id": "${{ vars.ROSTER_APP_CLIENT_ID }}",
+            "private-key": "${{ secrets.ROSTER_APP_PRIVATE_KEY }}",
+            "owner": "Adam-S-Daniel",
+            "repositories": "skills-evals",
+            "permission-contents": "write",
+            "permission-pull-requests": "write",
+        }, "exactly these inputs: one repository, exactly two scopes — a "
+           "dropped scope makes the token inherit the installation's full "
+           "set, and any other permission-* widens it")
+        self.assertEqual([s.get("name") for s in self.job["steps"]],
+                         ["Mint the roster App token", MANAGE_STEP])
+
+    def test_the_app_is_referenced_by_no_job_but_roster_pr(self):
+        markers = ("ROSTER_APP", APP_TOKEN_STEP_ID, "create-github-app-token",
+                   "secrets.", "vars.")
+        for name, job in self.doc["jobs"].items():
+            if name == "roster-pr":
+                continue
+            text = json.dumps(job)
+            for marker in markers:
+                with self.subTest(job=name, marker=marker):
+                    self.assertNotIn(marker, text,
+                                     f"`{name}` must never see the roster App's "
+                                     "key, client id or token")
+        rest = {k: v for k, v in self.doc.items() if k != "jobs"}
+        for marker in markers:
+            with self.subTest(where="workflow level", marker=marker):
+                self.assertNotIn(marker, json.dumps(rest, default=str))
+
+    def test_inside_roster_pr_only_the_mint_step_reads_the_key(self):
+        mint, manage = self.job["steps"]
+        self.assertNotIn("env", self.job, "no job-level env on roster-pr")
+        self.assertIn("secrets.ROSTER_APP_PRIVATE_KEY", json.dumps(mint))
+        self.assertNotIn("secrets.", json.dumps(manage))
+        self.assertNotIn("vars.", json.dumps(manage))
+
+    def test_the_manage_step_gets_the_token_from_the_step_output(self):
+        manage = _manage_step(self.doc)
+        env = manage["env"]
+        self.assertEqual(env.get("ROSTER_APP_TOKEN"),
+                         "${{ steps.%s.outputs.token }}" % APP_TOKEN_STEP_ID)
+        # GH_TOKEN/GITHUB_TOKEN stay the job's own GITHUB_TOKEN: an empty
+        # App token in GH_TOKEN would make `gh` fall back to GITHUB_TOKEN
+        # silently, which is exactly what must never open or arm the PR.
+        self.assertEqual(env.get("GH_TOKEN"), "${{ github.token }}")
+        self.assertEqual(env.get("GITHUB_TOKEN"), "${{ github.token }}")
+        refs = [k for k, v in env.items() if APP_TOKEN_STEP_ID in str(v)]
+        self.assertEqual(refs, ["ROSTER_APP_TOKEN"])
+        self.assertNotIn("${{", manage["run"])
+
+    def test_no_dispatch_and_no_actions_scope_anywhere(self):
+        for name, job in self.doc["jobs"].items():
+            with self.subTest(job=name):
+                self.assertNotIn("actions", job.get("permissions") or {})
+                for step in job.get("steps", []):
+                    self.assertNotIn("workflow run", step.get("run") or "")
+        self.assertEqual(self.job["permissions"],
+                         {"pull-requests": "write", "issues": "write",
+                          "contents": "read"})
+
+    def test_ci_runs_test_on_a_reopened_pull_request(self):
+        # The close/reopen cycle only works if ci.yml's `pull_request`
+        # trigger keeps GitHub's default activity types (opened,
+        # synchronize, reopened): a `types:` list without `reopened` would
+        # leave the reopened roster PR with no `test` at all.
+        ci = yaml.safe_load((REPO_ROOT / ".github" / "workflows" / "ci.yml")
+                            .read_text(encoding="utf-8"))
+        triggers = ci.get("on", ci.get(True))
+        pr = triggers["pull_request"]
+        types = (pr or {}).get("types")
+        self.assertTrue(types is None or "reopened" in types, types)
+
+
+class TestRosterPrUsesTheAppToken(_AutoProposeStepFixture):
+    """The `roster-pr` step against a stub `gh` that records which
+    credential each call ran with (`gh-auth.log`)."""
+
+    APP = "app-token-fake"
+
+    def _pushed_sha(self):
+        origin = self.tmp / "work-origin.git"
+        return subprocess.run(["git", "--git-dir", str(origin), "rev-parse",
+                               "refs/heads/roster/proposal"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+
+    def _by(self, prefix):
+        return [(tok, c) for tok, c in self._auth_calls() if c.startswith(prefix)]
+
+    def _app_calls(self):
+        return [c for tok, c in self._auth_calls() if tok == self.APP]
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_no_open_pr_is_created_and_armed_by_the_app(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_create_number = "77"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pushed = self._pushed_sha()
+        creates = self._by("pr create")
+        self.assertEqual(len(creates), 1, calls)
+        self.assertEqual(creates[0][0], self.APP, "the App opens the PR")
+        arms = [(t, c) for t, c in self._by("pr merge 77") if "--auto" in c]
+        self.assertEqual(len(arms), 1, calls)
+        self.assertEqual(arms[0][0], self.APP, "the App arms auto-merge")
+        self.assertIn("--merge", arms[0][1])
+        self.assertIn(f"--match-head-commit {pushed}", arms[0][1])
+        self.assertEqual(self._by("pr close"), [])
+        self.assertEqual(self._by("pr reopen"), [])
+        self.assertFalse(any(c.startswith("workflow ") for c in calls), calls)
+        # The App never touches the tracking issue or the reads; those
+        # stay on GITHUB_TOKEN.
+        for tok, c in self._auth_calls():
+            if c.startswith("issue ") or c.startswith("api "):
+                with self.subTest(call=c):
+                    self.assertEqual(tok, "t")
+        self.assertIn("Pull request #77", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_an_open_pr_is_closed_reopened_and_armed_by_the_app(self):
+        # The `roster` job moved this PR's head with GITHUB_TOKEN, which
+        # triggers no `synchronize` run; the App's close + reopen fires a
+        # `reopened` run of `test` on the new head.
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_value = "12"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        pushed = self._pushed_sha()
+        self.assertEqual(self._by("pr create"), [])
+        seq = [(t, c) for t, c in self._auth_calls()
+               if c.startswith(("pr edit 12", "pr close 12", "pr reopen 12"))
+               or (c.startswith("pr merge 12") and "--auto" in c
+                   and "--disable-auto" not in c)]
+        self.assertEqual([c.split()[1] for _, c in seq],
+                         ["edit", "close", "reopen", "merge"], seq)
+        for tok, c in seq:
+            with self.subTest(call=c):
+                self.assertEqual(tok, self.APP)
+        self.assertIn(f"--match-head-commit {pushed}", seq[-1][1])
+        self.assertFalse(any(c.startswith("workflow ") for c in calls), calls)
+        self.assertIn("Pull request #12", body)
+        self.assertIn("merging automatically", " ".join(
+            c for c in calls if c.startswith("issue ")))
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_missing_app_token_opens_and_arms_nothing(self):
+        for token in ("", "not a token", "tok\nen"):
+            with self.subTest(token=token):
+                self._app_token = token
+                latest = self._differs()
+                work = self._repo("auto", name=f"missing-{len(token)}")
+                shutil.rmtree(self.tmp / "runner", ignore_errors=True)
+                out, calls, body = self._run_step(latest, [], cwd=work)
+                self.assertFalse(any(c.startswith(("pr create", "pr edit", "pr close",
+                                                   "pr reopen", "workflow "))
+                                     or (c.startswith("pr merge") and "--auto" in c
+                                         and "--disable-auto" not in c)
+                                     for c in calls), calls)
+                self.assertIn("::warning::the roster App token was unavailable; "
+                              "no roster pull request was opened or armed\n", out)
+                self.assertIn("`roster_mode: auto` is set, but the roster App token "
+                              "was unavailable, so no pull request was opened or "
+                              "armed — the proposal is on `roster/proposal` for a "
+                              "human to open as a pull request and merge after CI.",
+                              body or "")
+                self.assertNotIn("merging automatically", " ".join(calls))
+                self.assertTrue(any(c.startswith("issue ") and "a change is proposed" in c
+                                    for c in calls), calls)
+        self._app_token = "app-token-fake"
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_missing_app_token_with_an_open_pr_only_disables_it(self):
+        self._app_token = ""
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_value = "12"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertFalse(any(c.startswith(("pr create", "pr edit", "pr close",
+                                           "pr reopen"))
+                             or (c.startswith("pr merge") and "--auto" in c
+                                 and "--disable-auto" not in c)
+                             for c in calls), calls)
+        disables = [(t, c) for t, c in self._by("pr merge 12") if "--disable-auto" in c]
+        self.assertEqual(len(disables), 1, calls)
+        self.assertEqual(disables[0][0], "t", "the disable stays on GITHUB_TOKEN")
+        self.assertIn("The roster App token was unavailable, so pull request #12", body)
+        self.assertIn("close and reopen it to run `test`", body)
+        self.assertIn("turned off", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_proposal_mode_never_uses_the_app_token(self):
+        latest = self._differs()
+        work = self._repo("proposal")
+        self._pr_list_value = "34"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertEqual(self._app_calls(), [])
+        disables = [(t, c) for t, c in self._by("pr merge 34") if "--disable-auto" in c]
+        self.assertEqual([t for t, _ in disables], ["t"])
+        self.assertNotIn("App token", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_failed_reopen_warns_arms_nothing_and_says_so(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_value = "12"
+        self._gh_fail = "pr reopen"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertIn("::warning::could not reopen the roster pull request\n", out)
+        self.assertFalse(any(c.startswith("pr merge") for c in calls), calls)
+        self.assertIn("Pull request #12 was closed so `test` could run on its new "
+                      "head, and could not be reopened", body)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_a_failed_close_warns_and_disables_with_github_token(self):
+        latest = self._differs()
+        work = self._repo("auto")
+        self._pr_list_value = "12"
+        self._gh_fail = "pr close"
+        out, calls, body = self._run_step(latest, [], cwd=work)
+        self.assertIn("::warning::could not close the roster pull request to re-run "
+                      "its checks\n", out)
+        self.assertEqual(self._by("pr reopen"), [])
+        self.assertFalse(any(c.startswith("pr merge") and "--auto" in c
+                             and "--disable-auto" not in c for c in calls), calls)
+        disables = [(t, c) for t, c in self._by("pr merge 12") if "--disable-auto" in c]
+        self.assertEqual([t for t, _ in disables], ["t"])
+        self.assertIn("did not complete", body)

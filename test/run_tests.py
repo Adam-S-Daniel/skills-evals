@@ -4229,7 +4229,8 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # block is `{}` deliberately — each of the FIVE jobs carries its
         # own least-privilege set, so the `eval` job (which runs the
         # bypass-permissions agent) never sees `pull-requests: write`/
-        # `actions: write`/`issues: write` at all, never reaches the
+        # `issues: write` at all (and no job holds `actions: write` since
+        # round 6 dropped the `ci.yml` dispatch), never reaches the
         # roster-decision scopes B1 round 3 moved onto `roster`, and — B1
         # round 4 — holds NO write scope of any kind: the badge/results
         # commit-and-push moved to a new `publish` job with a fresh
@@ -4291,18 +4292,17 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "needs, on a job with no agent and a fresh checkout")
         self.assertEqual(
             doc["jobs"]["roster-pr"].get("permissions"),
-            {"pull-requests": "write", "actions": "write", "issues": "write",
-             "contents": "write"},
+            {"pull-requests": "write", "issues": "write", "contents": "read"},
             "the `roster-pr` job's permissions must be exactly "
-            "{pull-requests: write, actions: write, issues: write, "
-            "contents: write} — this job (F2, adversarial round 1 on #209) "
-            "is the only one holding pull-requests/actions, for "
-            "roster_mode: auto's PR create/edit/merge/close and its "
-            "`gh workflow run ci.yml` dispatch; `issues: write` because it "
-            "finishes the tracking issue's PR-outcome-dependent text; "
-            "`contents: write` (S2, round 2, spec-roster-mode-r2.md) is for "
-            "enablePullRequestAutoMerge/an immediate merge, even though "
-            "this job performs no checkout and runs no repository code")
+            "{pull-requests: write, issues: write, contents: read} — round 6 "
+            "(ADR 0003): opening, reopening and arming the roster PR moved "
+            "to the roster App's own token, so GITHUB_TOKEN here keeps only "
+            "`pull-requests: write` to turn a stale auto-merge off and close "
+            "a stale PR, `issues: write` for the tracking issue's "
+            "PR-outcome-dependent text, and `contents: read` for its "
+            "policy/ref/compare reads. `actions: write` went with the "
+            "`gh workflow run ci.yml` dispatch, `contents: write` with "
+            "arming auto-merge")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "read")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
         self.assertNotEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
@@ -6106,9 +6106,11 @@ class TestIssue67(unittest.TestCase):
         # contents-READ/id-token — no write scope of any kind, since B1
         # round 4 moved the badge commit/push off this job entirely;
         # `publish` (contents: write only) does that commit/push instead,
-        # with no agent on its runner; `pull-requests`/`actions` stay on
-        # `roster-pr` alone — so the bypass-permissions agent's own job
-        # never widens.
+        # with no agent on its runner; `pull-requests` stays on `roster-pr`
+        # (and `disarm`, to turn auto-merge off) — so the bypass-permissions
+        # agent's own job never widens. Round 6: `roster-pr` holds no
+        # `actions` or `contents: write` any more; the roster App's token
+        # opens and arms the PR.
         self.assertEqual(doc["permissions"], {})
         # (c) Exactly five jobs, so a sixth can never go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
@@ -6123,8 +6125,8 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(doc["jobs"]["publish"]["permissions"],
                          {"contents": "write"})
         self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
-                         {"pull-requests": "write", "actions": "write",
-                          "issues": "write", "contents": "write"})
+                         {"pull-requests": "write", "issues": "write",
+                          "contents": "read"})
         for job in doc["jobs"].values():
             for step in job["steps"]:
                 script = step.get("run") or ""
@@ -30204,7 +30206,7 @@ elif 'worktree' in args and 'remove' in args:
             run = subprocess.run(["/bin/bash", "-c", script], cwd=workspace,
                                  env=env, capture_output=True, text=True, timeout=60)
             # F2 (adversarial round 1 on #209): the `roster-pr` job's step
-            # now owns every `gh pr`/`gh workflow run` call and the
+            # now owns every `gh pr` call and the
             # differs-branch tracking-issue write, fed by the `eval` job's
             # outputs above — run it too, against the SAME recording `gh`/
             # `git` shims, so `calls` below is the full cross-job call log
@@ -30212,8 +30214,11 @@ elif 'worktree' in args and 'remove' in args:
             # single-job workflow.
             if run.returncode == 0:
                 outputs = self._parse_github_output(github_output)
+                # Round 6: the App's token-mint step comes first now; the
+                # script is the step found by name.
                 roster_pr_script = next(
-                    step for step in document["jobs"]["roster-pr"]["steps"])
+                    step for step in document["jobs"]["roster-pr"]["steps"]
+                    if step.get("name") == "Manage the roster pull request")
                 # B1 (round 3 on #209): `eval_note` is NOT here — it is
                 # computed inside `roster-pr` itself, from `needs.eval.result`
                 # (env2's EVAL_RESULT, left unset here, reads as "no eval
