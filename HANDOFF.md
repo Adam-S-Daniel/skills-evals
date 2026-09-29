@@ -67,6 +67,20 @@ tracking issue on "same" too (#203 probe round 8, R8-1 — the workflow had
 read only `defaults_failed`), with a title that says "probe failed" only
 for a genuine failure and its own wording for a mismatch, both when both
 are present. See ADR 0002's decision 6 and third update.
+**Amended 2026-09-28 (retirement of the Tier-3 account-store audit):** the
+owner deleted the claude.ai Routine "skills-evals: account-store propagation
+audit" the same day the claude.ai ZIP-upload channel it audited was retired
+([adam-agentskills#23](https://github.com/Adam-S-Daniel/adam-agentskills/issues/23)).
+`.github/workflows/account-store-drift.yml`, `harness/run_account_audit.py`,
+`harness/run_account_drift_issue.py` and `harness/propagation/account_store.py`
+are gone, and `propagation.yml`'s freshness gate went with them; see that
+workflow's header comment and `evals/propagation/ROUTINE.md`, now marked
+HISTORY, for the full record. `scripts/model_usage_census.py` (§ "The
+census's public-output contract" in `README.md`/`DESIGN.md`) rode that
+Routine's schedule best-effort and has lost its ride — it was not deleted,
+and now has its own publisher, `scripts/publish_usage_census.sh`, scheduled by
+the owner from a transcript-bearing machine (`evals/usage/CENSUS.md`); until he
+does, nothing fires it and the roster falls back to "no fresh census".
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.
@@ -123,11 +137,10 @@ carries the reasons and the compare link.
 (`claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5`,
 `claude-fable-5-1`) and judge `claude-fable-5`, every seat by the
 newest-per-tier fallback because **no usage census has ever been published**
-(`usage/latest.json` is absent on `eval-results`; the census now runs from
-`scripts/publish_usage_census.sh` on a transcript-bearing machine, see
-`evals/usage/CENSUS.md`; it was step 6 of the Tier-3 account-store Routine,
-which was retired 2026-09-28 by owner decision, see adam-agentskills ADR 0014,
-https://github.com/Adam-S-Daniel/adam-agentskills/pull/35). It was not merged: it would multiply the paid
+(`usage/latest.json` is absent on `eval-results`; the census is published by
+`scripts/publish_usage_census.sh` from a transcript-bearing machine, see
+`evals/usage/CENSUS.md`; it was once step 6 of the Tier-3 account-store
+Routine, now retired). It was not merged: it would multiply the paid
 weekly run and raise the judge tier on no usage evidence, which is the human
 call ADR 0001 reserves. Two ways forward: publish the census first so the next
 Monday run proposes from usage, or open and merge a PR from `roster/proposal`
@@ -1125,23 +1138,3 @@ it.
    cleared; schedule the hourly wake; rewrite the board with a dated state.
 6. Keep one message to Adam per wave: merged, running, blocked on him, spend,
    next wave. Anything named gets its link.
-
-## 8. Note, 2026-09-28: the account-store audit is retired
-
-Owner decision (Adam, 2026-09-28): every surface takes this account's skills
-from repo-based marketplace plugins; he deleted every upload from the claude.ai
-account store and verified it, and deleted the account-audit Routine. Removed
-here, with history kept in git: the Tier-3 audit (`harness/run_account_audit.py`,
-`harness/propagation/account_store.py`), its drift issue workflow
-(`.github/workflows/account-store-drift.yml`, `harness/run_account_drift_issue.py`),
-the freshness gate in `propagation.yml` and `harness/run_propagation.py`
-(`--gate-only`, `--no-gate`, `--account-*`, `--now`), and
-`evals/propagation/ROUTINE.md`. The sections above that describe them are
-history, not current behaviour. Kept: the probe-leg isolation guards against the
-account channel (`~/.claude/skills/synced/`), because Anthropic's own skills
-still arrive through it.
-
-The usage census was a passenger on that Routine and now has its own home:
-`evals/usage/CENSUS.md` and `scripts/publish_usage_census.sh`, scheduled by the
-owner on his durable machine. Until he does, `harness/roster.py` degrades to
-"no fresh census" after 14 days and says so in every arm's reason.

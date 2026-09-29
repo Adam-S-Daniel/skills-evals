@@ -20,18 +20,16 @@ Run: python3 test/test_propagation.py
 from __future__ import annotations
 
 import collections
-import contextlib
 import fnmatch
-import io
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -47,6 +45,7 @@ sys.path.insert(0, str(HARNESS_DIR))
 import run_propagation  # noqa: E402
 from propagation import arms, init_probe  # noqa: E402
 
+NOW = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
 # The arms build their child's environment from init_probe's allowlist, which is
 # exactly what would otherwise stop a mutation mode reaching the stub — leaving
 # every mutation test silently unmutated and green. Tests widen the allowlist by
@@ -71,15 +70,10 @@ def write_skill(directory: Path, name: str, description: str, body: str = "body\
 
 
 def make_registry(root: Path, bundle: str = "adam",
-                  skills=FIXTURE_SKILLS, declared=None) -> Path:
+                  skills=FIXTURE_SKILLS) -> Path:
     """A miniature adam-agentskills-shaped checkout, plus a skills.lock whose
     digests are computed from the tree it ships — so the lock can never rot
     against it.
-
-    `declared` writes `plugins/<bundle>/skills/sync-skills/account-skills.txt`,
-    the file the retired account-store audit read. Nothing in this suite reads
-    it any more; the parameter is kept so the fixture registry's shape (and so
-    its digests) is unchanged. Defaults to `skills`.
     """
     registry = root / "registry"
     for name in skills:
@@ -90,12 +84,6 @@ def make_registry(root: Path, bundle: str = "adam",
             "skills": {f"{bundle}/{name}": arms.digest_skill_dir(
                 registry / "plugins" / bundle / "skills" / name) for name in skills}}
     (registry / "skills.lock").write_text(json.dumps(lock, indent=2), encoding="utf-8")
-    account_skills = registry / "plugins" / bundle / "skills" / "sync-skills" / "account-skills.txt"
-    account_skills.parent.mkdir(parents=True, exist_ok=True)
-    account_skills.write_text(
-        "# fixture account-skills.txt\n"
-        + "".join(f"{name}\n" for name in (skills if declared is None else declared)),
-        encoding="utf-8")
     shutil.copy(FAKE_HOOK, registry / "hook.sh")
     return registry
 
@@ -746,7 +734,7 @@ class ArmMutationTests(unittest.TestCase):
 
 
 class RunnerTests(unittest.TestCase):
-    """The CLI surface: exit codes, and the gate wired to real files."""
+    """The CLI surface: exit codes."""
 
     def setUp(self):
         self.root = Path(tempfile.mkdtemp())
@@ -823,27 +811,6 @@ class RunnerTests(unittest.TestCase):
                 self.assertEqual(
                     self.run_cli("--arm", arm, registry=relative), 0)
 
-    def test_the_retired_gate_flags_are_refused(self):
-        # The freshness gate and its flags left with the Tier-3 audit. A caller
-        # still passing one must fail loudly (argparse exits 2) rather than
-        # have it silently ignored.
-        for flag in ("--no-gate", "--gate-only", "--account-latest=x",
-                     "--account-marker=x", "--account-verdict-advisory",
-                     "--now=2026-01-01T00:00:00Z"):
-            with self.subTest(flag=flag), \
-                    contextlib.redirect_stderr(io.StringIO()), \
-                    self.assertRaises(SystemExit) as cm:
-                self.run_cli(flag)
-            self.assertEqual(cm.exception.code, 2)
-        self.assertFalse(hasattr(run_propagation, "run_gate"))
-
-    def test_the_run_record_carries_no_freshness_gate(self):
-        record = self.root / "record.json"
-        self.assertEqual(self.run_cli("--arm", "clean-room",
-                                      "--json", str(record)), 0)
-        self.assertNotIn("freshness_gate",
-                         json.loads(record.read_text(encoding="utf-8")))
-
     def test_run_record_is_written_when_asked(self):
         record = self.root / "record.json"
         self.assertEqual(self.run_cli("--arm", "clean-room",
@@ -878,14 +845,19 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(set(fixture["arms"]) <= set(arms.ARMS))
         self.assertEqual(sorted(fixture["arms"]), sorted(arms.ARMS))
 
-
 class _DryRunStepContract:
     """The shared contract for a scheduled step that files a tracking issue.
 
-    propagation.yml's `report` is the one such step here (the probes are
-    failing). The account-store drift reactor that used to share this contract
-    was retired 2026-09-28; the contract stays a mixin so a second reporting
-    workflow can bind to it again.
+    propagation.yml's `report` (the probes are failing) is the one workflow
+    here that has one. account-store-drift.yml's `react` (the account store
+    has drifted) used to be a second, and this was written as a mixin rather
+    than folded into `DispatchAndDryRunTests` directly because the two
+    reported different facts to different readers under the same SHAPE — a
+    shape that kept being got wrong. `react` and its workflow were retired
+    2026-09-28 along with the Tier-3 audit they reacted to (see
+    evals/propagation/ROUTINE.md, now HISTORY); the mixin stays a mixin
+    because the shape it pins is a real invariant a future scheduled-write
+    step could need again, not because a second subclass still exists today.
 
     A MIXIN rather than a base TestCase, so unittest never collects it on its
     own: a contract class with no workflow bound to it passes by checking
@@ -1008,9 +980,10 @@ class _DryRunStepContract:
         `${{ }}` is substituted into a `run:` body BEFORE the shell sees any of
         it, so the rendered command is echoed into a public log and evaluated
         as shell — which is why every value these steps read arrives through
-        `env:` instead. The step that holds `issues: write` needs
-        an assertion of its own, and the gap is not theoretical: a comment
-        added here while fixing an unrelated defect explained the rule by QUOTING it, and an
+        `env:` instead. `FreshnessGateEventPolicyTests` already pins that for
+        the gate step; the two steps that hold `issues: write` had no such
+        assertion, and the gap is not theoretical: a comment added here while
+        fixing an unrelated defect explained the rule by QUOTING it, and an
         empty expression in a shell comment is a workflow-level syntax error
         that no test, no shell parse and no reading of the diff caught. GitHub
         does not know `#` starts a comment — it expands the whole block.
@@ -1296,7 +1269,8 @@ class DispatchAndDryRunTests(_DryRunStepContract, unittest.TestCase):
     WORKFLOW = REPO_ROOT / ".github" / "workflows" / "propagation.yml"
     JOB = "report"
     # One line each, below the bail-out. `gh issue comment` rather than an
-    # edit: this issue is a running log of failing probe runs.
+    # edit: this issue is a running log of failing probe runs, not a single
+    # edited-in-place statement of state.
     # The close call joined them when the job gained a green path. It is a write
     # like the other two, and a write this tuple does not name is one this test
     # never pins to its side of the bail-out — the sibling allowlist test would
@@ -1341,21 +1315,20 @@ class DispatchAndDryRunTests(_DryRunStepContract, unittest.TestCase):
     # test's reach.
     #
     # NO CREDENTIAL CENSUS HERE, and that is the one-step rule doing the work
-    # rather than an omission. The sibling class needs
-    # `AccountDriftWorkflowTests._privilege_findings` because its job is six
-    # steps under one `issues: write` grant, so "which of them holds a token"
-    # is a real question — and its third part refuses a credential declared at
-    # `jobs.<id>.env:` or workflow scope, since an inherited `env:` arms every
-    # step at once. Neither scope can widen anything HERE: `env:` is inherited
-    # by the steps in scope, `report` has exactly one, and that step is the
-    # write step, which already declares `GH_TOKEN` legitimately. Measured
-    # rather than reasoned about: both splices were run against every test in
-    # this class and all 7 stayed OK, which is the correct result and not a
-    # gap. What a workflow-level `env:` WOULD reach is `gate` and `arms` — the
-    # other jobs, already declared out of scope above, and bounded in fact by
-    # the workflow-level `permissions: contents: read` that neither overrides.
-    # If `report` ever legitimately needs a second step, the census the
-    # sibling class already owns is what has to come with it.
+    # rather than an omission. A job with several steps under one
+    # `issues: write` grant would raise a real question — "which of them
+    # holds a token", including one declared at `jobs.<id>.env:` or workflow
+    # scope, since an inherited `env:` arms every step at once. `report`
+    # never raises it: it is exactly one step, so `env:` inherited from
+    # anywhere reaches only the write step, which already declares
+    # `GH_TOKEN` legitimately. Measured rather than reasoned about: both
+    # splices were run against every test in this class and all 7 stayed OK,
+    # which is the correct result and not a gap. What a workflow-level
+    # `env:` WOULD reach is `gate` and `arms` — the other jobs, already
+    # declared out of scope above, and bounded in fact by the
+    # workflow-level `permissions: contents: read` that neither overrides.
+    # If `report` ever legitimately needs a second step, it needs this same
+    # census too.
 
     def select_step(self):
         # EVERY step, not just the scripted ones. Filtering to `run:` steps left
@@ -1452,22 +1425,29 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
     """What the report step DOES with each pair of job results.
 
     `DispatchAndDryRunTests` pins where the writes may sit; nothing there says
-    which one happens. The defects this class was written for are behavioural
-    and were invisible to a shape test:
+    which one happens. Three behavioural defects, invisible to a shape test,
+    are what this class was written for:
 
-    * the body diagnosed a cause it could not know. It told the reader the
-      agentskills registry was the likely culprit whichever job had gone red.
-      The body now prints the two job results and describes both halves, so
-      the assertions are that the results really reach it and that it no
-      longer points at the retired Tier-3 account audit or its drift issue.
+    * the body diagnosed a cause it could not know. Before 2026-09-28 `gate`
+      also carried a freshness check on a claude.ai Routine, and every
+      scheduled failure this workflow ever had under that check — five of
+      them, run 32452792300 included — was the `gate` job on a
+      `[reported-failure]` verdict with all five arms green, which the old
+      body's single "look at the registry" diagnosis could not have named
+      (see evals/propagation/ROUTINE.md, now HISTORY). The body now prints
+      the two job results and describes both halves, so the assertions are
+      that the results really reach it and that a red gate is diagnosed as
+      this repository's own fault, never the registry's.
     * nothing ever closed the issue. A green run reaching the job is one half
       (`test_the_report_job_is_scheduled_on_a_green_run_as_well`); this is the
       other — the script, run with both results green, has to reach the close
       call and not the create one.
-    * and then the close reached too far: a dispatch may run against any
-      branch and defaults to a dry run, so it must not retract a finding the
-      05:41 run filed. Which EVENT the step is running under is therefore an
-      input to this suite, not ambient context — hence `run_step(event=…)`.
+    * and then the close reached too far. `schedule` is the only trigger
+      guaranteed to be testing `main`; a `workflow_dispatch` can target any
+      branch, so a green dispatch from an unmerged fix would retract a
+      finding that the next scheduled run — still red on `main` — immediately
+      re-files. Which EVENT the step is running under is therefore an input
+      to this suite, not ambient context — hence `run_step(event=…)`.
 
     `gh` is stubbed rather than the whole script paraphrased, so the branch
     under test is the real one, including the dedupe substitution feeding it.
@@ -1556,23 +1536,21 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         self.assertIn("gate: success", body)
         self.assertIn("arms: failure", body)
 
-    def test_the_body_no_longer_relays_the_retired_account_audit(self):
-        """The Tier-3 audit and its drift issue were retired 2026-09-28.
+    def test_a_red_gate_is_diagnosed_as_a_fault_in_this_repository(self):
+        """The old misdiagnosis, inverted.
 
-        A body that still sent the reader to a drift issue nothing files
-        would have them searching for something that does not exist.
+        Before 2026-09-28 a red `gate` usually meant the Tier-3 account-store
+        audit had drifted — a fault no commit here could cause or repair. That
+        check is gone: `gate` is the hermetic mutation suite alone, so a red
+        gate is now always a bug in this repository's own propagation harness,
+        and the body has to say so rather than pointing anywhere else.
         """
-        _, _, body, recovered = self.run_step(gate="failure",
-                                              arms_result="success")
-        for stale in ("Tier-3", "Tier 3", "account-store-drift", "Routine",
-                      "account audit", "skill store"):
-            self.assertNotIn(stale, body)
-            self.assertNotIn(stale, recovered)
-        self.assertFalse((REPO_ROOT / ".github" / "workflows" /
-                          "account-store-drift.yml").exists())
-        # A red ARM still points at the registry, which is the right answer.
-        self.assertIn("adam-agentskills registry", body)
-        self.assertIn("mutation suite", body)
+        _, _, body, _ = self.run_step(gate="failure", arms_result="success")
+        self.assertIn("fault in this repository", body)
+        self.assertIn("test/test_propagation.py", body)
+        # The registry still gets named — it is the right answer for a red ARM,
+        # and must not disappear along with the gate's old diagnosis.
+        self.assertIn("adam-agentskills", body)
 
     # ---- B2: which write each pair of results reaches ----
 
@@ -1600,13 +1578,16 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         self.assertIn("no tracking issue is open", out)
 
     def test_a_green_dispatch_never_closes_the_issue_the_schedule_filed(self):
-        """The close is fenced to the schedule.
+        """The close is fenced to the event guaranteed to be testing `main`.
 
-        A dispatch may run against any branch and defaults to a dry run, so a
-        green dispatch has not shown that the finding the 05:41 run filed
-        against `main` is gone. Closing there would also strand the comment
-        history: the dedupe lookup is `--state open`, so the next failure
-        files a BRAND-NEW issue instead of finding the closed one.
+        `schedule` only ever runs against the default branch; a
+        `workflow_dispatch` can run against any ref. A green dispatch from a
+        branch whose fix has not merged yet would — before this guard —
+        retract a finding the 05:41 run had filed on the still-broken `main`,
+        and because the dedupe lookup is `--state open`, the next morning's
+        schedule would file a BRAND-NEW issue instead of finding the closed
+        one: the comment history the close path was added to preserve,
+        stranded.
 
         Driven through the real script rather than read off its shape, because
         a guard can be written correctly and compare the wrong variable —
@@ -1618,8 +1599,9 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
                                          event="workflow_dispatch")
         self.assertEqual(
             calls, [],
-            "a green workflow_dispatch must write NOTHING: it has not shown "
-            "that the finding the schedule filed is gone")
+            "a green workflow_dispatch must write NOTHING: it is not "
+            "guaranteed to be testing `main`, so it has not shown the "
+            "problem that opened the issue is fixed there")
         self.assertIn("only a scheduled run may close", out)
         # And the schedule still does close, so the guard cannot pass by
         # fencing the close off from every event including its own.
@@ -1628,10 +1610,11 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         self.assertEqual(calls, ["issue close 51"])
 
     def test_a_red_dispatch_still_files_and_still_comments(self):
-        # The fence is on the RETRACTION only. A dispatch that goes red has
-        # found something real and must still be able to say so — fencing the
-        # whole job to `schedule` would be the over-correction that makes
-        # `dry_run=false` a knob wired to nothing.
+        # The fence is on the RETRACTION only. A red run found something real
+        # regardless of which ref it targeted, so a dispatch that goes red
+        # must still be able to say so — fencing the whole job to `schedule`
+        # would be the over-correction that makes `dry_run=false` a knob
+        # wired to nothing.
         calls, _, _, _ = self.run_step(gate="failure", arms_result="success",
                                        event="workflow_dispatch")
         self.assertEqual(calls, ["issue create --repo"])
@@ -1674,6 +1657,241 @@ class ReportStepBehaviourTests(_StubbedShellStep, unittest.TestCase):
         self.assertIn("open-issue=41", out)
         self.assertIn("gate=failure", out)
         self.assertIn("event=workflow_dispatch", out)
+
+
+class PublishMessageAndPushTriggerTests(unittest.TestCase):
+    """ROUTINE.md's publish message and the workflow set must not contradict.
+
+    Step 4 of the Routine prompt mandates the commit message
+    `propagation: account audit [skip ci]`, and `[skip ci]` is GitHub's
+    documented instruction NOT to create a workflow run for a `push` event. So
+    a workflow that tries to react to the Routine's publish with
+
+        on:
+          push:
+            branches: [eval-results]
+
+    cannot fire on a single one of those pushes. It is not red, not slow, and
+    not logged anywhere — it simply never runs, which is the worst shape a CI
+    dependency can take. That trap is exactly what a design note in ROUTINE.md
+    ("A second route the issue does not consider") records, and prose is not an
+    assertion: this pins the pair so the two halves cannot be edited apart.
+
+    The coupling is DERIVED at both ends rather than hard-coded. The message is
+    read out of ROUTINE.md's own step 4 (so rewording it is followed, not
+    broken) and the listeners are read by parsing every workflow with a real
+    YAML parser (never a line scan — a bare `on:` is the YAML 1.1 boolean True,
+    which a regex reads straight past). What is asserted is the implication:
+    if any workflow listens for a push on `eval-results`, the mandated message
+    may not carry a CI-skip token. Removing the token is a legitimate decision
+    — it is what stops a results-branch publish feeding CI back into itself, so
+    it has consequences of its own — and this test does not forbid it; it
+    forbids having it both ways silently.
+
+    `test_the_detector_sees_a_listener_when_there_is_one` is the reason the
+    implication is not vacuous today. No workflow here listens on
+    `eval-results`, so the guard would pass against a detector that finds
+    nothing ever; the positive control runs the same function over a synthetic
+    document that does listen, and requires it to be found.
+    """
+
+    ROUTINE = EVAL_DIR / "ROUTINE.md"
+    WORKFLOWS = REPO_ROOT / ".github" / "workflows"
+    RESULTS_BRANCH = "eval-results"
+    # GitHub's documented commit-message skip tokens. `skip-checks: true` is a
+    # trailer rather than a message token and is deliberately not modelled.
+    SKIP_TOKENS = ("[skip ci]", "[ci skip]", "[no ci]", "[skip actions]",
+                   "[actions skip]")
+    # Lexical on purpose, and legitimately so: this extracts the CONTENT of one
+    # leaf token — the inline-code span on the "Commit message:" line — not the
+    # structure of anything. The structural half of this test (which events a
+    # workflow declares) goes through yaml.safe_load below.
+    MESSAGE_RE = re.compile(r"Commit message:\s*`([^`]+)`")
+
+    def _mandated_message(self) -> str:
+        found = self.MESSAGE_RE.findall(
+            self.ROUTINE.read_text(encoding="utf-8"))
+        self.assertEqual(
+            len(found), 1,
+            "ROUTINE.md must declare the publish commit message exactly once, "
+            "as an inline-code span on a `Commit message:` line — that "
+            "declaration is what this guard reads. Found: "
+            f"{found!r}")
+        return found[0]
+
+    @classmethod
+    def _listens_on(cls, doc: dict, branch: str) -> bool:
+        """Does this parsed workflow raise a run on a push to `branch`?
+
+        Errs toward YES on anything it cannot resolve exactly: an unmatched
+        pattern here reds this test and sends someone to look, whereas a missed
+        one is the silent never-fires failure the whole guard exists to catch.
+        """
+        # A bare `on:` key parses as the YAML 1.1 boolean True, not "on".
+        triggers = doc.get("on", doc.get(True)) if isinstance(doc, dict) else None
+        # `on: push` and `on: [push]` are the two shorthand spellings, and both
+        # mean EVERY push on EVERY branch — `eval-results` included. Neither
+        # parses to a mapping (`{True: 'push'}` and `{True: ['push']}`
+        # respectively), so a mapping-only reader returns False on the exact
+        # shapes this guard exists to catch, which is the silent never-fires
+        # failure one level up.
+        if isinstance(triggers, str):
+            return triggers == "push"
+        if isinstance(triggers, list):
+            return any(str(event) == "push" for event in triggers)
+        if not isinstance(triggers, dict):
+            # No `on:` at all, or a shape this cannot read. Unresolvable, so
+            # say yes and send someone to look — per the docstring above.
+            return True
+        if "push" not in triggers:
+            return False
+        push = triggers["push"]
+        if not isinstance(push, dict):
+            return True  # bare `push:` — every branch, this one included
+        if "branches" in push:
+            return any(fnmatch.fnmatch(branch, str(pattern))
+                       for pattern in push["branches"] or [])
+        if "branches-ignore" in push:
+            return not any(fnmatch.fnmatch(branch, str(pattern))
+                           for pattern in push["branches-ignore"] or [])
+        return True  # `push:` with only `paths:` — still every branch
+
+    def _listeners(self) -> list[str]:
+        import yaml
+        # GitHub Actions reads BOTH extensions, so a `.yaml` workflow is a real
+        # workflow that a `*.yml`-only glob never opens.
+        paths = sorted(set(self.WORKFLOWS.glob("*.yml"))
+                       | set(self.WORKFLOWS.glob("*.yaml")))
+        self.assertTrue(
+            paths,
+            f"no workflows parsed out of {self.WORKFLOWS} — this guard would "
+            "pass by finding nothing, which is not the same as agreeing")
+        return [path.name for path in paths
+                if self._listens_on(
+                    yaml.safe_load(path.read_text(encoding="utf-8")),
+                    self.RESULTS_BRANCH)]
+
+    def test_the_detector_sees_a_listener_when_there_is_one(self):
+        import yaml
+        positive = yaml.safe_load(
+            "on:\n  push:\n    branches: [eval-results]\n")
+        self.assertTrue(
+            self._listens_on(positive, self.RESULTS_BRANCH),
+            "the listener detector must find the shape the design note warns "
+            "about, or the guard below passes for the wrong reason")
+        negative = yaml.safe_load("on:\n  push:\n    branches: [main]\n")
+        self.assertFalse(
+            self._listens_on(negative, self.RESULTS_BRANCH),
+            "a push pinned to main is not a listener on the results branch")
+
+    def test_the_detector_sees_the_bare_list_shorthand(self):
+        """`on: [push]` means every push on every branch, this one included."""
+        import yaml
+        positive = yaml.safe_load("on: [push]\n")
+        self.assertEqual(
+            positive, {True: ["push"]},
+            "this spelling parses to a LIST under the boolean-True key, not a "
+            "mapping — that is why a mapping-only reader misses it")
+        self.assertTrue(
+            self._listens_on(positive, self.RESULTS_BRANCH),
+            "`on: [push]` is an unfiltered push trigger, so it fires on "
+            f"{self.RESULTS_BRANCH!r} like every other branch; a reader that "
+            "returns False here would let the `[skip ci]` trap through in the "
+            "one shape nothing else catches")
+        # Negative control: same shorthand, no push event. Without this a
+        # detector hard-wired to `return True` would satisfy the assertion
+        # above and detect nothing at all.
+        negative = yaml.safe_load("on: [pull_request, workflow_dispatch]\n")
+        self.assertEqual(negative, {True: ["pull_request", "workflow_dispatch"]})
+        self.assertFalse(
+            self._listens_on(negative, self.RESULTS_BRANCH),
+            "the list shorthand without `push` is not a push listener — this "
+            "control is what proves the case above discriminates")
+
+    def test_the_detector_sees_the_bare_scalar_shorthand(self):
+        """`on: push` is the same trap one step smaller."""
+        import yaml
+        positive = yaml.safe_load("on: push\n")
+        self.assertEqual(
+            positive, {True: "push"},
+            "this spelling parses to a STRING under the boolean-True key")
+        self.assertTrue(
+            self._listens_on(positive, self.RESULTS_BRANCH),
+            "`on: push` is an unfiltered push trigger and fires on "
+            f"{self.RESULTS_BRANCH!r}")
+        negative = yaml.safe_load("on: workflow_dispatch\n")
+        self.assertEqual(negative, {True: "workflow_dispatch"})
+        self.assertFalse(
+            self._listens_on(negative, self.RESULTS_BRANCH),
+            "a scalar naming some other event is not a push listener — the "
+            "control that keeps the case above from passing vacuously")
+
+    def test_an_unreadable_trigger_block_errs_toward_yes(self):
+        """The docstring's promise, asserted rather than described.
+
+        A shape this cannot resolve must red the guard and send someone to
+        look. The alternative — quietly answering "not a listener" — is the
+        same silent miss as the two shorthands above.
+        """
+        self.assertTrue(
+            self._listens_on({"jobs": {}}, self.RESULTS_BRANCH),
+            "a document with no `on:` key at all is unresolvable, not a "
+            "resolved no")
+        self.assertTrue(
+            self._listens_on(None, self.RESULTS_BRANCH),
+            "an empty workflow file parses to None; that is unresolvable too")
+        # Negative control: a trigger block this CAN resolve must still resolve
+        # to no, or "errs toward yes" has degenerated into "always yes".
+        self.assertFalse(
+            self._listens_on({True: {"schedule": [{"cron": "0 5 * * *"}]}},
+                             self.RESULTS_BRANCH),
+            "a readable mapping with no `push` key is a resolved no, and must "
+            "not be swept up by the unresolvable fallback")
+
+    def test_a_dot_yaml_workflow_is_read_too(self):
+        """`.yaml` is a workflow extension GitHub honours; the glob must too.
+
+        A listener written `.yaml` evaded the guard entirely — not by parsing
+        wrong but by never being opened, which leaves no trace at all.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            workflows = Path(tmp)
+            (workflows / "listener.yaml").write_text(
+                "on:\n  push:\n    branches: [eval-results]\njobs: {}\n",
+                encoding="utf-8")
+            with mock.patch.object(type(self), "WORKFLOWS", workflows):
+                self.assertEqual(
+                    self._listeners(), ["listener.yaml"],
+                    "a `.yaml` workflow that listens on the results branch "
+                    "must be found; a `*.yml`-only glob reports an empty list "
+                    "and the guard passes for the wrong reason")
+            # Negative control: same extension, pinned to main. Proves the case
+            # above found a LISTENER rather than merely finding a file.
+            (workflows / "listener.yaml").write_text(
+                "on:\n  push:\n    branches: [main]\njobs: {}\n",
+                encoding="utf-8")
+            with mock.patch.object(type(self), "WORKFLOWS", workflows):
+                self.assertEqual(
+                    self._listeners(), [],
+                    "a `.yaml` workflow pinned to main is not a listener on "
+                    f"{self.RESULTS_BRANCH!r}")
+
+    def test_no_push_listener_while_the_publish_message_skips_ci(self):
+        message = self._mandated_message()
+        tokens = [token for token in self.SKIP_TOKENS
+                  if token in message.lower()]
+        listeners = self._listeners()
+        self.assertFalse(
+            tokens and listeners,
+            f"{listeners} listen for a push on {self.RESULTS_BRANCH!r}, but "
+            f"ROUTINE.md step 4 mandates the commit message {message!r}, which "
+            f"carries {tokens} — GitHub will not create a workflow run for "
+            "such a push, so those workflows never fire on a Routine publish "
+            "and say nothing about it. Either drop the token from step 4 and "
+            "the live Routine prompt together (it is what keeps a "
+            "results-branch publish from feeding CI back into itself, so read "
+            "the design note in ROUTINE.md first), or trigger on something "
+            "`[skip ci]` does not gate.")
 
 
 if __name__ == "__main__":

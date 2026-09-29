@@ -2914,16 +2914,12 @@ class TestIssue97(unittest.TestCase):
         if rel == "harness/guidance.py" and name == "deliver":
             return fn(tmp, scratch=tmp, dest_dir=tmp / "cfg", home=tmp / "home",
                       payload="x", **kwargs)
-        if name == "git_tracked":
-            return fn(tmp, Path("."))
         if name == "_run_hook":
             return fn(tmp / "hook.sh", scratch=None, env_extra={}, **kwargs)
         if name == "arm_plugin_marketplace":
             return fn(**kwargs)
         if name == "probe":
             return fn(cwd=tmp, home=tmp, tmpdir=tmp)
-        if name == "registry_ref":
-            return fn(tmp)
         if name == "claude_version":
             return fn()
         if name == "run_leg":

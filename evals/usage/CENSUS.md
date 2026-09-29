@@ -18,7 +18,7 @@ own machine, which is why the owner sets it up himself (below).
 
 It used to ride along as a step of the Tier-3 account-store Routine. That
 Routine, and the audit it existed for, were retired on 2026-09-28 (see
-`HANDOFF.md`, section 8), so the census needed its own home.
+`HANDOFF.md`, the 2026-09-28 amendment near the top), so the census needed its own home.
 
 ## The privacy contract
 

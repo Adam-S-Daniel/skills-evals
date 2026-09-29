@@ -9,16 +9,17 @@ before its first request, then kills the child. A full five-arm run costs
 $0.00, so this belongs on `pull_request` rather than behind `eval.yml`'s OIDC —
 where a branch dispatch would die at token exchange and tell you nothing.
 
-(The Tier-3 account audit and the freshness gate that relayed it were retired
-2026-09-28: every surface now takes skills from repo-based marketplace plugins,
-so there is no account store of our own to audit. The probe-leg isolation
-guards against the account channel that still delivers Anthropic's own skills
-stay in `propagation/init_probe.py` and `propagation/arms.py`.)
+This used to also carry a FRESHNESS GATE that read a claude.ai Routine's
+Tier-3 account-store audit and failed when that audit's published result was
+missing, stale or unreadable. The owner deleted that Routine on 2026-09-28
+along with the claude.ai ZIP-upload channel it audited (adam-agentskills#23),
+so the gate was retired in the same change — there was nothing left for it to
+watch. See `evals/propagation/ROUTINE.md`, now marked HISTORY, for what that
+layer did and why.
 
 Usage:
     python3 harness/run_propagation.py evals/propagation
     python3 harness/run_propagation.py evals/propagation --arm bootstrap-hook
-    python3 harness/run_propagation.py evals/propagation --self-test
 
 Exit codes: 0 everything asserted holds; 1 an assertion failed; 2 a probe
 fault — the CLI would not start, the stream changed shape, or a guard did not
@@ -63,6 +64,13 @@ def load_fixture(eval_dir: Path) -> dict:
             f"{type(doc).__name__}"
             + (" (the file is empty)" if doc is None else f": {doc!r}"))
     return doc
+
+
+def parse_iso8601(value: str) -> datetime:
+    """RFC 3339 in, tz-aware UTC out. Used only for `--now` (see its help)."""
+    text = str(value).strip().replace("Z", "+00:00")
+    parsed = datetime.fromisoformat(text)
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
 def resolve_registry(cli_value: Path | None) -> Path:
@@ -154,6 +162,10 @@ def main(argv=None) -> int:
     parser.add_argument("--self-test", action="store_true",
                         help="also prove, against the real binary, that the "
                              "plugin arm still FAILS on a deliberately wrong lock")
+    parser.add_argument("--now", default=None,
+                        help="ISO-8601 instant to stamp the run record's "
+                             "generated_at with; tests pass it so the JSON "
+                             "output never depends on the clock")
     parser.add_argument("--timeout", type=int, default=120,
                         help="per-CLI-invocation timeout in seconds; "
                              "1..2700, the harness-wide ceiling "
@@ -180,17 +192,19 @@ def main(argv=None) -> int:
     except guidance.GuidanceError as exc:
         print(f"configuration error: {exc}")
         return EXIT_FAULT
-    now = datetime.now(timezone.utc)
+    now = (parse_iso8601(args.now) if args.now
+           else datetime.now(timezone.utc))
 
-    results = []
-    self_test_line = None
-    self_test_ok = True
-    fault = False
     names = args.arm or list(fixture["arms"])
     unknown = [name for name in names if name not in arms.ARMS]
     if unknown:
         print(f"unknown arm(s): {unknown}; known: {sorted(arms.ARMS)}")
         return EXIT_FAULT
+
+    results = []
+    self_test_line = None
+    self_test_ok = True
+    fault = False
     root = Path(tempfile.mkdtemp(prefix="propagation-"))
     try:
         ctx = build_context(fixture, resolve_registry(args.registry), root,

@@ -24,7 +24,7 @@ harness/
   run_canary.py            # runner: probes the guidance-bridge canary against the real CLI
   guidance.py              # guidance subject: payload assembly per delivery mode,
                            # delivery through the real fleet-memory hook, the guard
-  run_propagation.py       # runner: the Tier-2 propagation arms
+  run_propagation.py       # runner: Tier-2 propagation arms
   roster.py                # model roster: availability + usage -> arms/judge/preflight
   timeweeks.py             # ISO-week arithmetic shared by the roster and the census
   scorers/
@@ -88,7 +88,8 @@ evals/
     _delivery/             # the delivery canary: one arm per mode, no seed
       fixture.yaml         # section id, five arms, per-arm transcript checks
   propagation/             # skill-delivery probes (issue #17)
-    fixture.yaml           # arms, bundle, collision skill
+    fixture.yaml           # arms, bundle, collision skill, staleness budget
+    ROUTINE.md             # HISTORY: the retired Tier-3 scheduled session, and why it was session-bound
   usage/
     CENSUS.md              # the usage census: contract, and how to schedule it
   roster-policy.yml        # model roster thresholds + the capability ladder
@@ -406,21 +407,22 @@ Two things worth knowing before editing any of it:
   `(type, subtype)`; selecting on `type == "system"` alone picks
   `commands_changed`, which has no `skills` key.
 
-### Tier 3 — retired
+### Tier 3 — the account store (retired 2026-09-28)
 
-There used to be a third tier: a daily audit of the claude.ai account skill
-store, a freshness gate on `propagation.yml` that relayed its result, and a
-drift issue. It was retired on 2026-09-28. Every surface now takes this
-account's skills from repo-based marketplace plugins, every upload was deleted
-from the account store, and the audit's Routine is gone. The probe-leg
-isolation guards against the account channel (`~/.claude/skills/synced/`) stay,
-because Anthropic's own skills still arrive through it and it would otherwise
-contaminate the control legs. The history is in `HANDOFF.md`.
-
-When a scheduled run of the Tier-2 probes fails, the workflow opens one tracking
-issue rather than leaving it to whoever next reads the Actions tab, and closes
-that issue again when a later scheduled run comes back green, so an open issue
-means "broken now" rather than "broke once".
+The claude.ai account store lands at `~/.claude/skills/synced/`, which exists
+only on a signed-in surface, so CI cannot see it. This repo used to run a
+daily Tier-3 audit of that store on a claude.ai Routine, and gate
+`propagation.yml` on the audit's freshness. The owner deleted the Routine on
+2026-09-28, the same day the claude.ai ZIP-upload channel it audited was
+retired ([adam-agentskills#23](https://github.com/Adam-S-Daniel/adam-agentskills/issues/23)):
+once nothing repopulates the account store from that channel, there is
+nothing left for an audit of it to check. `harness/run_account_audit.py`,
+`harness/run_account_drift_issue.py`, `harness/propagation/account_store.py`
+and `.github/workflows/account-store-drift.yml` were removed in the same
+change, and `propagation.yml`'s freshness gate went with them. What the audit
+was, what it found, and the incidents that shaped its design are recorded in
+[`evals/propagation/ROUTINE.md`](evals/propagation/ROUTINE.md), now marked
+HISTORY.
 
 ## Tests
 
@@ -646,7 +648,9 @@ _nothing` is the guard, and it stays. The census runs on a durable machine, not
 in CI (a runner has no transcripts): the owner schedules
 `scripts/publish_usage_census.sh` there, which publishes `usage/latest.json` to
 `eval-results` — [`evals/usage/CENSUS.md`](evals/usage/CENSUS.md) has the
-contract and the exact prompt and cron line.
+contract and the exact prompt and cron line. (It used to ride on the Tier-3
+account-store Routine, retired 2026-09-28; see "Tier 3 — the account store"
+above.)
 `harness/roster.py`'s `_census_verdict` recognizes eight distinct ways there
 is no usable evidence — present but unreadable, absent, future-dated, stale,
 published but empty over the window, published but holding no usage the
@@ -738,5 +742,9 @@ models. The propagation probe's `--json` run record carries, per arm,
 - [x] Guidance-bridge canary (`harness/run_canary.py`)
 - [x] Weekly real run + quality badge (`.github/workflows/eval.yml`, `scripts/make_badge.py`)
 - [x] Propagation probes, Tier 2 (`harness/run_propagation.py`, `.github/workflows/propagation.yml`)
-- [x] Propagation probes, Tier 3 (account-store audit) — built, then retired 2026-09-28
+- [x] Propagation probes, Tier 3 (built, ran daily via a Routine bound to an
+  authorized session after freshly-minted ones were refused the push —
+  [#20](https://github.com/Adam-S-Daniel/skills-evals/issues/20) — then
+  **retired 2026-09-28** along with the claude.ai ZIP-upload channel it
+  audited; see `evals/propagation/ROUTINE.md`, now HISTORY)
 - [ ] Regression tracking (compare a run against the previous one)
