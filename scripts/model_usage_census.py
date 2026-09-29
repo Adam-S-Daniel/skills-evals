@@ -4,9 +4,9 @@
 *** THE OUTPUT OF THIS SCRIPT IS PUBLISHED PUBLICLY. ***
 
 It is committed to the `eval-results` branch of a PUBLIC repository as
-`usage/latest.json`, exactly the way the Tier-3 account-store Routine
-publishes its audit (see `evals/propagation/ROUTINE.md`). Treat every byte it
-emits as world-readable, forever.
+`usage/latest.json` by `scripts/publish_usage_census.sh` (see
+`evals/usage/CENSUS.md`). Treat every byte it emits as world-readable,
+forever.
 
 That is why the output is `{model_id: {iso_week: count}}` and NOTHING else. It
 carries no project names, no directory names, no filesystem paths, no prompt
@@ -52,10 +52,8 @@ itself needs PyYAML. That import is LAZY (see `_require_model_id_re()`), so
 importing this module and running `--help` work with no PyYAML installed —
 only building an actual census does, and a machine that lacks it gets one
 named line on stderr and exit 2, never an ImportError traceback. See
-`evals/propagation/ROUTINE.md`, History, "The usage census rode along on
-this Routine" for installing it on the durable machine that ran this script
-(that step is not part of the current prompt as of 2026-09-27 — see that
-section's note).
+`evals/usage/CENSUS.md` for installing it on the durable machine that runs
+this script.
 
 Usage:
     python3 scripts/model_usage_census.py --out usage/latest.json
@@ -260,15 +258,18 @@ def main() -> int:
                         help="Claude Code transcript root (default ~/.claude/projects)")
     parser.add_argument("--weeks", type=int, default=DEFAULT_WEEKS)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--now", default=None,
+                        help="ISO-8601 instant to treat as now (tests and "
+                             "scripts/publish_usage_census.sh's test seam); "
+                             "default: the wall clock")
     args = parser.parse_args()
 
     try:
         _require_model_id_re()
     except ImportError:
         # PyYAML (via roster.py) is not installed on this machine. Printed
-        # here, not raised: the durable-machine Routine that historically ran
-        # this script (evals/propagation/ROUTINE.md, History, "The usage
-        # census rode along on this Routine") installs nothing by default,
+        # here, not raised: the durable machine that runs this script
+        # (evals/usage/CENSUS.md) installs nothing by default,
         # and a bare ImportError traceback used to kill the import of this
         # module before argparse ever ran — even `--help` failed.
         print(PYYAML_MISSING_MESSAGE, file=sys.stderr)
@@ -276,14 +277,18 @@ def main() -> int:
 
     if not Path(args.projects).is_dir():
         # Say so and stop, rather than publishing a clean census of nothing —
-        # the same rule the account-store Routine follows on a surface that
-        # cannot do the job. The message names no path: this line reaches a
-        # public CI log and a Routine's status report.
+        # never a clean census of nothing on a surface that cannot do the
+        # job. The message names no path: this line reaches a scheduled
+        # task's status report.
         print("no Claude Code transcript directory on this surface; "
               "nothing published", file=sys.stderr)
         return 2
 
-    document = build_document(args.projects, datetime.now(timezone.utc), args.weeks)
+    now = parse_ts(args.now) if args.now else datetime.now(timezone.utc)
+    if now is None:
+        print("--now is not an ISO-8601 instant", file=sys.stderr)
+        return 2
+    document = build_document(args.projects, now, args.weeks)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(document, f, indent=2, sort_keys=True)

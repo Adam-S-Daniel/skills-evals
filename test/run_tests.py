@@ -36225,5 +36225,229 @@ class TestNewestPerQualifyingTier(unittest.TestCase):
         self.assertIn("claude-fable-5-1", self._arm_ids(result))
         self.assertEqual(result["retired_since_last"], [])
 
+
+class TestPublishUsageCensus(unittest.TestCase):
+    """scripts/publish_usage_census.sh, end to end against a LOCAL bare repo.
+
+    The script clones skills-evals, runs the census against a fake
+    `~/.claude/projects`, and pushes usage/latest.json to the `eval-results`
+    branch. Here `origin` is a bare repository in a temp dir reached over
+    `file://`, the clock is `CENSUS_NOW`, git's global and system config are
+    switched off, and `HOME` is a scratch dir: no network, no real gh, no
+    wall-clock, and nothing from the developer's machine reaches the script.
+    """
+
+    NOW = TestIssue67.NOW
+    SCRIPT = REPO_ROOT / "scripts" / "publish_usage_census.sh"
+    SUBJECT = "propagation: usage census [skip ci]"
+    SECRET_PATH = "/home/example/repos/private-client-work"
+    SECRET_TEXT = "the merger closes on Tuesday"
+    ARN = ("arn:aws:bedrock:us-east-1:123456789012:"
+           "application-inference-profile/abcd1234")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.home = self.tmp / "home"
+        self.home.mkdir()
+        self.origin = self.tmp / "origin.git"
+        self.url = self.origin.as_uri()
+        self.env = {
+            "PATH": os.environ.get("PATH", ""),
+            "HOME": str(self.home),
+            "GIT_CONFIG_GLOBAL": os.devnull,
+            "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_TERMINAL_PROMPT": "0",
+            "SKILLS_EVALS_URL": self.url,
+            "CENSUS_NOW": self.NOW.strftime("%Y-%m-%dT%H:%M:%SZ"),
+        }
+        self._seed_origin()
+        self.projects = self._fake_projects()
+
+    def git(self, *args, cwd=None, check=True):
+        env = dict(self.env, GIT_AUTHOR_NAME="Fixture", GIT_COMMITTER_NAME="Fixture",
+                   GIT_AUTHOR_EMAIL="fixture@example.com",
+                   GIT_COMMITTER_EMAIL="fixture@example.com")
+        return subprocess.run(["git", *args], cwd=cwd, env=env, check=check,
+                              capture_output=True, text=True).stdout.strip()
+
+    def _seed_origin(self):
+        """main = the census script and what it imports; eval-results = one
+        unrelated commit, the way the real branch starts."""
+        self.git("init", "--bare", "--quiet", "-b", "main", str(self.origin))
+        seed = self.tmp / "seed"
+        seed.mkdir()
+        self.git("init", "--quiet", "-b", "main", cwd=seed)
+        (seed / "scripts").mkdir()
+        shutil.copy(REPO_ROOT / "scripts" / "model_usage_census.py",
+                    seed / "scripts")
+        shutil.copytree(HARNESS_DIR, seed / "harness",
+                        ignore=shutil.ignore_patterns("__pycache__"))
+        (seed / "evals").mkdir()
+        shutil.copy(REPO_ROOT / "evals" / "roster-policy.yml", seed / "evals")
+        self.git("add", ".", cwd=seed)
+        self.git("commit", "--quiet", "-m", "seed", cwd=seed)
+        self.git("remote", "add", "origin", self.url, cwd=seed)
+        self.git("push", "--quiet", "origin", "main", cwd=seed)
+        self.git("checkout", "--quiet", "--orphan", "eval-results", cwd=seed)
+        self.git("rm", "-rfq", ".", cwd=seed)
+        (seed / "roster.txt").write_text("unrelated\n", encoding="utf-8")
+        self.git("add", ".", cwd=seed)
+        self.git("commit", "--quiet", "-m", "results seed", cwd=seed)
+        self.git("push", "--quiet", "origin", "eval-results", cwd=seed)
+
+    def _fake_projects(self) -> Path:
+        """The census's own leak fixture: hostile `message.model` values, a
+        project path in the directory name and in `cwd`, prose in the content."""
+        projects = self.tmp / "fake-claude" / "projects"
+        entries = [
+            {"type": "user", "cwd": self.SECRET_PATH,
+             "sessionId": "11111111-2222-4333-8444-555555555555",
+             "timestamp": "2026-09-03T10:00:00Z",
+             "message": {"role": "user", "content": self.SECRET_TEXT}},
+            {"type": "assistant", "cwd": self.SECRET_PATH,
+             "timestamp": "2026-09-03T10:00:01Z",
+             "message": {"role": "assistant", "model": "claude-opus-5",
+                         "content": [{"type": "text", "text": self.SECRET_TEXT}]}},
+            {"type": "assistant", "timestamp": "2026-08-27T09:00:00Z",
+             "message": {"role": "assistant", "model": "claude-haiku-4-5"}},
+        ] + [{"type": "assistant", "timestamp": "2026-09-03T10:00:02Z",
+              "message": {"role": "assistant", "model": value}}
+             for value in (self.ARN, self.SECRET_PATH, self.SECRET_TEXT,
+                           {"id": "claude-opus-5"}, 7)]
+        TestIssue67Review._write_transcript(
+            projects / "-home-example-repos-private-client-work" / "s.jsonl",
+            entries, self.NOW)
+        return projects
+
+    def run_script(self, *args, projects=None, extra_env=None):
+        env = dict(self.env, CENSUS_PROJECTS=str(projects or self.projects),
+                   **(extra_env or {}))
+        return subprocess.run(["bash", str(self.SCRIPT), *args], env=env,
+                              capture_output=True, text=True, timeout=120)
+
+    def head(self, branch="eval-results") -> str:
+        return self.git("rev-parse", branch, cwd=self.origin)
+
+    def published(self) -> dict:
+        return json.loads(self.git("show", "eval-results:usage/latest.json",
+                                   cwd=self.origin))
+
+    def test_the_script_is_executable_and_strict(self):
+        self.assertTrue(os.access(self.SCRIPT, os.X_OK))
+        self.assertIn("set -euo pipefail", self.SCRIPT.read_text(encoding="utf-8"))
+
+    def test_a_dry_run_pushes_nothing(self):
+        before = self.head()
+        proc = self.run_script("--dry-run")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.head(), before)
+        self.assertIn("dry run", proc.stdout)
+        self.assertNotIn("usage/latest.json",
+                         self.git("ls-tree", "-r", "--name-only", "eval-results",
+                                  cwd=self.origin))
+
+    def test_a_real_run_pushes_exactly_the_one_file_and_verifies_it(self):
+        before = self.head()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        after = self.head()
+        self.assertNotEqual(before, after)
+        self.assertEqual(self.git("rev-list", "--count", f"{before}..{after}",
+                                  cwd=self.origin), "1")
+        self.assertEqual(self.git("diff", "--name-only", before, after,
+                                  cwd=self.origin), "usage/latest.json")
+        self.assertEqual(self.git("log", "-1", "--format=%s", "eval-results",
+                                  cwd=self.origin), self.SUBJECT)
+        # Nothing else on the branch moved, and main was never written to.
+        self.assertEqual(self.git("show", "eval-results:roster.txt",
+                                  cwd=self.origin), "unrelated")
+        self.assertEqual(self.git("rev-list", "--count", "main", cwd=self.origin), "1")
+        self.assertIn("published", proc.stdout)
+
+    def test_the_published_file_is_only_model_week_counts_and_metadata(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        document = self.published()
+        self.assertEqual(sorted(document), ["counts", "generated_at", "weeks"])
+        self.assertEqual(document["counts"]["claude-opus-5"], {"2026-W36": 1})
+        self.assertEqual(document["counts"]["claude-haiku-4-5"], {"2026-W35": 1})
+        self.assertEqual(document["counts"]["other"], {"2026-W36": 5})
+        self.assertEqual(sorted(document["counts"]),
+                         ["claude-haiku-4-5", "claude-opus-5", "other"])
+        blob = self.git("show", "eval-results:usage/latest.json", cwd=self.origin)
+        for leaked in (self.SECRET_PATH, self.SECRET_TEXT, "123456789012",
+                       "private-client-work", "s.jsonl",
+                       "11111111-2222-4333-8444-555555555555"):
+            self.assertNotIn(leaked, blob)
+
+    def test_an_unchanged_census_makes_no_commit(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.head()
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual(self.head(), first)
+        self.assertIn("unchanged", proc.stdout)
+
+    def test_an_unchanged_census_is_still_refreshed_before_it_goes_stale(self):
+        """The roster calls a census older than 14 days "no fresh census", so
+        identical counts must not stop the timestamp moving forever."""
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.head()
+        clone = self.tmp / "aged"
+        self.git("clone", "--quiet", "--branch", "eval-results", self.url, str(clone))
+        path = clone / "usage" / "latest.json"
+        doc = json.loads(path.read_text(encoding="utf-8"))
+        doc["generated_at"] = "2026-08-20T12:00:00Z"   # 15 days before NOW
+        path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8")
+        self.git("commit", "--quiet", "-am", "age it", cwd=clone)
+        self.git("push", "--quiet", "origin", "eval-results", cwd=clone)
+        aged = self.head()
+        self.assertNotEqual(aged, first)
+        proc = self.run_script()
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertNotEqual(self.head(), aged)
+        self.assertEqual(self.published()["generated_at"], "2026-09-04T12:00:00Z")
+
+    def test_changed_counts_are_published_again(self):
+        self.assertEqual(self.run_script().returncode, 0)
+        first = self.head()
+        extra = self.projects / "-home-example-other" / "t.jsonl"
+        TestIssue67Review._write_transcript(extra, [
+            {"type": "assistant", "timestamp": "2026-09-03T11:00:00Z",
+             "message": {"role": "assistant", "model": "claude-opus-5"}}],
+            self.NOW)
+        self.assertEqual(self.run_script().returncode, 0)
+        self.assertNotEqual(self.head(), first)
+        self.assertEqual(self.published()["counts"]["claude-opus-5"],
+                         {"2026-W36": 2})
+
+    def test_the_summary_line_is_totals_only(self):
+        proc = self.run_script()
+        printed = proc.stdout + proc.stderr
+        self.assertEqual(proc.returncode, 0, printed)
+        self.assertEqual(len(proc.stdout.strip().splitlines()), 1)
+        self.assertIn("3 models, 7 assistant turns", printed)
+        for forbidden in (str(self.home), str(self.tmp), self.SECRET_PATH,
+                          "private-client-work", "claude-opus-5",
+                          "claude-haiku-4-5"):
+            self.assertNotIn(forbidden, printed)
+
+    def test_no_transcript_directory_fails_and_publishes_nothing(self):
+        before = self.head()
+        proc = self.run_script(projects=self.tmp / "nowhere")
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertEqual(self.head(), before)
+
+    def test_an_unknown_argument_is_refused_before_any_work(self):
+        proc = self.run_script("--push-everything")
+        self.assertEqual(proc.returncode, 2)
+
+    def test_the_script_handles_no_credential_of_its_own(self):
+        text = self.SCRIPT.read_text(encoding="utf-8")
+        for token in ("GH_TOKEN", "GITHUB_TOKEN", "gh auth", "curl", "wget"):
+            self.assertNotIn(token, text)
+
+
 if __name__ == "__main__":
     raise SystemExit(main())

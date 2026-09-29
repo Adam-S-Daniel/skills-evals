@@ -40,7 +40,8 @@ because `main` is pull-request only: nothing automated can change it.
 Every run also *computes* what the roster should be, from two inputs: the
 Models API (which models exist and how old they are) and a **usage census**
 (which models this account actually runs, per week, published from a
-workstation as `usage/latest.json` on the results branch).
+workstation as `usage/latest.json` on the results branch by
+`scripts/publish_usage_census.sh`).
 
 **How a model earns an arm's seat** (Adam decided this on 2026-09-22). A
 model is an arm if the fleet actually runs on it — at least 10% of the
@@ -87,7 +88,7 @@ branch, which carries generated data only and is treated as untrusted input:
 | `badges/<fixture>.json` | the shields.io badge over the last five runs, rendered at the top of the README |
 | `roster/latest.json` | the computed roster and proposal from the latest run (an exhibit, read by no decision) |
 | `usage/latest.json` | the usage census |
-| `propagation/` | the separate account-store audit |
+| `propagation/` | historical: the retired account-store audit's last result (no longer updated) |
 
 The most recent real run at the time of writing is
 [`results/workflow-path-audit/20260922T125552Z/report.md`](https://github.com/Adam-S-Daniel/skills-evals/blob/eval-results/results/workflow-path-audit/20260922T125552Z/report.md).

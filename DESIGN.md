@@ -450,11 +450,10 @@ in, a roster dict out; no network, no clock, no environment — which is what
 makes the whole policy testable at the granularity of one threshold. The
 single network call in the feature is `scripts/refresh_models.py`; the usage
 side is `scripts/model_usage_census.py`, which runs on a durable machine (a CI
-runner has no transcripts). It used to ride, best-effort, as a passenger on
-the Tier-3 account-store Routine, retired 2026-09-28 along with the audit it
-carried (see `evals/propagation/ROUTINE.md`, now HISTORY) — the census script
-itself was not deleted, but it lost that ride and needs a new one to keep
-publishing. Its output carries a `proposal` block —
+runner has no transcripts), scheduled by the owner via
+`scripts/publish_usage_census.sh` (see `evals/usage/CENSUS.md`; it used to ride
+on the Tier-3 account-store Routine, retired 2026-09-28, see
+`evals/propagation/ROUTINE.md`, now HISTORY). Its output carries a `proposal` block —
 `{status: "same"|"differs", changes: [...]}` — computed against the committed
 file, with every seat change carrying its numerator, its denominator and the
 share they make, in words.

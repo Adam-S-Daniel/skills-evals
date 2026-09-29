@@ -78,8 +78,9 @@ workflow's header comment and `evals/propagation/ROUTINE.md`, now marked
 HISTORY, for the full record. `scripts/model_usage_census.py` (§ "The
 census's public-output contract" in `README.md`/`DESIGN.md`) rode that
 Routine's schedule best-effort and has lost its ride — it was not deleted,
-but nothing currently fires it, which is a gap for whoever resumes the
-roster/census work to close, not something this change decided.
+and now has its own publisher, `scripts/publish_usage_census.sh`, scheduled by
+the owner from a transcript-bearing machine (`evals/usage/CENSUS.md`); until he
+does, nothing fires it and the roster falls back to "no fresh census".
 A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
 roster without a paid eval run, so the hold above can be lifted by reviewing
 that proposal first.
@@ -151,9 +152,10 @@ carries the reasons and the compare link.
 (`claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5`,
 `claude-fable-5-1`) and judge `claude-fable-5`, every seat by the
 newest-per-tier fallback because **no usage census has ever been published**
-(`usage/latest.json` is absent on `eval-results`; the census is step 6 of the
-Tier-3 account-store Routine in `evals/propagation/ROUTINE.md` and needs a
-transcript-bearing machine). It was not merged: it would multiply the paid
+(`usage/latest.json` is absent on `eval-results`; the census is published by
+`scripts/publish_usage_census.sh` from a transcript-bearing machine, see
+`evals/usage/CENSUS.md`; it was once step 6 of the Tier-3 account-store
+Routine, now retired). It was not merged: it would multiply the paid
 weekly run and raise the judge tier on no usage evidence, which is the human
 call ADR 0001 reserves. Two ways forward: publish the census first so the next
 Monday run proposes from usage, or open and merge a PR from `roster/proposal`
