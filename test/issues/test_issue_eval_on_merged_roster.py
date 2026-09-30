@@ -513,6 +513,7 @@ class TestTheGates(_Scripts):
         (("success", "false", False), False),
         (("success", "", False), False),
         (("failure", "", False), False),   # never started, or died
+        (("failure", "false", False), False),  # R2-S1: the sweep exits 1
         (("failure", "true", False), True),  # a step after the sweep failed
         (("cancelled", "", False), False),  # timed out before the sweep
         (("skipped", "", False), True),    # off `main`: today's behavior
@@ -533,6 +534,27 @@ class TestTheGates(_Scripts):
                     self.assertIs(self._runs("publish", args[0], args[1],
                                              eval_result=eval_result),
                                   want and eval_result == "success")
+
+    def test_a_failing_roster_wait_changes_nothing_else_downstream(self):
+        # R2-S1: the sweep now fails its job when it cannot confirm. Only
+        # `eval` and `publish` depend on `roster-wait`, and both gates use a
+        # status-check function (`cancelled()`), so they are evaluated —
+        # and skipped on `cleared != 'true'` — rather than implicitly
+        # skipped or implicitly run. Nothing marks the failure as ignorable.
+        dependents = sorted(n for n, j in self.jobs.items() if "roster-wait" in _needs(j))
+        self.assertEqual(dependents, ["eval", "publish"])
+        for name in dependents:
+            with self.subTest(job=name):
+                self.assertIn("cancelled()", self.jobs[name]["if"])
+                self.assertIn("needs.roster-wait.outputs.cleared == 'true'",
+                              self.jobs[name]["if"])
+        wait = self.jobs["roster-wait"]
+        self.assertNotIn("continue-on-error", wait)
+        for step in wait["steps"]:
+            self.assertNotIn("continue-on-error", step)
+        self.assertEqual(_step(wait, SWEEP_STEP)["if"], "${{ always() }}")
+        self.assertEqual(wait["steps"][-1]["name"], SWEEP_STEP,
+                         "the sweep is the last step, so its exit 1 skips nothing in the job")
 
     def test_the_old_gate_would_have_run_the_eval_uncleared(self):
         # The negative control: the pre-S1 `if:` runs the eval on
@@ -649,9 +671,11 @@ class _WaitHarness(_Origin):
         self.stdout = done.stdout
         return _parse_output(self.output)
 
-    def _run_sweep(self, rows, *, states=None, fail=None, noop=False):
+    def _run_sweep(self, rows, *, states=None, fail=None, noop=False, armed_pr=""):
         """The `always()` sweep step. With `states`, on a fresh world (no
-        wait step ran); without, right after `_run_wait`, on its world."""
+        wait step ran); without, right after `_run_wait`, on its world.
+        `armed_pr` is `needs.roster-pr.outputs.pr_number`. The exit code is
+        left in `self.sweep_rc`: R2-S1 makes an unconfirmed sweep exit 1."""
         if states is not None:
             self._setup(states)
         (self.tmp / "rows.json").write_text(json.dumps(rows), encoding="utf-8")
@@ -661,14 +685,21 @@ class _WaitHarness(_Origin):
             env["FAKE_GH_FAIL"] = fail
         if noop:
             env["FAKE_DISABLE_NOOP"] = "1"
+        env["ARMED_PR_NUMBER"] = armed_pr
         self.log.unlink(missing_ok=True)
         self.output.write_text("", encoding="utf-8")
         self.summary.write_text("", encoding="utf-8")
         run = _step(self.jobs["roster-wait"], SWEEP_STEP)["run"]
         done = subprocess.run(["bash", "-c", run], capture_output=True, text=True,
                               timeout=60, env=env, cwd=self.tmp)
-        self.assertEqual(done.returncode, 0, done.stderr)
-        return done.stdout, self._calls(), _parse_output(self.output)
+        self.assertIn(done.returncode, (0, 1), done.stderr)
+        self.sweep_rc = done.returncode
+        outputs = _parse_output(self.output)
+        # Confirmed <=> exit 0; unconfirmed <=> exit 1 (R2-S1: a week with
+        # no eval makes the run red).
+        self.assertEqual(done.returncode, 0 if outputs.get("cleared") == "true" else 1,
+                         (outputs, done.stdout))
+        return done.stdout, self._calls(), outputs
 
     def _calls(self):
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
@@ -871,6 +902,7 @@ class TestTheDisarmStep(_WaitHarness):
 
     def _assert_not_cleared(self, out, outputs):
         self.assertEqual(outputs, {"cleared": "false"})
+        self.assertEqual(self.sweep_rc, 1, "an unconfirmed sweep fails the job")
         self.assertIn("::warning::could not confirm that no roster pull request is left "
                       "armed; the eval and publish jobs will not run", out)
         summary = self.summary.read_text(encoding="utf-8")
@@ -893,6 +925,47 @@ class TestTheDisarmStep(_WaitHarness):
                 out, calls, outputs = self._run_sweep([self.OWN], states=states, fail=fail)
                 self._assert_not_cleared(out, outputs)
 
+    def test_the_armed_pr_is_checked_even_when_the_lookup_misses_it(self):
+        # Nit 2 (round 2): the lookup filters on `base=main`; a PR whose
+        # base was changed away from `main` drops out of it but may still
+        # be armed. The sweep also reads the number `roster-pr` armed.
+        self._propose()
+        armed_elsewhere = [self._state(base="release")]
+        out, calls, outputs = self._run_sweep([], states=armed_elsewhere, armed_pr="55",
+                                              noop=True)
+        self.assertIn(f"pr merge 55 --repo {REPO} --disable-auto", calls)
+        self._assert_not_cleared(out, outputs)
+        # The same PR, with a disable that takes, is cleared — by checking
+        # it, not by the lookup's silence.
+        out, calls, outputs = self._run_sweep([], states=armed_elsewhere, armed_pr="55")
+        self.assertIn(f"pr merge 55 --repo {REPO} --disable-auto", calls)
+        self.assertEqual(outputs, {"cleared": "true"})
+
+    def test_both_the_lookup_and_the_armed_number_must_be_clear(self):
+        self._propose()
+        other = dict(self.OWN, number=56)
+        # 56 found by the lookup reads unarmed (the fake serves reads in
+        # order: 56's read, then 55's read and re-read); 55, the armed
+        # number, stays armed because its disable does not take.
+        out, calls, outputs = self._run_sweep(
+            [other], states=[self._state(auto=False), self._state(), self._state()],
+            armed_pr="55", noop=True)
+        joined = " ".join(calls)
+        self.assertIn(f"api repos/{REPO}/pulls/56 --jq", joined)
+        self.assertIn(f"api repos/{REPO}/pulls/55 --jq", joined)
+        self.assertNotIn("pr merge 56", joined)
+        self._assert_not_cleared(out, outputs)
+
+    def test_a_junk_armed_number_is_ignored_not_read(self):
+        self._propose()
+        out, calls, outputs = self._run_sweep([], states=[self._state()], armed_pr="55; x")
+        self.assertEqual([c for c in calls if "pulls/55" in c], [])
+        self.assertEqual(outputs, {"cleared": "true"})
+
+    def test_the_sweep_reads_the_armed_number_from_roster_pr(self):
+        env = _step(self.jobs["roster-wait"], SWEEP_STEP)["env"]
+        self.assertEqual(env.get("ARMED_PR_NUMBER"), "${{ needs.roster-pr.outputs.pr_number }}")
+
     def test_after_a_merge_there_is_nothing_open_to_disarm(self):
         self._propose()
         m = self._merge()
@@ -900,6 +973,47 @@ class TestTheDisarmStep(_WaitHarness):
         out, calls, outputs = self._run_sweep([])
         self.assertEqual([c for c in calls if c.startswith("pr merge")], [])
         self.assertEqual(outputs, {"cleared": "true"})
+
+
+@unittest.skipUnless(HAVE_TOOLS, "needs bash, git and jq")
+class TestTheDisarmJobSkipsAnUnarmedPr(_WaitHarness):
+    """Nit 3 (round 2): the `disarm` job reads the PR first and does not
+    call `--disable-auto` on one with no auto-merge. Otherwise it keeps its
+    fail-OPEN semantics — a failed read still attempts the disable, and it
+    always exits 0 — since it is about an EARLIER run's arming and
+    `roster-wait`'s sweep is the fail-closed gate."""
+
+    OWN = TestTheDisarmStep.OWN
+
+    def _run_disarm(self, states, rows, fail=None):
+        self._setup(states)
+        (self.tmp / "rows.json").write_text(json.dumps(rows), encoding="utf-8")
+        env = dict(self.env)
+        env.pop("FAKE_GH_FAIL", None)
+        if fail:
+            env["FAKE_GH_FAIL"] = fail
+        self.log.unlink(missing_ok=True)
+        run = self.jobs["disarm"]["steps"][0]["run"]
+        done = subprocess.run(["bash", "-c", run], capture_output=True, text=True,
+                              timeout=60, env=env, cwd=self.tmp)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return done.stdout, [c for c in self._calls() if c.startswith("pr merge")]
+
+    def test_an_unarmed_pr_is_left_alone_without_a_warning(self):
+        self._propose()
+        out, merges = self._run_disarm([self._state(auto=False)], [self.OWN])
+        self.assertEqual(merges, [])
+        self.assertNotIn("::warning::", out)
+
+    def test_an_armed_pr_is_disarmed(self):
+        self._propose()
+        _, merges = self._run_disarm([self._state()], [self.OWN])
+        self.assertEqual(merges, [f"pr merge 55 --repo {REPO} --disable-auto"])
+
+    def test_a_failed_read_still_attempts_the_disable(self):
+        self._propose()
+        _, merges = self._run_disarm([self._state()], [self.OWN], fail="pulls/55")
+        self.assertEqual(merges, [f"pr merge 55 --repo {REPO} --disable-auto"])
 
 
 # --- the overlay step, run --------------------------------------------------
