@@ -3713,8 +3713,10 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         # ADR 0004: `eval` also waits for `roster-pr` (the arming) and
         # `roster-wait` (the bounded wait that resolves it).
         self.assertEqual(eval_job.get("needs"), ["roster", "disarm", "roster-pr", "roster-wait"])
-        self.assertEqual(eval_job.get("if"),
-                         "${{ !cancelled() && !inputs.roster_only }}")
+        # ADR 0004 review, S1 (fail closed): also gated on `roster-wait`
+        # confirming the arming cleared (or being skipped, off `main`); a
+        # failed `roster` or `disarm` is still never fatal.
+        self.assertEqual(eval_job.get("if"), "${{ !cancelled() && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
         self.assertEqual(doc["jobs"]["disarm"].get("needs"), "roster")
 
 
@@ -3860,7 +3862,10 @@ class _AutoProposeStepFixture(_ProposeStepFixture):
                                                             encoding="utf-8")
         (self.tmp / "issues.json").write_text(json.dumps([issues]), encoding="utf-8")
         event = self.tmp / "event.json"
-        event.write_text(json.dumps({"schedule": "0 7 * * 1"}), encoding="utf-8")
+        # ADR 0004 review, nit 2: a test may set `self._event` to model a
+        # dispatch (e.g. `roster_only`); a scheduled run by default.
+        event.write_text(json.dumps(getattr(self, "_event", None) or {"schedule": "0 7 * * 1"}),
+                         encoding="utf-8")
         env = {"RUNNER_TEMP": str(runner), "GITHUB_EVENT_PATH": str(event),
                "REPO": "example/skills-evals", "RUN_ID": "1",
                "SERVER_URL": "https://github.example.com",
@@ -5757,9 +5762,10 @@ class TestB1Round4JobGraph(unittest.TestCase):
 
     def test_publish_runs_only_after_a_successful_eval(self):
         publish = self.jobs["publish"]
-        self.assertEqual(self._needs(publish), ["eval", "roster"])
-        self.assertEqual(publish.get("if"),
-                         "${{ !cancelled() && needs.eval.result == 'success' }}")
+        # ADR 0004 review, S1: `publish` (contents: write) is gated on the
+        # same `roster-wait` confirmation as `eval`, so it needs that job.
+        self.assertEqual(self._needs(publish), ["eval", "roster", "roster-wait"])
+        self.assertEqual(publish.get("if"), "${{ !cancelled() && needs.eval.result == 'success' && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
 
     def test_roster_pr_runs_after_disarm_and_a_failed_one_never_blocks_it(self):
         # Round 5 had roster-pr wait for `publish` (`contents: write`),
@@ -5781,10 +5787,12 @@ class TestB1Round4JobGraph(unittest.TestCase):
 
     def test_eval_waits_for_disarm_but_a_skipped_or_failed_one_never_blocks_it(self):
         ev = self.jobs["eval"]
-        # ADR 0004: and for `roster-pr` and `roster-wait`, equally never
-        # blocking (the `if:` below is unchanged).
+        # ADR 0004: and for `roster-pr` (never blocking) and `roster-wait`,
+        # which since the review's S1 DOES block unless it confirmed the
+        # arming cleared or was skipped — the gate logic itself is
+        # evaluated in test_issue_eval_on_merged_roster.TestTheGates.
         self.assertEqual(self._needs(ev), ["disarm", "roster", "roster-pr", "roster-wait"])
-        self.assertEqual(ev.get("if"), "${{ !cancelled() && !inputs.roster_only }}")
+        self.assertEqual(ev.get("if"), "${{ !cancelled() && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}")
 
 
 class TestB1VerifyComparePredicate(unittest.TestCase):
@@ -6869,6 +6877,30 @@ class TestRosterPrHandsTheArmingToTheWait(_AutoProposeStepFixture):
         self.assertIsNotNone(pushed)
         self.assertEqual(self._outputs(), {"armed": "true", "pr_number": "77",
                                            "pushed_sha": pushed})
+
+    WAITS = "waits a bounded time"
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_the_wait_sentence_is_said_only_when_an_eval_follows(self):
+        # Nit 2: a `roster_only` dispatch has no wait and no eval, so its
+        # PR body and tracking issue must not promise either.
+        for event, waits in (({"schedule": "0 7 * * 2"}, True),
+                             ({"inputs": {"roster_only": True}}, False),
+                             ({"inputs": {"roster_only": "true"}}, False)):
+            with self.subTest(event=event):
+                shutil.rmtree(self.tmp / "work", ignore_errors=True)
+                shutil.rmtree(self.tmp / "work-origin.git", ignore_errors=True)
+                shutil.rmtree(self.tmp / "runner", ignore_errors=True)
+                self._event = event
+                self._pr_create_number = "77"
+                _, _, issue = self._run_step(self._differs(), [], cwd=self._repo("auto"))
+                pr_body = (self.tmp / "runner" / "pr-body.md").read_text(encoding="utf-8")
+                self.assertIn("merges automatically", issue)
+                self.assertIs(self.WAITS in issue, waits, issue)
+                self.assertIs(self.WAITS in pr_body, waits, pr_body)
+                if not waits:
+                    self.assertIn("roster_only", issue)
 
     @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
                          "needs bash, jq and git")

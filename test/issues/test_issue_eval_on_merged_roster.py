@@ -24,6 +24,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -90,7 +91,7 @@ def _parse_output(path: Path) -> dict:
 
 #: A fake `gh`, answered from real git in `$FAKE_GIT_DIR`. The pull
 #: request's own state is a test-controlled SEQUENCE (`$FAKE_PR_STATES`, one
-#: JSON object per poll, the last one repeated), because "is it merged yet"
+#: JSON object per read, the last one repeated), because "is it merged yet"
 #: is not something a local repository can answer. Its files list is REAL:
 #: `git diff --name-status base...head` of the state last served. Every call
 #: is logged to `$FAKE_GH_LOG`; any call whose argument line contains
@@ -157,6 +158,8 @@ if args[:1] == ["api"]:
         if state == "error":
             sys.stderr.write("HTTP 502\n")
             raise SystemExit(1)
+        if os.path.exists(os.environ["FAKE_PR_STATES"] + ".disabled") and isinstance(state, dict):
+            state = dict(state, auto_merge=None)
         answer(state, jq)
     if path.startswith("pulls/") and "/files" in path:
         state = last_state()
@@ -193,6 +196,10 @@ if args[:1] == ["api"]:
     sys.stderr.write("HTTP 404\n")
     raise SystemExit(1)
 if args[:2] == ["pr", "merge"]:
+    # A disable that "succeeds" clears auto_merge on later reads, unless
+    # the test models GitHub answering OK while the PR stays armed.
+    if "--disable-auto" in args and not os.environ.get("FAKE_DISABLE_NOOP"):
+        open(os.environ["FAKE_PR_STATES"] + ".disabled", "w").close()
     raise SystemExit(0)
 sys.stderr.write("unexpected gh call\n")
 raise SystemExit(1)
@@ -230,7 +237,8 @@ class TestTheJobGraph(_Scripts):
         self.assertEqual(_needs(self.jobs["roster-wait"]), ["roster", "roster-pr"])
         self.assertEqual(_needs(self.jobs["eval"]),
                          ["disarm", "roster", "roster-pr", "roster-wait"])
-        self.assertEqual(_needs(self.jobs["publish"]), ["eval", "roster"])
+        # S1: `publish` reads `roster-wait`'s `cleared` in its gate.
+        self.assertEqual(_needs(self.jobs["publish"]), ["eval", "roster", "roster-wait"])
 
     def test_the_agent_starts_only_after_the_wait_resolved(self):
         # Invariant 3: nothing armed while the agent runs. `eval` needs the
@@ -265,10 +273,7 @@ class TestTheJobGraph(_Scripts):
         self.assertEqual(self.jobs["roster-wait"].get("if"),
                          "${{ !cancelled() && github.ref == 'refs/heads/main' "
                          "&& !inputs.roster_only }}")
-        # A failed or skipped wait never blocks the eval: it runs on the
-        # committed roster instead.
-        self.assertEqual(self.jobs["eval"].get("if"),
-                         "${{ !cancelled() && !inputs.roster_only }}")
+        # The eval/publish gates are exercised by TestTheGates below.
 
 
 class TestTheWaitJobsShape(_Scripts):
@@ -288,6 +293,7 @@ class TestTheWaitJobsShape(_Scripts):
         wait = _step(self.job, WAIT_STEP)
         sweep = _step(self.job, SWEEP_STEP)
         self.assertEqual(wait.get("id"), "wait")
+        self.assertEqual(sweep.get("id"), "sweep")
         # The disarm runs whatever happened to the wait step — failed,
         # timed out or cancelled — so a timed-out wait still disarms.
         self.assertEqual(sweep.get("if"), "${{ always() }}")
@@ -307,6 +313,7 @@ class TestTheWaitJobsShape(_Scripts):
             "roster_reason": "${{ steps.wait.outputs.roster_reason }}",
             "merge_sha": "${{ steps.wait.outputs.merge_sha }}",
             "pr_number": "${{ steps.wait.outputs.pr_number }}",
+            "cleared": "${{ steps.sweep.outputs.cleared }}",
         })
 
     def test_inputs_arrive_through_env(self):
@@ -393,8 +400,151 @@ class TestRosterPrStillHoldsTheAppTokenAlone(_Scripts):
             "ROSTER_REASON": "${{ needs.roster-wait.outputs.roster_reason }}",
             "MERGE_SHA": "${{ needs.roster-wait.outputs.merge_sha }}",
             "ROSTER_PR_NUMBER": "${{ needs.roster-wait.outputs.pr_number }}",
+            "ROSTER_CLEARED": "${{ needs.roster-wait.outputs.cleared }}",
             "PROPOSED_ROSTER_B64": "${{ needs.roster.outputs.proposed_roster_b64 }}",
         })
+
+
+class _Expr:
+    """A minimal evaluator for the GitHub Actions expressions these gates
+    use (`!`, `&&`, `||`, `==`, `!=`, parentheses, 'strings', dotted
+    context names, zero-argument functions), so a gate is tested as the
+    PARSED `if:` string, never re-typed here. It refuses anything else."""
+
+    TOKEN = re.compile(r"\$\{\{|\}\}|&&|\|\||==|!=|!|\(|\)|'[^']*'|[A-Za-z_][A-Za-z0-9_.\-]*")
+
+    def __init__(self, expr, ctx):
+        pos, toks = 0, []
+        while pos < len(expr):
+            if expr[pos].isspace():
+                pos += 1
+                continue
+            m = self.TOKEN.match(expr, pos)
+            if not m:
+                raise ValueError(f"unsupported expression text: {expr[pos:]!r}")
+            toks.append(m.group(0))
+            pos = m.end()
+        if toks[:1] != ["${{"] or toks[-1:] != ["}}"]:
+            raise ValueError(expr)
+        self.toks, self.i, self.ctx = toks[1:-1], 0, ctx
+
+    def value(self):
+        v = self._or()
+        if self.i != len(self.toks):
+            raise ValueError(f"trailing tokens: {self.toks[self.i:]}")
+        return v
+
+    def _peek(self):
+        return self.toks[self.i] if self.i < len(self.toks) else None
+
+    def _take(self):
+        t = self.toks[self.i]
+        self.i += 1
+        return t
+
+    def _or(self):
+        v = self._and()
+        while self._peek() == "||":
+            self._take()
+            r = self._and()
+            v = v or r
+        return v
+
+    def _and(self):
+        v = self._cmp()
+        while self._peek() == "&&":
+            self._take()
+            r = self._cmp()
+            v = v and r
+        return v
+
+    def _cmp(self):
+        v = self._unary()
+        if self._peek() in ("==", "!="):
+            op = self._take()
+            r = self._unary()
+            v = (v == r) if op == "==" else (v != r)
+        return v
+
+    def _unary(self):
+        if self._peek() == "!":
+            self._take()
+            return not self._unary()
+        return self._atom()
+
+    def _atom(self):
+        t = self._take()
+        if t == "(":
+            v = self._or()
+            if self._take() != ")":
+                raise ValueError("unbalanced")
+            return v
+        if t.startswith("'"):
+            return t[1:-1]
+        if self._peek() == "(":
+            self._take()
+            if self._take() != ")":
+                raise ValueError("only zero-argument functions")
+            return self.ctx["functions"][t]()
+        if t not in self.ctx:
+            raise KeyError(f"{t} is not in this test's context")
+        return self.ctx[t]
+
+
+class TestTheGates(_Scripts):
+    """S1 (fail closed): `eval` and `publish` run only when `roster-wait`
+    CONFIRMED no roster pull request is left armed (`cleared == 'true'`),
+    or when `roster-wait` was skipped (off `main`, `roster_only`) — never
+    when it failed, timed out, was cancelled or never started."""
+
+    def _ctx(self, wait_result, cleared, *, roster_only=False, eval_result="success"):
+        return {"functions": {"cancelled": lambda: False},
+                "inputs.roster_only": roster_only,
+                "needs.roster-wait.result": wait_result,
+                "needs.roster-wait.outputs.cleared": cleared,
+                "needs.eval.result": eval_result}
+
+    def _runs(self, job, *args, **kwargs):
+        return bool(_Expr(self.jobs[job]["if"], self._ctx(*args, **kwargs)).value())
+
+    CASES = [
+        # (roster-wait result, cleared, roster_only) -> eval runs?
+        (("success", "true", False), True),
+        (("success", "false", False), False),
+        (("success", "", False), False),
+        (("failure", "", False), False),   # never started, or died
+        (("failure", "true", False), True),  # a step after the sweep failed
+        (("cancelled", "", False), False),  # timed out before the sweep
+        (("skipped", "", False), True),    # off `main`: today's behavior
+        (("skipped", "", True), False),    # roster_only: no eval at all
+    ]
+
+    def test_the_eval_gate(self):
+        for args, want in self.CASES:
+            with self.subTest(args=args):
+                self.assertIs(self._runs("eval", args[0], args[1], roster_only=args[2]), want)
+
+    def test_the_publish_gate(self):
+        for args, want in self.CASES:
+            if args[2]:
+                continue
+            for eval_result in ("success", "failure", "skipped"):
+                with self.subTest(args=args, eval_result=eval_result):
+                    self.assertIs(self._runs("publish", args[0], args[1],
+                                             eval_result=eval_result),
+                                  want and eval_result == "success")
+
+    def test_the_old_gate_would_have_run_the_eval_uncleared(self):
+        # The negative control: the pre-S1 `if:` runs the eval on
+        # `cleared=false`, so the rows above are testing the new clause.
+        old = "${{ !cancelled() && !inputs.roster_only }}"
+        self.assertTrue(_Expr(old, self._ctx("success", "false")).value())
+
+    def test_the_evaluator_refuses_what_it_does_not_understand(self):
+        for expr in ("${{ contains(x, 'y') }}", "${{ a > b }}", "${{ !cancelled() "):
+            with self.subTest(expr=expr):
+                with self.assertRaises((ValueError, KeyError, IndexError)):
+                    _Expr(expr, self._ctx("success", "true")).value()
 
 
 # --- the wait step, run ----------------------------------------------------
@@ -455,8 +605,8 @@ class _Origin(_Scripts):
 
 class _WaitHarness(_Origin):
 
-    def _run_wait(self, states, *, armed="true", pr="55", pushed=None,
-                  proposal=NEW_ROSTER, polls="3", fail=None, extra_env=None):
+    def _setup(self, states, *, armed="true", pr="55", pushed=None,
+               proposal=NEW_ROSTER, polls="3", fail=None, extra_env=None):
         bin_dir = self.tmp / "bin"
         bin_dir.mkdir(exist_ok=True)
         gh = bin_dir / "gh"
@@ -465,6 +615,7 @@ class _WaitHarness(_Origin):
         states_file = self.tmp / "states.json"
         states_file.write_text(json.dumps(states), encoding="utf-8")
         (self.tmp / "states.json.served").unlink(missing_ok=True)
+        (self.tmp / "states.json.disabled").unlink(missing_ok=True)
         self.log = self.tmp / "gh.log"
         self.log.unlink(missing_ok=True)
         self.output = self.tmp / "github-output"
@@ -488,25 +639,36 @@ class _WaitHarness(_Origin):
             env["FAKE_GH_FAIL"] = fail
         env.update(extra_env or {})
         self.env = env
+
+    def _run_wait(self, states, **kwargs):
+        self._setup(states, **kwargs)
         run = _step(self.jobs["roster-wait"], WAIT_STEP)["run"]
         done = subprocess.run(["bash", "-c", run], capture_output=True, text=True,
-                              timeout=120, env=env, cwd=self.tmp)
+                              timeout=120, env=self.env, cwd=self.tmp)
         self.assertEqual(done.returncode, 0, done.stderr)
         self.stdout = done.stdout
         return _parse_output(self.output)
 
-    def _run_sweep(self, rows, fail=None):
+    def _run_sweep(self, rows, *, states=None, fail=None, noop=False):
+        """The `always()` sweep step. With `states`, on a fresh world (no
+        wait step ran); without, right after `_run_wait`, on its world."""
+        if states is not None:
+            self._setup(states)
         (self.tmp / "rows.json").write_text(json.dumps(rows), encoding="utf-8")
         env = dict(self.env)
         env.pop("FAKE_GH_FAIL", None)
         if fail:
             env["FAKE_GH_FAIL"] = fail
+        if noop:
+            env["FAKE_DISABLE_NOOP"] = "1"
         self.log.unlink(missing_ok=True)
+        self.output.write_text("", encoding="utf-8")
+        self.summary.write_text("", encoding="utf-8")
         run = _step(self.jobs["roster-wait"], SWEEP_STEP)["run"]
         done = subprocess.run(["bash", "-c", run], capture_output=True, text=True,
                               timeout=60, env=env, cwd=self.tmp)
         self.assertEqual(done.returncode, 0, done.stderr)
-        return done.stdout, self._calls()
+        return done.stdout, self._calls(), _parse_output(self.output)
 
     def _calls(self):
         return self.log.read_text(encoding="utf-8").splitlines() if self.log.exists() else []
@@ -573,9 +735,45 @@ class TestTheWaitStep(_WaitHarness):
         out = self._run_wait([self._state()], polls="4")
         self.assertEqual(out.get("roster_source"), "committed")
         self.assertEqual(out.get("roster_reason"), "timeout")
-        self.assertEqual(len(self._polls()), 4)
-        # Polling is read-only: the wait step itself never writes.
-        self.assertFalse([c for c in self._calls() if c.startswith("pr ")])
+        calls = self._calls()
+        disable = f"pr merge 55 --repo {REPO} --disable-auto"
+        # The cap's 4 polls are read-only; then ONE disable, then one final
+        # read (S2) — nothing else writes.
+        self.assertEqual([c for c in calls if c.startswith("pr ")], [disable])
+        at = calls.index(disable)
+        self.assertEqual(len([c for c in calls[:at] if c == f"api repos/{REPO}/pulls/55"]), 4)
+        self.assertEqual([c for c in calls[at + 1:] if c.startswith("api ")],
+                         [f"api repos/{REPO}/pulls/55"])
+        # The wait step cannot know the disable took: it must not say so.
+        summary = self.summary.read_text(encoding="utf-8")
+        self.assertIn("did not merge within", summary)
+        self.assertNotIn("was turned off", summary)
+
+    def test_a_merge_that_lands_after_the_last_poll_is_used_when_it_verifies(self):
+        # S2: open for the whole cap, merged by the final read after the
+        # disable — GitHub merged it between the last poll and the disable.
+        self._propose()
+        m = self._merge()
+        out = self._run_wait([self._state(), self._state(),
+                              self._state(merged=True, merge_sha=m)], polls="2")
+        self.assertEqual(out.get("roster_source"), "merged")
+        self.assertEqual(out.get("roster_reason"), "merged")
+        self.assertEqual(out.get("merge_sha"), m)
+
+    def test_a_late_merge_still_has_to_verify(self):
+        self._propose(content=NEW_ROSTER + b"# not this run's proposal\n")
+        m = self._merge()
+        out = self._run_wait([self._state(), self._state(merged=True, merge_sha=m)],
+                             polls="1")
+        self.assertEqual(out.get("roster_source"), "committed")
+        self.assertEqual(out.get("roster_reason"), "verify-failed")
+        self.assertNotIn("merge_sha", out)
+
+    def test_a_failed_timeout_disable_is_still_a_timeout_and_warns(self):
+        self._propose()
+        out = self._run_wait([self._state()], polls="1", fail="--disable-auto")
+        self.assertEqual(out.get("roster_reason"), "timeout")
+        self.assertIn("::warning::could not disable auto-merge", self.stdout)
 
     def test_a_read_error_is_retried_within_the_cap(self):
         self._propose()
@@ -642,28 +840,66 @@ class TestTheDisarmStep(_WaitHarness):
     FOREIGN = {"number": 99, "head": {"repo": {"full_name": "someone/skills-evals"},
                                       "ref": "roster/proposal"}}
 
-    def test_a_timeout_disarms_the_open_pr(self):
+    def _armed(self):
         self._propose()
-        self._run_wait([self._state()], polls="2")
-        out, calls = self._run_sweep([self.FOREIGN, self.OWN])
+        return [self._state()]
+
+    def test_an_armed_open_pr_is_disarmed_and_confirmed_cleared(self):
+        out, calls, outputs = self._run_sweep([self.FOREIGN, self.OWN], states=self._armed())
         self.assertEqual([c for c in calls if c.startswith("pr merge")],
                          [f"pr merge 55 --repo {REPO} --disable-auto"])
+        # Confirmed by a re-read AFTER the disable, not by its exit code.
+        at = calls.index(f"pr merge 55 --repo {REPO} --disable-auto")
+        self.assertTrue([c for c in calls[at + 1:]
+                         if c.startswith(f"api repos/{REPO}/pulls/55 ")], calls)
+        self.assertEqual(outputs, {"cleared": "true"})
+
+    def test_an_unarmed_pr_is_left_alone(self):
+        # Nit 1: a proposal-mode PR with no auto-merge gets no disable call
+        # and so no spurious warning.
+        self._propose()
+        out, calls, outputs = self._run_sweep([self.OWN], states=[self._state(auto=False)])
+        self.assertEqual([c for c in calls if c.startswith("pr merge")], [])
+        self.assertNotIn("::warning::", out)
+        self.assertEqual(outputs, {"cleared": "true"})
+
+    def test_nothing_open_is_cleared(self):
+        out, calls, outputs = self._run_sweep([], states=self._armed())
+        self.assertIn("no open roster pull request", out)
+        self.assertEqual([c for c in calls if c.startswith("pr merge")], [])
+        self.assertEqual(outputs, {"cleared": "true"})
+
+    def _assert_not_cleared(self, out, outputs):
+        self.assertEqual(outputs, {"cleared": "false"})
+        self.assertIn("::warning::could not confirm that no roster pull request is left "
+                      "armed; the eval and publish jobs will not run", out)
+        summary = self.summary.read_text(encoding="utf-8")
+        self.assertIn("The eval and publish jobs do not run this time", summary)
+
+    def test_a_failed_disable_is_not_cleared(self):
+        out, calls, outputs = self._run_sweep([self.OWN], states=self._armed(),
+                                              fail="--disable-auto")
+        self._assert_not_cleared(out, outputs)
+
+    def test_a_disable_that_answered_ok_but_did_not_take_is_not_cleared(self):
+        out, calls, outputs = self._run_sweep([self.OWN], states=self._armed(), noop=True)
+        self.assertIn(f"pr merge 55 --repo {REPO} --disable-auto", calls)
+        self._assert_not_cleared(out, outputs)
+
+    def test_a_failed_lookup_or_read_is_not_cleared(self):
+        states = self._armed()
+        for fail in ("pulls?state=open", "pulls/55"):
+            with self.subTest(fail=fail):
+                out, calls, outputs = self._run_sweep([self.OWN], states=states, fail=fail)
+                self._assert_not_cleared(out, outputs)
 
     def test_after_a_merge_there_is_nothing_open_to_disarm(self):
         self._propose()
         m = self._merge()
         self._run_wait([self._state(merged=True, merge_sha=m)])
-        out, calls = self._run_sweep([])
+        out, calls, outputs = self._run_sweep([])
         self.assertEqual([c for c in calls if c.startswith("pr merge")], [])
-        self.assertIn("no open roster pull request", out)
-
-    def test_a_failed_disarm_or_lookup_warns_and_exits_zero(self):
-        self._propose()
-        self._run_wait([self._state()], polls="1")
-        out, _ = self._run_sweep([self.OWN], fail="--disable-auto")
-        self.assertIn("::warning::could not disable auto-merge for the roster pull request", out)
-        out, _ = self._run_sweep([self.OWN], fail="pulls?state=open")
-        self.assertIn("::warning::could not find the roster pull request to disarm", out)
+        self.assertEqual(outputs, {"cleared": "true"})
 
 
 # --- the overlay step, run --------------------------------------------------
@@ -682,7 +918,7 @@ class _OverlayHarness(_Origin):
         self.head = _git(self.checkout, "rev-parse", "HEAD").stdout.strip()
 
     def _run_overlay(self, *, source="merged", reason="merged", merge_sha="",
-                     pr="55", proposal=NEW_ROSTER):
+                     pr="55", proposal=NEW_ROSTER, cleared="true"):
         self.summary = self.tmp / "summary.md"
         self.summary.write_text("", encoding="utf-8")
         runner = self.tmp / "runner"
@@ -691,7 +927,7 @@ class _OverlayHarness(_Origin):
                "GITHUB_STEP_SUMMARY": str(self.summary),
                "HOME": str(self.tmp), "GIT_CONFIG_NOSYSTEM": "1",
                "ROSTER_SOURCE": source, "ROSTER_REASON": reason, "MERGE_SHA": merge_sha,
-               "ROSTER_PR_NUMBER": pr,
+               "ROSTER_PR_NUMBER": pr, "ROSTER_CLEARED": cleared,
                "PROPOSED_ROSTER_B64": base64.b64encode(proposal).decode()}
         run = _step(self.jobs["eval"], OVERLAY_STEP)["run"]
         done = subprocess.run(["bash", "-c", run], capture_output=True, text=True,
@@ -782,8 +1018,22 @@ class TestTheOverlayStep(_OverlayHarness):
                 summary = self.summary.read_text(encoding="utf-8")
                 self.assertIn("committed `evals/roster.yml`", summary)
                 self.assertNotIn("junk", summary)
-        self._run_overlay(source="", reason="", merge_sha="")
+        self._run_overlay(source="", reason="", merge_sha="", cleared="")
         self.assertIn("did not run", self.summary.read_text(encoding="utf-8"))
+
+    def test_the_timeout_text_claims_auto_merge_off_only_when_confirmed(self):
+        self._run_overlay(source="committed", reason="timeout", cleared="true")
+        self.assertIn("confirmed", self.summary.read_text(encoding="utf-8"))
+        self._run_overlay(source="committed", reason="timeout", cleared="")
+        summary = self.summary.read_text(encoding="utf-8")
+        self.assertNotIn("confirmed", summary)
+        self.assertNotIn("was turned off", summary)
+
+    def test_the_path_check_ignores_rename_detection(self):
+        # Nit 6: with renames on, `--name-only` names only a rename's NEW
+        # path. A lexical token in the one command, so a token check.
+        run = _step(self.jobs["eval"], OVERLAY_STEP)["run"]
+        self.assertIn('git diff --no-renames --name-only "$merge_sha^1" "$merge_sha"', run)
 
 
 @unittest.skipUnless(HAVE_TOOLS, "needs bash, git and jq")
@@ -797,13 +1047,18 @@ class TestTimeoutDisarmsThenTheEvalUsesTheCommittedRoster(_OverlayHarness, _Wait
         self._propose()
         out = self._run_wait([self._state()], polls="2")
         self.assertEqual(out.get("roster_reason"), "timeout")
-        _, calls = self._run_sweep([TestTheDisarmStep.OWN])
-        self.assertIn(f"pr merge 55 --repo {REPO} --disable-auto", calls)
+        self.assertIn(f"pr merge 55 --repo {REPO} --disable-auto", self._calls())
+        # The sweep re-reads the PR, finds auto-merge off, and confirms.
+        _, calls, swept = self._run_sweep([TestTheDisarmStep.OWN])
+        self.assertEqual(swept, {"cleared": "true"})
         self._run_overlay(source=out.get("roster_source", ""),
                           reason=out.get("roster_reason", ""),
-                          merge_sha=out.get("merge_sha", ""), pr=out.get("pr_number", ""))
+                          merge_sha=out.get("merge_sha", ""), pr=out.get("pr_number", ""),
+                          cleared=swept["cleared"])
         self._unchanged()
-        self.assertIn("did not merge within", self.summary.read_text(encoding="utf-8"))
+        summary = self.summary.read_text(encoding="utf-8")
+        self.assertIn("did not merge within", summary)
+        self.assertIn("confirmed", summary)
 
     def test_merged_then_overlay_end_to_end(self):
         self._propose()

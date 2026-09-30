@@ -279,13 +279,15 @@ on:
 # credential that step holds, so no write credential of any kind may exist
 # on this job's runner at all, ever. `needs: [roster, disarm, roster-pr,
 # roster-wait]` — NOT the other way: `disarm` and `roster-wait` must finish
-# (or fail; see `if:` below) before this job's agent starts, so no armed
-# auto-merge — an earlier run's or this run's — is left standing for the
-# length of this job. `if: ${{ !cancelled() &&
-# !inputs.roster_only }}` — neither the roster step's own failures nor a
-# failed/warned `disarm` may ever be fatal to the eval (a stale/unreachable
-# census, or a `disarm` that could not reach the API, are not this job's
-# problem), and a `roster_only` dispatch skips this job entirely.
+# before this job's agent starts. `if:` is `!cancelled()`, not
+# `roster_only`, AND (S1, fail closed) `roster-wait` either skipped (off
+# `main`) or reporting `cleared == 'true'` — so no armed auto-merge, an
+# earlier run's or this run's, is left standing for the length of this job.
+# Neither the roster step's own failures nor a failed/warned `disarm` is
+# fatal to the eval (a stale/unreachable census, or a `disarm` that could
+# not reach the API, are not this job's problem: `roster-wait`'s sweep is
+# the confirmation that counts), and a `roster_only` dispatch skips this
+# job entirely.
 # `id-token: write` is this job's OWN, separate WIF mint (never shared with
 # `roster`'s bearer — different runners, different jobs, no credential in
 # common) for the preflight and the eval run. Nothing in this job ever
@@ -300,13 +302,18 @@ on:
 # checks only at enable time, so a write-credential job still running after
 # the arming could move `roster/proposal` under an armed PR unnoticed. So:
 # `roster` and `disarm` have finished before `roster-pr` arms (it needs
-# both); `roster-wait`'s `pull-requests: write` cannot move a branch; and
-# `publish` (`contents: write`) runs only after `eval`, which runs only
-# after `roster-wait` resolved the arming — merged, or auto-merge turned
-# off by its `always()` disarm step. Within an eval run, then, no job
-# holding a write credential runs while the PR is armed, and nothing is
-# armed while the agent runs. A `roster_only` dispatch has no wait and no
-# eval: its arming stands, as before, with nothing after it.
+# both); `roster-wait` holds only `pull-requests: write` and runs no code
+# that could move a branch; and `eval` and `publish` (`contents: write`)
+# are gated on `roster-wait`'s `cleared` output (S1, fail closed): they run
+# only when its `always()` sweep step CONFIRMED, by re-reading the pull
+# request after turning its auto-merge off, that no roster pull request is
+# left armed (or when `roster-wait` was skipped, off `main`). A sweep that
+# cannot confirm it, or a `roster-wait` that never got that far, means no
+# eval and no publish this run, loudly. Within an eval run, then, no job
+# holding a write credential runs while the PR is armed, and the eval and
+# `publish` do not run unless the arming is confirmed cleared. A
+# `roster_only` dispatch has no wait and no eval: its arming stands, as
+# before, with nothing after it.
 # What this workflow cannot control: between arming and the merge any
 # other write-access actor that pushes `roster/proposal` retargets the
 # armed PR — see ADR 0003.
@@ -319,8 +326,9 @@ on:
 # that used to be the `eval` job's own "Build the badge over the run
 # window, commit, and push" step, moved into a job with NO agent and a
 # FRESH checkout, so the write credential it holds never coexists on a
-# runner with the bypass-permissions agent. `needs: [roster, eval]`, `if:
-# ${{ !cancelled() && needs.eval.result == 'success' }}` — it only runs
+# runner with the bypass-permissions agent. `needs: [roster, eval,
+# roster-wait]`, `if:` `!cancelled()`, `needs.eval.result == 'success'` and
+# (S1) the same `roster-wait` `cleared` gate as `eval` — it only runs
 # once the eval has actually produced something to publish (this also
 # reproduces the old skip on a `roster_only` dispatch, whose `eval` job
 # never runs at all: `needs.eval.result` reads `skipped`, which is never
@@ -381,10 +389,12 @@ on:
 # minutes by default), verifies a merge (the merged head is the armed
 # commit; the PR touches exactly `evals/roster.yml`; that file at the merge
 # commit is this run's proposal byte for byte; the merge commit is on
-# `main`) and hands `eval` the merge commit. Its second step runs
-# `always()` and turns auto-merge off on any still-open roster PR, so a
-# timed-out, failed or cancelled wait leaves nothing armed while the agent
-# runs. No checkout, no App token, no CLI, no agent.
+# `main`) and hands `eval` the merge commit. On a timeout it asks for
+# auto-merge off and reads the PR once more, using a merge that landed in
+# between if it verifies. Its second step runs `always()`, turns auto-merge
+# off on any still-open roster PR and re-reads it; only a confirmed-clear
+# answer sets `cleared=true`, which `eval` and `publish` require. No
+# checkout, no App token, no CLI, no agent.
 permissions: {}
 
 # Never let two runs (e.g. a manual dispatch during the weekly run) race the
@@ -1290,6 +1300,14 @@ jobs:
     # on the roster its own run just merged. `disarm` stays listed: it is
     # what clears an EARLIER run's stale arming before anything else.
     needs: [roster, disarm, roster-pr, roster-wait]
+    # S1 (fail closed): runs only when `roster-wait` CONFIRMED no roster
+    # pull request is left armed (`cleared == 'true'`), or when it was
+    # skipped altogether (a dispatch off `main`, where nothing is armed by
+    # this workflow — today's behavior there). A `roster-wait` that failed,
+    # timed out, was cancelled or never started leaves `cleared` empty, so
+    # this job, and `publish` after it, do not run; the sweep step's
+    # warning and summary say so when it got that far, and the failed
+    # `roster-wait` job itself is the signal when it did not.
     # NOT fatal on a `roster` failure (its own steps are already designed
     # to warn and continue rather than fail the job on an ordinary
     # refresh/publish problem; this `if:` covers the job dying outright,
@@ -1297,11 +1315,11 @@ jobs:
     # roster either way. Likewise never fatal on a failed/warned `disarm` —
     # that job's own job-level `::warning::`s are its loud channel, and
     # this job must still run on the committed roster regardless (B1, round
-    # 4 on #209). The same holds for a failed, skipped or timed-out
-    # `roster-pr`/`roster-wait` (ADR 0004): no `roster_source=merged` from
-    # them means the committed roster. Skipped entirely for a `roster_only`
-    # dispatch.
-    if: ${{ !cancelled() && !inputs.roster_only }}
+    # 4 on #209). A failed or skipped `roster-pr` likewise just means no
+    # arming and the committed roster. But a `roster-wait` that did not
+    # CONFIRM the arming cleared keeps this job from running at all (S1,
+    # the clause below). Skipped entirely for a `roster_only` dispatch.
+    if: ${{ !cancelled() && !inputs.roster_only && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
     runs-on: ubuntu-latest
     # Job-level, not workflow-level (F2). B1 (round 4 on #209, blocker):
     # `contents: write` is GONE — this job runs the bypass-permissions
@@ -1361,6 +1379,7 @@ jobs:
           ROSTER_REASON: ${{ needs.roster-wait.outputs.roster_reason }}
           MERGE_SHA: ${{ needs.roster-wait.outputs.merge_sha }}
           ROSTER_PR_NUMBER: ${{ needs.roster-wait.outputs.pr_number }}
+          ROSTER_CLEARED: ${{ needs.roster-wait.outputs.cleared }}
           PROPOSED_ROSTER_B64: ${{ needs.roster.outputs.proposed_roster_b64 }}
         run: |
           set -uo pipefail
@@ -1389,7 +1408,12 @@ jobs:
             case "${ROSTER_REASON:-}" in
               not-armed) why="no roster pull request was armed this run (see the roster tracking issue for why)." ;;
               invalid-input) why="the values the roster jobs handed on did not validate." ;;
-              timeout) why="the armed roster pull request did not merge within this run's bounded wait; its auto-merge was turned off before this job started." ;;
+              timeout)
+                why="the armed roster pull request did not merge within this run's bounded wait."
+                if [ "${ROSTER_CLEARED:-}" = true ]; then
+                  why="$why \`roster-wait\` confirmed, by re-reading it, that its auto-merge is off before this job started."
+                fi
+                ;;
               closed) why="the armed roster pull request was closed without merging." ;;
               auto-merge-off) why="the roster pull request's auto-merge was turned off before it merged." ;;
               head-moved) why="the roster pull request's head is not the commit this run armed." ;;
@@ -1415,7 +1439,7 @@ jobs:
             || refuse "the merge commit could not be fetched."
           git merge-base --is-ancestor "$head" "$merge_sha" 2>/dev/null \
             || refuse "the merge commit does not descend from this run's commit."
-          changed=$(git diff --name-only "$merge_sha^1" "$merge_sha" 2>/dev/null) \
+          changed=$(git diff --no-renames --name-only "$merge_sha^1" "$merge_sha" 2>/dev/null) \
             || refuse "the merge commit's change could not be read."
           [ "$changed" = "evals/roster.yml" ] \
             || refuse "the merge commit changes more than \`evals/roster.yml\`."
@@ -1657,7 +1681,11 @@ jobs:
       # preflight used to read `$RUNNER_TEMP/roster/latest.json` — this
       # run's own proposal, computed partly from an untrusted census — so a
       # census plant could choose which model the job canaried its bearer
-      # against. `evals/roster.yml` is on `main`, behind a reviewed commit.
+      # against. `evals/roster.yml` is on `main`, behind a commit that
+      # passed the required `test` check — merged by a human under
+      # `roster_mode: proposal`, but automatically, with no human review,
+      # under `roster_mode: auto` (ADR 0003), and possibly by this very run
+      # (ADR 0004, overlaid by the step above after it verified).
       #
       # The literal below is the documented ROSTER FALLBACK, and it is the
       # only model id in this file. It is used when the committed roster
@@ -1748,8 +1776,11 @@ jobs:
   # relocated off the `eval` job to a runner the agent never touches. See
   # the header comment above for the full rationale.
   publish:
-    needs: [roster, eval]
-    if: ${{ !cancelled() && needs.eval.result == 'success' }}
+    # S1 (ADR 0004): gated on `roster-wait`'s confirmation exactly as
+    # `eval` is — `contents: write` never runs beside an arming that was
+    # not confirmed cleared, even if `eval`'s own gate ever drifted.
+    needs: [roster, eval, roster-wait]
+    if: ${{ !cancelled() && needs.eval.result == 'success' && (needs.roster-wait.result == 'skipped' || needs.roster-wait.outputs.cleared == 'true') }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -2639,7 +2670,12 @@ jobs:
               echo
               printf '%s\n' "$auto_summary"
               echo
-              echo "Merged automatically once \`test\` passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval). The run that armed it waits a bounded time for the merge before its eval; if the merge does not land in time, that run turns auto-merge off again before its eval starts, and the next run re-arms it."
+              echo "Merged automatically once \`test\` passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
+              # Review nit 2: only a run that has an eval to follow waits.
+              if [ "$roster_only" != true ]; then
+                echo
+                echo "The run that armed it waits a bounded time for the merge before its eval; if the merge does not land in time, that run turns auto-merge off again and confirms it is off before its eval starts (or runs no eval at all), and the next run re-arms it."
+              fi
             } > "$pr_body"
 
             if pr_number=$(find_roster_pr); then
@@ -2753,7 +2789,11 @@ jobs:
               printf '%s\n\n' "$marker"
               echo "The weekly run computed a roster difference and opened pull request #$pr_number from \`roster/proposal\`, which merges automatically once its \`test\` check passes (\`roster_mode: auto\` in \`evals/roster-policy.yml\`; set it to \`proposal\` to require approval)."
               echo
-              echo "This run waits a bounded time for that merge before its eval (ADR 0004). If it merges in time, the eval runs on the merged roster; if not, auto-merge is turned off again before the eval starts, the eval runs on the committed \`evals/roster.yml\`, and the next run re-arms the pull request. The run summary says which happened."
+              if [ "$roster_only" = true ]; then
+                echo "This was a \`roster_only\` dispatch, so no eval follows and nothing waits for the merge; the pull request merges on its own once \`test\` passes."
+              else
+                echo "This run waits a bounded time for that merge before its eval (ADR 0004). If it merges in time, the eval runs on the merged roster; if not, auto-merge is turned off again and re-read to confirm it is off before the eval starts, the eval runs on the committed \`evals/roster.yml\`, and the next run re-arms the pull request. If that cannot be confirmed, neither the eval nor \`publish\` runs. The run summary says which happened."
+              fi
               echo
               [ -z "$probe_note" ] || printf '%s\n\n' "$probe_note"
               echo "$eval_note"
@@ -2915,17 +2955,19 @@ jobs:
   # is GITHUB_TOKEN's; the ONE write is the disarm step's `gh pr merge
   # --disable-auto`. No checkout, no repository code, no CLI, no agent.
   #
-  # Invariant 3 (nothing armed while the agent runs): the second step runs
-  # `if: always()` — after a wait that merged, failed, timed out (its own
-  # `timeout-minutes`) or was cancelled — and turns off auto-merge on any
-  # open `roster/proposal` pull request, with the same owner-filtered
-  # lookup `disarm` uses. After a merge there is none open. `eval` needs
-  # this job, so it starts only once that step is done.
+  # Invariant 3 (nothing armed while the agent runs), FAIL CLOSED: the
+  # second step runs `if: always()` — after a wait that merged, failed,
+  # timed out (its own `timeout-minutes`) or was cancelled — turns off
+  # auto-merge on any open `roster/proposal` pull request (same
+  # owner-filtered lookup `disarm` uses), re-reads it, and emits
+  # `cleared=true` only when that re-read shows it off (or no roster PR is
+  # open, as after a merge). `eval` and `publish` run only on
+  # `cleared == 'true'`.
   #
   # Invariant 2 (no write-credential job running once a PR is armed): this
-  # job's `pull-requests: write` cannot move `roster/proposal` (that needs
-  # contents), and `publish` (`contents: write`) runs only after `eval`,
-  # which runs only after this job resolved the arming.
+  # job holds only `pull-requests: write` and runs no code that could move
+  # `roster/proposal`, and `publish` (`contents: write`) runs only after
+  # `eval`, with the same `cleared` gate.
   #
   # Main-only, like `roster-pr` and `disarm`; skipped on a `roster_only`
   # dispatch (no eval runs, so there is nothing to wait for — an armed PR
@@ -2948,6 +2990,10 @@ jobs:
       roster_reason: ${{ steps.wait.outputs.roster_reason }}
       merge_sha: ${{ steps.wait.outputs.merge_sha }}
       pr_number: ${{ steps.wait.outputs.pr_number }}
+      # S1: `true` ONLY when the sweep step confirmed, by re-reading, that
+      # no roster pull request is left armed. The `eval` and `publish`
+      # gates require it.
+      cleared: ${{ steps.sweep.outputs.cleared }}
     steps:
       # Polls the armed pull request, read-only, every
       # ROSTER_WAIT_INTERVAL_SECONDS (default 30) for at most
@@ -3002,7 +3048,7 @@ jobs:
               merged) printf 'Roster pull request #%s merged (merge commit `%s`) and verified: it touched exactly `evals/roster.yml`, merged onto `main`, and carries the roster this run proposed, byte for byte. The eval runs on it.' "$pr" "$merge_sha" ;;
               not-armed) printf 'No roster pull request was armed this run (`roster_mode: proposal`, a dirty probe, a rejected, unchanged or unpublished proposal, a missing App token, or an arm that did not complete; the tracking issue says which), so nothing was waited for.' ;;
               invalid-input) printf 'The values the roster jobs handed on did not validate, so nothing was waited for.' ;;
-              timeout) printf 'The armed roster pull request did not merge within this run'"'"'s bounded wait; its auto-merge is turned off before the eval, and the next run re-arms it.' ;;
+              timeout) printf 'The armed roster pull request did not merge within this run'"'"'s bounded wait. Its auto-merge was asked to turn off; the next step re-reads it and says whether that is confirmed. The next run re-arms it.' ;;
               closed) printf 'The armed roster pull request was closed without merging.' ;;
               auto-merge-off) printf 'The roster pull request'"'"'s auto-merge was turned off before it merged.' ;;
               head-moved) printf 'The roster pull request'"'"'s head is not the commit this run armed.' ;;
@@ -3066,12 +3112,15 @@ jobs:
 
           # >>> wait-poll
           state_file="$RUNNER_TEMP/roster-wait-pr.json"
-          outcome=""
-          i=0
-          while [ "$i" -lt "$polls" ]; do
-            i=$((i + 1))
-            if gh api "repos/$REPO/pulls/$pr" > "$state_file" 2>/dev/null; then
-              outcome=$(python3 - "$state_file" "$REPO" "$pushed" <<'PY'
+          # One read of the armed PR, classified into a fixed word (or
+          # `merged <sha>`); an unreadable answer is `unreadable`.
+          read_state() {
+            local result
+            if ! gh api "repos/$REPO/pulls/$pr" > "$state_file" 2>/dev/null; then
+              printf 'unreadable'
+              return 0
+            fi
+            result=$(python3 - "$state_file" "$REPO" "$pushed" <<'PY'
           import json
           import re
           import sys
@@ -3107,10 +3156,14 @@ jobs:
           else:
               print("pending")
           PY
-              ) || outcome=unreadable
-            else
-              outcome=unreadable
-            fi
+            ) || result=unreadable
+            printf '%s' "$result"
+          }
+          outcome=""
+          i=0
+          while [ "$i" -lt "$polls" ]; do
+            i=$((i + 1))
+            outcome=$(read_state)
             case "$outcome" in
               pending|unreadable) : ;;
               *) break ;;
@@ -3118,6 +3171,27 @@ jobs:
             if [ "$i" -lt "$polls" ]; then sleep "$interval"; fi
           done
           # <<< wait-poll
+
+          # >>> wait-timeout (S2): the cap ran out with the PR still open
+          # (or unreadable). Ask GitHub to turn its auto-merge off, then
+          # read it ONCE more: GitHub may have merged it between the last
+          # poll and the disable, and a merge that verifies is still used.
+          # Whether auto-merge really is off is the NEXT step's to confirm
+          # (it re-reads the PR); this step never claims it.
+          case "$outcome" in
+            "merged "*|identity|head-moved|closed|auto-merge-off) : ;;
+            *)
+              if ! gh pr merge "$pr" --repo "$REPO" --disable-auto >/dev/null 2>&1; then
+                echo "::warning::could not disable auto-merge for the roster pull request after the wait; the next step re-checks it"
+              fi
+              outcome=$(read_state)
+              case "$outcome" in
+                "merged "*) echo "the roster pull request merged after the last poll" ;;
+                *) outcome=timeout ;;
+              esac
+              ;;
+          esac
+          # <<< wait-timeout
 
           case "$outcome" in
             "merged "*) merge_sha="${outcome#merged }" ;;
@@ -3170,16 +3244,23 @@ jobs:
           # <<< wait-verify
           finish
 
-      # Invariant 3: runs whatever the wait step did — merged, failed, timed
-      # out or cancelled — so no armed auto-merge survives into the `eval`
-      # job's agent. The SAME validated, owner-filtered lookup as `disarm`
-      # (server-side `head=` filter, re-asserted client-side by the exact
-      # repo full name and branch name, digits-only on the number). A failed
-      # lookup or disable is a fixed `::warning::`, exit 0 — the same
-      # tolerance `disarm` has; the eval then runs on the committed roster
-      # either way, since a PR that did not merge never became
-      # `roster_source=merged`.
+      # Invariant 3, FAIL CLOSED (S1): runs whatever the wait step did —
+      # merged, failed, timed out or cancelled. It finds any open
+      # `roster/proposal` pull request with the SAME validated,
+      # owner-filtered lookup as `disarm` (server-side `head=` filter,
+      # re-asserted client-side by the exact repo full name and branch
+      # name, digits-only on the number), reads it, turns its auto-merge off
+      # if it is on (never calling `--disable-auto` on one that is already
+      # off), and then READS IT AGAIN. Only a re-read showing auto-merge off
+      # (or the PR no longer open), or a lookup finding no open roster PR at
+      # all, emits `cleared=true`. Every other outcome — a failed lookup,
+      # read or disable, or a disable GitHub answered OK that did not take —
+      # is `cleared=false` with a fixed `::warning::`, and the `eval` and
+      # `publish` jobs' gates then keep both from running. So does this job
+      # never getting here (it failed or was cancelled before this step):
+      # `cleared` is then empty, never `true`.
       - name: Disarm the roster pull request unless it merged
+        id: sweep
         if: ${{ always() }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -3187,6 +3268,8 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -uo pipefail
+          : "${GITHUB_OUTPUT:=/dev/null}"
+          : "${GITHUB_STEP_SUMMARY:=/dev/null}"
           find_roster_pr() {
             local raw
             if ! raw=$(gh api "repos/$REPO/pulls?state=open&base=main&head=${REPO%%/*}:roster/proposal" \
@@ -3199,17 +3282,52 @@ jobs:
               *) printf '%s' "$raw" ;;
             esac
           }
-          if pr_number=$(find_roster_pr); then
-            if [ -n "$pr_number" ]; then
-              if gh pr merge "$pr_number" --repo "$REPO" --disable-auto; then
-                echo "disarmed pull request #$pr_number before the eval job's agent runs"
-              else
-                echo "::warning::could not disable auto-merge for the roster pull request"
-              fi
-            else
-              echo "no open roster pull request to disarm"
-            fi
-          else
+          # `clear` when the PR is no longer open or carries no auto-merge;
+          # `armed` when it does; fails when it cannot be read.
+          pr_armed_state() {
+            local word
+            word=$(gh api "repos/$REPO/pulls/$1" \
+                     --jq 'if (.state != "open") or (.auto_merge == null) then "clear" else "armed" end' \
+                     2>/dev/null) || return 1
+            case "$word" in clear|armed) printf '%s' "$word" ;; *) return 1 ;; esac
+          }
+          confirmed() {
+            printf 'cleared=true\n' >> "$GITHUB_OUTPUT"
+            echo "$1"
+            {
+              echo "### Roster pull request"
+              echo
+              echo "$1"
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          unconfirmed() {
+            printf 'cleared=false\n' >> "$GITHUB_OUTPUT"
+            echo "::warning::could not confirm that no roster pull request is left armed; the eval and publish jobs will not run this time"
+            {
+              echo "### Roster pull request"
+              echo
+              echo "**The eval and publish jobs do not run this time:** $1 Nothing may be armed while the eval's agent runs (ADR 0004). Turn off auto-merge on the roster pull request by hand if it is still on; the next run tries again."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          }
+          if ! pr_number=$(find_roster_pr); then
             echo "::warning::could not find the roster pull request to disarm"
+            unconfirmed "the open roster pull request could not be looked up."
           fi
-          exit 0
+          if [ -z "$pr_number" ]; then
+            confirmed "No open roster pull request is left armed: there is no open roster pull request to disarm."
+          fi
+          state=$(pr_armed_state "$pr_number") || unconfirmed "pull request #$pr_number could not be read."
+          if [ "$state" = clear ]; then
+            confirmed "Pull request #$pr_number is not armed: its auto-merge is off."
+          fi
+          if ! gh pr merge "$pr_number" --repo "$REPO" --disable-auto; then
+            echo "::warning::could not disable auto-merge for the roster pull request"
+            unconfirmed "turning off auto-merge on pull request #$pr_number failed."
+          fi
+          state=$(pr_armed_state "$pr_number") || unconfirmed "pull request #$pr_number could not be re-read after its auto-merge was turned off."
+          if [ "$state" = clear ]; then
+            confirmed "Disarmed pull request #$pr_number before the eval job's agent runs, confirmed by re-reading it."
+          fi
+          unconfirmed "pull request #$pr_number still shows auto-merge on after it was turned off."
