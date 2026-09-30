@@ -3419,15 +3419,15 @@ class TestRound3Wording(_WeeklyLoop):
                 self.assertNotIn("no seat changes on a failed probe", flat)
 
 
-class TestEvalNoteKnowsTheOutcome(unittest.TestCase):
-    """R3-3 (#203 probe round 3); relocated by B1 (round 3 on #209): the
-    issue's eval sentence comes from the `eval` JOB's `result`, read
-    through `env:` by the `roster-pr` job — the only job with a `needs`
-    relationship to both `roster` and `eval`, so the only one that can
-    build this sentence at all (`roster`, which writes the "same"/
-    frozen-same bodies directly, must never depend on `eval` and so can
-    only ever know whether an eval runs THIS dispatch, never how it
-    turned out)."""
+class TestEvalNoteBeforeTheEval(unittest.TestCase):
+    """R3-3 (#203 probe round 3) used to build this sentence from the `eval`
+    JOB's `result` (`needs.eval.result`, read by `roster-pr` after the eval).
+    ADR 0004 (2026-09-30) moved `roster-pr` BEFORE the eval — it arms the
+    roster pull request so the eval can run on the merged roster — so it
+    can no longer know how the eval turned out: the sentence now says what
+    WILL happen, and points at the run summary, where `roster-wait` and the
+    `eval` job's roster step say which roster the eval used and why. These
+    rows replace the old outcome-per-result rows deliberately."""
 
     START = "# >>> eval-note"
     END = "# <<< eval-note"
@@ -3436,7 +3436,7 @@ class TestEvalNoteKnowsTheOutcome(unittest.TestCase):
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         self.roster_pr_step = _manage_step(doc)
 
-    def _note(self, outcome, event=None):
+    def _note(self, event=None, extra_env=None):
         run = self.roster_pr_step["run"]
         fragment = run[run.index(self.START):run.index(self.END)]
         tmp = Path(tempfile.mkdtemp())
@@ -3444,74 +3444,45 @@ class TestEvalNoteKnowsTheOutcome(unittest.TestCase):
         (tmp / "event.json").write_text(json.dumps(event or {"schedule": "x"}),
                                         encoding="utf-8")
         env = {"PATH": os.environ.get("PATH", ""),
-               "GITHUB_EVENT_PATH": str(tmp / "event.json")}
-        if outcome is not None:
-            env["EVAL_RESULT"] = outcome
+               "GITHUB_EVENT_PATH": str(tmp / "event.json"), **(extra_env or {})}
         done = subprocess.run(["bash", "-c", "set -euo pipefail\n" + fragment
                                + '\nprintf "%s" "$eval_note"\n'],
                               capture_output=True, text=True, timeout=30, env=env)
         self.assertEqual(done.returncode, 0, done.stderr)
         return done.stdout
 
-    def test_the_result_arrives_through_env_from_needs_eval_result(self):
-        self.assertEqual(self.roster_pr_step["env"]["EVAL_RESULT"], "${{ needs.eval.result }}")
+    def test_the_eval_result_is_no_longer_read(self):
+        self.assertNotIn("EVAL_RESULT", self.roster_pr_step["env"])
+        self.assertNotIn("EVAL_RESULT", self.roster_pr_step["run"])
         self.assertNotIn("${{", self.roster_pr_step["run"])
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_a_failed_eval_says_nothing_was_published(self):
-        note = self._note("failure")
-        self.assertIn("the `eval` job failed; nothing from this run was published to "
-                      "`eval-results`", note)
-        self.assertNotIn("are published", note)
-
-    @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_a_successful_eval_says_publishing_is_the_publish_job(self):
-        # B1 (round 4 on #209, blocker): publication moved off `eval` onto
-        # `publish`.
-        note = self._note("success")
-        self.assertIn("ran on the committed", note)
-        self.assertIn("results are published to `eval-results` by the "
-                      "`publish` job", note)
-        self.assertNotIn("published to `eval-results` normally", note)
-        self.assertNotIn("eval` job's own badge step", note)
-
-    @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_an_eval_that_did_not_run_says_so(self):
-        for outcome in ("", None):
-            with self.subTest(outcome=outcome):
-                note = self._note(outcome)
-                self.assertIn("the `eval` job did not run, or its result is unknown; "
-                              "nothing from this run was published to `eval-results`",
-                              note)
+    def test_a_normal_run_says_the_eval_follows_on_the_merged_or_committed_roster(self):
+        for event in ({"schedule": "x"}, {"inputs": {"roster_only": False}},
+                      {"inputs": {"roster_only": "false"}}):
+            with self.subTest(event=event):
+                note = self._note(event)
+                self.assertIn("The paid eval runs after this job", note)
+                self.assertIn("merged roster", note)
+                self.assertIn("committed `evals/roster.yml` otherwise", note)
+                self.assertIn("The run summary says which roster it used and why", note)
                 self.assertNotIn("ran on the committed", note)
+                self.assertNotIn("no eval ran", note)
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_a_cancelled_eval_says_cancelled_or_timed_out(self):
-        # N2 (round 4 on #209): `needs.eval.result == 'cancelled'` gets its
-        # own sentence — "cancelled or timed out" — rather than being
-        # folded into the generic "did not run, or its result is unknown"
-        # catch-all, which is what a genuinely unrecognised/empty result
-        # still reads as.
-        note = self._note("cancelled")
-        self.assertIn("The eval job was cancelled or timed out; nothing "
-                      "from this run was published to `eval-results`", note)
-        self.assertNotIn("did not run, or its result is unknown", note)
-        self.assertNotIn("ran on the committed", note)
+    def test_a_stray_eval_result_changes_nothing(self):
+        # Nothing in the environment can pull the old outcome sentences back.
+        for outcome in ("success", "failure", "cancelled", "skipped"):
+            with self.subTest(outcome=outcome):
+                self.assertEqual(self._note(extra_env={"EVAL_RESULT": outcome}), self._note())
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_a_skipped_eval_reads_as_no_eval_ran(self):
-        # B1 (round 3 on #209): the `eval` job's `if:` is EXACTLY
-        # `!inputs.roster_only`, so a `result` of `skipped` means precisely
-        # a `roster_only` dispatch — never some other reason the job might
-        # be skipped.
-        note = self._note("skipped")
-        self.assertIn("no eval ran", note)
-
-    @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
-    def test_roster_only_wins(self):
-        note = self._note("skipped", {"inputs": {"roster_only": True}})
-        self.assertIn("no eval ran", note)
-        self.assertNotIn("the `eval` job did not run", note)
+    def test_roster_only_says_no_eval_ran(self):
+        for value in (True, "true"):
+            with self.subTest(value=value):
+                note = self._note({"inputs": {"roster_only": value}})
+                self.assertIn("no eval ran", note)
+                self.assertNotIn("The paid eval runs after this job", note)
 
 
 class TestProposeStepGhWritesWarn(_ProposeStepFixture):
@@ -3715,13 +3686,15 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         self.assertEqual(badge_step["env"].get("ROSTER_LATEST_JSON"),
                          "${{ needs.roster.outputs.roster_latest_json }}")
 
-    def test_roster_pr_job_needs_eval_and_runs_unless_cancelled(self):
+    def test_roster_pr_job_runs_before_the_eval_unless_cancelled(self):
         doc = self._doc()
         job = doc["jobs"]["roster-pr"]
-        # Round 5: `publish` (contents: write) too — `--match-head-commit`
-        # is checked only when auto-merge is ENABLED, so no in-run write
-        # holder may still be running once roster-pr has armed the PR.
-        self.assertEqual(job.get("needs"), ["roster", "eval", "publish"])
+        # Round 5 made this `[roster, eval, publish]` so no in-run write
+        # holder could still be running once roster-pr armed the PR. ADR
+        # 0004 moves the arming BEFORE the eval: `roster-wait` resolves it
+        # (merged or disarmed) before `eval`, and so `publish`, can start —
+        # test_issue_eval_on_merged_roster.TestTheJobGraph asserts that.
+        self.assertEqual(job.get("needs"), ["roster", "disarm"])
         # B1.4 (round 2): only on `main` — added to the original
         # `!cancelled()` gate, never replacing it.
         self.assertEqual(job.get("if"),
@@ -3737,7 +3710,9 @@ class TestRosterPrJobEnvMatchesOutputs(unittest.TestCase):
         doc = self._doc()
         self.assertIsNone(doc["jobs"]["roster"].get("needs"))
         eval_job = doc["jobs"]["eval"]
-        self.assertEqual(eval_job.get("needs"), ["roster", "disarm"])
+        # ADR 0004: `eval` also waits for `roster-pr` (the arming) and
+        # `roster-wait` (the bounded wait that resolves it).
+        self.assertEqual(eval_job.get("needs"), ["roster", "disarm", "roster-pr", "roster-wait"])
         self.assertEqual(eval_job.get("if"),
                          "${{ !cancelled() && !inputs.roster_only }}")
         self.assertEqual(doc["jobs"]["disarm"].get("needs"), "roster")
@@ -5786,14 +5761,15 @@ class TestB1Round4JobGraph(unittest.TestCase):
         self.assertEqual(publish.get("if"),
                          "${{ !cancelled() && needs.eval.result == 'success' }}")
 
-    def test_roster_pr_waits_for_publish_but_a_skipped_one_never_blocks_it(self):
-        # Round 5: `publish` holds `contents: write`; roster-pr arms
-        # auto-merge with `--match-head-commit`, checked only at enable
-        # time, so no write holder may run after the arming. The `if:`
-        # stays `!cancelled()`-shaped so a skipped (`roster_only`) or failed
-        # `publish` never blocks the roster pull request.
+    def test_roster_pr_runs_after_disarm_and_a_failed_one_never_blocks_it(self):
+        # Round 5 had roster-pr wait for `publish` (`contents: write`),
+        # since `--match-head-commit` is checked only at enable time. ADR
+        # 0004 arms BEFORE the eval instead, and `roster-wait` resolves the
+        # arming before `eval` and `publish` start. It needs `disarm` so
+        # that job cannot turn off this job's own arming. The `if:` stays
+        # `!cancelled()`-shaped so a failed `disarm` never blocks it.
         rp = self.jobs["roster-pr"]
-        self.assertEqual(self._needs(rp), ["eval", "publish", "roster"])
+        self.assertEqual(self._needs(rp), ["disarm", "roster"])
         self.assertEqual(rp.get("if"),
                          "${{ !cancelled() && github.ref == 'refs/heads/main' }}")
 
@@ -5805,7 +5781,9 @@ class TestB1Round4JobGraph(unittest.TestCase):
 
     def test_eval_waits_for_disarm_but_a_skipped_or_failed_one_never_blocks_it(self):
         ev = self.jobs["eval"]
-        self.assertEqual(self._needs(ev), ["disarm", "roster"])
+        # ADR 0004: and for `roster-pr` and `roster-wait`, equally never
+        # blocking (the `if:` below is unchanged).
+        self.assertEqual(self._needs(ev), ["disarm", "roster", "roster-pr", "roster-wait"])
         self.assertEqual(ev.get("if"), "${{ !cancelled() && !inputs.roster_only }}")
 
 
@@ -5973,19 +5951,18 @@ class TestRound4Docs(unittest.TestCase):
         self.assertIn("can outlast the freeze", flat)
         self.assertIn("`superseded_exit_weeks` buffer", flat)
 
-    def test_c_the_success_sentence_covers_a_failed_publish(self):
-        # B1 (round 3 on #209): relocated to `roster-pr`'s own eval-note
-        # fragment. B1 (round 4 on #209, blocker): the publishing step
-        # itself is now a SEPARATE job (`publish`, `needs.eval.result ==
-        # 'success'`) that can still fail independently of `eval` — so
-        # `needs.eval.result == success` no longer implies publication
-        # succeeded, only that `publish` was allowed to attempt it; this
-        # sentence still has to name that "if that job failed" case.
+    def test_c_the_note_never_claims_publication(self):
+        # B1 (round 4 on #209) required the success sentence to name a
+        # failed `publish`. ADR 0004 moved `roster-pr` before the eval, so
+        # its note can claim no outcome at all: it must not say results
+        # were (or will be) published, only point at the run summary for
+        # whether they were.
         doc = yaml.safe_load(EVAL_WORKFLOW.read_text(encoding="utf-8"))
         roster_pr = _manage_step(doc)
         line = next(ln for ln in roster_pr["run"].splitlines()
-                    if "by the \\`publish\\` job" in ln)
-        self.assertIn("if that job failed", line)
+                    if "The paid eval runs after this job" in ln)
+        self.assertIn("whether its results were published", line)
+        self.assertNotIn("are published", line)
 
 
 # --- #203 probe round 5 -------------------------------------------------------
@@ -6868,6 +6845,54 @@ class TestRosterAppTokenIsConfined(unittest.TestCase):
         pr = triggers["pull_request"]
         types = (pr or {}).get("types")
         self.assertTrue(types is None or "reopened" in types, types)
+
+
+class TestRosterPrHandsTheArmingToTheWait(_AutoProposeStepFixture):
+    """ADR 0004: `roster-pr` tells `roster-wait` what it armed — `armed`,
+    `pr_number`, `pushed_sha` on its `$GITHUB_OUTPUT` — and ONLY when
+    auto-merge really was enabled on this run's own published commit. Every
+    other path leaves them unset, which `roster-wait` reads as "nothing
+    armed" (the eval then runs on the committed roster)."""
+
+    def _outputs(self):
+        # Nothing emitted means the file was never even created.
+        path = self.tmp / "github-output-2"
+        return self._parse_github_output(path) if path.exists() else {}
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_an_armed_pr_is_handed_on(self):
+        work = self._repo("auto")
+        self._pr_create_number = "77"
+        self._run_step(self._differs(), [], cwd=work)
+        pushed = self._rev(work, "refs/heads/roster/proposal")
+        self.assertIsNotNone(pushed)
+        self.assertEqual(self._outputs(), {"armed": "true", "pr_number": "77",
+                                           "pushed_sha": pushed})
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq") and shutil.which("git"),
+                         "needs bash, jq and git")
+    def test_nothing_is_handed_on_when_nothing_was_armed(self):
+        cases = {"proposal mode": ("proposal", None, None),
+                 "no App token": ("auto", "", None),
+                 "arming failed": ("auto", None, "--match-head-commit")}
+        for label, (mode, token, fail) in cases.items():
+            with self.subTest(case=label):
+                shutil.rmtree(self.tmp / "work", ignore_errors=True)
+                shutil.rmtree(self.tmp / "work-origin.git", ignore_errors=True)
+                shutil.rmtree(self.tmp / "runner", ignore_errors=True)
+                (self.tmp / "github-output-2").unlink(missing_ok=True)
+                work = self._repo(mode)
+                self._app_token = "app-token-fake" if token is None else token
+                self._gh_fail = fail
+                _, calls, _ = self._run_step(self._differs(), [], cwd=work)
+                if fail:
+                    # The negative control: this case really reached the
+                    # enable call, and only that call failing kept it quiet.
+                    self.assertTrue([c for c in calls if fail in c], calls)
+                out = self._outputs()
+                for key in ("armed", "pr_number", "pushed_sha"):
+                    self.assertNotIn(key, out)
 
 
 class TestRosterPrUsesTheAppToken(_AutoProposeStepFixture):
