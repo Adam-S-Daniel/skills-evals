@@ -28,7 +28,7 @@ reconstructed from memory.
   status blockquote at the top of its body and a "Review rounds" record with
   each round's findings, fix-round session links and verified counts.
 
-**Eval runs on hold (Adam, 2026-09-23).** No paid eval runs until the roster
+**Eval runs on hold (Adam, 2026-09-23; lifted 2026-09-30, see the status below).** No paid eval runs until the roster
 seats `claude-opus-5-5` and `claude-sonnet-5` as the arms with
 `claude-fable-5-1` judging. Opus 5.5 came out on 2026-09-22, and the roster
 step of [run 35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203)
@@ -44,9 +44,12 @@ seated by [#206](https://github.com/Adam-S-Daniel/skills-evals/pull/206)
 [#214](https://github.com/Adam-S-Daniel/skills-evals/pull/214) (2026-09-29)
 seats four arms: `claude-opus-5-5` and `claude-sonnet-5-5` as the probed
 vendor defaults, and `claude-opus-5` and `claude-sonnet-5` inside their
-one-week buffers, with `claude-fable-5-1` judging. The hold has not been
-formally lifted; lifting it, and the skills-doctor arm budget above, are
-Adam's calls.
+one-week buffers, with `claude-fable-5-1` judging. **Lifted by Adam on
+2026-09-30:** paid eval runs may resume on this roster. The skills-doctor
+arm budget stays at the harness default 600 s agent timeout (Adam,
+2026-09-30: do not increase it), so a re-run's `without_skill` arm may time
+out again and leave no delta. Lifting the hold does not reopen the fixture
+lanes stopped by decision 8.
 
 **Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
 once it merges, the next roster run proposes `claude-opus-5-5` immediately
@@ -947,7 +950,7 @@ reopening of the lane; everything below still stands. The run,
 [35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203):
 `with_skill` 5/5 objective, judge 10.0, $0.46 (claude-sonnet-5, 17 turns, 91 s);
 `without_skill` hit the 600 s agent timeout, so there is no delta and no
-badge. Not re-run: see the hold above § 0B.
+badge. Not re-run yet; the § 0B hold was lifted on 2026-09-30, with the 600 s timeout unchanged.
 
 Epic #62 in full: no dispatch on #75, #76, #78, #83, #87 to #94 or
 [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408), nor on #79 beyond
