@@ -51,6 +51,20 @@ arm budget stays at the harness default 600 s agent timeout (Adam,
 out again and leave no delta. Lifting the hold does not reopen the fixture
 lanes stopped by decision 8.
 
+**Amended 2026-09-30 (Adam): the scheduled eval moved from Mondays to
+Tuesdays 07:00 UTC** (`eval.yml`'s cron is now `0 7 * * 2`), so it lands
+after Monday's usage census (the owner's daily 16:37 UTC publish) has closed
+the previous ISO week. The eval job still runs on the COMMITTED
+`evals/roster.yml`; a retirement the Tuesday run proposes merges afterwards
+and applies from the next run. Census at 2026-09-30: `claude-opus-5` has no
+turns in 2026-W40, so it can retire off the first census after W40 closes
+(Monday 2026-10-05); `claude-sonnet-5` has about 24% of W40 so far, and its
+successor `claude-sonnet-5-5` first appears in W40, so its one-week buffer
+ends with W41 at the earliest (census of Monday 2026-10-12, and only if under
+the 2% exit bar). With no roster-only run in between, the scheduled evals
+run four arms on 2026-10-06, three on 2026-10-13 and two on 2026-10-20 at
+the earliest.
+
 **Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
 once it merges, the next roster run proposes `claude-opus-5-5` immediately
 as the opus tier's vendor default, with no wait for 2026-09-29, and keeps

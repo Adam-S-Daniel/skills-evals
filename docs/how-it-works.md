@@ -67,7 +67,7 @@ merges it, or does not. See ADR
 
 ## 3. When it runs, and what it costs to run
 
-`.github/workflows/eval.yml` runs every Monday at 07:00 UTC and on manual
+`.github/workflows/eval.yml` runs every Tuesday at 07:00 UTC and on manual
 dispatch (`gh workflow run eval.yml --ref main`, optional input `fixture=`).
 It bills the organisation's API workspace `skills-evals-ci` through workload
 identity federation, not the Claude Code subscription. A measured run on
@@ -257,7 +257,7 @@ one arm" predate the two-arm roster merged on 2026-09-22 as
    (`b1bb221`) and #162 is closed. A fixture run therefore costs roughly
    $5–7 (two arms, a judge at twice Opus prices) rather than about $1.7 on
    the one-arm roster or the $10–14 four arms would have cost, and the
-   Monday run has stopped re-proposing. No allowance cost.
+   weekly run has stopped re-proposing. No allowance cost.
 2. **Whether to reopen the fixture lanes** ([#62](https://github.com/Adam-S-Daniel/skills-evals/issues/62),
    [#96](https://github.com/Adam-S-Daniel/skills-evals/issues/96)), stopped by
    decision 8 on 2026-09-08 ("stop adding and completing evals for specific
