@@ -194,7 +194,7 @@ name: Real eval
 
 on:
   schedule:
-    - cron: "0 7 * * 1" # Mondays 07:00 UTC
+    - cron: "0 7 * * 2" # Tuesdays 07:00 UTC
   workflow_dispatch:
     inputs:
       fixture:

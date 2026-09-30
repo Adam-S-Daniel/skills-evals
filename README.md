@@ -732,7 +732,7 @@ nothing.
 ## Quality badge (real weekly run)
 
 `.github/workflows/eval.yml` runs the full `workflow-path-audit` A/B eval every
-Monday 07:00 UTC (and on manual dispatch) against the live Claude Code CLI and
+Tuesday 07:00 UTC (and on manual dispatch) against the live Claude Code CLI and
 Anthropic API, commits the run's summaries and report under `results/`, and
 regenerates `badges/workflow-path-audit.json` with `scripts/make_badge.py` — a
 [shields.io endpoint badge](https://shields.io/badges/endpoint) whose message
