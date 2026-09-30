@@ -64,14 +64,18 @@ successor `claude-sonnet-5-5` first appears in W40, so its one-week buffer
 ends with W41 at the earliest (census of Monday 2026-10-12, and only if under
 the 2% exit bar). The run of 2026-10-06 retires `claude-opus-5` before its
 eval (three arms), and the run of 2026-10-13 retires `claude-sonnet-5` before
-its eval if it is under the 2% exit bar for W41 (two arms).
+its eval if it is under the 2% exit bar for W41 (two arms) — each only if
+that run's roster pull request's `test` passes and it merges within the
+wait; otherwise that week's eval runs on the committed roster and the
+retirement lands a week later.
 
 **Amended 2026-09-30 (Adam) by [ADR 0004](docs/decisions/0004-eval-runs-on-the-roster-its-run-merged.md):**
 the roster update now happens immediately before the eval, with no approval:
 `roster-pr` arms the proposal before the eval, `roster-wait` waits up to 30
 minutes for it to merge, and the eval runs on the merged `evals/roster.yml`
 (or on the committed one, saying why, when the merge does not land and
-verify in time).
+verify in time). The eval and `publish` do not run at all unless
+`roster-wait` confirms no roster pull request is left armed.
 
 **Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
 once it merges, the next roster run proposes `claude-opus-5-5` immediately
