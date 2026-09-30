@@ -4,6 +4,7 @@
   [Round 6](#round-6-the-roster-pr-is-the-apps): the roster PR is opened,
   reopened and armed by a dedicated GitHub App, and the `ci.yml` dispatch
   in decision 3 is gone.
+- **Amended by [ADR 0004](0004-eval-runs-on-the-roster-its-run-merged.md) (2026-09-30):** `roster-pr` arms the pull request BEFORE the eval (`needs: [roster, disarm]`), not last, and a `roster-wait` job resolves the arming (merged, or auto-merge turned off) before `eval` and `publish` start.
 - **Issue:** none filed; Adam's decision of 2026-09-28. Settings-as-code
   follow-up for the "Allow GitHub Actions to create and approve pull
   requests" repo setting this depends on:

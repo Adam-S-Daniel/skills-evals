@@ -582,9 +582,9 @@ write in it is a fixed `::warning::`, never a failed job; it pushes nothing
 itself — `roster-pr` publishes `roster/proposal` with the roster App's token,
 and a failed publish there is a fixed `::warning::` too, which the tracking
 issue reports as a proposal that was not pushed. Its issue says whether
-the eval step succeeded, failed or did not run; the step runs before the one
-that publishes to `eval-results`, so for a successful eval it says that
-step publishes next. With no `--defaults` document at all nothing is frozen and the
+an eval runs this dispatch and on which roster it will run; since ADR 0004
+`roster-pr` writes it before the eval, so the eval's own outcome is in the
+run summary. With no `--defaults` document at all nothing is frozen and the
 roster is the same one the pre-#202 code computes, with one exception: a
 previous arm whose listed spelling has switched between dated and undated
 since the previous run is still recognised as that arm, rather than reading
@@ -612,9 +612,11 @@ rendered its proposal, nothing is published and the next run re-proposes
 every seat's reason in words, with the numerator and denominator its share was
 taken over — and a `main...roster/proposal` compare link. An invalid proposal
 does not update the branch or compare link; its tracking issue says it needs
-review and lists the admission failures. The paid eval result still publishes
-from the committed roster — except on a `roster_only` dispatch, where no eval
-runs and nothing is published to `eval-results`. Nothing in CI writes
+review and lists the admission failures. The paid eval runs on the committed
+roster, unless this run's own proposal merged in time (below,
+[ADR 0004](docs/decisions/0004-eval-runs-on-the-roster-its-run-merged.md)) —
+except on a `roster_only` dispatch, where no eval runs and nothing is
+published to `eval-results`. Nothing in CI writes
 `evals/roster.yml` directly — only a merged pull request does. When the
 computed roster matches the committed one, that issue (and, under
 `roster_mode: auto`, any open pull request) is closed.
@@ -642,17 +644,33 @@ human-merge flow exactly, and says why in the tracking issue. Any `gh`
 failure along the way is a fixed warning, never a failed job, and degrades
 that run to the human-merge flow too. A dedicated `disarm` job
 (B1, adversarial round 4 on #209) turns off any already-open pull request's
-auto-merge FIRST, before the `eval` job's agent ever starts — never after —
-so an earlier run's still-armed auto-merge cannot sit exposed for the length
-of that job. `roster-pr` then re-arms it, but only for a proposal ITS OWN
-independent checks admit; on every run that does not (re-)enable auto-merge —
-a dirty probe, `roster_mode: proposal`, a rejected proposal, or a failed `gh`
-call partway through — the pull request's auto-merge is turned off again (or
-stays off). `roster-pr` also runs after `publish` (the one other job holding
-`contents: write`), since `--match-head-commit` is checked only when
-auto-merge is enabled. So, within a run, no job holding a write credential
-runs after `roster-pr` arms the pull request, and `disarm` clears any arming
-before the agent starts. Between arming and the merge (which waits on a green
+auto-merge FIRST, before anything else touches it. `roster-pr` then re-arms
+it, but only for a proposal ITS OWN independent checks admit; on every run
+that does not (re-)enable auto-merge — a dirty probe, `roster_mode:
+proposal`, a rejected proposal, or a failed `gh` call partway through — the
+pull request's auto-merge is turned off again (or stays off).
+
+**The eval runs on the roster its own run merged**
+([ADR 0004](docs/decisions/0004-eval-runs-on-the-roster-its-run-merged.md),
+Adam's decision of 2026-09-30). The jobs run roster, `disarm`, `roster-pr`,
+`roster-wait`, `eval`, `publish`, in that order. When `roster-pr` armed this
+run's pull request, `roster-wait` waits for it to merge, polling read-only
+for up to 30 minutes, and verifies the merge: the merged head is the commit
+it armed, the pull request touches exactly `evals/roster.yml`, that file at
+the merge commit is this run's proposal byte for byte, and the merge commit
+is on `main`. The `eval` job then re-verifies the merge commit locally and
+writes that one file over its own checkout, whose code stays at the run's
+commit. In every other case (proposal mode, a dirty probe, a rejected or
+unchanged proposal, no App token, an arm that did not complete, a failed
+`test`, a merge not seen within the wait, a merge that does not verify, any
+API error) the eval runs on the committed roster, and the run summary says
+which roster it used and why. `roster-wait` ends with a step that runs
+whatever happened and turns off auto-merge on any roster pull request still
+open, so nothing is armed while the agent runs, and `publish` (the one other
+job holding `contents: write`) starts only after that, since
+`--match-head-commit` is checked only when auto-merge is enabled. A pull
+request whose wait ran out stays open with auto-merge off; the next run
+re-arms it. A `roster_only` dispatch has no wait and no eval. Between arming and the merge (which waits on a green
 `test`, possibly for days), any other write-access actor that pushes
 `roster/proposal` retargets the armed pull request; that is outside what this
 workflow controls. The known instance is

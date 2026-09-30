@@ -56,14 +56,22 @@ Tuesdays 07:00 UTC** (`eval.yml`'s cron is now `0 7 * * 2`), so it lands
 after Monday's usage census (the owner's daily 16:37 UTC publish) has closed
 the previous ISO week. The eval job still runs on the COMMITTED
 `evals/roster.yml`; a retirement the Tuesday run proposes merges afterwards
-and applies from the next run. Census at 2026-09-30: `claude-opus-5` has no
+and applies from the next run (superseded the same day by the ADR 0004
+amendment below). Census at 2026-09-30: `claude-opus-5` has no
 turns in 2026-W40, so it can retire off the first census after W40 closes
 (Monday 2026-10-05); `claude-sonnet-5` has about 24% of W40 so far, and its
 successor `claude-sonnet-5-5` first appears in W40, so its one-week buffer
 ends with W41 at the earliest (census of Monday 2026-10-12, and only if under
-the 2% exit bar). With no roster-only run in between, the scheduled evals
-run four arms on 2026-10-06, three on 2026-10-13 and two on 2026-10-20 at
-the earliest.
+the 2% exit bar). The run of 2026-10-06 retires `claude-opus-5` before its
+eval (three arms), and the run of 2026-10-13 retires `claude-sonnet-5` before
+its eval if it is under the 2% exit bar for W41 (two arms).
+
+**Amended 2026-09-30 (Adam) by [ADR 0004](docs/decisions/0004-eval-runs-on-the-roster-its-run-merged.md):**
+the roster update now happens immediately before the eval, with no approval:
+`roster-pr` arms the proposal before the eval, `roster-wait` waits up to 30
+minutes for it to merge, and the eval runs on the merged `evals/roster.yml`
+(or on the committed one, saying why, when the merge does not land and
+verify in time).
 
 **Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
 once it merges, the next roster run proposes `claude-opus-5-5` immediately

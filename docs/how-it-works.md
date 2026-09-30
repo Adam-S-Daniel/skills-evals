@@ -61,9 +61,18 @@ reason saying plainly that it did so because the usage evidence was missing.
 The computed roster is only a **proposal**. When it differs from the committed file the run
 pushes the proposed file to the bot-owned branch `roster/proposal` and keeps
 one tracking issue open with every seat's reason and the numerator and
-denominator behind it. A human opens a pull request from that branch and
-merges it, or does not. See ADR
-[0001](decisions/0001-roster-trusted-on-main.md) for why it is shaped this way.
+denominator behind it. With `roster_mode: auto` (the setting today) the run
+opens a pull request from that branch itself and sets it to merge once its
+`test` check passes; with `roster_mode: proposal` a human opens and merges
+it, or does not. See ADR [0001](decisions/0001-roster-trusted-on-main.md)
+for why it is shaped this way, and ADR
+[0003](decisions/0003-roster-merges-automatically.md) for the automatic merge.
+
+The eval then runs on that merged roster in the same run, if the merge lands
+within about half an hour and checks out: it changes only
+`evals/roster.yml`, and that file is exactly what the run proposed. If not,
+the eval runs on the committed roster as before, and the run's summary says
+why (ADR [0004](decisions/0004-eval-runs-on-the-roster-its-run-merged.md)).
 
 ## 3. When it runs, and what it costs to run
 
