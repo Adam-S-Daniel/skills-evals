@@ -475,11 +475,19 @@ as one commit on the bot-owned branch `roster/proposal` (recreated from `main`
 every run — never a shared branch), with one tracking issue carrying the
 rendered summary and compare link. An invalid proposal instead leaves the
 branch and compare link untouched and creates or updates a “needs review”
-tracking issue with its admission failures. The paid eval result is still
-published from the committed roster. A human opens the pull request for a valid
-proposal and merges it after CI. That is the fleet's sanctioned bot-write path;
-nothing in CI writes `evals/roster.yml`. When the computed roster matches, the
-tracking issue is closed.
+tracking issue with its admission failures. Under `roster_mode: proposal` a
+human opens the pull request for a valid proposal and merges it after CI;
+under `roster_mode: auto` the roster App opens it and arms auto-merge on a
+clean probe ([ADR 0003](docs/decisions/0003-roster-merges-automatically.md)).
+Nothing in CI writes `evals/roster.yml` directly. When the computed roster
+matches, the tracking issue is closed.
+
+**Which roster the eval runs on** ([ADR 0004](docs/decisions/0004-eval-runs-on-the-roster-its-run-merged.md),
+2026-09-30). The committed one, unless this run armed its own proposal and
+it merged within the run's bounded wait (the `roster-wait` job, up to 30
+minutes): then the `eval` job takes `evals/roster.yml`, and only that file,
+from the verified merge commit, while its code stays at the run's own
+commit. Either way the run summary says which roster it used and why.
 
 **Who is an arm (2026-09-22, Adam's decision).** Two rules, the second
 subordinate to the first. **(1) Usage seats:** every available model at or

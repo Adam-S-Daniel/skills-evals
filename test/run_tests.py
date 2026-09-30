@@ -4243,10 +4243,12 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
         # (c) The guard covers the workflow's jobs EXACTLY: a sixth job
         # (with whatever scopes, or none declared) would otherwise slip
         # past every per-job equality below, which only look up by name.
+        # ADR 0004 (2026-09-30) added a sixth, `roster-wait`: the bounded
+        # wait for this run's armed roster pull request, before the eval.
         self.assertEqual(
             sorted(doc["jobs"]),
-            ["disarm", "eval", "publish", "roster", "roster-pr"],
-            "eval.yml must have exactly these five jobs — a new job needs "
+            ["disarm", "eval", "publish", "roster", "roster-pr", "roster-wait"],
+            "eval.yml must have exactly these six jobs — a new job needs "
             "its own exact-permissions row here and in "
             "test_eval_workflow_keeps_its_security_posture")
         self.assertEqual(
@@ -4306,6 +4308,14 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             "policy/ref/compare reads. `actions: write` went with the "
             "`gh workflow run ci.yml` dispatch, `contents: write` with "
             "arming auto-merge")
+        self.assertEqual(
+            doc["jobs"]["roster-wait"].get("permissions"),
+            {"pull-requests": "write", "contents": "read"},
+            "the `roster-wait` job's permissions must be exactly "
+            "{pull-requests: write, contents: read} — ADR 0004: it polls "
+            "the armed roster pull request and verifies its merge with "
+            "reads, and its one write turns that pull request's auto-merge "
+            "off when it did not merge, before the `eval` job's agent starts")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["contents"], "read")
         self.assertEqual(doc["jobs"]["eval"]["permissions"]["id-token"], "write")
         self.assertNotEqual(doc["jobs"]["eval"]["permissions"]["contents"], "write")
@@ -4359,7 +4369,9 @@ class EvalWorkflowSecurityHeaderTests(unittest.TestCase):
             name for name, j in doc["jobs"].items()
             if any(v == "write" and k != "id-token"
                    for k, v in (j.get("permissions") or {}).items()))
-        self.assertEqual(writers, ["disarm", "publish", "roster", "roster-pr"])
+        # ADR 0004: `roster-wait` (pull-requests: write, for its disarm)
+        # is the fifth, and runs no agent either.
+        self.assertEqual(writers, ["disarm", "publish", "roster", "roster-pr", "roster-wait"])
         for name in writers:
             for step in doc["jobs"][name]["steps"]:
                 self.assertNotIn("run_eval.py", step.get("run") or "")
@@ -6118,9 +6130,11 @@ class TestIssue67(unittest.TestCase):
         # `actions` or `contents: write` any more; the roster App's token
         # opens and arms the PR.
         self.assertEqual(doc["permissions"], {})
-        # (c) Exactly five jobs, so a sixth can never go unguarded.
+        # (c) Exactly six jobs (ADR 0004 added `roster-wait`), so a seventh
+        # can never go unguarded.
         self.assertEqual(sorted(doc["jobs"]),
-                         ["disarm", "eval", "publish", "roster", "roster-pr"])
+                         ["disarm", "eval", "publish", "roster", "roster-pr",
+                          "roster-wait"])
         # Round 7 (ADR 0003): `roster` no longer pushes, so contents: read.
         self.assertEqual(doc["jobs"]["roster"]["permissions"],
                          {"contents": "read", "id-token": "write",
@@ -6134,6 +6148,8 @@ class TestIssue67(unittest.TestCase):
         self.assertEqual(doc["jobs"]["roster-pr"]["permissions"],
                          {"pull-requests": "write", "issues": "write",
                           "contents": "read"})
+        self.assertEqual(doc["jobs"]["roster-wait"]["permissions"],
+                         {"pull-requests": "write", "contents": "read"})
         for job in doc["jobs"].values():
             for step in job["steps"]:
                 script = step.get("run") or ""
