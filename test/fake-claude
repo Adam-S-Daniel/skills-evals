@@ -41,6 +41,10 @@ into a single entry. The canned ranking is fixed while the
 LABEL each draft carries is shuffled per trial by the scorer, which is what
 lets a test read the shuffle back out of the resulting rank.
 
+Every canned JSON result carries a `modelUsage` object keyed by the
+`--model` it was invoked with (else "fake-default-model"), as the real CLI's
+result does; run_eval.py records its keys as `models_used` (#202).
+
 `--version` is handled unconditionally (regardless of FAKE_CLAUDE_MODE) so
 that harness/run_canary.py's `claude --version` recording call succeeds even
 when a mode simulates a failure.
@@ -135,7 +139,19 @@ PAIRWISE_DIMENSIONS_BY_LABEL = {
 }
 
 
+# The model a canned result says served it, when no `--model` was passed. The
+# real CLI's `--output-format json` result carries `modelUsage` keyed by the
+# model id(s) that served the turns; run_eval.py records those keys as an
+# arm's `models_used` (#202). With `--model X` the fake reports X, which is
+# what the real CLI does for a model it can serve.
+DEFAULT_FAKE_MODEL = "fake-default-model"
+
+
 def emit(payload: dict) -> None:
+    payload.setdefault("modelUsage", {
+        (_flag_value("--model") or DEFAULT_FAKE_MODEL): {
+            "inputTokens": USAGE["input_tokens"],
+            "outputTokens": USAGE["output_tokens"]}})
     print(json.dumps(payload))
 
 

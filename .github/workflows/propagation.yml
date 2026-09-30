@@ -22,24 +22,27 @@
 #   than trusting someone to read the Actions tab, idempotently, because a
 #   steady-state red would otherwise file a fresh issue every morning. #17
 #   specifies Tier 2 as scheduled for a reason the arms make concrete: their
-#   one unpinned input is the agentskills registry at `main`, so real delivery
-#   can break with no commit in this repo, and pull requests here are too
-#   infrequent to find out. What a schedule here CANNOT do is run the Tier-3
-#   audit — that needs a signed-in account CI has not got — so `gate` reads
-#   the Routine's published result instead, on every pull request and on every
-#   scheduled run, and fails when it is missing, stale or unreadable. A dead
-#   Routine and a broken channel are different failures; neither surface sees
-#   both. The audit's own VERDICT is a third thing again: red there is the
-#   ACCOUNT store drifting, so it is advisory on every event EXCEPT the
-#   schedule, which is the one surface that acts on it — see the gate step.
-#   See evals/propagation/ROUTINE.md.
+#   one unpinned input is the adam-agentskills registry at `main`, so real
+#   delivery can break with no commit in this repo, and pull requests here are
+#   too infrequent to find out.
+#
+#   This workflow used to carry a Tier 3 as well: a freshness gate that read a
+#   claude.ai Routine's published account-store audit and reddened when the
+#   Routine went quiet. The owner deleted that Routine on 2026-09-28 along
+#   with the claude.ai ZIP-upload channel it audited (adam-agentskills#23) —
+#   retiring the uploads meant nothing kept re-populating what the audit
+#   checked, so the audit was retired in the same change. `gate` is now the
+#   hermetic mutation suite alone. See evals/propagation/ROUTINE.md, now
+#   marked HISTORY, for what that layer did and why.
 #
 # * DELIBERATELY NO `paths:` filter, contrary to the fleet's usual rule. The
-#   `gate` job's entire job is to run on every pull request: filtering it to
-#   the propagation harness's own files would mean a Routine could stop firing
-#   for a month and nobody would learn of it until someone happened to touch
-#   this directory. The arms cost ~15s of runner time and no money, so the
-#   always-run half of "always-run + early-skip" is affordable here.
+#   arms probe an unpinned upstream registry — adam-agentskills at `main` —
+#   so a pull request that touches nothing here can still be the first place
+#   real delivery drift shows up; filtering this workflow to its own paths
+#   would mean that drift only surfaces at the next 05:41 schedule. `gate`'s
+#   mutation suite is hermetic Python with no CLI to install, so it stays
+#   cheap and always-present on the same trigger rather than being split onto
+#   a filtered one of its own.
 
 name: Propagation
 
@@ -48,8 +51,8 @@ on:
   push:
     branches: [main]
   # :41 rather than :00 because GitHub queues the whole platform's cron on the
-  # hour and delays it, and staggered off agentskills' 06:17 census so the
-  # fleet's daily audits do not all land at once.
+  # hour and delays it, and staggered off adam-agentskills' 06:17 census so
+  # the fleet's daily audits do not all land at once.
   schedule:
     - cron: "41 5 * * *" # daily, 05:41 UTC
   # A probe you cannot run on demand is a probe you cannot VERIFY on demand. A
@@ -103,9 +106,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # Hermetic: the mutation suite, plus the freshness gate that watches the
-  # Tier-3 schedule. Needs no Claude Code CLI at all, so it still reports even
-  # when a CLI release breaks the arms.
+  # Hermetic: the mutation suite. Needs no Claude Code CLI at all, so it
+  # still reports even when a CLI release breaks the arms.
   gate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -116,11 +118,11 @@ jobs:
           path: skills-evals
           persist-credentials: false
 
-      - name: Check out agentskills registry (side-by-side)
+      - name: Check out adam-agentskills registry (side-by-side)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: Adam-S-Daniel/agentskills
-          path: agentskills
+          repository: Adam-S-Daniel/adam-agentskills
+          path: adam-agentskills
           persist-credentials: false
 
       - name: Set up Python
@@ -131,78 +133,14 @@ jobs:
       - name: Install harness dependencies
         run: pip install pyyaml
 
-      - name: Fetch the account audit's published result
-        # Anonymous clone of a public repo — no token, and the branch may not
-        # exist yet, which the gate reports as not-yet-bootstrapped rather than
-        # as a failure. A hard failure here would red every pull request from
-        # the day this merges, and the gate would be disabled in week one.
-        run: |
-          set -uo pipefail
-          if git clone --depth 1 --single-branch --branch eval-results \
-              "https://github.com/${GITHUB_REPOSITORY}" eval-results; then
-            echo "eval-results checked out"
-          else
-            echo "eval-results branch not present yet"
-            mkdir -p eval-results
-          fi
-
       - name: Mutation suite (hermetic — no CLI, no network, no clock)
         working-directory: skills-evals
         # $AGENTSKILLS_DIR lets the one registry-dependent test actually run
         # here (it binds this harness's digest to the registry's own
         # generator) instead of skipping.
         env:
-          AGENTSKILLS_DIR: ${{ github.workspace }}/agentskills
+          AGENTSKILLS_DIR: ${{ github.workspace }}/adam-agentskills
         run: python3 test/test_propagation.py
-
-      - name: Freshness gate — is the Tier-3 account audit still running?
-        working-directory: skills-evals
-        # The account audit's own VERDICT is advisory on every event EXCEPT
-        # the schedule. A red Tier-3 result means the claude.ai account store
-        # has drifted: no commit in this repo caused it, none can clear it, and
-        # no runner here can even see that store. On a pull request that made
-        # every open branch wear someone else's red. On a push to `main` it is
-        # worse than useless — a post-merge push has nothing left to block, so
-        # the red blocks no merge, names no actionable change, and is then
-        # re-reported as a CI fault by scheduled-run-health.yml. Measured: runs
-        # 32444343915 and 32445416856 (2026-08-21) were both pushes to `main`
-        # that went red on `FAIL freshness-gate [reported-failure]`, and the
-        # health audit then filed both into issue #33 — two CI-fault reports
-        # for one account drift that neither run could cause or repair.
-        #
-        # The schedule is the DESIGNATED fatal surface because it is the only
-        # one that does anything with the verdict: `report` files the tracking
-        # issue there. See evals/propagation/ROUTINE.md.
-        #
-        # Liveness — missing, stale, unreadable — stays fatal on every event,
-        # because those mean the audit is not reaching us at all and catching a
-        # Routine that quietly stopped is this gate's whole purpose. That is
-        # guaranteed by ADVISORY_STATUSES in the runner, which names
-        # `reported-failure` and nothing else, and NOT by the flag built below
-        # — passing the flag can never downgrade a liveness failure.
-        #
-        # Read from env rather than interpolated into the script: the fleet
-        # rule is that `${{ }}` does not go in a `run:` body.
-        env:
-          EVENT_NAME: ${{ github.event_name }}
-        run: |
-          set -euo pipefail
-          # Advisory by DEFAULT and subtracted on the schedule, rather than
-          # fatal by default and added to on one named event. The old shape
-          # listed `pull_request` as the sole advisory event, so every trigger
-          # added afterwards — the push to `main` above, and a
-          # workflow_dispatch or merge_group next — inherited the fatal side
-          # silently. Defaulting the other way means a new trigger arrives on
-          # the side that blocks nothing, and making one fatal is a deliberate
-          # line in a diff.
-          advisory=(--account-verdict-advisory)
-          if [ "$EVENT_NAME" = "schedule" ]; then
-            advisory=()
-          fi
-          python3 harness/run_propagation.py evals/propagation --gate-only \
-            --account-latest ../eval-results/propagation/account/latest.json \
-            --account-marker ../eval-results/propagation/.bootstrapped \
-            ${advisory[@]+"${advisory[@]}"}
 
   # The live arms, one CI job each so a red arm names itself in the checks list
   # and one broken channel never hides another.
@@ -221,14 +159,14 @@ jobs:
           path: skills-evals
           persist-credentials: false
 
-      - name: Check out agentskills registry (side-by-side)
+      - name: Check out adam-agentskills registry (side-by-side)
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: Adam-S-Daniel/agentskills
+          repository: Adam-S-Daniel/adam-agentskills
           # Full history: the bootstrap-hook arm clones this checkout at the
           # commit skills.lock pins, which a shallow clone may not contain.
           fetch-depth: 0
-          path: agentskills
+          path: adam-agentskills
           persist-credentials: false
 
       - name: Set up Node
@@ -237,13 +175,45 @@ jobs:
           node-version: 22
 
       - name: Install Claude Code CLI
-        # Pinned to the version this harness was validated against. The arms
-        # assert on the SHAPE of the stream-json init event, so a CLI bump is a
-        # deliberate, reviewed change here — and the --self-test below is what
-        # catches a bump that silently blinded the assertions.
+        # NOT PINNED, and ALWAYS THE LATEST (the owner's decisions of
+        # 2026-09-27, #202, and 2026-09-28, #203): every run installs the
+        # newest Claude Code release npm reports, never reusing one already
+        # on the runner, and fails if another `claude` on PATH shadows it.
+        # The arms assert on the SHAPE of the stream-json init event, so a new
+        # CLI can change what they read — the --self-test below is what
+        # catches a release that silently blinded the assertions, and the
+        # version actually used is recorded per run: here in the step summary
+        # and, per arm, as `harness_version` (with the init event's `model`)
+        # in the --json run record. This job holds no credential at all (see
+        # the posture note at the top), and the install runs before any step
+        # that could be given one.
+        #
+        # `claude --version` is captured whole and cut to its first line in
+        # the shell, not piped through `head`: under pipefail a `head` that
+        # exits first can fail the step on the CLI's SIGPIPE. A failing or
+        # empty version, an unusable npm answer, or a shadowing CLI fails the
+        # step by name.
         run: |
-          npm install -g @anthropic-ai/claude-code@2.1.231
-          claude --version
+          set -euo pipefail
+          latest="$(npm view @anthropic-ai/claude-code version)" || { echo "::error::could not resolve the latest Claude Code version"; exit 1; }
+          # A plain MAJOR.MINOR.PATCH and nothing else: a prerelease, an error
+          # page, an empty answer or two lines is refused, never stripped
+          # into something that looks like a version.
+          [[ "$latest" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::npm reported no usable latest Claude Code version"; exit 1; }
+          npm install -g "@anthropic-ai/claude-code@${latest}"
+          version="$(timeout -k 10 60 claude --version)" || { echo "::error::claude --version failed"; exit 1; }
+          # First line only, and only characters a version string needs: this
+          # lands in a markdown code span in the step summary.
+          version="${version%%$'\n'*}"
+          version="${version:0:80}"
+          version="${version//[^A-Za-z0-9._() -]/}"
+          [[ -n "$version" ]] || { echo "::error::claude --version printed no version"; exit 1; }
+          # A different claude earlier on PATH would shadow the one just
+          # installed. Exact on the first token: a prefix match would pass a
+          # stale 2.1.30 for a latest of 2.1.3.
+          [[ "${version%% *}" == "$latest" ]] || { echo "::error::claude on PATH is not the npm latest just installed"; exit 1; }
+          echo "harness: Claude Code ${version} (npm latest)"
+          { echo "### Harness"; echo "Claude Code \`${version}\` (npm latest)"; } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -264,7 +234,6 @@ jobs:
         # the registry does not ship and requires a red. Without it, a CLI that
         # stopped emitting what this harness reads would look like five green
         # arms. It rides the plugin job because that is the arm it exercises.
-        # --no-gate because the `gate` job owns that and needs no CLI.
         env:
           ARM: ${{ matrix.arm }}
         run: |
@@ -272,7 +241,7 @@ jobs:
           extra=()
           if [ "$ARM" = "plugin-marketplace" ]; then extra=(--self-test); fi
           python3 harness/run_propagation.py evals/propagation \
-            --arm "$ARM" --registry ../agentskills --no-gate \
+            --arm "$ARM" --registry ../adam-agentskills \
             --json "$RUNNER_TEMP/propagation.json" "${extra[@]+"${extra[@]}"}"
 
       - name: Upload the run record on failure
@@ -320,11 +289,15 @@ jobs:
     # through the dedupe lookup and stops one line short of the write.
     #
     # Admitting the dispatch here does NOT admit it to the CLOSE call: the
-    # shell below fences that to `schedule`, because the `gate` job measures
-    # the account verdict under a weaker policy on every other event and a
-    # dispatch would otherwise retract a finding the schedule filed. The
-    # asymmetry belongs in the shell rather than in this `if:` — a dispatch
-    # still has to reach the job to file, to comment, and to dry-run.
+    # shell below fences that to `schedule`, because only a `schedule` trigger
+    # is guaranteed to be testing `main` — GitHub runs a scheduled workflow
+    # against the default branch and nothing else, while `workflow_dispatch`
+    # can target any ref. A green dispatch from a branch whose fix has not
+    # merged yet would retract a finding that the next morning's schedule —
+    # still red on the unfixed `main` — immediately re-files, stranding the
+    # comment history the close path exists to keep. The asymmetry belongs in
+    # the shell rather than in this `if:` — a dispatch still has to reach the
+    # job to file, to comment, and to dry-run.
     if: >-
       (success() || failure())
       && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
@@ -340,20 +313,22 @@ jobs:
           ISSUE_TITLE: Scheduled propagation probes are failing
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           # WHICH HALF FAILED, carried in as DATA so the body can state it
-          # without a shell branch. The body used to assert a cause — "the arms'
-          # one unpinned input is the agentskills registry, so look there first"
-          # — and it has been wrong on four of the five runs it was posted on:
-          # all five scheduled failures this workflow has ever had were the
-          # `gate` job on a `[reported-failure]` verdict, and on four of them
-          # every arm was green (run 32452792300 among those). The fifth,
-          # 32000114291 on 2026-08-17, had `arms (bootstrap-hook)` red
-          # alongside — which is exactly why the body reports the two results
-          # rather than picking one of them to blame. A body that names the wrong repository sends
-          # the reader to audit a registry that never moved, and the drift it
-          # was actually reporting outlives their patience. These two words are
-          # printed verbatim and the prose below describes both halves, so it
-          # cannot be wrong in that way and costs no statement above the
-          # dry-run bail-out.
+          # without a shell branch. Printing both rather than diagnosing one
+          # from the other is deliberate: a red **gate** (the hermetic
+          # mutation suite) and a red **arm** (usually the adam-agentskills
+          # registry moving under an unpinned checkout) are different faults
+          # in different places, and a body that picked one to blame risks
+          # sending the reader to audit whichever half it guessed wrong on.
+          # Before 2026-09-28 `gate` also carried a freshness check on a
+          # claude.ai Routine, and every one of this workflow's five scheduled
+          # failures up to then was that check tripping with every arm green
+          # (run 32452792300 among them) — the measurement that first proved a
+          # single-cause body would mislead (see evals/propagation/ROUTINE.md,
+          # now HISTORY). That check is gone, but the lesson — report both,
+          # guess neither — still holds for the two causes that remain. These
+          # two words are printed verbatim and the prose below describes both
+          # halves, so it cannot be wrong in that way and costs no statement
+          # above the dry-run bail-out.
           GATE_RESULT: ${{ needs.gate.result }}
           ARMS_RESULT: ${{ needs.arms.result }}
           # A BARE input reference, and the flag is built from it in SHELL
@@ -379,27 +354,20 @@ jobs:
           The scheduled propagation probes failed: $RUN_URL
 
           Job results — **gate: $GATE_RESULT**, **arms: $ARMS_RESULT**. Read those
-          two before looking anywhere else: they fail for reasons that live in
-          different repositories, and only one of them is a fault in CI.
+          two before looking anywhere else: they fail for different reasons.
 
-          A failing **gate** is usually not a CI fault at all. Its freshness step
-          relays the daily Tier-3 account audit, and a red verdict there means the
-          claude.ai account skill store has drifted from the registry — which no
-          run in either repository can cause or repair, because only a signed-in
-          surface can see that store. Drift has its own tracking issue, titled
-          "Account skill store drifted from registry (automated Tier-3 audit)",
-          which .github/workflows/account-store-drift.yml opens, edits in place
-          and closes on its own schedule; the repair steps live in its body, and
-          none of them is a change to this repository. The gate
-          also fails when the published audit result is missing, stale or
-          unreadable — that says the Routine publishing it has stopped, not that
-          anything drifted, and the gate's own message says which it saw.
+          A failing **gate** is a fault in this repository. Its one step is the
+          hermetic mutation suite (test/test_propagation.py), so a red gate
+          means the propagation harness's own logic broke — nothing external
+          caused it and nothing external can repair it.
 
-          A failing **arm** is the CI-side fault. The arms' one unpinned input is
-          the agentskills registry, which they check out at main, so a red arm
-          most likely means a change there rather than a change here. The Claude
-          Code CLI is version-pinned in this workflow and cannot have moved on
-          its own.
+          A failing **arm** is usually caused by something outside this
+          repository. The arms have two unpinned inputs: the adam-agentskills
+          registry, which they check out at main, and the Claude Code CLI,
+          which every run installs at the npm latest tag and records in the
+          step summary. A red arm most likely means a change in one of those
+          rather than a change here; compare the CLI version the failing run
+          recorded with the last green run's.
           EOF
           cat > "$RUNNER_TEMP/propagation-recovered.md" <<EOF
           The scheduled propagation probes are green again — gate: $GATE_RESULT,
@@ -442,25 +410,22 @@ jobs:
             # resolved history — and an issue list that only holds live findings
             # is the only kind anyone keeps reading.
             #
-            # AND THE CLOSE IS SCHEDULE-ONLY, because the issue is OPENED under
-            # one policy and would otherwise be CLOSED under a weaker one. The
-            # `gate` job hands the account audit's verdict `--account-verdict-
-            # advisory` on every event EXCEPT the schedule, so a
-            # `[reported-failure]` that reds the 05:41 run and files this issue
-            # comes back green on a dispatch having measured nothing new — the
-            # dispatch downgraded the very verdict the issue reports. Closing
-            # there retracts a live finding on the strength of a run that never
-            # tested it, and the next morning's schedule is fatal again, finds
-            # no OPEN issue, and files a fresh one: the comment history this
-            # close path exists to keep is stranded on the issue it just shut.
-            # Filing stays allowed on every event this job runs on — a red
-            # under the weaker policy is red under the stricter one too — so
-            # only the retraction is fenced. `GITHUB_EVENT_NAME` is a default
-            # runner variable, like the `GITHUB_REPOSITORY` the lookup above
-            # already reads, so consulting it puts no workflow expression in
-            # this script — not even in a comment, which GitHub expands like
-            # any other text here — and `set -u` turns a misspelling into a
-            # loud failure rather than a silently skipped guard.
+            # AND THE CLOSE IS SCHEDULE-ONLY, because `schedule` is the only
+            # trigger guaranteed to be testing `main`. A `workflow_dispatch`
+            # can run against any branch, so a green dispatch from one that
+            # fixes the gate or an arm but has not merged yet would retract a
+            # finding that the next morning's schedule — still red on the
+            # unfixed `main` — immediately re-opens: the comment history this
+            # close path exists to keep would be stranded on the issue it just
+            # shut. Filing stays allowed on every event this job runs on — a
+            # red run found something real regardless of which ref it
+            # targeted — so only the retraction is fenced. `GITHUB_EVENT_NAME`
+            # is a default runner variable, like the `GITHUB_REPOSITORY` the
+            # lookup above already reads, so consulting it puts no workflow
+            # expression in this script — not even in a comment, which GitHub
+            # expands like any other text here — and `set -u` turns a
+            # misspelling into a loud failure rather than a silently skipped
+            # guard.
             if [ "$GITHUB_EVENT_NAME" != "schedule" ]; then
               echo "the probes passed, but only a scheduled run may close the tracking issue"
             elif [ -n "$number" ]; then
@@ -471,9 +436,9 @@ jobs:
               echo "the probes passed and no tracking issue is open"
             fi
           elif [ -n "$number" ]; then
-            # A comment rather than an edit in place, unlike the account-drift
-            # issue: this one is a running log of which scheduled runs failed,
-            # and each run URL is a distinct fact worth keeping.
+            # A comment rather than an edit in place: this issue is a running
+            # log of which scheduled runs failed, and each run URL is a
+            # distinct fact worth keeping.
             gh issue comment "$number" --repo "$GITHUB_REPOSITORY" \
               --body-file "$RUNNER_TEMP/propagation-failure.md"
           else

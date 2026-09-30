@@ -39,7 +39,7 @@
 # the judge's register dimension backstops what is left.
 
 skill: adam-writing-style
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills-private
 
 # Arms pinned mid-tier, judge pinned strong — DESIGN.md's harness-wide
 # rules. A ceiling-effect arm is signal-free, and an unpinned arm silently
@@ -65,8 +65,8 @@ prompt: >
 objective_checks:
   # The avoid list, verbatim from the skill's "Avoid (almost always)"
   # section. test/run_tests.py::TestIssue81 reads that section out of the
-  # agentskills checkout at TEST time and fails if a term there is not
-  # covered here, so the two cannot drift apart.
+  # adam-agentskills-private checkout at TEST time and fails if a term there
+  # is not covered here, so the two cannot drift apart.
   #
   # Nothing below carries a quote anchor of its own any more. Every check
   # here sets `strip_seed: true`, and objective.strip_seed_material does

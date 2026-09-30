@@ -6,7 +6,7 @@
 # merge, so the salience decision has to move inside the workflow instead.
 
 skill: workflow-path-audit
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # `model:` and `judge.model:` are OVERRIDES, not the only source. Absent
 # either, the runner takes the committed model roster — `evals/roster.yml` on

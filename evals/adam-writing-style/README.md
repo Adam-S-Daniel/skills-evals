@@ -58,7 +58,7 @@ That means three invocations by hand:
 # --no-judge until run_eval.py honours judge.mode: see the warning above.
 for f in recruiter-reply proposal-bio self-appraisal-opening; do
   python3 harness/run_eval.py evals/adam-writing-style/$f --arm both \
-    --registry agentskills=../agentskills --no-judge
+    --registry adam-agentskills-private=../adam-agentskills-private --no-judge
 done
 ```
 

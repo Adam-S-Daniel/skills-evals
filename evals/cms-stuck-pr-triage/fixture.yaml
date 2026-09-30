@@ -164,7 +164,7 @@
 
 skill: cms-stuck-pr-triage
 # NOTE: this skill ships in cms-platform, whose layout is `skills/<skill>/`
-# rather than agentskills' `plugins/*/skills/<skill>/`. Resolving it needs
+# rather than adam-agentskills' `plugins/*/skills/<skill>/`. Resolving it needs
 # skills-evals#63 (harness/registries.yml + `--registry NAME=PATH`) on main;
 # until then the arms cannot be run, and everything below is exercised
 # hermetically by TestIssue84 / TestIssue84Review in test/run_tests.py. The

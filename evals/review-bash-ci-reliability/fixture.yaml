@@ -14,7 +14,7 @@
 # the rubric does not cap Correctness on it (see judge_rubric below).
 
 skill: review-bash-ci-reliability
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # Same calibration as the other fixtures: a pinned mid-tier model so the
 # with/without comparison is not flattened by a ceiling effect, and so the

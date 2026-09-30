@@ -28,6 +28,100 @@ reconstructed from memory.
   status blockquote at the top of its body and a "Review rounds" record with
   each round's findings, fix-round session links and verified counts.
 
+**Eval runs on hold (Adam, 2026-09-23).** No paid eval runs until the roster
+seats `claude-opus-5-5` and `claude-sonnet-5` as the arms with
+`claude-fable-5-1` judging. Opus 5.5 came out on 2026-09-22, and the roster
+step of [run 35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203)
+excluded it as inside the 7-day cooling-off, so the earliest it can be seated
+is about 2026-09-29. That run was the one paid run of the skills-doctor
+fixture (decision 8's exception, below): `with_skill` 5/5, judge 10.0;
+`without_skill` timed out at 600 s, so there is no delta yet. Before its
+re-run, decide whether that arm needs a longer agent budget.
+**Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
+once it merges, the next roster run proposes `claude-opus-5-5` immediately
+as the opus tier's vendor default, with no wait for 2026-09-29, and keeps
+`claude-opus-5` for a one-week buffer (`superseded_exit_weeks: 1`) before
+proposing its retirement.
+Also 2026-09-27: the model cooling-off is 0 and CI's Claude Code is unpinned,
+with the version and models recorded per arm in `summary.json` (`harness`,
+`models_used`, `judge_models_used`) — ADR 0002's update.
+**Amended 2026-09-28 by [#203](https://github.com/Adam-S-Daniel/skills-evals/pull/203):**
+CI always installs the npm latest (never a preinstalled CLI), and the vendor
+defaults come from that CLI, probed with no credential
+(`scripts/probe_model_defaults.py`), instead of from the docs page; the
+carried-defaults machinery is gone, and a failed probe freezes its family
+for that run: previous arms held, none retired except models gone from the
+Models API, and none added unless the family holds no seat the Models API
+still lists, said loudly in the summary, a warning and the tracking issue.
+A default the probe answered but the run's catalogue does not otherwise
+match FREEZES its family exactly like a probe failure (#203 probe round 7,
+R7-1), kept in its own field (`defaults_mismatched`) and wording so a human
+can tell a failure from a mismatch; an answer in the wrong tier or family,
+or one naming a model with no `created_at`, is a failure (probe round 5,
+R5-1). The governing guarantee, now structural rather than a guessed
+"effective default": a single run whose probe answer is a failure or a
+mismatch changes no seat a clean run would not — a persistent mismatch
+HOLDS a listed seat rather than seating a newer, more-used model the probe
+cannot corroborate, loudly: its own fixed `::warning::` and an open
+tracking issue on "same" too (#203 probe round 8, R8-1 — the workflow had
+read only `defaults_failed`), with a title that says "probe failed" only
+for a genuine failure and its own wording for a mismatch, both when both
+are present. See ADR 0002's decision 6 and third update.
+**Amended 2026-09-28 (retirement of the Tier-3 account-store audit):** the
+owner deleted the claude.ai Routine "skills-evals: account-store propagation
+audit" the same day the claude.ai ZIP-upload channel it audited was retired
+([adam-agentskills#23](https://github.com/Adam-S-Daniel/adam-agentskills/issues/23)).
+`.github/workflows/account-store-drift.yml`, `harness/run_account_audit.py`,
+`harness/run_account_drift_issue.py` and `harness/propagation/account_store.py`
+are gone, and `propagation.yml`'s freshness gate went with them; see that
+workflow's header comment and `evals/propagation/ROUTINE.md`, now marked
+HISTORY, for the full record. `scripts/model_usage_census.py` (§ "The
+census's public-output contract" in `README.md`/`DESIGN.md`) rode that
+Routine's schedule best-effort and has lost its ride — it was not deleted,
+and now has its own publisher, `scripts/publish_usage_census.sh`, scheduled by
+the owner from a transcript-bearing machine (`evals/usage/CENSUS.md`); until he
+does, nothing fires it and the roster falls back to "no fresh census".
+A **Real eval** dispatch with `roster_only: true` refreshes and proposes the
+roster without a paid eval run, so the hold above can be lifted by reviewing
+that proposal first.
+**Amended 2026-09-28 (Adam's decision, ADR 0003):** a differing proposal no
+longer necessarily waits for a human to open and merge the pull request.
+`roster_mode: auto` in `evals/roster-policy.yml` — the shipped setting — has
+the propose step open/update the `roster/proposal` PR itself, dispatch
+`ci.yml` on it, and enable auto-merge once `test` passes, but only on a run
+whose vendor-default probe was clean; a dirty probe, a rejected proposal, or
+any failed `gh` call along the way still leaves the human-merge flow above
+untouched. Set `roster_mode: proposal` to restore it everywhere, with no
+other change.
+**Amended further (adversarial round 4 on #209):** the `eval` job now holds
+no write scope at all — the badge/results commit-and-push moved to a new
+`publish` job with a fresh checkout and no agent, and a new `disarm` job
+turns off any already-armed `roster/proposal` auto-merge BEFORE `eval`'s
+agent starts, not only after it finishes. See
+[ADR 0003's round 4 section](docs/decisions/0003-roster-merges-automatically.md).
+**Amended 2026-09-29 (ADR 0003, round 6):** the first live `auto` run
+([run 36509251840](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/36509251840),
+[PR #214](https://github.com/Adam-S-Daniel/skills-evals/pull/214)) never
+merged — the PR's own `test` run was held for approval, and the dispatched one
+does not count for the required check. The roster PR is now opened, reopened
+and armed with a dedicated GitHub App's token (`ROSTER_APP_CLIENT_ID` /
+`ROSTER_APP_PRIVATE_KEY`, installed on skills-evals only, not a bypass actor);
+the `ci.yml` dispatch is gone. Without that token the run opens and arms
+nothing and says so in the tracking issue. repo-settings' override letting
+Actions create and approve pull requests on skills-evals is no longer needed
+and is to be reverted there.
+**Amended 2026-09-29 (ADR 0003, round 7):** the same App now also publishes
+`roster/proposal` — the `roster` job renders and admits the proposal but no
+longer commits or pushes it (and no longer holds `contents: write`); the
+`roster-pr` job writes the commit through the git-data REST API on live
+`main`, in either `roster_mode`. That lets a ruleset on
+`refs/heads/roster/proposal` (creation, update, deletion, non-fast-forward;
+bypass: the roster App and repository admins only) be added in
+repo-settings, which closes the Dependabot-auto-merge retarget gap ADR 0003
+records. Merge this change BEFORE that ruleset, and verify it with a
+`roster_only` dispatch. Without the App token nothing is published and the
+tracking issue carries the rendered file.
+
 ## 0B. Session of 2026-09-21 — RESUME HERE
 
 This section supersedes § 0A where the two differ. Adam asked to proceed from
@@ -80,9 +174,10 @@ carries the reasons and the compare link.
 (`claude-haiku-4-5-20251001`, `claude-sonnet-5`, `claude-opus-5`,
 `claude-fable-5-1`) and judge `claude-fable-5`, every seat by the
 newest-per-tier fallback because **no usage census has ever been published**
-(`usage/latest.json` is absent on `eval-results`; the census is step 6 of the
-Tier-3 account-store Routine in `evals/propagation/ROUTINE.md` and needs a
-transcript-bearing machine). It was not merged: it would multiply the paid
+(`usage/latest.json` is absent on `eval-results`; the census is published by
+`scripts/publish_usage_census.sh` from a transcript-bearing machine, see
+`evals/usage/CENSUS.md`; it was once step 6 of the Tier-3 account-store
+Routine, now retired). It was not merged: it would multiply the paid
 weekly run and raise the judge tier on no usage evidence, which is the human
 call ADR 0001 reserves. Two ways forward: publish the census first so the next
 Monday run proposes from usage, or open and merge a PR from `roster/proposal`
@@ -841,7 +936,7 @@ reopening of the lane; everything below still stands. The run,
 [35812851203](https://github.com/Adam-S-Daniel/skills-evals/actions/runs/35812851203):
 `with_skill` 5/5 objective, judge 10.0, $0.46 (claude-sonnet-5, 17 turns, 91 s);
 `without_skill` hit the 600 s agent timeout, so there is no delta and no
-badge. Not re-run.
+badge. Not re-run: see the hold above § 0B.
 
 Epic #62 in full: no dispatch on #75, #76, #78, #79, #83, #87 to #94 or
 [cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408); #130 and #131 stay parked as stopped; the real N=3 runs and

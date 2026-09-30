@@ -49,7 +49,7 @@
 # skill text, not the only one a faithful agent could land on.
 
 skill: rename-pdfs
-registry: https://github.com/Adam-S-Daniel/agentskills
+registry: https://github.com/Adam-S-Daniel/adam-agentskills
 
 # Same calibration as workflow-path-audit / windows-elevation-from-wsl: a
 # pinned mid-tier model so the with/without comparison isn't flattened by a

@@ -60,6 +60,15 @@ CHILD_ENV = "SKILLS_EVALS_SUITE_CHILD"
 # that this spelling is the one run_tests.py reads.
 MEMORY_ENV = "SKILLS_EVALS_USER_MEMORY"
 
+# What run_tests.py reads to discover somewhere other than the real
+# test/issues/. The two planting tests below use it to plant their probe in a
+# SCRATCH dir instead: a concurrently running child suite (a parallel run,
+# #182) discovers whatever lives under the real test/issues/, so a probe
+# planted there would fail that OTHER worker's run too.
+# `test_the_discovery_override_names_its_env_var` pins that this spelling is
+# the one run_tests.py reads.
+DISCOVERY_ENV = "SKILLS_EVALS_DISCOVERY_DIR"
+
 _MEMORY_BEFORE: str | None = None
 
 
@@ -252,6 +261,18 @@ class TestIssue97(unittest.TestCase):
         return [int(n) for n in re.findall(r"^Ran (\d+) tests?", output,
                                            flags=re.MULTILINE)]
 
+    def _scratch_discovery_dir(self, prefix: str) -> Path:
+        """A tempdir symlinking every real test_issue_*.py, for a probe to be
+        planted into instead of the real test/issues/ (#182): a concurrently
+        running child suite spawned by any OTHER parallel worker discovers
+        whatever lives under the real directory, so planting there would
+        fail that other worker's run too."""
+        scratch = Path(tempfile.mkdtemp(prefix=prefix))
+        self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        for real in ISSUES_DIR.glob("test_issue_*.py"):
+            (scratch / real.name).symlink_to(real)
+        return scratch
+
     def _skip_in_child(self) -> None:
         if os.environ.get(CHILD_ENV):
             reason = ("child suite run — the discovery pin does not re-fork "
@@ -263,9 +284,13 @@ class TestIssue97(unittest.TestCase):
         self._skip_in_child()
         self.assertFalse(self.PLANTED.exists(),
                          f"{self.PLANTED} is left over from an earlier run")
-        self.PLANTED.write_text(self.PLANTED_SOURCE, encoding="utf-8")
-        self.addCleanup(lambda: self.PLANTED.unlink(missing_ok=True))
-        proc = self._run_suite()
+        # Planted into a SCRATCH discovery dir (#182), never the real
+        # test/issues/ — see _scratch_discovery_dir. $SKILLS_EVALS_DISCOVERY_DIR
+        # is what makes the child's build_suite() look there instead.
+        scratch = self._scratch_discovery_dir("issue97-discovery-probe-")
+        (scratch / self.PLANTED.name).write_text(self.PLANTED_SOURCE,
+                                                  encoding="utf-8")
+        proc = self._run_suite(env_extra={DISCOVERY_ENV: str(scratch)})
         output = proc.stdout + proc.stderr
         self.assertEqual(
             proc.returncode, 1,
@@ -1492,9 +1517,15 @@ class TestIssue97(unittest.TestCase):
         watched.write_text("stand-in user memory\n", encoding="utf-8")
         self.assertFalse(self.MEMORY_PROBE.exists(),
                          f"{self.MEMORY_PROBE} is left over from an earlier run")
-        self.MEMORY_PROBE.write_text(self.MEMORY_PROBE_SOURCE, encoding="utf-8")
-        self.addCleanup(lambda: self.MEMORY_PROBE.unlink(missing_ok=True))
-        proc = self._run_suite(env_extra={MEMORY_ENV: str(watched)})
+        # Planted into a SCRATCH discovery dir (#182), never the real
+        # test/issues/ — see _scratch_discovery_dir. Same reasoning as the
+        # discovery probe above: a concurrent child suite from another
+        # parallel worker discovers whatever lives under the real directory.
+        scratch = self._scratch_discovery_dir("issue97-memory-probe-")
+        (scratch / self.MEMORY_PROBE.name).write_text(
+            self.MEMORY_PROBE_SOURCE, encoding="utf-8")
+        proc = self._run_suite(env_extra={MEMORY_ENV: str(watched),
+                                          DISCOVERY_ENV: str(scratch)})
         output = proc.stdout + proc.stderr
         self.assertTrue(
             re.search(r"^OK", output, flags=re.MULTILINE),
@@ -1543,6 +1574,23 @@ class TestIssue97(unittest.TestCase):
         self.assertEqual(assigned, [MEMORY_ENV],
                          "test/run_tests.py must define USER_MEMORY_ENV as "
                          f"{MEMORY_ENV!r}")
+
+    def test_the_discovery_override_names_its_env_var(self):
+        # Mirrors the pin above: the two planting tests set
+        # $SKILLS_EVALS_DISCOVERY_DIR by literal name, so pin that
+        # run_tests.py reads that same spelling — renaming the knob on one
+        # side must turn this red instead of quietly making the two planting
+        # pins plant into a scratch dir the child never looks at (#182).
+        source = (TEST_DIR / "run_tests.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        assigned = [n.value.value for n in ast.walk(tree)
+                    if isinstance(n, ast.Assign)
+                    and isinstance(n.value, ast.Constant)
+                    for t in n.targets
+                    if isinstance(t, ast.Name) and t.id == "DISCOVERY_ENV"]
+        self.assertEqual(assigned, [DISCOVERY_ENV],
+                         "test/run_tests.py must define DISCOVERY_ENV as "
+                         f"{DISCOVERY_ENV!r}")
 
     # ------------------------------------------------------------------
     # A2 — a timeout knob is a positive number, or it is absent
@@ -2254,9 +2302,6 @@ class TestIssue97(unittest.TestCase):
     HARNESS_TIMEOUT_SINKS = {
         ("harness/guidance.py", "deliver", "subprocess.run", "timeout"):
             (1, (("default", "120"),)),
-        ("harness/propagation/account_store.py", "git_tracked",
-         "subprocess.run", "GIT_TIMEOUT_S"):
-            (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/propagation/arms.py", "_run_hook", "subprocess.run",
          "timeout"): (1, (("flag", "harness/run_propagation.py"),)),
         ("harness/propagation/arms.py", "arm_plugin_marketplace",
@@ -2264,8 +2309,6 @@ class TestIssue97(unittest.TestCase):
             (1, (("flag", "harness/run_propagation.py"),)),
         ("harness/propagation/init_probe.py", "probe", "<popen>.wait",
          "KILL_WAIT_TIMEOUT_S"): (1, (("constant", "KILL_WAIT_TIMEOUT_S"),)),
-        ("harness/run_account_audit.py", "registry_ref", "subprocess.run",
-         "GIT_TIMEOUT_S"): (1, (("constant", "GIT_TIMEOUT_S"),)),
         ("harness/run_canary.py", "claude_version", "subprocess.run",
          "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         # Two callers, two sources: run_canary's own `--timeout`, and
@@ -2273,6 +2316,10 @@ class TestIssue97(unittest.TestCase):
         ("harness/run_canary.py", "run_leg", "subprocess.run", "timeout"):
             (1, (("flag", "harness/run_canary.py"),
                  ("knob", "guard.timeout_s"))),
+        # #202: the harness version, read once per run and recorded in every
+        # arm's summary.json — the same shape as run_canary's.
+        ("harness/run_eval.py", "claude_version", "subprocess.run",
+         "VERSION_TIMEOUT_S"): (1, (("constant", "VERSION_TIMEOUT_S"),)),
         ("harness/run_eval.py", "run_setup", "subprocess.run", "timeout"):
             (1, (("knob", "setup_timeout_s"),)),
         # `args.timeout or fixture.get("timeout_s", 600)` — BOTH halves, which
@@ -2797,18 +2844,15 @@ class TestIssue97(unittest.TestCase):
     # cannot arrive with no direct-call coverage.
     SINK_DRIVERS = {
         ("harness/guidance.py", "deliver"): ("param", "timeout"),
-        ("harness/propagation/account_store.py", "git_tracked"):
-            ("const", "GIT_TIMEOUT_S"),
         ("harness/propagation/arms.py", "_run_hook"): ("param", "timeout"),
         ("harness/propagation/arms.py", "arm_plugin_marketplace"):
             ("ctx", "timeout"),
         ("harness/propagation/init_probe.py", "probe"):
             ("const", "KILL_WAIT_TIMEOUT_S"),
-        ("harness/run_account_audit.py", "registry_ref"):
-            ("const", "GIT_TIMEOUT_S"),
         ("harness/run_canary.py", "claude_version"):
             ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_canary.py", "run_leg"): ("param", "timeout"),
+        ("harness/run_eval.py", "claude_version"): ("const", "VERSION_TIMEOUT_S"),
         ("harness/run_eval.py", "run_setup"): ("fixture", "setup_timeout_s"),
         ("harness/run_eval.py", "run_agent"): ("arm", "timeout"),
         ("harness/run_eval.py", "_nested_repo_diff"): ("const", "GIT_TIMEOUT_S"),
@@ -2870,16 +2914,12 @@ class TestIssue97(unittest.TestCase):
         if rel == "harness/guidance.py" and name == "deliver":
             return fn(tmp, scratch=tmp, dest_dir=tmp / "cfg", home=tmp / "home",
                       payload="x", **kwargs)
-        if name == "git_tracked":
-            return fn(tmp, Path("."))
         if name == "_run_hook":
             return fn(tmp / "hook.sh", scratch=None, env_extra={}, **kwargs)
         if name == "arm_plugin_marketplace":
             return fn(**kwargs)
         if name == "probe":
             return fn(cwd=tmp, home=tmp, tmpdir=tmp)
-        if name == "registry_ref":
-            return fn(tmp)
         if name == "claude_version":
             return fn()
         if name == "run_leg":
@@ -3741,12 +3781,18 @@ class TestIssue97(unittest.TestCase):
             with self.subTest(step=step.get("name")):
                 self.assertNotIn("${{", run)
         scripts = [s.get("run") or "" for s in self._eval_steps()]
-        reading = [s for s in scripts if "GITHUB_EVENT_PATH" in s]
+        reading = [s for s in scripts if "GITHUB_EVENT_PATH" in s
+                   and "inputs.fixture" in s]
         self.assertEqual(len(reading), 1,
-                         "exactly one step reads the dispatch input, and it "
+                         "exactly one step reads the fixture input, and it "
                          "reads it from the event file")
-        self.assertIn("inputs.fixture", reading[0],
-                      "the event file's .inputs.fixture is the value read")
+        # The one other reader is "Propose a roster change", which reads the
+        # boolean `roster_only` from the same file to word its issue text
+        # (#203 round 1) — never the fixture.
+        others = [s for s in scripts if "GITHUB_EVENT_PATH" in s
+                  and "inputs.fixture" not in s]
+        for other in others:
+            self.assertIn(".inputs.roster_only", other)
 
     def test_the_fixture_is_validated_before_any_credential_step(self):
         names = [(s.get("name") or "") for s in self._eval_steps()]
@@ -3775,8 +3821,10 @@ class TestIssue97(unittest.TestCase):
         event_path = tmp / "event.json"
         event_path.write_text(json.dumps(event if event is not None else {}),
                               encoding="utf-8")
+        # A real runner always provides GITHUB_OUTPUT (the step writes the
+        # `eval_key` job output there for the `publish` job, B1 round 4).
         env = dict(os.environ, GITHUB_EVENT_PATH=str(event_path),
-                   RUNNER_TEMP=str(tmp))
+                   RUNNER_TEMP=str(tmp), GITHUB_OUTPUT=str(tmp / "gh-output"))
         proc = subprocess.run(["bash", "-c", self._validation_script()],
                               cwd=str(cwd or REPO_ROOT), env=env,
                               capture_output=True, text=True, timeout=300)
@@ -3784,6 +3832,8 @@ class TestIssue97(unittest.TestCase):
             if (tmp / "eval-fixture").is_file() else None
         proc.key = (tmp / "eval-key").read_text(encoding="utf-8") \
             if (tmp / "eval-key").is_file() else None
+        proc.output = (tmp / "gh-output").read_text(encoding="utf-8") \
+            if (tmp / "gh-output").is_file() else ""
         return proc
 
     def test_the_validation_step_accepts_every_committed_fixture(self):
@@ -3795,6 +3845,10 @@ class TestIssue97(unittest.TestCase):
                 proc = self._run_validation({"inputs": {"fixture": fixture}})
                 self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
                 self.assertEqual(proc.selected, fixture)
+                # B1 (round 4 on #209): the job output `publish` reads for
+                # its commit message is exactly the validated key, one line.
+                self.assertEqual(
+                    proc.output, f"eval_key={fixture[len('evals/'):]}\n")
 
     def test_the_validation_step_defaults_when_the_event_carries_no_input(self):
         # The scheduled run: no `inputs` in the event payload at all.
