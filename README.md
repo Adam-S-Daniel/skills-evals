@@ -670,9 +670,11 @@ happened, turns off auto-merge on any roster pull request still open, and
 re-reads it: **the eval and `publish` (the one other job holding `contents:
 write`, which matters because `--match-head-commit` is checked only when
 auto-merge is enabled) do not run unless that step confirmed no roster pull
-request is left armed.** If it cannot confirm that, the run skips both and
-says so in a warning and in its summary; off `main`, where `roster-wait` is
-skipped, the eval runs as before. A pull
+request is left armed.** It checks both any open roster pull request and the
+one `roster-pr` armed. If it cannot confirm that, it fails `roster-wait` (a
+red run), and the run skips both and says so in a warning and in its
+summary; off `main`, where `roster-wait` is skipped, the eval runs as
+before. A pull
 request whose wait ran out stays open with auto-merge off; the next run
 re-arms it. A `roster_only` dispatch has no wait and no eval. Between arming and the merge (which waits on a green
 `test`, possibly for days), any other write-access actor that pushes

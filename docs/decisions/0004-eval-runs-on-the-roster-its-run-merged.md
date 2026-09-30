@@ -71,11 +71,14 @@ start and the merge.
    used if it verifies. The wait job's second step runs `if: always()`,
    after a merge, a timeout, a failure or a cancellation of the wait step:
    it finds any open roster PR with the same owner-filtered lookup
-   `disarm` uses, turns its auto-merge off if it is on, and RE-READS it. It
-   emits `cleared=true` only when that re-read shows auto-merge off (or no
-   roster PR is open). A failed lookup, read or disable, or a disable that
-   did not take, is `cleared=false` with a warning and a summary line
-   saying the eval and `publish` do not run. `eval` and `publish` both
+   `disarm` uses, and also takes the PR number `roster-pr` armed (which
+   still finds a PR whose base was moved off `main`); for each it turns
+   auto-merge off if it is on and RE-READS it. It emits `cleared=true` only
+   when every re-read shows auto-merge off (or no roster PR is open or
+   armed). A failed lookup, read or disable, or a disable that did not
+   take, is `cleared=false` with a warning and a summary line saying the
+   eval and `publish` do not run, and the step then exits 1: that is a
+   failed `roster-wait` job and a red run. `eval` and `publish` both
    require `cleared == 'true'`, unless `roster-wait` was skipped (off
    `main`); a `roster-wait` that failed or was cancelled before that step
    leaves `cleared` empty, so neither runs then either, and that failed
@@ -101,9 +104,13 @@ start and the merge.
 - **A proposal can apply in the run that proposed it.** On 2026-10-06 the
   run that retires `claude-opus-5` also evaluates without it, if its roster
   PR's `test` passes and it merges within the wait.
-- **An unconfirmed disarm costs the week's eval.** If `roster-wait` cannot
-  confirm no roster PR is left armed, the eval and `publish` are skipped
-  rather than run beside a possibly armed PR.
+- **An unconfirmed disarm costs the week's eval, and the run is red.** If
+  `roster-wait` cannot confirm no roster PR is left armed, the eval and
+  `publish` are skipped rather than run beside a possibly armed PR, and
+  `roster-wait` fails so the run shows it. `disarm` stays fail-open (it
+  concerns an earlier run's arming, and the sweep is the gate); it now
+  leaves a PR with no auto-merge alone, so an unarmed proposal-mode PR
+  raises no warning there.
 - **A run gets longer.** Up to 30 minutes of waiting, plus the `test` run on
   the PR, sit between the roster job and the eval. A PR whose `test` fails
   costs the full cap before the run falls back, because the wait job has no
