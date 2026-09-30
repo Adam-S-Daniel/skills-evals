@@ -4,7 +4,7 @@
 systematic-evals effort (skills and fleet guidance, six epics across five
 repositories), where it stands, what is parked and why, and how to pick it up.
 It was written by the orchestrator session when Adam paused the programme on
-2026-09-08 (decision 9 below) and **last updated on 2026-09-15** (see § 0A; § 0 preserves the September 13 session, and the 2026-09-08 state after #129's
+2026-09-08 (decision 9 below) and **last updated on 2026-09-15**, with dated amendments through 2026-09-30 (see § 0A; § 0 preserves the September 13 session, and the 2026-09-08 state after #129's
 round 14, decision 11, follows it): #131 and #130 merged in the parked-PR wave, #129 ran a
 fourteenth review round, was NOT CLEAN on both halves again, and is now answered
 — revert round 14's ITEM 2, then redesign the roster's denominator around a
@@ -37,6 +37,17 @@ is about 2026-09-29. That run was the one paid run of the skills-doctor
 fixture (decision 8's exception, below): `with_skill` 5/5, judge 10.0;
 `without_skill` timed out at 600 s, so there is no delta yet. Before its
 re-run, decide whether that arm needs a longer agent budget.
+
+**Status 2026-09-30:** the hold's condition is met. `claude-opus-5-5` was
+seated by [#206](https://github.com/Adam-S-Daniel/skills-evals/pull/206)
+(2026-09-28), and `evals/roster.yml` on `main` since
+[#214](https://github.com/Adam-S-Daniel/skills-evals/pull/214) (2026-09-29)
+seats four arms: `claude-opus-5-5` and `claude-sonnet-5-5` as the probed
+vendor defaults, and `claude-opus-5` and `claude-sonnet-5` inside their
+one-week buffers, with `claude-fable-5-1` judging. The hold has not been
+formally lifted; lifting it, and the skills-doctor arm budget above, are
+Adam's calls.
+
 **Amended 2026-09-27 by [#202](https://github.com/Adam-S-Daniel/skills-evals/issues/202):**
 once it merges, the next roster run proposes `claude-opus-5-5` immediately
 as the opus tier's vendor default, with no wait for 2026-09-29, and keeps
@@ -938,11 +949,17 @@ reopening of the lane; everything below still stands. The run,
 `without_skill` hit the 600 s agent timeout, so there is no delta and no
 badge. Not re-run: see the hold above § 0B.
 
-Epic #62 in full: no dispatch on #75, #76, #78, #79, #83, #87 to #94 or
-[cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408); #130 and #131 stay parked as stopped; the real N=3 runs and
-`docs/skill-impact.md` entries owed for the six merged skill fixtures (#82,
-#86, #85, #77, #74, #80) are not pursued. Those issues stay open as "merged
-hermetic; real run stopped" until Adam closes them or reopens the lane. Epic
+Epic #62 in full: no dispatch on #75, #76, #78, #83, #87 to #94 or
+[cms-platform#408](https://github.com/Adam-S-Daniel/cms-platform/issues/408), nor on #79 beyond
+the exception above. The real N=3 runs and `docs/skill-impact.md` entries
+owed for the eight merged skill fixtures are not pursued: #82, #86, #85,
+#77, #74 and #80, plus #81 and #84, whose PRs #131 and #130 merged in the
+parked-PR wave on 2026-09-08 (decision 10, above). `docs/skill-impact.md`
+does not exist yet. Those eight issues, and #79 (its fixture merged as the
+exception; its one paid run has no delta), stay open as "merged hermetic;
+real run stopped" until Adam closes them or reopens the lane. *Corrected
+2026-09-30: this paragraph said #130 and #131 "stay parked as stopped" and
+counted six merged fixtures.* Epic
 #96 in full (the guidance fixtures #100 to #120), by Adam's answer at 02:10 on
 09-08 that they count as evals for specific skills: nothing dispatched. A
 consequence for the remaining guidance systematic-runs work (#99, #121, #122,
