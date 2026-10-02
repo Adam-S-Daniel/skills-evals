@@ -3,7 +3,7 @@
 
 *** THE OUTPUT OF THIS SCRIPT IS PUBLISHED PUBLICLY. ***
 
-It is committed to the `eval-results` branch of a PUBLIC repository as
+It is committed to the `persistent/eval-results` branch of a PUBLIC repository as
 `usage/latest.json` by `scripts/publish_usage_census.sh` (see
 `evals/usage/CENSUS.md`). Treat every byte it emits as world-readable,
 forever.

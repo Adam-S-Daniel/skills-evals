@@ -27,7 +27,7 @@ every manifest `file:` is resolved with its symlinks followed and refused if
 it lands outside (`inside_checkout` below). Before that, a row
 `file: ../OUTSIDE_SECRET.md` was read, delivered, and written into
 `results/.../transcripts/raw.json`, which main pushes to the public
-`eval-results` branch — so a row could publish any file the runner can read.
+`persistent/eval-results` branch — so a row could publish any file the runner can read.
 
 THE FIVE MODES (`mode:` on an arm):
 
@@ -491,7 +491,7 @@ def inside_checkout(guidance_dir: Path, rel) -> Path:
     a row `file: ../OUTSIDE_SECRET.md` was resolved, read, delivered to the
     arm and written verbatim into
     `results/guidance/<key>/<ts>/<arm>/transcripts/raw.json`, which on `main`
-    is pushed to the PUBLIC `eval-results` branch. So a manifest row could
+    is pushed to the PUBLIC `persistent/eval-results` branch. So a manifest row could
     publish any file the runner can read. An absolute `file:` is the same
     hole spelled shorter — `Path("/x") / "/etc/passwd"` is `/etc/passwd`.
 

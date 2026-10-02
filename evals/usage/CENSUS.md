@@ -3,7 +3,7 @@
 `scripts/model_usage_census.py` counts which Claude models this account
 actually ran, per ISO week, from the local Claude Code transcripts under
 `~/.claude/projects`. `scripts/publish_usage_census.sh` runs it and publishes
-the result as `usage/latest.json` on the `eval-results` branch. `harness/roster.py`
+the result as `usage/latest.json` on the `persistent/eval-results` branch. `harness/roster.py`
 reads that file to decide which models earn an arm's seat; when it is absent or
 older than 14 days the roster falls back to "newest model per tier" and says so
 in every arm's reason ("no fresh census"). Nothing fails silently — but nothing
@@ -127,7 +127,7 @@ C:\Windows\System32\wsl.exe --distribution Ubuntu --cd "<wsl-automation checkout
 
 ### Checking that it works
 
-`git ls-remote https://github.com/Adam-S-Daniel/skills-evals eval-results` should
+`git ls-remote https://github.com/Adam-S-Daniel/skills-evals persistent/eval-results` should
 move after a run that found changed counts, and the branch's
 `usage/latest.json` carries the run's `generated_at`. The next roster run
 (`roster/latest.json`) reports the census timestamp in its `source.census_at`.

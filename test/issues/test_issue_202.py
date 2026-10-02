@@ -1288,7 +1288,7 @@ class TestRosterOnlyDispatch(unittest.TestCase):
             with self.subTest(value=value):
                 note = self._eval_note({"inputs": {"roster_only": value}})
                 self.assertIn("no eval ran", note)
-                self.assertIn("nothing from this run is published to `eval-results`", note)
+                self.assertIn("nothing from this run is published to `persistent/eval-results`", note)
                 self.assertNotIn("results will still be published", note)
 
     @unittest.skipUnless(shutil.which("jq") and shutil.which("bash"), "needs jq and bash")
@@ -1322,7 +1322,7 @@ class TestRosterOnlyDispatch(unittest.TestCase):
         for text in (spec["description"],
                      (REPO_ROOT / "README.md").read_text(encoding="utf-8")):
             flat = " ".join(text.split())
-            self.assertIn("publishes nothing to `eval-results`", flat)
+            self.assertIn("publishes nothing to `persistent/eval-results`", flat)
             self.assertIn("`roster/proposal`", flat)
 
 

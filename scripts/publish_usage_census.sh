@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Publish the model-usage census to the `eval-results` branch.
+# Publish the model-usage census to the `persistent/eval-results` branch.
 #
 # Runs on the OWNER'S DURABLE MACHINE, never in CI or a cloud session: the
 # census reads local Claude Code transcripts (~/.claude/projects), which
@@ -9,11 +9,11 @@
 # Steps, all inside one temp dir that is removed on exit:
 #   1. shallow-clone skills-evals and run ITS copy of
 #      scripts/model_usage_census.py against the real transcripts;
-#   2. shallow-clone the eval-results branch, copy in usage/latest.json;
+#   2. shallow-clone the persistent/eval-results branch, copy in usage/latest.json;
 #   3. commit "propagation: usage census [skip ci]" ONLY if the census
 #      changed, and push it (one `pull --rebase` retry when the push is not a
 #      fast-forward);
-#   4. verify with `git merge-base --is-ancestor HEAD origin/eval-results` —
+#   4. verify with `git merge-base --is-ancestor HEAD origin/persistent/eval-results` —
 #      a push that printed success is not proof the commit is on the branch.
 #
 # Credentials: whatever git already has on this machine. This script handles
@@ -32,7 +32,7 @@
 set -euo pipefail
 
 URL="${SKILLS_EVALS_URL:-https://github.com/Adam-S-Daniel/skills-evals.git}"
-BRANCH="eval-results"
+BRANCH="persistent/eval-results"
 PY="${PYTHON:-python3}"
 # A census whose counts did not change is still re-published once its
 # generated_at is this old: harness/roster.py treats a census older than 14

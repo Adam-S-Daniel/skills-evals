@@ -465,8 +465,8 @@ defects all came from leaving it unstated:
 | --- | --- | --- |
 | `evals/roster.yml` (on `main`) | the running set, and the observation history (`catalogue_seen`) | a human, through a reviewed pull request |
 | the Models API response | availability, within the run that fetched it | Anthropic |
-| `usage/latest.json` (on `eval-results`) | **nothing.** It can shape a proposal and nothing else | a job on another machine |
-| `roster/latest.json` (on `eval-results`) | nothing. An exhibit for the explorer, read by no decision | this workflow |
+| `usage/latest.json` (on `persistent/eval-results`) | **nothing.** It can shape a proposal and nothing else | a job on another machine |
+| `roster/latest.json` (on `persistent/eval-results`) | nothing. An exhibit for the explorer, read by no decision | this workflow |
 
 **The proposal flow.** When the computed roster differs from the committed one,
 `eval.yml` renders it with `scripts/render_roster_yaml.py` and admits the
@@ -669,7 +669,7 @@ Five properties are load-bearing and should survive any rework:
 
    **Migration.** `evals/roster.yml` was seeded by hand with an empty
    `catalogue_seen`, because the only history that existed lived on
-   `eval-results` and that branch is not trusted to supply one. So the first
+   `persistent/eval-results` and that branch is not trusted to supply one. So the first
    run after ADR 0001 landed behaves exactly like a genuine first run — the
    same migration `catalogue_seen`'s own introduction made — and a model
    retired before this harness observes it directly is unattributable until
@@ -810,7 +810,7 @@ checkout root. The two are different boundaries and the second is not implied
 by the first: a manifest row naming `../OUTSIDE_SECRET.md` was read,
 delivered, and written verbatim into
 `results/guidance/<key>/<ts>/<arm>/transcripts/raw.json`, which `main` pushes
-to the public `eval-results` branch — so a row could publish any file the
+to the public `persistent/eval-results` branch — so a row could publish any file the
 runner can read.
 
 ## Out of scope

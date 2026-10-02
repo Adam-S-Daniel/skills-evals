@@ -93,10 +93,10 @@ blocking decision 5.
 ## 4. Where to look for current results
 
 Everything published lives on the unprotected
-[`eval-results`](https://github.com/Adam-S-Daniel/skills-evals/tree/eval-results)
+[`persistent/eval-results`](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/eval-results)
 branch, which carries generated data only and is treated as untrusted input:
 
-| Path on `eval-results` | What it is |
+| Path on `persistent/eval-results` | What it is |
 |---|---|
 | `results/<fixture>/<timestamp>/report.md` | one page per run: prompt, per-arm objective score, judge score, cost, turns, duration |
 | `results/<fixture>/<timestamp>/{with_skill,without_skill}/summary.json` | the raw numbers behind the report, including token usage and every check's detail |
@@ -106,7 +106,7 @@ branch, which carries generated data only and is treated as untrusted input:
 | `propagation/` | historical: the retired account-store audit's last result (no longer updated) |
 
 The most recent real run at the time of writing is
-[`results/workflow-path-audit/20260922T125552Z/report.md`](https://github.com/Adam-S-Daniel/skills-evals/blob/eval-results/results/workflow-path-audit/20260922T125552Z/report.md).
+[`results/workflow-path-audit/20260922T125552Z/report.md`](https://github.com/Adam-S-Daniel/skills-evals/blob/persistent/eval-results/results/workflow-path-audit/20260922T125552Z/report.md).
 Raw transcripts are deliberately never published (public repository).
 
 ## 5. What is measured today

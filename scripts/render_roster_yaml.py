@@ -18,7 +18,7 @@ that needs saying because it is invisible from inside this file — NO
 ENVIRONMENT (N7, #129 review round 7). `eval.yml` runs this in the same
 shell that exports the Anthropic bearer for `refresh_models.py`, so that
 credential is in this process's environment even though nothing here wants
-it. The run id and the `eval-results` commit are therefore ARGUMENTS, not
+it. The run id and the `persistent/eval-results` commit are therefore ARGUMENTS, not
 `$GITHUB_RUN_ID` and `$GITHUB_SHA` read from underneath: a module that
 reads no environment cannot leak one, and the workflow passes both through
 `env:` into a variable and then on the command line rather than
@@ -175,7 +175,7 @@ def main(argv=None) -> int:
     parser.add_argument("--run-id", required=True,
                         help="the workflow run that computed the proposal")
     parser.add_argument("--eval-results-commit", required=True,
-                        help="the eval-results commit the census came from")
+                        help="the persistent/eval-results commit the census came from")
     args = parser.parse_args(argv)
     try:
         with open(args.roster, encoding="utf-8") as f:

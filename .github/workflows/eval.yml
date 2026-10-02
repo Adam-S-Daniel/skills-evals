@@ -1,6 +1,6 @@
 # Real (non-hermetic) skill eval: runs the workflow-path-audit A/B eval against
 # the live Claude Code CLI + Anthropic API, regenerates the quality badge, and
-# pushes the badge + run summaries to the `eval-results` branch. The hermetic
+# pushes the badge + run summaries to the `persistent/eval-results` branch. The hermetic
 # suite stays in ci.yml — this workflow is the ONLY place real credentials
 # appear. The objective checks are hermetic everywhere, here included.
 #
@@ -174,15 +174,15 @@
 #   scheduled workflows after ~60 days without repo activity, and each run
 #   commits fresh results, so the schedule keeps itself alive.
 #
-# * Results + badge live on the `eval-results` branch, not main: main's
+# * Results + badge live on the `persistent/eval-results` branch, not main: main's
 #   branch-protection ruleset requires changes go through a pull request
 #   (this repo's fleet repo-settings baseline), so a bot direct-pushing
 #   straight to main would be rejected — as it was in run 29620223686. The
-#   `publish` job's commit step fetches/builds on `eval-results` (creating it on the first
+#   `publish` job's commit step fetches/builds on `persistent/eval-results` (creating it on the first
 #   run) and pushes there directly; nobody hand-commits to that branch and
 #   the `real-eval` concurrency lane serializes runs, so a rejected push
 #   fails the job loudly rather than retrying. The README badge URL consumes
-#   raw content from `eval-results` accordingly.
+#   raw content from `persistent/eval-results` accordingly.
 #
 # * All actions are SHA-pinned, bare — no trailing version/date comment. The
 #   comment went stale silently and then lied (Dependabot rewrites it only
@@ -210,7 +210,7 @@ on:
           Refresh the model roster and file its proposal, then stop: skip the
           WIF preflight, the eval and the badge, so nothing is spent on a
           model beyond the Models API read. A roster_only run publishes
-          nothing to `eval-results`; its only outputs are the
+          nothing to `persistent/eval-results`; its only outputs are the
           `roster/proposal` branch and the tracking issue.
         type: boolean
         required: false
@@ -291,7 +291,7 @@ on:
 # `id-token: write` is this job's OWN, separate WIF mint (never shared with
 # `roster`'s bearer — different runners, different jobs, no credential in
 # common) for the preflight and the eval run. Nothing in this job ever
-# calls `gh pr`, `gh issue`, `gh workflow run`, or touches `eval-results`.
+# calls `gh pr`, `gh issue`, `gh workflow run`, or touches `persistent/eval-results`.
 #
 # Ordering (ADR 0004, 2026-09-30; it replaces round 5's "roster-pr runs
 # last"): roster -> disarm -> roster-pr -> roster-wait -> eval -> publish.
@@ -338,7 +338,7 @@ on:
 # agent shared a filesystem with — downloads the `eval` job's uploaded
 # artifact into `results/`, and runs `scripts/make_badge.py` from ITS OWN
 # checkout, never from the artifact: the artifact is the eval's raw output,
-# untrusted content exactly like everything else `eval-results` already
+# untrusted content exactly like everything else `persistent/eval-results` already
 # carries, and it must never be able to substitute its own copy of the
 # script that builds the badge. The roster exhibit it commits
 # (`roster/latest.json`) comes from `needs.roster.outputs.roster_latest_json`
@@ -554,11 +554,11 @@ jobs:
       # IT COMPUTES A PROPOSAL, NOT THE RUNNING SET (ADR 0001). The models
       # the eval below actually runs come from the committed
       # `evals/roster.yml` and from nothing else; this step's `--previous`
-      # is that same committed file, and its output goes to `eval-results`
+      # is that same committed file, and its output goes to `persistent/eval-results`
       # as an exhibit plus, when it differs, to the bot-owned
       # `roster/proposal` branch and one tracking issue for a human to
       # merge. Nothing here sets $EVAL_ROSTER, and nothing materialises a
-      # roster off `eval-results` for selection — that is what let one line
+      # roster off `persistent/eval-results` for selection — that is what let one line
       # on an unprotected branch pick every unpinned fixture's models.
       # Amended by ADR 0004: when this run's proposal is merged within the
       # run's bounded wait, the eval runs on that MERGED `evals/roster.yml`
@@ -605,9 +605,9 @@ jobs:
       # a branch it simply could not read; `ls-remote` tells them apart.
       #
       # Everything lands in $RUNNER_TEMP, not the working tree: roster/ is
-      # tracked on eval-results and untracked on main, so a copy in the
+      # tracked on persistent/eval-results and untracked on main, so a copy in the
       # working tree would make the commit step's `git checkout -B
-      # eval-results` refuse. The commit step restores it after the switch,
+      # persistent/eval-results` refuse. The commit step restores it after the switch,
       # exactly as it already does for results/. $RUNNER_TEMP/roster holds the
       # published roster AND NOTHING ELSE — the working inputs live in
       # roster-inputs/ and the Admin API usage report (billing data) at
@@ -688,11 +688,11 @@ jobs:
             python3 scripts/probe_model_defaults.py --out "$work/defaults.json" || printf '{"probe_exit": "nonzero"}\n' > "$work/defaults.json" || true
             ANTHROPIC_AUTH_TOKEN="$(cat "$RUNNER_TEMP/anthropic-bearer")"
             export ANTHROPIC_AUTH_TOKEN
-            # The published census comes off eval-results WITHOUT checking it
+            # The published census comes off persistent/eval-results WITHOUT checking it
             # out; the previous roster is the committed evals/roster.yml.
             # The branch switch belongs to the commit step, and an absent
             # census remains an ordinary fallback case.
-            if ! git fetch origin eval-results 2>/dev/null; then
+            if ! git fetch origin persistent/eval-results 2>/dev/null; then
               # `git ls-remote | grep -q` discards ls-remote's OWN exit status
               # under `pipefail`: on a correlated outage (fetch AND ls-remote
               # both unreachable) grep sees empty stdin, "no match" is exit 1,
@@ -703,12 +703,12 @@ jobs:
               # with a here-string so nothing is piped into grep (the fleet's
               # SIGPIPE rule) and ls-remote's failure cannot be swallowed by
               # what comes after it.
-              ls_out=$(git ls-remote --heads origin eval-results 2>/dev/null) || {
+              ls_out=$(git ls-remote --heads origin persistent/eval-results 2>/dev/null) || {
                 reason="roster inputs unavailable: could not reach origin"
                 return 1
               }
-              if grep -qF -- 'refs/heads/eval-results' <<<"$ls_out"; then
-                reason="roster inputs unavailable: eval-results exists but could not be fetched"
+              if grep -qF -- 'refs/heads/persistent/eval-results' <<<"$ls_out"; then
+                reason="roster inputs unavailable: persistent/eval-results exists but could not be fetched"
                 return 1
               fi
             fi
@@ -717,8 +717,8 @@ jobs:
             # from this branch at all, because a document read off an
             # unprotected branch cannot be the harness's record of what
             # it has observed (#147).
-            if git rev-parse -q --verify origin/eval-results >/dev/null 2>&1; then
-              git show origin/eval-results:usage/latest.json > "$work/census.json" 2>/dev/null || true
+            if git rev-parse -q --verify origin/persistent/eval-results >/dev/null 2>&1; then
+              git show origin/persistent/eval-results:usage/latest.json > "$work/census.json" 2>/dev/null || true
             fi
             # stderr is captured, not swallowed: it is echoed back to the log
             # either way, and on failure extract_reason picks the
@@ -862,7 +862,7 @@ jobs:
           fi
           # B1 (round 3 on #209): this run's computed roster, published as an
           # OUTPUT so the `publish` job (round 4: relocated off `eval`) can
-          # commit an EXHIBIT copy to `eval-results` without the `roster`
+          # commit an EXHIBIT copy to `persistent/eval-results` without the `roster`
           # job depending on `eval` or `publish` (ADR 0001, decision 3:
           # `roster/latest.json` is read by no decision) and without either
           # of those jobs needing any git access to this job's own runner.
@@ -956,14 +956,14 @@ jobs:
             roster_only=true
           fi
           if [ "$roster_only" = true ]; then
-            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval runs on the committed roster, no eval ran at all."
+            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`persistent/eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval runs on the committed roster, no eval ran at all."
           else
             # S3 (round 4 on #209): "runs", not "ran" — this step writes
             # this sentence in the `roster` job, which never `needs:
             # eval` and so cannot know whether the `eval` job (in a
             # separate job after this one) has even started yet, let
             # alone finished.
-            eval_note="The paid eval runs, in a separate job after this one, on the committed \`evals/roster.yml\`; that job's own result says whether it succeeded and what it published to \`eval-results\`."
+            eval_note="The paid eval runs, in a separate job after this one, on the committed \`evals/roster.yml\`; that job's own result says whether it succeeded and what it published to \`persistent/eval-results\`."
           fi
           # <<< roster-only note
 
@@ -1144,10 +1144,10 @@ jobs:
             exit 0
           fi
 
-          # The eval-results commit the census came from, recorded in the
+          # The persistent/eval-results commit the census came from, recorded in the
           # rendered file's provenance so a merged proposal says which
           # untrusted document shaped it.
-          census_commit=$(git rev-parse origin/eval-results 2>/dev/null) || census_commit="none"
+          census_commit=$(git rev-parse origin/persistent/eval-results 2>/dev/null) || census_commit="none"
           # A computed roster may legitimately have no non-arm judge when
           # every available model is seated. Preserve that observation in the
           # published eval result, but do not publish a branch a reviewer
@@ -1773,7 +1773,7 @@ jobs:
       # token it needs) moved to the `publish` job, which has no agent and
       # a fresh checkout. This step hands `publish` its raw output as a
       # build artifact instead: `results/` is exactly what the old badge
-      # step snapshotted before switching to `eval-results`, so `publish`
+      # step snapshotted before switching to `persistent/eval-results`, so `publish`
       # can restore it the same way. `if: ${{ !cancelled() }}` rather than
       # the default (only on success) so a failed eval run still uploads
       # whatever partial output it produced — this is also this job's own
@@ -1813,7 +1813,7 @@ jobs:
           path: skills-evals
           ref: ${{ github.sha }}
           # Full history so the accumulated-window badge build and the
-          # eval-results branch switch below always have the commits they
+          # persistent/eval-results branch switch below always have the commits they
           # need; this repo is small.
           fetch-depth: 0
           persist-credentials: false
@@ -1834,7 +1834,7 @@ jobs:
 
       # Badge generation, commit and push are ONE step because the badge's
       # window can only see the accumulated history, and that history exists
-      # nowhere until the `eval-results` checkout below has happened. This
+      # nowhere until the `persistent/eval-results` checkout below has happened. This
       # workflow used to build the badge in a step of its own, ahead of the
       # commit step — which ran make_badge.py against the fresh workspace,
       # where results/ holds only the run that just finished. The `--window N`
@@ -1842,15 +1842,15 @@ jobs:
       # aggregation was structurally inert and every published badge quietly
       # reported a single run (the `n=` marker only appears above one run, so
       # its absence was the only symptom). The ordering here is load-bearing —
-      # fetch and check out `eval-results`, restore the fresh run into
+      # fetch and check out `persistent/eval-results`, restore the fresh run into
       # results/, and only THEN build the badge, so the window spans the real
-      # run history. Note also that the `eval-results` branch carries no
+      # run history. Note also that the `persistent/eval-results` branch carries no
       # scripts/ directory, so the branch switch takes make_badge.py out of the
       # working tree; it is stashed in $RUNNER_TEMP beforehand and invoked
       # from there — from THIS job's own fresh checkout, never from the
       # downloaded artifact (B1, round 4 on #209): the artifact is the
       # `eval` job's raw, untrusted-exactly-like-everything-else-on-
-      # eval-results output, and it must never be able to substitute its
+      # persistent/eval-results output, and it must never be able to substitute its
       # own copy of the script that builds the badge. It is stdlib-only, so
       # nothing else has to travel with it.
       - name: Build the badge over the run window, commit, and push
@@ -1880,18 +1880,18 @@ jobs:
           # Stash the badge script before the branch switch drops scripts/.
           cp scripts/make_badge.py "$RUNNER_TEMP/"
           # Snapshot the downloaded results (results/ is new/untracked
-          # here, and is tracked on eval-results — without this the branch
+          # here, and is tracked on persistent/eval-results — without this the branch
           # switch would clobber or refuse the downloaded output)
           snap="$RUNNER_TEMP/eval-outputs"
           rm -rf "$snap"; mkdir -p "$snap"
           [ -d results ] && cp -r results "$snap/results"
           # Build on the accumulated results branch (create on first run)
           git checkout -- .
-          git fetch origin eval-results || true
-          if git rev-parse -q --verify origin/eval-results >/dev/null; then
-            git checkout -B eval-results origin/eval-results
+          git fetch origin persistent/eval-results || true
+          if git rev-parse -q --verify origin/persistent/eval-results >/dev/null; then
+            git checkout -B persistent/eval-results origin/persistent/eval-results
           else
-            git checkout -B eval-results
+            git checkout -B persistent/eval-results
           fi
           [ -d "$snap/results" ] && { mkdir -p results; cp -r "$snap/results/." results/; }
           # The `roster` job's own computed roster (B1, round 3 on #209):
@@ -1922,7 +1922,7 @@ jobs:
           git add badges results
           # -f is load-bearing: .gitignore lists roster/ and usage/ so a stray
           # local copy cannot ride into a main-branch PR. They ARE tracked here
-          # on eval-results, and a plain `git add` would silently skip them.
+          # on persistent/eval-results, and a plain `git add` would silently skip them.
           if [ -d roster ]; then git add -f roster; fi
           if git diff --cached --quiet; then
             echo "No changes to commit."
@@ -1938,7 +1938,7 @@ jobs:
           esac
           git commit -m "eval: $key run + badge + roster [skip ci]"
           auth="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)"
-          git -c "http.https://github.com/.extraheader=$auth" push origin eval-results
+          git -c "http.https://github.com/.extraheader=$auth" push origin persistent/eval-results
 
   # F2 (adversarial round 1 on #209): everything that touches the
   # `roster/proposal` pull request — find/create/edit/close/merge it, and
@@ -2169,9 +2169,9 @@ jobs:
             roster_only=true
           fi
           if [ "$roster_only" = true ]; then
-            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval runs on the committed roster, no eval ran at all."
+            eval_note="This was a \`roster_only\` dispatch: no eval ran, and nothing from this run is published to \`persistent/eval-results\`. Its only outputs are the \`roster/proposal\` branch and this issue; where the summary below says the eval runs on the committed roster, no eval ran at all."
           else
-            eval_note="The paid eval runs after this job, in a later job of this run: on this run's merged roster if this run armed the roster pull request and it merged within the run's bounded wait (ADR 0004), and on the committed \`evals/roster.yml\` otherwise. The run summary says which roster it used and why, and whether its results were published to \`eval-results\`."
+            eval_note="The paid eval runs after this job, in a later job of this run: on this run's merged roster if this run armed the roster pull request and it merged within the run's bounded wait (ADR 0004), and on the committed \`evals/roster.yml\` otherwise. The run summary says which roster it used and why, and whether its results were published to \`persistent/eval-results\`."
           fi
           # <<< eval-note
           probe_note="${PROBE_NOTE:-}"
