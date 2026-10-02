@@ -101,7 +101,7 @@ Inputs
                availability, straight from GET /v1/models. Trusted for
                availability within the run that fetched it.
   census_doc   {"generated_at": ..., "weeks": [...], "counts": {model: {week: n}}}
-               — usage, published to `eval-results` as usage/latest.json by
+               — usage, published to `persistent/eval-results` as usage/latest.json by
                scripts/model_usage_census.py. THE ONE INPUT STILL WRITTEN BY
                A JOB ON ANOTHER MACHINE, and trusted for nothing: it can
                shape a proposal and nothing else. Optional: absent, older
@@ -132,7 +132,7 @@ public log. It also carries a SIZE BOUND (`CENSUS_MAX_KEYS`,
 `CENSUS_MAX_BYTES`), past which the run refuses rather than let an untrusted
 document decide how much work it does.
 
-Output — roster/latest.json on `eval-results`, an EXHIBIT read by no
+Output — roster/latest.json on `persistent/eval-results`, an EXHIBIT read by no
 decision, plus `proposal`, which is what `eval.yml` acts on:
   {generated_at, source: {models_api_at, census_at, admin_report_at},
    defaults: {source: "claude-code-cli <version>", probed_at,
@@ -158,7 +158,7 @@ decision, plus `proposal`, which is what `eval.yml` acts on:
 `catalogue_seen` is the union of every model id the Models API has been
 observed to list, each with the date it was last seen (property 5,
 DESIGN.md). It comes IN from the committed roster and goes OUT in the
-proposal; it no longer round-trips through `eval-results`, and it is no
+proposal; it no longer round-trips through `persistent/eval-results`, and it is no
 longer capped or exempted — an entry leaves when its `last_seen` is older
 than the policy's window, and by no other route. See
 `_update_catalogue_seen`.
@@ -429,7 +429,7 @@ class TrustedRosterUnreadable(Exception):
     reviewer is most likely to wave through.
 
     The `previous_state: "unavailable"` this replaces was the opposite
-    posture, and it was right while `previous` came off `eval-results`:
+    posture, and it was right while `previous` came off `persistent/eval-results`:
     an unreadable file there is an ordinary fact about an unprotected
     branch, and carrying on was the only option. It is not an ordinary
     fact about `main`.
@@ -781,7 +781,7 @@ def _is_attributable(folded: str, api_ids: set[str] | None,
     this harness ever observed it is unattributable — there is no evidence
     to credit, only the shape it USED to have, which is exactly the
     unreliable signal this replaces. This also covers the MIGRATION case:
-    the `previous.json` already sitting on `eval-results` predates this
+    the `previous.json` already sitting on `persistent/eval-results` predates this
     field entirely, so the first run after this merges behaves exactly
     like a genuine first run. S3 (#129 review round 6) adds a SECOND
     migration, for `catalogue_seen`'s own shape change (a bare id string
@@ -847,7 +847,7 @@ def _fold_set(ids: set[str], aliases: dict) -> set[str]:
 # refused a retirement while more than 1% of the exit window's denominator
 # was attributable ONLY through the previous roster; the notice said out
 # loud when that fraction was material. Both existed for one reason: the
-# previous roster came off `eval-results` and could not be believed, so the
+# previous roster came off `persistent/eval-results` and could not be believed, so the
 # run measured how much of its own denominator rested on it.
 #
 # THE MEASUREMENT THAT SHOWS THEY NOW DECIDE NOTHING. `previous` is
@@ -985,7 +985,7 @@ def usage_numbers(counts: dict, model_id: str, weeks: list[str],
     before this harness's first run is unattributable — its usage silently
     drops from the denominator until a run observes it directly (see
     `_is_attributable`) — including the MIGRATION case where the
-    `previous.json` already on `eval-results` predates this field, so the
+    `previous.json` already on `persistent/eval-results` predates this field, so the
     first run after this merges behaves like a genuine first run; S3
     (#129 review round 6) adds a second migration on top, for
     `catalogue_seen`'s own bare-string-to-`{id, last_seen}` shape change.
@@ -1095,7 +1095,7 @@ def _clean_models(models_doc: dict, warn) -> list[dict]:
     alone) reaches `unranked`/`excluded` and from there render_summary's
     Markdown, which eval.yml prints to stdout — where GitHub parses `::`
     workflow commands — or reaches `catalogue_seen`, published verbatim to
-    the public `eval-results` branch and read back as `previous`'s own
+    the public `persistent/eval-results` branch and read back as `previous`'s own
     `catalogue_seen` next run (`catalogue_seen` does not itself reach
     render_summary's Markdown). A hostile id is dropped the same way a
     bad-shaped `entry` is, and the warning names no value — only the count.
@@ -1147,7 +1147,7 @@ MAX_WEEKLY_TURNS = 10 ** 7
 
 #: A SIZE BOUND ON THE CENSUS DOCUMENT, in model keys (ADR 0001's "what
 #: stays"). The census is the one input that is still attacker-writable
-#: after #147 — it comes off `eval-results` — and every other bound on an
+#: after #147 — it comes off `persistent/eval-results` — and every other bound on an
 #: untrusted input went with the caps it belonged to, because those caps
 #: existed to approximate a trusted history and the trusted history is a
 #: file on `main` now. What did NOT go away is that an unbounded document
@@ -1255,7 +1255,7 @@ def _clean_counts(counts, warn) -> dict:
 # decision 4, which names all three constants), and so is the tier
 # ordering they evicted by.
 #
-# WHAT THEY WERE FOR. The previous roster came off `eval-results`, so its
+# WHAT THEY WERE FOR. The previous roster came off `persistent/eval-results`, so its
 # `arms` and `catalogue_seen` lists were unbounded public input: anyone
 # with write access could add 500 entries, and six review rounds went into
 # finding an order that decided which of them survived WITHOUT reading
@@ -3090,7 +3090,7 @@ def compute_roster(models_doc: dict, census_doc: dict | None, policy: dict,
         # `previous["arms"]` produced seven distinct `roster/latest.json`
         # digests differing in nothing but this list's order, and
         # `render_summary` prints retirements in it — so whoever writes
-        # `eval-results` decided whether the one real retirement led the
+        # `persistent/eval-results` decided whether the one real retirement led the
         # step summary or sat on line 501 of it.
         for model_id in sorted(previous_arms):
             if model_id in arm_ids:
@@ -3521,7 +3521,7 @@ def main() -> int:
     parser.add_argument("--policy", type=Path,
                         default=Path(__file__).resolve().parent.parent / "evals" / "roster-policy.yml")
     parser.add_argument("--census", type=Path, default=None,
-                        help="usage/latest.json from eval-results; optional")
+                        help="usage/latest.json from persistent/eval-results; optional")
     parser.add_argument("--admin-report", type=Path, default=None,
                         help="optional Admin API usage report; recorded as provenance")
     parser.add_argument("--previous", type=Path, default=None,

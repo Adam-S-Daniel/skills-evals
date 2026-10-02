@@ -214,7 +214,7 @@ class WithSkillInstallTests(unittest.TestCase):
             self.assertIn("does-not-exist", result["detail"])
             # Item 6 (#129 review round 4): the registry's basename, not its
             # full absolute path — this detail reaches summary.json, which
-            # eval.yml commits to the public eval-results branch.
+            # eval.yml commits to the public persistent/eval-results branch.
             self.assertIn(FAKE_REGISTRY.name, result["detail"])
             self.assertNotIn(str(FAKE_REGISTRY), result["detail"])
             # Names the plugins/*/skills/<skill> glob pattern that was searched.
@@ -3939,13 +3939,13 @@ class MakeBadgeTests(unittest.TestCase):
 
 
 class BadgeWorkflowOrderingTests(unittest.TestCase):
-    """The real-eval workflow must build the badge AFTER checking out eval-results.
+    """The real-eval workflow must build the badge AFTER checking out persistent/eval-results.
 
     make_badge.py averages the `--window N` newest runs under results/, but the
-    only place that run history exists is the `eval-results` branch — a fresh
+    only place that run history exists is the `persistent/eval-results` branch — a fresh
     CI workspace holds nothing but the run that just finished. eval.yml used to
     generate the badge in a step of its own, ahead of the commit step that
-    fetches and checks `eval-results` out, so the window could never contain
+    fetches and checks `persistent/eval-results` out, so the window could never contain
     more than one run: the averaging was structurally inert and every published
     badge silently reported a single run while looking perfectly healthy. The
     only outward symptom was a missing `n=` marker, which make_badge.py emits
@@ -3954,7 +3954,7 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
     Nothing inside the badge script can enforce this — it is purely a question
     of step ordering in the workflow — so the invariant is pinned here: exactly
     one step may invoke make_badge.py, and it must do so after that same
-    script's `git checkout -B eval-results`. The regression this guards against
+    script's `git checkout -B persistent/eval-results`. The regression this guards against
     is someone re-introducing a separate, earlier badge step alongside the
     merged one.
     """
@@ -3966,7 +3966,7 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
         """Line indices where `script` actually RUNS make_badge.py.
 
         Merely naming the file is not running it: the step also copies the
-        script into $RUNNER_TEMP before the branch switch (the eval-results
+        script into $RUNNER_TEMP before the branch switch (the persistent/eval-results
         branch carries no scripts/ dir), and that copy legitimately precedes
         the checkout. An invocation is a mention with an interpreter ahead of
         it on the same line.
@@ -3997,23 +3997,23 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
             f"{[s.get('name') for s in building]}")
 
         script = building[0]["run"]
-        self.assertIn("git checkout -B eval-results", script,
-                      "the badge must be built on the eval-results branch, so "
+        self.assertIn("git checkout -B persistent/eval-results", script,
+                      "the badge must be built on the persistent/eval-results branch, so "
                       "that checkout has to live in this same step")
         lines = script.splitlines()
         checkout = next(i for i, line in enumerate(lines)
-                        if "git checkout -B eval-results" in line)
+                        if "git checkout -B persistent/eval-results" in line)
         for invocation in self._invocation_lines(script):
             self.assertGreater(
                 invocation, checkout,
-                "make_badge.py must run after `git checkout -B eval-results` "
+                "make_badge.py must run after `git checkout -B persistent/eval-results` "
                 "and after the results/ restore, or its window sees only the "
                 "run that just finished and the badge always reports n=1")
 
     def test_make_badge_always_runs_from_the_publish_jobs_own_checkout(self):
         # B1 (round 4 on #209, blocker), item (e): `publish` downloads the
         # `eval` job's raw output as a build artifact into `results/` —
-        # untrusted content, exactly like everything else `eval-results`
+        # untrusted content, exactly like everything else `persistent/eval-results`
         # already carries. `make_badge.py` must be invoked from THIS job's
         # own fresh checkout (stashed at `$RUNNER_TEMP/make_badge.py`
         # before the branch switch), never from any path under the
@@ -4033,7 +4033,7 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
                 self.assertNotIn("results/", line)
         self.assertIn("cp scripts/make_badge.py \"$RUNNER_TEMP/\"", script,
                       "the script must come from this job's OWN checkout of "
-                      "scripts/, stashed before the eval-results branch "
+                      "scripts/, stashed before the persistent/eval-results branch "
                       "switch drops it, never from the downloaded artifact")
 
     # Anything naming the downloaded artifact: its download path, the
@@ -4077,7 +4077,7 @@ class BadgeWorkflowOrderingTests(unittest.TestCase):
     def test_publish_executes_nothing_from_the_downloaded_artifact(self):
         # B1 (round 4 on #209, blocker), item (e), second half: the
         # downloaded `results/` is DATA, untrusted exactly like
-        # `eval-results`. No command in any `publish` step may be a path
+        # `persistent/eval-results`. No command in any `publish` step may be a path
         # into it, or hand a path into it to an interpreter (`bash
         # results/x.sh`, `python3 "$snap/results/y.py"`, `. results/env`) —
         # the make_badge.py test above pins only that one invocation.
@@ -5965,7 +5965,7 @@ class TestIssue67(unittest.TestCase):
         self.assertIsNotNone(summary["error"])
         # The roster's basename, not its full absolute path (item 5, #129
         # review round 3) — this detail reaches summary.json, which
-        # eval.yml commits to the public eval-results branch.
+        # eval.yml commits to the public persistent/eval-results branch.
         self.assertIn(missing.name, summary["error"]["detail"])
         self.assertNotIn(str(missing), summary["error"]["detail"])
 
@@ -6099,9 +6099,9 @@ class TestIssue67(unittest.TestCase):
         # job now, not `eval` — see that job's own comment.
         _, doc = self._eval_workflow()
         commit = next(s for s in doc["jobs"]["publish"]["steps"]
-                      if "git checkout -B eval-results" in (s.get("run") or ""))
+                      if "git checkout -B persistent/eval-results" in (s.get("run") or ""))
         self.assertIn("roster", commit["run"],
-                      "roster/ is published on eval-results alongside the badge")
+                      "roster/ is published on persistent/eval-results alongside the badge")
 
     def test_eval_workflow_keeps_its_security_posture(self):
         raw, doc = self._eval_workflow()
@@ -6876,7 +6876,7 @@ class TestIssue67Review(unittest.TestCase):
         self.assertIsNotNone(summary["error"], "no pin and no roster must not run")
         # The roster's basename, not its full absolute path (item 5, #129
         # review round 3): this detail flows into summary.json, which
-        # eval.yml commits to the public eval-results branch.
+        # eval.yml commits to the public persistent/eval-results branch.
         self.assertIn(missing.name, summary["error"]["detail"],
                       "the error names the roster path it looked for")
         self.assertNotIn(str(missing), summary["error"]["detail"],
@@ -6913,7 +6913,7 @@ class TestIssue67Review(unittest.TestCase):
                 # 15, #129 review round 2; item 5, round 3): a selection
                 # error naming the roster's ABSOLUTE path lands in
                 # summary.json, which eval.yml commits to the public
-                # eval-results branch. assertIn(path.name, ...) alone has
+                # persistent/eval-results branch. assertIn(path.name, ...) alone has
                 # no teeth here — path.name is a substring of the full
                 # path too — so the absolute path's absence is asserted
                 # explicitly.
@@ -7178,7 +7178,7 @@ class TestIssue67Review(unittest.TestCase):
 for a in "$@"; do
   case "$a" in
     fetch) echo "fatal: unable to access origin" >&2; exit 128 ;;
-    ls-remote) printf 'deadbeef\\trefs/heads/eval-results\\n'; exit 0 ;;
+    ls-remote) printf 'deadbeef\\trefs/heads/persistent/eval-results\\n'; exit 0 ;;
   esac
 done
 exec {GIT} "$@"
@@ -10308,7 +10308,7 @@ class TestIssue63Round2(unittest.TestCase):
             # Item 6 (#129 review round 4): the registry's NAME and layout,
             # not its resolved absolute path — this detail reaches
             # summary.json, which eval.yml commits to the public
-            # eval-results branch.
+            # persistent/eval-results branch.
             expected_path = str((tmp_root / "scratch-registry").resolve())
             self.assertIn("scratch-registry", with_skill_summary["error"]["detail"])
             self.assertNotIn(expected_path, with_skill_summary["error"]["detail"])
@@ -10347,7 +10347,7 @@ class TestIssue63Round2(unittest.TestCase):
             self.assertEqual(result["error"], "skill_install_failed")
             # The skill name, not the destination's absolute workspace path
             # (S5, #129 review round 5) — this detail reaches summary.json,
-            # which eval.yml commits to the public eval-results branch.
+            # which eval.yml commits to the public persistent/eval-results branch.
             # Generic wording (N1, #129 review round 6): "already exists"
             # would be false for the NotADirectoryError case below, which
             # shares this same message.
@@ -25015,7 +25015,7 @@ class TestIssue84Round5(Issue84Fixture, unittest.TestCase):
     through `run_eval.py --arm without_skill` with a stand-in `claude` that
     dumps its own environment. The arm's transcript is written to
     `results/<skill>/<ts>/<arm>/transcripts/raw.json`, which eval.yml pushes
-    to the public `eval-results` branch, so an arm that runs `env` while
+    to the public `persistent/eval-results` branch, so an arm that runs `env` while
     debugging publishes whatever the denylist did not name.
 
     The rule is now an ALLOWLIST, and the test that measures it builds the
@@ -26286,7 +26286,7 @@ class TestIssue67Review7(unittest.TestCase):
         shape was as well, but only the bare string had a test. An id
         carrying a newline and a `::` workflow command reaches
         `catalogue_seen`, which is published verbatim to the public
-        `eval-results` branch and read back next run."""
+        `persistent/eval-results` branch and read back next run."""
         models = TestIssue67._models_doc()
         previous = {"arms": [], "catalogue_seen": [
             {"id": self.HOSTILE_SEEN_ID, "last_seen": self._days_ago(1)}]}
@@ -27361,7 +27361,7 @@ class TestIssue67Review9(unittest.TestCase):
     # `PREVIOUS_ARM_ID_RE` accepts the result — so anyone who can write
     # `previous.json` and knows ONE census key (every live model id is one,
     # and `usage/latest.json` and `roster/latest.json` are both public on
-    # `eval-results`) mints five hundred ids the predicate calls
+    # `persistent/eval-results`) mints five hundred ids the predicate calls
     # census-named. Round 6 keyed the cap on the id, round 7 on `last_seen`,
     # round 8 on a predicate over the id — each on something the planter
     # writes. The rows below are the three spellings that reached it.
@@ -27539,7 +27539,7 @@ class TestIssue67Review9(unittest.TestCase):
     # input. Round 7's N4 guard wraps the JSON load and cannot reach this.
     # eval.yml turns the non-zero rc into a `::warning::` and the eval runs
     # on the fixture pins — so one planted entry disables the feature until
-    # `eval-results` is edited by hand.
+    # `persistent/eval-results` is edited by hand.
 
     S1_PLANT = "claude-opus-4-1"
     S1_CRASHING = ("0001-01-01T00:00:00+05:00", "0001-01-01T00:00:00+00:01",
@@ -28527,7 +28527,7 @@ class TestIssue67Review11(unittest.TestCase):
     # planted id, a 4,000-character junk string, or the one surviving
     # neighbour of a malformed cell. And the planter can write the census
     # as well as the roster — eval.yml materialises `census.json` and
-    # `previous.json` from the same `eval-results` branch.
+    # `previous.json` from the same `persistent/eval-results` branch.
     #
     # PRE-EXISTING on 5d1f00a and 5712522 as well as on 1fa9d3a. The fix
     # is to generalise from "the census names nothing" to "the census
@@ -28631,7 +28631,7 @@ class TestIssue67Review11(unittest.TestCase):
     def test_the_published_roster_is_identical_across_shuffles(self):
         """`retired_since_last` was published in the previous roster's own
         insertion order — the one part of the roster whoever writes
-        `eval-results` decided. Six shuffles of `previous["arms"]` gave
+        `persistent/eval-results` decided. Six shuffles of `previous["arms"]` gave
         seven distinct `roster/latest.json` digests, differing in nothing
         but that list's order, and `render_summary` prints retirements in
         it: a planter chose whether the one real retirement led the step
@@ -29066,8 +29066,8 @@ class TestIssue67Review12(unittest.TestCase):
         """`_relevance.__doc__` said "a planter cannot add a census key"
         twice and `evals/roster-policy.yml` said "a planter writes neither
         document". `eval.yml` takes `previous.json` from
-        `origin/eval-results:roster/latest.json` and `census.json` from
-        `origin/eval-results:usage/latest.json` — the same branch, so one
+        `origin/persistent/eval-results:roster/latest.json` and `census.json` from
+        `origin/persistent/eval-results:usage/latest.json` — the same branch, so one
         write grants both.
 
         It changed no published roster, and that is exactly why it was
@@ -29080,18 +29080,18 @@ class TestIssue67Review12(unittest.TestCase):
 
         THE PREMISE NARROWED IN #147 AND THE ROW SURVIVES IT. The previous
         roster is the committed `evals/roster.yml` now and is not taken
-        off `eval-results` at all, so "one write grants both" is no longer
+        off `persistent/eval-results` at all, so "one write grants both" is no longer
         true — but the CENSUS still comes off that branch, and it is the
         census these sentences were wrong about. The workflow half is
         measured rather than quoted, in both directions: the census IS
-        read from `eval-results`, and the roster is NOT.
+        read from `persistent/eval-results`, and the roster is NOT.
         """
         workflow = (REPO_ROOT / ".github" / "workflows"
                     / "eval.yml").read_text(encoding="utf-8")
-        self.assertIn("git show origin/eval-results:usage/latest.json",
+        self.assertIn("git show origin/persistent/eval-results:usage/latest.json",
                       workflow,
                       "the premise this test is about has changed")
-        self.assertNotIn("git show origin/eval-results:roster/latest.json",
+        self.assertNotIn("git show origin/persistent/eval-results:roster/latest.json",
                          workflow,
                          "the previous roster is the committed file now "
                          "(#147); nothing may materialise it from the "
@@ -29710,7 +29710,7 @@ class TestIssue147(unittest.TestCase):
     # --- item 2: selection reads the committed file, and only it ---------
 
     def test_the_default_roster_path_is_the_committed_file(self):
-        # `roster/latest.json` is published to `eval-results` and is an
+        # `roster/latest.json` is published to `persistent/eval-results` and is an
         # EXHIBIT — read by the explorer, by no decision (ADR 0001,
         # decision 3). The default rung of the precedence has to name the
         # trusted file instead, or a checkout with a stray `roster/`
@@ -29807,7 +29807,7 @@ class TestIssue147(unittest.TestCase):
     def test_eval_yml_no_longer_points_selection_at_eval_results(self):
         # THE WHOLE OF #147's FIRST DEFECT CLASS, asserted at the workflow.
         # While `$EVAL_ROSTER` named a file materialised from
-        # `origin/eval-results`, one line on that branch chose the models
+        # `origin/persistent/eval-results`, one line on that branch chose the models
         # every unpinned fixture ran against.
         #
         # Asserted over the PARSED steps, not over the raw file: the
@@ -29831,7 +29831,7 @@ class TestIssue147(unittest.TestCase):
                     self.assertNotIn(
                         "EVAL_ROSTER", code,
                         "eval.yml must not point selection at anything off "
-                        "eval-results; the committed evals/roster.yml is the "
+                        "persistent/eval-results; the committed evals/roster.yml is the "
                         "roster the harness runs on (ADR 0001)")
                     self.assertNotIn("EVAL_ROSTER", (step.get("env") or {}))
                     self.assertNotIn(
@@ -30192,7 +30192,7 @@ with open(os.environ['PROPOSAL_CALLS'], 'a', encoding='utf-8') as handle:
     handle.write(json.dumps(['git', *args]) + '\\n')
 if 'rev-parse' in args:
     print('a' * 40)
-elif ('push' in args and 'eval-results' in args
+elif ('push' in args and 'persistent/eval-results' in args
       and os.environ.get('PROPOSAL_RESULTS_PUSH_ERROR') == '1'):
     raise SystemExit(1)
 elif 'worktree' in args and 'add' in args:
@@ -30471,7 +30471,7 @@ elif 'worktree' in args and 'remove' in args:
                 self.assertFalse(any("roster/proposal" in call for call in pushes), calls)
                 self.assertEqual(bool(self._proposal_outputs.get("proposed_roster_b64")),
                                  proposal_handed_on, calls)
-                self.assertTrue(any("eval-results" in call for call in pushes), calls)
+                self.assertTrue(any("persistent/eval-results" in call for call in pushes), calls)
                 self.assertTrue(any(
                     call[:3] == ["git", "commit", "-m"]
                     and call[3] == "eval: workflow-path-audit run + badge + roster [skip ci]"
@@ -30575,7 +30575,7 @@ elif 'worktree' in args and 'remove' in args:
 
     def test_an_unreadable_committed_roster_is_fatal_not_a_state(self):
         """`previous_state: "unavailable"` was the right posture while the
-        previous roster came off `eval-results` — an unreadable file on an
+        previous roster came off `persistent/eval-results` — an unreadable file on an
         unprotected branch is an ordinary fact and carrying on is the only
         option. It is not an ordinary fact about `main`: it means somebody
         merged a broken file, and the proposal an empty `previous` would
@@ -30720,7 +30720,7 @@ elif 'worktree' in args and 'remove' in args:
         exports the Anthropic bearer, so the credential is in this
         process's environment even though nothing here wants it. A module
         that reads no environment cannot leak one — and the run id and the
-        eval-results commit are ARGUMENTS for that reason, not
+        persistent/eval-results commit are ARGUMENTS for that reason, not
         `$GITHUB_RUN_ID` read from underneath.
         """
         source = (REPO_ROOT / "scripts" / "render_roster_yaml.py").read_text(
@@ -30757,7 +30757,7 @@ elif 'worktree' in args and 'remove' in args:
     # reach a decision at all:
     #
     #   (a) THE RUNNING SET. The hostile document is written where
-    #       `eval-results` puts it — `<repo>/roster/latest.json`, the path
+    #       `persistent/eval-results` puts it — `<repo>/roster/latest.json`, the path
     #       `_resolve_roster` defaulted to on `424eebf` and the one
     #       `eval.yml` pointed `$EVAL_ROSTER` at. `select_models`, resolved
     #       the way a real run resolves it (no `--model`, no `--roster`, no
@@ -30773,7 +30773,7 @@ elif 'worktree' in args and 'remove' in args:
     #       a decision" are different claims and only the second is true.
     #
     # THE PLANT GOES IN A THROWAWAY CHECKOUT, NOT THE OPERATOR'S (#161).
-    # `roster/` is gitignored (it is published on `eval-results` and
+    # `roster/` is gitignored (it is published on `persistent/eval-results` and
     # untracked on `main`), which used to be read as licence to write the
     # plant at the real `<repo>/roster/latest.json` and `shutil.rmtree`
     # `<repo>/roster` in `addCleanup` — so a run of this suite in a
@@ -30828,7 +30828,7 @@ elif 'worktree' in args and 'remove' in args:
     def _assert_running_set_is_committed(self, published):
         """`published` is the roster this run WOULD have published from the
         hostile input — which is exactly what `eval.yml` wrote to
-        `eval-results` and what the next run read back on `424eebf`. It is
+        `persistent/eval-results` and what the next run read back on `424eebf`. It is
         planted where the published roster lands, and the running set must
         be the committed one regardless."""
         committed = self._committed()
@@ -30890,7 +30890,7 @@ elif 'worktree' in args and 'remove' in args:
     # --- row 1: round-13 BLOCKER B — one deletion from catalogue_seen ----
 
     def test_row1_a_catalogue_seen_deletion_cannot_reach_the_running_set(self):
-        """#147 defect 1. On `eval-results`, delete the ONE
+        """#147 defect 1. On `persistent/eval-results`, delete the ONE
         `catalogue_seen` entry that bridges a live arm's own census key
         onto it. Its 3,000 turns leave the attributable denominator, the
         arm measures 0.0%, and it is published `RETIRED ... (0.0%)` — rc
@@ -36271,7 +36271,7 @@ class TestPublishUsageCensus(unittest.TestCase):
     """scripts/publish_usage_census.sh, end to end against a LOCAL bare repo.
 
     The script clones skills-evals, runs the census against a fake
-    `~/.claude/projects`, and pushes usage/latest.json to the `eval-results`
+    `~/.claude/projects`, and pushes usage/latest.json to the `persistent/eval-results`
     branch. Here `origin` is a bare repository in a temp dir reached over
     `file://`, the clock is `CENSUS_NOW`, git's global and system config are
     switched off, and `HOME` is a scratch dir: no network, no real gh, no
@@ -36313,7 +36313,7 @@ class TestPublishUsageCensus(unittest.TestCase):
                               capture_output=True, text=True).stdout.strip()
 
     def _seed_origin(self):
-        """main = the census script and what it imports; eval-results = one
+        """main = the census script and what it imports; persistent/eval-results = one
         unrelated commit, the way the real branch starts."""
         self.git("init", "--bare", "--quiet", "-b", "main", str(self.origin))
         seed = self.tmp / "seed"
@@ -36330,12 +36330,12 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.git("commit", "--quiet", "-m", "seed", cwd=seed)
         self.git("remote", "add", "origin", self.url, cwd=seed)
         self.git("push", "--quiet", "origin", "main", cwd=seed)
-        self.git("checkout", "--quiet", "--orphan", "eval-results", cwd=seed)
+        self.git("checkout", "--quiet", "--orphan", "persistent/eval-results", cwd=seed)
         self.git("rm", "-rfq", ".", cwd=seed)
         (seed / "roster.txt").write_text("unrelated\n", encoding="utf-8")
         self.git("add", ".", cwd=seed)
         self.git("commit", "--quiet", "-m", "results seed", cwd=seed)
-        self.git("push", "--quiet", "origin", "eval-results", cwd=seed)
+        self.git("push", "--quiet", "origin", "persistent/eval-results", cwd=seed)
 
     def _fake_projects(self) -> Path:
         """The census's own leak fixture: hostile `message.model` values, a
@@ -36367,11 +36367,11 @@ class TestPublishUsageCensus(unittest.TestCase):
         return subprocess.run(["bash", str(self.SCRIPT), *args], env=env,
                               capture_output=True, text=True, timeout=120)
 
-    def head(self, branch="eval-results") -> str:
+    def head(self, branch="persistent/eval-results") -> str:
         return self.git("rev-parse", branch, cwd=self.origin)
 
     def published(self) -> dict:
-        return json.loads(self.git("show", "eval-results:usage/latest.json",
+        return json.loads(self.git("show", "persistent/eval-results:usage/latest.json",
                                    cwd=self.origin))
 
     def test_the_script_is_executable_and_strict(self):
@@ -36385,7 +36385,7 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.assertEqual(self.head(), before)
         self.assertIn("dry run", proc.stdout)
         self.assertNotIn("usage/latest.json",
-                         self.git("ls-tree", "-r", "--name-only", "eval-results",
+                         self.git("ls-tree", "-r", "--name-only", "persistent/eval-results",
                                   cwd=self.origin))
 
     def test_a_real_run_pushes_exactly_the_one_file_and_verifies_it(self):
@@ -36398,10 +36398,10 @@ class TestPublishUsageCensus(unittest.TestCase):
                                   cwd=self.origin), "1")
         self.assertEqual(self.git("diff", "--name-only", before, after,
                                   cwd=self.origin), "usage/latest.json")
-        self.assertEqual(self.git("log", "-1", "--format=%s", "eval-results",
+        self.assertEqual(self.git("log", "-1", "--format=%s", "persistent/eval-results",
                                   cwd=self.origin), self.SUBJECT)
         # Nothing else on the branch moved, and main was never written to.
-        self.assertEqual(self.git("show", "eval-results:roster.txt",
+        self.assertEqual(self.git("show", "persistent/eval-results:roster.txt",
                                   cwd=self.origin), "unrelated")
         self.assertEqual(self.git("rev-list", "--count", "main", cwd=self.origin), "1")
         self.assertIn("published", proc.stdout)
@@ -36415,7 +36415,7 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.assertEqual(document["counts"]["other"], {"2026-W36": 5})
         self.assertEqual(sorted(document["counts"]),
                          ["claude-haiku-4-5", "claude-opus-5", "other"])
-        blob = self.git("show", "eval-results:usage/latest.json", cwd=self.origin)
+        blob = self.git("show", "persistent/eval-results:usage/latest.json", cwd=self.origin)
         for leaked in (self.SECRET_PATH, self.SECRET_TEXT, "123456789012",
                        "private-client-work", "s.jsonl",
                        "11111111-2222-4333-8444-555555555555"):
@@ -36435,14 +36435,14 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.assertEqual(self.run_script().returncode, 0)
         first = self.head()
         clone = self.tmp / "aged"
-        self.git("clone", "--quiet", "--branch", "eval-results", self.url, str(clone))
+        self.git("clone", "--quiet", "--branch", "persistent/eval-results", self.url, str(clone))
         path = clone / "usage" / "latest.json"
         doc = json.loads(path.read_text(encoding="utf-8"))
         doc["generated_at"] = "2026-08-20T12:00:00Z"   # 15 days before NOW
         path.write_text(json.dumps(doc, indent=2, sort_keys=True) + "\n",
                         encoding="utf-8")
         self.git("commit", "--quiet", "-am", "age it", cwd=clone)
-        self.git("push", "--quiet", "origin", "eval-results", cwd=clone)
+        self.git("push", "--quiet", "origin", "persistent/eval-results", cwd=clone)
         aged = self.head()
         self.assertNotEqual(aged, first)
         proc = self.run_script()

@@ -1669,7 +1669,7 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
 
         on:
           push:
-            branches: [eval-results]
+            branches: [persistent/eval-results]
 
     cannot fire on a single one of those pushes. It is not red, not slow, and
     not logged anywhere — it simply never runs, which is the worst shape a CI
@@ -1682,7 +1682,7 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
     broken) and the listeners are read by parsing every workflow with a real
     YAML parser (never a line scan — a bare `on:` is the YAML 1.1 boolean True,
     which a regex reads straight past). What is asserted is the implication:
-    if any workflow listens for a push on `eval-results`, the mandated message
+    if any workflow listens for a push on `persistent/eval-results`, the mandated message
     may not carry a CI-skip token. Removing the token is a legitimate decision
     — it is what stops a results-branch publish feeding CI back into itself, so
     it has consequences of its own — and this test does not forbid it; it
@@ -1690,14 +1690,14 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
 
     `test_the_detector_sees_a_listener_when_there_is_one` is the reason the
     implication is not vacuous today. No workflow here listens on
-    `eval-results`, so the guard would pass against a detector that finds
+    `persistent/eval-results`, so the guard would pass against a detector that finds
     nothing ever; the positive control runs the same function over a synthetic
     document that does listen, and requires it to be found.
     """
 
     ROUTINE = EVAL_DIR / "ROUTINE.md"
     WORKFLOWS = REPO_ROOT / ".github" / "workflows"
-    RESULTS_BRANCH = "eval-results"
+    RESULTS_BRANCH = "persistent/eval-results"
     # GitHub's documented commit-message skip tokens. `skip-checks: true` is a
     # trailer rather than a message token and is deliberately not modelled.
     SKIP_TOKENS = ("[skip ci]", "[ci skip]", "[no ci]", "[skip actions]",
@@ -1730,7 +1730,7 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
         # A bare `on:` key parses as the YAML 1.1 boolean True, not "on".
         triggers = doc.get("on", doc.get(True)) if isinstance(doc, dict) else None
         # `on: push` and `on: [push]` are the two shorthand spellings, and both
-        # mean EVERY push on EVERY branch — `eval-results` included. Neither
+        # mean EVERY push on EVERY branch — `persistent/eval-results` included. Neither
         # parses to a mapping (`{True: 'push'}` and `{True: ['push']}`
         # respectively), so a mapping-only reader returns False on the exact
         # shapes this guard exists to catch, which is the silent never-fires
@@ -1774,7 +1774,7 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
     def test_the_detector_sees_a_listener_when_there_is_one(self):
         import yaml
         positive = yaml.safe_load(
-            "on:\n  push:\n    branches: [eval-results]\n")
+            "on:\n  push:\n    branches: [persistent/eval-results]\n")
         self.assertTrue(
             self._listens_on(positive, self.RESULTS_BRANCH),
             "the listener detector must find the shape the design note warns "
@@ -1857,7 +1857,7 @@ class PublishMessageAndPushTriggerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             workflows = Path(tmp)
             (workflows / "listener.yaml").write_text(
-                "on:\n  push:\n    branches: [eval-results]\njobs: {}\n",
+                "on:\n  push:\n    branches: [persistent/eval-results]\njobs: {}\n",
                 encoding="utf-8")
             with mock.patch.object(type(self), "WORKFLOWS", workflows):
                 self.assertEqual(

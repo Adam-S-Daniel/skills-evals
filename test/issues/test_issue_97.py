@@ -3174,7 +3174,7 @@ class TestIssue97(unittest.TestCase):
     # existing file outside the checkout was resolved, read, delivered to the
     # arm, and its content landed in
     # `results/guidance/<key>/<ts>/<arm>/transcripts/raw.json` at rc 0 — and
-    # on main that directory is pushed to the PUBLIC `eval-results` branch.
+    # on main that directory is pushed to the PUBLIC `persistent/eval-results` branch.
     # The trust boundary eval.yml states is that guidance content is EXECUTED
     # by the arm; reading and publishing a file from outside the checkout is
     # a different thing and is not implied by it.
@@ -3215,7 +3215,7 @@ class TestIssue97(unittest.TestCase):
                 self.OUTSIDE_MARKER.encode(), body,
                 f"{path} carries content read from outside the guidance "
                 "checkout — this directory is pushed to the public "
-                "eval-results branch")
+                "persistent/eval-results branch")
 
     def test_a_manifest_file_outside_the_checkout_is_refused_by_name(self):
         tmp = Path(tempfile.mkdtemp(prefix="guidance-escape-"))
@@ -3311,7 +3311,7 @@ class TestIssue97(unittest.TestCase):
             with self.subTest(doc=label):
                 folded = " ".join(text.split())
                 for phrase in ("only from inside", "trust boundary",
-                               "eval-results"):
+                               "persistent/eval-results"):
                     # assertTrue, not assertIn: assertIn's default message
                     # would dump the whole docstring (or DESIGN.md) into the
                     # failure ahead of the sentence that explains it.
@@ -3321,7 +3321,7 @@ class TestIssue97(unittest.TestCase):
                         "guidance content is executed "
                         "by the arm (the header's trust boundary) and that "
                         "the harness reads it only from inside the checkout, "
-                        "whose sink is the public eval-results branch")
+                        "whose sink is the public persistent/eval-results branch")
 
     # ------------------------------------------------------------------
     # F-1-N — the funnel is the only way to build a path from the checkout
@@ -4439,7 +4439,7 @@ class TestIssue97(unittest.TestCase):
     # main() on a6d165d, one arm per run: an arm named `..` exited 0 and
     # wrote `summary.json` and `transcripts/raw.json` one level ABOVE the
     # timestamped run directory — into the per-key directory that
-    # accumulates run history on the public eval-results branch — and `.`
+    # accumulates run history on the public persistent/eval-results branch — and `.`
     # wrote into the run directory itself. Round 2 tested `../esc` and
     # `a/b`; the two canonical traversal names were the ones the traversal
     # check let through.

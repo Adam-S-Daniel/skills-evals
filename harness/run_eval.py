@@ -498,7 +498,7 @@ def _validate_skill_name(skill: str) -> None:
 #: pull-request-only, so an arm, the judge, the preflight model or a
 #: `catalogue_seen` entry cannot appear here or vanish from here without a
 #: reviewed commit — which is the one property the published
-#: `roster/latest.json` on `eval-results` never had.
+#: `roster/latest.json` on `persistent/eval-results` never had.
 TRUSTED_ROSTER = Path(__file__).resolve().parent.parent / "evals" / "roster.yml"
 
 
@@ -506,7 +506,7 @@ def _resolve_roster(cli_value: Path | None) -> Path:
     """Model roster: --roster, else $EVAL_ROSTER, else the COMMITTED file.
 
     THE DEFAULT USED TO BE `roster/latest.json`, materialised by CI from the
-    `eval-results` branch and pointed at by `$EVAL_ROSTER` — a branch other
+    `persistent/eval-results` branch and pointed at by `$EVAL_ROSTER` — a branch other
     jobs on other machines write to, which the design treats as untrusted
     input. That made one line on that branch decide which models every
     unpinned fixture ran against, and fourteen review rounds on PR #129
@@ -556,7 +556,7 @@ def read_roster(roster_path: Path | None) -> tuple[dict | None, str | None]:
     # round 2 item 15): this problem string flows unchanged into
     # select_models' return value, which the caller writes into
     # summary.json — and eval.yml commits that file to the public
-    # eval-results branch.
+    # persistent/eval-results branch.
     if not path.is_file() or path.stat().st_size == 0:
         return None, f"no model roster at {path.name}"
     try:
@@ -699,7 +699,7 @@ def expand(value: str, env: dict) -> str:
 # own checkout. The arm's workspace is its cwd under bypassPermissions, `env`
 # is one of the first things a shell reaches for, and `_write_summary` writes
 # the arm's transcript to `results/<skill>/<ts>/<arm>/transcripts/raw.json`,
-# which `.github/workflows/eval.yml` pushes to the public `eval-results`
+# which `.github/workflows/eval.yml` pushes to the public `persistent/eval-results`
 # branch — so a variable that reaches the arm is a variable an arm can
 # publish.
 #
@@ -952,7 +952,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # it — falling back to the checkout dir's basename otherwise)
             # plus the RELATIVE glob, never the resolved absolute path: this
             # detail reaches summary.json, which eval.yml commits to the
-            # public eval-results branch (item 6, #129 review round 4 — the
+            # public persistent/eval-results branch (item 6, #129 review round 4 — the
             # same treatment select_models' own roster-path messages use).
             registry_label = arm.get("registry_name") or registry.name
             return {"error": "skill_not_found",
@@ -972,7 +972,7 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
             # exception type covers both honestly. The skill name, not
             # `skill_dest`'s absolute workspace path — this detail reaches
             # summary.json, which eval.yml commits to the public
-            # eval-results branch.
+            # persistent/eval-results branch.
             return {"error": "skill_install_failed",
                     "detail": f"could not install {skill}/ into the seed "
                               f"workspace ({type(exc).__name__})"}
@@ -1273,7 +1273,7 @@ HARNESS_NAME = "claude-code"
 # check and the `timeout=` argument are provably the same value.
 VERSION_TIMEOUT_S = 30
 #: A version string longer than this is cut: it is the CLI's own output,
-#: recorded into a summary.json the public eval-results branch carries.
+#: recorded into a summary.json the public persistent/eval-results branch carries.
 VERSION_MAX_CHARS = 64
 #: Every character a version string needs — the same set the workflows'
 #: install step keeps (`${version//[^A-Za-z0-9._() -]/}`). Anything else is
@@ -1556,7 +1556,7 @@ def _run_arm(arm_name: str, fixture: dict, seed: Path, registries: dict[str, dic
                     if not entry["path"].is_dir():
                         # The registry's NAME and layout, not its resolved
                         # absolute path — this detail reaches summary.json,
-                        # which eval.yml commits to the public eval-results
+                        # which eval.yml commits to the public persistent/eval-results
                         # branch (item 6, #129 review round 4).
                         registry_error = {
                             "error": "registry_not_found",
@@ -1745,7 +1745,7 @@ def _names_a_new_directory(name: str) -> bool:
     names that do NOT. Measured through main(), one arm per run: an arm named
     `..` wrote `summary.json` and `transcripts/raw.json` one level ABOVE the
     timestamped run directory — into the per-key directory that accumulates
-    run history on the public `eval-results` branch — and `.` wrote into the
+    run history on the public `persistent/eval-results` branch — and `.` wrote into the
     run directory itself, on top of whatever was there.
 
     Stated as the property rather than as a blocklist of the two names that

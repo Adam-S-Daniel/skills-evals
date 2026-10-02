@@ -2,7 +2,7 @@
 #
 # The roster answers "which models should this harness be running against
 # today?" from two inputs: what the Models API says is AVAILABLE, and what the
-# fleet is actually USING (the census published to `eval-results` as
+# fleet is actually USING (the census published to `persistent/eval-results` as
 # `usage/latest.json`). Arms pinned as literals in each fixture went stale
 # silently — nothing here noticed when a model shipped or retired — which is
 # the problem this file exists to close (#67).
@@ -88,7 +88,7 @@ tiers:
 # only once no run has ever observed it — FIRST-RUN CAVEAT: with no
 # `catalogue_seen` history yet (a genuine first run, a previous roster that
 # could not be read, OR THE MIGRATION CASE — the `previous.json` already
-# published on `eval-results` predates this field entirely, so the first
+# published on `persistent/eval-results` predates this field entirely, so the first
 # run after it merges behaves exactly like a genuine first run), a model
 # retired before this harness's first run is unattributable, and its usage
 # silently drops from the denominator until a run observes it directly. An
@@ -253,7 +253,7 @@ min_ranked_share: 0.01
 # ruleset-protected and pull-request-only, so an entry cannot appear there
 # or vanish from there without a reviewed commit. That is
 # docs/decisions/0001-roster-trusted-on-main.md, and it is what replaced
-# reading the history back from `roster/latest.json` on `eval-results` —
+# reading the history back from `roster/latest.json` on `persistent/eval-results` —
 # a branch other jobs on other machines write to, which this harness
 # treated as untrusted input (issue #147).
 #
@@ -310,9 +310,9 @@ min_ranked_share: 0.01
 #
 # THE ONE INPUT STILL WRITTEN BY ANOTHER MACHINE IS THE CENSUS.
 # `.github/workflows/eval.yml` takes it from
-# `origin/eval-results:usage/latest.json` — and takes the previous roster
+# `origin/persistent/eval-results:usage/latest.json` — and takes the previous roster
 # from the COMMITTED `evals/roster.yml` instead, which is the whole of
-# #147: one write to `eval-results` used to grant both, and now it grants
+# #147: one write to `persistent/eval-results` used to grant both, and now it grants
 # only this one. The census is trusted for nothing:
 # it can shape a PROPOSAL and nothing else. What guards it is named rather
 # than assumed — the freshness window and the ranked/raw floors below, the
@@ -330,7 +330,7 @@ min_ranked_share: 0.01
 # A person merges it or does not. The defence is that the distortion is
 # visible in a diff on `main`'s history rather than silent on a branch
 # nobody reads, and that reverting the merge undoes it — the two
-# properties `eval-results` never had.
+# properties `persistent/eval-results` never had.
 #
 # Ageing out is not a repair, and that has not changed. It ends a plant's
 # future effect; it does not undo a retirement the plant already caused —
