@@ -20,7 +20,7 @@ reconstructed from memory.
   authoritative state; this file is the map to it.
 - **Every review report, worker brief, review prompt and verification log**:
   the branch
-  [`claude/orchestration-state`](https://github.com/Adam-S-Daniel/skills-evals/tree/claude/orchestration-state/.orchestration)
+  [`persistent/orchestration-state`](https://github.com/Adam-S-Daniel/skills-evals/tree/persistent/orchestration-state/.orchestration)
   (reference only, never merged), laid out as
   `.orchestration/<YYYY-MM-DD>/{briefs,prompts,reviews,verify,ctx}/` plus
   `state-log.md`, the orchestrator's append-only chronological log.
@@ -1214,7 +1214,7 @@ it.
 ## 7. Resume checklist
 
 1. Read the board's latest body ([#126](https://github.com/Adam-S-Daniel/skills-evals/issues/126))
-   and the last entries of `state-log.md` on `claude/orchestration-state`.
+   and the last entries of `state-log.md` on `persistent/orchestration-state`.
 2. Confirm reach: skills-evals, _agent-guidance, agentskills, cms-platform and
    adamdaniel.ai attached; the session-provisioned GitHub connector present.
 3. Read Adam's answers: the board's comments, and — for #129, the only park

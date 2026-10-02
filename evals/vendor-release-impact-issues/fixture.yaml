@@ -87,7 +87,7 @@ objective_checks:
   # alone: `judge.score` sees the transcript and diff, not this check's
   # result.
   #
-  # Run 36263643613 (results 20260926T184529Z on persistent/eval-results) failed the
+  # Run 36263643613 (results 20260926T184529Z on eval-results) failed the
   # old version of this check for lacking the 4.1.0 and 4.3.0 `published`
   # stamps. Its judge notes say it named 4.1.0 in prose; whether it stamped
   # that mention is unknown because the workspace was not kept.
@@ -137,7 +137,7 @@ objective_checks:
   # The id changed because the semantics changed (version-binding is new,
   # and coverage moved explicitly to the judge): the OLD id,
   # `publish-times-are-github-publish-not-tag-or-npm`, is what scored run
-  # 20260926T184529Z. Past summaries on persistent/eval-results carry the old id; no
+  # 20260926T184529Z. Past summaries on eval-results carry the old id; no
   # fixture version is recorded, so scores from before and after this change
   # aren't comparable.
   - id: publish-times-source-and-version-bound
