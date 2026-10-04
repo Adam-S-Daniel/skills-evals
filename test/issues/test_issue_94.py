@@ -253,8 +253,8 @@ for name, constraints in {
 
 FIXTURE_DIR = Path(__file__).resolve().parents[2] / "evals" / "embeddable-tool-pages"
 FIXTURE_SEED = FIXTURE_DIR / "seed"
-FIXTURE_IDS = ("asset-copy", "tool-front-matter", "source-unchanged",
-               "existing-tool-unchanged", "site-wiring-unchanged")
+FIXTURE_IDS = ("asset-copy", "tool-front-matter", "tool-entry-listing", "post-embed",
+               "source-unchanged", "existing-tool-unchanged", "site-wiring-unchanged")
 SOURCE_APP = "seed/new-tool/index.html"
 PUBLISHED_APP = "assets/tools/unit-converter/index.html"
 TOOL_ENTRY = "_tools/unit-converter.md"
@@ -262,6 +262,22 @@ EXISTING_PATHS = ("assets/tools/existing/index.html", "_data/tool_sources/existi
                   "_tools/existing.md")
 WIRING_PATHS = ("_config.yml", "_layouts/tool.html", "_layouts/default.html",
                 "_includes/header.html", "tools/index.html", "admin/collections.site.yml")
+
+
+def add_post_embed(workspace, embed_html):
+    post = workspace / "_posts/2026-01-01-example.md"
+    content = post.read_text()
+    post.write_text(content.replace(
+        "\n## Working with estimates", "\n<!-- html-embed:start -->\n" + embed_html +
+        "\n<!-- html-embed:end -->\n\n## Working with estimates"))
+
+
+def replace_post_embed(workspace, embed_blocks):
+    post = workspace / "_posts/2026-01-01-example.md"
+    content = post.read_text()
+    start = content.index("<!-- html-embed:start -->")
+    end = content.index("<!-- html-embed:end -->", start) + len("<!-- html-embed:end -->")
+    post.write_text(content[:start] + embed_blocks + content[end:])
 
 
 def tool_fixture():
@@ -281,14 +297,12 @@ def tool_workspace(good=False):
             target.parent.mkdir(parents=True)
             shutil.copyfile(workspace / SOURCE_APP, target)
             (workspace / TOOL_ENTRY).write_text(page())
-            post = workspace / "_posts/2026-01-01-example.md"
-            post.write_text(post.read_text().replace(
-                "\n## Working with estimates", "\n<!-- html-embed:start -->\n"
-                '<div class="post-embed">\n'
-                '<iframe src="/assets/tools/unit-converter/" title="Length Converter" '
-                'loading="lazy" style="width:100%; height:80vh; border:0;"></iframe>\n'
-                '<p><a href="/tools/unit-converter/">Open the full-page version</a></p>\n'
-                "</div>\n<!-- html-embed:end -->\n\n## Working with estimates"))
+            add_post_embed(workspace,
+                           '<div class="post-embed">\n'
+                           '<iframe src="/assets/tools/unit-converter/" title="Length Converter" '
+                           'loading="lazy" style="width:100%; height:80vh; border:0;"></iframe>\n'
+                           '<p><a href="/tools/unit-converter/">Open the full-page version</a></p>\n'
+                           "</div>")
         yield root, workspace
     finally:
         assert workspace.resolve().is_relative_to(owned_root)
@@ -317,7 +331,15 @@ class TestIssue94Fixture(unittest.TestCase):
                          "_posts/2026-01-01-example.md below the intro.")
         self.assertEqual([c["id"] for c in fixture["objective_checks"]], list(FIXTURE_IDS))
         self.assertEqual([c["type"] for c in fixture["objective_checks"]],
-                         ["file_digests_match", "front_matter_has"] + ["files_unchanged"] * 3)
+                         ["file_digests_match", "front_matter_has", "dir_listing_matches",
+                          "file_matches"] + ["files_unchanged"] * 3)
+        checks = {check["id"]: check for check in fixture["objective_checks"]}
+        self.assertEqual(checks["tool-entry-listing"]["paths"], ["_tools"])
+        self.assertEqual(checks["tool-entry-listing"]["expected"],
+                         ["existing.md", "unit-converter.md"])
+        self.assertEqual(checks["post-embed"]["paths"], ["_posts/2026-01-01-example.md"])
+        self.assertIs(checks["post-embed"]["require_present"], True)
+        self.assertTrue(checks["post-embed"]["must_match"])
         self.assertEqual(fixture["objective_checks"][0]["sha256"],
                          hashlib.sha256((FIXTURE_SEED / SOURCE_APP).read_bytes()).hexdigest())
         self.assertEqual(fixture["judge"]["weights"],
@@ -332,7 +354,8 @@ class TestIssue94Fixture(unittest.TestCase):
 
     def test_pristine_fails_behavior_and_passes_restraint(self):
         with tool_workspace() as (_root, workspace):
-            self.assert_only_failed(workspace, "asset-copy", "tool-front-matter")
+            self.assert_only_failed(workspace, "asset-copy", "tool-front-matter",
+                                    "tool-entry-listing", "post-embed")
 
     def test_known_good_passes_every_check(self):
         with tool_workspace(good=True) as (_root, workspace):
@@ -345,6 +368,8 @@ class TestIssue94Fixture(unittest.TestCase):
 
     def test_each_check_has_an_isolated_mutation_and_restoration(self):
         mutations = {"asset-copy": PUBLISHED_APP, "tool-front-matter": TOOL_ENTRY,
+                     "tool-entry-listing": "_tools/length-converter.md",
+                     "post-embed": "_posts/2026-01-01-example.md",
                      "source-unchanged": SOURCE_APP,
                      "existing-tool-unchanged": EXISTING_PATHS[0],
                      "site-wiring-unchanged": WIRING_PATHS[0]}
@@ -352,14 +377,99 @@ class TestIssue94Fixture(unittest.TestCase):
             with self.subTest(check=check_id), tool_workspace(good=True) as (_root, workspace):
                 self.assert_only_failed(workspace)
                 target = workspace / path
-                original = target.read_bytes()
-                if check_id == "tool-front-matter":
+                original = target.read_bytes() if check_id != "tool-entry-listing" else None
+                if check_id == "tool-entry-listing":
+                    target.write_text(page())
+                elif check_id == "tool-front-matter":
                     target.write_text(page(FIELDS.replace("slug: unit-converter", "slug: wrong")))
+                elif check_id == "post-embed":
+                    target.write_text(target.read_text().replace(
+                        "/assets/tools/unit-converter/", "/tools/unit-converter/"))
                 else:
                     target.write_bytes(original + b"\nchanged\n")
                 self.assert_only_failed(workspace, check_id)
-                target.write_bytes(original)
+                if check_id == "tool-entry-listing":
+                    target.unlink()
+                else:
+                    target.write_bytes(original)
                 self.assert_only_failed(workspace)
+
+    def test_tool_entry_listing_rejects_duplicate_and_unexpected_entries(self):
+        for extra in ("length-converter.md", "unexpected.txt", "nested"):
+            with self.subTest(extra=extra), tool_workspace(good=True) as (_root, workspace):
+                path = workspace / "_tools" / extra
+                if extra == "nested":
+                    path.mkdir()
+                else:
+                    path.write_text(page())
+                self.assert_only_failed(workspace, "tool-entry-listing")
+
+    def test_post_embed_accepts_lexical_attribute_variants(self):
+        variants = {
+            "skill_multiline_src_first": (
+                '<iframe src="/assets/tools/unit-converter/" title="Length Converter"\n'
+                'loading="lazy" style="width:100%; height:80vh; border:0;"></iframe>\n'
+                '<p><a href="/tools/unit-converter/">Open the full-page version</a></p>'),
+            "attributes_before_src_double_quotes": (
+                '<iframe title="Length Converter" loading="lazy"\n'
+                ' src = "/assets/tools/unit-converter/" style="width:100%"></iframe>\n'
+                '<a href="/tools/unit-converter/">Full page</a>'),
+            "attributes_before_src_single_quotes_and_trailing_spaces": (
+                "<div class='post-embed'>  \n"
+                "<iframe title='Length Converter'\n"
+                "  src  =  '/assets/tools/unit-converter/'\t\n"
+                "style='width:100%'></iframe>   \n"
+                "<a href='/tools/unit-converter/'>Full page</a>\n</div>   "),
+        }
+        for name, html in variants.items():
+            with self.subTest(variant=name), tool_workspace(good=True) as (_root, workspace):
+                replace_post_embed(workspace, "<!-- html-embed:start -->\n" + html +
+                                   "\n<!-- html-embed:end -->")
+                self.assert_only_failed(workspace)
+        with tool_workspace(good=True) as (_root, workspace):
+            replace_post_embed(workspace,
+                               "<!-- html-embed:start -->\n<!-- html-embed:end -->\n"
+                               "<!-- html-embed:start -->\n" + variants["skill_multiline_src_first"] +
+                               "\n<!-- html-embed:end -->")
+            self.assert_only_failed(workspace)
+
+    def test_post_embed_rejects_missing_or_misplaced_iframe(self):
+        valid = ('<div class="post-embed"><iframe src="/assets/tools/unit-converter/" '
+                 'title="Length Converter"></iframe><a href="/tools/unit-converter/">Full page</a></div>')
+        variants = {
+            "no_iframe_link_and_prose_only":
+                '<a href="/assets/tools/unit-converter/">Open app</a>\n'
+                'See /assets/tools/unit-converter/ and /tools/unit-converter/.',
+            "wrong_src": valid.replace("/assets/tools/unit-converter/", "/tools/unit-converter/", 1),
+            "renamed_iframe_tag": valid.replace("<iframe ", "<iframe-other ", 1),
+            "data_src_does_not_count": valid.replace("src=", "data-src=", 1),
+            "missing_src": valid.replace(' src="/assets/tools/unit-converter/"', "", 1),
+            "src_without_matching_quote": valid.replace('src="/assets/tools/unit-converter/"',
+                                                          "src='/assets/tools/unit-converter/\""),
+            "iframe_before_block": valid + "\n<!-- html-embed:start -->\n<!-- html-embed:end -->",
+            "iframe_after_block": "<!-- html-embed:start -->\n<!-- html-embed:end -->\n" + valid,
+            "stray_iframe_cannot_bridge_earlier_end":
+                "<!-- html-embed:start -->\n<!-- html-embed:end -->\n" + valid +
+                "\n<!-- html-embed:end -->",
+            "missing_start": valid + "\n<!-- html-embed:end -->",
+            "missing_end": "<!-- html-embed:start -->\n" + valid,
+            "reversed_sentinels": "<!-- html-embed:end -->\n" + valid +
+                                  "\n<!-- html-embed:start -->",
+        }
+        for name, html in variants.items():
+            with self.subTest(variant=name), tool_workspace(good=True) as (_root, workspace):
+                replace_post_embed(workspace, html)
+                self.assert_only_failed(workspace, "post-embed")
+
+    def test_post_embed_rejects_missing_and_empty_post(self):
+        for state in ("missing", "empty"):
+            with self.subTest(state=state), tool_workspace(good=True) as (_root, workspace):
+                post = workspace / "_posts/2026-01-01-example.md"
+                if state == "missing":
+                    post.unlink()
+                else:
+                    post.write_text("")
+                self.assert_only_failed(workspace, "post-embed")
 
     def test_all_protected_paths_detect_edits_deletions_and_additions(self):
         owners = {"source-unchanged": (SOURCE_APP,),
@@ -376,7 +486,10 @@ class TestIssue94Fixture(unittest.TestCase):
                             target.unlink()
                         else:
                             target.write_bytes(original + b"\nchanged\n")
-                        self.assert_only_failed(workspace, owner)
+                        self.assert_only_failed(workspace, owner,
+                                                *( ("tool-entry-listing",)
+                                                   if path == "_tools/existing.md" and mutation == "delete"
+                                                   else () ))
                         target.write_bytes(original)
                         self.assert_only_failed(workspace)
         for path, owner in (("_data/tool_sources/extra.yml", "existing-tool-unchanged"),

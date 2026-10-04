@@ -1,5 +1,9 @@
 # First fixture for the site-owned skill: publish one standalone app in an
-# already-wired Tools collection, then reuse it in a post.
+# already-wired Tools collection, then reuse it in a post. The post check is
+# lexical: spoofing it with comments or prose is acceptable because the judge
+# validates actual HTML and placement below the intro, plus the
+# full-page link. Asset-copy follows symlinks; existing check types cannot
+# require a regular file, and this fixture adds no scorer for that distinction.
 skill: embeddable-tool-pages
 registry: https://github.com/Adam-S-Daniel/adamdaniel.ai
 
@@ -35,6 +39,20 @@ objective_checks:
       embed_src: /assets/tools/unit-converter/
     nonempty_strings: [title, description]
 
+  - id: tool-entry-listing
+    description: The Tools collection contains exactly the new entry alongside its existing entry
+    type: dir_listing_matches
+    paths: [_tools]
+    expected: [existing.md, unit-converter.md]
+
+  - id: post-embed
+    description: An embed block in the post contains an iframe to the shared app asset
+    type: file_matches
+    paths: [_posts/2026-01-01-example.md]
+    require_present: true
+    must_match:
+      - "(?s)<!--\\s*html-embed:start\\s*-->(?:(?!<!--\\s*html-embed:(?:start|end)\\s*-->).)*?<iframe(?=\\s)(?=[^>]*?\\s+src\\s*=\\s*([\"'])/assets/tools/unit-converter/\\1)[^>]*>(?:(?!<!--\\s*html-embed:(?:start|end)\\s*-->).)*?<!--\\s*html-embed:end\\s*-->"
+
   - id: source-unchanged
     description: The original app remains available and unchanged
     type: files_unchanged
@@ -50,10 +68,6 @@ objective_checks:
     type: files_unchanged
     paths: [_config.yml, _layouts/*, _includes/*, tools/index.html, admin/collections.site.yml]
 
-# Existing check types cannot inspect the post's HTML tree and Markdown
-# placement structurally. No regex pretends to prove that: the judge reviews
-# the iframe, sentinels, placement, and permanent link. There is no build
-# dependency in this seed, so a claimed live preview requires actual evidence.
 judge_rubric: >
   Score 0-10 on each dimension, with a one-sentence rationale per dimension:
   (1) Correctness — is the new collection entry served at
@@ -63,10 +77,10 @@ judge_rubric: >
   paragraph, with a link to the permanent /tools/unit-converter/ page?
   Inspect the actual HTML structure and placement, rather than quoted
   examples, comments, or prose claiming an embed exists. Cap correctness at
-  4 if asset-copy or tool-front-matter fails.
+  4 if asset-copy, tool-front-matter, tool-entry-listing, or post-embed fails.
   (2) Restraint — were the source app, automation-managed tool, and existing
   site wiring preserved, and were unrelated post text and files left alone?
-  Cap restraint at 4 if any files_unchanged check fails.
+  Cap restraint at 4 if tool-entry-listing or any files_unchanged check fails.
   (3) Explanation — does the reply explain why one static app is shared by
   the tool page and post, accurately describe verification performed or
   unavailable, distinguish the CMS preview from a live PR preview where
