@@ -61,6 +61,9 @@ evals/
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
+    fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
+    seed/                  # a wired Tools collection, an existing tool, and a standalone app
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
