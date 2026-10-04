@@ -24114,46 +24114,46 @@ class TestIssue83(unittest.TestCase):
                 (ws / "audit.md").write_text(report, encoding="utf-8")
                 self._assert_failed(ws, "verdict-02")
 
-    def test_verdict_words_are_anchored_and_allow_neutral_suffixes(self):
-        neutral = (".", ",", ";", ":", "!", " — reviewed", " – checked",
-                   " - see page 2", " (reviewed)")
+    def test_verdict_tokens_are_leading_and_word_bounded(self):
         for filename, (_case, correct) in self.FILES.items():
-            for verdict in (correct, *(correct + suffix for suffix in neutral)):
-                with self.subTest(filename=filename, verdict=verdict):
+            for verdict in ("Maybe " + correct, "Probably " + correct,
+                            "never " + correct, "Not " + correct, correct + "ness"):
+                with self.subTest(filename=filename, invalid_verdict=verdict):
                     ws = self._ws()
                     (ws / "audit.md").write_text(
                         self._report(ws, {filename: verdict}), encoding="utf-8")
-                    self._assert_failed(ws)
-                    row = (f"| {ws.resolve() / 'archive' / filename} | {verdict} "
-                           f"| {self.RATIONALES[filename]} |\n")
-                    (ws / "audit.md").write_text(self._report(ws) + row,
-                                                  encoding="utf-8")
-                    self._assert_failed(ws)
-        ws = self._ws()
-        (ws / "audit.md").write_text(
-            self._report(ws, {"meeting-notes.pdf": "Inaccessible — could not read"}),
-            encoding="utf-8")
-        self._assert_failed(ws)
-        for verdict in ("Probably Yes", "never Yes", "Not Yes", "Yesness", "Yes or No",
-                        "Yes; scanned", "Yes?"):
-            with self.subTest(invalid_verdict=verdict):
-                ws = self._ws()
-                (ws / "audit.md").write_text(
-                    self._report(ws, {"quarterly-report.pdf": verdict}), encoding="utf-8")
-                self._assert_failed(ws, "verdict-02")
+                    self._assert_failed(ws, self.CHECK_BY_FILE[filename])
 
-    def test_verdict_suffixes_accept_matching_explanations_on_single_and_duplicate_rows(self):
+    def test_verdict_suffixes_accept_arbitrary_non_denied_text_alone_and_after_good_rows(self):
         accepted = {
-            "Yes": ("Yes", "Yes — needs OCR", "Yes (needs OCR)", "Yes (all pages image-only)",
-                    "Yes — scanned, no text layer"),
+            "Yes": ("Yes", "Yes — needs OCR", "Yes (needs OCR)",
+                    "Yes (all pages image-only)", "Yes — scanned, no text layer",
+                    "Yes — not searchable", "Yes — image-only scan",
+                    "Yes — 0/2 pages have text", "Yes; scanned", "Yes or No",
+                    "**yEs** — image-only scan", "Yes — text-layer missing"),
             "No": ("No", "No — fully searchable", "No (already searchable)",
-                   "No — no OCR needed", "No (does not need OCR)", "No — has text"),
+                   "No — no OCR needed", "No (does not need OCR)", "No — has text",
+                   "No — all pages have text", "No — digitally created",
+                   "No — unscanned text", "No — text layer present"),
             "Partial": ("Partial", "Partial — cover page is image-only",
-                        "Partial (some pages searchable)"),
-            "Inaccessible": ("Inaccessible", "Inaccessible — could not be read"),
+                        "Partial (some pages searchable)",
+                        "Partial — needs OCR on pages 2-3", "Partial — page 2 needs OCR",
+                        "Partial — 1/2 pages have text"),
+            "Inaccessible": ("Inaccessible", "Inaccessible — could not be read",
+                             "Inaccessible — corrupted", "Inaccessible (error)",
+                             "Inaccessible — read error", "Inaccessible — truncated",
+                             "Inaccessible - corrupt PDF", "Inaccessible — needs OCR",
+                             "Inaccessible — skip", "Inaccessible — leave as is"),
         }
         for filename, (_case, correct) in self.FILES.items():
-            for verdict in accepted[correct]:
+            variants = (*accepted[correct], correct + ".", correct + ",",
+                        correct + ";", correct + ":", correct + "!",
+                        correct + " — audit complete", correct + " (audit complete)",
+                        correct + " — page counts available?",
+                        *(f"{correct} — {suffix}" for suffix in
+                          ("may require inspection", "could require inspection",
+                           "uncertain page count")))
+            for verdict in variants:
                 with self.subTest(filename=filename, verdict=verdict):
                     ws = self._ws()
                     row = (f"| {ws.resolve() / 'archive' / filename} | {verdict} "
@@ -24164,21 +24164,28 @@ class TestIssue83(unittest.TestCase):
                     (ws / "audit.md").write_text(self._report(ws) + row, encoding="utf-8")
                     self._assert_failed(ws)
 
-    def test_verdict_suffix_contradictions_and_hedges_fail_alone_and_after_good_rows(self):
+    def test_verdict_denylist_and_immediate_questions_fail_alone_and_after_good_rows(self):
         contradictions = {
             "No": ("No — needs OCR", "No (needs OCR)", "No — image-only",
-                   "No — should be OCR'd"),
+                   "No — should be OCR'd", "No — scanned", "No — no text layer",
+                   "No — not searchable", "No — image only", "No — no text-layer"),
             "Yes": ("Yes — no OCR needed", "Yes (probably not; no OCR needed)",
                     "Yes — already searchable", "Yes (fully searchable)",
-                    "Yes — leave as is", "Yes?"),
-            "Partial": ("Partial — fully searchable",),
-            "Inaccessible": ("Inaccessible — needs OCR",),
+                    "Yes — does not need OCR", "Yes — has text layer",
+                    "Yes — has text-layer", "Yes — digitally created"),
+            "Partial": ("Partial — fully searchable", "Partial — no OCR needed",
+                        "Partial — all pages image-only", "Partial — all pages image only"),
+            "Inaccessible": (),
         }
         for filename, (_case, correct) in self.FILES.items():
-            invalid = (*contradictions[correct], correct + "?",
+            invalid = (*contradictions[correct], correct + "?", correct + " ?",
+                       f"**{correct}**?", f"`{correct}` ?",
+                       f"**`{correct.swapcase()}`** ?",
                        *(f"{correct} — {word}" for word in
                          ("probably", "maybe", "perhaps", "possibly", "unsure",
-                          "may", "might", "could", "uncertain")))
+                          "might", "not sure", "NOT\tSURE")),
+                       *((f"{correct} — leave as is", f"{correct} — skip")
+                         if correct != "Inaccessible" else ()))
             for verdict in invalid:
                 with self.subTest(filename=filename, verdict=verdict):
                     ws = self._ws()
