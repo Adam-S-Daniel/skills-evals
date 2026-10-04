@@ -11506,6 +11506,7 @@ class TestIssue67Review6(unittest.TestCase):
         self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
         reason = next(e["reason"] for e in result["excluded"]
                       if e["id"] == "claude-haiku-4-5")
+        self.assertIn("newest in the haiku tier", reason)
         self.assertIn("no model in that tier carries 10%", reason)
         self.assertNotIn(self.UNDATED, self._seen_ids(result))
         self.assertNotIn(self.DATED, self._seen_ids(result))
@@ -11538,6 +11539,7 @@ class TestIssue67Review6(unittest.TestCase):
         self.assertNotIn("claude-haiku-4-5", self._arm_ids(result))
         reason = next(e["reason"] for e in result["excluded"]
                       if e["id"] == "claude-haiku-4-5")
+        self.assertIn("newest in the haiku tier", reason)
         self.assertIn("no model in that tier carries 10%", reason)
         # Mutation check (manual): deleting `candidate in catalogue_seen
         # or folded in catalogue_seen` makes the 500 turns unattributable
@@ -30847,6 +30849,18 @@ elif 'worktree' in args and 'remove' in args:
         self.assertNotEqual(
             run_eval._resolve_roster(None), planted,
             "selection must not resolve to the published roster")
+        # The plant above sits in a throwaway root, so a resolver reverted to
+        # the `424eebf` default — `Path(__file__)`-anchored, blind to the
+        # rebound `TRUSTED_ROSTER` — never reads it, and when the operator's
+        # own `roster/latest.json` happens to hold the committed arms the
+        # running-set equalities above stay green. Compare against the path
+        # that revert resolves to, which does not depend on what is on disk
+        # (#166 item 1).
+        self.assertNotEqual(
+            run_eval._resolve_roster(None),
+            Path(run_eval.__file__).resolve().parent.parent
+            / "roster" / "latest.json",
+            "selection must not resolve to this checkout's published roster")
 
     #: A live catalogue with a NEWER model beside the victim, so there is
     #: no newest-per-tier fallback to rescue a share the denominator got
@@ -31081,7 +31095,10 @@ elif 'worktree' in args and 'remove' in args:
                                create=True):
             row._plant_published_roster(
                 {"arms": [{"id": self._GHOST, "reason": "planted"}]})
-            row.doCleanups()
+            # `doCleanups` returns False when a cleanup raised, and swallows
+            # the exception itself: assert on the result (#166 item 1).
+            self.assertTrue(row.doCleanups(),
+                            "a cleanup the helper registered failed")
 
         for path, payload in seeded.items():
             self.assertTrue(path.is_file(),
@@ -31092,6 +31109,53 @@ elif 'worktree' in args and 'remove' in args:
                              "this suite does not own")
         self.assertEqual(snapshot(), before,
                          "the helper changed a checkout it does not own")
+
+    def test_the_plant_helper_plants_only_inside_a_temporary_directory(self):
+        """#166 item 1. The test above shows the helper ignores the deleted
+        `_PUBLISHED` constant; this one asserts the invariant itself, on
+        what the helper actually does: the file it plants is inside a
+        directory it created under the temporary directory, never inside
+        this checkout's `roster/`, the cleanups it registered all succeed,
+        and the planted root is gone afterwards.
+
+        Nothing here removes a path derived from what the helper returned
+        unless that path was first shown to be under the temporary
+        directory: a helper that planted at `<repo>/roster/latest.json`
+        would otherwise have this test delete the checkout it runs in.
+        """
+        real_roster = REPO_ROOT / "roster"
+        tmp_root = Path(tempfile.gettempdir()).resolve()
+
+        def snapshot():
+            if not real_roster.is_dir():
+                return None
+            return {path.relative_to(real_roster).as_posix(): path.read_bytes()
+                    for path in sorted(real_roster.rglob("*"))
+                    if path.is_file()}
+
+        before = snapshot()
+        row = TestIssue147("test_row5_the_open_cell_cannot_reach_the_running_set")
+        planted = row._plant_published_roster(
+            {"arms": [{"id": self._GHOST, "reason": "planted"}]})
+        root = planted.parent.parent
+        self.assertTrue(planted.is_file())
+        self.assertTrue(
+            root.resolve().is_relative_to(tmp_root)
+            and not REPO_ROOT.resolve().is_relative_to(root.resolve()),
+            f"the helper planted under {root}, not the temporary directory")
+        # Only for a failed assertion below: the real cleanup is the
+        # helper's own, and the test asserts it ran.
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        self.assertFalse(
+            planted.resolve().is_relative_to(real_roster.resolve()),
+            "the helper planted inside this checkout's roster/")
+        self.assertEqual(snapshot(), before,
+                         "the helper changed this checkout's roster/")
+        cleaned = row.doCleanups()
+        self.assertTrue(cleaned, "a cleanup the helper registered failed")
+        self.assertFalse(root.exists(), "the helper left its checkout behind")
+        self.assertEqual(snapshot(), before,
+                         "the cleanups changed this checkout's roster/")
 
     def test_no_row_above_can_be_applied_without_a_human(self):
         """The claim every row leans on, asserted once at the workflow:
@@ -31342,7 +31406,7 @@ _ENVIRON = object()
 # env[MARKER] = "1"` shape that every reviewed sink in this repository uses.
 _COPY = object()
 # A BOUND MARKER-CLEARING METHOD of the mapping: `f = os.environ.pop` parked
-# on a name, then `f(MARKER, None)`. That call's `func` is a bare NAME, so no
+# on a name by a plain assignment, then `f(MARKER, None)`. That call's `func` is a bare NAME, so no
 # attribute rule below looks at it, and the mapping appears in no argument
 # either — the bound method carries it. Round 5 measured three spellings of it
 # keeping a sink's proof. Resolving the member is what gives the rules
@@ -31688,8 +31752,24 @@ def _bound_scope_walk(stmt, bindings):
         # iterable, a `with` item, an `except` clause.
         if id(child) not in within:
             yield from _bound_scope_walk(child, bindings)
+    # A name the header BINDS holds something this parser cannot read inside
+    # every block of the statement: `for x in ...`, `with ... as x`,
+    # `except ... as x` and a walrus in a header (#166 item 2). Without this,
+    # a benign binding of the same name from BEFORE the statement survived
+    # into the body and exonerated a write through it. An `except` clause is
+    # walked as a statement of its own below, so its body's names are not
+    # the `try` header's.
+    header_bound = {name for child in ast.iter_child_nodes(stmt)
+                    if id(child) not in within
+                    and not isinstance(child, (ast.ExceptHandler,
+                                               ast.match_case))
+                    for name in _assigned_names(child)}
+    if isinstance(stmt, ast.ExceptHandler) and stmt.name:
+        header_bound.add(stmt.name)
     for block in blocks:
         local = dict(bindings)
+        for name in header_bound:
+            local[name] = _UNKNOWN
         for node in block:
             yield from _bound_scope_walk(node, local)
             _bind_statement(node, local)
@@ -32555,7 +32635,10 @@ class _SuiteForkScan:
         write. `X.setdefault(...)` cannot remove a key and is not one either.
 
         (4) A BOUND METHOD OF THE MAPPING, called through the name it was
-        parked on. `f = os.environ.pop` then `f(MARKER, None)` clears
+        parked on by a plain assignment (a copy of that name included; the
+        other spellings are declared residuals, see
+        `test_every_suite_forking_test_in_this_repo_stands_down_in_a_child`).
+        `f = os.environ.pop` then `f(MARKER, None)` clears
         exactly the mapping the guard reads, but the call's `func` is a bare
         NAME, so (1) never looks at it, and the mapping appears in no
         argument, so the escape rule never sees it either. The binding table
@@ -33454,7 +33537,8 @@ class TestTheRunnerItself(unittest.TestCase):
         a receiver whose value it cannot read AT ALL however that receiver
         is spelled (a bare name, a `self`/`cls` attribute, or a chain on a
         call or a subscript such as `sys.modules['os'].environ`), a bound
-        marker-clearing method of the mapping parked on a name and then
+        marker-clearing method of the mapping parked on a name by a plain
+        assignment (`f = os.environ.pop`, or a copy of that name) and then
         called or registered as a cleanup, and a rebind made INSIDE an
         `if`/`for`/`while`/`with`/`try` body for the rest of that body. It
         does not cover a fixture that reaches the marker only through code
@@ -33507,6 +33591,12 @@ class TestTheRunnerItself(unittest.TestCase):
         `for ...: env.pop(MARKER); env = os.environ` is read with the
         `env` that held before the loop. (After the block ends, a name the
         block assigned is unknown rather than trusted, which fails closed.) A
+        bound marker-clearing method is followed only through a plain
+        assignment to a bare name: parked by tuple unpacking, a walrus, a
+        subscript or a loop target, or handed to a parsed helper of the
+        class that calls it, it is lost to an unknown name and calling that
+        is not a write — pinned by
+        `test_a_bound_method_lost_before_the_call_is_a_declared_residual`. A
         `subprocess` call whose argv is a name this parser cannot resolve,
         with no `shell`, no spread and no string shape, stays an unknown
         EXTERNAL command — measured cost of closing it: 32 of the 148 spawn
@@ -35555,6 +35645,136 @@ class B:
                 self.assertTrue(scan.guard_verified["Guard.sink"],
                                 scan.guard_errors["Guard.sink"])
 
+    def test_a_name_a_block_header_binds_is_unreadable_inside_the_block(self):
+        """#166 item 2. `_bound_scope_walk` gave each block a copy of the
+        bindings that held BEFORE the statement, so `for x in ...`,
+        `with ... as x`, `except ... as x` and a walrus in a header never
+        entered the block's own bindings: a benign earlier binding of the
+        same name (a `dict(os.environ)` copy, this repository's own idiom)
+        survived into the body and exonerated a write through the name,
+        which is the real mapping, or something this parser cannot read.
+
+        The controls hold the other direction: a copy the header does not
+        rebind is still trusted inside the block, and so is one bound before
+        a `try` whose handler binds some other name.
+        """
+        lost = {
+            "a `for` target that is the mapping":
+                "        env = dict(os.environ)\n"
+                "        for env in [os.environ]:\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a `with ... as` name":
+                "        env = dict(os.environ)\n"
+                "        with self.lock as env:\n"
+                "            env.pop(self.CHILD, None)\n",
+            "an `except ... as` name":
+                "        env = dict(os.environ)\n"
+                "        try:\n"
+                "            pass\n"
+                "        except KeyError as env:\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a walrus in an `if` header":
+                "        env = dict(os.environ)\n"
+                "        if (env := os.environ):\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a walrus in a `while` header":
+                "        env = dict(os.environ)\n"
+                "        while (env := os.environ):\n"
+                "            env.pop(self.CHILD, None)\n"
+                "            break\n",
+            "a `for` target read in the `else` block":
+                "        env = dict(os.environ)\n"
+                "        for env in [os.environ]:\n"
+                "            pass\n"
+                "        else:\n"
+                "            env.pop(self.CHILD, None)\n",
+        }
+        for label, statements in lost.items():
+            with self.subTest(header_bound=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertFalse(scan.guard_verified["Guard.sink"], label)
+                self.assertTrue(scan.guard_errors["Guard.sink"])
+        kept = {
+            "a copy the `for` header does not rebind":
+                "        env = dict(os.environ)\n"
+                "        for other in range(1):\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a copy the `with` header does not rebind":
+                "        env = dict(os.environ)\n"
+                "        with self.lock as other:\n"
+                "            env.pop(self.CHILD, None)\n",
+            "a copy bound before a `try` whose handler binds another name":
+                "        env = dict(os.environ)\n"
+                "        try:\n"
+                "            env.pop(self.CHILD, None)\n"
+                "        except KeyError as other:\n"
+                "            pass\n",
+            "a copy bound before an `if` whose walrus binds another name":
+                "        env = dict(os.environ)\n"
+                "        if (other := self.c):\n"
+                "            env.pop(self.CHILD, None)\n",
+        }
+        for label, statements in kept.items():
+            with self.subTest(control=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(scan.guard_verified["Guard.sink"],
+                                scan.guard_errors["Guard.sink"])
+
+    def test_a_bound_method_lost_before_the_call_is_a_declared_residual(self):
+        """#166 item 3. The bound-method rule resolves `f = os.environ.pop`
+        and a name-to-name copy of it, because `_bind_statement` keeps
+        `_ENVIRON_METHOD` only for a plain assignment to a bare name. Every
+        other spelling that parks the method on something loses it to
+        `_UNKNOWN`, and a call through an unknown NAME is not a write, so
+        `_SuiteForkScan` does not see these. The docstring of
+        `test_every_suite_forking_test_in_this_repo_stands_down_in_a_child`
+        names them as residuals rather than promising them away; this pins
+        them, so modelling one makes this test red and the sentence has to
+        be narrowed or extended with it.
+
+        The control is the plain spelling, which IS caught.
+        """
+        residual = {
+            "tuple unpacking":
+                "        a, b = os.environ.pop, 1\n"
+                "        a(self.CHILD, None)\n",
+            "a walrus":
+                "        (f := os.environ.pop)\n"
+                "        f(self.CHILD, None)\n",
+            "a subscript":
+                "        d = {}\n"
+                "        d['k'] = os.environ.pop\n"
+                "        d['k'](self.CHILD, None)\n",
+            "a loop target":
+                "        for f in [os.environ.pop]:\n"
+                "            f(self.CHILD, None)\n",
+            "a bound method handed to a parsed helper of the class":
+                "        f = os.environ.pop\n"
+                "        self._clear(f)\n\n"
+                "    def _clear(self, fn):\n"
+                "        fn(self.CHILD, None)\n",
+        }
+        for label, statements in residual.items():
+            with self.subTest(residual=label):
+                scan = self._scan_source(self._mapping_source(
+                    "import os\n", "",
+                    body="    def setUp(self):\n" + statements + "\n"))
+                self.assertTrue(
+                    scan.guard_verified["Guard.sink"],
+                    f"{label} is now caught: model it in the docstring's "
+                    "claim and drop it from the residuals")
+        scan = self._scan_source(self._mapping_source(
+            "import os\n", "",
+            body="    def setUp(self):\n"
+                 "        f = os.environ.pop\n"
+                 "        f(self.CHILD, None)\n\n"))
+        self.assertFalse(scan.guard_verified["Guard.sink"],
+                         "the plain spelling must stay caught")
+
     def test_a_rebind_inside_a_block_governs_the_rest_of_that_block(self):
         """Round-5 nit 2. Every node of a compound statement used to be
         judged against the bindings that held BEFORE the statement, because
@@ -36063,6 +36283,56 @@ class TestNewestPerQualifyingTier(unittest.TestCase):
         self.assertNotIn("qualifies by usage",
                          self._reason(result, "claude-opus-5"))
 
+    def test_the_seat_names_the_largest_qualifying_share_in_its_tier(self):
+        """#168 item 1. Two models of the opus tier clear the entry bar, and
+        the newest model's reason names the LARGER share, not whichever
+        qualifier comes first: flipping the comparison in
+        `qualifying_by_rung` (the newest-per-tier rule) or in
+        `qualifying_by_family` (a vendor default's reason) left every other
+        row green. The reason decides no seat; it is the one number a
+        reviewer checks the seat against, so it has to be the right one.
+
+        `claude-opus-4-8` is OLDER than `claude-opus-5`, so it comes first in
+        the order the models are walked and a flipped comparison keeps it.
+        A tie goes to the model walked first, as the code says.
+        """
+        newer = self._model("claude-opus-5-1", self._days_before(self.NOW, 30))
+        turns = {**self.TURNS, "claude-opus-4-8": 1500}
+        census = self._census({model: {self.W[0]: n}
+                               for model, n in turns.items()})
+        # 2465 / 6950 = 35.5% against 1500 / 6950 = 21.6%: both clear 10%.
+        newest_rule = self._compute(
+            models=self._catalogue(extra=[newer]), census=census)
+        self.assertIn("carries 21.6%", self._reason(newest_rule, "claude-opus-4-8"))
+        self.assertIn("carries 35.5%", self._reason(newest_rule, "claude-opus-5"))
+        reason = self._reason(newest_rule, "claude-opus-5-1")
+        self.assertIn("`claude-opus-5` carries 35.5%", reason)
+        self.assertNotIn("`claude-opus-4-8` carries", reason)
+
+        defaults = {"probed_at": "2026-09-04T10:00:00Z",
+                    "harness_version": "2.1.283 (Claude Code)",
+                    "defaults": {"opus": "claude-opus-5-1"},
+                    "skipped": ["haiku", "sonnet", "mythos", "fable"],
+                    "errors": {}}
+        vendor_default = roster.compute_roster(
+            models_doc=self._catalogue(extra=[newer]), census_doc=census,
+            policy=self._policy(), previous=None, now=self.NOW,
+            warn=lambda _message: None, defaults_doc=defaults)
+        reason = self._reason(vendor_default, "claude-opus-5-1")
+        self.assertIn("vendor default for the opus tier", reason)
+        self.assertIn("`claude-opus-5` carries 35.5%", reason)
+        self.assertNotIn("`claude-opus-4-8` carries", reason)
+
+        # A tie: the same turns for both, so 2465 / 7915 = 31.1% each.
+        tied = {**turns, "claude-opus-4-8": 2465}
+        tie = self._compute(
+            models=self._catalogue(extra=[newer]),
+            census=self._census({model: {self.W[0]: n}
+                                 for model, n in tied.items()}))
+        reason = self._reason(tie, "claude-opus-5-1")
+        self.assertIn("`claude-opus-4-8` carries 31.1%", reason)
+        self.assertNotIn("`claude-opus-5` carries", reason)
+
     def test_a_newer_haiku_or_fable_changes_nothing(self):
         """WORKED EXAMPLE 3. The newest model in the catalogue, in a tier
         no model of which clears the entry bar, is not an arm — which is
@@ -36137,19 +36407,34 @@ class TestNewestPerQualifyingTier(unittest.TestCase):
         empty = self._census(counts={})
         unranked = self._census(counts={"other": {self.W[0]: 9000}})
         thin = self._census(counts={"claude-sonnet-5": {self.W[0]: 3}})
+        # 20 ranked turns clear the 20-turn floor but are 0.2% of 9,020 raw
+        # turns, under the 1% relative floor.
+        diluted = self._census(counts={"claude-sonnet-5": {self.W[0]: 20},
+                                       "other": {self.W[0]: 9000}})
+        # Each of `_census_verdict`'s eight verdicts, with the words its
+        # arms' reasons must carry: the fallback is only debuggable when the
+        # reason names WHICH way the evidence was missing (#168 item 4).
+        problem = "census file unreadable (JSONDecodeError)"
         cases = {
-            "absent": None,
-            "future-dated": future,
-            "stale": stale,
-            "empty over the window": empty,
-            "nothing rankable": unranked,
-            "under the ranked-turn floor": thin,
+            "unreadable": (None, problem, problem),
+            "absent": (None, None, "none published"),
+            "future-dated": (future, None, "its generated_at is in the future"),
+            "stale": (stale, None, "last published 34 days ago"),
+            "empty over the window": (empty, None,
+                                      "published but empty over the window"),
+            "nothing rankable": (unranked, None,
+                                 "holds no usage this policy can rank"),
+            "under the ranked-turn floor": (thin, None,
+                                            "under the 20-turn floor"),
+            "under the relative floor": (diluted, None,
+                                         "under the 1% relative floor"),
         }
-        for label, census in cases.items():
+        for label, (census, census_problem, cause) in cases.items():
             with self.subTest(case=label):
                 result = roster.compute_roster(
                     models_doc=self._catalogue(), census_doc=census,
-                    policy=self._policy(), previous=None, now=self.NOW)
+                    policy=self._policy(), previous=None, now=self.NOW,
+                    census_problem=census_problem)
                 # Newest per tier, ACROSS ALL FOUR TIERS.
                 self.assertEqual(sorted(self._arm_ids(result)),
                                  ["claude-fable-5-1", "claude-haiku-4-5",
@@ -36157,6 +36442,7 @@ class TestNewestPerQualifyingTier(unittest.TestCase):
                 for arm in result["arms"]:
                     self.assertIn("fell back to newest per tier",
                                   arm["reason"])
+                    self.assertIn(cause, arm["reason"])
                     self.assertNotIn("qualifies by usage", arm["reason"])
 
     def test_an_enter_window_under_the_floor_falls_back_the_same_way(self):
