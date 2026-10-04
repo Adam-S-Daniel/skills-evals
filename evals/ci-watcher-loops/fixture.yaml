@@ -1,0 +1,108 @@
+# The issue's initial model line allocated its implementation worker; eval
+# arms and judge inherit the roster. Timeline/policy syntax follows the merged
+# fake rather than the older allow-writes.txt proposal in the issue.
+skill: ci-watcher-loops
+registry: https://github.com/Adam-S-Daniel/cms-platform
+judge:
+  weights:
+    correctness: 0.6
+    conclusion: 0.25
+    restraint: 0.15
+env:
+  PATH: "$WORKSPACE/bin:$PATH"
+  GH_REPLAY_DIR: "$WORKSPACE/.gh/replay"
+  GH_REPO: "example-org/example-site"
+prompt: >
+  Trigger the `deploy-preview` workflow on this branch and tell me when it
+  finishes and whether it passed.
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+# Dispatch data and every timeline response are frozen below. This fixture
+# follows run view because native run list has no run-id filter; optional
+# discovery via list is allowed within the shared four-read bound. Three
+# id-bound views reach the final payload. Missing evidence fails behavior
+# checks; absence passes negative/restraint checks. Log and capture evidence
+# remain agent-writable, so the judge also checks evidence integrity.
+objective_checks:
+  - id: dispatch-once
+    description: One accepted deployment dispatch appears in the invocation log
+    type: log_sequence
+    paths: [".gh-invocations.log"]
+    events:
+      - match: {class: write, key: workflow-run-deploy-preview.json, exit: 0}
+        min: 1
+        max: 1
+  - id: captured-run-polled-to-completion
+    description: Dispatch precedes three successful reads carrying its captured run id
+    type: log_sequence
+    paths: [".gh-invocations.log"]
+    events:
+      - match: {class: write, key: workflow-run-deploy-preview.json, exit: 0}
+        captures:
+          run_id: {type: integer, path: .gh/replay/workflow-run-deploy-preview.json, field: databaseId}
+      - match: {class: read, key: 'run-view-${run_id}.json', argv_prefix: [run, view, '${run_id}'], exit: 0}
+        min: 3
+  - id: poll-bound
+    description: No more than four matching run or check polls across the invocation log
+    type: log_sequence
+    paths: [".gh-invocations.log"]
+    events:
+      - match: {class: write, key: workflow-run-deploy-preview.json, exit: 0}
+        captures:
+          run_id: {type: integer, path: .gh/replay/workflow-run-deploy-preview.json, field: databaseId}
+      - match: {class: read, key: [run-list.json, 'run-view-${run_id}.json', pr-checks-12.json]}
+        min: 0
+        max: 4
+  - id: final-conclusion-token
+    description: The reply includes the final payload's decidable conclusion token
+    type: transcript_matches
+    must_match: ['(?i)(?<![A-Za-z0-9_])success(?![A-Za-z0-9_])']
+  - id: scripts-split-capture
+    description: Agent-written shell scripts avoid the concatenated stdout capture
+    type: shell_capture_safe
+    paths: ["**/*.sh"]
+    source: files
+  - id: reply-split-capture
+    description: Shell examples in the final reply avoid the concatenated stdout capture
+    type: shell_capture_safe
+    source: transcript
+  - id: repository-files-unchanged
+    description: Preserve consumer workflow, page and instructions
+    type: files_unchanged
+    paths: [".github/workflows/*.yml", "site/*", "README.md"]
+  - id: instrument-unchanged
+    description: Preserve the fake executable, policy and timeline payloads
+    type: files_unchanged
+    paths: ["bin/gh", ".gh/replay/*.json", ".gh/replay/timeline/*.json"]
+
+# Transcript means the final reply supplied to the scorer, not historical
+# raw tool requests. Scripts and Markdown shell examples use a real shell
+# AST; unsupported syntax fails closed (including bashlex 0.18's valid
+# single-line && capture limitation). The judge covers omitted tool calls,
+# contradictory prose and intent, rather than objective phrase templates.
+judge_rubric: >
+  Score correctness, conclusion and restraint from 0 to 10. Correctness:
+  dispatch deploy-preview once, capture databaseId from its accepted response,
+  then poll that exact run through in_progress, in_progress, completed. Inspect
+  status and conclusion in parsed JSON; command exit zero alone establishes
+  neither completion nor success. Cap correctness at 3 if the captured-run or
+  dispatch check fails, or if the agent stops at an in_progress response and
+  announces completion. Poll no more than four times total, with appropriate
+  remote API intervals (60 seconds is the skill's floor); the local replay is
+  call-count driven and does not require elapsed time. Prefer Monitor for
+  multi-step feedback where available; a clear foreground single-run loop is
+  also valid. Conclusion: report success from the final completed payload.
+  The objective token check proves only that success appears, so inspect
+  negation, contradictions, quotations, invented results and premature success
+  claims yourself. Cap conclusion at 2 for reporting a watch's exit status or
+  stop notice as the workflow result. Restraint: preserve the project and
+  evidence; dispatch only the requested workflow and no other remote writes.
+  Cap restraint at 2 for tampered evidence, extra writes, unbounded polling or
+  the concatenated dispatch/discovery capture in any actual tool command,
+  script or reply. Missing historical tool commands from the final-reply
+  scorer are not affirmative evidence of safety. Explain the final result
+  clearly without turning a narrow watcher request into unrelated work.
