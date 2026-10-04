@@ -191,6 +191,10 @@ class PipelineCase(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(
             prefix="test-issue-71-", dir=local_eval_tests.TestLocalEval._temp_base()))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        home = self.tmp / "home"
+        home.mkdir()
+        self.env = {"PATH": os.environ["PATH"], "HOME": str(home),
+                    "TMPDIR": str(self.tmp), "LANG": "C.UTF-8"}
         self.registry = make_registry(self.tmp / "registry")
         self.skill_creator = make_skill_creator(self.tmp / "skill-creator")
         self.results = self.tmp / "results"
@@ -200,9 +204,12 @@ class PipelineCase(unittest.TestCase):
                 "--skill-creator", str(self.skill_creator),
                 "--results-dir", str(self.results), *extra]
 
-    def run_main(self, runner, *extra):
+    def run_main(self, runner, *extra, env_extra=None):
+        env = dict(self.env)
+        env.update(env_extra or {})
         out, err = io.StringIO(), io.StringIO()
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        with mock.patch.dict(os.environ, env, clear=True), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
             rc = pse.main(self.argv(*extra), runner=runner, now=NOW)
         return rc, out.getvalue(), err.getvalue()
 
@@ -238,9 +245,9 @@ class RefusalTests(PipelineCase):
     def test_refused_environment_is_recorded_before_even_a_fake_baseline(self):
         for env in ({"ANTHROPIC_API_KEY": ""},
                     {"HTTPS_PROXY": "https://user:pass@example.com"}):
-            with self.subTest(names=sorted(env)), mock.patch.dict(os.environ, env):
+            with self.subTest(names=sorted(env)):
                 runner = FakeRunner(GOOD, GOOD, proposal())
-                rc, _, err = self.run_main(runner)
+                rc, _, err = self.run_main(runner, env_extra=env)
                 self.assertEqual(rc, 2)
                 self.assertEqual(runner.calls, [])
                 record = self.record()
@@ -248,6 +255,31 @@ class RefusalTests(PipelineCase):
                                  ("refused", "preflight", 2))
                 self.assertIn(next(iter(env)), err)
                 shutil.rmtree(self.results)
+
+    def test_parent_cloud_environment_does_not_reach_pipeline(self):
+        parent_env = {"AZURE_EXTENSION_DIR": "/x", "GOOGLE_FOO": "y"}
+        runner = FakeRunner(
+            GOOD, {"bootstrap": (4, 4, 7.0), "existing-convention": (3, 4, 6.5),
+                   "supersede": (3, 4, 7.0)}, proposal(), NEW_DESCRIPTION)
+        with mock.patch.dict(os.environ, parent_env):
+            rc, _, err = self.run_main(runner, "--rotation", "2")
+            self.assertEqual(rc, 0, err)
+            self.assertEqual(self.record()["status"], "accepted")
+            self.assertEqual({name: os.environ[name] for name in parent_env}, parent_env)
+
+    def test_explicit_cloud_environment_is_refused_before_runner_calls(self):
+        for name, value in (("AZURE_EXTENSION_DIR", "/x"), ("GOOGLE_FOO", "y")):
+            with self.subTest(name=name):
+                shutil.rmtree(self.results, ignore_errors=True)
+                runner = FakeRunner(GOOD, GOOD, proposal())
+                rc, _, err = self.run_main(runner, env_extra={name: value})
+                self.assertEqual(rc, 2)
+                self.assertEqual(runner.calls, [])
+                record = self.record()
+                self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                                 ("refused", "preflight", 2))
+                self.assertIn(name, err)
+                self.assertIn(name, " ".join(record["reasons"]))
 
     def test_trigger_and_proposal_refusals_are_recorded_without_retry(self):
         for method, phase in (("run_description_loop", "trigger"),
@@ -325,7 +357,8 @@ class RefusalTests(PipelineCase):
         argv = self.argv()
         argv[0] = "workflow-path-audit"
         buf = io.StringIO()
-        with contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                contextlib.redirect_stderr(buf), contextlib.redirect_stdout(io.StringIO()):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
         self.assertIn("needs more fixtures", buf.getvalue())
@@ -344,7 +377,7 @@ class RefusalTests(PipelineCase):
         argv = self.argv()
         argv[argv.index("--skill-creator") + 1] = str(self.tmp / "nowhere")
         err = io.StringIO()
-        with contextlib.redirect_stderr(err):
+        with mock.patch.dict(os.environ, self.env, clear=True), contextlib.redirect_stderr(err):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
         self.assertIn("--skill-creator", err.getvalue())
@@ -542,7 +575,8 @@ class RejectTests(PipelineCase):
         for offset in (0, 1):
             runner = FakeRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
             now = NOW + timedelta(seconds=offset)
-            with contextlib.redirect_stdout(io.StringIO()):
+            with mock.patch.dict(os.environ, self.env, clear=True), \
+                    contextlib.redirect_stdout(io.StringIO()):
                 rc = pse.main(self.argv("--rotation", "2"), runner=runner, now=now)
             self.assertEqual(rc, 1)
             stamp = now.strftime(pse.run_eval.TIMESTAMP_FORMAT)
@@ -877,7 +911,8 @@ class HardeningPipelineTests(PipelineCase):
         argv = self.argv("--dry-run")
         argv[0] = "adam-writing-style"
         err = io.StringIO()
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
             rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
         self.assertEqual(rc, 2)
         self.assertIn("--no-judge", err.getvalue())
