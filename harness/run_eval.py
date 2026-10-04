@@ -1553,8 +1553,8 @@ def aggregate_trials(trials: list[dict]) -> dict:
     first), each in the shape `_write_summary` writes.
 
     EVERY TRIAL COUNTS IN `n`. A trial whose `error` is set is counted in
-    `errors` and listed in `trial_errors`; it is in no mean, no pass rate and
-    no sum. `scored` is `n - errors`, the number of trials the objective
+    `errors` and listed in `trial_errors`; it is in no score mean or pass
+    rate. `scored` is `n - errors`, the number of trials the objective
     figures are over. Each statistic also carries its own `n`, because the
     three are not always over the same trials: a scored trial whose judge
     call failed is in the objective and cost figures and not in the judge's.
@@ -1574,9 +1574,10 @@ def aggregate_trials(trials: list[dict]) -> dict:
         answered something unusable), `overall` (`_stats`, or null when
         `n` is 0) and `dimensions`: `_stats` per dimension name, matched
         trimmed and casefolded, over the results counted in `n`.
-      * `cost_usd` — `_stats` over the scored trials' agent cost, or null
-        when none reported a number. An errored trial is not in it, whatever
-        its own `agent` block carries.
+      * `cost_usd` — `_stats` over every trial's finite numeric agent cost,
+        including errored trials, or null when none reported a usable cost.
+      * `cost_unknown_trials` — trials without a usable agent cost. A zero
+        cost is known; an absent or invalid cost is unknown, not free.
     """
     scored = [t for t in trials if not t.get("error")]
     trial_errors = [
@@ -1627,14 +1628,15 @@ def aggregate_trials(trials: list[dict]) -> dict:
             "dimensions": [{"name": d["name"], **_stats(d["scores"])}
                            for d in by_name.values()]}
 
-    costs = [t["agent"]["cost_usd"] for t in scored
+    costs = [t["agent"]["cost_usd"] for t in trials
              if isinstance(t.get("agent"), dict)
              and _is_number(t["agent"].get("cost_usd"))]
 
     return {"n": len(trials), "errors": len(trial_errors),
             "scored": len(scored), "trial_errors": trial_errors,
             "aggregate": {"objective": objective_stats, "judge": judge_stats,
-                          "cost_usd": _stats(costs)}}
+                          "cost_usd": _stats(costs),
+                          "cost_unknown_trials": len(trials) - len(costs)}}
 
 
 def _trials_error(stats: dict) -> dict | None:
@@ -1651,7 +1653,7 @@ def _trials_error(stats: dict) -> dict | None:
     for entry in stats["trial_errors"]:
         kinds[entry["type"]] = kinds.get(entry["type"], 0) + 1
     listed = ", ".join(f"{kind} x{count}" for kind, count in kinds.items())
-    tail = (f"every mean is over the {stats['scored']} that did not"
+    tail = (f"score means are over the {stats['scored']} that did not"
             if stats["scored"] else "no trial was scored")
     return {"type": "trial_errors",
             "detail": f"{stats['errors']} of {stats['n']} trials errored "
@@ -1711,6 +1713,8 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
             cost = block["cost_usd"]
             cost_str = (f"{cost['mean']:.4f} / {cost['sum']:.4f}"
                         if cost else "-")
+            if block["cost_unknown_trials"]:
+                cost_str += f"; {block['cost_unknown_trials']} unknown"
             lines.append(f"| {arm['arm']} | {stats['n']} | {stats['errors']} | "
                          f"{objective_str} | {judge_str} | {cost_str} |")
 
@@ -1719,7 +1723,8 @@ def _render_trials_report(skill: str, timestamp: str, trials: int,
         if errored:
             lines += ["",
                       "Errored trials are counted in n and excluded from "
-                      "every mean:", ""]
+                      "score means; known costs from all trials are counted:",
+                      ""]
             lines += [f"- {arm_name} trial {entry['trial']}: "
                       f"{_error_cell(entry)}" for arm_name, entry in errored]
 
