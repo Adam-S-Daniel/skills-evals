@@ -74,6 +74,7 @@ needs a system jq.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -662,7 +663,25 @@ def read_label_json(path: str):
         raise LabelPolicyError() from None
 
 
-def label_entries(document) -> set[tuple[str, int, str]]:
+def label_entry(row) -> tuple[str, int, str]:
+    if not isinstance(row, dict) or set(row) != {"repo", "number", "label"}:
+        raise LabelPolicyError()
+    repo, number, label = row["repo"], row["number"], row["label"]
+    if (not isinstance(repo, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repo)
+            or type(number) is not int or number <= 0
+            or not isinstance(label, str) or not label or label != label.strip()
+            or "," in label or any(not c.isprintable() for c in label)):
+        raise LabelPolicyError()
+    return repo, number, label
+
+
+def label_digest(entry: tuple[str, int, str]) -> str:
+    repo, number, label = entry
+    return hashlib.sha256((repo + "\n" + str(number) + "\n" + label).encode("utf-8")).hexdigest()
+
+
+def label_entries(document, *, hashed_policy: bool = False) -> set:
     if not isinstance(document, dict) or set(document) != {"pr_edit_add_label"}:
         raise LabelPolicyError()
     rows = document["pr_edit_add_label"]
@@ -670,16 +689,14 @@ def label_entries(document) -> set[tuple[str, int, str]]:
         raise LabelPolicyError()
     entries = set()
     for row in rows:
-        if not isinstance(row, dict) or set(row) != {"repo", "number", "label"}:
-            raise LabelPolicyError()
-        repo, number, label = row["repo"], row["number"], row["label"]
-        if (not isinstance(repo, str)
-                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*", repo)
-                or type(number) is not int or number <= 0
-                or not isinstance(label, str) or not label or label != label.strip()
-                or "," in label or any(not c.isprintable() for c in label)):
-            raise LabelPolicyError()
-        entry = (repo, number, label)
+        if hashed_policy and isinstance(row, dict) and set(row) == {"sha256"}:
+            entry = row["sha256"]
+            if not isinstance(entry, str) or not re.fullmatch(r"[0-9a-f]{64}", entry):
+                raise LabelPolicyError()
+        else:
+            entry = label_entry(row)
+            if hashed_policy:
+                entry = label_digest(entry)
         if entry in entries:
             raise LabelPolicyError()
         entries.add(entry)
@@ -698,10 +715,11 @@ def load_label_policy(payload_dir: str | None):
     candidate = os.path.join(os.path.realpath(payload_dir), "write-policy.json")
     if not os.path.lexists(candidate):
         return None
-    policy = label_entries(read_label_json(local_path(payload_dir, "write-policy.json")))
+    policy = label_entries(read_label_json(local_path(payload_dir, "write-policy.json")),
+                           hashed_policy=True)
     path = local_path(LOG_DIR, ".gh-label-state.json")
     state = label_entries(read_label_json(path)) if os.path.lexists(path) else set()
-    if not state <= policy:
+    if not {label_digest(entry) for entry in state} <= policy:
         raise LabelPolicyError()
     return policy, state
 
@@ -740,8 +758,11 @@ def permitted_label_edit(positionals: list[str], flags: dict, policy: set):
     if (not repos or any(not isinstance(r, str) or not r for r in repos)
             or len(labels) != 1 or not isinstance(labels[0], str)):
         return None
-    entry = (repos[-1], int(positionals[2]), labels[0])
-    return entry if entry in policy else None
+    try:
+        entry = label_entry(dict(repo=repos[-1], number=int(positionals[2]), label=labels[0]))
+    except LabelPolicyError:
+        return None
+    return entry if label_digest(entry) in policy else None
 
 
 def add_local_label(payload_dir: str, entry: tuple) -> None:
@@ -778,7 +799,7 @@ def add_local_label(payload_dir: str, entry: tuple) -> None:
             # Startup policy/state are only a preliminary check. Another
             # process may have committed an edit or revoked this grant.
             latest = load_label_policy(payload_dir)
-            if latest is None or entry not in latest[0]:
+            if latest is None or label_digest(entry) not in latest[0]:
                 raise LabelPolicyError()
             state = latest[1] | {entry}
             path = local_path(LOG_DIR, ".gh-label-state.json")

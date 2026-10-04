@@ -167,15 +167,31 @@ A fixture can opt into specific label additions by supplying this JSON:
 ```json
 {
   "pr_edit_add_label": [
-    {"repo": "example-org/example-site", "number": 512, "label": "decap-cms/draft"},
-    {"repo": "example-org/example-site", "number": 518, "label": "decap-cms/pending_publish"}
+    {"repo": "example-org/example-site", "number": 42, "label": "editorial/draft"},
+    {"repo": "example-org/example-site", "number": 43, "label": "editorial/review"}
   ]
 }
 ```
 
-Those numbers and labels are examples, not built-in exceptions. The top-level
-key and the three entry keys are exact; unknown keys, duplicate JSON keys,
-duplicate entries, non-list collections and invalid values fail closed.
+Those numbers and labels are examples, not built-in exceptions. An entry may
+instead contain exactly one key, `sha256`, with a 64-character lowercase
+hexadecimal digest. Compute it with Python as:
+
+```python
+import hashlib
+
+hashlib.sha256((repo + '\n' + str(number) + '\n' + label).encode('utf-8')).hexdigest()
+```
+
+The repository and label preserve exact case, the number is a positive decimal
+integer without leading zeros, and there is no trailing newline. Plain and
+hashed grants may share a policy. Duplicate digests, including a plain grant
+and its equivalent hashed grant, fail closed. Hashing hides the plaintext grant
+from a casual reader, but hashes are not secrets: enumerable labels can be
+guessed and checked. A digest is not encryption.
+
+The top-level key and each entry's keys are exact; unknown keys, duplicate JSON
+keys, duplicate entries, non-list collections and invalid values fail closed.
 Repositories must be canonical `owner/name` strings with ASCII letters,
 digits, underscores, periods or hyphens, with each component starting with a
 letter or digit. Numbers are positive JSON integers, excluding booleans.
@@ -206,8 +222,9 @@ state is present. No list payload is required to edit.
 
 Successful edits return exit 0 with empty output and append a `class=write`
 record with `exit=0`. They atomically replace `.gh-label-state.json` in the
-anchored log workspace, using the same JSON schema as the policy; stored
-tuples must be a subset of the current policy. An exclusive lock on the
+anchored log workspace, always using plain `{repo, number, label}` entries
+under `pr_edit_add_label`. Digest entries are never valid state; each stored
+tuple's digest must match a current policy grant. An exclusive lock on the
 workspace's dedicated `.gh-label-state.lock` covers re-reading the current
 policy and state, validating the grant, and replacing the state. Concurrent
 edits therefore preserve each other's additions. The lock is released before

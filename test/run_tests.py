@@ -8036,6 +8036,86 @@ class TestGhWriteAllowlist(unittest.TestCase):
         row = json.loads(self._call(["pr", "view", "512"]).stdout)
         self.assertEqual(len(row["labels"]), 2, "repeated successful edits are idempotent")
 
+    @staticmethod
+    def _hashed_entry(entry):
+        canonical = f"{entry['repo']}\n{entry['number']}\n{entry['label']}"
+        return {"sha256": hashlib.sha256(canonical.encode("utf-8")).hexdigest()}
+
+    def test_hash_policy_replays_edits_in_plain_state_and_read_payloads(self):
+        self._policy({"pr_edit_add_label": [self._hashed_entry(e) for e in self.ENTRIES]})
+        for entry in self.ENTRIES:
+            self.assertEqual(self._edit(entry["number"], entry["label"]).returncode, 0)
+        self.assertEqual(json.loads((self.ws / ".gh-label-state.json").read_text()),
+                         {"pr_edit_add_label": self.ENTRIES})
+        for entry in self.ENTRIES:
+            row = json.loads(self._call(["pr", "view", str(entry["number"])]).stdout)
+            self.assertIn({"name": entry["label"]}, row["labels"])
+        rows = json.loads(self._call(["pr", "list"]).stdout)
+        self.assertEqual([row["labels"] for row in rows[:2]],
+                         [[{"name": e["label"]}] for e in self.ENTRIES])
+
+    def test_hash_policy_exact_case_decimal_utf8_and_no_trailing_newline(self):
+        entry = {"repo": "Example-Org/Example-Site", "number": 519, "label": "Editorial ✓"}
+        self._json(self.ws / ".gh/replay/pr-view-519.json", {"labels": []})
+        args = ["pr", "edit", "519", "--repo", entry["repo"], "--add-label", entry["label"]]
+        canonical = "Example-Org/Example-Site\n519\nEditorial ✓"
+        for alternative in (canonical + "\n", canonical.lower(), canonical.replace("\n", ":"),
+                            canonical.replace("519", "0519")):
+            self._policy({"pr_edit_add_label": [{"sha256": hashlib.sha256(
+                alternative.encode("utf-8")).hexdigest()}]})
+            self._reject(args)
+        self._policy({"pr_edit_add_label": [self._hashed_entry(entry)]})
+        self.assertEqual(self._call(args).returncode, 0)
+
+    def test_hash_policy_wrong_tuples_and_implicit_repo_are_refused(self):
+        self._policy({"pr_edit_add_label": [self._hashed_entry(self.ENTRIES[0])]})
+        valid = ["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"]
+        for args in (valid[:3] + valid[5:], ["pr", "edit", "518", *valid[3:]],
+                     ["pr", "edit", "0512", *valid[3:]], valid[:-1] + ["decap-cms/Draft"],
+                     valid[:4] + [self.REPO.upper()] + valid[5:]):
+            with self.subTest(args=args):
+                self._reject(args)
+
+    def test_hash_policy_cannot_authorize_lexically_invalid_repo_or_label(self):
+        for field, value in (("repo", "../example-site"), ("repo", self.REPO + "/"),
+                             ("label", " bad"), ("label", "bad,"), ("label", "bad\nlabel"),
+                             ("label", "")):
+            with self.subTest(field=field, value=value):
+                entry = dict(self.ENTRIES[0], **{field: value})
+                self._policy({"pr_edit_add_label": [self._hashed_entry(entry)]})
+                self._reject(["pr", "edit", str(entry["number"]), "--repo", entry["repo"],
+                              "--add-label", entry["label"]])
+
+    def test_malformed_hash_and_equivalent_duplicate_grants_fail_closed(self):
+        hashed = self._hashed_entry(self.ENTRIES[0])
+        digest = hashed["sha256"]
+        rows = [[{"sha256": value}] for value in
+                (None, True, 12, [], {}, "", "a" * 63, "a" * 65, digest.upper(), "g" * 64,
+                 digest + "\n", " " + digest)]
+        rows += [[dict(hashed, unknown=True)], [dict(self.ENTRIES[0], **hashed)],
+                 [hashed, hashed], [self.ENTRIES[0], hashed], [hashed, self.ENTRIES[0]]]
+        for entries in rows:
+            with self.subTest(entries=entries):
+                self._policy({"pr_edit_add_label": entries})
+                self._reject(["pr", "view", "512"], configuration=True)
+                self._reject(["pr", "edit", "512", "--repo", self.REPO,
+                              "--add-label", "decap-cms/draft"], configuration=True)
+
+    def test_mixed_policy_accepts_plain_state_but_rejects_hash_state_and_revocation(self):
+        hashed = self._hashed_entry(self.ENTRIES[0])
+        self._policy({"pr_edit_add_label": [hashed, self.ENTRIES[1]]})
+        self.assertEqual(self._edit().returncode, 0)
+        self.assertEqual(self._edit(518, self.ENTRIES[1]["label"]).returncode, 0)
+        state = self.ws / ".gh-label-state.json"
+        plain = state.read_bytes()
+        self._json(state, {"pr_edit_add_label": [hashed]})
+        self._reject(["pr", "view", "512"], configuration=True)
+        state.write_bytes(plain)
+        self._policy({"pr_edit_add_label": [self.ENTRIES[1]]})
+        self._reject(["pr", "view", "512"], configuration=True)
+        self._reject(["pr", "edit", "518", "--repo", self.REPO,
+                      "--add-label", self.ENTRIES[1]["label"]], configuration=True)
+
     def test_nonexistent_short_label_spellings_are_refused(self):
         self._policy()
         for label in (["-l", "decap-cms/draft"], ["-l=decap-cms/draft"],
@@ -8359,6 +8439,16 @@ class TestGhWriteAllowlist(unittest.TestCase):
         self.assertFalse((self.ws / ".gh-label-state.json").exists())
         self.assertIn("class=write key=pr-edit-512.json exit=1",
                       (self.ws / ".gh-invocations.log").read_text())
+
+    def test_hashed_grant_revoked_after_startup_is_revalidated(self):
+        self._policy({"pr_edit_add_label": [self._hashed_entry(e) for e in self.ENTRIES]})
+        self._instrument_copy(self.STARTUP_PAUSE)
+        running = self._paused_edit(self.ENTRIES[0])
+        self._ready(running)
+        self._policy({"pr_edit_add_label": [self._hashed_entry(self.ENTRIES[1])]})
+        self._release(running)
+        self._finished(running, code=1)
+        self.assertFalse((self.ws / ".gh-label-state.json").exists())
 
     def test_state_changed_after_startup_is_revalidated(self):
         self._policy()
