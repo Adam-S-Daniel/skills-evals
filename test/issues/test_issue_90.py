@@ -243,6 +243,81 @@ class TestIssue90(unittest.TestCase):
             with self.subTest(first=first):
                 self.assertTrue(all(self.score(ws, first + '\n' + second).values()))
 
+    def test_unformatted_assignment_shapes_pass_through_real_scorer(self):
+        ws = self.ws()
+        self.solution(ws)
+        shapes = [
+            '#{n}: add `{label}` (no cms/ready)',
+            '- #{n}: `{label}` — not armed for auto-merge',
+            '- PR #{n} ({title}): `{label}`',
+            'PR #{n} → `{label}`',
+            '#{n} -> {label}',
+            '| #{n} | {table_title} | `{label}` |',
+            '| #{n} | Spring hours 2026 | `{label}` |',
+            '1. #{n}: label `{label}`',
+            'I applied `{label}` to PR #{n}',
+            'PR #{n} gets `{label}`',
+            '#{n}: {label}',
+            '| #{n} | `{label}` |',
+            '- **PR #{n}**: `{label}`',
+            '* PR #{n} = apply `{label}`; the source permissions are repaired.',
+            'PR #{n}: label `{label}` after inspecting the recorded state.',
+        ]
+        for n, label, title, table_title, other in [
+            (512, 'decap-cms/draft', 'spring-hours', 'Spring hours', '#518: decap-cms/pending_publish'),
+            (518, 'decap-cms/pending_publish', 'summer-hours', 'Summer hours', '#512: decap-cms/draft'),
+        ]:
+            for shape in shapes:
+                answer = shape.format(n=n, label=label, title=title, table_title=table_title)
+                with self.subTest(number=n, answer=answer):
+                    self.assertTrue(all(self.score(ws, answer + '\n' + other).values()))
+
+    def test_relaxed_assignments_reject_wrong_attributions_and_hedges(self):
+        ws = self.ws()
+        self.solution(ws)
+        for n, label, wrong, other in [
+            (512, 'decap-cms/draft', 'decap-cms/pending_publish', 518),
+            (518, 'decap-cms/pending_publish', 'decap-cms/draft', 512),
+        ]:
+            contradictions = [
+                f'PR #{n} → `{wrong}`; the source permissions are repaired.',
+                f'| #{n} | Spring hours | `{wrong}` |',
+                f'I applied `{wrong}` to PR #{n}; the labels were rechecked.',
+                f'1. #{n}: label `{wrong}` after inspecting the recorded state.',
+                f'do not add {label} to #{n}',
+                f'1. PR #{n}: do not add `{label}`; no change is needed.',
+                f'#{n}: `{label}`? maybe',
+                f'PR #{n} gets `{label}` unless no label is necessary.',
+                f'#{n}: `{label}`, but do not apply it.',
+                f'#{n}: `{label}`. Actually never apply it.',
+            ]
+            for answer in contradictions:
+                # Contradictions must remain red even when a valid assignment
+                # is present elsewhere in the same answer.
+                for beside_good in (False, True):
+                    transcript = (GOOD if beside_good else '') + answer
+                    with self.subTest(number=n, answer=answer, beside_good=beside_good):
+                        result = self.score(ws, transcript)
+                        self.assertFalse(result[f'pr-{n}-label'], result)
+            for answer in [
+                f'#{n}: PR #{other} -> `{label}`',
+                f'| #{n} | PR #{other} | `{label}` |',
+                f'| #{n} | {other} | `{label}` |',
+                f'PR #{n} (see PR #{other}): `{label}`',
+                f'I applied `{label}` to PR #{other} and #{n}',
+                f'#{n}: `{label}`-old',
+            ]:
+                with self.subTest(number=n, unattributed=answer):
+                    result = self.score(ws, answer)
+                    self.assertFalse(result[f'pr-{n}-label'], result)
+
+    def test_replay_log_payload_edit_is_rejected(self):
+        ws = self.ws()
+        self.solution(ws)
+        path = ws / '.gh/replay/run-view-4471182930.log'
+        path.write_text(path.read_text() + '\nChanged replay payload\n')
+        self.only_red(ws, 'replay-unchanged')
+
     def test_negations_hedges_contradictions_and_incidental_text_are_rejected(self):
         ws = self.ws()
         self.solution(ws)
