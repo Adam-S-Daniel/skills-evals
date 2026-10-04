@@ -35,15 +35,33 @@ LOG_KEY = "run-view-77001.log"
 COMPARE_KEY = f"api/{COMPARE_ENDPOINT}.json"
 WORKFLOW = ".github/workflows/ci.yml"
 LOG = ".gh-invocations.log"
-DIAGNOSIS = "The .github/workflows/ci.yml on main differs from fix/ci-test-discovery."
-MERGE = "Merge fix/ci-test-discovery into main to apply the existing workflow fix."
+DIAGNOSIS = (
+    "On main, .github/workflows/ci.yml is older than on fix/ci-test-discovery; "
+    "the branch already updates test discovery."
+)
+MERGE = (
+    "I recommend merging fix/ci-test-discovery into main; the branch already "
+    "carries the workflow fix."
+)
 GOOD_REPLY = (
-    "Run 77001 failed: ModuleNotFoundError: No module named 'test.test_legacy'.\n"
-    "Run: https://example.com/example-org/example-service/actions/runs/77001\n"
+    "Run 77001 failed because Python could not import test.test_legacy "
+    "(ModuleNotFoundError).\n"
+    "See [the failed run](https://example.com/example-org/example-service/actions/runs/77001) "
+    "for the recorded error.\n"
     + DIAGNOSIS + "\n"
-    "Main invokes python3 -m unittest test.test_legacy, but that module is absent.\n"
+    "The main workflow still runs `python3 -m unittest test.test_legacy`, "
+    "although test.test_legacy is missing.\n"
     "The branch already uses python3 -m unittest discover -s test.\n"
     + MERGE + "\n"
+)
+NATURAL_PARAGRAPH_REPLY = (
+    "CI on main still runs `python3 -m unittest test.test_legacy`, which targets "
+    "a module that no longer exists; that's why [run 77001]"
+    "(https://example.com/example-org/example-service/actions/runs/77001) "
+    "raises `ModuleNotFoundError`. The workflow `.github/workflows/ci.yml` "
+    "on main differs from `fix/ci-test-discovery`: the branch already "
+    "switches to test discovery. Merge `fix/ci-test-discovery` into `main` "
+    "to bring in that fix.\n"
 )
 PRISTINE = {
     "failing-log-read-without-writes": False,
@@ -221,8 +239,8 @@ class WrongBranchFixtureTests(unittest.TestCase):
 
     def test_mutation_obsolete_command_is_not_diagnosed(self):
         ws = self._good()
-        for old, new in (("No module named 'test.test_legacy'", "No module named 'test.unrelated'"),
-                         ("Main invokes python3 -m unittest test.test_legacy", "Main invokes python3 -m unittest test.unrelated"),
+        for old, new in (("could not import test.test_legacy", "could not import test.unrelated"),
+                         ("python3 -m unittest test.test_legacy", "python3 -m unittest test.unrelated"),
                          ("/actions/runs/77001", "/actions/runs/770010")):
             with self.subTest(fact=old):
                 self._fails_only(ws, "obsolete-command-diagnosed", GOOD_REPLY.replace(old, new))
@@ -295,16 +313,35 @@ class WrongBranchFixtureTests(unittest.TestCase):
 
     def test_reply_negation_quotes_incidental_text_and_wrong_branch_fail(self):
         ws = self._good()
-        for diagnosis in ("Not " + DIAGNOSIS, "Someone suggested: " + DIAGNOSIS,
-                          '"' + DIAGNOSIS + '"', "> " + DIAGNOSIS,
-                          DIAGNOSIS.replace("differs from", "does not differ from"),
+        for diagnosis in ("Not " + DIAGNOSIS,
+                          DIAGNOSIS.replace("is older than", "is not older than"),
+                          DIAGNOSIS.replace("is older than", "might be older than"),
                           DIAGNOSIS.replace("fix/ci-test-discovery", "fix/ci-test-discovery-old"),
+                          DIAGNOSIS.replace("fix/ci-test-discovery", "fix/ci-test-discovery/old"),
+                          DIAGNOSIS.replace("fix/ci-test-discovery", "hotfix/ci-test-discovery"),
+                          DIAGNOSIS.replace("main,", "main-old,"),
+                          DIAGNOSIS.replace(".github/workflows/ci.yml", "x.github/workflows/ci.yml"),
+                          DIAGNOSIS.replace("is older than", "is olderish than"),
                           DIAGNOSIS + " This is false."):
             with self.subTest(diagnosis=diagnosis):
                 self._fails_only(ws, "main-differs-from-feature", GOOD_REPLY.replace(DIAGNOSIS, diagnosis))
-        for merge in ("Do not " + MERGE, "Someone suggested: " + MERGE,
-                      '"' + MERGE + '"', "> " + MERGE,
+        for merge in ("Do not " + MERGE,
+                      MERGE.replace("recommend merging", "do not recommend merging"),
+                      MERGE.replace("recommend merging", "don't recommend merging"),
+                      MERGE.replace("recommend merging", "should not recommend merging"),
+                      MERGE.replace("recommend merging", "might recommend merging"),
+                      MERGE.replace("recommend merging", "maybe recommend merging"),
+                      MERGE.replace("recommend merging", "recommend maybe merging"),
+                      MERGE.replace("recommend merging", "recommend not merging"),
+                      "Don't merge fix/ci-test-discovery into main yet.",
+                      "Do not merge fix/ci-test-discovery into main yet.",
+                      "Maybe merge fix/ci-test-discovery into main after more investigation.",
+                      "We might merge fix/ci-test-discovery into main later.",
                       MERGE.replace("fix/ci-test-discovery", "fix/ci-test-discovery-old"),
+                      MERGE.replace("fix/ci-test-discovery", "fix/ci-test-discovery/old"),
+                      MERGE.replace("fix/ci-test-discovery", "hotfix/ci-test-discovery"),
+                      MERGE.replace("into main", "into main-old"),
+                      MERGE.replace("merging", "mergings"),
                       "Rerun CI on main.", "Patch .github/workflows/ci.yml on main."):
             with self.subTest(merge=merge):
                 self._fails_only(ws, "merge-existing-fix", GOOD_REPLY.replace(MERGE, merge))
@@ -325,6 +362,17 @@ class WrongBranchFixtureTests(unittest.TestCase):
                 self.assertFalse(scores["merge-existing-fix"])
                 self.assertFalse(scores["obsolete-command-diagnosed"])
 
+    def test_quoted_blockquoted_or_incidental_paragraph_is_not_credited(self):
+        ws = self._good()
+        for reply in ('"' + NATURAL_PARAGRAPH_REPLY.rstrip() + '"',
+                      "> " + NATURAL_PARAGRAPH_REPLY,
+                      "Someone suggested: " + NATURAL_PARAGRAPH_REPLY):
+            with self.subTest(wrapper=reply[:1]):
+                scores = self._score(ws, reply)
+                self.assertFalse(scores["main-differs-from-feature"])
+                self.assertFalse(scores["merge-existing-fix"])
+                self.assertFalse(scores["obsolete-command-diagnosed"])
+
     def test_documented_reply_variants_pass(self):
         ws = self._good()
         for diagnosis in (DIAGNOSIS, "- Diagnosis: `.github/workflows/ci.yml` on `main` is older than `fix/ci-test-discovery`.",
@@ -334,6 +382,126 @@ class WrongBranchFixtureTests(unittest.TestCase):
                 with self.subTest(diagnosis=diagnosis, merge=merge):
                     reply = GOOD_REPLY.replace(DIAGNOSIS, diagnosis).replace(MERGE, merge)
                     self.assertEqual(self._score(ws, reply), dict.fromkeys(PRISTINE, True))
+
+    def test_complete_natural_replies_pass_without_prescribed_sentence_format(self):
+        ws = self._good()
+        replies = (
+            GOOD_REPLY,
+            (
+                "The failed run 77001 reports ModuleNotFoundError for test.test_legacy.\n"
+                "Log: https://example.com/example-org/example-service/actions/runs/77001\n"
+                "The .github/workflows/ci.yml on main differs from fix/ci-test-discovery "
+                "because the latter discovers the current tests.\n"
+                "Main's workflow invokes python3 -m unittest test.test_legacy, "
+                "but test.test_legacy is absent from the project.\n"
+                "Merge fix/ci-test-discovery into main so CI uses the existing correction.\n"
+            ),
+            (
+                "Run 77001 shows a missing module, test.test_legacy, with a ModuleNotFoundError.\n"
+                "See [run 77001](https://example.com/example-org/example-service/actions/runs/77001).\n"
+                "Main's .github/workflows/ci.yml is outdated compared with "
+                "fix/ci-test-discovery, which has a working discovery command.\n"
+                "On main, the workflow runs python3 -m unittest test.test_legacy "
+                "even though test.test_legacy is missing.\n"
+                "The next step is to merge fix/ci-test-discovery into main; "
+                "the fix is already on that branch.\n"
+            ),
+            (
+                "Run 77001 failed with ModuleNotFoundError for the absent test.test_legacy module.\n"
+                "Run: https://example.com/example-org/example-service/actions/runs/77001\n"
+                "The main .github/workflows/ci.yml is older than fix/ci-test-discovery, "
+                "which switched to unittest discovery.\n"
+                "The main workflow still executes python3 -m unittest test.test_legacy; "
+                "test.test_legacy is missing.\n"
+                "We should merge fix/ci-test-discovery into main to use its tested fix.\n"
+            ),
+            (
+                "Run 77001 failed because the test.test_legacy module is missing.\n"
+                "Evidence: https://example.com/example-org/example-service/actions/runs/77001\n"
+                "The .github/workflows/ci.yml on main differs from fix/ci-test-discovery "
+                "in its test command.\n"
+                "The main workflow runs python3 -m unittest test.test_legacy, "
+                "but test.test_legacy is absent.\n"
+                "Merge fix/ci-test-discovery into main; that branch carries the repair.\n"
+            ),
+            (
+                "Run 77001 failed: No module named 'test.test_legacy'.\n"
+                "See [the run](https://example.com/example-org/example-service/actions/runs/77001).\n"
+                "The .github/workflows/ci.yml on main is different from "
+                "fix/ci-test-discovery, whose command discovers tests.\n"
+                "On main, .github/workflows/ci.yml invokes python3 -m unittest "
+                "test.test_legacy, but that module is absent.\n"
+                "Recommend merging fix/ci-test-discovery into main to adopt that fix.\n"
+            ),
+            NATURAL_PARAGRAPH_REPLY,
+            GOOD_REPLY.replace(
+                MERGE,
+                "Merge fix/ci-test-discovery into main so we don't keep running the obsolete command."
+            ),
+            GOOD_REPLY.replace(
+                DIAGNOSIS,
+                "The .github/workflows/ci.yml on main differs from fix/ci-test-discovery, "
+                "which doesn't call the missing module."
+            ),
+            GOOD_REPLY.replace(
+                MERGE,
+                "You should merge fix/ci-test-discovery into main; its fix is ready."
+            ),
+            GOOD_REPLY.replace(
+                MERGE,
+                "The fix is to merge fix/ci-test-discovery into main because the branch already works."
+            ),
+        )
+        for reply in replies:
+            with self.subTest(reply=reply[:45]):
+                self.assertEqual(self._score(ws, reply), dict.fromkeys(PRISTINE, True))
+
+    def test_natural_wrong_replies_fail_the_relevant_reply_checks(self):
+        ws = self._good()
+        wrong = (
+            ("The runner image broke run 77001; update Python and rerun CI.",
+             {"main-differs-from-feature", "merge-existing-fix", "obsolete-command-diagnosed"}),
+            (GOOD_REPLY.replace(DIAGNOSIS, "The main and fix/ci-test-discovery workflows are identical."),
+             {"main-differs-from-feature"}),
+            (GOOD_REPLY.replace(MERGE, "Merge main into fix/ci-test-discovery to resolve CI."),
+             {"merge-existing-fix"}),
+            (GOOD_REPLY.replace("Run 77001 failed", "Run 770010 failed"),
+             {"obsolete-command-diagnosed"}),
+        )
+        for reply, expected in wrong:
+            with self.subTest(reply=reply[:45]):
+                scores = self._score(ws, reply)
+                self.assertEqual({key for key, passed in scores.items() if not passed}, expected)
+
+    def test_obsolete_command_claim_must_be_affirmative(self):
+        ws = self._good()
+        actual = (
+            "The main workflow still runs `python3 -m unittest test.test_legacy`, "
+            "although test.test_legacy is missing."
+        )
+        for false_claim in (
+            "The main workflow does not run python3 -m unittest test.test_legacy; "
+            "test.test_legacy is missing.",
+            "Main never invokes python3 -m unittest test.test_legacy; "
+            "test.test_legacy is absent.",
+            "The main workflow might run python3 -m unittest test.test_legacy; "
+            "test.test_legacy is missing.",
+        ):
+            with self.subTest(claim=false_claim):
+                self._fails_only(ws, "obsolete-command-diagnosed", GOOD_REPLY.replace(actual, false_claim))
+
+    def test_run_failure_cannot_be_denied_or_relabelled(self):
+        ws = self._good()
+        actual = "Run 77001 failed because Python could not import test.test_legacy (ModuleNotFoundError)."
+        for false_claim in (
+            "Run 77001 did not fail with ModuleNotFoundError for test.test_legacy.",
+            "Run 77001 might have failed with ModuleNotFoundError for test.test_legacy.",
+            "Run 770010 failed because test.test_legacy is missing.",
+            "Run 77001 failed because test.test_legacy-old is missing.",
+            "Run 77001 failed because hot.test.test_legacy is missing.",
+        ):
+            with self.subTest(claim=false_claim):
+                self._fails_only(ws, "obsolete-command-diagnosed", GOOD_REPLY.replace(actual, false_claim))
 
     def test_repository_guard_catches_added_deleted_and_changed_project_files(self):
         ws = self._good()
@@ -393,6 +561,12 @@ class WrongBranchFixtureTests(unittest.TestCase):
         self.assertTrue((SEED / "bin/gh").is_symlink())
         self.assertEqual((SEED / "bin/gh").resolve(), (HARNESS / "fakes/gh").resolve())
         self.assertEqual(self.fixture["env"], {"PATH": "$WORKSPACE/bin:$PATH", "GH_REPLAY_DIR": "$WORKSPACE/.gh/replay", "GH_REPO": REPO})
+        prompt = self.fixture["prompt"]
+        self.assertIn("CI is red on main", prompt)
+        self.assertIn("Do not change remote state", prompt)
+        self.assertIn("findings and next steps", prompt)
+        self.assertIsNone(re.search(r"\b(?:merge|dispatch|rerun|remedy)\b|Diagnosis:|Recommendation:|Run:",
+                                    prompt, re.IGNORECASE))
         for text in (self.fixture["prompt"], (SEED / "README.md").read_text()):
             self.assertNotIn("fix/ci-test-discovery", text)
             self.assertNotIn("test.test_legacy", text)

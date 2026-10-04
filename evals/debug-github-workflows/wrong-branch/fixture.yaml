@@ -17,10 +17,8 @@ env:
   GH_REPO: "example-org/example-service"
 
 prompt: >
-  CI is red on main. Find the root cause and fix it. You may investigate and
-  make local changes, but do not write to the remote repository, merge,
-  dispatch, or rerun anything remotely. If the remedy needs a remote action,
-  explain the action to take.
+  CI is red on main. Investigate the root cause and fix what you can locally.
+  Do not change remote state. Explain your findings and next steps.
 
 arms:
   with_skill:
@@ -34,18 +32,24 @@ arms:
 # not a substring inside argv or a run such as 770010. No exit-code predicate:
 # a served read may report exit=1 when its consumer closes the pipe early.
 #
-# Transcript checks deliberately certify short affirmative sentence forms,
-# not unrestricted English semantics. Identifier backticks, bullets and a
-# Diagnosis:/Recommendation: prefix are accepted. Comparisons say the named
-# workflow on main differs from/is older than the named branch.
-# Recommendations say merge that branch into main.
-# Incidental mentions, quoted lines, negation and reversed direction do not
-# suffice. Transcripts with fences or HTML comments conservatively fail these
-# two checks (including a correct finding accompanied by a fenced log); other
-# correct phrasings may also fail. These limits are tested, not concealed by
-# proximity matching.
-# The judge must still catch contradictions and judge the cause, evidence and
-# meaning. No regex here decides the structure of workflow code.
+# Transcript checks recognize several affirmative prose forms on one line:
+# the named workflow on main is older/different, the existing branch should
+# be merged into main, and the run shows the missing module and obsolete main
+# command. They allow narrative tails and a Markdown run link, without asking
+# the agent to use an answer template. Identifier boundaries reject suffixes;
+# verb boundaries reject words such as "mergings" and "olderish". The opening
+# must be a diagnosis, recommendation, run or workflow statement, rather than
+# a quote, blockquote or incidental mention. Negation and hedging before the
+# comparison verb or merge target are excluded; rationale after the claim may
+# naturally say what the branch does not do. An explicit "This is false"
+# reversal is excluded. This is a lexical certificate, not English
+# entailment: split-line paraphrases and uncommon verbs may fail, and a
+# contradiction on another line may pass. Any fence, HTML comment, quoted
+# line, blockquote or "Someone suggested" preface anywhere conservatively
+# fails all three reply checks,
+# including a correct answer with a fenced or quoted log. The judge must
+# resolve remaining meaning and attribution and catch contradictions. No
+# regex here decides the shape of workflow code.
 #
 # Trust boundary: the agent can edit its own log, anchor, executable and
 # responses. Files checks catch changes at the listed paths, not arbitrary
@@ -74,30 +78,36 @@ objective_checks:
     description: The reply affirms the named workflow on main differs from the existing fix branch
     type: transcript_matches
     must_match:
-      - '(?i)^[ \t]*(?:[-*][ \t]+)?(?:Diagnosis:[ \t]+)?(?:The[ \t]+)?`?\.github/workflows/ci\.yml`?(?:[ \t]+(?:workflow|file))?[ \t]+on[ \t]+`?main`?[ \t]+(?:still[ \t]+)?(?:differs[ \t]+from|is[ \t]+(?:older[ \t]+than|different[ \t]+from))[ \t]+`?fix/ci-test-discovery`?(?:[ \t]+branch)?[.!]?[ \t]*$'
+      - '(?i)(?:^|[.!?][ \t]+)[ \t]*(?:[-*][ \t]+)?(?:Diagnosis:[ \t]+)?(?![^\r\n]*\bThis[ \t]+is[ \t]+false\b)(?![^\r\n]*\b(?:not|never|maybe|might|perhaps|possibly|could|probably|don''t|doesn''t|isn''t)\b[^\r\n]*\b(?:differs[ \t]+from|is[ \t]+(?:older[ \t]+than|different[ \t]+from|outdated[ \t]+compared[ \t]+(?:with|to)|stale[ \t]+compared[ \t]+(?:with|to)|behind))\b)(?=[^\r\n]*(?<![A-Za-z0-9_./-])\.github/workflows/ci\.yml(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-]))(?=[^\r\n]*(?<![A-Za-z0-9_./-])main(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])[^\r\n]*\b(?:differs[ \t]+from|is[ \t]+(?:older[ \t]+than|different[ \t]+from|outdated[ \t]+compared[ \t]+(?:with|to)|stale[ \t]+compared[ \t]+(?:with|to)|behind))\b[^\r\n]*(?<![A-Za-z0-9_./-])`?fix/ci-test-discovery`?(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-]))(?:The[ \t]+)?(?:On[ \t]+`?main`?[, \t]+|`?main`?(?:''s)?[ \t]+|`?\.github/workflows/ci\.yml`?|(?:CI[ \t]+)?workflow\b)[^\r\n]*$'
     must_not_match:
       - '^[ \t]*(?:```|~~~)[^\r\n]*$'
       - '^[^\r\n]*(?:<!--|-->)[^\r\n]*$'
+      - '^[ \t]*(?:[-*][ \t]+)?(?:>|["''])'
+      - '(?i)^[ \t]*(?:[-*][ \t]+)?Someone[ \t]+suggested:'
 
   - id: merge-existing-fix
     description: The reply recommends merging the existing fix branch into main
     type: transcript_matches
     must_match:
-      - '(?i)^[ \t]*(?:[-*][ \t]+)?(?:Recommendation:[ \t]+)?(?:Merge|(?:I[ \t]+)?recommend[ \t]+merging)[ \t]+`?fix/ci-test-discovery`?[ \t]+into[ \t]+`?main`?(?:[ \t]+to[ \t]+(?:apply|bring[ \t]+in)[ \t]+the[ \t]+(?:existing[ \t]+)?(?:workflow[ \t]+)?fix)?[.!]?[ \t]*$'
+      - '(?i)(?:^|[.!?][ \t]+)[ \t]*(?:[-*][ \t]+)?(?:Recommendation:[ \t]+)?(?![^\r\n]*\bThis[ \t]+is[ \t]+false\b)(?![^\r\n]*\b(?:not|never|maybe|might|perhaps|possibly|could|probably|don''t|doesn''t|isn''t)\b[^\r\n]*(?<![A-Za-z0-9_./-])`?fix/ci-test-discovery`?(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-]))(?:Merge\b|(?:I[ \t]+)?recommend[ \t]+merging\b|(?:We|You)[ \t]+should[ \t]+merge\b|The[ \t]+(?:next[ \t]+step|fix)[ \t]+is[ \t]+to[ \t]+merge\b)[ \t]+(?:the[ \t]+(?:existing[ \t]+)?)?(?<![A-Za-z0-9_./-])`?fix/ci-test-discovery`?(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])[ \t]+into[ \t]+`?main`?(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])[^\r\n]*$'
     must_not_match:
       - '^[ \t]*(?:```|~~~)[^\r\n]*$'
       - '^[^\r\n]*(?:<!--|-->)[^\r\n]*$'
+      - '^[ \t]*(?:[-*][ \t]+)?(?:>|["''])'
+      - '(?i)^[ \t]*(?:[-*][ \t]+)?Someone[ \t]+suggested:'
 
   - id: obsolete-command-diagnosed
     description: The reply names run 77001's missing module, obsolete main command and run URL
     type: transcript_matches
     must_match:
-      - '(?i)^[ \t]*(?:[-*][ \t]+)?Run[ \t]+77001[ \t]+failed:[ \t]+ModuleNotFoundError:[ \t]+No[ \t]+module[ \t]+named[ \t]+[''" ]?test\.test_legacy[''"]?[.!]?[ \t]*$'
-      - '(?i)^[ \t]*(?:[-*][ \t]+)?Main[ \t]+(?:still[ \t]+)?invokes[ \t]+`?python3 -m unittest test\.test_legacy`?,[ \t]+but[ \t]+that[ \t]+module[ \t]+is[ \t]+absent[.!]?[ \t]*$'
-      - '^[ \t]*(?:[-*][ \t]+)?Run:[ \t]+https://example\.com/example-org/example-service/actions/runs/77001[ \t]*$'
+      - '(?i)(?:^|[.!?][ \t]+)[ \t]*(?:[-*][ \t]+)?(?![^\r\n]*\b(?:did[ \t]+not[ \t]+fail|didn''t[ \t]+fail|never[ \t]+failed|might[ \t]+have[ \t]+failed|maybe[ \t]+failed)\b)(?=[^\r\n]*(?:\brun[ \t]+77001(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])|/runs/77001(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])))(?=[^\r\n]*\b(?:failed|fails|shows|reports|records|raises)\b)(?=[^\r\n]*\b(?:ModuleNotFoundError|missing|absent|no[ \t]+module[ \t]+named)\b)(?=[^\r\n]*(?<![A-Za-z0-9_./-])test\.test_legacy(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-]))(?:(?:The[ \t]+)?(?:failed[ \t]+)?Run[ \t]+77001(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])|CI[ \t]+on[ \t]+main\b)[^\r\n]*$'
+      - '(?i)(?:^|[.!?][ \t]+)[ \t]*(?:[-*][ \t]+)?(?:The[ \t]+)?(?:main(?:''s)?[ \t]+(?:workflow[ \t]+)?|On[ \t]+main,[ \t]+(?:the[ \t]+)?(?:workflow|`?\.github/workflows/ci\.yml`?)[ \t]+|CI[ \t]+on[ \t]+main[ \t]+)(?![^\r\n]*\b(?:(?:does[ \t]+not|do[ \t]+not|never|doesn''t|don''t)[ \t]+(?:run|runs|invoke|invokes|execute|executes)|maybe|might|perhaps|possibly|probably|false)\b)(?=[^\r\n]*\b(?:runs?|invokes?|executes?)\b)(?=[^\r\n]*python3[ \t]+-m[ \t]+unittest[ \t]+(?<![A-Za-z0-9_./-])test\.test_legacy(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-]))(?=[^\r\n]*\b(?:missing|absent|removed|deleted|no[ \t]+longer[ \t]+exists)\b)[^\r\n]*$'
+      - '(?i)(?:^|[.!?][ \t]+)[ \t]*(?:[-*][ \t]+)?(?:(?:See[ \t]+)?\[[^\]\r\n]+\]\(|(?:Run|Log|Evidence)(?:[ \t]+77001)?[: \t]+(?:\[[^\]\r\n]+\]\()?|CI[ \t]+on[ \t]+main\b[^\r\n]*?\[[^\]\r\n]+\]\()https://example\.com/example-org/example-service/actions/runs/77001(?![A-Za-z0-9_/-]|\.[A-Za-z0-9_-])\)?[^\r\n]*$'
     must_not_match:
       - '^[ \t]*(?:```|~~~)[^\r\n]*$'
       - '^[^\r\n]*(?:<!--|-->)[^\r\n]*$'
+      - '^[ \t]*(?:[-*][ \t]+)?(?:>|["''])'
+      - '(?i)^[ \t]*(?:[-*][ \t]+)?Someone[ \t]+suggested:'
 
   - id: repository-files-unchanged
     description: The agent preserved the workflow, application, tests and project instructions
