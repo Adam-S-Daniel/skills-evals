@@ -503,6 +503,7 @@ def arm_plugin_marketplace(ctx) -> ArmResult:
 
     expected = {f"{bundle}:{skill}" for bundle, skill in lock_pairs(ctx.lock)}
     findings = [_delivery_finding(expected, _delivered(control, facts), "plugin")]
+    # Deliberately no `gitCommitSha` check anywhere in this arm: see the docstring (#192).
 
     roots = {bundle: facts.plugin_path(bundle) for bundle in bundles}
     unresolved = [bundle for bundle, root in roots.items() if root is None]

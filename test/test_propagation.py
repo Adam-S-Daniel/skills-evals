@@ -52,7 +52,7 @@ NOW = datetime(2026, 8, 14, 12, 0, 0, tzinfo=timezone.utc)
 # these names only; `test_extra_passthrough_is_empty_in_production` asserts the
 # committed value is empty.
 STUB_VARS = ("FAKE_INIT_MODE", "FAKE_INIT_DROP", "FAKE_INIT_EXTRA",
-             "FAKE_INIT_ACCOUNT", "FAKE_HOOK_MODE")
+             "FAKE_INIT_ACCOUNT", "FAKE_INIT_COMMIT_SHA", "FAKE_HOOK_MODE")
 FIXTURE_SKILLS = ("fixture-alpha", "fixture-beta")
 
 
@@ -232,6 +232,59 @@ class ChannelAttributionTests(unittest.TestCase):
 
     def test_everything_else_is_local(self):
         self.assertEqual(init_probe.attribute(self._facts(["z"]))["z"], "local")
+
+    # --- #196: a synced skill's name carries a `:` on CLI >= 2.1.269 --------
+    # The release notes (read, not measured here) say synced skills are named
+    # `anthropic-skills:<name>`, so the namespace rule must not claim them.
+
+    def _probe_account_namespaced(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
+        scratch = arms.make_scratch(root, "account-namespaced")
+        env = {"FAKE_INIT_MODE": "account-namespaced",
+               "FAKE_INIT_ACCOUNT": "fixture-synced"}
+        with mock.patch.dict(os.environ, {"CLAUDE_BIN": str(FAKE_CLAUDE_INIT)}):
+            return init_probe.probe(cwd=scratch.ws, home=scratch.home,
+                                    tmpdir=scratch.tmp, env_extra=env, timeout=60)
+
+    def test_a_synced_skill_named_anthropic_skills_is_account_not_plugin(self):
+        # Through the production path: the stub emits the stream, `probe`
+        # parses it, `attribute` classifies. Red when the `:` rule is checked
+        # before the account channel.
+        facts = self._probe_account_namespaced()
+        self.assertIn("anthropic-skills:fixture-synced", facts.skills)
+        self.assertIn("anthropic-skills:fixture-synced",
+                      facts.account_named_skills())
+        channels = init_probe.attribute(facts)
+        self.assertEqual(channels["anthropic-skills:fixture-synced"], "account")
+        # The honest built-ins are untouched.
+        self.assertEqual(channels["fixture-builtin-a"], "local")
+
+    def test_the_account_namespace_alone_means_account(self):
+        # No `commands_changed` (a surface with no account emits none): the
+        # name is the only signal there is.
+        facts = self._facts(["anthropic-skills:y"])
+        self.assertFalse(facts.commands_seen)
+        self.assertEqual(init_probe.attribute(facts)["anthropic-skills:y"],
+                         "account")
+
+    def test_the_account_set_outranks_the_namespace_rule(self):
+        # The order itself: any `:`-named skill the account set carries is
+        # an account skill, whatever its prefix (`Skill(claude-ai:*)` rules
+        # exist in 2.1.282's notes too).
+        facts = self._facts(["claude-ai:y"],
+                            {"claude-ai:y": "desc (claude.ai sync)"})
+        self.assertEqual(init_probe.attribute(facts)["claude-ai:y"], "account")
+
+    def test_a_marketplace_plugin_is_still_a_plugin_beside_a_synced_skill(self):
+        # The control: moving the account check first must not swallow the
+        # plugin channel.
+        facts = self._facts(
+            ["adam:x", "anthropic-skills:y", "z"],
+            {"anthropic-skills:y": "d (claude.ai sync)", "z": "plain"})
+        self.assertEqual(init_probe.attribute(facts),
+                         {"adam:x": "plugin", "anthropic-skills:y": "account",
+                          "z": "local"})
 
     def test_account_sentinel_is_the_discriminator_that_always_exists(self):
         # commands_changed is NOT emitted on a surface with no account
@@ -572,6 +625,28 @@ class ArmMutationTests(unittest.TestCase):
         result = self.run_arm("plugin-marketplace", lock=lock)
         self.assertEqual(result.status, arms.FAIL, result.render())
         self.assertIn("adam/fixture-alpha", self.findings(result)["plugin/digest"].detail)
+
+    def test_plugin_arm_does_not_depend_on_the_recorded_git_commit_sha(self):
+        # #192. `arm_plugin_marketplace` deliberately does NOT compare the
+        # `gitCommitSha` the CLI records in installed_plugins.json: that is
+        # the checkout's HEAD, the lock pins the commit whose CONTENT it
+        # hashed, and the two differ while every digest matches (see the
+        # arm's docstring; introduced with the arm in af91844). CLI 2.1.277
+        # and 2.1.280 changed when the CLI writes that value (release notes,
+        # not measured here), which is exactly why the arm must not care.
+        # Red if the arm ever starts comparing it to the lock's `ref` or
+        # requires it to be present.
+        lock = arms.load_lock(self.registry / "skills.lock")
+        for label, sha in (("a commit other than the lock's ref", "9" * 40),
+                           ("the lock's own ref", lock["ref"]),
+                           ("no commit recorded", "")):
+            with self.subTest(recorded=label):
+                with mock.patch.dict(os.environ, {"FAKE_INIT_COMMIT_SHA": sha}):
+                    result = self.run_arm("plugin-marketplace", lock=lock)
+                self.assertEqual(result.status, arms.PASS, result.render())
+                self.assertNotIn("gitCommitSha", result.render())
+        self.assertNotEqual("9" * 40, lock["ref"],
+                            "the divergent case must actually diverge")
 
     def test_plugin_arm_fails_when_skills_arrive_unnamespaced(self):
         with mock.patch.dict(os.environ,
