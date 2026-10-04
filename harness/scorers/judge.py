@@ -39,6 +39,7 @@ from . import invisibles, wrapping
 _HARNESS_DIR = str(Path(__file__).resolve().parent.parent)
 if _HARNESS_DIR not in sys.path:
     sys.path.insert(0, _HARNESS_DIR)
+from cli_json import normalize_cli_result  # noqa: E402
 
 _REQUIRED_DIM_KEYS = ("name", "score", "rationale")
 
@@ -208,11 +209,13 @@ def _run_judge_cli(prompt: str, *, model: str | None, timeout: int) -> str:
         )
 
     try:
-        data = json.loads(result.stdout)
+        data = normalize_cli_result(json.loads(result.stdout))
     except json.JSONDecodeError as e:
         raise RuntimeError(
             f"judge CLI produced invalid JSON: {result.stdout[:500]!r}: {e}"
         ) from e
+    except ValueError as e:
+        raise RuntimeError(f"judge CLI produced invalid JSON: {e}") from e
 
     for sink in _MODEL_SINKS:
         sink.append({"modelUsage": data.get("modelUsage")}

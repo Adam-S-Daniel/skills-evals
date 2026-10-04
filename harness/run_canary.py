@@ -101,6 +101,7 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
     # guidance.run_guard with the `guard.timeout_s` knob, and from anywhere a
     # later caller decides to reach it from.
     import guidance  # noqa: PLC0415 — cycle-avoidance, see main()
+    from cli_json import normalize_cli_result  # noqa: PLC0415 — main() sets path
     guidance.check_timeout(timeout, "run_canary.run_leg(timeout=)",
                            guidance.SINK_TIMEOUT_REMEDY)
     # Unlike run_eval, no --permission-mode bypassPermissions: the probe must
@@ -126,9 +127,11 @@ def run_leg(workspace: Path, prompt: str, disallowed_tools: str, *,
                 "returncode": result.returncode}
 
     try:
-        data = json.loads(result.stdout)
+        data = normalize_cli_result(json.loads(result.stdout))
     except json.JSONDecodeError as e:
         return {"error": "invalid_json", "detail": f"{result.stdout[:500]!r}: {e}"}
+    except ValueError as e:
+        return {"error": "invalid_json", "detail": str(e)}
 
     if data.get("is_error"):
         return {"error": "agent_error", "detail": data.get("result", ""), "raw": data}
