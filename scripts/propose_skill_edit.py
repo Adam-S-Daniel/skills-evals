@@ -83,6 +83,7 @@ EVALS_DIR = REPO_ROOT / "evals"
 RUN_EVAL = HARNESS_DIR / "run_eval.py"
 
 sys.path.insert(0, str(HARNESS_DIR))
+from cli_json import normalize_cli_result  # noqa: E402
 import run_eval  # noqa: E402
 
 MIN_FIXTURES = 3
@@ -169,8 +170,8 @@ class Runner:
         if proc.returncode != 0:
             raise Refusal(f"proposal call exited {proc.returncode}")
         try:
-            return json.loads(proc.stdout).get("result", "")
-        except (json.JSONDecodeError, AttributeError) as exc:
+            return normalize_cli_result(json.loads(proc.stdout)).get("result", "")
+        except (ValueError, AttributeError) as exc:
             raise Refusal("proposal call printed no JSON result") from exc
 
 
