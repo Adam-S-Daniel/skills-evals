@@ -428,6 +428,42 @@ this account and has grown a run-a-script grader; until then this harness
 stays the system of record. If `results/` is ever restructured, mirror its
 report schema to keep a future migration cheap.
 
+**Re-read 2026-10-04 ([#193](https://github.com/Adam-S-Daniel/skills-evals/issues/193)),
+from `claude plugin eval --help` on Claude Code 2.1.289, run with a throwaway
+`HOME` and no login.** Only the help text was read; no eval was run, so
+everything below is "read in `--help`", not measured.
+
+- *Early access:* the help no longer says so. Whether this account is still
+  gated is **not verified**; probing it needs a login this note does not use.
+- *Graders:* the help names LLM and baseline graders as the paid ones (with
+  "free graders" beside them), a `with-only` marker that includes
+  `tool_used: Skill`, and a `scaffold_script` that runs author-supplied bash
+  as you, off unless `--scaffold` is passed. It does not name a grader that
+  runs a script and scores its result, so the 2026-08-30 "no scriptable
+  grader" is neither confirmed nor refuted. The `scaffold_script` is described
+  as setup, not scoring.
+- *Layout:* still per plugin: cases live in `<eval dir>/**/case.yaml` (or
+  `prompt.md` plus `graders/*.md`) under the plugin, results in
+  `<plugin>/<dir>/results/`, with `--eval-dir` and a manifest
+  `experimental.evals` to move it. This harness keeps its fixtures centralized
+  under `evals/<skill>/`.
+- *New since 2026-08-30, as read:* an `init` subcommand that authors a suite
+  by interview; with/without-baseline ablation on by default whenever a plugin
+  resolves; an OS sandbox around shell tools and MCP mocks (`--mocks`);
+  `--runs`, `--concurrency` (1 to 8), `--max-cost-usd`; `--json` output and an
+  HTML `--report`, which the CLI also **publishes to claude.ai by default when
+  the account supports it** (`--no-publish` opts out). This harness
+  publishes its results to its own `persistent/eval-results` branch, so a
+  wrapper would have to decide that default deliberately.
+- *Not assessed:* `/skill-doctor`, the other tool in the same issue.
+
+**Decision unchanged: monitor, don't wrap.** The criterion that would flip it
+was a run-a-script grader, and `--help` does not show one; the layout is still
+per plugin; and the gate is unverified either way. The help also describes
+plugin targets, and says nothing about whether a `subject: guidance` fixture
+(an `AGENTS.md` section, not a plugin) could run under it. Re-read `--help` on
+the next CLI bump, and run it once if a grader that scores a script appears.
+
 ## Model roster (2026-09-04, #67; redesigned 2026-09-13, #147)
 
 The harness's model choices were literals: an arm pinned in each fixture, a
