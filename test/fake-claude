@@ -77,6 +77,8 @@ Three modes simulate harness/run_canary.py's guidance-bridge canary:
   - canary_loader: mimics Claude Code's real memory loader — expands an
     `@AGENTS.md`-style import line in ./CLAUDE.md (outside fenced code
     blocks) and replies with CLAUDE.md's content plus whatever it imported.
+    With no CLAUDE.md it replies with AGENTS.md's content (native AGENTS.md
+    support, 2.1.277), and with neither it replies NO-MAGIC-WORD.
   - canary_blind: always replies "NO-MAGIC-WORD", simulating a regressed
     loader that injects nothing.
   - canary_forager: replies with the concatenation of every *.md file in cwd
@@ -159,6 +161,14 @@ def _load_claude_md() -> str:
     """canary_loader: expand `@file` import lines outside fenced code blocks."""
     claude_md = Path("CLAUDE.md")
     if not claude_md.is_file():
+        # Native AGENTS.md support as Claude Code 2.1.277's release note
+        # describes it: "in a project with no CLAUDE.md, Claude Code reads
+        # AGENTS.md instead". Modeled from that note, not measured against a
+        # real CLI (skills-evals#191). With a CLAUDE.md present AGENTS.md is
+        # NOT read, which is why no-bridge and fence stay invisible.
+        agents_md = Path("AGENTS.md")
+        if agents_md.is_file():
+            return agents_md.read_text(encoding="utf-8")
         return "NO-MAGIC-WORD"
     content = claude_md.read_text(encoding="utf-8")
     imported = []
