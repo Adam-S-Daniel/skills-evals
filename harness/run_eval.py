@@ -54,6 +54,7 @@ from pathlib import Path
 import yaml
 
 sys.path.insert(0, str(Path(__file__).parent))
+from cli_json import normalize_cli_result  # noqa: E402
 import guidance  # noqa: E402
 from scorers import judge, objective  # noqa: E402
 
@@ -1023,10 +1024,12 @@ def run_agent(workspace: Path, prompt: str, arm: dict) -> dict:
                 "returncode": result.returncode}
 
     try:
-        data = json.loads(result.stdout)
+        data = normalize_cli_result(json.loads(result.stdout))
     except json.JSONDecodeError as e:
         return {"error": "invalid_json",
                 "detail": f"{result.stdout[:500]!r}: {e}"}
+    except ValueError as e:
+        return {"error": "invalid_json", "detail": str(e)}
 
     if data.get("is_error"):
         return {"error": "agent_error", "detail": data.get("result", ""), "raw": data}

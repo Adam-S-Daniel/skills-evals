@@ -1,0 +1,12 @@
+---
+layout: default
+title: Tools
+permalink: /tools/
+---
+<h1>Tools</h1>
+<div class="tool-grid">
+{% assign sorted_tools = site.tools | sort: 'featured' | reverse %}
+{% for tool in sorted_tools %}
+<article><h2><a href="{{ tool.url | relative_url }}">{{ tool.title | escape }}</a></h2><p>{{ tool.description | escape }}</p></article>
+{% endfor %}
+</div>
