@@ -7,7 +7,8 @@ decision record is docs/decisions/0005-improvement-loop-reuses-skill-creator.md.
 
     python3 scripts/propose_skill_edit.py <skill> \\
         --registry adam-agentskills=PATH [--ref REF] [--trials 3] \\
-        [--rotation K] [--trigger-eval-set FILE] [--skill-creator DIR] \\
+        [--rotation K] [--min-gain .10] [--holdout FIXTURE] \\
+        [--trigger-eval-set FILE] [--skill-creator DIR] \\
         [--results-dir DIR] [--no-judge] [--dry-run]
 
 WHAT IT DOES, in order:
@@ -18,7 +19,8 @@ WHAT IT DOES, in order:
  2. Splits them deterministically: the fixtures in name order, validation is
     the one at index `rotation % n`, train is the rest. `rotation` defaults to
     the number of records already written for this skill, so consecutive
-    runs hold out a different fixture.
+    runs hold out a different fixture. `--holdout` removes one fixed fixture
+    from both train and the rotating validation population on every run.
  3. Builds two scratch registries from `git archive <ref>` of the local
     registry checkout: no `.git`, so nothing in them has a push path.
  4. BASELINE: `harness/run_eval.py evals/<skill> --arm with_skill --trials N`
@@ -27,7 +29,9 @@ WHAT IT DOES, in order:
     `scripts/run_loop.py` description-optimization loop (stratified 60/40
     train/held-out split of a should/should-not-trigger query set, 3 runs per
     query, best description picked by HELD-OUT score). The validation
-    fixture's prompt is never in that query set.
+    fixture's prompt and the fixed holdout's prompt are never in that set.
+    Scratch project settings disable the archived registry plugins that
+    provide the skill, leaving the operator's login available.
  6. BODY HALF: one proposal call (roster judge model, no tools) returning
     `{rationale, unified_diff}` for SKILL.md's body, fed the train fixtures'
     failed checks and transcripts. A diff naming any other file, or touching
@@ -36,7 +40,9 @@ WHAT IT DOES, in order:
     with the same run_eval invocation.
  8. ACCEPT only if validation held (objective pass rate not lower; judge mean
     not lower by more than 0.5) AND train improved (objective pass rate
-    higher, or equal with a higher judge mean).
+    higher by at least `--min-gain` (default .10), or equal with judge mean
+    higher by at least ten times that gain). A fixed holdout must not regress
+    on either score. This is a conservative heuristic, not a significance test.
  9. Writes `<results>/improvements/<skill>/<ts>.json` always, `<ts>.patch`
     whenever a candidate existed, and `<ts>.pr-body.md` on accept. Nothing is
     pushed and no pull request is opened: a human reads the record first.
@@ -58,12 +64,14 @@ import argparse
 import difflib
 import io
 import json
+import math
 import os
 import shutil
 import subprocess
 import sys
 import tarfile
 import tempfile
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -79,6 +87,7 @@ import run_eval  # noqa: E402
 
 MIN_FIXTURES = 3
 DEFAULT_TRIALS = 3
+DEFAULT_MIN_GAIN = 0.10
 #: The judge may drop by at most this much on validation (#71 step 3).
 JUDGE_TOLERANCE = 0.5
 #: skill-creator's own hard limit on a description (improve_description.py).
@@ -175,12 +184,15 @@ def skill_fixtures(skill: str) -> list[str]:
     return run_eval.nested_fixture_names(EVALS_DIR / skill)
 
 
-def split_fixtures(fixtures: list[str], rotation: int) -> tuple[list[str], str]:
+def split_fixtures(fixtures: list[str], rotation: int,
+                   holdout: str | None = None) -> tuple[list[str], str]:
     """(train, validation): validation is `sorted(fixtures)[rotation % n]`."""
     if len(fixtures) < MIN_FIXTURES:
         raise Refusal(f"needs more fixtures: {len(fixtures)} found, "
                       f"{MIN_FIXTURES} required (one held out, the rest trained on)")
-    ordered = sorted(fixtures)
+    if holdout is not None and holdout not in fixtures:
+        raise Refusal(f"--holdout {holdout!r} is not a nested fixture of this skill")
+    ordered = sorted(f for f in fixtures if f != holdout)
     validation = ordered[rotation % len(ordered)]
     return [f for f in ordered if f != validation], validation
 
@@ -251,6 +263,79 @@ def find_skill_dir(registry_root: Path, layout: str, skill: str) -> Path:
     return matches[0].parent
 
 
+def skill_provider_plugins(registry_root: Path, skill: str) -> list[str]:
+    """Local marketplace plugins providing `skill`, using archived manifests.
+
+    Default skills/ and declared additional skill paths are additive. Remote
+    marketplace sources cannot be inspected in this archive and are skipped.
+    Every local path is confined to the archive; no installed plugin runs.
+    """
+    def read_manifest(path: Path) -> dict:
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise Refusal(f"unreadable plugin manifest {path.name}") from exc
+        if not isinstance(value, dict):
+            raise Refusal(f"plugin manifest {path.name} must be an object")
+        return value
+
+    def local_path(base: Path, value: str) -> Path:
+        if not isinstance(value, str) or (value != "." and not value.startswith("./")):
+            raise Refusal("local plugin paths must be . or start with ./")
+        path = (base / value).resolve()
+        if not path.is_relative_to(registry_root.resolve()):
+            raise Refusal("local plugin path escapes the archived registry")
+        return path
+
+    marketplace_path = registry_root / ".claude-plugin" / "marketplace.json"
+    if not marketplace_path.exists():
+        return []  # No marketplace means no fully-qualified installed key.
+    marketplace = read_manifest(marketplace_path)
+    market_name, plugins = marketplace.get("name"), marketplace.get("plugins")
+    if not isinstance(market_name, str) or not market_name or not isinstance(plugins, list):
+        raise Refusal("marketplace manifest needs a name and plugins list")
+    providers = set()
+    for entry in plugins:
+        if not isinstance(entry, dict):
+            raise Refusal("marketplace plugin entry must be an object")
+        source = entry.get("source")
+        if isinstance(source, dict):
+            continue  # Federated sources are never fetched by this loop.
+        root = local_path(registry_root, source)
+        manifest_path = root / ".claude-plugin" / "plugin.json"
+        manifest = read_manifest(manifest_path) if manifest_path.exists() else {}
+        name = entry.get("name")  # Installed keys use the marketplace entry.
+        if not isinstance(name, str) or not name:
+            raise Refusal("marketplace plugin entry needs a name")
+        paths = []
+        for declaration in (manifest.get("skills", []), entry.get("skills", [])):
+            if isinstance(declaration, str):
+                declaration = [declaration]
+            if not isinstance(declaration, list):
+                raise Refusal("plugin skills must be a path or list of paths")
+            for declared in declaration:
+                path = local_path(root, declared)
+                if not path.is_relative_to(root):
+                    raise Refusal("skill path escapes its plugin root")
+                paths.append(path)
+        defaults = ([] if root == registry_root.resolve() and entry.get("skills")
+                    else [root / "skills"])
+        for path in defaults + paths:
+            candidates = ([path / "SKILL.md"] if (path / "SKILL.md").is_file()
+                          else sorted(path.glob("*/SKILL.md")))
+            for candidate in candidates:
+                if not candidate.resolve().is_relative_to(root):
+                    raise Refusal("skill path escapes its plugin root")
+                try:
+                    provided_name = frontmatter_data(candidate.read_text(encoding="utf-8")).get(
+                        "name", candidate.parent.name)
+                except (OSError, yaml.YAMLError, InvalidProposal) as exc:
+                    raise Refusal("unreadable plugin skill frontmatter") from exc
+                if provided_name == skill:
+                    providers.add(f"{name}@{market_name}")
+    return sorted(providers)
+
+
 def find_skill_creator(cli_value: Path | None) -> tuple[Path, str | None]:
     """(skill-creator's skill directory, its installed commit or None).
 
@@ -278,12 +363,16 @@ def find_skill_creator(cli_value: Path | None) -> tuple[Path, str | None]:
                   "(the directory holding scripts/run_loop.py)")
 
 
-def arm_model(fixture: dict) -> str:
+def arm_model(fixture: dict, no_judge: bool = True) -> str:
     """The model run_eval itself will pick for this fixture's agent."""
-    ns = argparse.Namespace(model=None, roster=None, no_judge=True)
+    ns = argparse.Namespace(model=None, roster=None, no_judge=no_judge)
     model, _, problem = run_eval.select_models(fixture, ns)
     if problem:
-        raise Refusal(problem)
+        raise Refusal(f"{problem}; configure a judge or pass --no-judge")
+    mode = (fixture.get("judge") or {}).get("mode", "absolute")
+    normalized = mode.strip().casefold() if isinstance(mode, str) else mode
+    if not no_judge and normalized not in (None, "", "absolute"):
+        raise Refusal(f"cannot drive judge mode {mode!r}; pass --no-judge")
     return model
 
 
@@ -303,14 +392,16 @@ def proposal_model() -> str:
 # ---------------------------------------------------------------------------
 
 def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
-                     validation: str, override: Path | None) -> tuple[list[dict], str]:
+                     validation: str, override: Path | None,
+                     holdout: str | None = None) -> tuple[list[dict], str]:
     """skill-creator's `[{query, should_trigger}]` and where it came from.
 
     Default: the train fixtures' prompts should trigger; every OTHER skill's
     fixture prompts should not. `--trigger-eval-set` replaces it. Either way
     the validation fixture's prompt is dropped, so the description loop never
     trains on the fixture that decides acceptance."""
-    held_out = " ".join(str(fixtures[validation].get("prompt", "")).split())
+    held_out = {" ".join(str(fixtures[n].get("prompt", "")).split())
+                for n in [validation] + ([holdout] if holdout else [])}
     if override:
         items = json.loads(override.read_text(encoding="utf-8"))
         source = f"file:{override.name}"
@@ -328,7 +419,7 @@ def trigger_eval_set(skill: str, fixtures: dict, train: list[str],
     clean = []
     for item in items:
         query = " ".join(str(item.get("query", "")).split())
-        if query and query != held_out:
+        if query and query not in held_out:
             clean.append({"query": query, "should_trigger": bool(item.get("should_trigger"))})
     if not any(i["should_trigger"] for i in clean) or all(i["should_trigger"] for i in clean):
         raise Refusal("the trigger eval set needs at least one should-trigger "
@@ -375,6 +466,9 @@ def set_description(text: str, description: str) -> str:
     Written plain when YAML reads it back unchanged, else double-quoted."""
     if not description or len(description) > DESCRIPTION_MAX_CHARS:
         raise InvalidProposal(f"description must be 1..{DESCRIPTION_MAX_CHARS} characters")
+    if any(unicodedata.category(char) == "Cc" and char not in "\t\n\r"
+           for char in description):
+        raise InvalidProposal("description contains a control character")
     block, body = split_frontmatter(text)
     lines = block.splitlines(keepends=True)
     start = next((i for i, line in enumerate(lines) if line.startswith("description:")), None)
@@ -393,6 +487,8 @@ def set_description(text: str, description: str) -> str:
                 break
         except yaml.YAMLError:
             continue
+    if rendered is None:
+        raise InvalidProposal("description cannot be rendered as YAML")
     new = "".join(lines[:start]) + rendered + "".join(lines[end:]) + body
     before, after = frontmatter_data(text), frontmatter_data(new)
     if after.get("description") != flat or {k: v for k, v in after.items() if k != "description"} \
@@ -561,7 +657,7 @@ def fixture_metrics(arm_dir: Path) -> dict:
 
 
 def group_metrics(per_fixture: dict, names: list[str]) -> dict:
-    rows = [per_fixture[n] for n in names]
+    rows = [per_fixture.get(n, {"error": "missing fixture"}) for n in names]
     errors = [n for n, r in zip(names, rows) if r.get("error") or not r.get("total")]
     passed = sum(r.get("passed") or 0 for r in rows)
     total = sum(r.get("total") or 0 for r in rows)
@@ -573,7 +669,9 @@ def group_metrics(per_fixture: dict, names: list[str]) -> dict:
 
 
 def decide(baseline: dict, candidate: dict, train: list[str],
-           validation: str) -> tuple[bool, list[str]]:
+           validation: str, min_gain: float = DEFAULT_MIN_GAIN,
+           holdout: str | None = None,
+           judge_required: bool | set[str] = False) -> tuple[bool, list[str]]:
     """(accepted, reasons). Pure: reads the two per-fixture metric maps."""
     reasons = []
     b_train, c_train = group_metrics(baseline, train), group_metrics(candidate, train)
@@ -582,6 +680,16 @@ def decide(baseline: dict, candidate: dict, train: list[str],
                          + b_val["errors"] + c_val["errors"]))
     if errored:
         return False, [f"inconclusive: errored or unscored fixtures {errored}"]
+    measured = train + [validation] + ([holdout] if holdout else [])
+    required = (set(measured) if judge_required is True
+                else set(judge_required) if judge_required else set())
+    required.update(n for n in measured
+                    if run_eval._is_number(baseline.get(n, {}).get("judge_mean")))
+    missing_judge = [n for n in measured if n in required and any(
+        not run_eval._is_number(metrics.get(n, {}).get("judge_mean"))
+        for metrics in (baseline, candidate))]
+    if missing_judge:
+        return False, [f"inconclusive: missing expected judge scores {missing_judge}"]
 
     held = c_val["pass_rate"] >= b_val["pass_rate"]
     if not held:
@@ -593,13 +701,30 @@ def decide(baseline: dict, candidate: dict, train: list[str],
         reasons.append(f"validation judge fell more than {JUDGE_TOLERANCE}: "
                        f"{b_val['judge_mean']:.2f} -> {c_val['judge_mean']:.2f}")
 
-    improved = c_train["pass_rate"] > b_train["pass_rate"]
-    if not improved and c_train["pass_rate"] == b_train["pass_rate"] \
-            and b_train["judge_mean"] is not None and c_train["judge_mean"] is not None \
-            and c_train["judge_mean"] > b_train["judge_mean"]:
-        improved = True
+    if holdout:
+        b_fixed = group_metrics(baseline, [holdout])
+        c_fixed = group_metrics(candidate, [holdout])
+        if b_fixed["errors"] or c_fixed["errors"]:
+            return False, [f"inconclusive: errored or unscored holdout {holdout!r}"]
+        if c_fixed["pass_rate"] < b_fixed["pass_rate"]:
+            held = False
+            reasons.append("holdout objective regressed")
+        if b_fixed["judge_mean"] is not None and c_fixed["judge_mean"] is not None \
+                and c_fixed["judge_mean"] < b_fixed["judge_mean"]:
+            held = False
+            reasons.append("holdout judge regressed (zero tolerance)")
+
+    def meets_gain(gain: float) -> bool:
+        return gain > 0 and (gain >= min_gain or math.isclose(
+            gain, min_gain, rel_tol=0, abs_tol=1e-12))
+
+    improved = meets_gain(c_train["pass_rate"] - b_train["pass_rate"])
+    if c_train["pass_rate"] == b_train["pass_rate"] \
+            and b_train["judge_mean"] is not None and c_train["judge_mean"] is not None:
+        improved = meets_gain((c_train["judge_mean"] - b_train["judge_mean"]) / 10)
     if not improved:
-        reasons.append(f"train did not improve: objective {b_train['pass_rate']:.3f} -> "
+        reasons.append(f"train did not meet minimum gain {min_gain:g}: "
+                       f"objective {b_train['pass_rate']:.3f} -> "
                        f"{c_train['pass_rate']:.3f}")
     if held and improved:
         reasons.append("validation held and train improved")
@@ -607,7 +732,7 @@ def decide(baseline: dict, candidate: dict, train: list[str],
 
 
 def table(baseline: dict, candidate: dict | None, train: list[str],
-          validation: str) -> str:
+          validation: str, holdout: str | None = None) -> str:
     def cell(m: dict | None) -> tuple[str, str]:
         if not m:
             return "-", "-"
@@ -618,10 +743,10 @@ def table(baseline: dict, candidate: dict | None, train: list[str],
                 f"{judge:.2f}" if run_eval._is_number(judge) else "-")
     lines = ["| Fixture | Split | Baseline objective | Candidate objective "
              "| Baseline judge | Candidate judge |", "|---|---|---|---|---|---|"]
-    for name in train + [validation]:
+    for name in train + [validation] + ([holdout] if holdout else []):
         b_obj, b_judge = cell(baseline.get(name))
         c_obj, c_judge = cell((candidate or {}).get(name))
-        split = "validation" if name == validation else "train"
+        split = "holdout" if name == holdout else "validation" if name == validation else "train"
         lines.append(f"| {name} | {split} | {b_obj} | {c_obj} | {b_judge} | {c_judge} |")
     return "\n".join(lines)
 
@@ -638,6 +763,8 @@ def pr_body(record: dict, rows: str) -> str:
              f"- Split: train {', '.join(record['split']['train'])}; "
              f"validation {record['split']['validation']} "
              f"(rotation {record['split']['rotation']})",
+             f"- Fixed holdout: {record['split'].get('holdout') or 'none'}; "
+             f"minimum train gain: {record['min_gain']:g} (normalized 0..1)",
              f"- Trials per fixture: {record['trials']}, arm `{ARM}`, "
              f"agent model `{record['models']['arm']}`", "",
              "### Train / validation", "", rows, "",
@@ -675,6 +802,11 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
     parser.add_argument("--trials", type=int, default=DEFAULT_TRIALS)
     parser.add_argument("--rotation", type=int, default=None,
                         help="validation fixture index (default: records so far)")
+    parser.add_argument("--min-gain", type=float, default=DEFAULT_MIN_GAIN,
+                        help="minimum train gain on 0..1 scale (default .10; "
+                             "objective rate or judge mean / 10 when objective is flat)")
+    parser.add_argument("--holdout", default=None,
+                        help="fixed nested fixture, never trained on; must not regress")
     parser.add_argument("--trigger-eval-set", type=Path, default=None,
                         help="skill-creator query set JSON (default: from fixtures)")
     parser.add_argument("--skill-creator", type=Path, default=None,
@@ -688,6 +820,8 @@ def parse_args(argv: list[str] | None) -> argparse.Namespace:
         parser.error(f"--trials must be 1..{run_eval.MAX_TRIALS}")
     if args.rotation is not None and args.rotation < 0:
         parser.error("--rotation must be >= 0")
+    if not math.isfinite(args.min_gain) or not 0 < args.min_gain <= 1:
+        parser.error("--min-gain must be finite and greater than 0, at most 1")
     return args
 
 
@@ -701,8 +835,14 @@ def plan(args: argparse.Namespace) -> dict:
     results = (args.results_dir or default_results_dir()).expanduser().resolve()
     records_dir = results / "improvements" / skill
     rotation = args.rotation if args.rotation is not None else default_rotation(records_dir)
-    train, validation = split_fixtures(names, rotation)
+    train, validation = split_fixtures(names, rotation, args.holdout)
     fixtures = load_fixtures(skill, names)
+    if args.holdout:
+        fixed_prompt = " ".join(str(fixtures[args.holdout].get("prompt", "")).split())
+        if any(" ".join(str(fixtures[n].get("prompt", "")).split()) == fixed_prompt
+               for n in train):
+            raise Refusal("fixed --holdout needs a prompt distinct from every train fixture")
+    models = {name: arm_model(fixture, args.no_judge) for name, fixture in fixtures.items()}
     url = next(iter(fixtures.values())).get("registry")
     try:
         registry = resolve_registry(url, args.registry)
@@ -711,22 +851,24 @@ def plan(args: argparse.Namespace) -> dict:
     sha = resolve_ref(registry["path"], args.ref)
     skill_creator, sc_sha = find_skill_creator(args.skill_creator)
     eval_set, source = trigger_eval_set(skill, fixtures, train, validation,
-                                        args.trigger_eval_set)
+                                        args.trigger_eval_set, args.holdout)
     return {"skill": skill, "results": results, "records_dir": records_dir,
             "rotation": rotation, "train": train, "validation": validation,
+            "holdout": args.holdout, "min_gain": args.min_gain,
             "fixtures": fixtures, "registry": registry, "sha": sha,
             "skill_creator": skill_creator, "skill_creator_sha": sc_sha,
             "eval_set": eval_set, "eval_set_source": source,
-            "arm_model": arm_model(fixtures[train[0]]),
+            "arm_model": models[train[0]],
             "proposal_model": proposal_model()}
 
 
 def print_plan(p: dict, args: argparse.Namespace) -> None:
-    n = len(p["train"]) + 1
+    n = len(p["fixtures"])
     per_run = n * args.trials * (1 if args.no_judge else 2)
     print(json.dumps({
         "skill": p["skill"], "rotation": p["rotation"], "train": p["train"],
         "validation": p["validation"],
+        "holdout": p["holdout"], "min_gain": p["min_gain"],
         "registry": {"name": p["registry"]["name"], "sha": p["sha"]},
         "skill_creator": str(p["skill_creator"]),
         "trigger_eval_set": {"source": p["eval_set_source"], "size": len(p["eval_set"])},
@@ -749,7 +891,7 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         return EXIT_ACCEPTED
     skill, results, registry = p["skill"], p["results"], p["registry"]
     ts = now.astimezone(timezone.utc).strftime(run_eval.TIMESTAMP_FORMAT)
-    names = p["train"] + [p["validation"]]
+    names = p["train"] + [p["validation"]] + ([p["holdout"]] if p["holdout"] else [])
     p["records_dir"].mkdir(parents=True, exist_ok=True)
     stem = p["records_dir"] / ts
     if stem.with_suffix(".json").exists():
@@ -763,6 +905,7 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         cand_skill = find_skill_dir(cand_root, registry["layout"], skill)
         rel_path = base_skill.relative_to(base_root).as_posix() + "/SKILL.md"
         original = (base_skill / "SKILL.md").read_text(encoding="utf-8")
+        disabled_plugins = skill_provider_plugins(base_root, skill)
 
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
                                            results / "runs" / "baseline", ts,
@@ -780,11 +923,14 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "split": {"rotation": p["rotation"], "train": p["train"],
                       "validation": p["validation"]},
             "trials": args.trials, "no_judge": args.no_judge,
+            "min_gain": args.min_gain,
             "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
             "baseline": baseline, "candidate": None,
             "runs": {"baseline": str(results / "runs" / "baseline" / skill / ts)},
             "files": {},
         }
+        if p["holdout"]:
+            record["split"]["holdout"] = p["holdout"]
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
@@ -793,17 +939,22 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         eval_set_path.write_text(json.dumps(p["eval_set"], indent=2), encoding="utf-8")
         project = scratch / "trigger-project"
         (project / ".claude").mkdir(parents=True)
+        (project / ".claude" / "settings.json").write_text(json.dumps({
+            "enabledPlugins": {name: False for name in disabled_plugins}}, indent=2),
+            encoding="utf-8")
         loop = runner.run_description_loop(
             description_loop_argv(eval_set_path, base_skill, p["arm_model"], trigger_dir),
             cwd=project, skill_creator=p["skill_creator"])
         (trigger_dir / "loop.json").write_text(json.dumps(loop, indent=2), encoding="utf-8")
         original_description = frontmatter_data(original).get("description", "")
-        best = " ".join(str(loop.get("best_description") or "").split())
+        raw_best = str(loop.get("best_description") or "")
+        best = " ".join(raw_best.split())
         record["description_half"] = {
             "from": "skill-creator scripts/run_loop.py",
             "skill_creator": {"path": str(p["skill_creator"]),
                               "commit": p["skill_creator_sha"]},
             "eval_set_source": p["eval_set_source"], "eval_set_size": len(p["eval_set"]),
+            "disabled_plugins": disabled_plugins,
             "original": original_description, "best": best,
             "best_test_score": loop.get("best_test_score"),
             "best_train_score": loop.get("best_train_score"),
@@ -832,7 +983,7 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             else:
                 record["body_half"]["error"] = "no failed train check to learn from"
             if record["description_half"]["changed"]:
-                candidate_text = set_description(candidate_text, best)
+                candidate_text = set_description(candidate_text, raw_best)
         except InvalidProposal as exc:
             record.update(status="invalid-proposal", reasons=[str(exc)])
             write_record(stem, record)
@@ -861,9 +1012,12 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         record["candidate"] = candidate
         record["runs"]["candidate"] = str(results / "runs" / "candidate" / skill / ts)
 
-        accepted, reasons = decide(baseline, candidate, p["train"], p["validation"])
+        accepted, reasons = decide(baseline, candidate, p["train"], p["validation"],
+                                    args.min_gain, p["holdout"],
+                                    {n for n in names if not args.no_judge
+                                     and p["fixtures"][n].get("judge_rubric")})
         record.update(status="accepted" if accepted else "rejected", reasons=reasons)
-        rows = table(baseline, candidate, p["train"], p["validation"])
+        rows = table(baseline, candidate, p["train"], p["validation"], p["holdout"])
         record["table"] = rows
         if accepted:
             body_path = stem.with_name(stem.name + ".pr-body.md")
