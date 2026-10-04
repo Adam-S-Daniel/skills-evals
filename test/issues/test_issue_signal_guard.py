@@ -3,8 +3,9 @@
 `killpg(1, sig)` is `kill(-1, sig)`: it signals every process the user owns.
 A test that replaced `subprocess.Popen` with a bare MagicMock once ran cleanup
 on `MagicMock().pid` (which indexes to 1) and killed the user's whole session
-about fifteen times. The guard is `type(pid) is int and pid > 1` before the
-signal; this module pins it two ways, with no real signal ever sent:
+about fifteen times. Each signal site validates an integer pid greater than 1 and
+refuses the caller's current pid and process group before signaling. This
+module pins it two ways, with no real signal ever sent:
 
   * the walk FINDS every os.kill / os.killpg call under harness/ and scripts/
     by parsing each file, and the set must equal SIGNAL_SITES, so a new site
@@ -17,6 +18,7 @@ from __future__ import annotations
 
 import ast
 import importlib
+import os
 import signal
 import sys
 import unittest
@@ -117,18 +119,21 @@ class TestSignalGuard(unittest.TestCase):
         unregistered = sorted(found - set(self.SIGNAL_SITES))
         self.assertFalse(
             unregistered,
-            f"os.kill/os.killpg called at {unregistered}: guard each with "
-            "`type(pid) is int and pid > 1` (killpg(1, sig) is kill(-1, sig)) "
+            f"os.kill/os.killpg called at {unregistered}: require an integer pid > 1 "
+            "that differs from os.getpid() and os.getpgrp() "
+            "(killpg(1, sig) is kill(-1, sig)) "
             "and register it in SIGNAL_SITES with a behavioral driver.")
         stale = sorted(set(self.SIGNAL_SITES) - found)
         self.assertFalse(stale, f"SIGNAL_SITES names sites the walk no longer finds: {stale}")
 
     def test_no_registered_site_signals_a_mock_or_unsafe_pid(self):
         procs = [("MagicMock()", mock.MagicMock)]
-        procs += [(f"pid={pid!r}", lambda pid=pid: mock.MagicMock(pid=pid))
-                  for pid in UNSAFE_PIDS]
         for (rel, name), drive in sorted(self.SIGNAL_SITES.items()):
-            for label, make in procs:
+            unsafe_pids = (*UNSAFE_PIDS, os.getpid(), os.getpgrp())
+            site_procs = procs + [
+                (f"pid={pid!r}", lambda pid=pid: mock.MagicMock(pid=pid))
+                for pid in unsafe_pids]
+            for label, make in site_procs:
                 for running in (True, False):
                     with self.subTest(site=f"{rel}::{name}", proc=label,
                                       running=running), \
@@ -139,6 +144,23 @@ class TestSignalGuard(unittest.TestCase):
                         drive(proc)
                         killpg.assert_not_called()
                         kill.assert_not_called()
+
+    def test_each_site_refuses_current_pid_and_group_at_call_time(self):
+        for (rel, name), drive in sorted(self.SIGNAL_SITES.items()):
+            module = _module_for(rel)
+            for identity, ids in (("pid", (1101, 1102)),
+                                  ("group", (2201, 2202))):
+                with self.subTest(site=f"{rel}::{name}", identity=identity), \
+                        mock.patch.object(module.os, "getpid", side_effect=[1101, 1102]), \
+                        mock.patch.object(module.os, "getpgrp", side_effect=[2201, 2202]), \
+                        mock.patch("os.killpg") as killpg, \
+                        mock.patch("os.kill") as kill:
+                    for current_id in ids:
+                        proc = mock.Mock(pid=current_id)
+                        proc.poll.return_value = 0
+                        drive(proc)
+                    killpg.assert_not_called()
+                    kill.assert_not_called()
 
 
 if __name__ == "__main__":

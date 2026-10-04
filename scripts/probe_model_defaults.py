@@ -167,7 +167,8 @@ def _signal_group(proc: subprocess.Popen, sig: int) -> None:
     pid = proc.pid
     # killpg(1, sig) is kill(-1, sig): it signals every process the user owns.
     # Cleanup is best effort, so an unsafe pid is skipped rather than raised.
-    if type(pid) is not int or pid <= 1:
+    if (type(pid) is not int or pid <= 1
+            or pid in (os.getpid(), os.getpgrp())):
         return
     try:
         os.killpg(pid, sig)
@@ -195,8 +196,9 @@ def _stop(proc: subprocess.Popen) -> None:
             _signal_group(proc, signal.SIGKILL)
             proc.wait()
     pid = proc.pid
-    # Same refusal as `_signal_group`: never killpg(1, sig) == kill(-1, sig).
-    if type(pid) is int and pid > 1:
+    # Same refusal as `_signal_group`, including the caller's current ids.
+    if (type(pid) is int and pid > 1
+            and pid not in (os.getpid(), os.getpgrp())):
         try:
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):

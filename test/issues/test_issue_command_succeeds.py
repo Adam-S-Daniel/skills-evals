@@ -95,10 +95,26 @@ class CommandSucceedsTests(unittest.TestCase):
         kill.assert_not_called()
 
     def test_stop_process_refuses_unsafe_pids_without_signalling(self):
-        for pid in (1, 0, -1, True):
-            with self.subTest(pid=pid), mock.patch.object(commands.os, "killpg") as kill:
+        unsafe_pids = (1, 0, -1, True, commands.os.getpid(), commands.os.getpgrp())
+        for pid in unsafe_pids:
+            with self.subTest(pid=pid), \
+                    mock.patch.object(commands.os, "killpg") as killpg, \
+                    mock.patch.object(commands.os, "kill") as kill:
                 with self.assertRaises(ValueError):
                     commands._stop_process(mock.Mock(pid=pid))
+                killpg.assert_not_called()
+                kill.assert_not_called()
+
+        for pid, caller_pid, caller_group in ((5101, 5101, 5201),
+                                              (5202, 5102, 5202)):
+            with self.subTest(pid=pid), \
+                    mock.patch.object(commands.os, "getpid", return_value=caller_pid), \
+                    mock.patch.object(commands.os, "getpgrp", return_value=caller_group), \
+                    mock.patch.object(commands.os, "killpg") as killpg, \
+                    mock.patch.object(commands.os, "kill") as kill:
+                with self.assertRaises(ValueError):
+                    commands._stop_process(mock.Mock(pid=pid))
+                killpg.assert_not_called()
                 kill.assert_not_called()
 
     def test_run_command_with_a_bare_mock_popen_never_signals(self):

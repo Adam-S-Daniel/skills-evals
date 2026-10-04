@@ -82,8 +82,9 @@ def _stop_process(proc) -> None:
                            guidance.SINK_TIMEOUT_REMEDY)
     pid = proc.pid
     # killpg(1, sig) is kill(-1, sig): it signals every process the user owns.
-    if type(pid) is not int or pid <= 1:
-        raise ValueError("refusing to signal process group of a non-positive or non-int pid")
+    if (type(pid) is not int or pid <= 1
+            or pid in (os.getpid(), os.getpgrp())):
+        raise ValueError("refusing to signal an unsafe process group id")
     try:
         if os.name == "posix":
             os.killpg(pid, signal.SIGKILL)
