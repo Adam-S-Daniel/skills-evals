@@ -111,6 +111,72 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+### Parsed configuration and staged-shell objective checks
+
+These opt-in checks implement [ADR 0006](docs/decisions/0006-parse-config-and-staged-shell-guards.md)
+in [`harness/scorers/objective.py`](harness/scorers/objective.py). Existing
+check types and fixtures retain their scoring behavior.
+
+| Type | Constraint keys | Evidence |
+| --- | --- | --- |
+| `parsed_config_values` | `format`, optional `expected` | Strict JSON or composed YAML, typed values at mapping-key paths; omitted expectations check parsing only |
+| `shell_staged_tool_guard` | `tools` | Real Bash AST: every configured tool has a reachable call receiving staged Go paths under positive availability and nonempty guards; missing tools skip successfully |
+
+Both require a nonempty `paths` list of exact workspace-relative regular
+files, without globs, absolute paths, `..`, or symlinks escaping the workspace.
+Each file must satisfy the constraints. Missing files fail; input is bounded
+to 64 KiB and trees to depth 64 and 4096 nodes. Failures contain fixed named
+reasons, without file contents or parser errors. Unknown constraint keys are
+rejected by fixture validation.
+
+```yaml
+- id: go-width
+  type: parsed_config_values
+  paths: [.golangci.yml]
+  format: yaml
+  expected:
+    - path: [linters, settings, lll, line-length]
+      equals: 100
+    - path: [linters, enable]
+      contains: lll
+- id: staged-go
+  type: shell_staged_tool_guard
+  paths: [scripts/lint-staged.sh]
+  tools: [gofmt, golangci-lint]
+```
+
+Configuration roots must be mappings with string keys and finite JSON-shaped
+values. Duplicate keys at any depth, YAML merge keys, custom tags, recursive
+aliases, malformed structures, and invalid JSON fail. Equality is recursive
+and typed (`"100"`, `100`, `100.0`, and `true` differ). `contains` requires a
+list and compares typed members. Each expected entry has exactly `path` plus
+`equals` or `contains`; paths are nonempty lists of string mapping keys.
+Missing keys report `missing_key_<depth>` (zero-based), distinguishing a
+missing root branch from a commented-out leaf. Wrong values and types report
+`value_mismatch` and `value_type_mismatch`.
+
+The shell check recognizes scalar or array assignments sourced from
+`git diff --cached --name-only -- '*.go'` (also `--staged`, and optional
+`--diff-filter=ACM`), or the same diff without a pathspec piped to
+`grep '\.go$'` / `grep -E '\.go$'`. It binds scalar `$files` / `${files}`
+and quoted array `"${files[@]}"` arguments to their source. Other call
+arguments may be literal flags or the `run` subcommand; additional filename
+arguments fail. Scalar guards use `-n "$files"` or a negated `-z` test;
+arrays use `${#files[@]} -gt 0`. This establishes provenance, without claiming
+NUL-safe handling of unusual filenames.
+
+Availability guards are `command -v TOOL`, `type TOOL`, `type -P TOOL`, or
+`hash TOOL`. A top-level helper with only such a check on `"$1"`, optionally
+redirected to `/dev/null`, qualifies. Nested `if`/`else`, negation, `&&`, and
+`exit 0` early skips propagate facts; reassignment invalidates provenance.
+Comments, strings, literal heredocs, disconnected guards, and unreachable
+branches supply no evidence. Dynamic execution, sourced files, aliases,
+indirect expansions, arbitrary substitutions, unsupported helper bodies,
+wrappers, loops, case statements, subshells, background jobs, redirects, and
+conditions fail closed. A missing-tool path that exits nonzero reports
+`missing_tool_nonzero_exit`. The parser's recovery/error nodes fail as
+`invalid_bash`. See the ADR for dependency pins and recognized-shape limits.
+
 ### YAML front-matter objective check (`harness/scorers/objective.py`)
 
 `front_matter_has` checks existing files at exact workspace-relative `paths`

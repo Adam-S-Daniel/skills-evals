@@ -3537,7 +3537,531 @@ def post_failure_comment_reference_valid(workspace: str, patterns: list[str], *,
             if not problems else "; ".join(problems))
 
 
+class _ObjectiveInputError(ValueError):
+    """Fixed, content-free failure reason for the opt-in parsed checks."""
+
+
+def _objective_file_bytes(workspace, rel):
+    if (not isinstance(rel, str) or not rel or "\x00" in rel
+            or os.path.isabs(rel) or ".." in Path(rel).parts or glob.has_magic(rel)):
+        raise _ObjectiveInputError("invalid_path")
+    root = Path(workspace).resolve()
+    try:
+        target = (root / rel).resolve()
+    except RuntimeError:
+        raise _ObjectiveInputError("unreadable_path") from None
+    if not target.is_relative_to(root):
+        raise _ObjectiveInputError("path_outside_workspace")
+    if not target.exists():
+        raise _ObjectiveInputError("missing_file")
+    if not target.is_file():
+        raise _ObjectiveInputError("not_regular_file")
+    with target.open("rb") as stream:
+        data = stream.read(65537)
+    if len(data) > 65536:
+        raise _ObjectiveInputError("input_limit")
+    return data.decode("utf-8")
+
+
+def _config_shape(value, depth=0, active=None, budget=None):
+    """Bound JSON-shaped graphs, including fixture-supplied expectations."""
+    import math
+    active = set() if active is None else active
+    budget = [4096] if budget is None else budget
+    budget[0] -= 1
+    if depth > 64 or budget[0] < 0 or id(value) in active:
+        raise _ObjectiveInputError("structure_limit")
+    if type(value) in (str, int, bool, type(None)):
+        return
+    if type(value) is float and math.isfinite(value):
+        return
+    if type(value) not in (dict, list):
+        raise _ObjectiveInputError("invalid_structure")
+    active.add(id(value))
+    if isinstance(value, dict):
+        if any(type(key) is not str for key in value):
+            raise _ObjectiveInputError("invalid_structure")
+        children = value.values()
+    else:
+        children = value
+    for child in children:
+        _config_shape(child, depth + 1, active, budget)
+    active.remove(id(value))
+
+
+def _config_equal(actual, expected):
+    if type(actual) is not type(expected):
+        return False
+    if isinstance(actual, dict):
+        return actual.keys() == expected.keys() and all(
+            _config_equal(actual[key], expected[key]) for key in actual)
+    if isinstance(actual, list):
+        return len(actual) == len(expected) and all(
+            _config_equal(a, b) for a, b in zip(actual, expected))
+    return actual == expected
+
+
+def _parsed_config_document(text, format):
+    import yaml
+
+    def pairs(items):
+        result = {}
+        for key, value in items:
+            if key in result:
+                raise _ObjectiveInputError("duplicate_key")
+            result[key] = value
+        return result
+
+    def nonfinite(_value):
+        raise _ObjectiveInputError("invalid_json")
+
+    if format == "json":
+        try:
+            data = json.loads(text, object_pairs_hook=pairs, parse_constant=nonfinite)
+        except json.JSONDecodeError:
+            raise _ObjectiveInputError("invalid_json") from None
+    else:
+        class Loader(yaml.SafeLoader):
+            depth = 0
+            count = 0
+
+            def compose_node(self, parent, index):
+                self.depth += 1
+                self.count += 1
+                try:
+                    if self.depth > 64 or self.count > 4096:
+                        raise _ObjectiveInputError("structure_limit")
+                    return super().compose_node(parent, index)
+                finally:
+                    self.depth -= 1
+
+        def validate(node, active, budget, depth=0):
+            budget[0] -= 1
+            if depth > 64 or budget[0] < 0 or id(node) in active:
+                raise _ObjectiveInputError("structure_limit")
+            active.add(id(node))
+            if isinstance(node, yaml.MappingNode):
+                keys = set()
+                for key, value in node.value:
+                    if not isinstance(key, yaml.ScalarNode) or key.tag != "tag:yaml.org,2002:str":
+                        raise _ObjectiveInputError("invalid_structure")
+                    if key.value in keys:
+                        raise _ObjectiveInputError("duplicate_key")
+                    keys.add(key.value)
+                    validate(value, active, budget, depth + 1)
+            elif isinstance(node, yaml.SequenceNode):
+                for child in node.value:
+                    validate(child, active, budget, depth + 1)
+            elif (not isinstance(node, yaml.ScalarNode)
+                  or node.tag not in {"tag:yaml.org,2002:" + tag
+                                      for tag in ("str", "int", "float", "bool", "null")}):
+                raise _ObjectiveInputError("invalid_structure")
+            active.remove(id(node))
+
+        loader = None
+        try:
+            loader = Loader(text)
+            node = loader.get_single_node()
+            if not isinstance(node, yaml.MappingNode):
+                raise _ObjectiveInputError("root_not_mapping")
+            validate(node, set(), [4096])
+            data = loader.construct_document(node)
+        except yaml.YAMLError:
+            raise _ObjectiveInputError("invalid_yaml") from None
+        finally:
+            if loader is not None:
+                loader.dispose()
+    if not isinstance(data, dict):
+        raise _ObjectiveInputError("root_not_mapping")
+    _config_shape(data)
+    return data
+
+
+def parsed_config_values(workspace: str, patterns: list[str], format=None,
+                         expected=_FRONT_MATTER_UNSET) -> tuple[bool, str]:
+    """Typed mapping paths, or parse-only; see ADR 0006 for the contract."""
+    try:
+        if not isinstance(patterns, list) or not patterns or format not in ("yaml", "json"):
+            raise _ObjectiveInputError("invalid_constraints")
+        expected = [] if expected is _FRONT_MATTER_UNSET else expected
+        if not isinstance(expected, list):
+            raise _ObjectiveInputError("invalid_constraints")
+        _config_shape(expected)
+        for item in expected:
+            if (not isinstance(item, dict) or set(item) not in ({"path", "equals"}, {"path", "contains"})
+                    or not isinstance(item["path"], list) or not item["path"]
+                    or any(type(key) is not str for key in item["path"])):
+                raise _ObjectiveInputError("invalid_constraints")
+            _config_shape(item.get("equals", item.get("contains")))
+        for rel in patterns:
+            data = _parsed_config_document(_objective_file_bytes(workspace, rel), format)
+            for item in expected:
+                actual = data
+                for index, key in enumerate(item["path"]):
+                    if not isinstance(actual, dict):
+                        raise _ObjectiveInputError("path_not_mapping")
+                    if key not in actual:
+                        raise _ObjectiveInputError(f"missing_key_{index}")
+                    actual = actual[key]
+                if "equals" in item:
+                    if type(actual) is not type(item["equals"]):
+                        raise _ObjectiveInputError("value_type_mismatch")
+                    if not _config_equal(actual, item["equals"]):
+                        raise _ObjectiveInputError("value_mismatch")
+                else:
+                    if not isinstance(actual, list):
+                        raise _ObjectiveInputError("contains_not_list")
+                    if not any(_config_equal(value, item["contains"]) for value in actual):
+                        raise _ObjectiveInputError("list_member_missing")
+    except _ObjectiveInputError as error:
+        return (False, f"parsed_config_values: {error}")
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        return (False, "parsed_config_values: unreadable_or_invalid_input")
+    return (True, "parsed_config_values: all values satisfy typed constraints")
+
+
+class _StagedToolGuard:
+    """Bounded Bash AST interpreter for ADR 0006's recognized shapes.
+
+    States carry provenance, positive availability, missing-tool, and nonempty
+    facts. Forks stay separate until execution rejoins; no shell is executed.
+    """
+
+    def __init__(self, root, tools):
+        self.root, self.tools = root, set(tools)
+        self.helpers, self.found = {}, set()
+        self.steps = 0
+
+    @staticmethod
+    def text(node):
+        return node.text.decode("utf-8")
+
+    def literal(self, node):
+        if node is None:
+            return None
+        if node.type in ("word", "number", "string_content"):
+            # Escapes are intentionally not interpreted as shell code.
+            value = self.text(node)
+            return value if "\\" not in value else None
+        if node.type == "raw_string":
+            return self.text(node)[1:-1]
+        if node.type in ("command_name", "string"):
+            children = node.named_children
+            return self.literal(children[0]) if len(children) == 1 else ("" if not children else None)
+        return None
+
+    @staticmethod
+    def copy(state):
+        variables, available, nonempty, missing = state
+        return (dict(variables), set(available), set(nonempty), set(missing))
+
+    def unwrap(self, node):
+        if node.type != "redirected_statement":
+            return node
+        for redirect in node.children_by_field_name("redirect"):
+            if redirect.type == "heredoc_redirect":
+                continue  # body text is not a command; substitutions are rejected below
+            if (redirect.type != "file_redirect"
+                    or self.text(redirect).replace(" ", "") not in
+                    (">/dev/null", "2>/dev/null", "1>/dev/null", "2>&1")):
+                raise _ObjectiveInputError("unsupported_redirect")
+        return node.child_by_field_name("body")
+
+    def command(self, node):
+        node = self.unwrap(node)
+        if node.type != "command" or any(c.type == "variable_assignment" for c in node.named_children):
+            return None, []
+        return (self.literal(node.child_by_field_name("name")),
+                node.children_by_field_name("argument"))
+
+    def reference(self, node):
+        if node.type == "string" and len(node.named_children) == 1:
+            return self.reference(node.named_children[0])
+        if node.type == "simple_expansion":
+            children = node.named_children
+            if len(children) == 1 and children[0].type == "variable_name":
+                return (self.text(children[0]), "scalar")
+        if node.type == "expansion":
+            children = node.named_children
+            if len(children) == 1 and children[0].type == "variable_name":
+                name = self.text(children[0])
+                if self.text(node) == "${" + name + "}":
+                    return (name, "scalar")
+            if len(children) == 1 and children[0].type == "subscript":
+                sub = children[0]
+                name = self.text(sub.child_by_field_name("name"))
+                if self.text(node) == "${" + name + "[@]}":
+                    return (name, "array")
+                if self.text(node) == "${#" + name + "[@]}":
+                    return (name, "count")
+        return None
+
+    def availability(self, node, parameter=False):
+        name, args = self.command(node)
+        values = [self.literal(arg) for arg in args]
+        target = None
+        if name == "command" and len(args) == 2 and values[0] == "-v":
+            target = args[1]
+        elif name == "type" and len(args) == 1:
+            target = args[0]
+        elif name == "type" and len(args) == 2 and values[0] == "-P":
+            target = args[1]
+        elif name == "hash" and len(args) == 1:
+            target = args[0]
+        elif name in self.helpers and len(args) == 1:
+            target = args[0]
+        if target is None:
+            return None
+        if parameter:
+            return "$1" if self.reference(target) == ("1", "scalar") else None
+        tool = self.literal(target)
+        return tool if tool in self.tools else None
+
+    def staged_source(self, value):
+        kind = "scalar"
+        if value.type == "array":
+            kind = "array"
+            if len(value.named_children) != 1:
+                return None
+            value = value.named_children[0]
+        if value.type != "command_substitution" or len(value.named_children) != 1:
+            return None
+        source = value.named_children[0]
+        filtered = False
+        if source.type == "pipeline":
+            if len(source.named_children) != 2:
+                return None
+            source, filter_node = source.named_children
+            if filter_node.type != "command":
+                return None
+            name, args = self.command(filter_node)
+            filtered = (name == "grep" and [self.literal(a) for a in args]
+                        in (["\\.go$"], ["-E", "\\.go$"]))
+            if not filtered:
+                return None
+        if source.type != "command":
+            return None
+        name, args = self.command(source)
+        words = [self.literal(arg) for arg in args]
+        if name != "git" or not words or words.pop(0) != "diff":
+            return None
+        # Flags are matched as whole AST arguments, not substrings of code.
+        if "--diff-filter=ACM" in words:
+            words.remove("--diff-filter=ACM")
+        if words[:2] not in (["--cached", "--name-only"], ["--staged", "--name-only"]):
+            return None
+        tail = words[2:]
+        if tail == ["--", "*.go"] or (filtered and not tail):
+            return kind
+        return None
+
+    def condition(self, node, state):
+        node = self.unwrap(node)
+        if node.type == "negated_command" and len(node.named_children) == 1:
+            yes, no = self.condition(node.named_children[0], state)
+            return no, yes
+        if node.type == "list":
+            if [self.text(c) for c in node.children if not c.is_named] != ["&&"]:
+                raise _ObjectiveInputError("unsupported_condition")
+            left, right = node.named_children
+            yes, no = self.condition(left, state)
+            result = []
+            for current in yes:
+                more_yes, more_no = self.condition(right, current)
+                result.extend(more_yes)
+                no.extend(more_no)
+            return result, no
+        tool = self.availability(node)
+        if tool:
+            yes, no = self.copy(state), self.copy(state)
+            yes[1].add(tool)
+            yes[3].discard(tool)
+            no[1].discard(tool)
+            no[3].add(tool)
+            return [yes], [no]
+        name, args = self.command(node)
+        if name in ("true", ":", "false") and not args:
+            return ([state], []) if name != "false" else ([], [state])
+        if node.type == "test_command" and len(node.named_children) == 1:
+            expr = node.named_children[0]
+            operator = expr.child_by_field_name("operator")
+            op = self.text(operator) if operator else None
+            ref, positive = None, True
+            if expr.type == "unary_expression" and op in ("-n", "-z"):
+                operands = [c for c in expr.named_children if c != operator]
+                ref = self.reference(operands[0]) if len(operands) == 1 else None
+                positive = op == "-n"
+                if ref and (ref[1] != "scalar" or operands[0].type != "string"):
+                    ref = None
+            elif expr.type == "binary_expression" and op == "-gt":
+                ref = self.reference(expr.child_by_field_name("left"))
+                if (not ref or ref[1] != "count"
+                        or self.literal(expr.child_by_field_name("right")) != "0"):
+                    ref = None
+            if ref:
+                yes, no = self.copy(state), self.copy(state)
+                expected_kind = "array" if ref[1] == "count" else "scalar"
+                if state[0].get(ref[0]) == expected_kind:
+                    yes[2].add(ref[0])
+                no[2].discard(ref[0])
+                return ([yes], [no]) if positive else ([no], [yes])
+        raise _ObjectiveInputError("unsupported_condition")
+
+    def sequence(self, nodes, states):
+        for node in nodes:
+            next_states = []
+            for state in states:
+                next_states.extend(self.execute(node, state))
+            states = next_states
+            if len(states) > 64:
+                raise _ObjectiveInputError("analysis_limit")
+        return states
+
+    def execute(self, node, state):
+        self.steps += 1
+        if self.steps > 4096:
+            raise _ObjectiveInputError("analysis_limit")
+        if node.type == "comment":
+            return [state]
+        if node.type == "function_definition":
+            name = self.literal(node.child_by_field_name("name"))
+            body = node.child_by_field_name("body")
+            children = [c for c in body.named_children if c.type != "comment"]
+            if (node.parent.type != "program" or name in self.helpers
+                    or not name or name in self.tools | {"command", "type", "hash", "git", "grep"}
+                    or len(children) != 1 or not self.availability(children[0], parameter=True)):
+                raise _ObjectiveInputError("unsupported_helper")
+            self.helpers[name] = True
+            return [state]
+        if node.type == "variable_assignment":
+            if any(c.type == "+=" for c in node.children):
+                raise _ObjectiveInputError("unsupported_staged_source")
+            name = self.text(node.child_by_field_name("name"))
+            if name in ("PATH", "IFS", "BASH_ENV", "ENV", "CDPATH", "SHELLOPTS", "BASHOPTS"):
+                raise _ObjectiveInputError("unsupported_dynamic_form")
+            value = node.child_by_field_name("value")
+            kind = self.staged_source(value) if value else None
+            if kind is None and value and self.literal(value) is None:
+                raise _ObjectiveInputError("unsupported_staged_source")
+            state = self.copy(state)
+            state[0][name] = kind
+            state[2].discard(name)
+            return [state]
+        if node.type == "if_statement":
+            conditions = [c for c in node.children_by_field_name("condition") if c.is_named]
+            if len(conditions) != 1:
+                raise _ObjectiveInputError("unsupported_condition")
+            yes, no = self.condition(conditions[0], state)
+            children = [c for c in node.named_children if c not in conditions]
+            alternate = [c for c in children if c.type in ("else_clause", "elif_clause")]
+            if any(c.type == "elif_clause" for c in alternate):
+                raise _ObjectiveInputError("unsupported_control_flow")
+            body = [c for c in children if c not in alternate]
+            return (self.sequence(body, yes)
+                    + (self.sequence(alternate[0].named_children, no) if alternate else no))
+        if node.type == "list":
+            if [self.text(c) for c in node.children if not c.is_named] != ["&&"]:
+                raise _ObjectiveInputError("unsupported_control_flow")
+            left, right = node.named_children
+            yes, no = self.condition(left, state)
+            return self.sequence([right], yes) + no
+        name, args = self.command(node)
+        if name in self.tools:
+            references = [self.reference(arg) for arg in args]
+            variables = {ref[0] for ref in references if ref and state[0].get(ref[0]) == ref[1]}
+            if not variables:
+                raise _ObjectiveInputError("staged_paths_missing")
+            for arg, ref in zip(args, references):
+                literal = self.literal(arg)
+                if ref and state[0].get(ref[0]) == ref[1]:
+                    if ref[1] == "array" and arg.type != "string":
+                        raise _ObjectiveInputError("unsupported_tool_arguments")
+                elif literal != "run" and (literal is None or not literal.startswith("-")):
+                    raise _ObjectiveInputError("unsupported_tool_arguments")
+            if name not in state[1]:
+                raise _ObjectiveInputError("availability_guard_missing")
+            if not variables <= state[2]:
+                raise _ObjectiveInputError("nonempty_guard_missing")
+            self.found.add(name)
+            return [state]
+        if name == "exit":
+            if len(args) != 1 or self.literal(args[0]) != "0":
+                raise _ObjectiveInputError("missing_tool_nonzero_exit" if state[3] else "unsupported_exit")
+            return []
+        if name in ("echo", "printf", "cat", ":", "true", "false"):
+            if name == "false":
+                raise _ObjectiveInputError("missing_tool_nonzero_exit" if state[3] else "unsupported_exit")
+            if name == "printf" and any(self.literal(arg) == "-v" for arg in args):
+                raise _ObjectiveInputError("unsupported_dynamic_form")
+            # cat is supported only to discard literal heredoc evidence.
+            if name == "cat" and (node.type != "redirected_statement" or args):
+                raise _ObjectiveInputError("unsupported_command")
+            return [state]
+        if name == "set" and [self.literal(a) for a in args] == ["-euo", "pipefail"]:
+            return [state]
+        if self.availability(node):
+            return [state]  # a standalone query is not a dominating guard
+        raise _ObjectiveInputError("unsupported_command" if name else "unsupported_control_flow")
+
+    def check(self):
+        pending = [(self.root, 0)]
+        count = 0
+        while pending:
+            node, depth = pending.pop()
+            count += 1
+            if count > 4096 or depth > 64:
+                raise _ObjectiveInputError("analysis_limit")
+            if node.type == "command":
+                name, _ = self.command(node)
+                if name is None or name in ("eval", "source", ".", "alias", "unalias", "exec", "bash", "sh"):
+                    raise _ObjectiveInputError("unsupported_dynamic_form")
+            if node.type == "expansion" and self.reference(node) is None:
+                raise _ObjectiveInputError("unsupported_dynamic_form")
+            if node.type == "command_substitution":
+                parent = node.parent
+                if parent.type == "array":
+                    parent = parent.parent
+                if parent.type != "variable_assignment":
+                    raise _ObjectiveInputError("unsupported_dynamic_form")
+            if node.type in ("for_statement", "while_statement", "case_statement", "subshell", "process_substitution"):
+                raise _ObjectiveInputError("unsupported_control_flow")
+            if any(c.type == "&" for c in node.children):
+                raise _ObjectiveInputError("unsupported_control_flow")
+            pending.extend((child, depth + 1) for child in node.named_children)
+        self.sequence(self.root.named_children, [({}, set(), set(), set())])
+        if self.found != self.tools:
+            raise _ObjectiveInputError("tool_not_invoked")
+
+
+def shell_staged_tool_guard(workspace: str, patterns: list[str], tools=None) -> tuple[bool, str]:
+    """Prove staged paths and dominating guards using a real Bash AST."""
+    try:
+        if (not isinstance(patterns, list) or not patterns or not isinstance(tools, list) or not tools
+                or any(not isinstance(tool, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", tool)
+                       for tool in tools) or len(set(tools)) != len(tools)):
+            raise _ObjectiveInputError("invalid_constraints")
+        try:
+            from tree_sitter import Language, Parser
+            import tree_sitter_bash
+        except ImportError:
+            raise _ObjectiveInputError("parser_unavailable") from None
+        parser = Parser(Language(tree_sitter_bash.language()))
+        for rel in patterns:
+            text = _objective_file_bytes(workspace, rel)
+            root = parser.parse(text.encode("utf-8")).root_node
+            if root.has_error:
+                raise _ObjectiveInputError("invalid_bash")
+            _StagedToolGuard(root, tools).check()
+    except _ObjectiveInputError as error:
+        return (False, f"shell_staged_tool_guard: {error}")
+    except (OSError, UnicodeError, ValueError, TypeError, RecursionError):
+        return (False, "shell_staged_tool_guard: unreadable_or_invalid_input")
+    return (True, "shell_staged_tool_guard: staged calls have availability and nonempty guards")
+
+
 CHECKS = {
+    "parsed_config_values": parsed_config_values,
+    "shell_staged_tool_guard": shell_staged_tool_guard,
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "pin_comment_absent": pin_comment_absent,
     "yaml_parses": yaml_parses,
@@ -3596,6 +4120,8 @@ _WORKFLOW_STEP_USES_KEYS = {
 # runs "for every type" reads, at a glance, like every type has an entry
 # here; six legitimately have none, by design, not by omission.
 _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
+    "parsed_config_values": {"format", "expected"},
+    "shell_staged_tool_guard": {"tools"},
     "changeset_triggers": {"changeset", "expect_triggered", "expect_skipped"},
     # `require_present` is `file_matches`'s only opt-in: it makes a check
     # whose evidence IS the file fail closed when that file is absent or
