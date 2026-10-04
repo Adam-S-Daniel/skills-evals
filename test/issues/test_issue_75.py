@@ -464,6 +464,51 @@ class TestIssue75(unittest.TestCase):
 
 
 
+    def test_negated_sha_recommendations_fail_only_sha_check(self):
+        good_sha = GOOD.splitlines()[0]
+        negatives = (
+            "never enable SHA pinning",
+            "no need to enable SHA pinning",
+            "don't enable SHA pinning",
+            "you should not enable SHA pinning",
+            "don’t enable SHA pinning",
+        )
+        with workspace() as (root, child):
+            read_all(root, child)
+            assert_passes(child)
+            for recommendation in negatives:
+                row = good_sha.rsplit(" | ", 1)[0] + " | " + recommendation
+                for wrapper in ("{row}", "| {row} |"):
+                    with self.subTest(recommendation=recommendation, wrapper=wrapper):
+                        transcript = GOOD.replace(good_sha, wrapper.format(row=row), 1)
+                        result = check_results(child, transcript)
+                        assert {key for key, passed in result.items() if not passed} == {
+                            "alpha-sha-drift"}, result
+                        assert_passes(child)
+
+
+
+    def test_removal_and_drop_recommendations_fail_only_engine_check(self):
+        good_manual = GOOD.splitlines()[1]
+        negatives = (
+            "apply never touches other rulesets, but engine removes it",
+            "apply never touches other rulesets, but engine drops it",
+        )
+        with workspace() as (root, child):
+            read_all(root, child)
+            assert_passes(child)
+            for recommendation in negatives:
+                row = good_manual.rsplit(" | ", 1)[0] + " | " + recommendation
+                for wrapper in ("{row}", "  > {row}"):
+                    with self.subTest(recommendation=recommendation, wrapper=wrapper):
+                        transcript = GOOD.replace(good_manual, wrapper.format(row=row), 1)
+                        result = check_results(child, transcript)
+                        assert {key for key, passed in result.items() if not passed} == {
+                            "alpha-engine-does-not-delete"}, result
+                        assert_passes(child)
+
+
+
     def test_wrong_ids_remain_rejected_with_new_aliases_and_wrappers(self):
         wrong_ids = (
             "manual-main (ID 7303)", "manual-main (ruleset 7303)",

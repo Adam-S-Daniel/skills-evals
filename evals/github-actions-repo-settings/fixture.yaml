@@ -3,8 +3,9 @@
 # The objective column certifies the critical factual rows, both overall
 # conclusions, successful source reads, and preservation. Transcript rows have
 # five fields on one physical line. The grammar accepts a finite vocabulary of
-# factual and action phrases, common ruleset-ID aliases, and indentation,
-# quote, list, and Markdown-table formatting; arbitrary prose is not parsed.
+# factual phrases, common ruleset-ID aliases, and indentation, quote, list,
+# and Markdown-table formatting. Common action verbs are recognized, but verbs
+# cannot be fully enumerated; arbitrary prose is not parsed.
 skill: github-actions-repo-settings
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 model: claude-sonnet-5
@@ -47,7 +48,7 @@ objective_checks:
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*(?!(?:[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|))[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-beta[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:no[ \t]+drift|no[ \t]+mismatches|all[ \t]+settings[ \t]+match)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
-      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:do[ \t]+not[ \t]+enable|disable[ \t]+SHA[ -]pinning|leave[ \t]+(?:it[ \t]+)?(?:off|false))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:do[ \t]+not[ \t]+enable|never[ \t]+enable|no[ \t]+need[ \t]+(?:to[ \t]+)?enable|don[\x27’]t[ \t]+enable|you[ \t]+should[ \t]+not[ \t]+enable|you[ \t]+shouldn[\x27’]t[ \t]+enable|should[ \t]+not[ \t]+enable|shouldn[\x27’]t[ \t]+enable|not[ \t]+(?:to[ \t]+)?enable|disable[ \t]+SHA[ -]pinning|leave[ \t]+(?:it[ \t]+)?(?:off|false))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   - id: alpha-unmanaged-ruleset-facts
     description: Alpha's additional ruleset has its own ID and no bypass actors
@@ -67,7 +68,7 @@ objective_checks:
     must_match:
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main)[ \t]*(?:\((?i:(?:id|ruleset))[ \t]*:?[ \t]*[0-9]+\)|#[0-9]+)[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*(?i:unmanaged|undeclared|not[ \t]+declared(?:[ \t]+in[ \t]+(?:the[ \t]+)?(?:baseline|config))?|not[ \t]+in[ \t]+(?:the[ \t]+)?(?:baseline|config)|absent[ \t]+from[ \t]+(?:the[ \t]+)?(?:declared[ \t]+)?(?:baseline|config)|not[ \t]+managed[ \t]+by[ \t]+(?:the[ \t]+)?engine)[ \t]*\|[ \t]*[^|\n]*(?i:(?:the[ \t]+)?(?:engine|repo_settings\.py)(?:[ \t]+apply)?[ \t]+(?:will[ \t]+not|does[ \t]+not|cannot|won\x27t|won’t)[ \t]+(?:automatically[ \t]+)?delete|(?:leave|keep)[ \t]+(?:it|this[ \t]+ruleset)[ \t]+in[ \t]+place[ \t]+because[ \t]+(?:it[ \t]+is[ \t]+)?unmanaged|apply[ \t]+(?:never[ \t]+touches[ \t]+other[ \t]+rulesets|leaves[ \t]+it[ \t]+untouched))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
     must_not_match:
-      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main\b)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:\b(?:engine|repo_settings\.py|apply)\b(?:(?!\b(?:not|never|cannot|won\x27t|won’t|doesn\x27t|doesn’t)\b)[^|\n])*?\bdeletes?\b)[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main\b)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:\b(?:engine|repo_settings\.py|apply)\b(?:(?!\b(?:not|never|cannot|won\x27t|won’t|doesn\x27t|doesn’t)\b)[^|\n])*?\b(?:delet(?:e|es|ed|ing)?|remov(?:e|es|ed|ing)?|drop(?:s|ped|ping)?)\b)[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   - id: beta-overall-match
     description: Beta matches all declared settings and needs no change
