@@ -21774,6 +21774,88 @@ class TestVendorReleaseImpactPublishTimesCheck(unittest.TestCase):
         self.assertFalse(result["passed"], result["detail"])
 
 
+class _WorkflowUsesChecks(unittest.TestCase):
+    PATH = ".github/workflows/check.yml"
+    USES = "example-org/example-repo/path/reusable.yml@v1"
+
+    def _ws(self, files: dict[str, str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, body in files.items():
+            path = ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return ws
+
+    def _workflow(self, uses: str | None = None) -> str:
+        uses = self.USES if uses is None else uses
+        return ("jobs:\n  caller:\n    uses: " + uses + "\n"
+                "    permissions:\n      contents: read\n"
+                "  runner:\n    runs-on: ubuntu-latest\n    steps:\n"
+                "      - uses: " + uses + "\n")
+
+    def _check(self, kind: str, ws: Path, **kwargs) -> tuple[bool, str]:
+        patterns = kwargs.pop("patterns", [self.PATH])
+        args = {"uses_suffix": "reusable.yml"}
+        args.update(kwargs)
+        if kind == "permissions":
+            return objective.workflow_permissions(
+                str(ws), patterns, job="caller", permissions_include={"contents": "read"}, **args)
+        return objective.workflow_step_uses(str(ws), patterns, **args)
+
+    def _assert_workflow(self, raw: str, expected: bool, **kwargs):
+        ws = self._ws({self.PATH: raw})
+        for kind in ("permissions", "steps"):
+            with self.subTest(kind=kind):
+                passed, detail = self._check(kind, ws, **kwargs)
+                self.assertEqual(passed, expected, detail)
+
+
+class TestIssue90UsesSuffixBoundary(_WorkflowUsesChecks):
+    """Both caller checks select whole trailing path segments before '@'."""
+
+    def test_whole_reference_and_path_segment_suffixes_pass(self):
+        cases = [("reusable.yml", "reusable.yml"),
+                 ("./path/reusable.yml", "reusable.yml"),
+                 ("./path/reusable.yml", "path/reusable.yml"),
+                 ("./path/reusable.yml", "./path/reusable.yml"),
+                 (self.USES, "example-org/example-repo/path/reusable.yml"),
+                 (self.USES, "path/reusable.yml")]
+        for uses, suffix in cases:
+            with self.subTest(uses=uses, suffix=suffix):
+                self._assert_workflow(self._workflow(uses), True, uses_suffix=suffix)
+
+    def test_leading_slash_suffixes_keep_their_existing_boundary(self):
+        for uses in ("./path/reusable.yml", self.USES):
+            with self.subTest(uses=uses):
+                self._assert_workflow(self._workflow(uses), True, uses_suffix="/reusable.yml")
+                self._assert_workflow(self._workflow(uses), True, uses_suffix="/path/reusable.yml")
+
+    def test_local_and_remote_tag_or_sha_refs_are_stripped(self):
+        for path, ref in itertools.product(
+                ("./path/reusable.yml", "example-org/example-repo/path/reusable.yml"),
+                ("v1", "a" * 40)):
+            with self.subTest(path=path, ref=ref):
+                self._assert_workflow(self._workflow(path + "@" + ref), True)
+                self._assert_workflow(self._workflow(path + "@" + ref), False,
+                                      uses_suffix="reusable.yml@" + ref)
+
+    def test_bare_filename_cannot_start_inside_a_segment(self):
+        for uses in ("xreusable.yml", "./path/xreusable.yml", "example-org/example-repo/xreusable.yml@v1"):
+            with self.subTest(uses=uses):
+                self._assert_workflow(self._workflow(uses), False)
+
+    def test_path_suffix_cannot_start_inside_a_segment(self):
+        for uses in ("./xpath/reusable.yml", "example-org/example-repo/xpath/reusable.yml@v1"):
+            with self.subTest(uses=uses):
+                self._assert_workflow(self._workflow(uses), False, uses_suffix="path/reusable.yml")
+
+    def test_trailing_extension_cannot_match(self):
+        for uses in ("./path/reusable.yml.bak", "example-org/example-repo/path/reusable.yml.bak@v1"):
+            with self.subTest(uses=uses):
+                self._assert_workflow(self._workflow(uses), False)
+
+
 class TestIssue90WorkflowPermissions(unittest.TestCase):
     """The reusable caller's effective grant is a parsed YAML fact."""
 

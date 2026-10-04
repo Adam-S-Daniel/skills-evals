@@ -3087,6 +3087,13 @@ def _log_file_reachable(log_file, download_paths: list[str]) -> bool:
     return False
 
 
+def _uses_suffix_matches(uses: str, suffix: str) -> bool:
+    """Match the reference before '@' at a whole path-segment boundary."""
+    ref = uses.split("@", 1)[0]
+    return not suffix or ref == suffix or ref.endswith(
+        suffix if suffix.startswith("/") else "/" + suffix)
+
+
 def workflow_permissions(workspace: str, patterns: list[str], *,
                          job: str | None = None,
                          uses_suffix: str | None = None,
@@ -3121,7 +3128,7 @@ def workflow_permissions(workspace: str, patterns: list[str], *,
                 return (False, f"{rel}: missing or malformed job {job!r}")
             job_body = jobs[job]
             uses = job_body.get("uses")
-            if not isinstance(uses, str) or not uses.split("@", 1)[0].endswith(uses_suffix):
+            if not isinstance(uses, str) or not _uses_suffix_matches(uses, uses_suffix):
                 return (False, f"{rel}: job {job!r} does not call {uses_suffix!r}")
             # Presence matters: an explicit null job block must not use the
             # helper's None fallback to a more generous workflow block.
@@ -3162,7 +3169,8 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                        min_matches: int = 1) -> tuple[bool, str]:
     """Structural assertions over parsed workflow YAML: does at least
     `min_matches` step, across every workflow matched by `patterns`, call a
-    `uses:` action whose ref (the part before '@') ends with `uses_suffix`,
+    `uses:` action whose ref (the part before '@') matches `uses_suffix` at
+    a whole path-segment boundary,
     inside a job matching `job` (by id or `name:`), satisfying the given
     job/step-level shape?
 
@@ -3261,8 +3269,7 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
             uses = step.get("uses")
             if not isinstance(uses, str):
                 continue
-            ref = uses.split("@", 1)[0]
-            if uses_suffix is not None and not ref.endswith(uses_suffix):
+            if uses_suffix is not None and not _uses_suffix_matches(uses, uses_suffix):
                 continue
             matches.append((rel, doc, job_id, job_body, step, step_index))
 
