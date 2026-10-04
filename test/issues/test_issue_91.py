@@ -313,6 +313,62 @@ def _check_secret_need_and_missing_denials_fail(case, row):
     assert failures(case, GOOD + "\n" + row) == {"missing-actions-secret"}
 
 
+@cases("separator", [":", "|", "-", "–", "—"])
+@cases("need", ["needed", "required", "necessary"])
+def _check_labeled_secret_need_denials_fail(case, separator, need):
+    read_evidence(case)
+    for denial in ("not", "no"):
+        for label in ("CMS_E2E_PAT", "- **CMS_E2E_PAT**", "| `CMS_E2E_PAT`"):
+            for space in ("", " "):
+                row = f"{label}{space}{separator} {denial} {need}."
+                assert failures(case, GOOD + "\n" + row) == {"missing-actions-secret"}
+
+
+@cases("need", ["needed", "required", "necessary"])
+def _check_no_secret_required_or_needed_fails(case, need):
+    read_evidence(case)
+    for label in ("CMS_E2E_PAT", "`CMS_E2E_PAT`", "**CMS_E2E_PAT**"):
+        assert failures(case, GOOD + f"\nno {label} {need}") == {"missing-actions-secret"}
+
+
+@cases("row", [
+    "Checks — read works only because the repo is public.",
+    "- Workflows - write is only needed by platform-bump, not this token.",
+    "**Workflows** – write is only needed by platform-bump, not this token.",
+    "Checks—read works only because the repo is public.",
+    "Workflows — read/write is only needed by platform-bump, not this token.",
+])
+def _check_extra_permission_access_prose_still_passes(case, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == set()
+
+
+@cases("row", [
+    "Workflows - Read and write",
+    "**Workflows** – write",
+    "Checks—read",
+    "Workflows — read/write",
+    "Workflows: Read & write.",
+    "Checks - read-only",
+    "Deployments | R/W | Explanation belongs here. |",
+    "| **Workflows** | **read/write** | Explanation belongs here. |",
+    "**Workflows** — **write.**",
+    "Checks — __read__.",
+])
+def _check_extra_permission_whole_access_cells_fail(case, row):
+    read_evidence(case)
+    assert failures(case, GOOD + "\n" + row) == {"no-extra-grants"}
+
+
+@cases("keywords", [", ".join(words) for count in (2, 3)
+                    for words in itertools.permutations(("implicit", "mandatory", "auto-selected"), count)])
+def _check_metadata_multiple_implicit_keywords_pass(case, keywords):
+    read_evidence(case)
+    for row in (f"Metadata: Read ({keywords})",
+                f"| **Metadata** | **Read ({keywords})** | Explanation belongs here. |"):
+        assert failures(case, GOOD.replace(GOOD_ROWS["metadata-read"], row)) == set()
+
+
 PERMISSION_CASES = [
     (check_id, label, ["write", "Read and write", "read/write", "R/W"]
      if check_id.endswith("-write") else ["Read", "read-only", "read only"])
