@@ -50,6 +50,7 @@ import json, os, sys
 LOG = {log!r}
 STATE = {state!r}
 FAIL_AGENT_CALL = {fail!r}
+PLANT = {plant!r}
 argv = sys.argv[1:]
 if "--version" in argv:
     role = "version"
@@ -76,6 +77,10 @@ if role == "probe":
                      if k in os.environ}}
 with open(LOG, "a") as f:
     f.write(json.dumps(record) + "\\n")
+if role == "agent" and PLANT:
+    os.makedirs(os.path.dirname(PLANT[0]), exist_ok=True)
+    with open(PLANT[0], "w") as f:
+        f.write(PLANT[1])
 if role == "agent" and n == FAIL_AGENT_CALL:
     sys.stderr.write("simulated agent failure\\n")
     sys.exit(3)
@@ -154,11 +159,11 @@ class TestLocalEval(unittest.TestCase):
 
     # -- helpers ---------------------------------------------------------
 
-    def _dispatcher(self, fail_agent_call=None) -> Path:
+    def _dispatcher(self, fail_agent_call=None, plant=None) -> Path:
         path = self.root / "claude-dispatch"
         path.write_text(DISPATCHER.format(
             python=sys.executable, log=str(self.log), state=str(self.state),
-            fail=fail_agent_call, fake=str(FAKE_CLAUDE),
+            fail=fail_agent_call, plant=plant, fake=str(FAKE_CLAUDE),
             fake_init=str(FAKE_CLAUDE_INIT)), encoding="utf-8")
         path.chmod(0o755)
         return path
@@ -181,8 +186,9 @@ class TestLocalEval(unittest.TestCase):
         return env
 
     def _run(self, *args, fail_agent_call=None, env_extra=None,
-             results_dir=None):
-        env = self._env(self._dispatcher(fail_agent_call), **(env_extra or {}))
+             results_dir=None, plant=None):
+        env = self._env(self._dispatcher(fail_agent_call, plant),
+                        **(env_extra or {}))
         out = self.out if results_dir is None else results_dir
         for attempt in (1, 2):
             proc = subprocess.run(
@@ -1178,34 +1184,42 @@ class TestLocalEval(unittest.TestCase):
         self.assertFalse((self.out / "t2").exists(), "no further trial")
         self.assertFalse((self.out / "aggregate.json").exists())
 
-    def test_a_guard_refusal_at_the_judge_stops_the_run(self):
-        # The judge runs from the harness checkout. Point that at a stand-in
-        # whose own .claude names a credential source: only the judge (and
-        # run_eval itself) start there, so the judge is the call refused.
-        sys.path.insert(0, str(REPO_ROOT / "scripts"))
-        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
-        import local_eval
-        fake_root = self.root / "harness-checkout"
-        (fake_root / ".claude").mkdir(parents=True)
-        (fake_root / ".claude" / "settings.local.json").write_text(
-            json.dumps({"apiKeyHelper": "sentinel-helper"}), encoding="utf-8")
-        env = self._env(self._dispatcher())
-        stderr = io.StringIO()
-        with mock.patch.dict(os.environ, env, clear=True), \
-                mock.patch.object(local_eval, "REPO_ROOT", fake_root), \
-                mock.patch.object(local_eval, "settings_files", lambda home: []), \
-                contextlib.redirect_stdout(io.StringIO()), \
-                contextlib.redirect_stderr(stderr):
-            code = local_eval.main(
-                [str(EVAL_DIR), "--results-dir", str(self.out), "--trials", "2",
-                 "--arm", "without_skill"])
-        self.assertEqual(code, 2, stderr.getvalue())
+    def test_a_credential_written_after_the_arm_stops_the_run_at_the_judge(self):
+        # The fake CLI plants user-level settings while the ARM runs (what a
+        # fixture's setup or the agent could do); the judge then launches,
+        # and the launcher's complete pre-flight refuses it.
+        target = self.home / ".claude" / "settings.json"
+        self.assertIn(self.root, target.parents)
+        proc = self._run(
+            str(EVAL_DIR), "--trials", "2", "--arm", "without_skill",
+            plant=(str(target), json.dumps({"apiKeyHelper": "sentinel-helper"})))
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
         roles = [c["role"] for c in self._calls()]
-        self.assertIn("agent", roles, "the arm (in its own workspace) ran")
+        self.assertIn("agent", roles)
         self.assertNotIn("judge", roles, "the judge never reached the CLI")
-        self.assertIn("trial 1", stderr.getvalue())
-        self.assertIn("settings.local.json", stderr.getvalue())
-        self.assertNotIn("sentinel-helper", stderr.getvalue())
+        self.assertIn("trial 1", proc.stderr)
+        self.assertIn(str(target), proc.stderr)
+        self.assertIn("apiKeyHelper", proc.stderr)
+        self.assertNotIn("sentinel-helper", proc.stderr)
+        self.assertFalse((self.out / "t2").exists())
+
+    def test_user_settings_written_by_setup_are_caught_at_the_next_launch(self):
+        target = self.home / ".claude" / "settings.json"
+        self.assertIn(self.root, target.parents, "the throwaway HOME")
+        eval_dir = self._fixture_copy(
+            setup='mkdir -p "$HOME/.claude" && printf \'%s\' '
+                  '\'{"apiKeyHelper": "sentinel-helper"}\' '
+                  '> "$HOME/.claude/settings.json"')
+        proc = self._run(str(eval_dir), "--trials", "3", "--no-judge",
+                         "--arm", "without_skill")
+        self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
+        self.assertTrue(target.is_file(), "the setup command ran")
+        roles = [c["role"] for c in self._calls()]
+        self.assertNotIn("agent", roles)
+        self.assertIn("trial 1", proc.stderr)
+        self.assertIn("(flat)", proc.stderr)
+        self.assertIn(str(target), proc.stderr)
+        self.assertNotIn("sentinel-helper", proc.stderr)
         self.assertFalse((self.out / "t2").exists())
 
     def test_every_child_kind_reaches_the_cli_through_the_guard(self):
@@ -1293,6 +1307,135 @@ class TestLocalEval(unittest.TestCase):
         self.assertNotEqual(badge_proc.returncode, 0)
         self.assertIn("inside a local exhibit", badge_proc.stderr)
         self.assertFalse(badge.exists())
+
+    # -- review round 4: the launcher as a unit --------------------------
+
+    def _launcher(self):
+        """The generated guard launcher, with a fake 'real CLI' that records
+        its argv. Returns (launcher, real_cli_log, refusal_record)."""
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval_guard
+        unit = self.root / "launcher-unit"
+        unit.mkdir()
+        log, record = unit / "real-cli-calls.jsonl", unit / "refusals.jsonl"
+        real = unit / "real-claude"
+        real.write_text(
+            f"#!{sys.executable}\nimport json, sys\n"
+            f"open({str(log)!r}, 'a').write(json.dumps(sys.argv[1:]) + '\\n')\n",
+            encoding="utf-8")
+        real.chmod(0o700)
+        launcher = unit / "claude"
+        launcher.write_text(local_eval_guard.launcher_source(
+            python=sys.executable, scripts_dir=str(REPO_ROOT / "scripts"),
+            real_cli=str(real), repo_root=str(unit / "harness-checkout"),
+            record=str(record)), encoding="utf-8")
+        launcher.chmod(0o700)
+        return launcher, log, record
+
+    def _launch(self, launcher, cwd, *args):
+        return subprocess.run(
+            [str(launcher), *args], cwd=str(cwd), capture_output=True, text=True,
+            env={"PATH": "/usr/bin:/bin", "HOME": str(self.home)}, timeout=60)
+
+    def _real_calls(self, log):
+        if not log.exists():
+            return []
+        return [json.loads(line) for line in
+                log.read_text(encoding="utf-8").splitlines()]
+
+    def _hostile(self, directory, name="settings.json"):
+        (directory / ".claude").mkdir(parents=True, exist_ok=True)
+        (directory / ".claude" / name).write_text(
+            json.dumps({"apiKeyHelper": "sentinel-helper"}), encoding="utf-8")
+
+    def test_the_launcher_refuses_without_starting_the_cli(self):
+        launcher, log, record = self._launcher()
+        cwd = self.root / "ws"
+        self._hostile(cwd)
+        proc = self._launch(launcher, cwd, "-p", "x")
+        self.assertEqual(proc.returncode, 87, proc.stderr)
+        self.assertEqual(self._real_calls(log), [], "the real CLI must not start")
+        self.assertIn(str(cwd / ".claude" / "settings.json"), proc.stderr)
+        self.assertIn("apiKeyHelper", proc.stderr)
+        self.assertNotIn("sentinel-helper", proc.stderr)
+        self.assertIn("settings.json", record.read_text(encoding="utf-8"))
+
+    def test_the_launcher_hands_a_clean_launch_to_the_cli_unchanged(self):
+        launcher, log, _ = self._launcher()
+        cwd = self.root / "clean-ws"
+        cwd.mkdir()
+        argv = ["-p", "a prompt", "--output-format", "json", "--model", "m"]
+        proc = self._launch(launcher, cwd, *argv)
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self._real_calls(log), [argv])
+
+    def test_only_exactly_a_bare_version_skips_the_settings_check(self):
+        launcher, log, _ = self._launcher()
+        cwd = self.root / "ws"
+        self._hostile(cwd)
+        proc = self._launch(launcher, cwd, "--version")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertEqual(self._real_calls(log), [["--version"]])
+        for args in (("--version", "--print", "x"), ("-v",), ("--VERSION",), ()):
+            with self.subTest(args=args):
+                proc = self._launch(launcher, cwd, *args)
+                self.assertEqual(proc.returncode, 87, proc.stderr)
+        self.assertEqual(len(self._real_calls(log)), 1, "only the bare one ran")
+
+    def test_the_launcher_checks_every_parent_up_to_the_filesystem_root(self):
+        launcher, log, _ = self._launcher()
+        project = self.root / "project"
+        for label, cwd in (("one level up", project / "sub"),
+                           ("above a git root", project / "sub" / "repo")):
+            with self.subTest(case=label):
+                cwd.mkdir(parents=True, exist_ok=True)
+                (cwd / ".git").mkdir(exist_ok=True)
+                self._hostile(project, "settings.local.json")
+                proc = self._launch(launcher, cwd, "-p", "x")
+                self.assertEqual(proc.returncode, 87, proc.stderr)
+                self.assertIn(str(project / ".claude" / "settings.local.json"),
+                              proc.stderr)
+        self.assertEqual(self._real_calls(log), [])
+
+    def test_the_launcher_checks_beneath_the_cwd(self):
+        launcher, log, _ = self._launcher()
+        cwd = self.root / "ws"
+        self._hostile(cwd / "a" / "deeper")
+        proc = self._launch(launcher, cwd, "-p", "x")
+        self.assertEqual(proc.returncode, 87, proc.stderr)
+        self.assertIn(str(cwd / "a" / "deeper" / ".claude" / "settings.json"),
+                      proc.stderr)
+        self.assertEqual(self._real_calls(log), [])
+
+    def test_an_unlistable_claude_directory_is_a_refusal(self):
+        if os.geteuid() == 0:
+            self.skipTest("running as root: a permission-denied listing "
+                          "cannot be arranged")
+        launcher, log, _ = self._launcher()
+        parent = self.root / "project"
+        (parent / ".claude").mkdir(parents=True)
+        cwd = parent / "sub"
+        cwd.mkdir()
+        (parent / ".claude").chmod(0)
+        self.addCleanup((parent / ".claude").chmod, 0o700)
+        proc = self._launch(launcher, cwd, "-p", "x")
+        self.assertEqual(proc.returncode, 87, proc.stderr)
+        self.assertIn("cannot list", proc.stderr)
+        self.assertEqual(self._real_calls(log), [])
+
+    def test_the_provider_exemption_is_one_exact_name(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval_guard
+        names = {"CLAUDE_CODE_USE_POWERSHELL_TOOL": "1",
+                 "CLAUDE_CODE_USE_POWERSHELL_TOOL_X": "1",
+                 "CLAUDE_CODE_USE_POWERSHELL": "1",
+                 "CLAUDE_CODE_USE_BEDROCK": "1"}
+        self.assertEqual(
+            local_eval_guard.refused_env_names(names),
+            ["CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_POWERSHELL",
+             "CLAUDE_CODE_USE_POWERSHELL_TOOL_X"])
 
 
 if __name__ == "__main__":

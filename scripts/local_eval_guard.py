@@ -153,10 +153,10 @@ def _claude_dir_settings(directory: Path, exact: bool = False) -> list[Path]:
 
 def check_launch_cwd(cwd: str, skip_beneath: bool = False) -> None:
     """The settings pre-flight at the last moment, on the directory the CLI is
-    about to start in: `.claude/settings*.json` in the cwd, the project's
+    about to start in: `.claude/settings*.json` in the cwd, the
     `settings.json` and `settings.local.json` in each parent up to the
-    project root (the nearest directory holding a `.git`; the filesystem root
-    when there is none), by the path as given and by its real path, and
+    filesystem root (which assumes nothing about where the CLI stops looking
+    for project settings), by the path as given and by its real path, and
     `.claude/settings*.json` beneath the cwd unless `skip_beneath` (the
     harness checkout's own tree, which the early pre-flight has checked as
     source)."""
@@ -166,8 +166,6 @@ def check_launch_cwd(cwd: str, skip_beneath: bool = False) -> None:
         for directory in (current, *current.parents):
             if directory not in chain:
                 chain.append(directory)
-            if (directory / ".git").exists():
-                break
     starts = {Path(os.path.abspath(cwd)), Path(os.path.realpath(cwd))}
     for directory in chain:
         for path in _claude_dir_settings(directory, exact=directory not in starts):
@@ -177,10 +175,40 @@ def check_launch_cwd(cwd: str, skip_beneath: bool = False) -> None:
             check_settings_file(path)
 
 
+def settings_files(home: Path, repo_root: Path, managed_files,
+                   managed_dropins) -> list[Path]:
+    """The settings files the CLI loads regardless of where it starts: the
+    user's, the harness checkout's (the judge's cwd) and the managed policy's."""
+    home, repo_root = Path(home), Path(repo_root)
+    files = [home / ".claude" / "settings.json",
+             home / ".claude" / "settings.local.json",
+             repo_root / ".claude" / "settings.json",
+             repo_root / ".claude" / "settings.local.json",
+             *map(Path, managed_files)]
+    for directory in map(Path, managed_dropins):
+        if directory.is_dir():
+            files += sorted(directory.glob("*.json"))
+    return files
+
+
+def check_all_settings(home, repo_root, managed_files, managed_dropins,
+                       cwd=None, skip_beneath: bool = False) -> None:
+    """The COMPLETE settings pre-flight, one code path for the early check
+    (no `cwd`) and the launch-time guard (the directory the CLI starts in):
+    user, harness-checkout and managed files, then, given a `cwd`, the walk in
+    `check_launch_cwd`. Raises Refused naming the file and key."""
+    for path in settings_files(home, repo_root, managed_files, managed_dropins):
+        check_settings_file(path)
+    if cwd is not None:
+        check_launch_cwd(cwd, skip_beneath=skip_beneath)
+
+
 def launcher_source(python: str, scripts_dir: str, real_cli: str,
-                    repo_root: str, record: str) -> str:
+                    repo_root: str, record: str, managed_files=(),
+                    managed_dropins=()) -> str:
     """The text of the guard launcher a run points every child's CLAUDE_BIN
-    (and the head of its PATH) at. It runs `check_launch_cwd` on its own cwd
+    (and the head of its PATH) at. It runs the whole pre-flight
+    (`check_all_settings`: user, checkout and managed files, then its own cwd)
     and, on a refusal, writes the file and key to stderr and to `record`,
     exits GUARD_EXIT and does NOT start the CLI; otherwise it execs the real
     CLI with argv and environment unchanged. A bare `--version` is not
@@ -194,8 +222,10 @@ REAL = {real_cli!r}
 args = sys.argv[1:]
 if args != ["--version"]:
     try:
-        guard.check_launch_cwd(
-            os.getcwd(),
+        guard.check_all_settings(
+            os.environ.get("HOME") or os.path.expanduser("~"), {repo_root!r},
+            {list(map(str, managed_files))!r}, {list(map(str, managed_dropins))!r},
+            cwd=os.getcwd(),
             skip_beneath=os.path.realpath(os.getcwd()) == {repo_root!r})
     except guard.Refused as exc:
         sys.stderr.write("local_eval guard: " + str(exc) + "\\n")

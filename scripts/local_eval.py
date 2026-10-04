@@ -65,9 +65,11 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    the CLI through it: the version call (run_eval.claude_version), the probe
    (init_probe), each arm (run_eval.run_agent) and the judge (judge.py reads
    CLAUDE_BIN too). In the instant before the real CLI starts it runs the
-   same settings check on its own cwd: `.claude/settings*.json` there, the
-   project's `settings.json` and `settings.local.json` in each parent up to
-   the project root (the nearest `.git`), and `.claude/settings*.json`
+   COMPLETE settings pre-flight, through the same function the early check
+   uses (`local_eval_guard.check_all_settings`, so the two cannot drift): the
+   user-level, harness-checkout and managed files of 1b, then its own cwd:
+   `.claude/settings*.json` there, `settings.json` and `settings.local.json`
+   in each parent up to the filesystem root, and `.claude/settings*.json`
    beneath the cwd, following symlinks with loop protection. The harness
    checkout's own tree (the judge's cwd) is not walked beneath, only its
    `.claude/` is read; its source was checked in 1b. On a refusal it prints
@@ -150,8 +152,11 @@ Limits a reader must know:
   `~/.claude/.credentials.json` (the interactive login itself, which is the
   intended credential), any settings key or variable a future CLI release
   adds, a settings file created AFTER the CLI has started (by its own child
-  processes), and anything the agent itself runs (it can edit files, PATH or
-  CLAUDE_BIN for the commands it spawns). The interactive login is the only credential the judge is left able
+  processes), one written between the launcher's check and the CLI's read (a
+  race), and anything the agent itself runs (it can edit files, PATH or
+  CLAUDE_BIN for the commands it spawns). A fixture `env:` block can likewise
+  set CLAUDE_BIN or PATH for what the agent spawns afterwards; the harness's
+  own launches still go through the guard. The interactive login is the only credential the judge is left able
   to use, if those checks and the CLI's documented precedence hold.
 """
 
@@ -232,24 +237,11 @@ def child_environment(environ) -> dict:
             if name in CHILD_ENV_NAMES or name.startswith(CHILD_ENV_PREFIXES)}
 
 
-def settings_files(home: Path) -> list[Path]:
-    """Every settings file the unisolated judge's CLI would load."""
-    files = [home / ".claude" / "settings.json",
-             home / ".claude" / "settings.local.json",
-             REPO_ROOT / ".claude" / "settings.json",
-             REPO_ROOT / ".claude" / "settings.local.json",
-             *MANAGED_SETTINGS_FILES]
-    for directory in MANAGED_SETTINGS_DROPINS:
-        if directory.is_dir():
-            files += sorted(directory.glob("*.json"))
-    return files
-
-
 def check_user_settings(home: Path) -> None:
-    """Refuse when a settings file the judge would load names a credential
-    source."""
-    for path in settings_files(home):
-        check_settings_file(path)
+    """The early settings pre-flight: user, this checkout's and managed files.
+    The launch-time guard runs the same `check_all_settings`."""
+    local_eval_guard.check_all_settings(
+        home, REPO_ROOT, MANAGED_SETTINGS_FILES, MANAGED_SETTINGS_DROPINS)
 
 
 def check_fixture_settings(seeds: list[Path], registries: list[Path]) -> None:
@@ -692,7 +684,9 @@ def install_guard_launcher(guard_dir: Path) -> str:
     launcher.write_text(local_eval_guard.launcher_source(
         python=sys.executable, scripts_dir=str(Path(__file__).resolve().parent),
         real_cli=real, repo_root=str(REPO_ROOT),
-        record=str(guard_dir / GUARD_RECORD)), encoding="utf-8")
+        record=str(guard_dir / GUARD_RECORD),
+        managed_files=MANAGED_SETTINGS_FILES,
+        managed_dropins=MANAGED_SETTINGS_DROPINS), encoding="utf-8")
     launcher.chmod(0o700)
     os.environ["CLAUDE_BIN"] = str(launcher)
     os.environ["PATH"] = str(guard_dir) + os.pathsep + os.environ.get("PATH", "")
