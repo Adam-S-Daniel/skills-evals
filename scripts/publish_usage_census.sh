@@ -57,7 +57,13 @@ if [ -z "$(git config user.email 2>/dev/null || true)" ]; then
   ident=(-c user.name=usage-census -c user.email=usage-census@users.noreply.github.com)
 fi
 
-git clone --quiet --depth 1 "$URL" "$tmp/src" >/dev/null 2>&1 \
+# Both clones are scratch, removed by the EXIT trap. `git commit` and `git
+# fetch` would otherwise spawn a detached `git maintenance run --auto` that can
+# still be writing into .git when `rm -rf "$tmp"` runs; the rm then fails and,
+# under `set -e`, turns a successful publish into exit 1.
+no_bg=(--config maintenance.auto=false --config gc.auto=0)
+
+git clone "${no_bg[@]}" --quiet --depth 1 "$URL" "$tmp/src" >/dev/null 2>&1 \
   || { echo "usage census: could not clone skills-evals" >&2; exit 1; }
 
 census_args=(--out "$tmp/usage/latest.json")
@@ -67,7 +73,7 @@ if [ -n "${CENSUS_NOW:-}" ]; then census_args+=(--now "$CENSUS_NOW"); fi
 # own summary instead. stderr stays: its messages name no path.
 "$PY" "$tmp/src/scripts/model_usage_census.py" "${census_args[@]}" >/dev/null
 
-git clone --quiet --depth 1 --single-branch --branch "$BRANCH" "$URL" "$tmp/results" >/dev/null 2>&1 \
+git clone "${no_bg[@]}" --quiet --depth 1 --single-branch --branch "$BRANCH" "$URL" "$tmp/results" >/dev/null 2>&1 \
   || { echo "usage census: could not clone the $BRANCH branch" >&2; exit 1; }
 
 # Totals for the summary line, and the changed/unchanged decision. Both read

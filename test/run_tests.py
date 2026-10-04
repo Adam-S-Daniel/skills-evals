@@ -36617,6 +36617,10 @@ class TestPublishUsageCensus(unittest.TestCase):
         """main = the census script and what it imports; persistent/eval-results = one
         unrelated commit, the way the real branch starts."""
         self.git("init", "--bare", "--quiet", "-b", "main", str(self.origin))
+        # The stand-in for GitHub: its receive-pack would otherwise spawn its
+        # own detached auto-maintenance on every push, which is the server's
+        # business, not the script's, and would muddy the GIT_TRACE check below.
+        self.git("config", "maintenance.auto", "false", cwd=self.origin)
         seed = self.tmp / "seed"
         seed.mkdir()
         self.git("init", "--quiet", "-b", "main", cwd=seed)
@@ -36763,6 +36767,28 @@ class TestPublishUsageCensus(unittest.TestCase):
         self.assertNotEqual(self.head(), first)
         self.assertEqual(self.published()["counts"]["claude-opus-5"],
                          {"2026-W36": 2})
+
+    def test_no_detached_git_maintenance_outlives_the_script(self):
+        """`git commit` and `git fetch` spawn `git maintenance run --auto
+        --detach`, which can still be writing into the results clone's .git
+        when the EXIT trap's `rm -rf "$tmp"` runs; that rm then fails, and
+        under `set -e` a failing trap turns a published run's exit 0 into 1
+        (the CI flake on this class, `rm: cannot remove .../results/.git`).
+        The scratch clones must switch auto-maintenance off."""
+        trace = self.tmp / "git-trace.log"
+        self.assertEqual(self.run_script().returncode, 0)   # results branch now has a census
+        extra = self.projects / "-home-example-other" / "t.jsonl"
+        TestIssue67Review._write_transcript(extra, [
+            {"type": "assistant", "timestamp": "2026-09-03T11:00:00Z",
+             "message": {"role": "assistant", "model": "claude-opus-5"}}],
+            self.NOW)
+        proc = self.run_script(extra_env={"GIT_TRACE": str(trace)})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn("published", proc.stdout)
+        spawned = [line for line in trace.read_text(encoding="utf-8").splitlines()
+                   if "run_command: git maintenance run" in line
+                   or "run_command: git gc --auto" in line]
+        self.assertEqual(spawned, [], trace.read_text(encoding="utf-8")[-6000:])
 
     def test_the_summary_line_is_totals_only(self):
         proc = self.run_script()
