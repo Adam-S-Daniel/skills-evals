@@ -368,6 +368,9 @@ linked comment there.
   triggers: ADR
   [`docs/decisions/0002-runs-bill-the-api-org-not-the-subscription.md`](docs/decisions/0002-runs-bill-the-api-org-not-the-subscription.md),
   summarised in `docs/how-it-works.md` § 7 blocking decision 5.
+  Decision 4's local exhibits have a guarded runner, `scripts/local_eval.py`
+  (own `/login`, results outside every repo, never badge input); see
+  `README.md` § Running.
 - **Planned next steps, in order** (full list with cost ranges in
   [`docs/how-it-works.md`](docs/how-it-works.md) § 7): (1) ~~move the judge
   calls in `eval.yml` to the Batch API~~ — **deferred by Adam on 2026-09-22**:
