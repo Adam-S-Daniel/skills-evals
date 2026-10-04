@@ -73,6 +73,12 @@ def make_registry(root: Path, text: str = ORIGINAL_SKILL_MD) -> Path:
     skill_dir.mkdir(parents=True)
     (skill_dir / "SKILL.md").write_text(text, encoding="utf-8")
     (root / "README.md").write_text("fictional registry\n", encoding="utf-8")
+    (root / ".claude-plugin").mkdir()
+    (root / ".claude-plugin" / "marketplace.json").write_text(json.dumps({
+        "name": "test-market", "plugins": [{"name": "demo", "source": "./plugins/demo"}]}))
+    (root / "plugins" / "demo" / ".claude-plugin").mkdir()
+    (root / "plugins" / "demo" / ".claude-plugin" / "plugin.json").write_text(
+        json.dumps({"name": "demo"}))
     env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
     for cmd in (["init", "-q", "-b", "main"], ["add", "-A"],
                 ["-c", "user.name=t", "-c", "user.email=t@example.com",
@@ -144,6 +150,7 @@ class FakeRunner:
         self.calls.append(("loop", list(argv), cwd, skill_creator))
         self.eval_set = json.loads(Path(flag(argv, "--eval-set")).read_text())
         self.loop_cwd_had_claude_dir = (Path(cwd) / ".claude").is_dir()
+        self.loop_settings = json.loads((Path(cwd) / ".claude" / "settings.json").read_text())
         original = pse.frontmatter_data(
             (Path(flag(argv, "--skill-path")) / "SKILL.md").read_text())["description"]
         best = self.best_description or original
@@ -467,6 +474,325 @@ class DecisionTableTests(unittest.TestCase):
         base = {k: m(v["passed"], v["total"]) for k, v in self.BASE.items()}
         cand = {"t1": m(3, 4), "t2": m(2, 4), "v": m(3, 4)}
         self.assertTrue(pse.decide(base, cand, self.TRAIN, self.VAL)[0])
+
+
+class HardeningDecisionTests(unittest.TestCase):
+
+    def test_minimum_objective_gain_includes_boundary_and_rejects_neutral(self):
+        base = {"t": m(50, 100), "v": m(80, 100)}
+        for passed, expected in ((50, False), (59, False), (60, True), (61, True)):
+            with self.subTest(passed=passed):
+                cand = {"t": m(passed, 100), "v": m(80, 100)}
+                self.assertEqual(pse.decide(base, cand, ["t"], "v")[0], expected)
+
+    def test_minimum_judge_gain_uses_normalized_scale(self):
+        base = {"t": m(1, 2, 6.0), "v": m(1, 2, 7.0)}
+        for judge, expected in ((6.0, False), (6.99, False), (7.0, True), (7.01, True)):
+            with self.subTest(judge=judge):
+                cand = {"t": m(1, 2, judge), "v": m(1, 2, 7.0)}
+                self.assertEqual(pse.decide(base, cand, ["t"], "v")[0], expected)
+
+    def test_small_objective_gain_cannot_use_judge_gain_to_override(self):
+        base = {"t": m(50, 100, 6), "v": m(80, 100, 7)}
+        cand = {"t": m(51, 100, 9), "v": m(80, 100, 7)}
+        self.assertFalse(pse.decide(base, cand, ["t"], "v")[0])
+
+    def test_fixed_holdout_rejects_regressions_and_inconclusive_scores(self):
+        base = {"t": m(1, 2, 6), "v": m(1, 2, 7), "h": m(3, 4, 7)}
+        for fixed, expected in ((m(3, 4, 7), True), (m(2, 4, 9), False),
+                                (m(3, 4, 6.99), False), (m(0, 0, 7), False),
+                                (m(3, 4, 7, "trial_errors"), False),
+                                (m(3, 4, None), False)):
+            with self.subTest(fixed=fixed):
+                cand = {"t": m(2, 2, 7), "v": m(1, 2, 6.5), "h": fixed}
+                self.assertEqual(pse.decide(base, cand, ["t"], "v", holdout="h",
+                                           judge_required=True)[0], expected)
+        base["h"] = m(3, 4)
+        cand["h"] = m(3, 4)
+        self.assertFalse(pse.decide(base, cand, ["t"], "v", holdout="h",
+                                   judge_required=True)[0])
+        self.assertTrue(pse.decide(base, cand, ["t"], "v", holdout="h")[0])
+        base["h"] = m(3, 4, 7)
+        self.assertFalse(pse.decide(base, cand, ["t"], "v", holdout="h")[0])
+        del cand["h"]
+        self.assertFalse(pse.decide(base, cand, ["t"], "v", holdout="h")[0])
+
+    def test_expected_judges_do_not_require_scores_from_objective_only_fixtures(self):
+        base = {"t": m(1, 2), "v": m(1, 2, 7), "h": m(3, 4)}
+        cand = {"t": m(2, 2), "v": m(1, 2, 7), "h": m(3, 4)}
+        self.assertTrue(pse.decide(base, cand, ["t"], "v", holdout="h",
+                                  judge_required={"v"})[0])
+
+    def test_missing_expected_train_or_validation_judge_is_inconclusive(self):
+        base = {"t": m(1, 2, 6), "v": m(1, 2, 7)}
+        for missing in ("t", "v"):
+            with self.subTest(missing=missing):
+                cand = {"t": m(2, 2, 7), "v": m(1, 2, 7)}
+                cand[missing]["judge_mean"] = None
+                accepted, reasons = pse.decide(base, cand, ["t"], "v", judge_required=True)
+                self.assertFalse(accepted)
+                self.assertIn("inconclusive", reasons[0])
+
+    def test_min_gain_cli_requires_finite_positive_fraction(self):
+        for value in ("0", "-0.1", "1.01", "nan", "inf"):
+            with self.subTest(value=value), contextlib.redirect_stderr(io.StringIO()), \
+                    self.assertRaises(SystemExit) as exc:
+                pse.parse_args([SKILL, "--min-gain", value])
+            self.assertEqual(exc.exception.code, 2)
+        self.assertEqual(pse.parse_args([SKILL, "--min-gain", "1"]).min_gain, 1)
+
+
+class HardeningPipelineTests(PipelineCase):
+
+    def queries(self):
+        path = self.tmp / "queries.json"
+        path.write_text(json.dumps([
+            {"query": "record the queue decision", "should_trigger": True},
+            {"query": "fix the flaky test", "should_trigger": False}]))
+        return str(path)
+
+    def test_fixed_holdout_never_rotates_into_train(self):
+        for rotation in range(6):
+            with self.subTest(rotation=rotation):
+                rc, out, _ = self.run_main(NoCallRunner(), "--dry-run", "--holdout",
+                                            "supersede", "--rotation", str(rotation),
+                                            "--trigger-eval-set", self.queries())
+                self.assertEqual(rc, 0)
+                planned = json.loads(out)
+                self.assertNotIn("supersede", planned["train"])
+                self.assertEqual(planned["validation"], FIXTURES[rotation % 2])
+                self.assertEqual(planned["holdout"], "supersede")
+                self.assertEqual(planned["min_gain"], .1)
+                self.assertEqual(planned["model_calls"]["run_eval_baseline"], 18)
+        self.assertFalse(self.results.exists())
+
+    def test_unknown_holdout_refuses_without_calls_or_writes(self):
+        rc, _, err = self.run_main(NoCallRunner(), "--holdout", "unknown")
+        self.assertEqual(rc, 2)
+        self.assertIn("--holdout", err)
+        self.assertFalse(self.results.exists())
+
+    def test_holdout_prompt_cannot_reach_proposer_via_another_train_fixture(self):
+        # Existing-convention shares bootstrap's prompt; rotation 1 trains it.
+        rc, _, err = self.run_main(NoCallRunner(), "--holdout", "bootstrap",
+                                    "--rotation", "1", "--trigger-eval-set", self.queries())
+        self.assertEqual(rc, 2)
+        self.assertIn("prompt distinct", err)
+        self.assertFalse(self.results.exists())
+
+    def test_holdout_is_measured_recorded_and_excluded_from_both_proposers(self):
+        fixed_prompt = pse.run_eval.load_fixture(REPO_ROOT / "evals" / SKILL / "supersede")["prompt"]
+        supplied = self.tmp / "queries.json"
+        supplied.write_text(json.dumps([
+            {"query": "  " + fixed_prompt.replace(" ", "\n  "), "should_trigger": True},
+            {"query": "record the queue decision", "should_trigger": True},
+            {"query": "fix the flaky test", "should_trigger": False}]))
+        candidate = dict(GOOD, **{"existing-convention": (3, 4, 7)})
+        runner = FakeRunner(GOOD, candidate, proposal())
+        rc, _, _ = self.run_main(runner, "--holdout", "supersede", "--rotation", "0",
+                                  "--trigger-eval-set", str(supplied), "--min-gain", ".25")
+        self.assertEqual(rc, 0)
+        self.assertNotIn(" ".join(fixed_prompt.split()), [i["query"] for i in runner.eval_set])
+        prompt = next(c[1] for c in runner.calls if c[0] == "propose")
+        self.assertNotIn(fixed_prompt.strip(), prompt)
+        self.assertNotIn('<fixture name="supersede">', prompt)
+        record = self.record()
+        self.assertEqual(record["min_gain"], .25)
+        self.assertEqual(record["split"]["holdout"], "supersede")
+        self.assertIn("supersede", record["baseline"])
+        self.assertIn("supersede", record["candidate"])
+        self.assertIn("| supersede | holdout |", record["table"])
+        body = Path(record["files"]["pr_body"]).read_text()
+        self.assertIn("Fixed holdout: supersede", body)
+        self.assertIn("minimum train gain: 0.25", body)
+
+    def test_custom_minimum_gain_changes_pipeline_decision(self):
+        candidate = dict(GOOD, **{"existing-convention": (3, 4, 7)})
+        runner = FakeRunner(GOOD, candidate, proposal())
+        rc, _, _ = self.run_main(runner, "--holdout", "supersede", "--min-gain", ".3",
+                                  "--trigger-eval-set", self.queries())
+        self.assertEqual(rc, 1)
+        self.assertIn("minimum gain 0.3", " ".join(self.record()["reasons"]))
+
+    def test_trigger_settings_disable_manifest_providers(self):
+        for name, skill, directory in (("custom", SKILL, "extra"),
+                                        ("unrelated", "another-skill", "skills")):
+            root = self.registry / "plugins" / name
+            target = root / directory / skill
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text(ORIGINAL_SKILL_MD.replace(SKILL, skill))
+            (root / ".claude-plugin").mkdir()
+            (root / ".claude-plugin" / "plugin.json").write_text(json.dumps({
+                "name": name, "skills": "./" + directory}))
+        market_path = self.registry / ".claude-plugin" / "marketplace.json"
+        market = json.loads(market_path.read_text())
+        market["plugins"] += [{"name": name, "source": "./plugins/" + name}
+                              for name in ("custom", "unrelated")]
+        market_path.write_text(json.dumps(market))
+        env = dict(os.environ, GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM="1")
+        subprocess.run(["git", "-C", str(self.registry), "add", "-A"], check=True, env=env)
+        subprocess.run(["git", "-C", str(self.registry), "-c", "user.name=t", "-c",
+                        "user.email=t@example.com", "commit", "-q", "-m", "add providers"],
+                       check=True, env=env)
+        runner = FakeRunner(GOOD, GOOD, proposal())
+        self.run_main(runner)
+        self.assertEqual(runner.loop_settings, {"enabledPlugins": {
+            "custom@test-market": False, "demo@test-market": False}})
+        self.assertEqual(self.record()["description_half"]["disabled_plugins"],
+                         ["custom@test-market", "demo@test-market"])
+
+    def test_control_description_is_an_invalid_proposal_record(self):
+        runner = FakeRunner(GOOD, {}, proposal(), "new\x7f description")
+        rc, _, _ = self.run_main(runner)
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["status"], "invalid-proposal")
+        self.assertIn("control character", record["reasons"][0])
+        self.assertIsNone(record["candidate"])
+        self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
+
+    def test_dry_run_pairwise_skill_names_no_judge_correction(self):
+        argv = self.argv("--dry-run")
+        argv[0] = "adam-writing-style"
+        err = io.StringIO()
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(err):
+            rc = pse.main(argv, runner=NoCallRunner(), now=NOW)
+        self.assertEqual(rc, 2)
+        self.assertIn("--no-judge", err.getvalue())
+        self.assertIn("pairwise", err.getvalue())
+        self.assertFalse(self.results.exists())
+
+    def test_preflight_checks_every_fixture_and_respects_no_judge(self):
+        fixtures = pse.load_fixtures(SKILL, FIXTURES)
+        fixtures["supersede"]["judge"]["mode"] = " PairWise "
+        with mock.patch.object(pse, "load_fixtures", return_value=fixtures):
+            rc, _, err = self.run_main(NoCallRunner(), "--dry-run")
+            self.assertEqual(rc, 2)
+            self.assertIn("--no-judge", err)
+            rc, out, _ = self.run_main(NoCallRunner(), "--dry-run", "--no-judge")
+            self.assertEqual(rc, 0)
+            self.assertEqual(json.loads(out)["model_calls"]["run_eval_baseline"], 9)
+        self.assertFalse(self.results.exists())
+
+    def test_missing_judge_model_fails_preflight_with_corrective_flag(self):
+        fixtures = pse.load_fixtures(SKILL, FIXTURES)
+        fixtures["supersede"]["judge"].pop("model", None)
+        original = pse.run_eval.select_models
+        def select(fixture, args):
+            if fixture is fixtures["supersede"] and not args.no_judge:
+                return None, None, "roster names no usable judge"
+            return original(fixture, args)
+        with mock.patch.object(pse, "load_fixtures", return_value=fixtures), \
+                mock.patch.object(pse.run_eval, "select_models", side_effect=select):
+            rc, _, err = self.run_main(NoCallRunner(), "--dry-run")
+            self.assertEqual(rc, 2)
+            self.assertIn("--no-judge", err)
+            self.assertEqual(self.run_main(NoCallRunner(), "--dry-run", "--no-judge")[0], 0)
+        self.assertFalse(self.results.exists())
+
+
+class HardeningDescriptionTests(unittest.TestCase):
+
+    def test_control_characters_are_invalid_proposals(self):
+        for char in ("\x00", "\x1f", "\x7f", "\x85", "\x9f"):
+            with self.subTest(char=repr(char)), self.assertRaises(pse.InvalidProposal):
+                pse.set_description(ORIGINAL_SKILL_MD, "new" + char + " description")
+
+    def test_unrenderable_yaml_is_an_invalid_proposal(self):
+        original = pse.yaml.safe_load
+        def reject_description(text):
+            return None if text.startswith("description:") else original(text)
+        with mock.patch.object(pse.yaml, "safe_load", side_effect=reject_description), \
+                self.assertRaises(pse.InvalidProposal):
+            pse.set_description(ORIGINAL_SKILL_MD, "valid words")
+
+
+class HardeningPluginDiscoveryTests(unittest.TestCase):
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp(prefix="test-issue-71-plugins-"))
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        (self.tmp / ".claude-plugin").mkdir()
+
+    def marketplace(self, plugins):
+        (self.tmp / ".claude-plugin" / "marketplace.json").write_text(
+            json.dumps({"name": "renamed-market", "plugins": plugins}))
+
+    def plugin(self, directory, skill=SKILL, paths=("skills",), manifest=None):
+        root = self.tmp / directory
+        for path in paths:
+            target = root / path / skill
+            target.mkdir(parents=True)
+            (target / "SKILL.md").write_text(ORIGINAL_SKILL_MD.replace(SKILL, skill))
+        if manifest is not None:
+            (root / ".claude-plugin").mkdir()
+            (root / ".claude-plugin" / "plugin.json").write_text(json.dumps(manifest))
+
+    def test_all_default_and_custom_providers_use_marketplace_entry_keys(self):
+        self.plugin("one", manifest={"name": "different-name"})
+        self.plugin("two", paths=("additional",), manifest={"skills": "./additional"})
+        self.plugin("unrelated", skill="another-skill")
+        self.marketplace([{"name": name, "source": "./" + directory}
+                          for name, directory in (("first", "one"), ("second", "two"),
+                                                   ("unrelated", "unrelated"))])
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL),
+                         ["first@renamed-market", "second@renamed-market"])
+        target = self.tmp / "one" / "skills" / SKILL / "SKILL.md"
+        target.write_text(ORIGINAL_SKILL_MD.replace("name: writing-adrs\n", ""))
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL),
+                         ["first@renamed-market", "second@renamed-market"])
+
+    def test_additional_skills_are_additive_and_support_direct_directories(self):
+        self.plugin("one", paths=("skills", "additional"),
+                    manifest={"skills": ["./additional/" + SKILL]})
+        self.marketplace([{"name": "first", "source": "./one"}])
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL), ["first@renamed-market"])
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, "absent"), [])
+        # Default skills/ still supplies the target after custom skill changes.
+        (self.tmp / "one" / "additional" / SKILL / "SKILL.md").write_text(
+            ORIGINAL_SKILL_MD.replace(SKILL, "another-skill"))
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL), ["first@renamed-market"])
+
+    def test_root_source_limits_scan_to_explicit_entry_skills(self):
+        self.plugin(".", paths=("skills", "selected"))
+        for source in (".", "./"):
+            with self.subTest(source=source):
+                self.marketplace([{"name": "root-plugin", "source": source,
+                                   "skills": "./selected/" + SKILL}])
+                selected = self.tmp / "selected" / SKILL / "SKILL.md"
+                selected.write_text(ORIGINAL_SKILL_MD)
+                self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL), ["root-plugin@renamed-market"])
+                selected.write_text(ORIGINAL_SKILL_MD.replace(SKILL, "another-skill"))
+                self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL), [])
+
+    def test_remote_sources_are_skipped_and_missing_marketplace_has_no_key(self):
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL), [])
+        self.marketplace([{"name": "remote", "source": {"source": "url", "url": "https://example.com/plugin"}}])
+        self.assertEqual(pse.skill_provider_plugins(self.tmp, SKILL), [])
+
+    def test_invalid_manifests_and_escaping_paths_refuse(self):
+        for content in ("[]", "{", '{"name": "market", "plugins": null}'):
+            with self.subTest(content=content):
+                (self.tmp / ".claude-plugin" / "marketplace.json").write_text(content)
+                with self.assertRaises(pse.Refusal):
+                    pse.skill_provider_plugins(self.tmp, SKILL)
+        self.plugin("one", manifest={"skills": "./../other"})
+        self.marketplace([{"name": "first", "source": "./one"}])
+        with self.assertRaisesRegex(pse.Refusal, "escapes its plugin root"):
+            pse.skill_provider_plugins(self.tmp, SKILL)
+        self.marketplace([{"name": "first", "source": "./../../outside"}])
+        with self.assertRaisesRegex(pse.Refusal, "escapes the archived registry"):
+            pse.skill_provider_plugins(self.tmp, SKILL)
+
+    def test_symlinked_skill_cannot_cross_plugin_root(self):
+        self.plugin("one", manifest={})
+        self.plugin("other")
+        skill_md = self.tmp / "one" / "skills" / SKILL / "SKILL.md"
+        skill_md.unlink()
+        skill_md.symlink_to(self.tmp / "other" / "skills" / SKILL / "SKILL.md")
+        self.marketplace([{"name": "first", "source": "./one"}])
+        with self.assertRaisesRegex(pse.Refusal, "escapes its plugin root"):
+            pse.skill_provider_plugins(self.tmp, SKILL)
 
 
 class ProposalParsingTests(unittest.TestCase):
