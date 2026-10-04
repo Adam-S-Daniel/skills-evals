@@ -25,6 +25,10 @@
 # `test-canary`'s reason is corrected, not carried: DESIGN.md says "covered by
 # the propagation arms", but nothing in the propagation arms references it and
 # its SKILL.md says the delivery probe is not built (issue #17).
+# `add-from-address` and `add-received-from-addresses` are not in DESIGN.md's
+# table: the owner decided to skip them (relayed in the skills-evals#225 fix
+# round), and each SKILL.md says it only dispatches a fastmail-actions workflow
+# that acts on a real Fastmail account with a real API token.
 skips:
   - registry: cms-platform
     skill: test-canary
@@ -72,6 +76,20 @@ skips:
     reason: >-
       credentialed live service; a fixture may not carry real accounts, and a
       faked Fastmail is a harness project of its own
+  - registry: adam-agentskills
+    skill: add-from-address
+    decision: skip
+    reason: >-
+      dispatches a workflow in the fastmail-actions repository that edits a
+      real Fastmail account's sending identities with a real API token; a
+      hermetic fixture cannot exercise it
+  - registry: adam-agentskills
+    skill: add-received-from-addresses
+    decision: skip
+    reason: >-
+      dispatches a workflow in the fastmail-actions repository that scans a
+      real Fastmail mailbox and adds sending identities with a real API token;
+      a hermetic fixture cannot exercise it
   - registry: cms-platform
     skill: aws-bootstrap
     decision: freshness lint
