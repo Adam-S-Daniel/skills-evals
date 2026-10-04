@@ -272,6 +272,148 @@ class TestIssue90(unittest.TestCase):
                 with self.subTest(number=n, answer=answer):
                     self.assertTrue(all(self.score(ws, answer + '\n' + other).values()))
 
+    def test_freely_worded_pr_label_cooccurrence_passes(self):
+        ws = self.ws()
+        self.solution(ws)
+        shapes = [
+            'I added `{label}` to #{n}',
+            'Added `{label}` to #{n}',
+            '#{n}: added `{label}`',
+            'PR #{n}: added `{label}`',
+            'I added the label `{label}` to PR #{n}',
+            'I added the `{label}` label to PR #{n}',
+            "I've added `{label}` to #{n}",
+            '#{n}: assigned `{label}`',
+            '- #{n}: add label `{label}`',
+            'I labeled #{n} `{label}`',
+            'Labeled #{n} with `{label}`',
+            'For #{n}, the recorded status is `{label}`.',
+            '`{label}` is the editorial status selected for pull {n}.',
+            '#{n} / `{label}`',
+            'pr{n}: `{label}`',
+            'PULL REQUEST #{n}: `{label}`',
+            '| `{label}` | {n} |',
+            '| Spring hours 2026 | **{n}** | `{label}` |',
+            'PR #{n} is repaired. Its editorial status is `{label}`.',
+            'I added `{label}` to #{n}; no need to reload.',
+            '#{n}: `{label}`; editors never see the dialog again.',
+            '#{n}: `{label}`; you should not reload the admin page.',
+            '#{n}: `{label}`; do not change the vendored tooling.',
+            '#{n}: `{label}`; it is not necessary to reload.',
+        ]
+        for n, label, other in [
+            (512, 'decap-cms/draft', '#518: decap-cms/pending_publish'),
+            (518, 'decap-cms/pending_publish', '#512: decap-cms/draft'),
+        ]:
+            for shape in shapes:
+                answer = shape.format(n=n, label=label)
+                with self.subTest(number=n, answer=answer):
+                    self.assertTrue(all(self.score(ws, answer + '\n' + other).values()))
+
+    def test_prose_interpretation_is_judge_owned(self):
+        ws = self.ws()
+        self.solution(ws)
+        for n, label, other in [
+            (512, 'decap-cms/draft', '#518: decap-cms/pending_publish'),
+            (518, 'decap-cms/pending_publish', '#512: decap-cms/draft'),
+        ]:
+            for answer in [
+                f'Example text says "#{n}: Add {label}."',
+                f'#{n}: Addendum {label}.',
+            ]:
+                # Exact tokens share a line. The judge decides whether prose
+                # actually recommends them; a verb vocabulary cannot decide it.
+                with self.subTest(number=n, answer=answer):
+                    self.assertTrue(all(self.score(ws, answer + '\n' + other).values()))
+
+    def test_physical_lines_are_independent_units(self):
+        ws = self.ws()
+        self.solution(ws)
+        for n, label, wrong, other in [
+            (512, 'decap-cms/draft', 'decap-cms/pending_publish', '#518: decap-cms/pending_publish'),
+            (518, 'decap-cms/pending_publish', 'decap-cms/draft', '#512: decap-cms/draft'),
+        ]:
+            for separator in ('\n', '\r\n'):
+                for answer in [
+                    f'#{n}:{separator}{label}',
+                    f'{label}{separator}PR #{n}',
+                    f'PR #{n} is repaired.{separator}Its editorial status is {label}.',
+                ]:
+                    with self.subTest(number=n, answer=answer):
+                        self.only_red(ws, f'pr-{n}-label', answer + '\n' + other)
+                # Standalone guard and wrong-label tokens on other lines cannot
+                # veto a complete good line or join a separate PR-only line.
+                answer = GOOD + separator.join(['Maybe do not apply it.', f'#{n}:', wrong])
+                with self.subTest(number=n, independent=answer):
+                    self.assertTrue(all(self.score(ws, answer).values()))
+                answer = f'#{n}: {label}{separator}{other}'
+                with self.subTest(number=n, complete_lines=answer):
+                    self.assertTrue(all(self.score(ws, answer).values()))
+
+    def test_exact_pr_and_case_sensitive_label_tokens(self):
+        ws = self.ws()
+        self.solution(ws)
+        for n, label, other in [
+            (512, 'decap-cms/draft', '#518: decap-cms/pending_publish'),
+            (518, 'decap-cms/pending_publish', '#512: decap-cms/draft'),
+        ]:
+            for decorated in [
+                label + '-old', label + '/old', label + '_old',
+                'x' + label, 'old-' + label, '/' + label,
+                label.upper(), label.replace('decap', 'Decap'),
+                f'`{label}`-old', f'**{label}**-old',
+            ]:
+                answer = f'#{n}: {decorated}'
+                with self.subTest(number=n, label=decorated):
+                    self.only_red(ws, f'pr-{n}-label', answer + '\n' + other)
+            for reference in [
+                f'#{n}0', f'#{n}x', f'#{n}-old', f'x#{n}',
+                f'PR{n}0', f'xPR{n}', f'pull {n}0', f'pull{n}x',
+                f'https://github.com/example-org/example-site/pull/{n}0',
+                f'| {n}0 |', f'| x{n} |',
+            ]:
+                answer = f'{reference}: {label}'
+                with self.subTest(number=n, reference=reference):
+                    self.only_red(ws, f'pr-{n}-label', answer + '\n' + other)
+
+    def test_wrong_pr_label_and_missing_tokens_fail(self):
+        ws = self.ws()
+        self.solution(ws)
+        for n, label, wrong, other in [
+            (512, 'decap-cms/draft', 'decap-cms/pending_publish', 518),
+            (518, 'decap-cms/pending_publish', 'decap-cms/draft', 512),
+        ]:
+            for answer in [
+                f'#{other}: {label}', f'#{n}: {wrong}',
+                f'Editorial status is {label}.', f'PR #{n} is repaired.',
+                f'{n}: {label}',
+                f'#{n}: {label}. See PR #{other}.',
+                f'| {label} | {n} | {other} |',
+            ]:
+                with self.subTest(number=n, answer=answer):
+                    result = self.score(ws, answer)
+                    self.assertFalse(result[f'pr-{n}-label'], result)
+
+    def test_lexical_guards_veto_freely_worded_lines_even_beside_good(self):
+        ws = self.ws()
+        self.solution(ws)
+        for n, label, other in [
+            (512, 'decap-cms/draft', '#518: decap-cms/pending_publish'),
+            (518, 'decap-cms/pending_publish', '#512: decap-cms/draft'),
+        ]:
+            for guard in [
+                'Maybe', 'PERHAPS', 'unless', 'should not', "shouldn't",
+                "don't", 'DO NOT', 'no need to', 'Never', 'not necessary to', '?',
+            ]:
+                for answer in [
+                    f'{guard} apply {label} for PR #{n}.',
+                    f'#{n}: {label}. Actually {guard} apply it.',
+                ]:
+                    for beside_good in (False, True):
+                        transcript = (GOOD if beside_good else other + '\n') + answer
+                        with self.subTest(number=n, answer=answer, beside_good=beside_good):
+                            self.only_red(ws, f'pr-{n}-label', transcript)
+
     def test_relaxed_assignments_reject_wrong_attributions_and_hedges(self):
         ws = self.ws()
         self.solution(ws)
@@ -318,7 +460,7 @@ class TestIssue90(unittest.TestCase):
         path.write_text(path.read_text() + '\nChanged replay payload\n')
         self.only_red(ws, 'replay-unchanged')
 
-    def test_negations_hedges_contradictions_and_incidental_text_are_rejected(self):
+    def test_negations_hedges_contradictions_and_invalid_tokens_are_rejected(self):
         ws = self.ws()
         self.solution(ws)
         for n, label, other in [(512, 'draft', '#518: Add decap-cms/pending_publish.'), (518, 'pending_publish', '#512: Add decap-cms/draft.')]:
@@ -333,9 +475,7 @@ class TestIssue90(unittest.TestCase):
                 f'#{n}: Add decap-cms/{label}. Actually never apply it.',
                 f'#{n}: Added decap-cms/{label}? No need.',
                 f'| #{n} | never add decap-cms/{label} |',
-                f'Example text says "#{n}: Add decap-cms/{label}."',
                 f'#{n}0: Add decap-cms/{label}.',
-                f'#{n}: Addendum decap-cms/{label}.',
                 f'#{n}: decap-cms/{label}-old',
             ]:
                 with self.subTest(answer=answer):
