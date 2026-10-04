@@ -39,6 +39,7 @@ Discovered and run by test/run_tests.py; also runnable on its own with
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import shutil
@@ -47,6 +48,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -1029,6 +1031,137 @@ class TestIssue66Trials(_HarnessCase):
 
 # ---------------------------------------------------------------------------
 # 4. the statistics, for shapes the entry point cannot easily be made to write
+
+
+class TestIssue66Timeouts(_HarnessCase):
+    """The real trial loop and subprocess.run timeout handler, without a child
+    process or any elapsed-time dependency."""
+
+    def test_each_trial_has_a_fresh_timeout_and_continues_after_expiry(self):
+        for label, override, fixture_timeout, expected in (
+                ("default", None, None, 600),
+                ("override", 17, 23, 17),
+                ("fixture", None, 23, 23)):
+            with self.subTest(timeout=label):
+                case_dir = self.tmp / label
+                case_dir.mkdir()
+                fixture = {"skill": "timeout-skill", "prompt": "stand-in",
+                           "judge_rubric": "stand-in"}
+                if fixture_timeout is not None:
+                    fixture["timeout_s"] = fixture_timeout
+                args = argparse.Namespace(
+                    trials=3, timeout=override, no_judge=False,
+                    results_dir=case_dir / "results")
+                children, workspaces = [], []
+                testcase = self
+
+                class InstantChild:
+                    def __init__(self, cmd, **kwargs):
+                        self.args = cmd
+                        self.workspace = kwargs["cwd"]
+                        self.index = len(children)
+                        self.returncode = None
+                        self.killed = self.reaped = False
+                        self.timeouts = []
+                        children.append(self)
+
+                    def __enter__(self):
+                        return self
+
+                    def __exit__(self, *_exc):
+                        self.wait()
+
+                    def communicate(self, input=None, timeout=None):
+                        if self.killed:
+                            # Windows drains output after kill; POSIX waits.
+                            return "", ""
+                        testcase.assertEqual(
+                            timeout, expected,
+                            "each trial must receive its full timeout")
+                        self.timeouts.append(timeout)
+                        if self.index == 1:
+                            raise subprocess.TimeoutExpired(self.args, timeout)
+                        self.returncode = 0
+                        return json.dumps({"result": "stand-in transcript",
+                                           "total_cost_usd": 0.04}), ""
+
+                    def kill(self):
+                        self.killed = True
+
+                    def wait(self, timeout=None):
+                        self.reaped = True
+                        self.returncode = -9 if self.killed else 0
+                        return self.returncode
+
+                    def poll(self):
+                        return self.returncode
+
+                def materialize(_seed, _fixture):
+                    workspace = case_dir / f"workspace-{len(workspaces) + 1}"
+                    workspace.mkdir()
+                    workspaces.append(workspace)
+                    return workspace
+
+                # Keep real _run_arm, run_agent, subprocess.run and cleanup.
+                # Popen alone supplies the child; no CLI can be launched.
+                with (mock.patch.object(run_eval, "materialize_workspace",
+                                        side_effect=materialize),
+                      mock.patch.object(run_eval, "assert_stand_ins_on_path"),
+                      mock.patch.object(run_eval, "agent_env",
+                                        return_value=_child_env(case_dir)),
+                      mock.patch.object(subprocess, "Popen", InstantChild),
+                      mock.patch.object(run_eval.objective, "run_checks",
+                                        return_value=[{"id": "only",
+                                                       "passed": True,
+                                                       "detail": ""}]) as checks,
+                      mock.patch.object(run_eval, "_build_judge_diff",
+                                        return_value=""),
+                      mock.patch.object(run_eval.judge, "score",
+                                        return_value={"overall": 8.0,
+                                                      "dimensions": []}) as score):
+                    result = run_eval._run_arm_trials(
+                        "without_skill",
+                        {"fixture": fixture, "seed": case_dir / "seed",
+                         "name": None}, {}, args, TS, (None, None, None))
+
+                self.assertEqual(len(children), 3)
+                self.assertEqual([c.timeouts for c in children],
+                                 [[expected], [expected], [expected]])
+                self.assertTrue(children[1].killed)
+                self.assertTrue(children[1].reaped)
+                self.assertFalse(children[0].killed)
+                self.assertFalse(children[2].killed)
+                self.assertEqual([c.workspace for c in children], workspaces)
+                self.assertEqual(len(set(workspaces)), 3)
+                self.assertTrue(all(not w.exists() for w in workspaces))
+                self.assertEqual(checks.call_count, 2)
+                self.assertEqual([call.args[1] for call in checks.call_args_list],
+                                 [str(workspaces[0]), str(workspaces[2])])
+                self.assertEqual(score.call_count, 2)
+
+                arm_dir = args.results_dir / fixture["skill"] / TS / "without_skill"
+                trials = [json.loads((arm_dir / f"trial-{k}" / "summary.json")
+                                     .read_text(encoding="utf-8"))
+                          for k in (1, 2, 3)]
+                self.assertEqual([t["trial"] for t in trials], [1, 2, 3])
+                self.assertIsNone(trials[0]["error"])
+                self.assertEqual(trials[1]["error"], {
+                    "type": "timeout",
+                    "detail": f"agent timed out after {expected}s"})
+                self.assertIsNone(trials[1]["agent"])
+                self.assertIsNone(trials[1]["objective_checks"])
+                self.assertIsNone(trials[1]["judge"])
+                self.assertIsNone(trials[2]["error"])
+                summary = json.loads((arm_dir / "summary.json")
+                                     .read_text(encoding="utf-8"))
+                stats = result["stats"]
+                self.assertEqual((stats["n"], stats["errors"], stats["scored"]),
+                                 (3, 1, 2))
+                self.assertEqual(summary["aggregate"], stats["aggregate"])
+                self.assertEqual(stats["aggregate"]["cost_unknown_trials"], 1)
+                self.assertEqual(stats["aggregate"]["cost_usd"]["n"], 2)
+                self.assertEqual(stats["aggregate"]["objective"]["n"], 2)
+                self.assertEqual(stats["aggregate"]["judge"]["n"], 2)
 
 
 class TestIssue66Statistics(unittest.TestCase):
