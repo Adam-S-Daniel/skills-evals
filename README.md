@@ -79,6 +79,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  editorial-label-audit/  # A/B eval, Class B: diagnose and repair persistent editorial labels
+    fixture.yaml           # prompt, permissions and label-transaction checks, rubric
+    seed/                  # thin daily caller, vendored audit, shared gh payloads
   github-actions-repo-settings/  # A/B eval, Class B: diagnose settings drift
     fixture.yaml           # read-only two-repo diagnosis and objective checks
     seed/                  # declared baseline, shared gh, and canned API responses
