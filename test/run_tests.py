@@ -15,6 +15,7 @@ import atexit
 import contextlib
 import copy
 import fnmatch
+import fcntl
 import hashlib
 import io
 import itertools
@@ -24,6 +25,7 @@ import builtins
 import os
 import random
 import re
+import select
 import shlex
 import shutil
 import subprocess
@@ -7952,13 +7954,17 @@ class TestGhWriteAllowlist(unittest.TestCase):
         self._json(ws / ".gh/replay/write-policy.json",
                    document if document is not None else {"pr_edit_add_label": self.ENTRIES})
 
-    def _call(self, args, *, ws=None, repo=None, replay=None, cwd=None):
+    def _env(self, ws=None, repo=None, replay=None):
         ws = ws or self.ws
-        env = {"PATH": os.defpath, "HOME": str(self.root), "LANG": "C.UTF-8",
+        return {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(self.root), "LANG": "C.UTF-8",
                "GH_REPLAY_DIR": str(replay or ws / ".gh/replay"),
                "GH_REPO": repo or self.REPO, "GH_TOKEN": "", "GITHUB_TOKEN": ""}
+
+    def _call(self, args, *, ws=None, repo=None, replay=None, cwd=None):
+        ws = ws or self.ws
         proc = subprocess.run([str(ws / "bin/gh"), *args],
-                              cwd=cwd or ws, env=env, capture_output=True)
+                              cwd=cwd or ws, env=self._env(ws, repo, replay), capture_output=True,
+                              timeout=10)
         record = (ws / ".gh-invocations.log").read_text().splitlines()[-1]
         self.assertIn(f"exit={proc.returncode})", record)
         self.assertNotIn(b"Traceback", proc.stderr)
@@ -7998,6 +8004,7 @@ class TestGhWriteAllowlist(unittest.TestCase):
         path = self.ws / ".gh/replay/pr-view-512.json"
         self.assertEqual(self._call(["pr", "view", "512"]).stdout, path.read_bytes())
         self.assertEqual((self.ws / ".gh-label-state.json").read_bytes(), b"invalid ignored state")
+        self.assertFalse((self.ws / ".gh-label-state.lock").exists())
 
     def test_two_edits_read_back_in_view_list_and_preserve_payloads(self):
         self._policy()
@@ -8213,7 +8220,201 @@ class TestGhWriteAllowlist(unittest.TestCase):
         self.assertEqual(error.getvalue(), "gh: invalid local label configuration or response\n")
         self.assertIn("class=write key=pr-edit-512.json exit=1", (self.ws / ".gh-invocations.log").read_text())
         self.assertEqual((self.ws / ".gh-label-state.json").read_bytes(), before)
-        self.assertEqual(list(self.ws.glob(".gh-label-*")), [self.ws / ".gh-label-state.json"])
+        self.assertEqual(set(self.ws.glob(".gh-label-*")),
+                         {self.ws / ".gh-label-state.json", self.ws / ".gh-label-state.lock"})
+
+    def _instrument_copy(self, wrappers):
+        """Inject bounded IPC into only the disposable executable, using its AST."""
+        binary = self.ws / "bin/gh"
+        tree = ast.parse(binary.read_text())
+        main_guard = next(i for i, node in enumerate(tree.body)
+                          if isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+                          and isinstance(node.test.left, ast.Name)
+                          and node.test.left.id == "__name__")
+        hook = ast.parse(textwrap.dedent('''
+            import select as _test_select
+            def _test_pause():
+                ready = int(os.environ["TEST_READY_FD"])
+                release = int(os.environ["TEST_RELEASE_FD"])
+                os.write(ready, b"x")
+                if not _test_select.select([release], [], [], 10)[0]:
+                    raise RuntimeError("test release timed out")
+                if os.read(release, 1) != b"x":
+                    raise RuntimeError("test release closed")
+        ''') + textwrap.dedent(wrappers))
+        tree.body[main_guard:main_guard] = hook.body
+        binary.write_text("#!/usr/bin/env python3\n" + ast.unparse(tree) + "\n")
+
+    STARTUP_PAUSE = '''
+        _original_load = load_label_policy
+        _loads = 0
+        def load_label_policy(*args):
+            global _loads
+            _loads += 1
+            result = _original_load(*args)
+            if _loads == 1:
+                _test_pause()
+            return result
+    '''
+
+    def _paused_edit(self, entry):
+        ready_read, ready_write = os.pipe()
+        release_read, release_write = os.pipe()
+        env = self._env()
+        env.update(TEST_READY_FD=str(ready_write), TEST_RELEASE_FD=str(release_read))
+        proc = subprocess.Popen(
+            [str(self.ws / "bin/gh"), "pr", "edit", str(entry["number"]),
+             "--repo", entry["repo"], "--add-label", entry["label"]],
+            cwd=self.ws, env=env, pass_fds=(ready_write, release_read),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        os.close(ready_write)
+        os.close(release_read)
+        def cleanup():
+            if proc.poll() is None:
+                proc.kill()  # Only the process this helper started.
+            proc.communicate(timeout=10)
+            os.close(ready_read)
+            os.close(release_write)
+        self.addCleanup(cleanup)
+        return proc, ready_read, release_write
+
+    def _ready(self, running):
+        descriptor = running[1]
+        self.assertTrue(select.select([descriptor], [], [], 10)[0], "child never reached pause")
+        self.assertEqual(os.read(descriptor, 1), b"x")
+
+    def _release(self, running):
+        os.write(running[2], b"x")
+
+    def _finished(self, running, code=0):
+        stdout, stderr = running[0].communicate(timeout=10)
+        self.assertEqual(running[0].returncode, code, stderr)
+        self.assertEqual(stdout, b"")
+        self.assertEqual(stderr, b"" if code == 0 else
+                         b"gh: invalid local label configuration or response\n")
+
+    def test_overlapping_startup_snapshots_preserve_both_edits(self):
+        self._policy()
+        self._instrument_copy(self.STARTUP_PAUSE)
+        first = self._paused_edit(self.ENTRIES[0])
+        second = self._paused_edit(self.ENTRIES[1])
+        self._ready(first)
+        self._ready(second)  # Both processes have now read the empty startup state.
+        self._release(first)
+        self._finished(first)
+        self._release(second)
+        self._finished(second)
+        state = json.loads((self.ws / ".gh-label-state.json").read_text())
+        self.assertEqual(state, {"pr_edit_add_label": self.ENTRIES})
+        # Copies without IPC let ordinary reads verify the resulting overlays.
+        shutil.copy2(self.GH_SOURCE, self.ws / "bin/gh")
+        for entry in self.ENTRIES:
+            row = json.loads(self._call(["pr", "view", str(entry["number"])]).stdout)
+            self.assertIn({"name": entry["label"]}, row["labels"])
+        rows = json.loads(self._call(["pr", "list"]).stdout)
+        self.assertEqual([row["labels"] for row in rows[:2]],
+                         [[{"name": entry["label"]}] for entry in self.ENTRIES])
+        writes = [line for line in (self.ws / ".gh-invocations.log").read_text().splitlines()
+                  if "class=write" in line]
+        self.assertEqual(len(writes), 2)
+        self.assertTrue(all("exit=0)" in line for line in writes))
+
+    def test_exclusive_lock_covers_fresh_read_and_replacement(self):
+        self._policy()
+        self._instrument_copy('''
+            _original_load = load_label_policy
+            _loads = 0
+            def load_label_policy(*args):
+                global _loads
+                _loads += 1
+                if _loads == 2:
+                    _test_pause()
+                return _original_load(*args)
+            _original_replace = os.replace
+            def _replace(*args):
+                _test_pause()
+                return _original_replace(*args)
+            os.replace = _replace
+        ''')
+        running = self._paused_edit(self.ENTRIES[0])
+        for stage in ("fresh read", "replacement"):
+            self._ready(running)
+            with open(self.ws / ".gh-label-state.lock", "r+b") as lock:
+                with self.assertRaises(BlockingIOError, msg=stage):
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._release(running)
+        self._finished(running)
+        # The completed process releases the dedicated lock.
+        with open(self.ws / ".gh-label-state.lock", "r+b") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_revoked_grant_after_startup_is_revalidated(self):
+        self._policy()
+        self._instrument_copy(self.STARTUP_PAUSE)
+        running = self._paused_edit(self.ENTRIES[0])
+        self._ready(running)
+        self._policy({"pr_edit_add_label": [self.ENTRIES[1]]})
+        self._release(running)
+        self._finished(running, code=1)
+        self.assertFalse((self.ws / ".gh-label-state.json").exists())
+        self.assertIn("class=write key=pr-edit-512.json exit=1",
+                      (self.ws / ".gh-invocations.log").read_text())
+
+    def test_state_changed_after_startup_is_revalidated(self):
+        self._policy()
+        self._instrument_copy(self.STARTUP_PAUSE)
+        running = self._paused_edit(self.ENTRIES[0])
+        self._ready(running)
+        state = self.ws / ".gh-label-state.json"
+        state.write_bytes(b"malformed state")
+        self._release(running)
+        self._finished(running, code=1)
+        self.assertEqual(state.read_bytes(), b"malformed state")
+
+    def test_lock_links_and_nonfiles_fail_closed(self):
+        self._policy()
+        outside = self.root / "outside-lock"
+        outside.write_bytes(b"unchanged")
+        lock = self.ws / ".gh-label-state.lock"
+        for target in (outside, self.root / "missing-lock", self.ws / "internal-lock"):
+            with self.subTest(target=target.name):
+                lock.symlink_to(target)
+                try:
+                    self._reject(["pr", "edit", "512", "--repo", self.REPO,
+                                  "--add-label", "decap-cms/draft"], configuration=True)
+                finally:
+                    lock.unlink()
+        for kind in ("directory", "fifo"):
+            with self.subTest(kind=kind):
+                if kind == "directory":
+                    lock.mkdir()
+                else:
+                    os.mkfifo(lock)
+                try:
+                    self._reject(["pr", "edit", "512", "--repo", self.REPO,
+                                  "--add-label", "decap-cms/draft"], configuration=True)
+                finally:
+                    lock.rmdir() if kind == "directory" else lock.unlink()
+        self.assertEqual(outside.read_bytes(), b"unchanged")
+        self.assertFalse((self.ws / "internal-lock").exists())
+
+    def test_lock_os_errors_fail_closed_and_log_failure(self):
+        self._policy()
+        namespace = {"__name__": "gh_test", "__file__": str(self.ws / "bin/gh")}
+        exec(compile(self.GH_SOURCE.read_text(), str(self.GH_SOURCE), "exec"), namespace)
+        for target in ("os.open", "fcntl.flock"):
+            with self.subTest(target=target):
+                error = io.StringIO()
+                with mock.patch.dict(os.environ, {"GH_REPLAY_DIR": str(self.ws / ".gh/replay")}), \
+                     mock.patch(target, side_effect=OSError("private details")), \
+                     contextlib.redirect_stderr(error):
+                    code = namespace["main"](["pr", "edit", "512", "--repo", self.REPO,
+                                              "--add-label", "decap-cms/draft"])
+                self.assertEqual(code, 1)
+                self.assertEqual(error.getvalue(), "gh: invalid local label configuration or response\n")
+                self.assertFalse((self.ws / ".gh-label-state.json").exists())
+                self.assertIn("class=write key=pr-edit-512.json exit=1",
+                              (self.ws / ".gh-invocations.log").read_text().splitlines()[-1])
 
 
 class Issue84Fixture:

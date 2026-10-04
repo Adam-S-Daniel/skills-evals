@@ -73,9 +73,11 @@ needs a system jq.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import re
+import stat
 import sys
 import tempfile
 
@@ -742,7 +744,7 @@ def permitted_label_edit(positionals: list[str], flags: dict, policy: set):
     return entry if entry in policy else None
 
 
-def add_local_label(payload_dir: str, entry: tuple, state: set) -> None:
+def add_local_label(payload_dir: str, entry: tuple) -> None:
     path = resolve_payload(payload_dir, f"pr-view-{entry[1]}.json")
     if path is None:
         raise LabelPolicyError()
@@ -757,18 +759,37 @@ def add_local_label(payload_dir: str, entry: tuple, state: set) -> None:
                 raise LabelPolicyError()
             if row.get("number") == entry[1]:
                 pr_row(row, entry[1])
-    state = state | {entry}
-    path = local_path(LOG_DIR, ".gh-label-state.json")
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=LOG_DIR,
-                                         prefix=".gh-label-", delete=False) as handle:
-            temporary = handle.name
-            json.dump(label_document(state), handle)
-            handle.write("\n")
-        # Recheck before replacement; never follow a planted external link.
-        local_path(LOG_DIR, ".gh-label-state.json")
-        os.replace(temporary, path)
+        # Lock a separate inode: replacing the state file must not release
+        # serialization. Reject links and non-files rather than lock a path
+        # outside the workspace or block while opening a FIFO.
+        lock_path = local_path(LOG_DIR, ".gh-label-state.lock")
+        descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW
+                             | os.O_NONBLOCK, 0o600)
+        with os.fdopen(descriptor, "r+b") as lock:
+            opened = os.fstat(lock.fileno())
+            if not stat.S_ISREG(opened.st_mode):
+                raise LabelPolicyError()
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+            current = os.lstat(lock_path)
+            if (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+                raise LabelPolicyError()
+            # Startup policy/state are only a preliminary check. Another
+            # process may have committed an edit or revoked this grant.
+            latest = load_label_policy(payload_dir)
+            if latest is None or entry not in latest[0]:
+                raise LabelPolicyError()
+            state = latest[1] | {entry}
+            path = local_path(LOG_DIR, ".gh-label-state.json")
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=LOG_DIR,
+                                             prefix=".gh-label-", delete=False) as handle:
+                temporary = handle.name
+                json.dump(label_document(state), handle)
+                handle.write("\n")
+            # Recheck before replacement; never follow a planted external link.
+            local_path(LOG_DIR, ".gh-label-state.json")
+            os.replace(temporary, path)
     except (OSError, UnicodeError):
         raise LabelPolicyError() from None
     finally:
@@ -848,14 +869,13 @@ def main(argv: list[str]) -> int:
     except LabelPolicyError:
         return label_error(argv, klass, key)
 
-
     if klass == "write":
         if label_policy is not None:
-            policy, state = label_policy
+            policy, _ = label_policy
             entry = permitted_label_edit(positionals, flags, policy)
             if entry is not None:
                 try:
-                    add_local_label(payload_dir, entry, state)
+                    add_local_label(payload_dir, entry)
                 except LabelPolicyError:
                     return label_error(argv, klass, key)
                 log_invocation(argv, "write", key, 0)

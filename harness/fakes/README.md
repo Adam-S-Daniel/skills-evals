@@ -207,8 +207,14 @@ state is present. No list payload is required to edit.
 Successful edits return exit 0 with empty output and append a `class=write`
 record with `exit=0`. They atomically replace `.gh-label-state.json` in the
 anchored log workspace, using the same JSON schema as the policy; stored
-tuples must be a subset of the current policy. Original payload files are
-never changed, and no network call is made. Repeating an authorized edit is
+tuples must be a subset of the current policy. An exclusive lock on the
+workspace's dedicated `.gh-label-state.lock` covers re-reading the current
+policy and state, validating the grant, and replacing the state. Concurrent
+edits therefore preserve each other's additions. The lock is released before
+output or logging; payload validation happens before locking. Lock failures,
+links, and non-file lock paths fail closed. With no policy, no lock is created.
+Original payload files are never changed, and no network call is made.
+Repeating an authorized edit is
 idempotent. Subsequent `pr view` and `pr list` reads merge additions for the
 effective repository (`--repo`/`-R`, else `GH_REPO`). Lists need an array of
 objects with integer `number` fields to identify affected rows. Affected rows
@@ -220,8 +226,8 @@ The existing whole-payload behavior still applies: `--json`, `--jq` and
 Malformed policy, state or affected responses return a safe `gh:` error,
 exit 1, and a record with the actual failure code. Policy and state paths
 that resolve outside their respective payload directory or workspace fail
-closed, including broken symlinks. State updates use atomic replacement;
-concurrent edits are not serialized. Policy, state and the workspace anchor
+closed, including broken symlinks. State updates use atomic replacement under
+the dedicated lock. Policy, state and the workspace anchor
 remain ordinary local files, with the same evidence-editing trust boundary
 described below.
 
