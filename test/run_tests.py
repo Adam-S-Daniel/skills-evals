@@ -36495,6 +36495,9 @@ class B:
 
     def test_mocked_invocation_contract_and_authoritative_suite_override(self):
         from issues import test_issue_97 as issue97
+        suite_case = issue97.TestIssue97()
+        self.addCleanup(suite_case.doCleanups)
+        suite_case.setUp()
         supplied = {self.CHILD: '', 'PROBE': 'yes'}
         argv = [sys.executable, '-']
         stdin = object()
@@ -36507,8 +36510,10 @@ class B:
             self.assertEqual(run.call_args.kwargs['cwd'], '/tmp')
             self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
             self.assertEqual(supplied[self.CHILD], '')
-            self.assertIs(issue97.TestIssue97()._run_suite(supplied), result)
-            self.assertEqual(run.call_args.kwargs['env'], {self.CHILD: '1', 'PROBE': 'yes'})
+            self.assertIs(suite_case._run_suite(supplied), result)
+            self.assertEqual(run.call_args.kwargs['env'],
+                             {self.CHILD: '1', 'PROBE': 'yes',
+                              'CLAUDE_BIN': str(suite_case.cli)})
         with mock.patch.dict(os.environ, {self.CHILD: '1'}, clear=True), mock.patch.object(subprocess, 'run') as run:
             with self.assertRaises(unittest.SkipTest):
                 TestIssue84Round5()._guarded_invoke(argv, cwd='/tmp', env={})
