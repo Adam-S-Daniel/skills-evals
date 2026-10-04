@@ -548,21 +548,32 @@ class SkillCreatorContractTests(unittest.TestCase):
 
     FAKE = textwrap.dedent("""\
         #!{python}
-        import json, pathlib, sys
+        import json, pathlib, signal, sys
         argv = sys.argv[1:]
         if "text" in argv:
             sys.stdin.read()
             print("<new_description>IMPROVED: use this for ADRs</new_description>")
             sys.exit(0)
         query = argv[argv.index("-p") + 1]
+        def text(path):
+            # Another worker's query can unlink its command file mid-glob.
+            try:
+                return path.read_text()
+            except FileNotFoundError:
+                return ""
         commands = sorted(pathlib.Path(".claude/commands").glob("*.md"))
-        names = [p.stem for p in commands if "IMPROVED" in p.read_text()]
+        names = [p.stem for p in commands if "IMPROVED" in text(p)]
         content = []
         if names and "POSITIVE" in query:
             content = [{{"type": "tool_use", "name": "Skill",
                          "input": {{"skill": " ".join(names)}}}}]
         print(json.dumps({{"type": "assistant", "message": {{"content": content}}}}))
-        print(json.dumps({{"type": "result"}}))
+        print(json.dumps({{"type": "result"}}), flush=True)
+        # Stay alive until skill-creator kills us. Its reader drops whatever
+        # is still buffered once the process has exited, so a stand-in that
+        # exits first races it and reads as "not triggered" (measured: one
+        # failure in a handful of runs).
+        signal.pause()
         """)
 
     def test_run_loop_picks_the_held_out_winner(self):
@@ -590,7 +601,7 @@ class SkillCreatorContractTests(unittest.TestCase):
             out = pse.Runner().run_description_loop(
                 argv, cwd=project, skill_creator=_skill_creator_dir())
         self.assertEqual(out["iterations_run"], 2)
-        self.assertTrue(out["best_description"].startswith("IMPROVED"))
+        self.assertTrue(out["best_description"].startswith("IMPROVED"), json.dumps([(h["description"], h["train_results"], h["test_results"]) for h in out["history"]]))
         self.assertEqual(out["best_test_score"], "2/2")
         self.assertEqual(list((project / ".claude" / "commands").glob("*.md")), [])
 

@@ -119,14 +119,24 @@ class Runner:
 
     def run_description_loop(self, argv: list[str], *, cwd: Path,
                              skill_creator: Path) -> dict:
-        """skill-creator's `python -m scripts.run_loop` with `argv`, run from
+        """skill-creator's `scripts/run_loop.py` with `argv`, run from
         `cwd` (its `find_project_root` writes a command file under the
         nearest `.claude/`, so `cwd` must be a scratch project), and its JSON
-        stdout parsed."""
+        stdout parsed. A `skill-creator` link to the plugin is planted in `cwd`."""
         env = dict(os.environ)
         env["PYTHONPATH"] = os.pathsep.join(
             p for p in (str(skill_creator), env.get("PYTHONPATH", "")) if p)
-        proc = subprocess.run([sys.executable, "-m", "scripts.run_loop", *argv],
+        # Run through a link to the plugin planted in the scratch project, so
+        # the script path is a literal: the test suite's fork scan
+        # (test_every_suite_forking_test_in_this_repo_stands_down_in_a_child)
+        # can then prove this spawn is skill-creator and not the suite, which
+        # it cannot for `-m` or a computed path. PYTHONPATH carries
+        # skill-creator's `scripts` package, so its imports resolve as under
+        # its documented `python -m scripts.run_loop`.
+        link = Path(cwd) / "skill-creator"
+        if not link.exists():
+            link.symlink_to(skill_creator, target_is_directory=True)
+        proc = subprocess.run([sys.executable, "skill-creator/scripts/run_loop.py", *argv],
                               cwd=cwd, env=env, capture_output=True, text=True,
                               check=False)
         if proc.returncode != 0:
