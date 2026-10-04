@@ -393,7 +393,15 @@ Not every skill takes the same eval, and some take none. Classify first:
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over
   absolute rubric scores. Expect noise; run more trials. Candidates:
-  `adam-writing-style`, `finding-unknowns`.
+  `adam-writing-style`. `finding-unknowns` now has one Class C fixture at
+  [`evals/finding-unknowns/`](evals/finding-unknowns/) for a pre-build
+  unknowns pass ([issue #78](https://github.com/Adam-S-Daniel/skills-evals/issues/78));
+  during-build and post-build behavior remains uncovered. The pairwise schema
+  and scorer exist, but [`harness/run_eval.py`](harness/run_eval.py) currently
+  rejects a judged pairwise run before either arm with
+  `judge_mode_unsupported` (exit 2). Its comment attributes the missing
+  runner wiring to [issue #97](https://github.com/Adam-S-Daniel/skills-evals/issues/97),
+  which is closed; this implementation gap remains.
 
   A Class C fixture says so in its `judge:` block: `mode: pairwise` plus
   `references:` ({name, path} entries, relative to the fixture dir — a path
