@@ -22,11 +22,16 @@
 # Rows below carry forward every DESIGN.md table row whose skill exists in a
 # registry today. `wj-next-break` and `sync-skills` are in that table but in no
 # registry now, so they have no row (a row would be a stale skip).
+# `test-canary`'s reason is corrected, not carried: DESIGN.md says "covered by
+# the propagation arms", but nothing in the propagation arms references it and
+# its SKILL.md says the delivery probe is not built (issue #17).
 skips:
   - registry: cms-platform
     skill: test-canary
     decision: no A/B
-    reason: delivery probe; covered by the propagation arms
+    reason: >-
+      internal canary; carries no guidance; its delivery probe (issue #17) is
+      not built
   - registry: cms-platform
     skill: sveltia-cms-playwright-demo
     decision: skip

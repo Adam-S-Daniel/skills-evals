@@ -17,23 +17,30 @@ WHAT A ROW IS. Every `SKILL.md` matched by a registry's `layout` glob in
 and the layouts are the ones `run_eval.py` uses, not a second copy). Its
 status is mechanical:
 
-  covered  at least one fixture under `evals/<x>/fixture.yaml` or
-           `evals/<x>/<y>/fixture.yaml` names this skill in its `skill:` field
+  covered  at least one `fixture.yaml` anywhere under `evals/` (the set
+           `eval.yml` discovers with `find evals -mindepth 1 -name
+           fixture.yaml`, at any depth) names this skill in its `skill:` field
            and this registry in its `registry:` field. `fixtures` counts them,
            so one flat fixture and several nested ones both register.
   skipped  no fixture, but `evals/non-coverage.yml` has a row for the pair,
            and that row carries the reason.
   gap      neither.
 
-A fixture with no `skill:` field (the `guidance` and `propagation` subjects)
-is not a skill fixture and is ignored.
+A fixture with no `skill:` key at all (the `guidance` and `propagation`
+subjects) is not a skill fixture and is ignored. A `skill:` key that is present
+but null or blank is a malformed skill fixture and is refused, never ignored.
 
 THE DENOMINATOR IS THE PART THAT LIES, so the script refuses (exit 2, nothing
 printed to stdout) rather than report a partial census: a registry in
 `harness/registries.yml` with no `--registry` path, a path that is not a
-directory, a layout that matches no skill, a fixture whose `registry:` is
-missing or unknown, a malformed or unknown-field `non-coverage.yml`. Nothing
-falls back to a sibling directory: the operator names every checkout.
+directory, a layout that matches no skill, one skill name in two bundles of one
+registry (`(registry, skill)` would be ambiguous and every count inflated), an
+`--evals-dir` with no `fixture.yaml` in it, a fixture whose `skill:` is null or
+blank or whose `registry:` is missing or unknown, a file that is not valid
+UTF-8 or YAML, a malformed or unknown-field `non-coverage.yml`. Nothing falls
+back to a sibling directory: the operator names every checkout. A refusal
+message never carries a skill name from a fixture or a non-coverage row, and
+never one from a private registry (see PRIVATE REGISTRY).
 
 PROBLEMS, reported beside the rows and failing `--check`:
 
@@ -41,10 +48,9 @@ PROBLEMS, reported beside the rows and failing `--check`:
                      has (a rename must not hide behind a skip)
   skip_but_covered   a non-coverage row for a skill that also has a fixture
   orphan_fixture     a fixture names a skill its registry does not have
-  duplicate_skill    one skill name in two bundles of one registry, which
-                     makes (registry, skill) ambiguous
 
-EXIT CODES. 0: census printed (and, under `--check`, no gap and no problem).
+EXIT CODES. 0: census printed (and, under `--check`, no gap and no problem;
+without `--check` a gap is reported and the exit is still 0).
 1: `--check` and a gap or a problem. 2: refused, or a usage error.
 
 PRIVATE REGISTRY. This repo is public and so is CI output. For a registry in
@@ -134,6 +140,18 @@ def enumerate_skills(entry: dict) -> list[dict]:
             "skill": skill_md.parent.name,
         })
     rows.sort(key=lambda r: (r["bundle"] or "", r["skill"]))
+    seen: set[str] = set()
+    for row in rows:
+        if row["skill"] in seen:
+            # (registry, skill) keys every fixture and skip lookup, so a name
+            # in two bundles would double-count; a private name stays unsaid.
+            who = ("" if entry["name"] in PRIVATE_REGISTRIES
+                   else f" {row['skill']!r}")
+            raise CensusRefusal(
+                f"registry {entry['name']!r} has one skill{who} in more than "
+                "one bundle: (registry, skill) would be ambiguous and every "
+                "count inflated")
+        seen.add(row["skill"])
     if not rows:
         raise CensusRefusal(
             f"registry {entry['name']!r} yields no skills for layout "
@@ -148,33 +166,55 @@ def _load_yaml(path: Path, what: str):
             return yaml.safe_load(f)
     except OSError as exc:
         raise CensusRefusal(f"cannot read {what} {path}: {exc.strerror}") from exc
+    except UnicodeDecodeError as exc:
+        raise CensusRefusal(f"{what} {path} is not valid UTF-8") from exc
     except yaml.YAMLError as exc:
-        raise CensusRefusal(f"{what} {path} is not valid YAML: {exc}") from exc
+        # Not str(exc): PyYAML can quote file content in it (an unknown tag,
+        # `!zz-name`, comes back verbatim), and that can be a private skill
+        # name. The line number is enough to find the problem.
+        mark = getattr(exc, "problem_mark", None)
+        where = f" (line {mark.line + 1})" if mark is not None else ""
+        raise CensusRefusal(f"{what} {path} is not valid YAML{where}") from exc
 
 
 def count_fixtures(evals_dir: Path, resolved: dict[str, dict]) -> dict:
     """{(registry name, skill): fixture count} from `skill:` / `registry:`."""
     if not evals_dir.is_dir():
         raise CensusRefusal(f"evals directory {evals_dir} is not a directory")
-    paths = sorted(evals_dir.glob("*/fixture.yaml")) + sorted(
-        evals_dir.glob("*/*/fixture.yaml"))
+    # Exactly the set eval.yml's dispatch check discovers:
+    # `find evals -mindepth 1 -name fixture.yaml`, at any depth, no exclusions.
+    paths = sorted(evals_dir.rglob("fixture.yaml"))
+    if not paths:
+        raise CensusRefusal(
+            f"no fixture.yaml under {evals_dir}: an empty or wrong evals "
+            "directory would report every skill as a gap or a skip")
     counts: dict[tuple[str, str], int] = {}
     for path in paths:
         doc = _load_yaml(path, "fixture")
         if not isinstance(doc, dict):
             raise CensusRefusal(f"fixture {path.relative_to(evals_dir)} is not a mapping")
-        skill = doc.get("skill")
-        if skill is None:
+        if "skill" not in doc:
             continue  # a guidance / propagation subject, not a skill fixture
+        skill = doc["skill"]
+        # The messages below never carry `skill`: while the registry is
+        # unknown it could be a private registry's name, and the fixture path
+        # in `label` already says where to look.
         label = path.relative_to(evals_dir).as_posix()
-        if not isinstance(skill, str):
-            raise CensusRefusal(f"fixture {label}: 'skill:' must be a string")
+        if not isinstance(skill, str) or not skill.strip():
+            raise CensusRefusal(
+                f"fixture {label}: 'skill:' is present but not a non-blank "
+                "string (omit the key for a non-skill subject)")
         url = doc.get("registry")
         if not isinstance(url, str) or not url.strip():
             raise CensusRefusal(
-                f"fixture {label} names skill {skill!r} but has no 'registry:'")
+                f"fixture {label} names a skill but has no 'registry:'")
         try:
             run_eval._validate_skill_name(skill)
+        except ValueError:
+            raise CensusRefusal(
+                f"fixture {label}: 'skill:' is not a valid skill name (one "
+                "path segment, no path or glob characters)") from None
+        try:
             name = run_eval.registry_for_url(resolved, url)["name"]
         except ValueError as exc:
             raise CensusRefusal(f"fixture {label}: {exc}") from exc
@@ -213,8 +253,10 @@ def load_skips(path: Path, resolved: dict[str, dict], *, private: bool,
                     "skill name would be public); use --private-non-coverage"))
         try:
             run_eval._validate_skill_name(skill)
-        except ValueError as exc:
-            raise CensusRefusal(f"{where}: {exc}") from exc
+        except ValueError:
+            raise CensusRefusal(
+                f"{where}: 'skill' is not a valid skill name (one path "
+                "segment, no path or glob characters)") from None
         if (registry, skill) in into:
             raise CensusRefusal(f"{where}: a second row for the same registry and skill")
         into[(registry, skill)] = row
@@ -228,9 +270,7 @@ def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict) -> dict
     seen_skills = set()
     for name, entry in resolved.items():
         rows = enumerate_skills(entry)
-        by_name: dict[str, int] = {}
         for row in rows:
-            by_name[row["skill"]] = by_name.get(row["skill"], 0) + 1
             seen_skills.add((name, row["skill"]))
             key = (name, row["skill"])
             row["fixtures"] = fixtures.get(key, 0)
@@ -242,10 +282,6 @@ def build_census(resolved: dict[str, dict], fixtures: dict, skips: dict) -> dict
                 row["reason"] = skips[key]["reason"]
             else:
                 row["status"] = "gap"
-        for skill, n in sorted(by_name.items()):
-            if n > 1:
-                problems.append({"kind": "duplicate_skill", "registry": name,
-                                 "skill": skill})
         counts = {"total": len(rows)}
         for status in STATUSES:
             counts[status] = sum(1 for r in rows if r["status"] == status)

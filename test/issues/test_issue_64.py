@@ -121,6 +121,18 @@ class World:
         self.skip("adamdaniel.ai", "site-skill")
         self.skip(PRIVATE, PRIVATE_GAP, private=True)
 
+    @staticmethod
+    def write_raw(path: Path, content: str | bytes) -> None:
+        if isinstance(content, bytes):
+            path.write_bytes(content)
+        else:
+            path.write_text(content, encoding="utf-8")
+
+    def raw_fixture(self, relpath: str, content: str | bytes) -> None:
+        path = self.evals / relpath / "fixture.yaml"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.write_raw(path, content)
+
     # running --------------------------------------------------------------
 
     def _write_skips(self, name: str, rows: list[dict]) -> Path:
@@ -130,13 +142,19 @@ class World:
 
     def run(self, *extra: str, omit: tuple[str, ...] = (),
             paths: dict | None = None, order: list[str] | None = None,
-            use_private_file: bool = True, raw_non_coverage: str | None = None):
+            use_private_file: bool = True,
+            raw_non_coverage: str | bytes | None = None,
+            raw_private: str | bytes | None = None):
         non_coverage = self._write_skips("non-coverage.yml", self.skips)
         if raw_non_coverage is not None:
-            non_coverage.write_text(raw_non_coverage, encoding="utf-8")
+            self.write_raw(non_coverage, raw_non_coverage)
         argv = [sys.executable, str(SCRIPT), "--evals-dir", str(self.evals),
                 "--non-coverage", str(non_coverage)]
-        if self.private_skips and use_private_file:
+        if raw_private is not None:
+            private = self.root / "private-non-coverage.yml"
+            self.write_raw(private, raw_private)
+            argv += ["--private-non-coverage", str(private)]
+        elif self.private_skips and use_private_file:
             argv += ["--private-non-coverage",
                      str(self._write_skips("private-non-coverage.yml",
                                            self.private_skips))]
@@ -271,6 +289,62 @@ class Refusals(unittest.TestCase):
                         encoding="utf-8")
         self.assert_refused(w2.run(), "badurl")
 
+    def test_a_skill_name_in_two_bundles_is_refused_in_every_mode(self):
+        w = World(self)
+        w.clear_all_gaps()
+        w.add_skill("adam-agentskills", "alpha", "plug-b")
+        for flags in ((), ("--json",), ("--check",), ("--json", "--check")):
+            with self.subTest(flags=flags):
+                self.assert_refused(w.run(*flags), "more than one bundle")
+        self.assertIn("'alpha'", w.run().stderr)  # public: the name helps
+
+    def test_invalid_utf8_in_any_input_file_is_refused_naming_the_file(self):
+        bad = b"skips: []\n# \xff\xfe\n"
+        w = World(self)
+        self.assert_refused(w.run(raw_non_coverage=bad), "not valid UTF-8")
+        self.assertIn("non-coverage.yml", w.run(raw_non_coverage=bad).stderr)
+        w2 = World(self)
+        w2.raw_fixture("badbytes", b"skill: alpha\n\xff\xfe\n")
+        proc = w2.run()
+        self.assert_refused(proc, "not valid UTF-8")
+        self.assertIn("fixture.yaml", proc.stderr)
+        self.assertNotIn("Traceback", proc.stderr)
+        w3 = World(self)
+        self.assert_refused(w3.run(raw_private=bad), "not valid UTF-8")
+
+    def test_a_fixture_at_any_depth_counts_like_eval_ymls_find(self):
+        # eval.yml: `find evals -mindepth 1 -name fixture.yaml`, any depth
+        w = World(self)
+        w.add_fixture("deep/er/still", "delta", "adam-agentskills")
+        w.add_fixture("deep/er/still/and/deeper", "delta", "adam-agentskills")
+        doc = w.json()
+        self.assertEqual(rows(doc, "adam-agentskills")["delta"]["fixtures"], 2)
+        self.assertEqual(rows(doc, "adam-agentskills")["delta"]["status"], "covered")
+        self.assertEqual(doc["totals"]["covered"], 5)
+
+    def test_a_fixture_with_a_null_or_blank_skill_is_refused(self):
+        for body in ("skill:\nregistry: https://github.com/Adam-S-Daniel/"
+                     "adam-agentskills\n",
+                     "skill: ~\n", "skill: ''\n", "skill: '   '\n",
+                     "skill: [alpha]\n"):
+            with self.subTest(body=body):
+                w = World(self)
+                w.raw_fixture("nullskill", body)
+                self.assert_refused(w.run(), "nullskill")
+                self.assertIn("'skill:'", w.run().stderr)
+        # the key ABSENT is still a non-skill subject, ignored
+        w = World(self)
+        w.raw_fixture("subject", "subject: guidance\n")
+        self.assertEqual(w.run().returncode, 0)
+
+    def test_an_evals_dir_with_no_fixture_is_refused(self):
+        w = World(self)
+        shutil.rmtree(w.evals)
+        w.evals.mkdir()
+        self.assert_refused(w.run(), "no fixture.yaml")
+        (w.evals / "notes.txt").write_text("not a fixture", encoding="utf-8")
+        self.assert_refused(w.run("--check"), "no fixture.yaml")
+
     def test_a_malformed_non_coverage_file_is_refused(self):
         for bad, needle in (
             ("skips: []\nextra: 1\n", "exactly one key"),
@@ -316,12 +390,6 @@ class Problems(unittest.TestCase):
         self.assertEqual(self.kinds(w.json()), {("orphan_fixture", "renamed-away")})
         self.assertEqual(w.run("--check").returncode, 1)
 
-    def test_one_skill_name_in_two_bundles_is_reported(self):
-        w = World(self)
-        w.clear_all_gaps()
-        w.add_skill("adam-agentskills", "alpha", "plug-b")
-        self.assertEqual(self.kinds(w.json()), {("duplicate_skill", "alpha")})
-        self.assertEqual(w.run("--check").returncode, 1)
 
 
 class PrivateNames(unittest.TestCase):
@@ -356,6 +424,71 @@ class PrivateNames(unittest.TestCase):
         self.assertEqual(kinds, ["orphan_fixture", "stale_skip"])
         self.assertIn("zz-private-renamed",
                       w.run("--json", "--include-private-names").stdout)
+
+    def test_no_refusal_path_prints_a_private_skill_name(self):
+        marker = "zz-private-leak-marker"
+        public_url = "https://github.com/Adam-S-Daniel/adam-agentskills"
+        row = ("skips:\n  - {registry: %s, skill: %s, decision: skip, "
+               "reason: r}\n")
+
+        def duplicate(w):
+            w.add_skill(PRIVATE, PRIVATE_COVERED, "plug-q")
+
+        cases = {
+            # fixture problems where the registry is unknown or missing
+            "fixture, no registry": (lambda w: w.raw_fixture(
+                "leaky/a", f"skill: {marker}\n"), "no 'registry:'"),
+            "fixture, unknown registry": (lambda w: w.raw_fixture(
+                "leaky/b", f"skill: {marker}\nregistry: https://example.com/x/y\n"),
+                "unknown registry"),
+            "fixture, invalid name": (lambda w: w.raw_fixture(
+                "leaky/c", f"skill: '{marker}/..'\nregistry: {public_url}\n"),
+                "not a valid skill name"),
+            "fixture, broken YAML": (lambda w: w.raw_fixture(
+                "leaky/d", f"skill: {marker}\nbad: [unclosed\n"),
+                "not valid YAML"),
+            "fixture, unknown YAML tag": (lambda w: w.raw_fixture(
+                "leaky/e", f"skill: !{marker} x\n"), "not valid YAML"),
+            # a private registry's own structural refusals
+            "private duplicate": (duplicate, "more than one bundle"),
+        }
+        for label, (mutate, needle) in cases.items():
+            with self.subTest(label):
+                w = World(self)
+                mutate(w)
+                proc = w.run()
+                self.assertEqual((proc.returncode, proc.stdout), (2, ""),
+                                 proc.stderr)
+                self.assertIn(needle, proc.stderr)
+                self.assertNotIn(marker, proc.stderr)
+                self.assertNotIn(PRIVATE_COVERED, proc.stderr)
+        # the operator-held private file, every way it can be refused
+        one = f"  - {{registry: {PRIVATE}, skill: {marker}, decision: skip, reason: r}}\n"
+        for label, raw, needle in (
+            ("duplicate row", "skips:\n" + one * 2, "second row"),
+            ("invalid name", row % (PRIVATE, f'"{marker}/.."'),
+             "not a valid skill name"),
+            ("extra field", f"skips:\n  - {{registry: {PRIVATE}, skill: "
+             f"{marker}, decision: skip, reason: r, x: 1}}\n",
+             "exactly the fields"),
+            ("broken YAML", f"skips: [{marker}: : :\n", "not valid YAML"),
+            # PyYAML's own message quotes an unknown tag from the file
+            ("unknown YAML tag", f"skips: !{marker} x\n", "not valid YAML"),
+            ("public registry row", row % ("cms-platform", marker),
+             "private registries only"),
+        ):
+            with self.subTest(f"private file, {label}"):
+                w = World(self)
+                proc = w.run(raw_private=raw)
+                self.assertEqual((proc.returncode, proc.stdout), (2, ""),
+                                 proc.stderr)
+                self.assertIn(needle, proc.stderr)
+                self.assertNotIn(marker, proc.stderr)
+        # and the same row in the PUBLIC file
+        w = World(self)
+        proc = w.run(raw_non_coverage=row % (PRIVATE, marker))
+        self.assertEqual((proc.returncode, proc.stdout), (2, ""))
+        self.assertNotIn(marker, proc.stderr)
 
     def test_the_committed_file_refuses_private_rows(self):
         w = World(self)
@@ -401,6 +534,16 @@ class RepoFiles(unittest.TestCase):
                     any(w in field.lower() for w in SCANNER_WORDS), field)
         pairs = [(r["registry"], r["skill"]) for r in doc["skips"]]
         self.assertEqual(len(pairs), len(set(pairs)))
+
+    def test_test_canary_is_not_said_to_be_covered_by_the_propagation_arms(self):
+        # Nothing under evals/propagation, the workflows or the harness
+        # references test-canary; its SKILL.md says the probe (issue #17) is
+        # not built. The reason must say that, not claim coverage.
+        doc = yaml.safe_load(COMMITTED_NON_COVERAGE.read_text(encoding="utf-8"))
+        row = next(r for r in doc["skips"] if r["skill"] == "test-canary")
+        self.assertEqual(
+            row["reason"], "internal canary; carries no guidance; its "
+            "delivery probe (issue #17) is not built")
 
     def test_the_committed_evals_tree_and_skip_file_load_through_the_script(self):
         w = World(self)
