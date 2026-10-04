@@ -192,7 +192,11 @@ or merge flattening. These bounds apply only to the header.
 
 `workflow_permissions` in [`harness/scorers/objective.py`](harness/scorers/objective.py)
 parses workflow YAML and checks an exact job ID's job-level `uses:` call,
-whose reference before `@` must end with `uses_suffix`. For example:
+whose reference before `@` must equal `uses_suffix` or end with it at a
+whole path-segment boundary. A bare `reusable.yml` suffix matches
+`path/reusable.yml`, but does not match `path/xreusable.yml`. Leading-slash
+suffixes retain their boundary; `@ref` is removed only from the call,
+not from the requested suffix. For example:
 
 ```yaml
 objective_checks:
@@ -217,6 +221,15 @@ blocks are scope mappings with `read`, `write`, or `none` levels, or the
 satisfies `read`, and `read-all` cannot satisfy a write requirement. Check
 arguments must include nonempty path patterns, job ID, suffix, and a nonempty
 scope mapping requiring `read` or `write`. Unknown constraint keys are rejected.
+
+`workflow_step_uses` uses the same suffix boundary. Both checks fail with a
+filename and a fixed duplicate-key detail if any matched workflow authors
+duplicate mapping keys anywhere in its composed YAML tree, including
+unrelated jobs or fields. Equivalent SafeLoader scalar keys and repeated
+merge keys count as duplicates; a single merge with explicit overrides and
+benign anchors/aliases remains supported. This validation happens before
+merge flattening and applies only to these two checks. Other malformed
+workflow files retain the step check's existing skip behavior.
 
 ### Git-state objective check types (`harness/scorers/objective.py`)
 
