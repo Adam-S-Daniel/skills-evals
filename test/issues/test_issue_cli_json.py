@@ -80,8 +80,12 @@ class CliJsonConsumersTests(unittest.TestCase):
         self.workspace = Path(self.temp.name)
         home = self.workspace / "home"
         home.mkdir()
+        self.cli = self.workspace / "cli-stub"
+        self.cli.write_text("#!/bin/sh\nexit 97\n", encoding="utf-8")
+        self.cli.chmod(0o700)
         self.env = {"PATH": os.environ["PATH"], "HOME": str(home),
-                    "TMPDIR": str(self.workspace), "LANG": "C.UTF-8"}
+                    "TMPDIR": str(self.workspace), "LANG": "C.UTF-8",
+                    "CLAUDE_BIN": str(self.cli)}
 
     def _agent(self, payload: object) -> dict:
         with mock.patch("subprocess.run", return_value=cli_reply(payload)):
@@ -157,6 +161,12 @@ class CliJsonConsumersTests(unittest.TestCase):
         with mock.patch.dict(os.environ, parent_env):
             self.assertEqual(self._proposal([MESSAGE, RESULT]), "done")
             self.assertEqual({name: os.environ[name] for name in parent_env}, parent_env)
+
+    def test_proposal_needs_no_cli_on_path(self):
+        empty_bin = self.workspace / "empty-bin"
+        empty_bin.mkdir()
+        with mock.patch.dict(self.env, {"PATH": str(empty_bin)}):
+            self.assertEqual(self._proposal([MESSAGE, RESULT]), "done")
 
     def test_raw_transcript_file_contains_only_normalized_result(self):
         raw = self._agent([MESSAGE, RESULT])["raw"]

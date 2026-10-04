@@ -1433,6 +1433,18 @@ class GuardedRunnerTests(unittest.TestCase):
         self.assertEqual(child["CLAUDE_BIN"], str(guard_dir / "claude"))
         self.assertEqual(child["PATH"].split(os.pathsep)[0], str(guard_dir))
 
+    def test_installer_refuses_when_child_has_no_cli(self):
+        guard_dir = self.tmp / "guard"
+        guard_dir.mkdir(mode=0o700)
+        empty_bin = self.tmp / "empty-bin"
+        empty_bin.mkdir()
+        child = {"PATH": str(empty_bin), "HOME": str(self.home)}
+        before = dict(child)
+        with self.assertRaisesRegex(pse.local_eval.Refused, "cannot find the claude CLI"):
+            pse.local_eval.install_guard_launcher(guard_dir, environ=child)
+        self.assertEqual(child, before)
+        self.assertEqual(list(guard_dir.iterdir()), [])
+
 
 def _skill_creator_dir() -> Path | None:
     try:
