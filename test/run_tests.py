@@ -30820,18 +30820,33 @@ elif 'worktree' in args and 'remove' in args:
             "the resolver's anchor is this checkout's root, which is what "
             "makes moving the anchor move the old default with it")
         root = Path(tempfile.mkdtemp(prefix="issue147-checkout-"))
+        self._plant_root = root
         self.addCleanup(shutil.rmtree, root, ignore_errors=True)
         trusted = root / "evals" / "roster.yml"
         trusted.parent.mkdir(parents=True)
         shutil.copyfile(self.ROSTER, trusted)
         self.assertEqual(trusted.read_bytes(), self.ROSTER.read_bytes())
         anchored = mock.patch.object(run_eval, "TRUSTED_ROSTER", trusted)
+        self._plant_anchor = anchored
         anchored.start()
         self.addCleanup(anchored.stop)
         published = root / "roster" / "latest.json"
         published.parent.mkdir(parents=True)
         published.write_text(json.dumps(document), encoding="utf-8")
         return published
+
+    @staticmethod
+    def _safe_plant_root(row, *, preserve=None) -> bool:
+        """Only run a row's file cleanup after proving its root is disposable."""
+        root = getattr(row, "_plant_root", None)
+        if root is None:
+            return False
+        root = Path(root).resolve()
+        tmp_root = Path(tempfile.gettempdir()).resolve()
+        return (root != tmp_root and root.is_relative_to(tmp_root)
+                and not REPO_ROOT.resolve().is_relative_to(root)
+                and (preserve is None
+                     or not Path(preserve).resolve().is_relative_to(root)))
 
     def _running_set(self):
         """(agent, judge) as a real run resolves them — no flag, no
@@ -31102,18 +31117,32 @@ elif 'worktree' in args and 'remove' in args:
 
         before = snapshot()
         row = TestIssue147("test_row5_the_open_cell_cannot_reach_the_running_set")
+        original_anchor = run_eval.TRUSTED_ROSTER
+        cleanups_run = False
         # `create=True`: the constant the old helper read is gone, and the
         # claim is precisely that pointing it at a checkout cannot make the
         # helper write there.
-        with mock.patch.object(TestIssue147, "_PUBLISHED",
-                               checkout / "roster" / "latest.json",
-                               create=True):
-            row._plant_published_roster(
-                {"arms": [{"id": self._GHOST, "reason": "planted"}]})
-            # `doCleanups` returns False when a cleanup raised, and swallows
-            # the exception itself: assert on the result (#166 item 1).
-            self.assertTrue(row.doCleanups(),
-                            "a cleanup the helper registered failed")
+        try:
+            with mock.patch.object(TestIssue147, "_PUBLISHED",
+                                   checkout / "roster" / "latest.json",
+                                   create=True):
+                row._plant_published_roster(
+                    {"arms": [{"id": self._GHOST, "reason": "planted"}]})
+                self.assertTrue(self._safe_plant_root(row, preserve=checkout),
+                                "the helper's cleanup root is not disposable")
+                # `doCleanups` returns False when a cleanup raised, and
+                # swallows the exception itself: assert on the result.
+                cleaned = row.doCleanups()
+                cleanups_run = True
+                self.assertTrue(cleaned,
+                                "a cleanup the helper registered failed")
+        finally:
+            if not cleanups_run and self._safe_plant_root(row, preserve=checkout):
+                row.doCleanups()
+            anchor = getattr(row, "_plant_anchor", None)
+            if anchor is not None:
+                anchor.stop()
+            run_eval.TRUSTED_ROSTER = original_anchor
 
         for path, payload in seeded.items():
             self.assertTrue(path.is_file(),
@@ -31139,8 +31168,6 @@ elif 'worktree' in args and 'remove' in args:
         would otherwise have this test delete the checkout it runs in.
         """
         real_roster = REPO_ROOT / "roster"
-        tmp_root = Path(tempfile.gettempdir()).resolve()
-
         def snapshot():
             if not real_roster.is_dir():
                 return None
@@ -31150,27 +31177,113 @@ elif 'worktree' in args and 'remove' in args:
 
         before = snapshot()
         row = TestIssue147("test_row5_the_open_cell_cannot_reach_the_running_set")
-        planted = row._plant_published_roster(
-            {"arms": [{"id": self._GHOST, "reason": "planted"}]})
-        root = planted.parent.parent
-        self.assertTrue(planted.is_file())
-        self.assertTrue(
-            root.resolve().is_relative_to(tmp_root)
-            and not REPO_ROOT.resolve().is_relative_to(root.resolve()),
-            f"the helper planted under {root}, not the temporary directory")
-        # Only for a failed assertion below: the real cleanup is the
-        # helper's own, and the test asserts it ran.
-        self.addCleanup(shutil.rmtree, root, ignore_errors=True)
-        self.assertFalse(
-            planted.resolve().is_relative_to(real_roster.resolve()),
-            "the helper planted inside this checkout's roster/")
-        self.assertEqual(snapshot(), before,
-                         "the helper changed this checkout's roster/")
-        cleaned = row.doCleanups()
-        self.assertTrue(cleaned, "a cleanup the helper registered failed")
-        self.assertFalse(root.exists(), "the helper left its checkout behind")
-        self.assertEqual(snapshot(), before,
-                         "the cleanups changed this checkout's roster/")
+        original_anchor = run_eval.TRUSTED_ROSTER
+        cleanups_run = False
+        try:
+            planted = row._plant_published_roster(
+                {"arms": [{"id": self._GHOST, "reason": "planted"}]})
+            root = planted.parent.parent
+            self.assertTrue(
+                self._safe_plant_root(row) and root.resolve() == row._plant_root.resolve(),
+                f"the helper planted under {root}, not a disposable directory")
+            self.assertTrue(planted.is_file())
+            self.assertFalse(
+                planted.resolve().is_relative_to(real_roster.resolve()),
+                "the helper planted inside this checkout's roster/")
+            self.assertEqual(snapshot(), before,
+                             "the helper changed this checkout's roster/")
+            cleaned = row.doCleanups()
+            cleanups_run = True
+            self.assertTrue(cleaned, "a cleanup the helper registered failed")
+            self.assertFalse(root.exists(), "the helper left its checkout behind")
+            self.assertEqual(snapshot(), before,
+                             "the cleanups changed this checkout's roster/")
+        finally:
+            if not cleanups_run and self._safe_plant_root(row):
+                row.doCleanups()
+            anchor = getattr(row, "_plant_anchor", None)
+            if anchor is not None:
+                anchor.stop()
+            run_eval.TRUSTED_ROSTER = original_anchor
+
+    def test_plant_assertion_failure_restores_the_anchor_and_removes_its_root(self):
+        original_anchor = run_eval.TRUSTED_ROSTER
+        original_helper = TestIssue147._plant_published_roster
+        roots = []
+
+        def capture(row, document):
+            planted = original_helper(row, document)
+            roots.append(planted.parent.parent)
+            return planted
+
+        target = TestIssue147(
+            "test_the_plant_helper_plants_only_inside_a_temporary_directory")
+        with mock.patch.object(TestIssue147, "_plant_published_roster", capture), \
+                mock.patch.object(target, "assertFalse",
+                                  side_effect=AssertionError("forced assertion")):
+            with self.assertRaisesRegex(AssertionError, "forced assertion"):
+                target.test_the_plant_helper_plants_only_inside_a_temporary_directory()
+        self.assertEqual(len(roots), 1)
+        self.assertFalse(roots[0].exists())
+        self.assertEqual(run_eval.TRUSTED_ROSTER, original_anchor)
+
+    def test_plant_helper_failure_restores_the_anchor_in_both_tests(self):
+        original_anchor = run_eval.TRUSTED_ROSTER
+        original_helper = TestIssue147._plant_published_roster
+        for method in (
+                "test_the_plant_helper_plants_only_inside_a_temporary_directory",
+                "test_the_plant_helper_writes_nothing_into_the_operators_checkout"):
+            with self.subTest(method=method):
+                roots = []
+
+                def fail_after_plant(row, document):
+                    planted = original_helper(row, document)
+                    roots.append(planted.parent.parent)
+                    raise RuntimeError("forced helper failure")
+
+                target = TestIssue147(method)
+                try:
+                    with mock.patch.object(TestIssue147, "_plant_published_roster",
+                                           fail_after_plant):
+                        with self.assertRaisesRegex(RuntimeError,
+                                                    "forced helper failure"):
+                            getattr(target, method)()
+                finally:
+                    target.doCleanups()
+                self.assertEqual(len(roots), 1)
+                self.assertFalse(roots[0].exists())
+                self.assertEqual(run_eval.TRUSTED_ROSTER, original_anchor)
+
+    def test_equal_temp_root_cannot_trigger_the_rows_cleanup(self):
+        original_anchor = run_eval.TRUSTED_ROSTER
+        cleanup_spy = mock.Mock()
+        with tempfile.TemporaryDirectory(prefix="issue147-equal-root-") as temp:
+            tmp_root = Path(temp)
+            planted = tmp_root / "roster" / "latest.json"
+            planted.parent.mkdir()
+            planted.write_text("{}", encoding="utf-8")
+
+            def return_temp_root(row, _document):
+                row._plant_root = tmp_root
+                anchor = mock.patch.object(
+                    run_eval, "TRUSTED_ROSTER", tmp_root / "evals" / "roster.yml")
+                row._plant_anchor = anchor
+                anchor.start()
+                row.addCleanup(cleanup_spy)
+                row.addCleanup(anchor.stop)
+                return planted
+
+            target = TestIssue147(
+                "test_the_plant_helper_plants_only_inside_a_temporary_directory")
+            with mock.patch.object(tempfile, "gettempdir", return_value=temp), \
+                    mock.patch.object(TestIssue147, "_plant_published_roster",
+                                      return_temp_root):
+                with self.assertRaisesRegex(AssertionError, "disposable directory"):
+                    target.test_the_plant_helper_plants_only_inside_a_temporary_directory()
+            cleanup_spy.assert_not_called()
+            self.assertTrue(tmp_root.is_dir())
+            self.assertTrue(planted.is_file())
+            self.assertEqual(run_eval.TRUSTED_ROSTER, original_anchor)
 
     def test_no_row_above_can_be_applied_without_a_human(self):
         """The claim every row leans on, asserted once at the workflow:

@@ -54,9 +54,10 @@ evals/
   disarm-inherited-reach/  # A/B eval, Class A: disarm a clone's inherited reach into production
     fixture.yaml           # prompt, setup: hook, git-state objective checks, rubric
     seed/                  # setup.sh builds a bare prod repo, a clone and a worktree
-  writing-adrs/            # A/B eval, Class A (format half): two fixtures
+  writing-adrs/            # A/B eval, Class A (format half): three fixtures
     bootstrap/             # no docs/decisions/ yet — bootstrap the folder
     existing-convention/   # docs/decisions/ already has a house format
+    supersede/             # replace an accepted decision and update its pointers
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
@@ -512,8 +513,10 @@ fixture to measure two tiers nobody uses. On the 2026-09-22 census (sonnet-5
 tier, which qualifies, seats it beside opus-5 for three; ship a newer haiku or
 fable and nothing changes. **The no-census fallback is untouched**: with no
 usable usage there is no qualifying tier and a roster must not be empty, so
-the rule reverts to newest-per-tier across *all* tiers and every arm's reason
-says which degradation it was. No new threshold was added — rule 2 reads rule
+the rule reverts to newest-per-tier across *all* tiers. When the census itself
+is unusable, each fallback reason names the degradation. When the census is
+usable but only its enter window fails a ranked-usage floor, the reason is
+the bare newest-per-tier sentence. No new threshold was added — rule 2 reads rule
 1's entry bar, and the numbers all stay in `evals/roster-policy.yml`.
 
 **A tier with a known vendor default follows the vendor** (Adam's decision,
@@ -733,7 +736,7 @@ fixture with no usable roster is a runner-level error naming the roster path,
 because falling through to the CLI's own default publishes a badge for a model
 nobody chose and makes every week-over-week comparison a comparison against a
 different model. `--roster` and `$EVAL_ROSTER` remain as overrides for tests
-and local runs; `eval.yml` sets neither. Both current fixtures keep their pins
+and local runs; `eval.yml` sets neither. The skill fixtures keep their pins
 — "deliberately one tier below the ceiling" is a per-fixture calibration the
 roster cannot express.
 

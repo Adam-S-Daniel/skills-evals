@@ -417,9 +417,10 @@ doctrine applies to the harness's own CI.
 The CLI's native eval harness was assessed against this design. It has
 first-class with/without-baseline arms and a stable `aggregate-result.json`
 report, but: it is early-access and gated for this account (probing prints
-"currently in early access"); its graders are regex / tool-use / file-exists
-/ LLM-judge / baseline only, with **no scriptable grader**, so it cannot host
-`scorers/objective.py`'s changeset replays — which would force decidable
+"currently in early access"); the graders assessed then were regex / tool-use
+/ file-exists / LLM-judge / baseline. That assessment did not establish a way
+to run `scorers/objective.py`'s changeset replays as a grader; substituting
+the assessed graders would force decidable
 facts back onto regex or the judge, the exact anti-pattern the rules above
 forbid; and its case layout is per-plugin where this harness is centralized.
 
@@ -439,9 +440,9 @@ everything below is "read in `--help`", not measured.
   "free graders" beside them), a `with-only` marker that includes
   `tool_used: Skill`, and a `scaffold_script` that runs author-supplied bash
   as you, off unless `--scaffold` is passed. It does not name a grader that
-  runs a script and scores its result, so the 2026-08-30 "no scriptable
-  grader" is neither confirmed nor refuted. The `scaffold_script` is described
-  as setup, not scoring.
+  runs a script and scores its result. This does not establish whether custom
+  code graders are supported; the `scaffold_script` is described as setup,
+  not scoring.
 - *Layout:* still per plugin: cases live in `<eval dir>/**/case.yaml` (or
   `prompt.md` plus `graders/*.md`) under the plugin, results in
   `<plugin>/<dir>/results/`, with `--eval-dir` and a manifest
@@ -548,7 +549,9 @@ usage there is no usage-qualified tier at all, and a roster must not be
 empty — so wherever the enter window carries no usable evidence (any of
 `_census_verdict`'s eight verdicts, or a fresh census whose enter window
 alone fails one of the ranked-usage floors) rule 2 reverts to newest per tier
-across every tier, with the existing degradation reasons. A usable census
+across every tier. When the census itself is unusable, each fallback reason
+names its degradation. A usable census whose enter window alone fails a
+ranked-usage floor gets the bare newest-per-tier reason. A usable census
 that simply names no model at the entry bar is a different thing: that is
 evidence, and it says no tier qualifies, so the only seats are previous arms
 held over the exit bar — and with none, `main()` refuses to publish a roster
