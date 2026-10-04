@@ -435,7 +435,8 @@ from `claude plugin eval --help` on Claude Code 2.1.289, run with a throwaway
 everything below is "read in `--help`", not measured.
 
 - *Early access:* the help no longer says so. Whether this account is still
-  gated is **not verified**; probing it needs a login this note does not use.
+  gated is **not verified**; probing it needs a login this note does not use
+  (measured below: it is not gated).
 - *Graders:* the help names LLM and baseline graders as the paid ones (with
   "free graders" beside them), a `with-only` marker that includes
   `tool_used: Skill`, and a `scaffold_script` that runs author-supplied bash
@@ -464,6 +465,39 @@ per plugin; and the gate is unverified either way. The help also describes
 plugin targets, and says nothing about whether a `subject: guidance` fixture
 (an `AGENTS.md` section, not a plugin) could run under it. Re-read `--help` on
 the next CLI bump, and run it once if a grader that scores a script appears.
+
+**Measured 2026-10-04 ([#232](https://github.com/Adam-S-Daniel/skills-evals/issues/232#issuecomment-5977656310)),
+one real run on Claude Code 2.1.289** with the operator's own login (API-key
+environment variables unset) and `--runs 1 --no-publish --max-cost-usd 1
+--trust-plugin`, against a scratch `git archive` copy of the
+`adam-coding-anywhere` plugin that has no `.git` and so no push path.
+
+- *Gate:* the account is **not gated**. The command ran end to end with no
+  early-access message.
+- *Graders:* the binary's case validation lists `type:` as exactly
+  `regex | tool_order | tool_used | file_exists | llm | baseline`. There is
+  still **no script or exit-code grader**, so the flip criterion above is not
+  met.
+- *Output:* `result.json` with `schemaVersion` 1, per-arm graders (each with
+  `scored` and `withOnly` flags) and `aggregates.delta` / `meanDelta`, plus a
+  local HTML report.
+- *Cost:* **$0.175** for one hand-written with/without case (about $0.10 with
+  the plugin, $0.08 without; 43 s in all).
+- *Result:* Δ = 0. The case was an easy one (a CI step piping `npm test`
+  through `tee` and `tail` before `./deploy.sh`, asked to be reviewed for CI
+  reliability problems), graded by a `pipefail|PIPESTATUS` regex plus a
+  with-only `tool_used: Skill`. Both arms scored 1.0 because the baseline
+  already knows `pipefail`; a lift needs cases a baseline fails.
+
+**Decision updated:** the gate is verified ungated, so that half of the flip
+criterion is met; the other half (a grader that runs a script and scores its
+result) is not. **Monitor, don't wrap** stays for behavior scoring: this
+harness remains the system of record, and the layout and `subject: guidance`
+gaps above are unchanged. One narrow use is worth allowing, **local only**: a
+cheap trigger check (did the skill fire?) using `claude plugin eval` with a
+`tool_used: Skill` grader and `--no-publish`. It is run by hand on a durable
+machine, never in CI, and its output is not written to `results/` or
+`persistent/eval-results`. Part of #232.
 
 ## Model roster (2026-09-04, #67; redesigned 2026-09-13, #147)
 
