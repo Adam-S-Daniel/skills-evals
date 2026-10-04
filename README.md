@@ -60,6 +60,10 @@ evals/
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  debug-github-workflows/  # Class B: one wrong-branch diagnosis fixture
+    wrong-branch/          # main invokes an obsolete test module; an unmerged branch has the fix
+      fixture.yaml         # replay-read, affirmative-reply and file-restraint checks
+      seed/                # Python service, shared gh symlink and scrubbed run/branch responses
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric

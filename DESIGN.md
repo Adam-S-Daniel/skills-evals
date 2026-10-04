@@ -286,7 +286,16 @@ Not every skill takes the same eval, and some take none. Classify first:
   reasoning quality only. `cms-stuck-pr-triage` graduated out of this list:
   covered by `evals/cms-stuck-pr-triage/` (issue #84), which is also where
   the shared `harness/fakes/gh` every other Class B fixture reuses came
-  from. Candidates: `debug-github-workflows`, `ci-watcher-loops`,
+  from. `debug-github-workflows` has one covered slice:
+  [`evals/debug-github-workflows/wrong-branch/`](evals/debug-github-workflows/wrong-branch/)
+  (issue [#76](https://github.com/Adam-S-Daniel/skills-evals/issues/76)). Main
+  invokes a missing test module while an unmerged branch already fixes its
+  workflow. Seven checks require actual log/comparison reads, affirmative
+  cause and merge statements, and preservation of project/instrument files.
+  The reply grammar is deliberately narrow; correct alternative phrasing can
+  fail, so no A/B calibration or measured improvement is claimed. Exit-128,
+  token/auth and misleading-success patterns remain uncovered.
+  Candidates: `ci-watcher-loops`,
   `editorial-label-audit`, `skills-doctor`, `consumer-repo-provisioning`
   (the which-secret-is-missing half).
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
@@ -381,8 +390,9 @@ the reference they point at.
 
 Backfill order, by usage × decidability × incident material:
 `cms-stuck-pr-triage` (builds the fake-`gh` machinery every Class B eval
-reuses), `debug-github-workflows`, then `adam-writing-style` as the Class C
-pilot. (`github-actions-sha-pinning` — fully decidable, including the
+reuses), `debug-github-workflows` (the wrong-branch slice above has shipped;
+its remaining patterns are still deferred), then `adam-writing-style` as the
+Class C pilot. (`github-actions-sha-pinning` — fully decidable, including the
 cms-platform tag carve-out — has shipped: `evals/github-actions-sha-pinning/`.
 `review-bash-ci-reliability`, which headed this list because the incident
 record practically is its fixture set, has shipped too:
