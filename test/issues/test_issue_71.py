@@ -336,6 +336,24 @@ class AcceptTests(PipelineCase):
         self.assertIn("reply of trial 1", prompt)
 
 
+class TriggerEvalSetOverrideTests(PipelineCase):
+
+    def test_validation_prompt_is_dropped_from_a_supplied_set(self):
+        validation_prompt = pse.run_eval.load_fixture(
+            REPO_ROOT / "evals" / SKILL / "supersede")["prompt"]
+        supplied = self.tmp / "queries.json"
+        supplied.write_text(json.dumps([
+            {"query": "  " + validation_prompt.replace(" ", "\n  "), "should_trigger": True},
+            {"query": "record why we picked this queue", "should_trigger": True},
+            {"query": "fix this flaky test", "should_trigger": False}]))
+        runner = FakeRunner(GOOD, {}, proposal(""))
+        self.run_main(runner, "--rotation", "2", "--trigger-eval-set", str(supplied))
+        self.assertEqual([i["query"] for i in runner.eval_set],
+                         ["record why we picked this queue", "fix this flaky test"])
+        self.assertEqual(self.record()["description_half"]["eval_set_source"],
+                         "file:queries.json")
+
+
 class RejectTests(PipelineCase):
 
     def test_validation_drop_is_rejected_and_recorded_with_numbers(self):
