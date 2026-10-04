@@ -1,10 +1,10 @@
 {
-  "digital.pdf": {"total_pages": 2, "text_pages": 2, "verdict": "No"},
-  "image.pdf": {"total_pages": 2, "text_pages": 0, "verdict": "Yes"},
-  "mixed.pdf": {"total_pages": 2, "text_pages": 1, "verdict": "Partial"},
-  "damaged.pdf": {"total_pages": null, "text_pages": null, "verdict": "Inaccessible"},
-  "noisy-text.pdf": {"total_pages": 1, "text_pages": 1, "verdict": "No"},
-  "annual-scan.pdf": {"total_pages": 2, "text_pages": 2, "verdict": "No"},
-  "invoice-ocr.pdf": {"total_pages": 1, "text_pages": 0, "verdict": "Yes"},
-  "UPPER.PDF": {"total_pages": 1, "text_pages": 1, "verdict": "No"}
+  "statement-2024-q1.pdf": {"total_pages": 2, "text_pages": 2, "verdict": "No"},
+  "lease-renewal.pdf": {"total_pages": 2, "text_pages": 0, "verdict": "Yes"},
+  "project-brief.pdf": {"total_pages": 2, "text_pages": 1, "verdict": "Partial"},
+  "meeting-notes.pdf": {"total_pages": null, "text_pages": null, "verdict": "Inaccessible"},
+  "delivery-receipt.pdf": {"total_pages": 1, "text_pages": 1, "verdict": "No"},
+  "annual-report.pdf": {"total_pages": 2, "text_pages": 2, "verdict": "No"},
+  "invoice-2024-07.pdf": {"total_pages": 1, "text_pages": 0, "verdict": "Yes"},
+  "POLICY.PDF": {"total_pages": 1, "text_pages": 1, "verdict": "No"}
 }
