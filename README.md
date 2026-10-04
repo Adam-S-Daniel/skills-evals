@@ -61,6 +61,9 @@ evals/
   review-bash-ci-reliability/  # A/B eval, Class A: bash CI-reliability findings
     fixture.yaml           # prompt, objective checks (file_matches over the seed scripts), rubric
     seed/                  # a release pipeline with the findings baked in
+  embeddable-tool-pages/   # A/B eval, Class A: publish a tool and preserve site wiring
+    fixture.yaml           # prompt, parsed front matter, asset digest, preservation checks, rubric
+    seed/                  # a wired Tools collection, an existing tool, and a standalone app
   vendor-release-impact-issues/  # A/B eval, Class A: draft GitHub issues for a
                            # vendor's release notes' effect on a repo
     fixture.yaml           # prompt, objective checks (quote/link/title hygiene), rubric
@@ -68,6 +71,9 @@ evals/
   rename-pdfs/             # A/B eval, Class A: rename a folder of PDFs by content
     fixture.yaml           # prompt, objective checks (listing + content digests), rubric
     seed/inbox/            # six committed PDFs built by ../make_pdfs.py
+  pdf-ocr-audit/           # A/B eval, Class A: audit synthetic PDFs for OCR needs
+    fixture.yaml           # prompt, objective report checks + source immutability, rubric
+    seed/archive/          # eight committed PDFs; generator and answer key live outside seed/
   skills-doctor/           # A/B eval, Class B: diagnose what a session is
     bucketed-account-store/ # actually being delivered, when the account store
       fixture.yaml         # is bucketed per account and its copy of a skill is

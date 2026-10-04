@@ -156,11 +156,12 @@ same file.
   and can derail a run before it reaches the fixture's own surface.
   `gh pr list --help` is still an ordinary `pr-list.json` read.
 
-### Optional local label writes
+### Optional local writes
 
 The default remains read-only. Without `write-policy.json` in the payload
-directory, every write gets the original 403 response, and reads return the
-original payload bytes. Any existing local label state is ignored.
+directory, every write gets the original 403 response, and local label state
+is ignored. Without a timeline configured either, reads return their original
+payload bytes and invocation records.
 
 A fixture can opt into specific label additions by supplying this JSON:
 
@@ -190,8 +191,10 @@ and its equivalent hashed grant, fail closed. Hashing hides the plaintext grant
 from a casual reader, but hashes are not secrets: enumerable labels can be
 guessed and checked. A digest is not encryption.
 
-The top-level key and each entry's keys are exact; unknown keys, duplicate JSON
-keys, duplicate entries, non-list collections and invalid values fail closed.
+Plain label entries have exactly the three keys shown above; hashed entries
+have exactly the `sha256` key. The top-level keys and each entry's keys are
+exact; unknown keys, duplicate JSON keys, duplicate entries, non-list
+collections and invalid values fail closed.
 Repositories must be canonical `owner/name` strings with ASCII letters,
 digits, underscores, periods or hyphens, with each component starting with a
 letter or digit. Numbers are positive JSON integers, excluding booleans.
@@ -209,7 +212,8 @@ spelling is rejected, including attached values. Repeated repositories are last-
 but any missing or empty repository value rejects the edit. Exactly one label
 flag is allowed; repeated labels (including duplicates or mixed spellings)
 and comma-separated labels reject the edit. Extra flags or positional
-arguments, other write verbs, and REST or GraphQL mutations still get a 403.
+arguments and REST or GraphQL mutations still get a 403. The only other
+permittable write is the recorded workflow dispatch described below.
 
 Each permitted target needs `pr-view-<number>.json` containing an object with
 a `labels` array. Labels may be strings or objects with a nonempty printable
@@ -247,6 +251,108 @@ closed, including broken symlinks. State updates use atomic replacement under
 the dedicated lock. Policy, state and the workspace anchor
 remain ordinary local files, with the same evidence-editing trust boundary
 described below.
+
+#### Recorded workflow dispatches
+
+The same `write-policy.json` may contain `workflow_run` instead of or alongside
+`pr_edit_add_label`. At least one of those two keys must exist; omitted
+collections are empty, and both collections may be empty. For example:
+
+```json
+{
+  "workflow_run": [
+    {"repo": "example-org/example-site", "workflow": "deploy-preview"}
+  ]
+}
+```
+
+Workflow rows have exactly `repo` and `workflow`; duplicate entries or JSON
+keys and invalid values fail closed. Repositories follow the label-policy
+format above. Workflow names contain ASCII letters, digits, underscores,
+periods or hyphens and start with a letter or digit. This permits names such
+as `deploy-preview` or `deploy-preview.yml`, with no path or URL aliases.
+
+Only `gh workflow run <workflow> --repo <repo>` is permitted, with the exact
+repository/workflow tuple granted. Repository spellings and last-wins
+behavior match label edits; `GH_REPO` cannot authorize dispatch. Missing or
+empty repository values, extra positionals, and all other flags, including
+`--ref`, input fields, and help, are refused. Other workflow verbs remain
+refused. An ungranted dispatch returns the original 403 before any dispatch
+payload is looked up.
+
+A granted dispatch requires the exact normalized
+`workflow-run-<workflow>.json` response (or the ordinary `.txt` fallback).
+It must be a JSON object with a positive integer `databaseId`, excluding
+booleans; additional fields are preserved. Success returns its original
+bytes, exit 0, and the usual `class=write` log record. Missing, unreadable,
+linked, non-file or malformed responses fail with a safe workflow error,
+exit 1 and one failure record. Dispatch changes no state or payload and
+never reaches a network. The fixture author supplies later `run list` and
+`run view <id>` responses carrying that same recorded ID.
+
+### Optional call-count timelines
+
+Without `timeline.json` in the payload directory, all existing response and
+invocation-log bytes are unchanged. Stale timeline state is ignored, and no
+timeline lock is created. A fixture can supply a script of explicit response
+paths:
+
+```json
+{
+  "timelines": {
+    "run-list.json": ["timeline/list-1.json", "timeline/list-2.json", "timeline/list-3.json"],
+    "run-view-7001.json": ["timeline/view-1.json", "timeline/view-2.json"],
+    "pr-checks-12.json": ["timeline/checks-1.json", "timeline/checks-2.json"]
+  }
+}
+```
+
+The top-level key is exactly `timelines`, whose value is a mapping (an empty
+mapping is valid). Supported normalized keys are `run-list.json`,
+`run-view-<id>.json`, `run-view-<id>.log`, `pr-checks.json`, and
+`pr-checks-<number>.json`. IDs are positive decimal integers of at most 20
+digits with no leading zeros. Every sequence is a nonempty array of explicit
+relative response paths. Absolute paths, backslashes, empty path components,
+`.` or `..` components, links at the response file itself, links escaping the
+payload directory, missing/unreadable responses, and non-file responses are
+rejected. Directory links resolving within the payload directory are allowed.
+Timeline responses are returned byte for byte, including line endings;
+their contents are not parsed or reserialized. Ordinary ignored formatting
+flags still do not select fields.
+
+Each mapped read increments an independent counter for its normalized key:
+`run list`, each `run view` ID, JSON versus log views, and each `pr checks`
+target do **not** share a counter. Flag ordering does not create a new
+counter. The first call serves the first response, the second the second,
+and exhausted scripts repeat their last response while counts continue
+increasing. Only calls advance the script; neither the clock, sleeps nor
+unmapped reads change the counters.
+
+Counts live in `.gh-timeline-state.json` in the anchored log workspace:
+`{"counts": {"run-list.json": 3}}`. Absence means fresh state. Stored
+counts must be positive JSON integers, excluding booleans, and their keys
+must exist in the current timeline configuration. Malformed configuration,
+duplicate JSON keys, invalid state or unsafe paths fail closed with
+`gh: invalid local timeline configuration or state`, exit 1, no payload and
+one failure record. Every payload read validates an existing timeline,
+including reads whose keys are not mapped. Version/help/usage retain their
+existing behavior, and writes follow their own policy before timeline lookup.
+
+Advancing reads append the 1-based call count after `exit=`:
+
+```text
+--- invocation (class=read key=run-list.json exit=0 count=3) --- ["run", "list"]
+```
+
+The dedicated `.gh-timeline-state.lock` uses a persistent regular-file inode
+and exclusive `flock`, covering fresh configuration/state reads, response
+selection, atomic state replacement and the invocation record. Lock links,
+non-files, failures and replaced inodes fail closed. The lock is released
+before output, so a caller's blocked pipe does not stall other calls.
+Failed output keeps its consumed count and corrects only its exact log
+record, preserving any records appended meanwhile. Configuration, state,
+lock and the anchor remain ordinary workspace evidence under the same local
+editing trust boundary as label state.
 
 ### Classes, and what each one does
 
@@ -372,7 +478,7 @@ writes the anchor by hand — one line, the workspace's absolute path, at
 | Class | When | Result |
 |---|---|---|
 | `read` | a non-mutating call with a payload | the payload on stdout, exit 0 |
-| `write` | `pr merge`, `pr close`, `workflow run`, `run rerun`, `gh api -X POST/PATCH/PUT/DELETE`, `gh api -f/-F/--input` with no method, plus the verbs that would write the arm's workspace or reach the network (`pr checkout`, `repo clone`, `run download`, `release download`, `issue develop`) | a real-shaped `HTTP 403: Resource not accessible by personal access token`, exit 1; only policy-authorized `pr edit` label additions update local state and exit 0 |
+| `write` | `pr merge`, `pr close`, `workflow run`, `run rerun`, `gh api -X POST/PATCH/PUT/DELETE`, `gh api -f/-F/--input` with no method, plus the verbs that would write the arm's workspace or reach the network (`pr checkout`, `repo clone`, `run download`, `release download`, `issue develop`) | a real-shaped `HTTP 403: Resource not accessible by personal access token`, exit 1; policy-authorized `pr edit` label additions and recorded `workflow run` responses exit 0 |
 | `unknown` | a read with no payload, or one that will not decode as UTF-8 | `gh: Not Found (HTTP 404)`, exit 1 |
 
 `gh api graphql` is decided by its DOCUMENT, not by its method or its body

@@ -1,0 +1,10 @@
+{
+  "signed-lease-scan.pdf": {"total_pages": 2, "text_pages": 2, "verdict": "No"},
+  "quarterly-report.pdf": {"total_pages": 2, "text_pages": 0, "verdict": "Yes"},
+  "project-brief.pdf": {"total_pages": 2, "text_pages": 1, "verdict": "Partial"},
+  "meeting-notes.pdf": {"total_pages": null, "text_pages": null, "verdict": "Inaccessible"},
+  "scanned-invoice.pdf": {"total_pages": 1, "text_pages": 1, "verdict": "No"},
+  "annual-report.pdf": {"total_pages": 2, "text_pages": 2, "verdict": "No"},
+  "statement-2024-q1.pdf": {"total_pages": 1, "text_pages": 0, "verdict": "Yes"},
+  "POLICY.PDF": {"total_pages": 1, "text_pages": 1, "verdict": "No"}
+}
