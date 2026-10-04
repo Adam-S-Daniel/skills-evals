@@ -1,0 +1,14 @@
+{
+  "pr_edit_add_label": [
+    {
+      "repo": "example-org/example-site",
+      "number": 512,
+      "label": "decap-cms/draft"
+    },
+    {
+      "repo": "example-org/example-site",
+      "number": 518,
+      "label": "decap-cms/pending_publish"
+    }
+  ]
+}
