@@ -198,7 +198,8 @@ def _failure_hint(leg: dict) -> str:
     if name == "agents-only":
         # Expected `visible`, got invisible: the one leg with no CLAUDE.md.
         return ("this layout has AGENTS.md and no CLAUDE.md, which Claude Code "
-                "2.1.277 reads natively (its release note); check the recorded "
+                "2.1.277 reads natively (its release note, unmeasured here until "
+                "this leg first passes); check the recorded "
                 "claude --version first, since an older CLI is expected to fail "
                 "here, and only then suspect a native-loading regression; see "
                 "README \"Guidance-bridge canary\".")
