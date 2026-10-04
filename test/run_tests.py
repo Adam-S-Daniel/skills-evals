@@ -15,6 +15,7 @@ import atexit
 import contextlib
 import copy
 import fnmatch
+import fcntl
 import hashlib
 import io
 import itertools
@@ -24,6 +25,7 @@ import builtins
 import os
 import random
 import re
+import select
 import shlex
 import shutil
 import subprocess
@@ -7900,6 +7902,520 @@ exit 0
                          "an id carrying both an opus and a haiku token "
                          "ranks by the weaker rung, regardless of which "
                          "word appears first in the id string")
+
+
+class TestGhWriteAllowlist(unittest.TestCase):
+    """Exercise opt-in writes through isolated executable copies, never Git."""
+
+    GH_SOURCE = REPO_ROOT / "harness" / "fakes" / "gh"
+    REPO = "example-org/example-site"
+    ENTRIES = [
+        {"repo": REPO, "number": 512, "label": "decap-cms/draft"},
+        {"repo": REPO, "number": 518, "label": "decap-cms/pending_publish"},
+    ]
+
+    def setUp(self):
+        self.root = Path(tempfile.mkdtemp(prefix="gh-label-test-"))
+        self.owned_root = self.root.resolve()
+        self.addCleanup(self._cleanup)
+        self.ws = self._workspace("workspace")
+
+    def _cleanup(self):
+        self.assertEqual(self.root.resolve(), self.owned_root)
+        self.assertEqual(self.root.parent, Path(tempfile.gettempdir()))
+        self.assertTrue(self.root.name.startswith("gh-label-test-"))
+        shutil.rmtree(self.root)
+
+    def _workspace(self, name):
+        ws = self.root / name
+        (ws / "bin").mkdir(parents=True)
+        (ws / ".git").mkdir()
+        # Only our anchor is created: no config, objects, refs or credentials.
+        (ws / ".git" / "workspace-root").write_text(str(ws) + "\n")
+        shutil.copy2(self.GH_SOURCE, ws / "bin" / "gh")
+        (ws / "bin" / "gh").chmod(0o755)
+        replay = ws / ".gh" / "replay"
+        replay.mkdir(parents=True)
+        for entry in self.ENTRIES:
+            self._json(replay / f"pr-view-{entry['number']}.json",
+                       {"number": entry["number"], "state": "OPEN",
+                        "labels": [{"name": "existing", "color": "abcdef"}],
+                        "title": "Recorded title"})
+        self._json(replay / "pr-list.json", [
+            {"number": e["number"], "state": "OPEN", "labels": []}
+            for e in self.ENTRIES] + [{"number": 519, "labels": ["unrelated"]}])
+        return ws
+
+    @staticmethod
+    def _json(path, value):
+        path.write_text(json.dumps(value) + "\n", encoding="utf-8")
+
+    def _policy(self, document=None, ws=None):
+        ws = ws or self.ws
+        self._json(ws / ".gh/replay/write-policy.json",
+                   document if document is not None else {"pr_edit_add_label": self.ENTRIES})
+
+    def _env(self, ws=None, repo=None, replay=None):
+        ws = ws or self.ws
+        return {"PATH": os.environ.get("PATH", os.defpath), "HOME": str(self.root), "LANG": "C.UTF-8",
+               "GH_REPLAY_DIR": str(replay or ws / ".gh/replay"),
+               "GH_REPO": repo or self.REPO, "GH_TOKEN": "", "GITHUB_TOKEN": ""}
+
+    def _call(self, args, *, ws=None, repo=None, replay=None, cwd=None):
+        ws = ws or self.ws
+        proc = subprocess.run([str(ws / "bin/gh"), *args],
+                              cwd=cwd or ws, env=self._env(ws, repo, replay), capture_output=True,
+                              timeout=10)
+        record = (ws / ".gh-invocations.log").read_text().splitlines()[-1]
+        self.assertIn(f"exit={proc.returncode})", record)
+        self.assertNotIn(b"Traceback", proc.stderr)
+        return proc
+
+    def _edit(self, number=512, label="decap-cms/draft", **kwargs):
+        return self._call(["pr", "edit", str(number), "--repo", self.REPO,
+                           "--add-label", label], **kwargs)
+
+    def _reject(self, args, *, configuration=False):
+        before = (self.ws / ".gh-label-state.json").read_bytes() if (
+            self.ws / ".gh-label-state.json").exists() else None
+        proc = self._call(args)
+        self.assertEqual(proc.returncode, 1, args)
+        self.assertEqual(proc.stdout, b"")
+        self.assertIn(b"gh:", proc.stderr)
+        if configuration:
+            self.assertEqual(proc.stderr, b"gh: invalid local label configuration or response\n")
+        else:
+            self.assertIn(b"HTTP 403", proc.stderr)
+        after = (self.ws / ".gh-label-state.json").read_bytes() if (
+            self.ws / ".gh-label-state.json").exists() else None
+        self.assertEqual(after, before)
+
+    def test_no_policy_preserves_exact_refusal_and_raw_read_bytes(self):
+        (self.ws / ".gh-label-state.json").write_bytes(b"invalid ignored state")
+        args = ["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"]
+        proc = self._call(args)
+        self.assertEqual(proc.returncode, 1)
+        self.assertEqual(proc.stdout, b"")
+        self.assertEqual(proc.stderr,
+            b'failed to run "gh pr edit": HTTP 403: Resource not accessible by personal access token '
+            b'(https://api.github.com/repos/example-org/example-site/pulls/512)\n'
+            b'gh: the token available here has read-only scopes.\n')
+        self.assertEqual((self.ws / ".gh-invocations.log").read_text(),
+            '--- invocation (class=write key=pr-edit-512.json exit=1) --- ' + json.dumps(args) + '\n')
+        path = self.ws / ".gh/replay/pr-view-512.json"
+        self.assertEqual(self._call(["pr", "view", "512"]).stdout, path.read_bytes())
+        self.assertEqual((self.ws / ".gh-label-state.json").read_bytes(), b"invalid ignored state")
+        self.assertFalse((self.ws / ".gh-label-state.lock").exists())
+
+    def test_two_edits_read_back_in_view_list_and_preserve_payloads(self):
+        self._policy()
+        replay = self.ws / ".gh/replay"
+        before = {p.name: p.read_bytes() for p in replay.iterdir()}
+        for entry in self.ENTRIES:
+            proc = self._edit(entry["number"], entry["label"])
+            self.assertEqual((proc.returncode, proc.stdout, proc.stderr), (0, b"", b""))
+            row = json.loads(self._call(["pr", "view", str(entry["number"]), "--json", "labels"]).stdout)
+            self.assertEqual(row["labels"], [{"name": "existing", "color": "abcdef"},
+                                            {"name": entry["label"]}])
+            self.assertEqual(row["title"], "Recorded title")
+        rows = json.loads(self._call(["pr", "list", "--json", "number,labels"]).stdout)
+        self.assertEqual([r["labels"] for r in rows],
+                         [[{"name": e["label"]}] for e in self.ENTRIES] + [["unrelated"]])
+        self.assertEqual(before, {p.name: p.read_bytes() for p in replay.iterdir()})
+        self.assertEqual(list((self.ws / ".git").iterdir()), [self.ws / ".git/workspace-root"])
+
+    def test_flag_spellings_order_and_last_repo_win(self):
+        self._policy()
+        for repo in (["--repo", self.REPO], ["--repo=" + self.REPO], ["-R", self.REPO],
+                     ["-R" + self.REPO], ["-R=" + self.REPO]):
+            for label in (["--add-label", "decap-cms/draft"], ["--add-label=decap-cms/draft"]):
+                for args in (["pr", "edit", "512", *repo, *label],
+                             [*repo, "pr", *label, "edit", "512"],
+                             ["pr", "edit", "512", "--repo", "other-org/other-site", *repo, *label]):
+                    with self.subTest(args=args):
+                        self.assertEqual(self._call(args).returncode, 0)
+        row = json.loads(self._call(["pr", "view", "512"]).stdout)
+        self.assertEqual(len(row["labels"]), 2, "repeated successful edits are idempotent")
+
+    def test_nonexistent_short_label_spellings_are_refused(self):
+        self._policy()
+        for label in (["-l", "decap-cms/draft"], ["-l=decap-cms/draft"],
+                      ["-ldecap-cms/draft"]):
+            with self.subTest(label=label):
+                self._reject(["pr", "edit", "512", "--repo", self.REPO, *label])
+
+    def test_wrong_tuple_extra_flags_positionals_and_missing_values_refused(self):
+        self._policy()
+        valid = ["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"]
+        cases = [valid[:3] + valid[5:],  # GH_REPO cannot authorize a write
+                 ["pr", "edit", "518", *valid[3:]],
+                 ["pr", "edit", "0512", *valid[3:]],
+                 ["pr", "edit", "0", *valid[3:]],
+                 ["pr", "edit", "https://github.com/" + self.REPO + "/pull/512", *valid[3:]],
+                 valid + ["extra"], valid + ["--", "--title", "text"],
+                 valid + ["--title", "text"], valid + ["--body-file", "-"],
+                 valid + ["--remove-label", "existing"], valid + ["--help"],
+                 valid + ["--add-label", "decap-cms/draft"], valid + ["-l", "decap-cms/draft"],
+                 valid + ["--repo"], ["pr", "edit", "512", "--repo", "--repo", self.REPO, *valid[5:]],
+                 valid[:-1], valid[:-2] + ["--add-label="], valid + ["--repo="],
+                 valid + ["-ldecap-cms/draft"], ["pr", "edit", "9" * 5000, *valid[3:]]]
+        for repo in ("other-org/other-site", "https://github.com/" + self.REPO, self.REPO + "/", self.REPO.upper()):
+            cases.append(valid[:4] + [repo] + valid[5:])
+        for label in ("wrong", "decap-cms/pending_publish", "decap-cms/draft,existing", " decap-cms/draft", "decap-cms/draft\n"):
+            cases.append(valid[:-1] + [label])
+        for args in cases:
+            with self.subTest(args=args):
+                self._reject(args)
+
+    def test_every_other_write_and_api_mutation_remains_refused(self):
+        self._policy()
+        namespace = {"__name__": "gh_test", "__file__": str(self.ws / "bin/gh")}
+        exec(compile(self.GH_SOURCE.read_text(), str(self.GH_SOURCE), "exec"), namespace)
+        writes = namespace["WRITE_SUBCOMMANDS"] | {
+            ("pr", "close"), ("pr", "merge"), ("issue", "edit"), ("workflow", "run")}
+        for command, verb in sorted(writes - {("pr", "edit")}):
+            with self.subTest(command=command, verb=verb):
+                self._reject([command, verb, "512", "--repo", self.REPO])
+        for args in (["api", "repos/" + self.REPO + "/issues/512/labels", "-X", "POST"],
+                     ["api", "repos/" + self.REPO + "/issues/512/labels", "-f", "labels[]=decap-cms/draft"],
+                     ["api", "graphql", "-f", "query=mutation{addLabelsToLabelable{clientMutationId}}"]):
+            self._reject(args)
+
+    def test_policy_is_data_not_hardcoded_to_two_prs(self):
+        self._policy({"pr_edit_add_label": [{"repo": self.REPO, "number": 519, "label": "custom"}]})
+        self._json(self.ws / ".gh/replay/pr-view-519.json", {"labels": []})
+        self.assertEqual(self._edit(519, "custom").returncode, 0)
+        self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"])
+
+    def test_labels_only_and_string_labels_supported(self):
+        self._policy()
+        self._json(self.ws / ".gh/replay/pr-view-512.json", {"labels": ["existing"]})
+        self.assertEqual(self._edit().returncode, 0)
+        self.assertEqual(json.loads(self._call(["pr", "view", "512"]).stdout),
+                         {"labels": ["existing", "decap-cms/draft"]})
+
+    def test_malformed_policy_fails_closed_without_exposing_contents(self):
+        bad = [[], {}, {"pr_edit_add_label": {}}, {"pr_edit_add_label": [], "unknown": 1},
+               {"pr_edit_add_label": [self.ENTRIES[0], self.ENTRIES[0]]},
+               {"pr_edit_add_label": [None]}]
+        for field, value in (("repo", "https://github.com/example-org/example-site"), ("repo", "../x"),
+                             ("repo", ""), ("number", True), ("number", 0), ("number", "512"),
+                             ("number", 512.0), ("label", ""), ("label", "bad\nlabel"),
+                             ("label", " a"), ("label", "a,b"), ("label", {})):
+            bad.append({"pr_edit_add_label": [dict(self.ENTRIES[0], **{field: value})]})
+        bad.append({"pr_edit_add_label": [dict(self.ENTRIES[0], unexpected=True)]})
+        for document in bad:
+            with self.subTest(document=document):
+                self._policy(document)
+                self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+                self._reject(["pr", "view", "512"], configuration=True)
+        path = self.ws / ".gh/replay/write-policy.json"
+        for contents in (b"not JSON private contents", b"\xff", b'{"pr_edit_add_label": [], "pr_edit_add_label": []}',
+                         b"[" * 10000 + b"0" + b"]" * 10000):
+            path.write_bytes(contents)
+            self._reject(["pr", "view", "512"], configuration=True)
+
+    def test_malformed_and_unauthorized_state_fails_closed(self):
+        self._policy()
+        path = self.ws / ".gh-label-state.json"
+        for state in ([], {}, {"pr_edit_add_label": [dict(self.ENTRIES[0], label="unauthorized")]},
+                      {"pr_edit_add_label": [dict(self.ENTRIES[0], number=True)]},
+                      {"pr_edit_add_label": [self.ENTRIES[0], self.ENTRIES[0]]}):
+            self._json(path, state)
+            self._reject(["pr", "view", "512"], configuration=True)
+            self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+        for raw in (b"bad state", b"\xff", b'{"pr_edit_add_label":[], "pr_edit_add_label":[]}',
+                    b"[" * 10000 + b"0" + b"]" * 10000):
+            path.write_bytes(raw)
+            self._reject(["pr", "view", "512"], configuration=True)
+
+    def test_invalid_baseline_or_closed_pr_never_writes_state(self):
+        self._policy()
+        path = self.ws / ".gh/replay/pr-view-512.json"
+        for row in ([], {}, {"labels": None}, {"labels": [42]}, {"labels": [{}]},
+                    {"labels": [{"name": 3}]}, {"labels": [], "number": 518},
+                    {"labels": [], "number": True}, {"labels": [], "state": "CLOSED"},
+                    {"labels": [], "state": "MERGED"}):
+            with self.subTest(row=row):
+                self._json(path, row)
+                self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+        path.write_bytes(b"bad JSON")
+        self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+        path.unlink()
+        self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+
+    def test_closed_list_row_rejects_edit_with_labels_only_view(self):
+        self._policy()
+        self._json(self.ws / ".gh/replay/pr-view-512.json", {"labels": []})
+        self._json(self.ws / ".gh/replay/pr-list.json", [{"number": 512, "labels": [], "state": "CLOSED"}])
+        self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+
+    def test_affected_read_payloads_fail_closed_after_write(self):
+        self._policy()
+        self.assertEqual(self._edit().returncode, 0)
+        for key, values in (("pr-view-512.json", ["bad", [], {"labels": [None]}, {"labels": [], "number": 518}]),
+                            ("pr-list.json", ["bad", {}, [{}], [{"number": 512, "labels": None}]])):
+            for value in values:
+                self._json(self.ws / ".gh/replay" / key, value)
+                args = ["pr", "view", "512"] if key.startswith("pr-view") else ["pr", "list"]
+                self._reject(args, configuration=True)
+            (self.ws / ".gh/replay" / key).write_bytes(b"[" * 10000 + b"0" + b"]" * 10000)
+            self._reject(args, configuration=True)
+
+    def test_other_repo_and_workspace_cannot_receive_overlay(self):
+        self._policy()
+        other = self._workspace("other")
+        self._policy(ws=other)
+        self.assertEqual(self._edit(cwd=other).returncode, 0)
+        baseline = self.ws / ".gh/replay/pr-view-512.json"
+        for args in (["pr", "view", "512", "--repo", "other-org/other-site"],
+                     ["pr", "view", "512", "-Rother-org/other-site"]):
+            self.assertEqual(self._call(args).stdout, baseline.read_bytes())
+        self.assertEqual(self._call(["pr", "view", "512"], repo="other-org/other-site").stdout,
+                         baseline.read_bytes())
+        self.assertEqual(self._call(["pr", "view", "512"], ws=other).stdout,
+                         (other / ".gh/replay/pr-view-512.json").read_bytes())
+        self.assertFalse((other / ".gh-label-state.json").exists())
+        self.assertFalse((other / ".gh-invocations.log").read_text().find("class=write") >= 0)
+
+    def test_policy_removal_ignores_previous_overlay(self):
+        self._policy()
+        self.assertEqual(self._edit().returncode, 0)
+        (self.ws / ".gh/replay/write-policy.json").unlink()
+        self.assertEqual(self._call(["pr", "view", "512"]).stdout,
+                         (self.ws / ".gh/replay/pr-view-512.json").read_bytes())
+        self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"])
+
+    def test_policy_and_state_external_and_broken_symlinks_rejected(self):
+        outside = self.root / "outside.json"
+        self._json(outside, {"pr_edit_add_label": self.ENTRIES})
+        before = outside.read_bytes()
+        policy_path = self.ws / ".gh/replay/write-policy.json"
+        for target in (outside, self.root / "missing.json"):
+            policy_path.symlink_to(target)
+            self._reject(["pr", "view", "512"], configuration=True)
+            policy_path.unlink()
+        self._policy()
+        state_path = self.ws / ".gh-label-state.json"
+        for target in (outside, self.root / "missing.json"):
+            state_path.symlink_to(target)
+            self._reject(["pr", "view", "512"], configuration=True)
+            self._reject(["pr", "edit", "512", "--repo", self.REPO, "--add-label", "decap-cms/draft"], configuration=True)
+            state_path.unlink()
+        self.assertEqual(outside.read_bytes(), before)
+
+    def test_state_write_failure_is_logged_as_failure_and_leaves_no_temporary_file(self):
+        self._policy()
+        self._json(self.ws / ".gh-label-state.json", {"pr_edit_add_label": []})
+        before = (self.ws / ".gh-label-state.json").read_bytes()
+        namespace = {"__name__": "gh_test", "__file__": str(self.ws / "bin/gh")}
+        exec(compile(self.GH_SOURCE.read_text(), str(self.GH_SOURCE), "exec"), namespace)
+        error = io.StringIO()
+        with mock.patch.dict(os.environ, {"GH_REPLAY_DIR": str(self.ws / ".gh/replay")}), \
+             mock.patch("os.replace", side_effect=OSError("private data")) as replace, \
+             contextlib.redirect_stderr(error):
+            code = namespace["main"](["pr", "edit", "512", "--repo", self.REPO,
+                                      "--add-label", "decap-cms/draft"])
+        replace.assert_called_once()
+        self.assertEqual(code, 1)
+        self.assertEqual(error.getvalue(), "gh: invalid local label configuration or response\n")
+        self.assertIn("class=write key=pr-edit-512.json exit=1", (self.ws / ".gh-invocations.log").read_text())
+        self.assertEqual((self.ws / ".gh-label-state.json").read_bytes(), before)
+        self.assertEqual(set(self.ws.glob(".gh-label-*")),
+                         {self.ws / ".gh-label-state.json", self.ws / ".gh-label-state.lock"})
+
+    def _instrument_copy(self, wrappers):
+        """Inject bounded IPC into only the disposable executable, using its AST."""
+        binary = self.ws / "bin/gh"
+        tree = ast.parse(binary.read_text())
+        main_guard = next(i for i, node in enumerate(tree.body)
+                          if isinstance(node, ast.If) and isinstance(node.test, ast.Compare)
+                          and isinstance(node.test.left, ast.Name)
+                          and node.test.left.id == "__name__")
+        hook = ast.parse(textwrap.dedent('''
+            import select as _test_select
+            def _test_pause():
+                ready = int(os.environ["TEST_READY_FD"])
+                release = int(os.environ["TEST_RELEASE_FD"])
+                os.write(ready, b"x")
+                if not _test_select.select([release], [], [], 10)[0]:
+                    raise RuntimeError("test release timed out")
+                if os.read(release, 1) != b"x":
+                    raise RuntimeError("test release closed")
+        ''') + textwrap.dedent(wrappers))
+        tree.body[main_guard:main_guard] = hook.body
+        binary.write_text("#!/usr/bin/env python3\n" + ast.unparse(tree) + "\n")
+
+    STARTUP_PAUSE = '''
+        _original_load = load_label_policy
+        _loads = 0
+        def load_label_policy(*args):
+            global _loads
+            _loads += 1
+            result = _original_load(*args)
+            if _loads == 1:
+                _test_pause()
+            return result
+    '''
+
+    def _paused_edit(self, entry):
+        ready_read, ready_write = os.pipe()
+        release_read, release_write = os.pipe()
+        env = self._env()
+        env.update(TEST_READY_FD=str(ready_write), TEST_RELEASE_FD=str(release_read))
+        proc = subprocess.Popen(
+            [str(self.ws / "bin/gh"), "pr", "edit", str(entry["number"]),
+             "--repo", entry["repo"], "--add-label", entry["label"]],
+            cwd=self.ws, env=env, pass_fds=(ready_write, release_read),
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        os.close(ready_write)
+        os.close(release_read)
+        def cleanup():
+            if proc.poll() is None:
+                proc.kill()  # Only the process this helper started.
+            proc.communicate(timeout=10)
+            os.close(ready_read)
+            os.close(release_write)
+        self.addCleanup(cleanup)
+        return proc, ready_read, release_write
+
+    def _ready(self, running):
+        descriptor = running[1]
+        self.assertTrue(select.select([descriptor], [], [], 10)[0], "child never reached pause")
+        self.assertEqual(os.read(descriptor, 1), b"x")
+
+    def _release(self, running):
+        os.write(running[2], b"x")
+
+    def _finished(self, running, code=0):
+        stdout, stderr = running[0].communicate(timeout=10)
+        self.assertEqual(running[0].returncode, code, stderr)
+        self.assertEqual(stdout, b"")
+        self.assertEqual(stderr, b"" if code == 0 else
+                         b"gh: invalid local label configuration or response\n")
+
+    def test_overlapping_startup_snapshots_preserve_both_edits(self):
+        self._policy()
+        self._instrument_copy(self.STARTUP_PAUSE)
+        first = self._paused_edit(self.ENTRIES[0])
+        second = self._paused_edit(self.ENTRIES[1])
+        self._ready(first)
+        self._ready(second)  # Both processes have now read the empty startup state.
+        self._release(first)
+        self._finished(first)
+        self._release(second)
+        self._finished(second)
+        state = json.loads((self.ws / ".gh-label-state.json").read_text())
+        self.assertEqual(state, {"pr_edit_add_label": self.ENTRIES})
+        # Copies without IPC let ordinary reads verify the resulting overlays.
+        shutil.copy2(self.GH_SOURCE, self.ws / "bin/gh")
+        for entry in self.ENTRIES:
+            row = json.loads(self._call(["pr", "view", str(entry["number"])]).stdout)
+            self.assertIn({"name": entry["label"]}, row["labels"])
+        rows = json.loads(self._call(["pr", "list"]).stdout)
+        self.assertEqual([row["labels"] for row in rows[:2]],
+                         [[{"name": entry["label"]}] for entry in self.ENTRIES])
+        writes = [line for line in (self.ws / ".gh-invocations.log").read_text().splitlines()
+                  if "class=write" in line]
+        self.assertEqual(len(writes), 2)
+        self.assertTrue(all("exit=0)" in line for line in writes))
+
+    def test_exclusive_lock_covers_fresh_read_and_replacement(self):
+        self._policy()
+        self._instrument_copy('''
+            _original_load = load_label_policy
+            _loads = 0
+            def load_label_policy(*args):
+                global _loads
+                _loads += 1
+                if _loads == 2:
+                    _test_pause()
+                return _original_load(*args)
+            _original_replace = os.replace
+            def _replace(*args):
+                _test_pause()
+                return _original_replace(*args)
+            os.replace = _replace
+        ''')
+        running = self._paused_edit(self.ENTRIES[0])
+        for stage in ("fresh read", "replacement"):
+            self._ready(running)
+            with open(self.ws / ".gh-label-state.lock", "r+b") as lock:
+                with self.assertRaises(BlockingIOError, msg=stage):
+                    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._release(running)
+        self._finished(running)
+        # The completed process releases the dedicated lock.
+        with open(self.ws / ".gh-label-state.lock", "r+b") as lock:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+    def test_revoked_grant_after_startup_is_revalidated(self):
+        self._policy()
+        self._instrument_copy(self.STARTUP_PAUSE)
+        running = self._paused_edit(self.ENTRIES[0])
+        self._ready(running)
+        self._policy({"pr_edit_add_label": [self.ENTRIES[1]]})
+        self._release(running)
+        self._finished(running, code=1)
+        self.assertFalse((self.ws / ".gh-label-state.json").exists())
+        self.assertIn("class=write key=pr-edit-512.json exit=1",
+                      (self.ws / ".gh-invocations.log").read_text())
+
+    def test_state_changed_after_startup_is_revalidated(self):
+        self._policy()
+        self._instrument_copy(self.STARTUP_PAUSE)
+        running = self._paused_edit(self.ENTRIES[0])
+        self._ready(running)
+        state = self.ws / ".gh-label-state.json"
+        state.write_bytes(b"malformed state")
+        self._release(running)
+        self._finished(running, code=1)
+        self.assertEqual(state.read_bytes(), b"malformed state")
+
+    def test_lock_links_and_nonfiles_fail_closed(self):
+        self._policy()
+        outside = self.root / "outside-lock"
+        outside.write_bytes(b"unchanged")
+        lock = self.ws / ".gh-label-state.lock"
+        for target in (outside, self.root / "missing-lock", self.ws / "internal-lock"):
+            with self.subTest(target=target.name):
+                lock.symlink_to(target)
+                try:
+                    self._reject(["pr", "edit", "512", "--repo", self.REPO,
+                                  "--add-label", "decap-cms/draft"], configuration=True)
+                finally:
+                    lock.unlink()
+        for kind in ("directory", "fifo"):
+            with self.subTest(kind=kind):
+                if kind == "directory":
+                    lock.mkdir()
+                else:
+                    os.mkfifo(lock)
+                try:
+                    self._reject(["pr", "edit", "512", "--repo", self.REPO,
+                                  "--add-label", "decap-cms/draft"], configuration=True)
+                finally:
+                    lock.rmdir() if kind == "directory" else lock.unlink()
+        self.assertEqual(outside.read_bytes(), b"unchanged")
+        self.assertFalse((self.ws / "internal-lock").exists())
+
+    def test_lock_os_errors_fail_closed_and_log_failure(self):
+        self._policy()
+        namespace = {"__name__": "gh_test", "__file__": str(self.ws / "bin/gh")}
+        exec(compile(self.GH_SOURCE.read_text(), str(self.GH_SOURCE), "exec"), namespace)
+        for target in ("os.open", "fcntl.flock"):
+            with self.subTest(target=target):
+                error = io.StringIO()
+                with mock.patch.dict(os.environ, {"GH_REPLAY_DIR": str(self.ws / ".gh/replay")}), \
+                     mock.patch(target, side_effect=OSError("private details")), \
+                     contextlib.redirect_stderr(error):
+                    code = namespace["main"](["pr", "edit", "512", "--repo", self.REPO,
+                                              "--add-label", "decap-cms/draft"])
+                self.assertEqual(code, 1)
+                self.assertEqual(error.getvalue(), "gh: invalid local label configuration or response\n")
+                self.assertFalse((self.ws / ".gh-label-state.json").exists())
+                self.assertIn("class=write key=pr-edit-512.json exit=1",
+                              (self.ws / ".gh-invocations.log").read_text().splitlines()[-1])
 
 
 class Issue84Fixture:
