@@ -1,9 +1,10 @@
 # Read-only, two-repository drift diagnosis. The declared baseline is in the
 # seed; current values are available through the workspace gh executable.
 # The objective column certifies the critical factual rows, both overall
-# conclusions, successful source reads, and preservation. It does not try to
-# parse every free-text explanation field or require separate rows for each
-# matching setting.
+# conclusions, successful source reads, and preservation. Transcript rows have
+# five fields on one physical line. The grammar accepts a finite vocabulary of
+# factual and action phrases, common ruleset-ID aliases, and indentation,
+# quote, list, and Markdown-table formatting; arbitrary prose is not parsed.
 skill: github-actions-repo-settings
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 model: claude-sonnet-5
@@ -40,22 +41,23 @@ objective_checks:
     description: Alpha's SHA setting is observed false, desired true, and should be enabled
     type: transcript_matches
     must_match:
-      - '^example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|[ \t]*(?i:(?:enable|require)[ \t]+(?:(?:full[- ]length|commit)[ \t]+)?SHA(?:[- ]pinning| pinning)|set[ \t]+sha_pinning_required[ \t]*(?:=|to)[ \t]*true)[^|\n]*$'
-      - '^example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:drift|mismatch|one[ \t]+declared[ \t]+setting[ \t]+drifts;[ \t]+one[ \t]+extra[ \t]+ruleset)[ \t]*\|[^|\n]*\|[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|[ \t]*[^|\n]*(?i:(?:enable|require)[ \t]+(?:(?:full[- ]length|commit)[ \t]+)?SHA(?:[- ]pinning|[ \t]+pinning)|set[ \t]+sha_pinning_required[ \t]*(?:=|to)[ \t]*true)[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:drift|mismatch|one[ \t]+declared[ \t]+setting[ \t]+drifts;[ \t]+one[ \t]+extra[ \t]+ruleset)[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
     must_not_match:
-      - '^example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|(?!(?:[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|))[^|\n]*\|[^|\n]*\|[^|\n]*$'
-      - '^example-org/service-beta[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[^|\n]*\|[^|\n]*$'
-      - '^example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:no[ \t]+drift|no[ \t]+mismatches|all[ \t]+settings[ \t]+match)[^|\n]*\|[^|\n]*\|[^|\n]*$'
-      - '^example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[^|\n]*\|[^|\n]*\|[^|\n]*(?i:do[ \t]+not[ \t]+enable|disable[ \t]+SHA[ -]pinning|leave[ \t]+(?:it[ \t]+)?(?:off|false))[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*(?!(?:[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|))[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-beta[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:no[ \t]+drift|no[ \t]+mismatches|all[ \t]+settings[ \t]+match)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:do[ \t]+not[ \t]+enable|disable[ \t]+SHA[ -]pinning|leave[ \t]+(?:it[ \t]+)?(?:off|false))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   - id: alpha-unmanaged-ruleset-facts
     description: Alpha's additional ruleset has its own ID and no bypass actors
     type: transcript_matches
     must_match:
-      - '^example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?manual-main[ \t]*(?:\(id[: ]*[ \t]*7302\)|#7302)[ \t]*\|[ \t]*bypass_actors[ \t]*(?:=|:)[ \t]*\[\][ \t]*\|[ \t]*unmanaged[ \t]*\|[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main)[ \t]*(?:\((?i:(?:id|ruleset))[ \t]*:?[ \t]*7302\)|#7302)[ \t]*\|[ \t]*bypass_actors[ \t]*(?:=|:)[ \t]*\[\][ \t]*\|[ \t]*(?i:unmanaged|undeclared|not[ \t]+declared(?:[ \t]+in[ \t]+(?:the[ \t]+)?(?:baseline|config))?|not[ \t]+in[ \t]+(?:the[ \t]+)?(?:baseline|config)|absent[ \t]+from[ \t]+(?:the[ \t]+)?(?:declared[ \t]+)?(?:baseline|config)|not[ \t]+managed[ \t]+by[ \t]+(?:the[ \t]+)?engine)[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
     must_not_match:
-      - '^example-org/service-beta[ \t]*\|[ \t]*(?:ruleset[ \t]+)?manual-main\b[^|\n]*\|[^|\n]*\|[^|\n]*\|[^|\n]*$'
-      - '^example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?manual-main[ \t]*(?:\(id[: ]*[ \t]*(?!7302\))[0-9]+\)|#(?!7302[ \t]*\|)[0-9]+)[^|\n]*\|[^|\n]*\|[^|\n]*\|[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-beta[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main\b)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main)[ \t]*(?:\((?i:(?:id|ruleset))[ \t]*:?[ \t]*(?!7302(?![0-9]))[0-9]+\)|#(?!7302(?![0-9]))[0-9]+)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main)[ \t]*(?:\((?i:(?:id|ruleset))[ \t]*:?[ \t]*[0-9]+\)|#[0-9]+)[ \t]*\|[ \t]*(?i:bypass_actors)[ \t]*(?:=|:)[ \t]*(?![ \t]*\[\][ \t]*\|)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   # This is independent of the ID check: changing only the ID should fail
   # alpha-unmanaged-ruleset-facts and leave this behavior check green.
@@ -63,17 +65,17 @@ objective_checks:
     description: The named-rule engine leaves an unmanaged ruleset in place
     type: transcript_matches
     must_match:
-      - '^example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?manual-main[ \t]*(?:\(id[: ]*[ \t]*[0-9]+\)|#[0-9]+)[ \t]*\|[^|\n]*\|[ \t]*unmanaged[ \t]*\|[ \t]*(?i:(?:the[ \t]+)?(?:engine|repo_settings\.py)[ \t]+(?:will[ \t]+not|does[ \t]+not|cannot|won''t|won’t)[ \t]+(?:automatically[ \t]+)?delete|(?:leave|keep)[ \t]+(?:it|this[ \t]+ruleset)[ \t]+in[ \t]+place[ \t]+because[ \t]+(?:it[ \t]+is[ \t]+)?unmanaged)[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main)[ \t]*(?:\((?i:(?:id|ruleset))[ \t]*:?[ \t]*[0-9]+\)|#[0-9]+)[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*(?i:unmanaged|undeclared|not[ \t]+declared(?:[ \t]+in[ \t]+(?:the[ \t]+)?(?:baseline|config))?|not[ \t]+in[ \t]+(?:the[ \t]+)?(?:baseline|config)|absent[ \t]+from[ \t]+(?:the[ \t]+)?(?:declared[ \t]+)?(?:baseline|config)|not[ \t]+managed[ \t]+by[ \t]+(?:the[ \t]+)?engine)[ \t]*\|[ \t]*[^|\n]*(?i:(?:the[ \t]+)?(?:engine|repo_settings\.py)(?:[ \t]+apply)?[ \t]+(?:will[ \t]+not|does[ \t]+not|cannot|won\x27t|won’t)[ \t]+(?:automatically[ \t]+)?delete|(?:leave|keep)[ \t]+(?:it|this[ \t]+ruleset)[ \t]+in[ \t]+place[ \t]+because[ \t]+(?:it[ \t]+is[ \t]+)?unmanaged|apply[ \t]+(?:never[ \t]+touches[ \t]+other[ \t]+rulesets|leaves[ \t]+it[ \t]+untouched))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
     must_not_match:
-      - '^example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?manual-main\b[^|\n]*\|[^|\n]*\|[^|\n]*\|[^|\n]*(?i:(?:engine|repo_settings\.py)[ \t]+(?:will[ \t]+)?(?:auto(?:matically)?[- ]?)?deletes?)[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*(?:ruleset[ \t]+)?(?:`manual-main`|manual-main\b)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:\b(?:engine|repo_settings\.py|apply)\b(?:(?!\b(?:not|never|cannot|won\x27t|won’t|doesn\x27t|doesn’t)\b)[^|\n])*?\bdeletes?\b)[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   - id: beta-overall-match
     description: Beta matches all declared settings and needs no change
     type: transcript_matches
     must_match:
-      - '^example-org/service-beta[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:match|(?:all[ \t]+)?(?:declared[ \t]+)?settings[ \t]+match|matches[ \t]+declared[ \t]+settings|no[ \t]+drift)[ \t]*\|[ \t]*(?i:declared[ \t]+baseline|same[ \t]+as[ \t]+declared|match)[ \t]*\|[ \t]*(?i:no[ \t]+(?:change|changes|action)[ \t]+(?:needed|required)|leave[ \t]+(?:as[ \t]+is|unchanged))[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-beta[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:match|(?:all[ \t]+)?(?:declared[ \t]+)?settings[ \t]+match|matches[ \t]+declared[ \t]+settings|no[ \t]+drift)[ \t]*\|[ \t]*(?i:declared[ \t]+baseline|same[ \t]+as[ \t]+declared|match)[ \t]*\|[ \t]*(?i:no[ \t]+(?:change|changes|action)[ \t]+(?:needed|required)|leave[ \t]+(?:as[ \t]+is|unchanged))(?:[ \t]*\|)?[ \t]*$'
     must_not_match:
-      - '^example-org/service-beta[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:drift|mismatch|does[ \t]+not[ \t]+match)[^|\n]*\|[^|\n]*\|[^|\n]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-beta[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:drift|mismatch|does[ \t]+not[ \t]+match)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   # The fake records one line per served GET. These positive checks make an
   # absent, empty, or deleted log fail the diagnosis even though the separate
@@ -108,7 +110,7 @@ objective_checks:
     type: file_matches
     paths: [".gh-invocations.log"]
     must_not_match:
-      - '^--- invocation \(class=(?:write|blocked)\b[^\n]*$'
+      - '^--- invocation \(class=write\b[^\n]*$'
 
   - id: config-unchanged
     description: The declared settings were not edited

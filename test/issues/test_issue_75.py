@@ -376,6 +376,134 @@ class TestIssue75(unittest.TestCase):
 
 
 
+    def test_all_four_factual_rows_accept_supported_formatting(self):
+        rows = GOOD.splitlines()
+        variants = {
+            "plain": GOOD,
+            "indented": "\n".join("  " + row for row in rows),
+            "quoted": "\n".join("  > " + row for row in rows),
+            "table-left": "\n".join("| " + row for row in rows),
+            "table-right": "\n".join(row + " |" for row in rows),
+            "full-table": "| repository | setting | observed | desired | recommendation |\n"
+                          "| --- | --- | --- | --- | --- |\n" +
+                          "\n".join("| " + row + " |" for row in rows),
+            **{f"bullet-{marker}": "\n".join(f"  {marker} | {row} |" for row in rows)
+               for marker in ("-", "*", "+")},
+        }
+        with workspace() as (root, child):
+            read_all(root, child)
+            for name, transcript in variants.items():
+                with self.subTest(format=name):
+                    results = check_results(child, transcript)
+                    assert all(results[key] for key in CHECK_IDS[:4]), results
+
+
+
+    def test_supported_aliases_and_phrases_pass_independently(self):
+        manual = GOOD.splitlines()[1]
+        sha = GOOD.splitlines()[0]
+        replacements = {
+            "recommendation-prose": (sha, sha.replace(
+                "enable SHA pinning", "run repo_settings.py apply to enable SHA pinning")),
+            "uppercase-id": (manual, manual.replace("(id 7302)", "(ID 7302)")),
+            "ruleset-id": (manual, manual.replace("(id 7302)", "(ruleset 7302)")),
+            "adjacent-id": (manual, manual.replace("manual-main (id 7302)", "manual-main(id7302)")),
+            "adjacent-number": (manual, manual.replace("manual-main (id 7302)", "manual-main#7302")),
+            "backticked-name": (manual, manual.replace("manual-main", "`manual-main`")),
+            "apply-never-touches": (manual, manual.replace(
+                "engine will not delete this ruleset", "apply never touches other rulesets")),
+            "apply-leaves-untouched": (manual, manual.replace(
+                "engine will not delete this ruleset", "apply leaves it untouched")),
+            "not-automatically-deleted": (manual, manual.replace(
+                "engine will not delete", "engine will not automatically delete")),
+            "spaced-bypass": (manual, manual.replace("bypass_actors=[]", "bypass_actors = []")),
+            "colon-bypass": (manual, manual.replace("bypass_actors=[]", "bypass_actors: []")),
+        }
+        for marker in ("not declared", "not declared in baseline",
+                       "not declared in config", "not in baseline", "not in config",
+                       "not managed by engine", "undeclared", "absent from declared baseline"):
+            replacements[f"desired-{marker}"] = (
+                manual, manual.replace("| unmanaged |", f"| {marker} |"))
+        with workspace() as (root, child):
+            read_all(root, child)
+            for name, (old, new) in replacements.items():
+                for wrapper in ("{row}", "| {row} |", "- | {row} |"):
+                    with self.subTest(phrase=name, wrapper=wrapper):
+                        transcript = GOOD.replace(old, wrapper.format(row=new), 1)
+                        results = check_results(child, transcript)
+                        assert all(results[key] for key in CHECK_IDS[:4]), results
+
+
+
+    def test_wrapped_contradictions_fail_their_relevant_checks(self):
+        contradictions = (
+            ("alpha-sha-drift", "example-org/service-alpha | actions.sha_pinning_required | true | false | no change"),
+            ("alpha-sha-drift", "example-org/service-alpha | overall | no mismatches | declared baseline | no change"),
+            ("alpha-sha-drift", "example-org/service-alpha | overall | no drift whatsoever | declared baseline | no change"),
+            ("alpha-unmanaged-ruleset-facts", "example-org/service-alpha | manual-main (id 7303) | bypass_actors=[] | unmanaged | review separately"),
+            ("alpha-unmanaged-ruleset-facts", "example-org/service-alpha | manual-main (id 7302) | bypass_actors=[RepositoryRole] | unmanaged | review separately"),
+            ("alpha-unmanaged-ruleset-facts", "example-org/service-beta | manual-main (id 7302) | bypass_actors=[] | unmanaged | review separately"),
+            ("alpha-unmanaged-ruleset-facts", "example-org/service-beta | manual-main | bypass_actors=[] | unmanaged | review separately"),
+            ("alpha-engine-does-not-delete", "example-org/service-alpha | manual-main (id 7302) | bypass_actors=[] | unmanaged | engine will delete this ruleset"),
+            ("alpha-engine-does-not-delete", "example-org/service-alpha | manual-main (id 7302) | bypass_actors=[] | unmanaged | engine will not delete this ruleset, but repo_settings.py apply deletes it"),
+            ("alpha-engine-does-not-delete", "example-org/service-alpha | manual-main (id 7302) | bypass_actors=[] | unmanaged | engine will not delete this ruleset, but repo_settings.py apply actually deletes it"),
+            ("alpha-engine-does-not-delete", "example-org/service-alpha | manual-main (id 7302) | bypass_actors=[] | unmanaged | engine will normally delete this ruleset"),
+            ("alpha-engine-does-not-delete", "example-org/service-alpha | manual-main | bypass_actors=[] | unmanaged | engine deletes this ruleset"),
+            ("beta-overall-match", "example-org/service-beta | overall | drift | declared baseline | change needed"),
+            ("beta-overall-match", "example-org/service-beta | overall | drift (needs correction) | declared baseline | change needed"),
+        )
+        wrappers = ("{row}", "  {row}", "  > {row}", "\t> > | {row} |",
+                    "| {row} |", "  - | {row} |", "* | {row} |", "+ | {row} |")
+        with workspace() as (root, child):
+            read_all(root, child)
+            for target, row in contradictions:
+                for wrapper in wrappers:
+                    with self.subTest(check=target, row=row, wrapper=wrapper):
+                        result = check_results(child, GOOD + "\n" + wrapper.format(row=row))
+                        assert not result[target], result
+
+
+
+    def test_wrong_ids_remain_rejected_with_new_aliases_and_wrappers(self):
+        wrong_ids = (
+            "manual-main (ID 7303)", "manual-main (ruleset 7303)",
+            "`manual-main` (id 7303)", "`manual-main` (ID 7303)",
+            "`manual-main` (ruleset 7303)", "ruleset `manual-main` #7303",
+        )
+        with workspace() as (root, child):
+            read_all(root, child)
+            for name in wrong_ids:
+                row = (f"example-org/service-alpha | {name} | bypass_actors=[] | "
+                       "unmanaged | review separately")
+                for wrapper in ("{row}", "  > {row}", "- | {row} |", "| {row} |"):
+                    with self.subTest(name=name, wrapper=wrapper):
+                        result = check_results(child, GOOD + "\n" + wrapper.format(row=row))
+                        assert not result["alpha-unmanaged-ruleset-facts"], result
+                        assert result["alpha-engine-does-not-delete"], result
+
+
+
+    def test_new_formatting_does_not_change_setting_owner_or_bypass_meaning(self):
+        mutations = (
+            ("alpha-sha-drift", "actions.sha_pinning_required", "actions.fork_pr_approval"),
+            ("alpha-sha-drift", "example-org/service-alpha", "example-org/service-beta"),
+            ("alpha-unmanaged-ruleset-facts", "example-org/service-alpha | manual-main",
+             "example-org/service-beta | manual-main"),
+            ("alpha-unmanaged-ruleset-facts", "bypass_actors=[]", "bypass_actors=[RepositoryRole]"),
+        )
+        with workspace() as (root, child):
+            read_all(root, child)
+            for target, original, wrong in mutations:
+                with self.subTest(check=target, wrong=wrong):
+                    rows = GOOD.splitlines()
+                    rows[0 if target == "alpha-sha-drift" else 1] = rows[
+                        0 if target == "alpha-sha-drift" else 1].replace(original, wrong, 1)
+                    transcript = "\n".join(f"- | {row} |" for row in rows)
+                    result = check_results(child, transcript)
+                    assert not result[target], result
+
+
+
     def test_all_regexes_are_line_anchored_and_constrained(self):
         for check in fixture()["objective_checks"]:
             if check["type"] not in {"transcript_matches", "file_matches"}:
