@@ -2937,7 +2937,9 @@ class TestIssue97(unittest.TestCase):
             with mock.patch("os.killpg"):
                 return fn(mock.MagicMock())
         if name == "_run_command":
-            return fn(["/usr/bin/true"], tmp, {}, None, None, **kwargs)
+            # Never signal a real process in this direct-call driver.
+            with mock.patch("os.killpg"):
+                return fn(["/usr/bin/true"], tmp, {}, None, None, **kwargs)
         if rel == "harness/guidance.py" and name == "deliver":
             return fn(tmp, scratch=tmp, dest_dir=tmp / "cfg", home=tmp / "home",
                       payload="x", **kwargs)

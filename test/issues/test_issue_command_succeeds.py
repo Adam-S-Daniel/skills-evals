@@ -88,6 +88,29 @@ class CommandSucceedsTests(unittest.TestCase):
         self.assertEqual(proc.wait.call_args.kwargs,
                          {"timeout": commands.CLEANUP_TIMEOUT_S})
 
+    def test_stop_process_refuses_a_mock_proc_without_signalling(self):
+        with mock.patch.object(commands.os, "killpg") as kill:
+            with self.assertRaises(ValueError):
+                commands._stop_process(mock.MagicMock())
+        kill.assert_not_called()
+
+    def test_stop_process_refuses_unsafe_pids_without_signalling(self):
+        for pid in (1, 0, -1, True):
+            with self.subTest(pid=pid), mock.patch.object(commands.os, "killpg") as kill:
+                with self.assertRaises(ValueError):
+                    commands._stop_process(mock.Mock(pid=pid))
+                kill.assert_not_called()
+
+    def test_run_command_with_a_bare_mock_popen_never_signals(self):
+        with mock.patch.object(commands.subprocess, "Popen",
+                               return_value=mock.MagicMock()), \
+                mock.patch.object(commands.os, "killpg") as kill:
+            try:
+                commands._run_command(["true"], self.ws, {}, None, None, 5)
+            except Exception:
+                pass  # Whatever it raises, it must not have signalled.
+        kill.assert_not_called()
+
     def test_argv_validation(self):
         for argv in (None, [], "python3", ("python3",), [1], [" "],
                      ["python3", None], ["python3", "\x00"]):

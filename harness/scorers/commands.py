@@ -80,9 +80,13 @@ def _stop_process(proc) -> None:
     import guidance
     guidance.check_timeout(CLEANUP_TIMEOUT_S, "_stop_process timeout",
                            guidance.SINK_TIMEOUT_REMEDY)
+    pid = proc.pid
+    # killpg(1, sig) is kill(-1, sig): it signals every process the user owns.
+    if type(pid) is not int or pid <= 1:
+        raise ValueError("refusing to signal process group of a non-positive or non-int pid")
     try:
         if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGKILL)
+            os.killpg(pid, signal.SIGKILL)
         elif proc.poll() is None:
             proc.kill()
     except ProcessLookupError:
