@@ -23,7 +23,7 @@ WHAT IT DOES, in order:
     from both train and the rotating validation population on every run.
  3. Builds two scratch registries from `git archive <ref>` of the local
     registry checkout: no `.git`, so nothing in them has a push path.
- 4. BASELINE: `harness/run_eval.py evals/<skill> --arm with_skill --trials N`
+ 4. BASELINE: `scripts/local_eval.py evals/<skill> --arm with_skill --trials N`
     against the first scratch copy.
  5. TRIGGER HALF, from Anthropic's skill-creator plugin: its
     `scripts/run_loop.py` description-optimization loop (stratified 60/40
@@ -37,7 +37,7 @@ WHAT IT DOES, in order:
     failed checks and transcripts. A diff naming any other file, or touching
     the frontmatter, is rejected before anything else runs.
  7. CANDIDATE: both halves applied to the second scratch copy and measured
-    with the same run_eval invocation.
+    through the same local_eval invocation.
  8. ACCEPT only if validation held (objective pass rate not lower; judge mean
     not lower by more than 0.5) AND train improved (objective pass rate
     higher by at least `--min-gain` (default .10), or equal with judge mean
@@ -80,10 +80,11 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 HARNESS_DIR = REPO_ROOT / "harness"
 EVALS_DIR = REPO_ROOT / "evals"
-RUN_EVAL = HARNESS_DIR / "run_eval.py"
+LOCAL_EVAL = REPO_ROOT / "scripts" / "local_eval.py"
 
 sys.path.insert(0, str(HARNESS_DIR))
 import run_eval  # noqa: E402
+import local_eval  # noqa: E402
 
 MIN_FIXTURES = 3
 DEFAULT_TRIALS = 3
@@ -121,9 +122,8 @@ class Runner:
     """The real thing. Tests substitute a fake with the same three methods."""
 
     def run_eval(self, argv: list[str]) -> int:
-        """`harness/run_eval.py` with `argv`; its exit code (0 pass, 1 a
-        check failed, 2 configuration error)."""
-        return subprocess.run([sys.executable, str(RUN_EVAL), *argv],
+        """Run the guarded local exhibit wrapper; 2 means refusal."""
+        return subprocess.run([sys.executable, str(LOCAL_EVAL), *argv],
                               check=False).returncode
 
     def run_description_loop(self, argv: list[str], *, cwd: Path,
@@ -563,15 +563,22 @@ Constraints (skills-evals#71):
 - Prefer the smallest edit that would plausibly fix the failures."""
 
 
-def run_paths(results: Path, label: str, skill: str, ts: str, fixture: str) -> Path:
-    return results / "runs" / label / skill / ts / fixture / ARM
+def run_paths(results: Path, label: str, skill: str, ts: str) -> Path:
+    """One empty local_eval destination for this skill, phase and timestamp."""
+    return results / "runs" / label / skill / ts
 
 
-def failure_evidence(arm_dir: Path) -> list[dict]:
+def trial_arm_dir(run_dir: Path, trial: int, skill: str, ts: str,
+                  fixture: str) -> Path:
+    return run_dir / f"t{trial}" / skill / ts / fixture / ARM
+
+
+def failure_evidence(run_dir: Path, skill: str, ts: str,
+                     fixture: str, trials: int) -> list[dict]:
     """Each trial's failed checks and the tail of its final reply."""
-    trial_dirs = sorted(arm_dir.glob(f"{run_eval.TRIAL_DIR_PREFIX}*")) or [arm_dir]
     evidence = []
-    for trial in trial_dirs:
+    for k in range(1, trials + 1):
+        trial = trial_arm_dir(run_dir, k, skill, ts, fixture)
         try:
             summary = json.loads((trial / "summary.json").read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -586,7 +593,7 @@ def failure_evidence(arm_dir: Path) -> list[dict]:
             reply = str(raw.get("result", "")) if isinstance(raw, dict) else ""
         except (OSError, ValueError):
             pass
-        evidence.append({"trial": trial.name, "failed_checks": failed,
+        evidence.append({"trial": k, "failed_checks": failed,
                          "reply_tail": reply[-TRANSCRIPT_EXCERPT_CHARS:]})
     return evidence
 
@@ -641,17 +648,39 @@ def run_eval_argv(skill: str, registry_name: str, registry_root: Path,
     return argv + (["--no-judge"] if no_judge else [])
 
 
-def fixture_metrics(arm_dir: Path) -> dict:
-    """One fixture's arm summary reduced to what the decision reads."""
-    try:
-        summary = json.loads((arm_dir / "summary.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return {"error": "no summary.json"}
-    stats = summary if "aggregate" in summary else run_eval.aggregate_trials([summary])
+def fixture_metrics(run_dir: Path, skill: str, ts: str,
+                    fixture: str, trials: int) -> dict:
+    """Reduce every local_eval trial; a missing trial stays inconclusive."""
+    summaries = []
+    for k in range(1, trials + 1):
+        path = trial_arm_dir(run_dir, k, skill, ts, fixture) / "summary.json"
+        try:
+            summary = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(summary, dict):
+                raise ValueError("summary is not an object")
+        except (OSError, ValueError):
+            summary = {"error": {"type": "missing_summary"}}
+        if summary.get("error") and not isinstance(summary["error"], dict):
+            summary["error"] = {"type": "trial_error"}
+        summaries.append(summary)
+    stats = run_eval.aggregate_trials(summaries)
     objective = stats["aggregate"]["objective"] or {}
-    judge = (stats["aggregate"]["judge"] or {}).get("overall") or {}
-    error = summary.get("error")
-    return {"error": (error or {}).get("type") if error else None,
+    judge_stats = stats["aggregate"]["judge"] or {}
+    judge = judge_stats.get("overall") or {}
+    error = next((s["error"].get("type") or "trial_error"
+                  for s in summaries if s.get("error")), None)
+    if not error and judge_stats.get("errors"):
+        error = "judge_error"
+    try:
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        manifest = None  # Injected offline runners may only write trial summaries.
+    trial_entries = manifest.get("trials") if isinstance(manifest, dict) else None
+    if not error and isinstance(trial_entries, list) and any(
+            not isinstance(item, dict) or item.get("exit_code") != 0
+            for item in trial_entries):
+        error = "trial_exit"
+    return {"error": error,
             "passed": objective.get("passed"), "total": objective.get("total"),
             "judge_mean": judge.get("mean"), "n": stats.get("n")}
 
@@ -891,6 +920,15 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         return EXIT_ACCEPTED
     skill, results, registry = p["skill"], p["results"], p["registry"]
     ts = now.astimezone(timezone.utc).strftime(run_eval.TIMESTAMP_FORMAT)
+    # Improvement records persist here; each local_eval call receives its
+    # own absent or empty directory beneath runs/.
+    try:
+        for path in (results, p["records_dir"],
+                     results / "trigger" / skill):
+            local_eval.check_results_dir(path, require_empty=False)
+        local_eval.check_results_dir(results / "trigger" / skill / ts)
+    except local_eval.Refused as exc:
+        raise Refusal(str(exc)) from exc
     names = p["train"] + [p["validation"]] + ([p["holdout"]] if p["holdout"] else [])
     p["records_dir"].mkdir(parents=True, exist_ok=True)
     stem = p["records_dir"] / ts
@@ -907,14 +945,6 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         original = (base_skill / "SKILL.md").read_text(encoding="utf-8")
         disabled_plugins = skill_provider_plugins(base_root, skill)
 
-        rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
-                                           results / "runs" / "baseline", ts,
-                                           args.trials, args.no_judge))
-        if rc not in (0, 1):
-            raise Refusal(f"baseline run_eval exited {rc}")
-        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts, n))
-                    for n in names}
-
         record = {
             "schema": 1, "skill": skill, "timestamp": ts,
             "local_exhibit": "skills-evals ADR 0002 decision 4: operator login, not badge input",
@@ -925,12 +955,26 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "trials": args.trials, "no_judge": args.no_judge,
             "min_gain": args.min_gain,
             "models": {"arm": p["arm_model"], "proposal": p["proposal_model"]},
-            "baseline": baseline, "candidate": None,
-            "runs": {"baseline": str(results / "runs" / "baseline" / skill / ts)},
+            "baseline": None, "candidate": None,
+            "runs": {"baseline": str(run_paths(results, "baseline", skill, ts))},
             "files": {},
         }
         if p["holdout"]:
             record["split"]["holdout"] = p["holdout"]
+
+        rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
+                                           run_paths(results, "baseline", skill, ts),
+                                           ts, args.trials, args.no_judge))
+        if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+            record.update(status="refused", phase="baseline", exit_code=rc,
+                          reasons=[f"local_eval exited {rc} during baseline"])
+            write_record(stem, record)
+            print(f"refused: local_eval baseline exited {rc}; record: "
+                  f"{stem.with_suffix('.json')}", file=sys.stderr)
+            return EXIT_REFUSED
+        baseline = {n: fixture_metrics(run_paths(results, "baseline", skill, ts),
+                                       skill, ts, n, args.trials) for n in names}
+        record["baseline"] = baseline
 
         # Trigger half: skill-creator's loop, untouched.
         trigger_dir = results / "trigger" / skill / ts
@@ -963,7 +1007,8 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             "loop_output": str(trigger_dir / "loop.json")}
 
         # Body half: one proposal call, validated before anything is measured.
-        evidence = {n: failure_evidence(run_paths(results, "baseline", skill, ts, n))
+        evidence = {n: failure_evidence(run_paths(results, "baseline", skill, ts),
+                                        skill, ts, n, args.trials)
                     for n in p["train"]}
         evidence = {n: e for n, e in evidence.items() if e}
         record["body_half"] = {"model": p["proposal_model"], "rationale": None,
@@ -1002,15 +1047,20 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         record["files"]["patch"] = str(stem.with_suffix(".patch"))
         (cand_skill / "SKILL.md").write_text(candidate_text, encoding="utf-8")
 
+        record["runs"]["candidate"] = str(run_paths(results, "candidate", skill, ts))
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], cand_root,
-                                           results / "runs" / "candidate", ts,
-                                           args.trials, args.no_judge))
-        if rc not in (0, 1):
-            raise Refusal(f"candidate run_eval exited {rc}")
-        candidate = {n: fixture_metrics(run_paths(results, "candidate", skill, ts, n))
-                     for n in names}
+                                           run_paths(results, "candidate", skill, ts),
+                                           ts, args.trials, args.no_judge))
+        if rc not in (EXIT_ACCEPTED, EXIT_REJECTED):
+            record.update(status="refused", phase="candidate", exit_code=rc,
+                          reasons=[f"local_eval exited {rc} during candidate"])
+            write_record(stem, record)
+            print(f"refused: local_eval candidate exited {rc}; record: "
+                  f"{stem.with_suffix('.json')}", file=sys.stderr)
+            return EXIT_REFUSED
+        candidate = {n: fixture_metrics(run_paths(results, "candidate", skill, ts),
+                                        skill, ts, n, args.trials) for n in names}
         record["candidate"] = candidate
-        record["runs"]["candidate"] = str(results / "runs" / "candidate" / skill / ts)
 
         accepted, reasons = decide(baseline, candidate, p["train"], p["validation"],
                                     args.min_gain, p["holdout"],

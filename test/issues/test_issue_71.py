@@ -5,7 +5,7 @@ Every model-spending step goes through the script's `Runner`, so these tests
 drive the whole pipeline with a fake one: no `claude`, no network, no clock
 (the timestamp is passed in). Two contract tests use the REAL subprocess
 paths with stand-in CLIs instead of a fake runner: the harness's
-`run_eval.py` under test/fake-claude, and Anthropic's skill-creator
+`local_eval.py` under test/fake-claude, and Anthropic's skill-creator
 `scripts/run_loop.py` under a stand-in `claude` on PATH. The second is skipped
 when skill-creator is not installed (CI does not install it); point
 SKILL_CREATOR_DIR at its skill directory to run it.
@@ -27,7 +27,7 @@ import sys
 import tempfile
 import textwrap
 import unittest
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -35,6 +35,7 @@ TEST_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = TEST_DIR.parent
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import propose_skill_edit as pse  # noqa: E402
+import test_issue_local_eval as local_eval_tests  # noqa: E402
 
 SKILL = "writing-adrs"
 FIXTURES = ["bootstrap", "existing-convention", "supersede"]
@@ -97,29 +98,21 @@ def flag(argv: list[str], name: str) -> str:
     return argv[argv.index(name) + 1]
 
 
-def write_arm(arm_dir: Path, passed: int, total: int, judge: float | None,
+def write_arm(run_dir: Path, ts: str, fixture: str,
+              passed: int, total: int, judge: float | None,
               trials: int = 3) -> None:
-    """A with_skill arm in run_eval's --trials N > 1 layout."""
+    """The per-trial layout written by local_eval's run_eval children."""
     for k in range(1, trials + 1):
-        trial = arm_dir / f"trial-{k}"
+        trial = run_dir / f"t{k}" / SKILL / ts / fixture / "with_skill"
         (trial / "transcripts").mkdir(parents=True)
         checks = [{"id": f"check-{i}", "passed": i < passed, "detail": f"detail {i}"}
                   for i in range(total)]
         (trial / "summary.json").write_text(json.dumps(
-            {"error": None, "objective_checks": checks, "trial": k}), encoding="utf-8")
+            {"error": None, "objective_checks": checks, "trial": k,
+             "judge": {"overall": judge} if judge is not None else None}),
+            encoding="utf-8")
         (trial / "transcripts" / "raw.json").write_text(
             json.dumps({"result": f"reply of trial {k}"}), encoding="utf-8")
-    judge_block = None
-    if judge is not None:
-        judge_block = {"n": trials, "errors": 0,
-                       "overall": {"n": trials, "mean": judge, "min": judge,
-                                   "max": judge, "sum": judge * trials},
-                       "dimensions": []}
-    (arm_dir / "summary.json").write_text(json.dumps({
-        "error": None, "n": trials,
-        "aggregate": {"objective": {"n": trials, "passed": passed * trials,
-                                    "total": total * trials},
-                      "judge": judge_block, "cost_usd": None}}), encoding="utf-8")
 
 
 class FakeRunner:
@@ -134,15 +127,17 @@ class FakeRunner:
         self.seen_skill_md: dict[str, str] = {}
 
     def run_eval(self, argv):
-        label = Path(flag(argv, "--results-dir")).name
+        run_dir = Path(flag(argv, "--results-dir"))
+        label = run_dir.parent.parent.name
         registry = Path(flag(argv, "--registry").split("=", 1)[1])
         self.calls.append(("run_eval", label, registry, list(argv)))
+        assert not run_dir.exists(), "local_eval destination must start empty"
         assert not (registry / ".git").exists(), "scratch registry carries .git"
         self.seen_skill_md[label] = (registry / "plugins" / "demo" / "skills"
                                      / SKILL / "SKILL.md").read_text(encoding="utf-8")
-        base = Path(flag(argv, "--results-dir")) / SKILL / flag(argv, "--timestamp")
         for fixture, (passed, total, judge) in self.numbers[label].items():
-            write_arm(base / fixture / "with_skill", passed, total, judge,
+            write_arm(run_dir, flag(argv, "--timestamp"), fixture,
+                      passed, total, judge,
                       int(flag(argv, "--trials")))
         return 1
 
@@ -170,6 +165,18 @@ class NoCallRunner:
         raise AssertionError(f"dry run made a {name} call")
 
 
+class RefusingRunner(FakeRunner):
+    def __init__(self, phase):
+        super().__init__(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        self.phase = phase
+
+    def run_eval(self, argv):
+        if Path(flag(argv, "--results-dir")).parent.parent.name == self.phase:
+            self.calls.append(("refused", self.phase))
+            return 2
+        return super().run_eval(argv)
+
+
 GOOD = {"bootstrap": (2, 4, 6.0), "existing-convention": (2, 4, 6.0),
         "supersede": (3, 4, 7.0)}
 
@@ -181,7 +188,8 @@ def proposal(diff: str = BODY_DIFF, rationale: str = "index step was missing") -
 class PipelineCase(unittest.TestCase):
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="test-issue-71-"))
+        self.tmp = Path(tempfile.mkdtemp(
+            prefix="test-issue-71-", dir=local_eval_tests.TestLocalEval._temp_base()))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
         self.registry = make_registry(self.tmp / "registry")
         self.skill_creator = make_skill_creator(self.tmp / "skill-creator")
@@ -226,6 +234,57 @@ class SplitTests(unittest.TestCase):
 
 
 class RefusalTests(PipelineCase):
+
+    def test_baseline_local_eval_refusal_is_recorded_without_retry(self):
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner)
+        self.assertEqual(rc, 2)
+        self.assertIn("local_eval baseline exited 2", err)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                         ("refused", "baseline", 2))
+        self.assertEqual(runner.calls, [("refused", "baseline")])
+
+    def test_candidate_local_eval_refusal_is_recorded_without_retry(self):
+        runner = RefusingRunner("candidate")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("local_eval candidate exited 2", err)
+        record = self.record()
+        self.assertEqual((record["status"], record["phase"], record["exit_code"]),
+                         ("refused", "candidate", 2))
+        self.assertIn("candidate", record["runs"])
+        self.assertEqual([c[0] for c in runner.calls].count("refused"), 1)
+
+    def test_results_root_inside_repository_refuses_before_writes_or_calls(self):
+        self.results = REPO_ROOT / "results" / "c42"
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("--results-dir", err)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse(self.results.exists())
+
+    def test_persistent_write_subdirectory_symlink_into_repo_refuses(self):
+        self.results.mkdir()
+        (self.results / "improvements").symlink_to(REPO_ROOT,
+                                                     target_is_directory=True)
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("--results-dir", err)
+        self.assertEqual(runner.calls, [])
+
+    def test_trigger_timestamp_symlink_into_repo_refuses(self):
+        trigger = self.results / "trigger" / SKILL
+        trigger.mkdir(parents=True)
+        (trigger / TS).symlink_to(REPO_ROOT, target_is_directory=True)
+        runner = RefusingRunner("baseline")
+        rc, _, err = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 2)
+        self.assertIn("--results-dir", err)
+        self.assertEqual(runner.calls, [])
+        self.assertFalse((self.results / "improvements").exists())
 
     def test_a_flat_single_fixture_skill_exits_2(self):
         rc, _, err = self.run_main(NoCallRunner(), "--dry-run")
@@ -309,7 +368,7 @@ class AcceptTests(PipelineCase):
                    / "SKILL.md").read_text()
         self.assertEqual(applied, self.runner.seen_skill_md["candidate"])
 
-    def test_measurement_uses_the_harness_with_n_trials_on_with_skill(self):
+    def test_measurement_uses_local_eval_with_n_trials_on_with_skill(self):
         evals = [c for c in self.runner.calls if c[0] == "run_eval"]
         self.assertEqual([c[1] for c in evals], ["baseline", "candidate"])
         for _, _, _, argv in evals:
@@ -317,6 +376,7 @@ class AcceptTests(PipelineCase):
             self.assertEqual(flag(argv, "--trials"), "3")
             self.assertEqual(flag(argv, "--timestamp"), TS)
             self.assertEqual(Path(argv[0]), REPO_ROOT / "evals" / SKILL)
+            self.assertFalse(Path(flag(argv, "--results-dir")).is_relative_to(REPO_ROOT))
 
     def test_trigger_half_never_sees_the_validation_prompt(self):
         validation_prompt = " ".join(pse.run_eval.load_fixture(
@@ -362,6 +422,108 @@ class TriggerEvalSetOverrideTests(PipelineCase):
 
 
 class RejectTests(PipelineCase):
+
+    def test_missing_one_trial_is_inconclusive_instead_of_using_survivors(self):
+        class MissingTrialRunner(FakeRunner):
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.parent.parent.name == "baseline":
+                    (run_dir / "t2" / SKILL / TS / "bootstrap" / "with_skill"
+                     / "summary.json").unlink()
+                return rc
+
+        runner = MissingTrialRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["status"], "rejected")
+        self.assertEqual(record["baseline"]["bootstrap"]["error"], "missing_summary")
+        self.assertIn("inconclusive", " ".join(record["reasons"]))
+
+    def test_one_errored_trial_is_inconclusive(self):
+        class ErroredTrialRunner(FakeRunner):
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.parent.parent.name == "baseline":
+                    path = (run_dir / "t2" / SKILL / TS / "bootstrap"
+                            / "with_skill" / "summary.json")
+                    summary = json.loads(path.read_text())
+                    summary["error"] = {"type": "nonzero_exit"}
+                    path.write_text(json.dumps(summary))
+                return rc
+
+        runner = ErroredTrialRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+        rc, _, _ = self.run_main(runner, "--rotation", "2")
+        self.assertEqual(rc, 1)
+        record = self.record()
+        self.assertEqual(record["baseline"]["bootstrap"]["error"], "nonzero_exit")
+        self.assertIn("inconclusive", " ".join(record["reasons"]))
+
+    def test_partial_judge_manifest_and_malformed_errors_are_inconclusive(self):
+        class PartialRunner(FakeRunner):
+            def __init__(self, fault):
+                super().__init__(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+                self.fault = fault
+
+            def run_eval(self, argv):
+                rc = super().run_eval(argv)
+                run_dir = Path(flag(argv, "--results-dir"))
+                if run_dir.parent.parent.name == "baseline":
+                    if self.fault == "manifest":
+                        (run_dir / "manifest.json").write_text(json.dumps({
+                            "trials": [{"trial": 1, "exit_code": 0},
+                                       {"trial": 2, "exit_code": 1},
+                                       {"trial": 3, "exit_code": 0}]}))
+                    else:
+                        path = (run_dir / "t2" / SKILL / TS / "bootstrap"
+                                / "with_skill" / "summary.json")
+                        summary = json.loads(path.read_text())
+                        if self.fault == "judge":
+                            summary["judge"] = {"error": "unavailable"}
+                        elif self.fault == "empty_type_none":
+                            summary["error"] = {"type": None}
+                        elif self.fault == "empty_type_string":
+                            summary["error"] = {"type": ""}
+                        else:
+                            summary["error"] = "malformed"
+                        path.write_text(json.dumps(summary))
+                return rc
+
+        for fault, expected in (("judge", "judge_error"),
+                                ("manifest", "trial_exit"),
+                                ("malformed", "trial_error"),
+                                ("empty_type_none", "trial_error"),
+                                ("empty_type_string", "trial_error")):
+            with self.subTest(fault=fault):
+                shutil.rmtree(self.results, ignore_errors=True)
+                rc, _, _ = self.run_main(PartialRunner(fault), "--rotation", "2")
+                self.assertEqual(rc, 1)
+                record = self.record()
+                self.assertEqual(record["status"], "rejected")
+                self.assertEqual(record["baseline"]["bootstrap"]["error"], expected)
+                self.assertIn("inconclusive", " ".join(record["reasons"]))
+
+    def test_repeated_measurements_use_distinct_empty_directories(self):
+        for offset in (0, 1):
+            runner = FakeRunner(GOOD, GOOD, proposal(), NEW_DESCRIPTION)
+            now = NOW + timedelta(seconds=offset)
+            with contextlib.redirect_stdout(io.StringIO()):
+                rc = pse.main(self.argv("--rotation", "2"), runner=runner, now=now)
+            self.assertEqual(rc, 1)
+            stamp = now.strftime(pse.run_eval.TIMESTAMP_FORMAT)
+            record = json.loads((self.results / "improvements" / SKILL
+                                 / f"{stamp}.json").read_text())
+            self.assertEqual(record["status"], "rejected")
+            for phase in ("baseline", "candidate"):
+                self.assertTrue(all(m["error"] is None
+                                    for m in record[phase].values()))
+            for phase in ("baseline", "candidate"):
+                path = pse.run_paths(self.results, phase, SKILL, stamp)
+                self.assertTrue((path / "t1").is_dir())
+        self.assertNotEqual(pse.run_paths(self.results, "baseline", SKILL, TS),
+                            pse.run_paths(self.results, "baseline", "another-skill", TS))
 
     def test_validation_drop_is_rejected_and_recorded_with_numbers(self):
         runner = FakeRunner(GOOD, {"bootstrap": (4, 4, 7.0),
@@ -862,7 +1024,9 @@ class SubprocessRunnerContractTests(unittest.TestCase):
     """The real Runner's subprocess paths, with stand-in CLIs."""
 
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="test-issue-71-runner-"))
+        self.tmp = Path(tempfile.mkdtemp(
+            prefix="test-issue-71-runner-",
+            dir=local_eval_tests.TestLocalEval._temp_base()))
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
     def test_propose_sends_the_prompt_on_stdin_with_no_tools(self):
@@ -892,20 +1056,92 @@ class SubprocessRunnerContractTests(unittest.TestCase):
         scratch = pse.archive_registry(registry, pse.resolve_ref(registry, "HEAD"),
                                        self.tmp / "scratch")
         self.assertFalse((scratch / ".git").exists())
-        results = self.tmp / "results" / "runs" / "baseline"
-        env = {"CLAUDE_BIN": str(TEST_DIR / "fake-claude"), "FAKE_CLAUDE_MODE": "agent"}
-        with mock.patch.dict(os.environ, env), \
+        results = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+        home = self.tmp / "home"
+        home.mkdir()
+        state = self.tmp / "state"
+        state.mkdir()
+        fake = self.tmp / "claude-dispatch"
+        log = self.tmp / "calls.jsonl"
+        fake.write_text(local_eval_tests.DISPATCHER.format(
+            python=sys.executable, log=str(log), state=str(state),
+            fail=None, plant=None, fake=str(TEST_DIR / "fake-claude"),
+            fake_init=str(TEST_DIR / "fake-claude-init")), encoding="utf-8")
+        fake.chmod(0o755)
+        env = {"CLAUDE_BIN": str(fake), "HOME": str(home),
+               "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
+               "LANG": "C.UTF-8", "UNRELATED_INHERITED_VALUE": "test"}
+        with mock.patch.dict(os.environ, env, clear=True), \
                 contextlib.redirect_stdout(io.StringIO()):
             rc = pse.Runner().run_eval(pse.run_eval_argv(
                 SKILL, "adam-agentskills", scratch, results, TS, 2, True))
         self.assertIn(rc, (0, 1))
+        self.assertTrue(log.is_file())
+        self.assertTrue((results / "LOCAL_EXHIBIT").is_file())
+        self.assertTrue((results / "manifest.json").is_file())
+        invocation = json.loads((results / "manifest.json").read_text())["invocation"]
+        self.assertEqual(invocation["trials"], 2)
+        self.assertEqual(invocation["arm"], "with_skill")
+        self.assertIs(invocation["no_judge"], True)
+        self.assertEqual(invocation["registries"], ["adam-agentskills"])
+        calls = [json.loads(line) for line in log.read_text().splitlines()]
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertNotIn("UNRELATED_INHERITED_VALUE", call["env_names"])
+            self.assertNotEqual(call["claude_bin"], str(fake))
+            self.assertEqual(Path(call["claude_bin"]).parent,
+                             Path(call["path_head"]))
         for name in FIXTURES:
-            arm = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS, name)
-            metrics = pse.fixture_metrics(arm)
+            arm = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+            metrics = pse.fixture_metrics(arm, SKILL, TS, name, 2)
             self.assertIsNone(metrics["error"], name)
             self.assertEqual(metrics["n"], 2)
             self.assertGreater(metrics["total"], 0)
-            self.assertTrue(pse.failure_evidence(arm), name)
+            self.assertTrue(pse.failure_evidence(arm, SKILL, TS, name, 2), name)
+            for k in (1, 2):
+                summary = json.loads((pse.trial_arm_dir(arm, k, SKILL, TS, name)
+                                      / "summary.json").read_text())
+                self.assertIs(summary["local_exhibit"], True)
+
+    def test_real_local_eval_refuses_credential_and_settings_before_cli(self):
+        registry = make_registry(self.tmp / "registry")
+        skill_creator = make_skill_creator(self.tmp / "skill-creator")
+        home = self.tmp / "home"
+        home.mkdir()
+        log = self.tmp / "calls.jsonl"
+        fake = self.tmp / "claude"
+        fake.write_text(f"#!{sys.executable}\n"
+                        f"from pathlib import Path\nPath({str(log)!r}).write_text('called')\n"
+                        "raise SystemExit(97)\n", encoding="utf-8")
+        fake.chmod(0o755)
+        env = {"CLAUDE_BIN": str(fake), "HOME": str(home),
+               "TMPDIR": str(self.tmp), "PATH": os.environ["PATH"],
+               "LANG": "C.UTF-8"}
+        results = pse.run_paths(self.tmp / "results", "baseline", SKILL, TS)
+        for cause in ("credential", "settings"):
+            with self.subTest(cause=cause):
+                if cause == "credential":
+                    env["ANTHROPIC_API_KEY"] = ""
+                else:
+                    env.pop("ANTHROPIC_API_KEY")
+                    (home / ".claude").mkdir()
+                    (home / ".claude" / "settings.json").write_text(
+                        json.dumps({"apiKeyHelper": "unused"}), encoding="utf-8")
+                with mock.patch.dict(os.environ, env, clear=True), \
+                        contextlib.redirect_stderr(io.StringIO()):
+                    rc = pse.main([SKILL, "--registry", f"adam-agentskills={registry}",
+                                   "--skill-creator", str(skill_creator),
+                                   "--results-dir", str(self.tmp / "results"),
+                                   "--rotation", "2", "--no-judge"],
+                                  runner=pse.Runner(), now=NOW)
+                self.assertEqual(rc, 2)
+                record = json.loads((self.tmp / "results" / "improvements" / SKILL
+                                     / f"{TS}.json").read_text())
+                self.assertEqual((record["status"], record["phase"],
+                                  record["exit_code"]), ("refused", "baseline", 2))
+                self.assertFalse(log.exists())
+                self.assertFalse(results.exists())
+                shutil.rmtree(self.tmp / "results")
 
 
 def _skill_creator_dir() -> Path | None:

@@ -281,8 +281,12 @@ def git_identity(path: Path) -> dict:
             "dirty": bool(status.stdout.strip()) if status.returncode == 0 else None}
 
 
-def check_results_dir(out: Path) -> Path:
-    """The resolved results dir, or Refused."""
+def check_results_dir(out: Path, *, require_empty: bool = True) -> Path:
+    """The resolved results dir, or Refused.
+
+    A persistent record root may use require_empty=False; repository and
+    directory-type checks still apply. CLI runs keep the strict default.
+    """
     resolved = out.expanduser().resolve()
     if resolved == REPO_ROOT or REPO_ROOT in resolved.parents:
         raise Refused(
@@ -320,7 +324,8 @@ def check_results_dir(out: Path) -> Path:
                 raise Refused(f"--results-dir resolves inside {parent}, which "
                               "holds a git repository (a .git entry); pick a "
                               "directory outside every repository.")
-    if resolved.exists() and (not resolved.is_dir() or any(resolved.iterdir())):
+    if resolved.exists() and (not resolved.is_dir()
+                              or (require_empty and any(resolved.iterdir()))):
         raise Refused(
             f"--results-dir {resolved} already exists and is not an empty "
             "directory; trials from two runs must not mix.")
@@ -649,9 +654,13 @@ def parse_args(argv=None) -> argparse.Namespace:
                              "nested fixtures, run only this one")
     parser.add_argument("--registry", action="append", default=None,
                         help="passed to run_eval.py, repeatable: NAME=PATH")
+    parser.add_argument("--timestamp", default=None,
+                        help="validated timestamp passed to each run_eval.py trial")
     args = parser.parse_args(argv)
     if not 1 <= args.trials <= MAX_TRIALS:
         parser.error(f"--trials must be 1..{MAX_TRIALS}, got {args.trials}")
+    if args.timestamp is not None and not run_eval._valid_timestamp(args.timestamp):
+        parser.error("--timestamp must have the YYYYMMDDTHHMMSSZ format")
     return args
 
 
@@ -784,6 +793,7 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
                     if REPO_ROOT in eval_dir.parents else str(eval_dir)),
         "skill": skill,
         "invocation": {"trials": args.trials, "arm": args.arm,
+                       "timestamp": args.timestamp,
                        "no_judge": args.no_judge, "fixture": args.fixture,
                        "registries": [f.split("=", 1)[0] for f in registry_flags]},
         "harness": {"claude_version": run_eval.claude_version(),
@@ -843,6 +853,8 @@ def _run(args: argparse.Namespace, guard_dir: Path) -> int:
             cmd += ["--registry", flag]
         if args.no_judge:
             cmd.append("--no-judge")
+        if args.timestamp is not None:
+            cmd += ["--timestamp", args.timestamp]
         print(f"local_eval: trial {k}/{args.trials}", flush=True)
         proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True,
                               text=True)
