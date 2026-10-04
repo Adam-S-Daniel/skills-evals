@@ -54,16 +54,16 @@ def build_multipage_pdf(pages: list[list[str] | None]) -> bytes:
 # Nonempty nonsense still counts as a text layer under the current skill.
 NOISY_LINES = ["xzQ9 vv0 zzJ3 qp7 Kxx ".strip()] * 20
 FILES = [
-    ("statement-2024-q1.pdf",
+    ("signed-lease-scan.pdf",
      build_multipage_pdf([["Example digital document"], ["Second text page"]])),
-    ("lease-renewal.pdf", build_multipage_pdf([None, None])),
+    ("quarterly-report.pdf", build_multipage_pdf([None, None])),
     ("project-brief.pdf",
      build_multipage_pdf([["Example searchable page"], None])),
     ("meeting-notes.pdf", b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog\n"),
-    ("delivery-receipt.pdf", _shared.build_text_pdf(NOISY_LINES)),
+    ("scanned-invoice.pdf", _shared.build_text_pdf(NOISY_LINES)),
     ("annual-report.pdf",
      build_multipage_pdf([["Example annual report"], ["Good text layer"]])),
-    ("invoice-2024-07.pdf", _shared.build_image_only_pdf()),
+    ("statement-2024-q1.pdf", _shared.build_image_only_pdf()),
     ("POLICY.PDF", _shared.build_text_pdf(["Example uppercase extension document"])),
 ]
 
