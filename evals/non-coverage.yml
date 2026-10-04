@@ -1,0 +1,100 @@
+# Deliberate non-coverage: a skill with no eval, on purpose.
+#
+# A row here is a decision with a reason; a skill with neither a fixture nor a
+# row is a GAP in scripts/eval_coverage.py's census. This file is the machine
+# form of the table DESIGN.md's "Deliberate non-coverage" section carries in
+# prose (DESIGN.md is not edited by this change; the two are reconciled when
+# the census is published).
+#
+# Fields, exactly these four per row (scripts/eval_coverage.py refuses any
+# other shape): `registry` (a name from harness/registries.yml), `skill`,
+# `decision`, `reason`.
+#
+# A row naming a skill its registry no longer has is reported as a stale skip
+# and fails `--check`, so a rename cannot hide behind a skip. A row for a
+# skill that also has a fixture fails the same way.
+#
+# NO PRIVATE-REGISTRY ROWS. This repo is public, so a skill name from
+# adam-agentskills-private must not be committed here; the loader refuses such
+# a row. Skip a private skill through the operator-held file passed as
+# `--private-non-coverage`.
+#
+# Rows below carry forward every DESIGN.md table row whose skill exists in a
+# registry today. `wj-next-break` and `sync-skills` are in that table but in no
+# registry now, so they have no row (a row would be a stale skip).
+# `test-canary`'s reason is corrected, not carried: DESIGN.md says "covered by
+# the propagation arms", but nothing in the propagation arms references it and
+# its SKILL.md says the delivery probe is not built (issue #17).
+# `add-from-address` and `add-received-from-addresses` are not in DESIGN.md's
+# table: the owner decided to skip them (relayed in the skills-evals#225 fix
+# round), and each SKILL.md says it only dispatches a fastmail-actions workflow
+# that acts on a real Fastmail account with a real API token.
+skips:
+  - registry: cms-platform
+    skill: test-canary
+    decision: no A/B
+    reason: >-
+      internal canary; carries no guidance; its delivery probe (issue #17) is
+      not built
+  - registry: cms-platform
+    skill: sveltia-cms-playwright-demo
+    decision: skip
+    reason: historical reference to retired tech
+  - registry: adam-agentskills
+    skill: launch-top-level-claude-session
+    decision: defer
+    reason: >-
+      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
+      than the churn justifies today
+  - registry: adam-agentskills
+    skill: sync-cc-settings-between-wsl-and-windows
+    decision: defer
+    reason: >-
+      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
+      than the churn justifies today
+  - registry: adam-agentskills
+    skill: migrate-claude-memory
+    decision: defer
+    reason: >-
+      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
+      than the churn justifies today
+  - registry: adam-agentskills
+    skill: compare-pdfpairs
+    decision: defer
+    reason: >-
+      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
+      than the churn justifies today
+  - registry: adam-agentskills
+    skill: ocr-pdfs
+    decision: defer
+    reason: >-
+      machine-bound (WSL/WPF/browser surfaces); faking the surface costs more
+      than the churn justifies today
+  - registry: adam-agentskills
+    skill: fastmail
+    decision: defer
+    reason: >-
+      credentialed live service; a fixture may not carry real accounts, and a
+      faked Fastmail is a harness project of its own
+  - registry: adam-agentskills
+    skill: add-from-address
+    decision: skip
+    reason: >-
+      dispatches a workflow in the fastmail-actions repository that edits a
+      real Fastmail account's sending identities with a real API token; a
+      hermetic fixture cannot exercise it
+  - registry: adam-agentskills
+    skill: add-received-from-addresses
+    decision: skip
+    reason: >-
+      dispatches a workflow in the fastmail-actions repository that scans a
+      real Fastmail mailbox and adds sending identities with a real API token;
+      a hermetic fixture cannot exercise it
+  - registry: cms-platform
+    skill: aws-bootstrap
+    decision: freshness lint
+    reason: staleness is the failure mode, not procedure quality
+  - registry: cms-platform
+    skill: preview-environments
+    decision: freshness lint
+    reason: staleness is the failure mode, not procedure quality
