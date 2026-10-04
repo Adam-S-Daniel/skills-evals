@@ -79,6 +79,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  github-actions-repo-settings/  # A/B eval, Class B: diagnose settings drift
+    fixture.yaml           # read-only two-repo diagnosis and objective checks
+    seed/                  # declared baseline, shared gh, and canned API responses
   disarm-inherited-reach/  # A/B eval: severing an inherited git remote before it can reach prod
     fixture.yaml           # prompt, setup: builds prod.git/checkout/scratch-wt, git-state checks
     seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)
