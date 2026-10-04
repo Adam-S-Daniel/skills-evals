@@ -514,6 +514,152 @@ def yaml_parses(workspace: str, patterns: list[str]) -> tuple[bool, str]:
     return (not bad, "all workflows parse" if not bad else "; ".join(bad))
 
 
+_FRONT_MATTER_UNSET = object()
+
+
+def front_matter_has(workspace: str, patterns: list[str],
+                     equals=_FRONT_MATTER_UNSET,
+                     nonempty_strings=_FRONT_MATTER_UNSET) -> tuple[bool, str]:
+    """Check only a bounded YAML front-matter mapping in named local files.
+
+    One initial UTF-8 BOM is allowed. Delimiters are exact `---` lines
+    (LF/CRLF; closing at EOF is allowed). The body is never decoded or
+    parsed. Duplicate authored root keys are rejected before SafeLoader's
+    merge handling; ordinary merge defaults with explicit overrides work.
+    """
+    import yaml
+
+    if not isinstance(patterns, list) or not patterns:
+        return (False, "front_matter_has: a nonempty paths list is required")
+    if (equals is not _FRONT_MATTER_UNSET
+            and (not isinstance(equals, dict)
+                 or any(not isinstance(key, str) for key in equals))):
+        return (False, "front_matter_has: equals must be a mapping with string keys")
+    if (nonempty_strings is not _FRONT_MATTER_UNSET
+            and (not isinstance(nonempty_strings, list)
+                 or any(not isinstance(key, str) for key in nonempty_strings))):
+        return (False, "front_matter_has: nonempty_strings must be a list of strings")
+    equals = {} if equals is _FRONT_MATTER_UNSET else equals
+    nonempty_strings = [] if nonempty_strings is _FRONT_MATTER_UNSET else nonempty_strings
+
+    header_limit, depth_limit, node_limit = 65536, 64, 4096
+
+    class BoundedSafeLoader(yaml.SafeLoader):
+        def __init__(self, stream):
+            super().__init__(stream)
+            self.compose_depth = 0
+            self.compose_count = 0
+
+        def compose_node(self, parent, index):
+            self.compose_depth += 1
+            self.compose_count += 1
+            try:
+                if self.compose_depth > depth_limit or self.compose_count > node_limit:
+                    raise ValueError("YAML limits exceeded")
+                return super().compose_node(parent, index)
+            finally:
+                self.compose_depth -= 1
+
+    def bound_graph(node):
+        # Count each alias occurrence's expanded subtree, rather than only
+        # unique node identities. Run BEFORE construction/merge flattening.
+        count = 0
+        active = set()
+
+        def visit(current, depth):
+            nonlocal count
+            count += 1
+            if count > node_limit or depth > depth_limit or id(current) in active:
+                raise ValueError("YAML limits exceeded")
+            active.add(id(current))
+            if isinstance(current, yaml.MappingNode):
+                for key, value in current.value:
+                    visit(key, depth + 1)
+                    visit(value, depth + 1)
+            elif isinstance(current, yaml.SequenceNode):
+                for child in current.value:
+                    visit(child, depth + 1)
+            active.remove(id(current))
+
+        visit(node, 1)
+
+    def equal(actual, expected, depth=0):
+        # Python considers True == 1, including nested keys and YAML sets.
+        if type(actual) is not type(expected) or depth > depth_limit:
+            return False
+        if isinstance(actual, dict):
+            return len(actual) == len(expected) and all(
+                any(equal(key, other, depth + 1) and equal(value, expected[other], depth + 1)
+                    for other in expected)
+                for key, value in actual.items())
+        if isinstance(actual, (list, tuple)):
+            return len(actual) == len(expected) and all(
+                equal(left, right, depth + 1) for left, right in zip(actual, expected))
+        if isinstance(actual, (set, frozenset)):
+            return len(actual) == len(expected) and all(
+                any(equal(value, other, depth + 1) for other in expected) for value in actual)
+        return actual == expected
+
+    workspace_real = os.path.realpath(workspace)
+    for rel in patterns:
+        if (not isinstance(rel, str) or not rel or "\x00" in rel
+                or os.path.isabs(rel) or ".." in Path(rel).parts
+                or glob.has_magic(rel)):
+            return (False, "front_matter_has: paths must be exact workspace-relative names")
+        target = os.path.realpath(os.path.join(workspace, rel))
+        if os.path.commonpath([workspace_real, target]) != workspace_real:
+            return (False, "front_matter_has: path resolves outside the workspace")
+        if not os.path.isfile(target):
+            return (False, "front_matter_has: file not found")
+        try:
+            with open(target, "rb") as stream:
+                opening = stream.readline(9)
+                if opening.startswith(b"\xef\xbb\xbf"):
+                    opening = opening[3:]
+                if opening not in (b"---\n", b"---\r\n"):
+                    return (False, "front_matter_has: missing or malformed opening delimiter")
+                header = bytearray()
+                while True:
+                    line = stream.readline(header_limit - len(header) + 6)
+                    if line in (b"---", b"---\n", b"---\r\n"):
+                        break
+                    if not line:
+                        return (False, "front_matter_has: missing closing delimiter")
+                    header.extend(line)
+                    if len(header) > header_limit:
+                        return (False, "front_matter_has: header exceeds 64 KiB")
+            loader = BoundedSafeLoader(header.decode("utf-8"))
+            try:
+                node = loader.get_single_node()
+                if not isinstance(node, yaml.MappingNode):
+                    return (False, "front_matter_has: YAML root must be a mapping")
+                bound_graph(node)
+                keys = set()
+                for key_node, _ in node.value:
+                    # The merge tag has no ordinary scalar constructor.
+                    if key_node.tag == "tag:yaml.org,2002:merge":
+                        key = ("merge",)
+                    else:
+                        key = loader.construct_object(key_node, deep=True)
+                    if key in keys:
+                        return (False, "front_matter_has: duplicate top-level key")
+                    keys.add(key)
+                data = loader.construct_document(node)
+                if not isinstance(data, dict):
+                    return (False, "front_matter_has: YAML root must construct to a mapping")
+            finally:
+                loader.dispose()
+        except (OSError, UnicodeError, yaml.YAMLError, ValueError, TypeError, RecursionError):
+            # Parser exceptions can contain header text. Never expose it.
+            return (False, "front_matter_has: unreadable or invalid YAML header")
+        if any(key not in data or not equal(data[key], value) for key, value in equals.items()):
+            return (False, "front_matter_has: required value or type does not match")
+        if any(key not in data or not isinstance(data[key], str) or not data[key].strip()
+               for key in nonempty_strings):
+            return (False, "front_matter_has: required nonempty string is missing or blank")
+    return (True, "front matter satisfies all constraints")
+
+
 def non_remote_refs_unchanged(workspace: str, patterns: list[str],
                               seed: str | None = None) -> tuple[bool, str]:
     """Local (./) and docker:// refs must match the seed workspace exactly."""
@@ -2941,6 +3087,61 @@ def _log_file_reachable(log_file, download_paths: list[str]) -> bool:
     return False
 
 
+def workflow_permissions(workspace: str, patterns: list[str], *,
+                         job: str | None = None,
+                         uses_suffix: str | None = None,
+                         permissions_include: dict | None = None) -> tuple[bool, str]:
+    """Every matched workflow's exact job ID calls the reusable workflow
+    and grants the required effective permissions. Job permissions replace
+    workflow permissions; malformed blocks and missing matches fail closed.
+    """
+    if (not isinstance(patterns, list) or not patterns
+            or any(not isinstance(p, str) or not p.strip() for p in patterns)):
+        return (False, "paths must be a nonempty list of nonempty strings")
+    if not isinstance(job, str) or not job.strip():
+        return (False, "job must be a nonempty job ID")
+    if not isinstance(uses_suffix, str) or not uses_suffix.strip():
+        return (False, "uses_suffix must be a nonempty string")
+    if (not isinstance(permissions_include, dict) or not permissions_include
+            or any(not isinstance(scope, str) or not scope.strip()
+                   or not isinstance(level, str) or level not in ("read", "write")
+                   for scope, level in permissions_include.items())):
+        return (False, "permissions_include must map nonempty scopes to read/write")
+
+    checked = 0
+    for pattern in patterns:
+        workflows = _load_workflows(workspace, [pattern])
+        if not workflows:
+            return (False, f"no workflow matches {pattern!r}")
+        for rel, doc in workflows:
+            if doc is None:
+                return (False, f"{rel}: workflow could not be parsed as a mapping")
+            jobs = doc.get("jobs")
+            if not isinstance(jobs, dict) or not isinstance(jobs.get(job), dict):
+                return (False, f"{rel}: missing or malformed job {job!r}")
+            job_body = jobs[job]
+            uses = job_body.get("uses")
+            if not isinstance(uses, str) or not uses.split("@", 1)[0].endswith(uses_suffix):
+                return (False, f"{rel}: job {job!r} does not call {uses_suffix!r}")
+            # Presence matters: an explicit null job block must not use the
+            # helper's None fallback to a more generous workflow block.
+            perms = job_body["permissions"] if "permissions" in job_body else doc.get("permissions")
+            if isinstance(perms, dict):
+                valid = bool(perms) and all(
+                    isinstance(scope, str) and bool(scope.strip())
+                    and isinstance(level, str) and level in ("read", "write", "none")
+                    for scope, level in perms.items())
+            else:
+                valid = isinstance(perms, str) and perms in ("read-all", "write-all")
+            if not valid:
+                return (False, f"{rel}: job {job!r} has missing or malformed effective permissions")
+            for scope, required in permissions_include.items():
+                if not _permission_satisfies(_job_permission_level(job_body, doc, scope), required):
+                    return (False, f"{rel}: job {job!r} lacks {scope}: {required}")
+            checked += 1
+    return (True, f"{checked} workflow(s) call {uses_suffix!r} with required permissions")
+
+
 def workflow_step_uses(workspace: str, patterns: list[str], *,
                        uses_suffix: str | None = None,
                        job: str | None = None,
@@ -3267,6 +3468,7 @@ CHECKS = {
     "uses_refs_sha_pinned": uses_refs_sha_pinned,
     "pin_comment_absent": pin_comment_absent,
     "yaml_parses": yaml_parses,
+    "front_matter_has": front_matter_has,
     "non_remote_refs_unchanged": non_remote_refs_unchanged,
     "changeset_triggers": changeset_triggers,
     "required_checks_early_skip": required_checks_early_skip,
@@ -3287,6 +3489,7 @@ CHECKS = {
     "pins_match_reference": pins_match_reference,
     "platform_refs_on_tag": platform_refs_on_tag,
     "workflow_step_uses": workflow_step_uses,
+    "workflow_permissions": workflow_permissions,
     "no_event_interpolation_in_run": no_event_interpolation_in_run,
     "post_failure_comment_reference_valid": post_failure_comment_reference_valid,
     "dir_listing_matches": dir_listing_matches,
@@ -3331,10 +3534,12 @@ _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "file_matches_excluding_comments": {"must_match", "must_not_match"},
     "transcript_matches": {"must_match", "must_not_match", "strip_seed"},
     "workflow_step_uses": _WORKFLOW_STEP_USES_KEYS,
+    "workflow_permissions": {"job", "uses_suffix", "permissions_include"},
     "post_failure_comment_reference_valid": {"uses_suffix"},
     "files_unchanged": {"by"},
     "dir_listing_matches": {"expected", "expected_file", "ignore"},
     "file_digests_match": {"sha256"},
+    "front_matter_has": {"equals", "nonempty_strings"},
     "git_ref_unchanged": {"path", "ref", "expected", "snapshot"},
     "no_git_config_names_path": {"forbidden_path", "exclude"},
     "git_remote_url_is": {"path", "remote", "expected_path"},

@@ -111,6 +111,77 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+### YAML front-matter objective check (`harness/scorers/objective.py`)
+
+`front_matter_has` checks existing files at exact workspace-relative `paths`
+(no globs, absolute paths, `..` components, or symlinks escaping the
+workspace). It parses only the YAML between an opening `---` line at the
+start of the file and the next exact `---` line. One initial UTF-8 BOM is
+accepted; LF and CRLF are accepted, and the closing delimiter may end at
+EOF. Delimiter indentation, trailing spaces/comments, and CR-only lines
+are rejected. Body bytes are never parsed or decoded, so even malformed
+YAML or invalid UTF-8 in the body cannot supply evidence.
+
+```yaml
+- id: tool-front-matter
+  type: front_matter_has
+  paths: ["_tools/unit-converter.md"]
+  equals:
+    slug: unit-converter
+    embed_src: /assets/tools/unit-converter/
+  nonempty_strings: [title, description]
+```
+
+The root must be a mapping. `equals` compares both type and value,
+recursively for containers (including mapping keys and YAML sets; a
+boolean never equals an integer). `nonempty_strings` requires each named
+key to contain a string with non-whitespace content. Both constraints
+may be omitted; if supplied, they must respectively be a mapping with
+string keys and a list of strings. Explicit null or a malformed shape
+fails the check. Unknown constraint keys raise at fixture validation,
+as with other check types.
+
+SafeLoader semantics preserve quoted scalars, field ordering, multiline
+strings, extra fields, benign anchors/aliases, and merge defaults with
+explicit overrides. Duplicate keys explicitly authored in the root are
+rejected, including equivalent YAML key spellings and repeated merge
+keys; nested mappings retain SafeLoader behavior. Missing/malformed
+delimiters, invalid YAML, non-mapping roots, missing/wrong values, and
+unreadable files fail with details that contain no file content. Headers
+are capped at 64 KiB, composition and alias-expanded graphs at 4096
+nodes and depth 64; recursive graphs are rejected before construction
+or merge flattening. These bounds apply only to the header.
+
+### Reusable-workflow permission checks
+
+`workflow_permissions` in [`harness/scorers/objective.py`](harness/scorers/objective.py)
+parses workflow YAML and checks an exact job ID's job-level `uses:` call,
+whose reference before `@` must end with `uses_suffix`. For example:
+
+```yaml
+objective_checks:
+  - id: caller-grant
+    type: workflow_permissions
+    paths: [.github/workflows/editorial-label-audit.yml]
+    job: editorial-label-audit
+    uses_suffix: .github/workflows/editorial-label-audit.yml
+    permissions_include:
+      contents: read
+      pull-requests: write
+```
+
+Every path pattern must match at least one file, and every matched file must
+qualify. Missing files, malformed YAML or job structures, a different job ID
+(even with a matching display name), and step-level calls fail. Job-level
+permissions replace the entire workflow-level block when present; otherwise
+the job inherits the workflow block. Explicit null, empty, or malformed
+effective blocks fail rather than falling back to a broader grant. Supported
+blocks are scope mappings with `read`, `write`, or `none` levels, or the
+`read-all`/`write-all` shorthands. An omitted scope grants nothing; `write`
+satisfies `read`, and `read-all` cannot satisfy a write requirement. Check
+arguments must include nonempty path patterns, job ID, suffix, and a nonempty
+scope mapping requiring `read` or `write`. Unknown constraint keys are rejected.
+
 ### Git-state objective check types (`harness/scorers/objective.py`)
 
 Added for fixtures whose target state is one or more real git repositories
