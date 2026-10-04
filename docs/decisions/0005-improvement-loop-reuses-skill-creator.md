@@ -54,8 +54,10 @@ this harness or it is not measured the way every other number here is.
    arguments (`--max-iterations 5 --runs-per-query 3 --holdout 0.4`, browser
    report off). It keeps skill-creator's split, its held-out selection and its
    proposer; nothing of it is copied into this repo. Its working directory is
-   a scratch project holding an empty `.claude/`, so the command files it
-   plants never land in a real checkout. The query set is
+   a scratch project holding `.claude/settings.json`, so the command files
+   it plants never land in a real checkout. Settings disable every local
+   registry plugin providing the skill (see the hardening addendum). The
+   query set is
    `--trigger-eval-set FILE` when given, else derived from fixtures: the
    train fixtures' prompts should trigger and every other skill's fixture
    prompts should not. **The validation fixture's prompt is always removed**,
@@ -80,10 +82,13 @@ this harness or it is not measured the way every other number here is.
    (else exit 2, "needs more fixtures"). In name order, validation is the
    fixture at `rotation % n`, where `rotation` defaults to the number of
    records already written for the skill, so consecutive runs hold out a
-   different fixture. A candidate is **accepted** only when validation held
+   different fixture, excluding an optional fixed `--holdout`. A candidate
+   is **accepted** only when validation held
    (objective pass rate not lower; judge mean not lower by more than 0.5)
-   **and** train improved (objective pass rate higher, or equal with a higher
-   judge mean). Any errored or unscored fixture rejects as inconclusive.
+   **and** train met `--min-gain` (default .10 on the normalized 0..1 scale:
+   objective pass rate, or judge mean divided by 10 when objective is equal).
+   The fixed holdout must not regress on either score. Any errored or
+   unscored fixture, or missing expected judge score, rejects as inconclusive.
 5. **Output stays local.** `improvements/<skill>/<ts>.json` is written every
    time (rejections are the high-value record), `<ts>.patch` whenever a
    candidate existed (rooted at the registry, `git apply`-able), and
@@ -120,11 +125,12 @@ this harness or it is not measured the way every other number here is.
 
 ## Consequences
 
-- The cost of one run is bounded and visible before it starts (`--dry-run`
+- The number of model calls is bounded and visible before it starts (`--dry-run`
   prints it): 2 × fixtures × trials agent calls (plus as many judge calls),
   at most `5 × 3 × queries + 8` skill-creator calls, and one proposal call.
-  `evals/budget.yml`'s per-skill cap (#71's guardrail) does not exist yet,
-  so nothing enforces a ceiling beyond `--trials` (1..20).
+  There is no implemented per-skill spend cap or budget configuration file;
+  the dollar cost is not bounded by these call counts. A spend-cap guardrail
+  remains part of [#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71).
 - Only two skills qualify today: `writing-adrs` (three fixtures) and
   `adam-writing-style` (three, but its pairwise judge mode is refused by
   `run_eval.py`, so it needs `--no-judge`).
@@ -143,13 +149,66 @@ this harness or it is not measured the way every other number here is.
   `docs/skill-impact.md` entry, `improve.yml`, the idempotency check on an
   open `eval-improve/<skill>` branch, the budget refusal, and publishing
   records to `persistent/eval-results`.
-- skill-creator's trigger runs are plain `claude -p` calls under the
-  operator's own configuration, so a skill already installed at user scope
-  (the owner's machine has the registry's plugins installed) competes with
-  the planted command file and can read as a miss. Whether to run the loop
-  under a throwaway `HOME` with only the login carried over is open.
+- skill-creator's trigger runs retain the operator's real login. Scratch
+  project settings disable the local registry plugins providing the target
+  skill so those installed copies do not compete with the planted command.
+  Federated marketplace sources are not fetched; their providers cannot be
+  inferred from this registry archive.
 - skill-creator is an external dependency read from the operator's plugin
   install. A plugin update can change `run_loop.py`'s output shape; the
   contract test in `test/issues/test_issue_71.py` runs the installed copy
   with a stand-in `claude` and fails if it does, but it is skipped wherever
   the plugin is not installed, CI included.
+
+## Pre-real-run hardening addendum (2026-10-04)
+
+The review of [PR #236](https://github.com/Adam-S-Daniel/skills-evals/pull/236)
+identified five requirements before any real run. The implementation still
+has only offline test evidence; no real evaluation was run for this change.
+
+- **Trigger isolation uses project configuration.** The archived registry's
+  `.claude-plugin/marketplace.json` supplies the marketplace and entry names
+  for `enabledPlugins` keys. Local plugin manifests and marketplace entries
+  supply additive skill directories, beside default `skills/`; an explicit
+  skills list for a marketplace-root plugin limits that default scan. A
+  plugin manifest is optional. Paths stay inside their archive and plugin
+  roots, malformed manifests refuse the run, and remote sources are skipped.
+  This follows the [plugin manifest reference](https://code.claude.com/docs/en/plugins-reference).
+  Each provider is set to `false` in the scratch project's settings before
+  the trigger loop starts. The run keeps the operator's login through the
+  real `HOME`; a throwaway `HOME` belongs only to offline tests.
+- **Acceptance requires material gain.** `--min-gain` must be finite and
+  greater than zero, at most one; its default .10 means ten percentage points
+  of objective pass rate, or one judge point on the 0..10 scale when the
+  objective rate is exactly equal. The boundary is inclusive (with only
+  1e-12 absolute tolerance for floating-point subtraction), neutral edits
+  reject, and judge gains cannot rescue an insufficient objective gain.
+  This conservative default reduces acceptance of tiny movements; it is an
+  empirical heuristic, not calibrated statistical significance. The rotating
+  validation judge tolerance remains .5, also uncalibrated, as requested in
+  [#71](https://github.com/Adam-S-Daniel/skills-evals/issues/71).
+- **A fixed holdout protects against rotation leakage.** `--holdout` names
+  one nested fixture excluded from training and the rotating validation
+  population on every run. Three total fixtures still suffice: one train,
+  one rotating validation, one fixed holdout. Both harness runs measure it,
+  and objective rate and judge mean must not regress (zero judge tolerance).
+  Its prompt is removed from every trigger query set, including overrides;
+  its prompt and failure evidence never enter the body proposal. Missing or
+  errored measurements reject as inconclusive. Choose a fixed fixture with
+  a prompt distinct from every train fixture, select a previously untrained
+  fixture, and keep the same `--holdout`
+  on subsequent runs; a duplicate train prompt refuses before calls or
+  writes. If a train prompt duplicates
+  validation's prompt, exclusion can remove all positive trigger queries;
+  that case refuses and requires a reviewed `--trigger-eval-set`, rather than
+  leaking the validation prompt. `writing-adrs`' bootstrap and
+  existing-convention fixtures currently share that prompt.
+- **Bad descriptions reject without crashing.** Control characters,
+  including DEL and C1 controls, or an unrenderable YAML description produce
+  the ordinary `invalid-proposal` record and no candidate measurement.
+- **Dry-run preflight is executable.** Every fixture's model selection uses
+  the actual `--no-judge` flag. Unsupported judge modes or unavailable judge
+  models refuse before calls or output writes and name `--no-judge` as the
+  corrective option. The deferred spend cap is a documentation fact, not a
+  mechanism this change implements: no script reads a budget file, and the
+  plan reports call bounds rather than a dollar ceiling.
