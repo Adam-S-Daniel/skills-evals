@@ -691,11 +691,60 @@ RULESET_REL_PATH = ".github/rulesets/main.json"
 GATE_REF_RE = re.compile(r"\b(?:steps|needs)\.[\w-]+\.outputs\.[\w-]+")
 
 
-def _load_workflows(workspace: str, patterns: list[str]) -> list[tuple[str, dict | None]]:
+class _DuplicateWorkflowKeyError(ValueError):
+    """A matched workflow authors the same mapping key more than once."""
+
+
+def _reject_duplicate_workflow_keys(loader, node, rel: str) -> None:
+    """Inspect authored keys before SafeLoader flattens merge defaults.
+
+    Alias references share node identities; visit each once, including
+    recursive aliases. Only scalar keys can construct to hashable keys in
+    SafeLoader; complex keys retain the loader's ordinary parse failure.
+    """
+    import yaml
+    merge_key = object()
+    seen = set()
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, yaml.MappingNode):
+            keys = set()
+            for key_node, value_node in current.value:
+                pending.extend((key_node, value_node))
+                if not isinstance(key_node, yaml.ScalarNode):
+                    continue
+                if key_node.tag == "tag:yaml.org,2002:merge":
+                    key = merge_key
+                elif key_node.tag == "tag:yaml.org,2002:value":
+                    # SafeLoader treats the plain '=' mapping key as a
+                    # string during flatten_mapping, after this walk.
+                    key = key_node.value
+                else:
+                    try:
+                        key = loader.construct_object(key_node, deep=True)
+                    except yaml.YAMLError:
+                        # An unsupported key tag must not hide duplicates
+                        # elsewhere. Construction still rejects the tag
+                        # after this authored-node walk finishes.
+                        key = (key_node.tag, key_node.value)
+                if key in keys:
+                    raise _DuplicateWorkflowKeyError(f"{rel}: duplicate YAML mapping key")
+                keys.add(key)
+        elif isinstance(current, yaml.SequenceNode):
+            pending.extend(current.value)
+
+
+def _load_workflows(workspace: str, patterns: list[str], *,
+                    reject_duplicate_keys: bool = False) -> list[tuple[str, dict | None]]:
     """[(relpath, parsed doc or None if it doesn't parse)] for every match.
 
     Paths are returned with forward slashes so fixtures can name them
-    platform-independently.
+    platform-independently. Duplicate validation is opt-in so unrelated
+    objective checks retain their existing SafeLoader behavior.
     """
     import yaml
     out = []
@@ -704,7 +753,16 @@ def _load_workflows(workspace: str, patterns: list[str]) -> list[tuple[str, dict
             rel = os.path.relpath(path, workspace).replace(os.sep, "/")
             try:
                 with open(path, encoding="utf-8") as f:
-                    doc = yaml.safe_load(f)
+                    if reject_duplicate_keys:
+                        loader = yaml.SafeLoader(f)
+                        try:
+                            node = loader.get_single_node()
+                            _reject_duplicate_workflow_keys(loader, node, rel)
+                            doc = loader.construct_document(node) if node is not None else None
+                        finally:
+                            loader.dispose()
+                    else:
+                        doc = yaml.safe_load(f)
             except (yaml.YAMLError, OSError, UnicodeDecodeError):
                 doc = None
             out.append((rel, doc if isinstance(doc, dict) else None))
@@ -3087,6 +3145,13 @@ def _log_file_reachable(log_file, download_paths: list[str]) -> bool:
     return False
 
 
+def _uses_suffix_matches(uses: str, suffix: str) -> bool:
+    """Match the reference before '@' at a whole path-segment boundary."""
+    ref = uses.split("@", 1)[0]
+    return not suffix or ref == suffix or ref.endswith(
+        suffix if suffix.startswith("/") else "/" + suffix)
+
+
 def workflow_permissions(workspace: str, patterns: list[str], *,
                          job: str | None = None,
                          uses_suffix: str | None = None,
@@ -3110,7 +3175,10 @@ def workflow_permissions(workspace: str, patterns: list[str], *,
 
     checked = 0
     for pattern in patterns:
-        workflows = _load_workflows(workspace, [pattern])
+        try:
+            workflows = _load_workflows(workspace, [pattern], reject_duplicate_keys=True)
+        except _DuplicateWorkflowKeyError as error:
+            return (False, str(error))
         if not workflows:
             return (False, f"no workflow matches {pattern!r}")
         for rel, doc in workflows:
@@ -3121,7 +3189,7 @@ def workflow_permissions(workspace: str, patterns: list[str], *,
                 return (False, f"{rel}: missing or malformed job {job!r}")
             job_body = jobs[job]
             uses = job_body.get("uses")
-            if not isinstance(uses, str) or not uses.split("@", 1)[0].endswith(uses_suffix):
+            if not isinstance(uses, str) or not _uses_suffix_matches(uses, uses_suffix):
                 return (False, f"{rel}: job {job!r} does not call {uses_suffix!r}")
             # Presence matters: an explicit null job block must not use the
             # helper's None fallback to a more generous workflow block.
@@ -3162,7 +3230,8 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
                        min_matches: int = 1) -> tuple[bool, str]:
     """Structural assertions over parsed workflow YAML: does at least
     `min_matches` step, across every workflow matched by `patterns`, call a
-    `uses:` action whose ref (the part before '@') ends with `uses_suffix`,
+    `uses:` action whose ref (the part before '@') matches `uses_suffix` at
+    a whole path-segment boundary,
     inside a job matching `job` (by id or `name:`), satisfying the given
     job/step-level shape?
 
@@ -3251,18 +3320,22 @@ def workflow_step_uses(workspace: str, patterns: list[str], *,
     has no `steps:` at all) — only step-level `uses:` inside a job's
     `steps:` list. Pair this check with `yaml_parses` on the same `paths` so
     an unparseable file fails loudly instead of reading as "no matching step,
-    as expected."
+    as expected." Duplicate authored keys anywhere in a matched workflow
+    fail this check, including files with no matching steps.
     """
     matches = []  # (rel, doc, job_id, job, step, step_index) for every uses_suffix-matching step
-    for rel, doc in _load_workflows(workspace, patterns):
+    try:
+        workflows = _load_workflows(workspace, patterns, reject_duplicate_keys=True)
+    except _DuplicateWorkflowKeyError as error:
+        return (False, str(error))
+    for rel, doc in workflows:
         if doc is None:
             continue
         for job_id, job_body, step, step_index in _iter_workflow_steps(doc):
             uses = step.get("uses")
             if not isinstance(uses, str):
                 continue
-            ref = uses.split("@", 1)[0]
-            if uses_suffix is not None and not ref.endswith(uses_suffix):
+            if uses_suffix is not None and not _uses_suffix_matches(uses, uses_suffix):
                 continue
             matches.append((rel, doc, job_id, job_body, step, step_index))
 
