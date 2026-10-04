@@ -195,9 +195,18 @@ def _failure_hint(leg: dict) -> str:
                 "see README \"Guidance-bridge canary\".")
     if name == "bridge-subagent":
         return "subagent memory passing may have regressed (as reported upstream Feb-May 2026)."
-    hint = ("either the probe's tool controls broke or native AGENTS.md support shipped "
-           "(anthropics/claude-code#6235) — a signal to simplify the fleet, not a failure "
-           "of it")
+    if name == "agents-only":
+        # Expected `visible`, got invisible: the one leg with no CLAUDE.md.
+        return ("this layout has AGENTS.md and no CLAUDE.md, which Claude Code "
+                "2.1.277 reads natively (its release note); check the recorded "
+                "claude --version first, since an older CLI is expected to fail "
+                "here, and only then suspect a native-loading regression; see "
+                "README \"Guidance-bridge canary\".")
+    # no-bridge / fence: expected invisible, got visible. They keep a CLAUDE.md,
+    # which native AGENTS.md support (no CLAUDE.md only) does not explain.
+    hint = ("most likely the probe's tool controls broke (foraging leaked the "
+            "token); native AGENTS.md support does not explain it, because this "
+            "layout has a CLAUDE.md")
     if name == "fence":
         hint += "; for fence specifically: fenced-import expansion behavior changed."
     else:

@@ -39,6 +39,13 @@ specific assertion fail, so that assertion is proven to be doing work:
                        plugin install or a stray project copy looks like)
   account-leak       — honest, plus $FAKE_INIT_ACCOUNT as a synced skill,
                        tagged with the ` (claude.ai sync)` suffix
+  account-namespaced — the same, with the skill named
+                       `anthropic-skills:$FAKE_INIT_ACCOUNT`, the naming the
+                       2.1.269 release notes describe for synced skills. Read
+                       in those notes, not measured on a real account (#196)
+
+`FAKE_INIT_COMMIT_SHA` sets the `gitCommitSha` that `plugin install` records in
+`installed_plugins.json` (empty: record none); see the install branch.
 
 `--model <alias>` resolves the way the real CLI resolves a family alias
 (#203: `scripts/probe_model_defaults.py` reads that resolution off the init
@@ -157,9 +164,17 @@ def handle_plugin_subcommand(argv: list) -> int:
         installed_path = state / "installed_plugins.json"
         installed = json.loads(installed_path.read_text(encoding="utf-8")) \
             if installed_path.is_file() else {"version": 2, "plugins": {}}
-        installed["plugins"][f"{bundle}@{market}"] = [
-            {"scope": "user", "installPath": str(path), "version": "1.0.0",
-             "gitCommitSha": "0" * 40}]
+        # `gitCommitSha` is what the CLI records for the install. It is a
+        # knob because the arm must not depend on it (#192): the real value is
+        # the checkout's HEAD, which is not the commit the lock pins, and
+        # CLI 2.1.277 and 2.1.280 changed when it is written (read in their
+        # release notes). Unset keeps the all-zero default; an EMPTY value
+        # omits the key, the shape of an install recorded without a commit.
+        entry = {"scope": "user", "installPath": str(path), "version": "1.0.0"}
+        sha = os.environ.get("FAKE_INIT_COMMIT_SHA", "0" * 40)
+        if sha:
+            entry["gitCommitSha"] = sha
+        installed["plugins"][f"{bundle}@{market}"] = [entry]
         installed_path.write_text(json.dumps(installed, indent=2), encoding="utf-8")
         print(f"Successfully installed plugin: {bundle}@{market}")
         return 0
@@ -193,8 +208,10 @@ def main() -> int:
         extra = os.environ["FAKE_INIT_EXTRA"]
         skills = skills + [extra]
         commands = commands + [{"name": extra, "description": f"fixture {extra}."}]
-    elif MODE == "account-leak":
+    elif MODE in ("account-leak", "account-namespaced"):
         leaked = os.environ["FAKE_INIT_ACCOUNT"]
+        if MODE == "account-namespaced":
+            leaked = f"anthropic-skills:{leaked}"
         skills = skills + [leaked]
         commands = commands + [{"name": leaked,
                                 "description": f"fixture {leaked}.{ACCOUNT_SUFFIX}"}]

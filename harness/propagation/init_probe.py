@@ -106,6 +106,13 @@ SCOPE_FLAGS = ("--setting-sources", "--disallowedTools", "--allowedTools")
 # is not on a surface with no account (see `ProbeFacts.commands_seen`).
 ACCOUNT_SUFFIX = " (claude.ai sync)"
 
+# Claude Code >= 2.1.269 names a skill synced from claude.ai
+# `anthropic-skills:<name>` (read in the 2.1.269 release notes, not measured
+# here; #196), so a `:` in the name no longer means a marketplace plugin. This
+# prefix is the discriminator that survives a surface that emits no
+# `commands_changed` at all.
+ACCOUNT_NAMESPACE = "anthropic-skills:"
+
 # Where the account store lands. Its mere existence under a leg's scratch HOME
 # means the account channel reached that leg — the discriminator that stays
 # available when `commands_changed` is not emitted.
@@ -193,8 +200,11 @@ class ProbeFacts:
 def attribute(facts: ProbeFacts) -> dict:
     """name -> channel, for every skill the init event carries.
 
+    - `"account"` — carries the ` (claude.ai sync)` suffix in `commands_changed`,
+      or is named `anthropic-skills:<name>`. CHECKED FIRST: a synced skill's
+      name contains `:` on CLI >= 2.1.269, so the namespace rule below would
+      claim it as a plugin skill (#196).
     - `"plugin"`  — namespaced (`adam:workflow-path-audit`), i.e. marketplace.
-    - `"account"` — carries the ` (claude.ai sync)` suffix in `commands_changed`.
     - `"local"`   — everything else: `~/.claude/skills`, the project's
       `.claude/skills`, or a CLI built-in. The init event genuinely cannot
       separate those three; the ARM separates them, by controlling what exists
@@ -203,10 +213,10 @@ def attribute(facts: ProbeFacts) -> dict:
     account = facts.account_named_skills()
     out = {}
     for name in facts.skills:
-        if ":" in name:
-            out[name] = "plugin"
-        elif name in account:
+        if name in account or name.startswith(ACCOUNT_NAMESPACE):
             out[name] = "account"
+        elif ":" in name:
+            out[name] = "plugin"
         else:
             out[name] = "local"
     return out

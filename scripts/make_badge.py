@@ -5,7 +5,9 @@ Reads the `--window` newest runs under `<results-dir>/<skill>/` (run dirs are
 UTC timestamps, so lexicographic order == chronological), averages the
 with_skill and without_skill arms over them on objective-check pass counts and
 judge overall scores, and writes `badges/<skill>.json` for shields.io's
-endpoint badge:
+endpoint badge. A run of a skill with nested fixtures holds one A/B pair per
+fixture, and a run made with `--trials N` holds N trials per arm (#66); the
+average is over every trial of every fixture of every run in the window:
 
     https://img.shields.io/endpoint?url=<raw URL of badges/<skill>.json>
 
@@ -23,15 +25,18 @@ only demote, never promote):
 
 A single run is scheduling luck, not a measurement: the arms have been
 observed several checks apart from one run to the next, so a badge built from
-one run reports noise. The window averages that out. Runs where either arm is
-missing or errored are dropped from the window rather than blanking the badge,
-so one bad night does not erase a week of signal; a window with no usable run
-at all still goes lightgrey.
+one run reports noise. The window averages that out. An A/B pair where either
+arm is missing or errored — at `--trials N`, where ANY trial of either arm
+errored — is dropped from the window rather than blanking the badge, so one
+bad night does not erase a week of signal; a window with no usable pair at
+all still goes lightgrey.
 
-The message carries the sample size (`n=N`) whenever more than one run was
-averaged — at n=1 there is no average and the marker is omitted, which is
-exactly the pre-window message. Means print as integers when integral (`7/7`,
-never `7.0/7`) and to one decimal otherwise.
+The message carries the sample size (`n=N`) whenever more than one trial was
+averaged: N is the number of trials per arm behind each mean, which is trials
+x fixtures x runs, and for single-trial runs of a flat fixture is the number
+of runs, as it always was. At n=1 there is no average and the marker is
+omitted, which is exactly the pre-window message. Means print as integers
+when integral (`7/7`, never `7.0/7`) and to one decimal otherwise.
 
 The message always carries a run's date (from the run directory's timestamp,
 NOT the wall clock) so a stale badge is self-evident: the newest run that
@@ -53,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 
@@ -119,32 +125,94 @@ def run_date(run_dir: Path) -> str:
     return name
 
 
-def arm_stats(run_dir: Path, arm: str) -> dict | None:
-    """{"passed", "total", "judge"} for an arm, or None if missing/errored.
+def _count(value) -> int | None:
+    """`value` as a non-negative integer count, or None. A bool is not a
+    count, and neither is a float that happens to be whole."""
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
+
+
+def _number(value) -> float | None:
+    """`value` as a finite real number, or None."""
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return None
+    try:
+        return value if math.isfinite(value) else None
+    except OverflowError:
+        return None
+
+
+def arm_stats(unit_dir: Path, arm: str) -> dict | None:
+    """One arm's totals, or None if missing, errored or malformed.
+
+    Returns `{"n", "passed", "total", "judge_sum", "judge_n"}`: the number of
+    trials, the objective checks passed and run summed over them, and the sum
+    and count of the trials' numeric judge overalls. Sums rather than means,
+    so that averaging several of these is one division of integer counts by
+    the number of trials.
+
+    Two summary shapes (harness/run_eval.py, "Trials"):
+
+      * single-trial — `objective_checks` is a list. This is every summary
+        written before #66 (no `n`) and every `--trials 1` summary since
+        (`n: 1`); both read as one trial.
+      * aggregate — `--trials N`, N > 1: `objective_checks` is null and the
+        counts are under `aggregate`.
+
+    An arm whose `error` is set is unusable in both shapes, and in the
+    aggregate that means ANY errored trial: a mean over the surviving trials
+    is not the measurement its sibling arm made.
 
     Defensive against malformed summaries (non-dict payloads, non-list
-    objective_checks, non-dict check entries or judge): anything that isn't
-    the expected shape reads as missing data — the badge goes lightgrey
-    rather than the job crashing.
+    objective_checks, non-dict check entries or judge, counts that are not
+    counts, an `n` that disagrees with the shape): anything that isn't the
+    expected shape reads as missing data — the badge goes lightgrey rather
+    than the job crashing.
     """
-    summary_path = run_dir / arm / "summary.json"
+    summary_path = unit_dir / arm / "summary.json"
     try:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(summary, dict) or summary.get("error"):
         return None
-    checks = summary.get("objective_checks")
-    if not isinstance(checks, list) or not checks:
+    n = _count(summary.get("n", 1))
+    if not n:
         return None
-    judge = summary.get("judge")
+
+    checks = summary.get("objective_checks")
+    if isinstance(checks, list):
+        if not checks or n != 1:
+            return None
+        judge = summary.get("judge")
+        overall = judge.get("overall") if isinstance(judge, dict) else None
+        if not isinstance(overall, (int, float)):
+            overall = None
+        return {
+            "n": 1,
+            "passed": sum(1 for c in checks
+                          if isinstance(c, dict) and c.get("passed")),
+            "total": len(checks),
+            "judge_sum": overall,
+            "judge_n": 0 if overall is None else 1,
+        }
+
+    block = summary.get("aggregate")
+    objective = block.get("objective") if isinstance(block, dict) else None
+    if not isinstance(objective, dict) or summary.get("errors"):
+        return None
+    passed, total = _count(objective.get("passed")), _count(objective.get("total"))
+    if passed is None or not total or passed > total or objective.get("n") != n:
+        return None
+    judge = block.get("judge")
     overall = judge.get("overall") if isinstance(judge, dict) else None
-    return {
-        "passed": sum(1 for c in checks
-                      if isinstance(c, dict) and c.get("passed")),
-        "total": len(checks),
-        "judge": overall if isinstance(overall, (int, float)) else None,
-    }
+    judge_sum = _number(overall.get("sum")) if isinstance(overall, dict) else None
+    judge_n = _count(overall.get("n")) if isinstance(overall, dict) else None
+    if judge_sum is None or not judge_n:
+        judge_sum, judge_n = None, 0
+    return {"n": n, "passed": passed, "total": total,
+            "judge_sum": judge_sum, "judge_n": judge_n}
 
 
 def _cmp(a: float, b: float) -> int:
@@ -172,44 +240,76 @@ def compare_arms(with_stats: dict, without_stats: dict) -> str:
     return "yellow" if judge == -1 else "green"  # objective strictly better
 
 
-def usable_runs(results_dir: Path, skill: str,
-                window: int) -> list[tuple[Path, dict, dict]]:
-    """(run_dir, with_stats, without_stats) for the usable runs in the window.
+def unit_dirs(run_dir: Path, treatment: str, control: str) -> list[Path]:
+    """The directories inside one run that hold an A/B pair's arm dirs.
 
-    The window is the `window` NEWEST run dirs; runs where either arm is
+    A flat fixture's arms sit directly in the run directory, which is every
+    run published before #66. A nested fixture's sit one level down, in
+    `<run>/<fixture>/`. A directory counts when it holds either arm's
+    directory, so a pair with one arm missing is still found — and then
+    dropped as unusable, which is what happened to it before. Sorted by
+    name, the run directory itself first.
+    """
+    def holds_an_arm(directory: Path) -> bool:
+        return any((directory / arm).is_dir() for arm in (treatment, control))
+
+    found = [run_dir] if holds_an_arm(run_dir) else []
+    found += sorted(child for child in run_dir.iterdir()
+                    if child.is_dir() and holds_an_arm(child))
+    return found
+
+
+def usable_units(results_dir: Path, skill: str,
+                 window: int) -> list[tuple[Path, dict, dict]]:
+    """(run_dir, with_stats, without_stats) for each usable A/B pair in the
+    window.
+
+    The window is the `window` NEWEST run dirs; pairs where either arm is
     missing or errored are then dropped. Deliberately not "scan back until you
     find `window` good runs": the window names a time span, so a bad night
     shrinks the sample rather than silently pulling in an older run. Newest
-    first.
+    run first, a run's fixtures in name order.
+
+    A pair whose arms report different trial counts is dropped too. One
+    invocation gives both arms the same `--trials`, so a mismatch means the
+    pair was assembled from two, and there is then no single `n` for the
+    badge to print.
     """
     treatment, control = arm_names(skill)
     out = []
     for run_dir in runs_newest_first(results_dir, skill)[:max(1, window)]:
-        with_stats = arm_stats(run_dir, treatment)
-        without_stats = arm_stats(run_dir, control)
-        if with_stats is None or without_stats is None:
-            continue
-        out.append((run_dir, with_stats, without_stats))
+        for unit_dir in unit_dirs(run_dir, treatment, control):
+            with_stats = arm_stats(unit_dir, treatment)
+            without_stats = arm_stats(unit_dir, control)
+            if with_stats is None or without_stats is None:
+                continue
+            if with_stats["n"] != without_stats["n"]:
+                continue
+            out.append((run_dir, with_stats, without_stats))
     return out
 
 
-def _mean(values: list[float]) -> float:
-    return sum(values) / len(values)
-
-
 def aggregate(stats: list[dict]) -> dict:
-    """Mean {"passed", "total", "judge"} over one arm's per-run stats.
+    """Mean {"passed", "total", "judge"} per trial, plus the trial count `n`,
+    over one arm's per-pair totals.
 
     `total` is averaged too rather than assumed constant: a fixture that gains
-    a check mid-window would otherwise print a pass count against a
-    denominator no run actually had. `judge` averages only the runs that
-    carried a numeric judge overall, and is None when none did.
+    a check mid-window — or two fixtures of one skill with different numbers
+    of checks — would otherwise print a pass count against a denominator no
+    trial actually had. `judge` averages only the trials that carried a
+    numeric judge overall, and is None when none did.
+
+    Every trial weighs the same. For single-trial pairs that is the plain
+    mean over runs this function always took.
     """
-    judges = [s["judge"] for s in stats if s["judge"] is not None]
+    n = sum(s["n"] for s in stats)
+    judge_n = sum(s["judge_n"] for s in stats)
     return {
-        "passed": _mean([s["passed"] for s in stats]),
-        "total": _mean([s["total"] for s in stats]),
-        "judge": _mean(judges) if judges else None,
+        "n": n,
+        "passed": sum(s["passed"] for s in stats) / n,
+        "total": sum(s["total"] for s in stats) / n,
+        "judge": (sum(s["judge_sum"] for s in stats if s["judge_n"]) / judge_n
+                  if judge_n else None),
     }
 
 
@@ -228,7 +328,7 @@ def build_badge(results_dir: Path, skill: str,
         return {"schemaVersion": 1, "label": label,
                 "message": "no runs yet", "color": "lightgrey"}
 
-    usable = usable_runs(results_dir, skill, window)
+    usable = usable_units(results_dir, skill, window)
     if not usable:
         # Nothing in the window was scorable; date the badge from the newest
         # run dir so the reader still sees how stale the attempt is.
@@ -241,8 +341,9 @@ def build_badge(results_dir: Path, skill: str,
     # data being reported.
     date = run_date(usable[0][0])
     # n=1 is not an average, and omitting the marker there keeps the
-    # single-run message byte-identical to the pre-window badge.
-    sample = f"n={len(usable)} · " if len(usable) > 1 else ""
+    # single-run message byte-identical to the pre-window badge. `n` is the
+    # trials per arm behind each mean; a usable pair's arms agree on it.
+    sample = f"n={with_agg['n']} · " if with_agg["n"] > 1 else ""
 
     message = (f"with {_fmt_mean(with_agg['passed'])}/{_fmt_mean(with_agg['total'])} vs "
                f"without {_fmt_mean(without_agg['passed'])}/{_fmt_mean(without_agg['total'])} "
@@ -268,7 +369,8 @@ def main() -> int:
     parser.add_argument("--out", type=Path, default=None,
                         help="output path (default: badges/<skill>.json)")
     parser.add_argument("--window", type=_positive_int, default=DEFAULT_WINDOW,
-                        help=f"average over the N newest runs "
+                        help=f"average over the N newest runs — every "
+                             f"fixture and every trial in them "
                              f"(default: {DEFAULT_WINDOW}; 1 = newest run only)")
     args = parser.parse_args()
 

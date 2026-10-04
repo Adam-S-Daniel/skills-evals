@@ -83,7 +83,7 @@ evals/
     seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)
   guidance-bridge-canary/  # behavioral canary for the CLAUDE.md -> @AGENTS.md import
     fixture.yaml           # prompt, disallowed tools, per-layout magic tokens
-    layouts/               # bridge / no-bridge / fence probe workspaces
+    layouts/               # bridge / no-bridge / fence / agents-only probe workspaces
   guidance/                # guidance-subject fixtures (subject: guidance)
     _delivery/             # the delivery canary: one arm per mode, no seed
       fixture.yaml         # section id, five arms, per-arm transcript checks
@@ -366,12 +366,36 @@ regression can be tied to a specific CLI release.
   recorded in the report. Could also be fixture rot — check
   `layouts/*/CLAUDE.md` and the tokens in `fixture.yaml` haven't drifted.
 - **`no-bridge` or `fence` failed** (magic word visible but shouldn't be) —
-  either the probe's tool controls broke (foraging leaked the token) or
-  native AGENTS.md support arrived
+  most likely the probe's tool controls broke (foraging leaked the token).
+  Native AGENTS.md support does **not** explain it: Claude Code 2.1.277
+  reads `AGENTS.md` natively only "in a project with no CLAUDE.md" (its
+  release note, quoted in
+  [skills-evals#191](https://github.com/Adam-S-Daniel/skills-evals/issues/191)),
+  and both of these layouts have a `CLAUDE.md` (a link in `no-bridge`, a
+  fenced import in `fence`), so they stay invisible even where that support
+  exists. An earlier version of this section said native support
   ([anthropics/claude-code#6235](https://github.com/anthropics/claude-code/issues/6235))
-  — a signal to simplify the fleet's guidance-bridge pattern, not a fleet
-  failure.
+  would surface here; with a `CLAUDE.md` present it could not.
+- **`agents-only` failed** (magic word expected but absent) — the one leg
+  with `AGENTS.md` and no `CLAUDE.md` at all, so the only leg where native
+  AGENTS.md support can show up. On a CLI at or past 2.1.277 it expects
+  `visible`; a failure there means native loading regressed or never worked
+  for this layout. On an older CLI it is **expected to fail**, so read the
+  `claude --version` recorded in the report before calling it a regression.
+  When it passes, the fleet's `CLAUDE.md` bridge is no longer the only way
+  Claude Code gets the guidance — a signal to revisit the bridge pattern, not
+  a fleet failure. Whether 2.1.277's native loading behaves as its release
+  note says in this layout has **not been measured**: the leg has not been run
+  against a real CLI yet (see below).
 - **`bridge-subagent` failed** — subagent memory passing regressed.
+
+**Owed: a live run on a CLI at or past 2.1.277.** The `agents-only` layout and
+this reading are hermetic only (against `test/fake-claude`, whose
+`canary_loader` mode models native AGENTS.md reading as the release note
+describes it, which is an assumption, not a measurement). A real run
+(`python3 harness/run_canary.py evals/guidance-bridge-canary`) costs API
+spend and has not been done; its report records `claude --version`, which is
+what ties a result to a CLI release.
 
 ## Propagation probes
 
