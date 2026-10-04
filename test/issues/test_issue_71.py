@@ -651,6 +651,33 @@ class HardeningPipelineTests(PipelineCase):
         self.assertIsNone(record["candidate"])
         self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"], ["baseline"])
 
+    def test_whitespace_descriptions_are_flattened_and_measured(self):
+        candidate = dict(GOOD, **{"bootstrap": (3, 4, 7.0)})
+        descriptions = ("Use\nthis skill", "Use\tthis skill", "Use\rthis skill",
+                        "Use\r\nthis skill")
+        for description in descriptions:
+            with self.subTest(description=repr(description)):
+                shutil.rmtree(self.results, ignore_errors=True)
+                runner = FakeRunner(GOOD, candidate, proposal(), description)
+                rc, _, _ = self.run_main(runner, "--rotation", "2")
+                self.assertEqual(rc, 0)
+                record = self.record()
+                self.assertEqual(record["status"], "accepted")
+                self.assertIn("bootstrap", record["baseline"])
+                self.assertIn("bootstrap", record["candidate"])
+                self.assertEqual([c[1] for c in runner.calls if c[0] == "run_eval"],
+                                 ["baseline", "candidate"])
+                self.assertEqual(record["body_half"]["unified_diff"], BODY_DIFF)
+                measured = runner.seen_skill_md["candidate"]
+                self.assertIn("Step three: add the record to the index", measured)
+                self.assertEqual(pse.frontmatter_data(measured)["description"],
+                                 " ".join(description.split()))
+                block, _ = pse.split_frontmatter(measured)
+                description_lines = [line for line in block.splitlines()
+                                     if line.startswith("description:")]
+                self.assertEqual(description_lines,
+                                 [f"description: {' '.join(description.split())}"])
+
     def test_dry_run_pairwise_skill_names_no_judge_correction(self):
         argv = self.argv("--dry-run")
         argv[0] = "adam-writing-style"
@@ -692,6 +719,29 @@ class HardeningPipelineTests(PipelineCase):
 
 
 class HardeningDescriptionTests(unittest.TestCase):
+
+    def test_whitespace_controls_are_flattened_in_description(self):
+        text = ORIGINAL_SKILL_MD.replace(
+            "description: Write an Architecture Decision Record when a decision needs context.",
+            "description: >\n  original description\n  continuation")
+        descriptions = ("Use\nthis skill", "Use\tthis skill", "Use\rthis skill",
+                        "Use\r\nthis skill")
+        original = pse.frontmatter_data(text)
+        for description in descriptions:
+            with self.subTest(description=repr(description)):
+                new = pse.set_description(text, description)
+                data = pse.frontmatter_data(new)
+                self.assertEqual(data["description"], " ".join(description.split()))
+                self.assertEqual({k: v for k, v in data.items() if k != "description"},
+                                 {k: v for k, v in original.items() if k != "description"})
+                block, body = pse.split_frontmatter(new)
+                description_lines = [line for line in block.splitlines()
+                                     if line.startswith("description:")]
+                self.assertEqual(description_lines,
+                                 [f"description: {' '.join(description.split())}"])
+                self.assertEqual(body, (
+                    "\n# Writing ADRs\n\nStep one: read the existing convention.\n"
+                    "Step two: write the record.\n"))
 
     def test_control_characters_are_invalid_proposals(self):
         for char in ("\x00", "\x1f", "\x7f", "\x85", "\x9f"):

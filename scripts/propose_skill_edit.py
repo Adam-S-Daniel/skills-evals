@@ -466,7 +466,8 @@ def set_description(text: str, description: str) -> str:
     Written plain when YAML reads it back unchanged, else double-quoted."""
     if not description or len(description) > DESCRIPTION_MAX_CHARS:
         raise InvalidProposal(f"description must be 1..{DESCRIPTION_MAX_CHARS} characters")
-    if any(unicodedata.category(char) == "Cc" for char in description):
+    if any(unicodedata.category(char) == "Cc" and char not in "\t\n\r"
+           for char in description):
         raise InvalidProposal("description contains a control character")
     block, body = split_frontmatter(text)
     lines = block.splitlines(keepends=True)
