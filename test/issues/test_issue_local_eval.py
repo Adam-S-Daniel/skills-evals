@@ -18,6 +18,8 @@ Discovered and run by test/run_tests.py; also runnable on its own with
 from __future__ import annotations
 
 import ast
+import contextlib
+import io
 import json
 import os
 import re
@@ -351,7 +353,7 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(probe["skill_under_test_copies"], [expected_copy])
         self.assertTrue(manifest["status"].startswith("refused"))
         self.assertEqual(sorted(p.name for p in self.out.iterdir()),
-                         ["manifest.json"])
+                         ["LOCAL_EXHIBIT", "manifest.json"])
 
     def test_a_user_level_copy_of_the_skill_fails_the_run(self):
         _plant_skill(self.home / ".claude" / "skills", SKILL)
@@ -450,7 +452,12 @@ class TestLocalEval(unittest.TestCase):
         self.assertIs(manifest["transcripts"]["local_only"], True)
         self.assertIn("LOCAL-ONLY", manifest["transcripts"]["note"])
         self.assertEqual(sorted(p.name for p in self.out.iterdir()),
-                         ["aggregate.json", "manifest.json", "t1", "t2", "t3"])
+                         ["LOCAL_EXHIBIT", "aggregate.json", "manifest.json",
+                          "t1", "t2", "t3"])
+        for k in (1, 2, 3):
+            self.assertIn(EXHIBIT, (self.out / f"t{k}" / "LOCAL_EXHIBIT").read_text(
+                encoding="utf-8"))
+        self.assertIn(EXHIBIT, (self.out / "LOCAL_EXHIBIT").read_text(encoding="utf-8"))
 
         # 5: the aggregate, recomputed here from the trial summaries.
         aggregate = self._json("aggregate.json")
@@ -648,6 +655,9 @@ class TestLocalEval(unittest.TestCase):
         # list) must not appear for the version call, the probe, an arm or
         # the judge.
         allowed = {"PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
+                   "USER", "LOGNAME", "SHELL", "HTTP_PROXY", "HTTPS_PROXY",
+                   "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+                   "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
                    "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR"}
         proc = self._run(str(EVAL_DIR), "--trials", "1",
                          "--registry", f"adam-agentskills={self._registry()}",
@@ -800,9 +810,10 @@ class TestLocalEval(unittest.TestCase):
                 for path in summaries:
                     self.assertIs(json.loads(path.read_text(
                         encoding="utf-8"))["local_exhibit"], True, str(path))
+                self._remove_markers()  # isolate the stamp from the marker
                 badge_proc, badge = self._make_badge(skill, self.out / "t1")
                 self.assertNotEqual(badge_proc.returncode, 0)
-                self.assertIn("local exhibit", badge_proc.stderr)
+                self.assertIn("local_exhibit: true", badge_proc.stderr)
                 self.assertFalse(badge.exists())
 
     def test_an_unstamped_summary_is_still_badge_input(self):
@@ -810,15 +821,104 @@ class TestLocalEval(unittest.TestCase):
         proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
                          "--registry", f"adam-agentskills={registry}")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
-        for path in self.out.rglob("summary.json"):
-            summary = json.loads(path.read_text(encoding="utf-8"))
-            del summary["local_exhibit"]  # what a published summary looks like
-            path.write_text(json.dumps(summary), encoding="utf-8")
+        self._unstamp_summaries()
+        self._remove_markers()  # now it looks like a published tree
         badge_proc, badge = self._make_badge(SKILL, self.out / "t1")
         self.assertEqual(badge_proc.returncode, 0, badge_proc.stderr)
-        self.assertTrue(badge.is_file())
         self.assertIn(f"skill eval: {SKILL}",
                       json.loads(badge.read_text(encoding="utf-8"))["label"])
+        # ... and it reads exactly as it did before this change.
+        baseline = self._baseline_make_badge()
+        if baseline is None:
+            self.skipTest("origin/main is not available to compare against")
+        old_badge = self.root / "old-badge.json"
+        old = subprocess.run(
+            [sys.executable, str(baseline), SKILL, "--results-dir",
+             str(self.out / "t1"), "--out", str(old_badge)],
+            capture_output=True, text=True, timeout=120)
+        self.assertEqual(old.returncode, 0, old.stderr)
+        self.assertEqual(badge.read_bytes(), old_badge.read_bytes())
+
+    def _unstamp_summaries(self):
+        for path in self.out.rglob("summary.json"):
+            summary = json.loads(path.read_text(encoding="utf-8"))
+            summary.pop("local_exhibit", None)  # what a published summary lacks
+            path.write_text(json.dumps(summary), encoding="utf-8")
+
+    def _remove_markers(self):
+        for path in self.out.rglob("LOCAL_EXHIBIT"):
+            path.unlink()
+
+    def _baseline_make_badge(self):
+        """make_badge.py as origin/main has it, or None when this checkout has
+        no such ref (a shallow CI clone)."""
+        shown = subprocess.run(
+            ["git", "-C", str(REPO_ROOT), "show",
+             "origin/main:scripts/make_badge.py"], capture_output=True, text=True)
+        if shown.returncode != 0:
+            return None
+        path = self.root / "make_badge_baseline.py"
+        path.write_text(shown.stdout, encoding="utf-8")
+        return path
+
+    def test_the_marker_alone_makes_a_trial_tree_unusable_as_badge_input(self):
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self._unstamp_summaries()  # a kill before the stamp: marker only
+        for results in (self.out / "t1", self.out):
+            with self.subTest(results=str(results)):
+                badge_proc, badge = self._make_badge(SKILL, results)
+                self.assertNotEqual(badge_proc.returncode, 0)
+                self.assertIn("inside a local exhibit", badge_proc.stderr)
+                self.assertFalse(badge.exists())
+
+    def test_a_marker_in_any_parent_directory_refuses_too(self):
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self._unstamp_summaries()
+        # A copy of the trial tree with only the PARENT carrying the marker.
+        parent = self.root / "marked-parent"
+        shutil.copytree(self.out / "t1", parent / "deeper" / "t1")
+        (parent / "LOCAL_EXHIBIT").write_text("x\n", encoding="utf-8")
+        for marker in (parent / "deeper" / "t1" / "LOCAL_EXHIBIT",):
+            marker.unlink()
+        badge_proc, badge = self._make_badge(SKILL, parent / "deeper" / "t1")
+        self.assertNotEqual(badge_proc.returncode, 0)
+        self.assertIn("inside a local exhibit", badge_proc.stderr)
+        self.assertFalse(badge.exists())
+
+    def test_the_marker_is_written_before_the_trial_launches(self):
+        # run_eval is the first thing to write under t<k>; the dispatcher logs
+        # the agent's cwd, so look at what already sat in the trial dir's root.
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--arm", "without_skill")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertTrue((self.out / "LOCAL_EXHIBIT").is_file())
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        seen = []
+        real_run = subprocess.run
+
+        def spy(cmd, *a, **kw):
+            if isinstance(cmd, list) and str(local_eval.RUN_EVAL) in cmd:
+                seen.append((Path(cmd[cmd.index("--results-dir") + 1]) /
+                              "LOCAL_EXHIBIT").is_file())
+            return real_run(cmd, *a, **kw)
+
+        shutil.rmtree(self.out)
+        env = self._env(self._dispatcher())
+        with mock.patch.dict(os.environ, env, clear=True), \
+                mock.patch.object(local_eval.subprocess, "run", side_effect=spy), \
+                contextlib.redirect_stdout(io.StringIO()), \
+                contextlib.redirect_stderr(io.StringIO()):
+            code = local_eval.main(
+                [str(EVAL_DIR), "--results-dir", str(self.out), "--trials", "1",
+                 "--no-judge", "--arm", "without_skill"])
+        self.assertEqual(code, 0)
+        self.assertEqual(seen, [True])
 
     # -- nested fixtures (run_eval's #66 layout) -------------------------
 
@@ -867,6 +967,121 @@ class TestLocalEval(unittest.TestCase):
                          "--no-judge", "--registry",
                          f"adam-agentskills={self._registry('writing-adrs')}")
         self._assert_clean(proc, 1, ["supersede"])
+
+    # -- review round 2 --------------------------------------------------
+
+    def test_a_hostile_xdg_config_home_never_reaches_a_child(self):
+        hostile = self.root / "xdg"
+        (hostile / "claude").mkdir(parents=True)
+        (hostile / "claude" / "settings.json").write_text(
+            json.dumps({"apiKeyHelper": "/bin/example"}), encoding="utf-8")
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={self._registry()}",
+                         env_extra={"XDG_CONFIG_HOME": str(hostile),
+                                    "XDG_DATA_HOME": str(hostile),
+                                    "XDG_STATE_HOME": str(hostile),
+                                    "XDG_CACHE_HOME": str(hostile)})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertGreater(len(calls), 3)
+        for call in calls:
+            with self.subTest(role=call["role"], n=call["n"]):
+                self.assertEqual([n for n in call["env_names"]
+                                  if n.startswith("XDG_")], [])
+
+    def test_proxy_and_ca_variables_and_identity_reach_the_children(self):
+        passed = {"HTTPS_PROXY": "http://proxy.example.com:3128",
+                  "http_proxy": "http://proxy.example.com:3128",
+                  "NO_PROXY": "example.net", "NODE_EXTRA_CA_CERTS": "/x/ca.pem",
+                  "SSL_CERT_FILE": "/x/ca.pem", "SSL_CERT_DIR": "/x/certs",
+                  "USER": "someone", "LOGNAME": "someone", "SHELL": "/bin/sh"}
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={self._registry()}",
+                         env_extra=passed)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for call in self._calls():
+            if call["role"] in ("version", "judge"):
+                with self.subTest(role=call["role"]):
+                    self.assertLessEqual(set(passed), set(call["env_names"]))
+
+    def test_refuses_a_proxy_url_that_embeds_userinfo(self):
+        for name in ("HTTPS_PROXY", "HTTP_PROXY", "https_proxy", "http_proxy"):
+            for value in ("http://user:sentinel-pw@proxy.example.com:3128",
+                          "http://sentinel-token@proxy.example.com/",
+                          "user:sentinel-pw@proxy.example.com:3128"):
+                with self.subTest(name=name, value=value):
+                    proc = self._run(str(EVAL_DIR), "--trials", "1",
+                                     env_extra={name: value})
+                    self._assert_nothing_ran(proc)
+                    self.assertIn(name, proc.stderr)
+                    self.assertNotIn("sentinel", proc.stderr)
+                    self.assertFalse(self.out.exists())
+
+    def test_refuses_a_credential_source_in_a_seed_or_registry_settings_file(self):
+        registry = self._registry()
+        eval_dir = self.root / "fixture-with-seed-settings"
+        shutil.copytree(EVAL_DIR, eval_dir)
+        deep = eval_dir / "seed" / "some" / "sub" / ".claude"
+        deep.mkdir(parents=True)
+        for name, content, key in (
+                ("settings.json", {"apiKeyHelper": "sentinel-helper"}, "apiKeyHelper"),
+                ("settings.local.json", {"env": {"AWS_PROFILE": "x"}},
+                 "env.AWS_PROFILE")):
+            with self.subTest(seed_file=name):
+                (deep / name).write_text(json.dumps(content), encoding="utf-8")
+                proc = self._run(str(eval_dir), "--trials", "1",
+                                 "--registry", f"adam-agentskills={registry}")
+                self._assert_nothing_ran(proc)
+                self.assertIn(str(deep / name), proc.stderr)
+                self.assertIn(key, proc.stderr)
+                self.assertNotIn("sentinel-helper", proc.stderr)
+                self.assertFalse(self.out.exists())
+                (deep / name).unlink()
+        (registry / ".claude").mkdir()
+        for name, content, key in (
+                ("settings.json", {"awsCredentialExport": "sentinel-helper"},
+                 "awsCredentialExport"),
+                ("settings.local.json", {"env": {"ANTHROPIC_API_KEY": "x"}},
+                 "env.ANTHROPIC_API_KEY")):
+            with self.subTest(registry_file=name):
+                path = registry / ".claude" / name
+                path.write_text(json.dumps(content), encoding="utf-8")
+                proc = self._run(str(EVAL_DIR), "--trials", "1",
+                                 "--registry", f"adam-agentskills={registry}")
+                self._assert_nothing_ran(proc)
+                self.assertIn(str(path), proc.stderr)
+                self.assertIn(key, proc.stderr)
+                self.assertFalse(self.out.exists())
+                path.unlink()
+
+    def test_an_unreadable_or_undecodable_settings_file_is_a_refusal(self):
+        target = self.home / ".claude" / "settings.json"
+        target.parent.mkdir(parents=True)
+        cases = [("a directory", lambda: target.mkdir(), "IsADirectoryError"),
+                 ("not UTF-8", lambda: target.write_bytes(b"\xff\xfe{"),
+                  "UnicodeDecodeError")]
+        if os.geteuid() != 0:
+            def unreadable():
+                target.write_text("{}", encoding="utf-8")
+                target.chmod(0)
+            cases.append(("permission denied", unreadable, "PermissionError"))
+        for label, make, error in cases:
+            with self.subTest(case=label):
+                make()
+                proc = self._run(str(EVAL_DIR), "--trials", "1")
+                self._assert_nothing_ran(proc)
+                self.assertIn(str(target), proc.stderr)
+                self.assertIn("cannot read settings file", proc.stderr)
+                self.assertIn(error, proc.stderr)
+                self.assertFalse(self.out.exists())
+                if target.is_dir():
+                    target.rmdir()
+                else:
+                    target.chmod(0o600)
+                    target.unlink()
+        if os.geteuid() == 0:
+            print("skipped the permission-denied case: running as root",
+                  file=sys.stderr)
 
 
 if __name__ == "__main__":

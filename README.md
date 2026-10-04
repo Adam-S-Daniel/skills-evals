@@ -168,14 +168,17 @@ or a skill directory of nested ones (`--fixture NAME` picks one). It refuses
 credential variable (`ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CONFIG_DIR`,
 `AWS_*`, `GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`, `AZURE_*`, `CLAUDE_CODE_OAUTH_TOKEN`,
 or a name containing `API_KEY`, `AUTH_TOKEN`, `ACCESS_KEY`, `SECRET` or
-`BEARER`), when a settings file the judge would load names `apiKeyHelper`,
-`awsAuthRefresh`, `awsCredentialExport` or such an `env` variable, when
+`BEARER`), when a proxy URL embeds `user:pass@`, when a settings file the
+judge or an arm would load (user, checkout, managed, fixture seed, registry
+root) names `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport` or such an
+`env` variable or cannot be read, when
 `--results-dir` resolves inside any git repository or is not empty, and when
 the skill under test is already visible to an empty workspace (a user-level
 copy would contaminate the `without_skill` arm). Every child it starts sees
-only an allow-listed environment. It writes `aggregate.json` and
+only an allow-listed environment (no `XDG_*`). It writes `aggregate.json` and
 `manifest.json`, stamped "local — not badge input", marks every kept
-`summary.json` `"local_exhibit": true` (`scripts/make_badge.py` refuses those),
+`summary.json` `"local_exhibit": true` and drops a `LOCAL_EXHIBIT` marker in the
+results dir and each trial (`scripts/make_badge.py` refuses both),
 never pushes and never calls `gh`. Its module docstring lists the flags and the
 limits.
 

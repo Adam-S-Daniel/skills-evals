@@ -29,12 +29,18 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    its value; `env -u NAME` clears it. A run under `/login` needs none of them,
    and each one either bills a dollar or cloud account, re-routes the CLI to
    another provider, or puts a credential in reach of an arm.
+   A proxy variable (`HTTP_PROXY`, `HTTPS_PROXY`, either case) whose URL
+   embeds userinfo (`scheme://user:pass@host`) is refused too, by name.
    Whatever passes is then NOT inherited wholesale: main() replaces the
-   process environment with an allow-list (`child_environment`: PATH, HOME,
-   LANG, LANGUAGE, LC_*, TERM, TMPDIR, TZ, XDG_*, CLAUDE_BIN and the two
-   registry locators) before anything is launched, so the version call, the
-   probe, every arm and the judge (which `harness/scorers/judge.py` starts
-   with no `env=`) see only that.
+   process environment with an allow-list (`child_environment`) before
+   anything is launched, so the version call, the probe, every arm and the
+   judge (which `harness/scorers/judge.py` starts with no `env=`) see only
+   that. The allow-list, in full: PATH, HOME, LANG, LANGUAGE, LC_*, TERM,
+   TMPDIR, TZ, USER, LOGNAME, SHELL, HTTP_PROXY, HTTPS_PROXY, NO_PROXY (and
+   their lowercase forms), NODE_EXTRA_CA_CERTS, SSL_CERT_FILE, SSL_CERT_DIR,
+   CLAUDE_BIN, SKILLS_EVALS_REGISTRIES, AGENTSKILLS_DIR. No XDG_* variable
+   passes: `$XDG_CONFIG_HOME/claude/settings.json` could carry a credential
+   source this wrapper does not read, so children use the defaults under HOME.
 1b. Reads the settings files the CLI loads for the unisolated judge, which
    runs from this checkout with no `--setting-sources`: `~/.claude/settings
    .json` and `settings.local.json`, this checkout's `.claude/settings.json`
@@ -42,8 +48,11 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    managed-settings.json` and `managed-settings.d/*.json`, plus the macOS and
    Windows locations). Refuses when one carries `apiKeyHelper`,
    `awsAuthRefresh` or `awsCredentialExport`, or an `env` object naming a
-   variable rule 1 refuses, or when one cannot be parsed as JSON. It names the
-   file and the key, never a value.
+   variable rule 1 refuses, or when one cannot be read or parsed as a JSON
+   object. It names the file and the key, never a value. The same check runs
+   on every `**/.claude/settings*.json` inside each selected fixture's `seed/`
+   (the arms load those as project settings) and on each registry checkout's
+   root `.claude/settings*.json`.
 2. Refuses a `--results-dir` that resolves (symlinks followed) inside this
    checkout, or inside any other git work tree or `.git` directory, or that
    already holds files; a git that cannot answer (dubious ownership,
@@ -77,7 +86,11 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    the manifest and counted in the aggregate's `errors`; it is never dropped.
    Right after each trial every `summary.json` under `<out>/t<k>/` is stamped
    `"local_exhibit": true`, and `scripts/make_badge.py` refuses a summary so
-   stamped: a trial tree is never badge input.
+   stamped. Because a kill could land between a summary's write and its stamp,
+   a `LOCAL_EXHIBIT` marker file is written at the results dir's root and in
+   each `t<k>` BEFORE the trial launches, and `make_badge.py` refuses any
+   `--results-dir` holding that marker in itself or any parent: a trial tree
+   is never badge input.
 7. Writes `<out>/aggregate.json`: per fixture (`fixtures.<name>.arms`, and
    `arms` at top level when one fixture ran; a flat fixture is named
    `(flat)`), per arm: `n` (trials), `errors`, per-check pass counts and
@@ -110,15 +123,17 @@ Limits a reader must know:
   the account's own credentials live (ADR 0002, decision 4).
 - Nothing here was verified against a real CLI: no real run was made. What
   the refusals and the settings pre-flight cannot see, and so stays
-  unverified, is every other way a CLI release could take a credential (a
-  keychain entry, `~/.claude.json`, a new setting or variable). The
-  interactive login is the only credential the judge is left able to use,
-  if those checks and the CLI's documented precedence hold.
+  unverified: `~/.claude.json`, the system keychain, and
+  `~/.claude/.credentials.json` (the interactive login itself, which is the
+  intended credential), and any settings key or variable a future CLI release
+  adds. The interactive login is the only credential the judge is left able
+  to use, if those checks and the CLI's documented precedence hold.
 """
 
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import os
 import shutil
@@ -151,8 +166,18 @@ REFUSED_ENV_SUBSTRINGS = ("API_KEY", "AUTH_TOKEN", "ACCESS_KEY", "SECRET",
 
 #: What every child may inherit; nothing else survives `child_environment`.
 CHILD_ENV_NAMES = ("PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
+                   "USER", "LOGNAME", "SHELL",
+                   "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY",
+                   "http_proxy", "https_proxy", "no_proxy",
+                   "NODE_EXTRA_CA_CERTS", "SSL_CERT_FILE", "SSL_CERT_DIR",
                    "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR")
-CHILD_ENV_PREFIXES = ("LC_", "XDG_")
+CHILD_ENV_PREFIXES = ("LC_",)
+#: Proxy variables passed on; one whose URL embeds userinfo is refused.
+PROXY_URL_NAMES = ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
+
+#: Written at the results dir's root and in each trial dir before the trial
+#: launches; scripts/make_badge.py refuses a results dir at or below one.
+EXHIBIT_MARKER = "LOCAL_EXHIBIT"
 
 #: Settings keys that name a credential source. A settings `env` object is held
 #: to the environment rule above.
@@ -200,6 +225,19 @@ def refused_env_names(environ) -> list[str]:
     return sorted(refused)
 
 
+def proxy_userinfo_names(environ) -> list[str]:
+    """Names of the proxy variables whose URL embeds `user[:pass]@`. Names
+    only; the value is parsed but never reported."""
+    named = []
+    for name in PROXY_URL_NAMES:
+        value = environ.get(name)
+        if value:
+            authority = value.split("://", 1)[-1].split("/", 1)[0]
+            if "@" in authority:
+                named.append(name)
+    return sorted(named)
+
+
 def child_environment(environ) -> dict:
     """The allow-listed environment every child runs under."""
     return {name: value for name, value in environ.items()
@@ -219,35 +257,66 @@ def settings_files(home: Path) -> list[Path]:
     return files
 
 
+def check_settings_file(path: Path) -> None:
+    """Raise Refused when the settings file at `path` names a credential
+    source or cannot be shown not to. A missing file passes. Reports the file
+    and the key, never a value."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return
+    except (OSError, ValueError) as exc:
+        raise Refused(f"cannot read settings file {path} "
+                      f"({type(exc).__name__}); cannot show it names no "
+                      "credential") from exc
+    try:
+        settings = json.loads(text)
+    except ValueError as exc:
+        raise Refused(f"settings file {path} is not valid JSON; cannot "
+                      "show it names no credential") from exc
+    if not isinstance(settings, dict):
+        raise Refused(f"settings file {path} is not a JSON object; cannot "
+                      "show it names no credential")
+    keys = [k for k in REFUSED_SETTINGS_KEYS if k in settings]
+    env_block = settings.get("env")
+    if isinstance(env_block, dict):
+        keys += [f"env.{name}" for name in refused_env_names(env_block)]
+    if keys:
+        raise Refused(f"settings file {path} sets {', '.join(keys)}: the "
+                      "CLI loads it, and it names a credential source "
+                      "or provider. Remove the key (or run elsewhere); "
+                      "a local exhibit runs under the interactive login.")
+
+
 def check_user_settings(home: Path) -> None:
-    """Raise Refused when a settings file the judge would load names a
-    credential source. Reports the file and the key, never a value."""
+    """Refuse when a settings file the judge would load names a credential
+    source."""
     for path in settings_files(home):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except FileNotFoundError:
-            continue
-        except (OSError, ValueError) as exc:
-            raise Refused(f"cannot read settings file {path} "
-                          f"({type(exc).__name__}); cannot show it names no "
-                          "credential") from exc
-        try:
-            settings = json.loads(text)
-        except ValueError as exc:
-            raise Refused(f"settings file {path} is not valid JSON; cannot "
-                          "show it names no credential") from exc
-        if not isinstance(settings, dict):
-            raise Refused(f"settings file {path} is not a JSON object; cannot "
-                          "show it names no credential")
-        keys = [k for k in REFUSED_SETTINGS_KEYS if k in settings]
-        env_block = settings.get("env")
-        if isinstance(env_block, dict):
-            keys += [f"env.{name}" for name in refused_env_names(env_block)]
-        if keys:
-            raise Refused(f"settings file {path} sets {', '.join(keys)}: the "
-                          "judge loads it, and it names a credential source "
-                          "or provider. Remove the key (or run elsewhere); "
-                          "a local exhibit runs under the interactive login.")
+        check_settings_file(path)
+
+
+def _settings_in_tree(root: Path) -> list[Path]:
+    """Every `.claude/settings*.json` at any depth under `root` (symlinked
+    directories are not followed; a settings* directory is returned too, so
+    the check refuses what it cannot read)."""
+    found = []
+    for directory, dirs, files in os.walk(root):
+        if os.path.basename(directory) == ".claude":
+            found += [Path(directory, name) for name in (*dirs, *files)
+                      if fnmatch.fnmatch(name, "settings*.json")]
+    return sorted(found)
+
+
+def check_fixture_settings(seeds: list[Path], registries: list[Path]) -> None:
+    """Refuse a credential source in settings an ARM loads as project
+    settings: any depth under each fixture's seed, and the root `.claude/` of
+    each registry checkout."""
+    for seed in seeds:
+        for path in _settings_in_tree(seed):
+            check_settings_file(path)
+    for registry in registries:
+        for path in sorted((registry / ".claude").glob("settings*.json")):
+            check_settings_file(path)
 
 
 def _git_env() -> dict:
@@ -607,6 +676,12 @@ def transcript_files(out: Path) -> list[str]:
 # ---------------------------------------------------------------------------
 
 
+def _write_marker(directory: Path) -> None:
+    (directory / EXHIBIT_MARKER).write_text(
+        f"{EXHIBIT}\nscripts/make_badge.py refuses a results dir at or below "
+        "a directory holding this file.\n", encoding="utf-8")
+
+
 def _write_json(path: Path, payload: dict) -> None:
     staged = path.with_name(path.name + ".partial")
     staged.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
@@ -668,6 +743,12 @@ def main(argv=None) -> int:
                 "bill a dollar or cloud account, re-route the CLI to another "
                 "provider, or put a credential in reach of the arms. Unset "
                 "them (e.g. `env -u NAME ...`) and re-run.")
+        proxies = proxy_userinfo_names(os.environ)
+        if proxies:
+            raise Refused(
+                "refusing to run with " + ", ".join(proxies) + " set to a URL "
+                "that embeds credentials (scheme://user:pass@host); put the "
+                "credentials elsewhere or use a proxy without them.")
         check_user_settings(Path(os.environ.get("HOME") or Path.home()))
         # From here every child (the version call, the probe, run_eval and
         # through it the arms, and the judge) inherits only the allow-list.
@@ -683,6 +764,10 @@ def main(argv=None) -> int:
             item["registry"] = resolve_fixture_registry(
                 item["fixture"], registry_flags, needed="with_skill" in arms)
             item["models"] = select_models(item["fixture"], args.no_judge)
+        check_fixture_settings(
+            [item["dir"] / run_eval.SEED_DIR for item in fixtures],
+            [Path(f.split("=", 1)[1]) for f in registry_flags]
+            + [item["registry"]["path"] for item in fixtures if item["registry"]])
     except Refused as exc:
         print(f"local_eval: {exc}", file=sys.stderr)
         return EXIT_REFUSED
@@ -710,6 +795,7 @@ def main(argv=None) -> int:
                       "persistent/eval-results, and never pushes",
     }
     out.mkdir(parents=True, exist_ok=True)
+    _write_marker(out)
     manifest_path = out / "manifest.json"
     _write_json(manifest_path, manifest)
 
@@ -738,6 +824,7 @@ def main(argv=None) -> int:
     for k in range(1, args.trials + 1):
         trial_dir = out / f"t{k}"
         trial_dir.mkdir()
+        _write_marker(trial_dir)
         cmd = [sys.executable, str(RUN_EVAL), str(eval_dir), "--arm", args.arm,
                "--results-dir", str(trial_dir)]
         if args.fixture is not None:

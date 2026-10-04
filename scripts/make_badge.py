@@ -99,6 +99,11 @@ def arm_names(name: str) -> tuple[str, str]:
     return ("with_skill", "without_skill")
 
 
+#: Written by scripts/local_eval.py at the root of a local exhibit's results
+#: dir and of each trial dir.
+LOCAL_EXHIBIT_MARKER = "LOCAL_EXHIBIT"
+
+
 def badge_label(name: str) -> str:
     if name.startswith(GUIDANCE_PREFIX):
         return f"guidance eval: {name[len(GUIDANCE_PREFIX):]}"
@@ -325,9 +330,25 @@ def _fmt_mean(value: float) -> str:
     return str(int(rounded)) if rounded == int(rounded) else f"{rounded:.1f}"
 
 
+def refuse_local_exhibit_tree(results_dir: Path) -> None:
+    """Exit when `results_dir` holds scripts/local_eval.py's marker, or any
+    parent does: a local trial tree is never badge input, stamped or not."""
+    resolved = results_dir.resolve()
+    for directory in (resolved, *resolved.parents):
+        try:
+            marked = (directory / LOCAL_EXHIBIT_MARKER).exists()
+        except OSError:
+            continue
+        if marked:
+            raise SystemExit(f"{results_dir}: inside a local exhibit "
+                             f"({directory / LOCAL_EXHIBIT_MARKER}), "
+                             "not badge input")
+
+
 def build_badge(results_dir: Path, skill: str,
                 window: int = DEFAULT_WINDOW) -> dict:
     _validate_name(skill)
+    refuse_local_exhibit_tree(results_dir)
     label = badge_label(skill)
     runs = runs_newest_first(results_dir, skill)
     if not runs:
