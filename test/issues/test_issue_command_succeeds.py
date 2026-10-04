@@ -132,6 +132,16 @@ class CommandSucceedsTests(unittest.TestCase):
         self.assertEqual(self.check(["git", "--version"])[0], False)
         self.assertEqual(self.check(["/usr/bin/true"]), (False, "command_invalid_executable"))
 
+    def test_missing_and_unexecutable_workspace_programs_fail(self):
+        program = self.ws / "unexecutable-program"
+        program.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        program.chmod(0o600)
+        for name in ("./missing-program", "./unexecutable-program"):
+            with self.subTest(name=name):
+                passed, detail = self.check([name])
+                self.assertFalse(passed)
+                self.assertEqual(detail, "command_spawn_failed network=unavailable")
+
     def test_fixed_interpreter_beats_agent_planted_name(self):
         planted = self.ws / "python3"
         planted.write_text("#!/bin/sh\nexit 9\n", encoding="utf-8")
@@ -273,6 +283,35 @@ class CommandSucceedsTests(unittest.TestCase):
                 exec(compile(source, "offline-guard", "exec"), {})
             self.assertEqual(refusal.exception.code, local_eval_guard.GUARD_EXIT)
             execute.assert_not_called()
+
+    def test_indirect_cli_lookup_executes_private_refusal_stub(self):
+        parent_bin = self.root / "parent-bin"
+        parent_bin.mkdir()
+        parent_cli = parent_bin / "claude"
+        local_launcher = self.root / "local-launcher"
+        workspace_cli = self.ws / "claude"
+        calls = self.root / "inherited-launcher-calls"
+        source = ("#!/usr/bin/python3\nfrom pathlib import Path\n"
+                  f"Path({str(calls)!r}).write_text('invoked', encoding='utf-8')\n"
+                  "raise SystemExit(0)\n")
+        for program in (parent_cli, local_launcher, workspace_cli):
+            program.write_text(source, encoding="utf-8")
+            program.chmod(0o700)
+        inherited = local_eval.child_environment({
+            "CLAUDE_BIN": str(local_launcher), "PATH": str(parent_bin),
+            "HOME": str(self.root)})
+        with mock.patch.dict(os.environ, inherited):
+            passed, detail = self.check([
+                "bash", "-c", "command -v claude > selected-cli; claude"])
+        self.assertFalse(passed)
+        self.assertIn("command_nonzero exit=97", detail)
+        selected = Path((self.ws / "selected-cli").read_text().strip())
+        self.assertEqual(selected.name, "claude")
+        self.assertEqual(selected.parent.name, "bin")
+        self.assertTrue(selected.parent.parent.name.startswith("objective-command-"))
+        self.assertNotIn(selected, (parent_cli, local_launcher, workspace_cli))
+        self.assertFalse(selected.exists())
+        self.assertFalse(calls.exists())
 
     def test_ci_objective_only_entrypoint_uses_final_workspace(self):
         eval_dir = self.root / "fixture"
