@@ -7930,6 +7930,7 @@ class TestGhWriteAllowlist(unittest.TestCase):
         # Only our anchor is created: no config, objects, refs or credentials.
         (ws / ".git" / "workspace-root").write_text(str(ws) + "\n")
         shutil.copy2(self.GH_SOURCE, ws / "bin" / "gh")
+        (ws / "bin" / "gh").chmod(0o755)
         replay = ws / ".gh" / "replay"
         replay.mkdir(parents=True)
         for entry in self.ENTRIES:
@@ -7956,7 +7957,7 @@ class TestGhWriteAllowlist(unittest.TestCase):
         env = {"PATH": os.defpath, "HOME": str(self.root), "LANG": "C.UTF-8",
                "GH_REPLAY_DIR": str(replay or ws / ".gh/replay"),
                "GH_REPO": repo or self.REPO, "GH_TOKEN": "", "GITHUB_TOKEN": ""}
-        proc = subprocess.run([sys.executable, str(ws / "bin/gh"), *args],
+        proc = subprocess.run([str(ws / "bin/gh"), *args],
                               cwd=cwd or ws, env=env, capture_output=True)
         record = (ws / ".gh-invocations.log").read_text().splitlines()[-1]
         self.assertIn(f"exit={proc.returncode})", record)
