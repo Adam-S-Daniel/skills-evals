@@ -56,6 +56,7 @@ DISARM_DIR = REPO_ROOT / "evals" / "disarm-inherited-reach"
 GHA_SHA_PINNING_DIR = REPO_ROOT / "evals" / "github-actions-sha-pinning"
 POST_FAILURE_COMMENT_DIR = REPO_ROOT / "evals" / "post-failure-comment"
 RENAME_DIR = REPO_ROOT / "evals" / "rename-pdfs"
+PDF_OCR_DIR = REPO_ROOT / "evals" / "pdf-ocr-audit"
 VENDOR_RELEASE_DIR = REPO_ROOT / "evals" / "vendor-release-impact-issues"
 
 sys.path.insert(0, str(HARNESS_DIR))
@@ -23551,6 +23552,359 @@ def _import_pypdf_or_skip():
     except ImportError:
         raise unittest.SkipTest("pypdf not installed")
     return pypdf
+
+
+class TestIssue83(unittest.TestCase):
+    """Static PDF audit seed and objective report checks; no pypdf needed.
+
+    Each solution mutation asserts the EXACT failed id set, rather than
+    accepting an unrelated failure as evidence that the intended check works.
+    All deletions are contained in this test's owned mkdtemp roots.
+    """
+
+    HEADER = "| Full Path | OCR Needed? | Rationale |"
+    SEPARATOR = "|-----------|-------------|-----------|"
+    SUMMARY = "> **Summary:** 8 files total — 4 No OCR needed, 2 Yes (need OCR), 1 Partial, 1 Inaccessible"
+    RATIONALES = {
+        "digital.pdf": "2/2 pages have embedded text — digitally created",
+        "image.pdf": "0/2 pages have embedded text — image-only scan",
+        "mixed.pdf": "1/2 pages have text; 1 page is image-only",
+        "damaged.pdf": "Corrupted PDF: EOF marker missing; cannot read the file",
+        "noisy-text.pdf": "1/1 pages have nonempty embedded text, even though it is noise",
+        "annual-scan.pdf": "2/2 pages have text; filename heuristic is supplemental",
+        "invoice-ocr.pdf": "0/1 pages have embedded text — image-only scan",
+        "UPPER.PDF": "1/1 pages have embedded text — searchable",
+    }
+
+    def _root(self) -> Path:
+        root = Path(tempfile.mkdtemp(prefix="issue83-"))
+        owned_root = root.resolve()
+        self.addCleanup(self._remove_root, root, owned_root)
+        return root
+
+    def _remove_root(self, root: Path, owned_root: Path) -> None:
+        self.assertTrue(root.resolve().is_relative_to(owned_root))
+        shutil.rmtree(root)
+
+    def _unlink(self, ws: Path, path: Path) -> None:
+        self.assertTrue(path.resolve().is_relative_to(ws.resolve()))
+        path.unlink()
+
+    def _expected(self) -> dict:
+        return json.loads((PDF_OCR_DIR / "expected.json").read_text(encoding="utf-8"))
+
+    def _report(self, ws: Path, verdicts=None, rationales=None) -> str:
+        verdicts, rationales = verdicts or {}, rationales or {}
+        lines = [self.HEADER, self.SEPARATOR]
+        for name, entry in self._expected().items():
+            verdict = verdicts.get(name, entry["verdict"])
+            rationale = rationales.get(name, self.RATIONALES[name])
+            lines.append(f"| {ws.resolve() / 'archive' / name} | {verdict} | {rationale} |")
+        return "\n".join([*lines, "", self.SUMMARY, ""])
+
+    def _ws(self, report=True) -> Path:
+        ws = self._root()
+        shutil.copytree(PDF_OCR_DIR / "seed", ws, dirs_exist_ok=True)
+        if report:
+            (ws / "audit.md").write_text(self._report(ws), encoding="utf-8")
+        return ws
+
+    def _run(self, ws: Path) -> dict:
+        results = objective.run_checks(run_eval.load_fixture(PDF_OCR_DIR),
+                                       str(ws), str(PDF_OCR_DIR / "seed"))
+        return {row["id"]: row for row in results}
+
+    def _assert_failed(self, ws: Path, *ids: str) -> None:
+        results = self._run(ws)
+        failed = {name for name, row in results.items() if not row["passed"]}
+        self.assertEqual(failed, set(ids), results)
+
+    def test_seed_contains_only_eight_flat_pdfs_and_no_answers(self):
+        seed = PDF_OCR_DIR / "seed"
+        self.assertEqual({p.name for p in seed.iterdir()}, {"archive"})
+        archive = seed / "archive"
+        self.assertEqual({p.name for p in archive.iterdir()}, set(self._expected()))
+        self.assertTrue(all(p.is_file() and p.suffix.lower() == ".pdf"
+                            for p in archive.iterdir()))
+        self.assertTrue(all(p.stat().st_size < 5000 for p in archive.iterdir()))
+
+    def test_expected_verdicts_and_page_counts_match_the_spec(self):
+        expected = self._expected()
+        self.assertEqual({name: (row["total_pages"], row["text_pages"], row["verdict"])
+                          for name, row in expected.items()}, {
+            "digital.pdf": (2, 2, "No"), "image.pdf": (2, 0, "Yes"),
+            "mixed.pdf": (2, 1, "Partial"), "damaged.pdf": (None, None, "Inaccessible"),
+            "noisy-text.pdf": (1, 1, "No"), "annual-scan.pdf": (2, 2, "No"),
+            "invoice-ocr.pdf": (1, 0, "Yes"), "UPPER.PDF": (1, 1, "No"),
+        })
+        self.assertEqual(sorted(row["verdict"] for row in expected.values()),
+                         sorted(["No"] * 4 + ["Yes"] * 2 + ["Partial", "Inaccessible"]))
+
+    def test_generator_reproduces_every_committed_byte_without_pypdf(self):
+        out = self._root() / "generated"
+        proc = subprocess.run([sys.executable, str(PDF_OCR_DIR / "make_pdfs.py"),
+                               "--out-dir", str(out)], capture_output=True, text=True)
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertEqual({p.name for p in out.iterdir()}, set(self._expected()))
+        for name in self._expected():
+            with self.subTest(name=name):
+                self.assertEqual((out / name).read_bytes(),
+                                 (PDF_OCR_DIR / "seed" / "archive" / name).read_bytes())
+
+    def test_generator_shares_the_existing_pdf_primitives(self):
+        tree = ast.parse((PDF_OCR_DIR / "make_pdfs.py").read_text(encoding="utf-8"))
+        calls = {node.func.attr for node in ast.walk(tree)
+                 if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                 and isinstance(node.func.value, ast.Name) and node.func.value.id == "_shared"}
+        self.assertTrue({"_obj", "_stream_obj", "_assemble_pdf", "_text_content_stream",
+                         "build_text_pdf", "build_image_only_pdf"}.issubset(calls))
+
+    def test_noise_is_nonempty_and_damaged_pdf_is_truncated(self):
+        archive = PDF_OCR_DIR / "seed" / "archive"
+        noise = (archive / "noisy-text.pdf").read_bytes()
+        self.assertGreater(noise.count(b"(xzQ9 vv0 zzJ3 qp7 Kxx) Tj"), 15)
+        self.assertNotIn(b"%%EOF", (archive / "damaged.pdf").read_bytes())
+        self.assertIn(b"/Count 2", (archive / "mixed.pdf").read_bytes())
+
+    def test_fixture_shape_uses_roster_and_only_existing_scorers(self):
+        fixture = run_eval.load_fixture(PDF_OCR_DIR)
+        self.assertEqual(fixture["skill"], "pdf-ocr-audit")
+        self.assertEqual(fixture["registry"], "https://github.com/Adam-S-Daniel/adam-agentskills")
+        self.assertEqual(fixture["prompt"],
+                         "Audit archive/ and tell me which PDFs need OCR. Save the results in audit.md.")
+        self.assertNotIn("model", fixture)
+        self.assertNotIn("model", fixture["judge"])
+        self.assertEqual(fixture["judge"]["weights"],
+                         {"explanation": 0.2, "reasoning": 0.6, "restraint": 0.2})
+        self.assertEqual(fixture["arms"], {"with_skill": {"install": "copy"},
+                                           "without_skill": {"install": "none"}})
+        self.assertEqual(fixture["requires"]["python"],
+                         [{"package": "pypdf", "version": "6.16.2", "published": "2026-08-23"}])
+        checks = fixture["objective_checks"]
+        self.assertEqual(len(checks), 12)
+        self.assertEqual({row["type"] for row in checks}, {"file_matches", "files_unchanged"})
+        self.assertEqual(len({row["id"] for row in checks}), 12)
+        for check in checks:
+            if check["type"] == "file_matches":
+                self.assertTrue(check["require_present"])
+                self.assertTrue(check["must_match"])
+                self.assertEqual(check["paths"], ["audit.md"])
+        restraint = next(row for row in checks if row["id"] == "archive-unchanged")
+        self.assertEqual(restraint["paths"], ["archive/*"])
+        self.assertEqual(restraint.get("by", "path"), "path")
+
+    def test_pristine_seed_fails_every_behavior_check_but_preserves_archive(self):
+        ws = self._ws(report=False)
+        checks = run_eval.load_fixture(PDF_OCR_DIR)["objective_checks"]
+        self._assert_failed(ws, *(row["id"] for row in checks if row["id"] != "archive-unchanged"))
+
+    def test_correct_report_passes_all_twelve_checks(self):
+        self._assert_failed(self._ws())
+
+    def test_each_objective_behavior_check_can_fail_in_isolation(self):
+        for check_id, old, new in (
+                ("report-header", "Full Path", "File"),
+                ("report-separator", self.SEPARATOR, "| x | x | x |"),
+                ("report-summary", "4 No OCR needed", "3 No OCR needed")):
+            with self.subTest(check_id=check_id):
+                ws = self._ws()
+                report = self._report(ws).replace(old, new)
+                (ws / "audit.md").write_text(report, encoding="utf-8")
+                self._assert_failed(ws, check_id)
+        for name, entry in self._expected().items():
+            with self.subTest(name=name):
+                ws = self._ws()
+                wrong = "Yes" if entry["verdict"] != "Yes" else "No"
+                (ws / "audit.md").write_text(self._report(ws, {name: wrong}), encoding="utf-8")
+                self._assert_failed(ws, "verdict-" + name.rsplit(".", 1)[0].lower())
+
+    def test_filename_only_guesses_fail_exactly_the_two_traps(self):
+        ws = self._ws()
+        (ws / "audit.md").write_text(self._report(ws, {"annual-scan.pdf": "Yes",
+                                                     "invoice-ocr.pdf": "No"}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-annual-scan", "verdict-invoice-ocr")
+
+    def test_garbage_quality_threshold_is_the_wrong_verdict(self):
+        ws = self._ws()
+        (ws / "audit.md").write_text(self._report(ws, {"noisy-text.pdf": "Yes"}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-noisy-text")
+
+    def test_missing_uppercase_file_fails_only_its_verdict(self):
+        ws = self._ws()
+        report = "\n".join(line for line in self._report(ws).splitlines() if "/UPPER.PDF" not in line)
+        (ws / "audit.md").write_text(report, encoding="utf-8")
+        self._assert_failed(ws, "verdict-upper")
+
+    def test_markdown_quotes_decoration_whitespace_and_optional_pipes_pass(self):
+        for decoration in ("", "`", "**", "**`"):
+            for outer_pipes in (True, False):
+                with self.subTest(decoration=decoration, outer_pipes=outer_pipes):
+                    ws = self._ws()
+                    lines = [self.HEADER, self.SEPARATOR]
+                    end = decoration[::-1]
+                    for name, entry in self._expected().items():
+                        path = ws.resolve() / "archive" / name
+                        lines.append(f"| {decoration}{path}{end}\t|\t{decoration}{entry['verdict']}{end} | {self.RATIONALES[name]} |")
+                    if not outer_pipes:
+                        lines = [line.strip("| ") for line in lines]
+                    report = "\n".join([*("  > " + line + "  " for line in lines), self.SUMMARY])
+                    (ws / "audit.md").write_text(report, encoding="utf-8")
+                    self._assert_failed(ws)
+
+    def test_incidental_mentions_and_inexact_paths_do_not_supply_a_row(self):
+        for replacement in ("archive/image.pdf", "/elsewhere/image.pdf",
+                            "/tmp/archive/prefix-image.pdf", "/tmp/archive/image.pdf.bak"):
+            with self.subTest(path=replacement):
+                ws = self._ws()
+                report = self._report(ws).replace(str(ws.resolve() / "archive" / "image.pdf"), replacement)
+                report += f"I inspected {ws.resolve() / 'archive' / 'image.pdf'}: Yes.\n"
+                (ws / "audit.md").write_text(report, encoding="utf-8")
+                self._assert_failed(ws, "verdict-image")
+
+    def test_hedged_or_self_contradictory_cells_fail_only_the_target(self):
+        for verdict in ("Probably Yes", "Yes but no need to OCR", "never Yes",
+                        "not necessary: Yes", "don't OCR; Yes", "Yesness", "Not Yes"):
+            with self.subTest(verdict=verdict):
+                ws = self._ws()
+                (ws / "audit.md").write_text(self._report(ws, {"image.pdf": verdict}), encoding="utf-8")
+                self._assert_failed(ws, "verdict-image")
+
+    def test_empty_rationale_does_not_count_as_a_complete_row(self):
+        ws = self._ws()
+        (ws / "audit.md").write_text(self._report(ws, rationales={"image.pdf": " "}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-image")
+
+    def test_exact_yes_cell_with_negated_ocr_rationale_fails(self):
+        for reason in ("0/2 pages have text; no need to OCR", "never OCR",
+                       "OCR is not necessary", "don't OCR", "do not OCR",
+                       "does not need OCR", "fully searchable", "all pages have embedded text",
+                       "0/2 pages have text; not necessary to OCR",
+                       "0/2 pages have text; no need to run OCR",
+                       "0/2 pages have text; don't run OCR",
+                       "0/2 pages have text; I would not recommend OCR",
+                       "0/2 pages have text; never need OCR",
+                       "0/2 pages have text; no OCR needed"):
+            with self.subTest(reason=reason):
+                ws = self._ws()
+                (ws / "audit.md").write_text(self._report(ws, rationales={"image.pdf": reason}), encoding="utf-8")
+                self._assert_failed(ws, "verdict-image")
+
+    def test_exact_no_cell_with_ocr_recommendation_fails(self):
+        for reason in ("2/2 pages have embedded text; needs OCR", "requires OCR",
+                       "OCR is necessary", "must OCR", "should perform OCR"):
+            with self.subTest(reason=reason):
+                ws = self._ws()
+                (ws / "audit.md").write_text(self._report(ws, rationales={"digital.pdf": reason}), encoding="utf-8")
+                self._assert_failed(ws, "verdict-digital")
+
+    def test_legitimate_negations_and_conditional_partial_reasons_pass(self):
+        for name, reason in (
+                ("image.pdf", "0/2 pages have text; not fully searchable"),
+                ("mixed.pdf", "1/2 pages have text; not fully searchable"),
+                ("mixed.pdf", "1/2 pages have text; OCR is not necessary for the cover"),
+                ("mixed.pdf", "Not all pages have embedded text; cover is image-only"),
+                ("digital.pdf", "2/2 pages have embedded text; not an image-only scan"),
+                ("digital.pdf", "2/2 pages have text; does not need OCR"),
+                ("digital.pdf", "2/2 pages have text; no need to OCR")):
+            with self.subTest(name=name, reason=reason):
+                ws = self._ws()
+                (ws / "audit.md").write_text(self._report(ws, rationales={name: reason}), encoding="utf-8")
+                self._assert_failed(ws)
+
+    def test_filename_case_and_verb_boundaries_are_exact(self):
+        ws = self._ws()
+        report = self._report(ws).replace("/UPPER.PDF", "/upper.pdf")
+        (ws / "audit.md").write_text(report, encoding="utf-8")
+        self._assert_failed(ws, "verdict-upper")
+        # Incidental lexical lookalikes must not stand in for OCR verbs.
+        for reason in ("2/2 pages have text; needsome OCR metadata", "2/2 pages have text; requiredness OCR"):
+            (ws / "audit.md").write_text(self._report(ws, rationales={"digital.pdf": reason}), encoding="utf-8")
+            self._assert_failed(ws)
+
+    def test_summary_rejects_conflicting_totals_and_extra_summary_lines(self):
+        for suffix in (" — actually 9 files total", "; 3 Yes", "; not all counts are correct",
+                       "\nSummary: 9 files total — 4 No, 3 Yes, 1 Partial, 1 Inaccessible"):
+            with self.subTest(suffix=suffix):
+                ws = self._ws()
+                report = self._report(ws).replace(self.SUMMARY, self.SUMMARY + suffix)
+                (ws / "audit.md").write_text(report, encoding="utf-8")
+                self._assert_failed(ws, "report-summary")
+
+    def test_summary_accepts_skill_example_and_plain_bullet_form(self):
+        ws = self._ws()
+        for summary in ("Summary: 8 PDFs total — 4 No, 2 Yes, 1 Partial, 1 Inaccessible.",
+                        "- **Summary:** 8 files total - 4 No OCR needed, 2 Yes (need OCR), 1 Partial, 1 Inaccessible"):
+            (ws / "audit.md").write_text(self._report(ws).replace(self.SUMMARY, summary), encoding="utf-8")
+            self._assert_failed(ws)
+
+    def test_contradictory_duplicate_rows_fail_only_their_target(self):
+        for name, entry in self._expected().items():
+            with self.subTest(name=name):
+                ws = self._ws()
+                wrong = "Yes" if entry["verdict"] != "Yes" else "No"
+                report = self._report(ws) + f"| `{ws.resolve() / 'archive' / name}` | **{wrong}** | Contradictory row |\n"
+                (ws / "audit.md").write_text(report, encoding="utf-8")
+                self._assert_failed(ws, "verdict-" + name.rsplit(".", 1)[0].lower())
+
+    def test_inaccessible_requires_a_read_error_without_guessing(self):
+        ws = self._ws()
+        (ws / "audit.md").write_text(self._report(ws, rationales={"damaged.pdf": "Unknown"}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-damaged")
+        (ws / "audit.md").write_text(self._report(ws, rationales={"damaged.pdf": "Corrupted; needs OCR"}), encoding="utf-8")
+        self._assert_failed(ws, "verdict-damaged")
+
+    def test_archive_modified_removed_added_and_renamed_fail_only_restraint(self):
+        for mutation in ("modified", "removed", "added", "renamed"):
+            with self.subTest(mutation=mutation):
+                ws = self._ws()
+                path = ws / "archive" / "digital.pdf"
+                self.assertTrue(path.resolve().is_relative_to(ws.resolve()))
+                if mutation == "modified":
+                    path.write_bytes(path.read_bytes() + b"changed")
+                elif mutation == "removed":
+                    self._unlink(ws, path)
+                elif mutation == "added":
+                    (ws / "archive" / "new.pdf").write_bytes(path.read_bytes())
+                else:
+                    target = ws / "archive" / "renamed.pdf"
+                    self.assertTrue(target.resolve().is_relative_to(ws.resolve()))
+                    path.rename(target)
+                self._assert_failed(ws, "archive-unchanged")
+
+    def test_unchanged_source_and_missing_or_empty_report_do_not_pass_behavior(self):
+        ws = self._ws()
+        for mutation in ("absent", "empty"):
+            with self.subTest(mutation=mutation):
+                if mutation == "absent":
+                    self._unlink(ws, ws / "audit.md")
+                else:
+                    (ws / "audit.md").write_text("", encoding="utf-8")
+                self._assert_failed(ws, *(row["id"] for row in
+                    run_eval.load_fixture(PDF_OCR_DIR)["objective_checks"]
+                    if row["id"] != "archive-unchanged"))
+
+    def test_cli_objective_only_scores_good_and_single_wrong_verdict(self):
+        ws = self._ws()
+        profile = self._root()
+        home = profile / "home"
+        home.mkdir()
+        memory = profile / "memory.md"
+        memory.write_text("", encoding="utf-8")
+        env = os.environ.copy()
+        env.update(HOME=str(home), SKILLS_EVALS_USER_MEMORY=str(memory),
+                   PYTHONDONTWRITEBYTECODE="1")
+        for verdicts, exit_code, failed in (({}, 0, set()),
+                                          ({"image.pdf": "No"}, 1, {"verdict-image"})):
+            with self.subTest(verdicts=verdicts):
+                (ws / "audit.md").write_text(self._report(ws, verdicts), encoding="utf-8")
+                proc = subprocess.run([sys.executable, str(HARNESS_DIR / "run_eval.py"),
+                                       str(PDF_OCR_DIR), "--arm", "objective-only",
+                                       "--workspace", str(ws)], env=env,
+                                      capture_output=True, text=True, cwd=str(REPO_ROOT))
+                self.assertEqual(proc.returncode, exit_code, proc.stdout + proc.stderr)
+                rows = json.loads(proc.stdout)["checks"]
+                self.assertEqual(len(rows), 12)
+                self.assertEqual({row["id"] for row in rows if not row["passed"]}, failed)
 
 
 class TestIssue82(unittest.TestCase):
