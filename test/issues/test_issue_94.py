@@ -1,14 +1,18 @@
-"""Hermetic front-matter scorer coverage for issue #94; no fixture or eval."""
+"""Hermetic front-matter scorer and tool-page fixture coverage for issue #94."""
 
 from __future__ import annotations
 
 import builtins
+from contextlib import contextmanager
+import hashlib
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+
+import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "harness"))
 from scorers import objective
@@ -245,6 +249,181 @@ for name, constraints in {
     "nonempty_null": {"nonempty_strings": None},
 }.items():
     setattr(FrontMatterHasTests, "test_reject_spec_" + name, invalid_spec_test(constraints))
+
+
+FIXTURE_DIR = Path(__file__).resolve().parents[2] / "evals" / "embeddable-tool-pages"
+FIXTURE_SEED = FIXTURE_DIR / "seed"
+FIXTURE_IDS = ("asset-copy", "tool-front-matter", "source-unchanged",
+               "existing-tool-unchanged", "site-wiring-unchanged")
+SOURCE_APP = "seed/new-tool/index.html"
+PUBLISHED_APP = "assets/tools/unit-converter/index.html"
+TOOL_ENTRY = "_tools/unit-converter.md"
+EXISTING_PATHS = ("assets/tools/existing/index.html", "_data/tool_sources/existing.yml",
+                  "_tools/existing.md")
+WIRING_PATHS = ("_config.yml", "_layouts/tool.html", "_layouts/default.html",
+                "_includes/header.html", "tools/index.html", "admin/collections.site.yml")
+
+
+def tool_fixture():
+    return yaml.safe_load((FIXTURE_DIR / "fixture.yaml").read_text())
+
+
+@contextmanager
+def tool_workspace(good=False):
+    root = Path(tempfile.mkdtemp(prefix="tool-fixture-94-"))
+    owned_root = root.resolve()
+    workspace = root / "workspace"
+    try:
+        # Copy fixture inputs only: no repository, remote, or credentials.
+        shutil.copytree(FIXTURE_SEED, workspace)
+        if good:
+            target = workspace / PUBLISHED_APP
+            target.parent.mkdir(parents=True)
+            shutil.copyfile(workspace / SOURCE_APP, target)
+            (workspace / TOOL_ENTRY).write_text(page())
+            post = workspace / "_posts/2026-01-01-example.md"
+            post.write_text(post.read_text().replace(
+                "\n## Working with estimates", "\n<!-- html-embed:start -->\n"
+                '<div class="post-embed">\n'
+                '<iframe src="/assets/tools/unit-converter/" title="Length Converter" '
+                'loading="lazy" style="width:100%; height:80vh; border:0;"></iframe>\n'
+                '<p><a href="/tools/unit-converter/">Open the full-page version</a></p>\n'
+                "</div>\n<!-- html-embed:end -->\n\n## Working with estimates"))
+        yield root, workspace
+    finally:
+        assert workspace.resolve().is_relative_to(owned_root)
+        if workspace.exists():
+            shutil.rmtree(workspace)
+        assert root.resolve() == owned_root and root.resolve().is_relative_to(owned_root)
+        root.rmdir()
+
+
+def tool_scores(workspace):
+    return {row["id"]: row["passed"] for row in objective.run_checks(
+        tool_fixture(), str(workspace), str(FIXTURE_SEED))}
+
+
+class TestIssue94Fixture(unittest.TestCase):
+    def assert_only_failed(self, workspace, *failed):
+        self.assertEqual(tool_scores(workspace),
+                         {key: key not in failed for key in FIXTURE_IDS})
+
+    def test_fixture_contract_and_source_digest(self):
+        fixture = tool_fixture()
+        self.assertEqual(fixture["skill"], "embeddable-tool-pages")
+        self.assertEqual(fixture["registry"], "https://github.com/Adam-S-Daniel/adamdaniel.ai")
+        self.assertEqual(fixture["prompt"].strip(), "Publish seed/new-tool as a Tools page at "
+                         "/tools/unit-converter/ and embed it in the post "
+                         "_posts/2026-01-01-example.md below the intro.")
+        self.assertEqual([c["id"] for c in fixture["objective_checks"]], list(FIXTURE_IDS))
+        self.assertEqual([c["type"] for c in fixture["objective_checks"]],
+                         ["file_digests_match", "front_matter_has"] + ["files_unchanged"] * 3)
+        self.assertEqual(fixture["objective_checks"][0]["sha256"],
+                         hashlib.sha256((FIXTURE_SEED / SOURCE_APP).read_bytes()).hexdigest())
+        self.assertEqual(fixture["judge"]["weights"],
+                         {"correctness": .5, "restraint": .2, "explanation": .3})
+        self.assertNotIn("model", fixture)
+        self.assertNotIn("model", fixture["judge"])
+        for path in FIXTURE_SEED.rglob("*"):
+            if path.is_file():
+                self.assertNotIn("unit-converter", path.read_text())
+                self.assertNotIn("html-embed:", path.read_text())
+        self.assertFalse((FIXTURE_SEED / SOURCE_APP).read_text().startswith("---"))
+
+    def test_pristine_fails_behavior_and_passes_restraint(self):
+        with tool_workspace() as (_root, workspace):
+            self.assert_only_failed(workspace, "asset-copy", "tool-front-matter")
+
+    def test_known_good_passes_every_check(self):
+        with tool_workspace(good=True) as (_root, workspace):
+            self.assert_only_failed(workspace)
+
+    def test_plausible_body_only_front_matter_fails(self):
+        with tool_workspace(good=True) as (_root, workspace):
+            (workspace / TOOL_ENTRY).write_text("# Length Converter\n\n" + FIELDS)
+            self.assert_only_failed(workspace, "tool-front-matter")
+
+    def test_each_check_has_an_isolated_mutation_and_restoration(self):
+        mutations = {"asset-copy": PUBLISHED_APP, "tool-front-matter": TOOL_ENTRY,
+                     "source-unchanged": SOURCE_APP,
+                     "existing-tool-unchanged": EXISTING_PATHS[0],
+                     "site-wiring-unchanged": WIRING_PATHS[0]}
+        for check_id, path in mutations.items():
+            with self.subTest(check=check_id), tool_workspace(good=True) as (_root, workspace):
+                self.assert_only_failed(workspace)
+                target = workspace / path
+                original = target.read_bytes()
+                if check_id == "tool-front-matter":
+                    target.write_text(page(FIELDS.replace("slug: unit-converter", "slug: wrong")))
+                else:
+                    target.write_bytes(original + b"\nchanged\n")
+                self.assert_only_failed(workspace, check_id)
+                target.write_bytes(original)
+                self.assert_only_failed(workspace)
+
+    def test_all_protected_paths_detect_edits_deletions_and_additions(self):
+        owners = {"source-unchanged": (SOURCE_APP,),
+                  "existing-tool-unchanged": EXISTING_PATHS,
+                  "site-wiring-unchanged": WIRING_PATHS}
+        for owner, paths in owners.items():
+            for path in paths:
+                for mutation in ("edit", "delete"):
+                    with self.subTest(path=path, mutation=mutation), tool_workspace(good=True) as (root, workspace):
+                        target = workspace / path
+                        original = target.read_bytes()
+                        if mutation == "delete":
+                            assert target.resolve().is_relative_to(root.resolve())
+                            target.unlink()
+                        else:
+                            target.write_bytes(original + b"\nchanged\n")
+                        self.assert_only_failed(workspace, owner)
+                        target.write_bytes(original)
+                        self.assert_only_failed(workspace)
+        for path, owner in (("_data/tool_sources/extra.yml", "existing-tool-unchanged"),
+                            ("_data/tool_sources/extra.json", "existing-tool-unchanged"),
+                            ("_layouts/extra.html", "site-wiring-unchanged"),
+                            ("_includes/extra.html", "site-wiring-unchanged")):
+            with self.subTest(added=path), tool_workspace(good=True) as (_root, workspace):
+                (workspace / path).write_text("unexpected addition\n")
+                self.assert_only_failed(workspace, owner)
+
+    def test_each_required_front_matter_field_is_enforced(self):
+        for field, value in (("slug", "unit-converter"), ("embed_src", "/assets/tools/unit-converter/"),
+                             ("title", "Converter"), ("description", "Useful")):
+            for replacement in ("", f'{field}: ""\n', f"{field}: true\n"):
+                with self.subTest(field=field, replacement=replacement), tool_workspace(good=True) as (_root, workspace):
+                    (workspace / TOOL_ENTRY).write_text(page(FIELDS.replace(f"{field}: {value}\n", replacement)))
+                    self.assert_only_failed(workspace, "tool-front-matter")
+        for field, wrong in (("slug", "wrong"), ("embed_src", "/tools/unit-converter/")):
+            with self.subTest(wrong=field), tool_workspace(good=True) as (_root, workspace):
+                values = dict(line.split(": ", 1) for line in FIELDS.splitlines())
+                values[field] = wrong
+                (workspace / TOOL_ENTRY).write_text(page("".join(f"{k}: {v}\n" for k, v in values.items())))
+                self.assert_only_failed(workspace, "tool-front-matter")
+
+    def test_front_matter_variants_accept_structure_and_reject_spoofs(self):
+        variants = {
+            "quoted_reordered": (ACCEPT["quoted_reordered"], True),
+            "multiline": (ACCEPT["folded"], True),
+            "different_title": (page(FIELDS.replace("title: Converter", "title: Distance Helper")), True),
+            "body_only": (REJECT["body_only"], False),
+            "malformed": (REJECT["malformed_yaml"], False),
+            "duplicate": (REJECT["duplicate_slug"], False),
+            "hedged_body": (page(FIELDS.replace("embed_src: /assets/tools/unit-converter/",
+                                                "embed_src: /tools/unit-converter/"),
+                                 body="Maybe it works; never use /assets/tools/unit-converter/ here."), False),
+        }
+        for name, (content, accepted) in variants.items():
+            with self.subTest(variant=name), tool_workspace(good=True) as (_root, workspace):
+                (workspace / TOOL_ENTRY).write_text(content)
+                self.assert_only_failed(workspace, *(() if accepted else ("tool-front-matter",)))
+
+    def test_editing_source_and_copy_cannot_redefine_expected_bytes(self):
+        with tool_workspace(good=True) as (_root, workspace):
+            modified = (workspace / SOURCE_APP).read_bytes() + b"\n<!-- altered app -->\n"
+            (workspace / SOURCE_APP).write_bytes(modified)
+            (workspace / PUBLISHED_APP).write_bytes(modified)
+            self.assert_only_failed(workspace, "asset-copy", "source-unchanged")
 
 
 if __name__ == "__main__":

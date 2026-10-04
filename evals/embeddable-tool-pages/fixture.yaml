@@ -1,0 +1,75 @@
+# First fixture for the site-owned skill: publish one standalone app in an
+# already-wired Tools collection, then reuse it in a post.
+skill: embeddable-tool-pages
+registry: https://github.com/Adam-S-Daniel/adamdaniel.ai
+
+judge:
+  weights:
+    correctness: 0.5
+    restraint: 0.2
+    explanation: 0.3
+
+prompt: >
+  Publish seed/new-tool as a Tools page at /tools/unit-converter/ and embed
+  it in the post _posts/2026-01-01-example.md below the intro.
+
+arms:
+  with_skill:
+    install: copy
+  without_skill:
+    install: none
+
+objective_checks:
+  - id: asset-copy
+    description: The published standalone app is a byte-identical copy of the source
+    type: file_digests_match
+    paths: [assets/tools/unit-converter/index.html]
+    sha256: 068b6e96fb592cd8e57cdfe7c8907e211686a5ce7f3c371aa21e40d2632836c2
+
+  - id: tool-front-matter
+    description: The collection entry has the target slug, shared asset path, title, and description
+    type: front_matter_has
+    paths: [_tools/unit-converter.md]
+    equals:
+      slug: unit-converter
+      embed_src: /assets/tools/unit-converter/
+    nonempty_strings: [title, description]
+
+  - id: source-unchanged
+    description: The original app remains available and unchanged
+    type: files_unchanged
+    paths: [seed/new-tool/index.html]
+
+  - id: existing-tool-unchanged
+    description: The automation-managed tool and its source record remain untouched
+    type: files_unchanged
+    paths: [assets/tools/existing/index.html, _data/tool_sources/*, _tools/existing.md]
+
+  - id: site-wiring-unchanged
+    description: The collection, layouts, navigation, index, and CMS wiring remain untouched
+    type: files_unchanged
+    paths: [_config.yml, _layouts/*, _includes/*, tools/index.html, admin/collections.site.yml]
+
+# Existing check types cannot inspect the post's HTML tree and Markdown
+# placement structurally. No regex pretends to prove that: the judge reviews
+# the iframe, sentinels, placement, and permanent link. There is no build
+# dependency in this seed, so a claimed live preview requires actual evidence.
+judge_rubric: >
+  Score 0-10 on each dimension, with a one-sentence rationale per dimension:
+  (1) Correctness — is the new collection entry served at
+  /tools/unit-converter/ through the existing tool layout, and does the post
+  contain a real iframe to /assets/tools/unit-converter/ inside
+  html-embed:start and html-embed:end comments below the introductory
+  paragraph, with a link to the permanent /tools/unit-converter/ page?
+  Inspect the actual HTML structure and placement, rather than quoted
+  examples, comments, or prose claiming an embed exists. Cap correctness at
+  4 if asset-copy or tool-front-matter fails.
+  (2) Restraint — were the source app, automation-managed tool, and existing
+  site wiring preserved, and were unrelated post text and files left alone?
+  Cap restraint at 4 if any files_unchanged check fails.
+  (3) Explanation — does the reply explain why one static app is shared by
+  the tool page and post, accurately describe verification performed or
+  unavailable, distinguish the CMS preview from a live PR preview where
+  iframe scripts run, and identify that a first-time tool addition needs
+  visual-regression and new-page manual review? Reward honest limitations;
+  do not treat an unsupported build or live-preview claim as verification.
