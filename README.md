@@ -79,6 +79,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  consumer-repo-provisioning/ # A/B eval, Class B: diagnose missing consumer credentials
+    fixture.yaml           # missing Actions secret diagnosis and PAT permission cells
+    seed/                  # shared fake gh, startup-failure metadata, denied secret listing
   disarm-inherited-reach/  # A/B eval: severing an inherited git remote before it can reach prod
     fixture.yaml           # prompt, setup: builds prod.git/checkout/scratch-wt, git-state checks
     seed/                  # repo-content/ + setup.sh (builds prod.git, checkout/, scratch-wt/)

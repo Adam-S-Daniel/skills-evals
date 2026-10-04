@@ -286,9 +286,13 @@ Not every skill takes the same eval, and some take none. Classify first:
   reasoning quality only. `cms-stuck-pr-triage` graduated out of this list:
   covered by `evals/cms-stuck-pr-triage/` (issue #84), which is also where
   the shared `harness/fakes/gh` every other Class B fixture reuses came
-  from. Candidates: `debug-github-workflows`, `ci-watcher-loops`,
-  `editorial-label-audit`, `skills-doctor`, `consumer-repo-provisioning`
-  (the which-secret-is-missing half).
+  from. [`consumer-repo-provisioning`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/consumer-repo-provisioning/fixture.yaml)
+  now has its first Class B fixture:
+  a consumer startup failure with a required Actions secret missing and the
+  secret listing inaccessible ([issue #91](https://github.com/Adam-S-Daniel/skills-evals/issues/91)).
+  The extra-permission and variable-misconfiguration scenarios remain open.
+  Candidates: `debug-github-workflows`, `ci-watcher-loops`,
+  `editorial-label-audit`, `skills-doctor`.
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over
