@@ -126,6 +126,8 @@ class AgentsOnlyLayoutShape(unittest.TestCase):
         hint = run_canary._failure_hint({"name": "agents-only"})
         self.assertIn("2.1.277", hint)
         self.assertIn("claude --version", hint)
+        # The release note's claim has not been measured by a real run.
+        self.assertIn("unmeasured", hint)
         # And the legs that keep a CLAUDE.md do not blame native support.
         for name in ("no-bridge", "fence"):
             with self.subTest(layout=name):

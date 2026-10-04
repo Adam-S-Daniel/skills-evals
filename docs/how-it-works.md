@@ -55,8 +55,10 @@ which put four arms on a roster where two of them measured tiers carrying
 today's census that means two arms (Sonnet 5 and Opus 5); an Opus 5.1
 shipped before the next run would make three. The one exception is when
 there is no usable census at all: then nothing can qualify, a roster with no
-arms is useless, and the newest model of every tier takes a seat, with each
-reason saying plainly that it did so because the usage evidence was missing.
+arms is useless, and the newest model of every tier takes a seat. If the census
+itself is unusable, each fallback reason names the degradation. If the census
+is usable but only its enter window fails a ranked-usage floor, the reason is
+the bare newest-per-tier sentence.
 
 The computed roster is only a **proposal**. When it differs from the committed file the run
 pushes the proposed file to the bot-owned branch `roster/proposal` and keeps
@@ -111,7 +113,7 @@ Raw transcripts are deliberately never published (public repository).
 
 ## 5. What is measured today
 
-Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`.
+Every fixture below lives under `evals/` on `main`; each entry says what task the agent is given, what a good result looks like, how many scripted objective checks decide pass or fail and what they look at, which judge dimensions score the subjective half (with their weights), the pinned models, and whether a real run against the live CLI has happened yet (most have not: the scheduled run always targets `workflow-path-audit`, and decision 8 stopped the per-skill lanes). Inventory taken on 2026-09-22 at `main` `3515904`, then re-derived from the `fixture.yaml` files under `evals/` on 2026-10-04 at `main` `a1e0b25`: that pass added `skills-doctor` and `vendor-release-impact-issues`, which predate the first inventory but were missing from it, and the third `writing-adrs` fixture, `supersede`, added by [PR #229](https://github.com/Adam-S-Daniel/skills-evals/pull/229). Seventeen fixtures are listed.
 
 Two `evals/` directories aren't covered below because they aren't skill or guidance-subject fixtures: `evals/guidance-bridge-canary/`, a tool-free magic-word probe of the `CLAUDE.md -> @AGENTS.md` import, and `evals/propagation/`, a skill-delivery probe compared against `adam-agentskills`' lockfile. Neither has a prompt, objective checks, or a judge rubric.
 
@@ -195,6 +197,22 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `correctness` 0.5, `restraint` 0.2, `explanation` 0.3.
 - Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A. No real run yet.
 
+### skills-doctor/bucketed-account-store
+
+- `skills-doctor` (registry: `adam-agentskills`) — [evals/skills-doctor/bucketed-account-store](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/skills-doctor/bucketed-account-store)
+- Diagnose a captured session where `writing-adrs` arrives from two channels under one name and the account copy is the older one, while the account store looks empty because it sits one directory down in a per-account bucket. Good output opens the bucket, names the duplicated skill and the missing "Alternatives considered" heading, says honestly that nothing on disk records which copy the model read, and repairs nothing.
+- Objective (5): a `FINDINGS.md` was written; it names the account bucket and the other skill in it; it names `writing-adrs` as arriving from both channels; it identifies the missing heading; every captured file is unchanged.
+- Judge: weighted — `root-cause` 0.5, `which-copy-the-model-reads` 0.3, `restraint` 0.2.
+- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class B. No real run yet.
+
+### vendor-release-impact-issues
+
+- `vendor-release-impact-issues` (registry: `adam-agentskills`) — [evals/vendor-release-impact-issues](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/vendor-release-impact-issues)
+- Turn a vendor CLI's release notes (ExampleCLI 4.1.0 to 4.3.0) into drafted GitHub issues for a small repo that consumes it. Five real findings are baked in, mixed with decoys. Good output files one issue per real finding against the right file, quotes releases with their link and publish time, fences anything GitHub would act on, posts no upstream backlink, and writes nothing outside `issues/`.
+- Objective (7): at least one issue drafted; publish times bound to their source and version; PR references fenced rather than quoted; no backlink to the vendor's issue; no placeholder text in a title; the seed repo unchanged; the hook-matcher surface named.
+- Judge: weighted — `correctness` 0.5, `hygiene` 0.3, `restraint` 0.2.
+- Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A (per the README; the fixture states no class). 1 real run, latest 2026-09-26T18:45:29Z: objective 6/7 with the skill against 4/7 without, judge overall 7.2 against 5.4.
+
 ### windows-elevation-from-wsl
 
 - `windows-elevation-from-wsl` (registry: `adam-agentskills`) — [evals/windows-elevation-from-wsl](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/windows-elevation-from-wsl)
@@ -227,9 +245,17 @@ Two `evals/` directories aren't covered below because they aren't skill or guida
 - Judge: weighted — `decision-with-alternatives-and-consequences` 0.5, `title-is-a-decision-statement` 0.3, `restraint` 0.2.
 - Model `claude-sonnet-5`; judge `claude-opus-4-8`. Class A (format half — matches an existing convention). No real run yet.
 
+### writing-adrs/supersede
+
+- `writing-adrs` (registry: `adam-agentskills`) — [evals/writing-adrs/supersede](https://github.com/Adam-S-Daniel/skills-evals/tree/main/evals/writing-adrs/supersede)
+- Record a snapshot-retention decision that reverses an accepted ADR. Good output writes ADR 0004, marks 0002 as superseded, updates both index rows and the script's ADR pointer, and preserves the old decision as history.
+- Objective (13): a new ADR with the required sections and a mention of 0002; 0002's status and index row point to 0004; the old decision text and unaffected rows stay intact; links resolve; a script comment points to 0004; the retention decision stays intact; exactly four ADR files exist; unrelated files stay byte-identical. These checks establish a format floor; the judge decides whether the prose explains the reversal.
+- Judge: weighted — `replacement-explains-the-reversal` 0.5, `audit-trail-preserved` 0.3, `restraint` 0.2.
+- Model `claude-sonnet-5`; judge `claude-opus-4-8`. No class label in the fixture: its objective checks are a format floor, and the README files all three `writing-adrs` fixtures under Class A (format half). No real run yet.
+
 ## 6. What is finished
 
-- The harness, scorers, roster, propagation audit and thirteen fixtures are
+- The harness, scorers, roster, propagation audit and sixteen A/B fixtures (the seventeenth section in the inventory, `guidance/_delivery`, is the delivery canary) are
   merged on `main` with CI green.
 - The roster redesign (PR #153) merged on 2026-09-21, the first real proposal
   run succeeded, and the census was published on 2026-09-22 so proposals are

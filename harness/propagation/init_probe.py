@@ -109,8 +109,8 @@ ACCOUNT_SUFFIX = " (claude.ai sync)"
 # Claude Code >= 2.1.269 names a skill synced from claude.ai
 # `anthropic-skills:<name>` (read in the 2.1.269 release notes, not measured
 # here; #196), so a `:` in the name no longer means a marketplace plugin. This
-# prefix is the discriminator that survives a surface that emits no
-# `commands_changed` at all.
+# prefix is a fallback when `commands_changed` is absent and the init event
+# does not list an installed plugin with that namespace.
 ACCOUNT_NAMESPACE = "anthropic-skills:"
 
 # Where the account store lands. Its mere existence under a leg's scratch HOME
@@ -201,19 +201,29 @@ def attribute(facts: ProbeFacts) -> dict:
     """name -> channel, for every skill the init event carries.
 
     - `"account"` — carries the ` (claude.ai sync)` suffix in `commands_changed`,
-      or is named `anthropic-skills:<name>`. CHECKED FIRST: a synced skill's
-      name contains `:` on CLI >= 2.1.269, so the namespace rule below would
-      claim it as a plugin skill (#196).
+      or uses the `anthropic-skills:` namespace when no plugin by that name
+      appears in `init.plugins`. The suffix is authoritative even if plugin
+      evidence also exists. Without a suffix or observed plugin, the namespace
+      alone is ambiguous; this fallback follows the account naming convention
+      reported for CLI >= 2.1.269 (#196).
     - `"plugin"`  — namespaced (`adam:workflow-path-audit`), i.e. marketplace.
+      An observed plugin named `anthropic-skills` wins over the namespace
+      fallback when no account suffix was emitted.
     - `"local"`   — everything else: `~/.claude/skills`, the project's
       `.claude/skills`, or a CLI built-in. The init event genuinely cannot
       separate those three; the ARM separates them, by controlling what exists
       where before the spawn.
     """
     account = facts.account_named_skills()
+    plugins = {plugin["name"] for plugin in facts.plugins
+               if isinstance(plugin, dict)
+               and isinstance(plugin.get("name"), str)}
     out = {}
     for name in facts.skills:
-        if name in account or name.startswith(ACCOUNT_NAMESPACE):
+        if name in account:
+            out[name] = "account"
+        elif (name.startswith(ACCOUNT_NAMESPACE)
+              and "anthropic-skills" not in plugins):
             out[name] = "account"
         elif ":" in name:
             out[name] = "plugin"

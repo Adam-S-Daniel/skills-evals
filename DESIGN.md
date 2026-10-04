@@ -427,9 +427,10 @@ doctrine applies to the harness's own CI.
 The CLI's native eval harness was assessed against this design. It has
 first-class with/without-baseline arms and a stable `aggregate-result.json`
 report, but: it is early-access and gated for this account (probing prints
-"currently in early access"); its graders are regex / tool-use / file-exists
-/ LLM-judge / baseline only, with **no scriptable grader**, so it cannot host
-`scorers/objective.py`'s changeset replays — which would force decidable
+"currently in early access"); the graders assessed then were regex / tool-use
+/ file-exists / LLM-judge / baseline. That assessment did not establish a way
+to run `scorers/objective.py`'s changeset replays as a grader; substituting
+the assessed graders would force decidable
 facts back onto regex or the judge, the exact anti-pattern the rules above
 forbid; and its case layout is per-plugin where this harness is centralized.
 
@@ -444,14 +445,15 @@ from `claude plugin eval --help` on Claude Code 2.1.289, run with a throwaway
 everything below is "read in `--help`", not measured.
 
 - *Early access:* the help no longer says so. Whether this account is still
-  gated is **not verified**; probing it needs a login this note does not use.
+  gated is **not verified**; probing it needs a login this note does not use
+  (measured below: it is not gated).
 - *Graders:* the help names LLM and baseline graders as the paid ones (with
   "free graders" beside them), a `with-only` marker that includes
   `tool_used: Skill`, and a `scaffold_script` that runs author-supplied bash
   as you, off unless `--scaffold` is passed. It does not name a grader that
-  runs a script and scores its result, so the 2026-08-30 "no scriptable
-  grader" is neither confirmed nor refuted. The `scaffold_script` is described
-  as setup, not scoring.
+  runs a script and scores its result. This does not establish whether custom
+  code graders are supported; the `scaffold_script` is described as setup,
+  not scoring.
 - *Layout:* still per plugin: cases live in `<eval dir>/**/case.yaml` (or
   `prompt.md` plus `graders/*.md`) under the plugin, results in
   `<plugin>/<dir>/results/`, with `--eval-dir` and a manifest
@@ -473,6 +475,39 @@ per plugin; and the gate is unverified either way. The help also describes
 plugin targets, and says nothing about whether a `subject: guidance` fixture
 (an `AGENTS.md` section, not a plugin) could run under it. Re-read `--help` on
 the next CLI bump, and run it once if a grader that scores a script appears.
+
+**Measured 2026-10-04 ([#232](https://github.com/Adam-S-Daniel/skills-evals/issues/232#issuecomment-5977656310)),
+one real run on Claude Code 2.1.289** with the operator's own login (API-key
+environment variables unset) and `--runs 1 --no-publish --max-cost-usd 1
+--trust-plugin`, against a scratch `git archive` copy of the
+`adam-coding-anywhere` plugin that has no `.git` and so no push path.
+
+- *Gate:* the account is **not gated**. The command ran end to end with no
+  early-access message.
+- *Graders:* the binary's case validation lists `type:` as exactly
+  `regex | tool_order | tool_used | file_exists | llm | baseline`. There is
+  still **no script or exit-code grader**, so the flip criterion above is not
+  met.
+- *Output:* `result.json` with `schemaVersion` 1, per-arm graders (each with
+  `scored` and `withOnly` flags) and `aggregates.delta` / `meanDelta`, plus a
+  local HTML report.
+- *Cost:* **$0.175** for one hand-written with/without case (about $0.10 with
+  the plugin, $0.08 without; 43 s in all).
+- *Result:* Δ = 0. The case was an easy one (a CI step piping `npm test`
+  through `tee` and `tail` before `./deploy.sh`, asked to be reviewed for CI
+  reliability problems), graded by a `pipefail|PIPESTATUS` regex plus a
+  with-only `tool_used: Skill`. Both arms scored 1.0 because the baseline
+  already knows `pipefail`; a lift needs cases a baseline fails.
+
+**Decision updated:** the gate is verified ungated, so that half of the flip
+criterion is met; the other half (a grader that runs a script and scores its
+result) is not. **Monitor, don't wrap** stays for behavior scoring: this
+harness remains the system of record, and the layout and `subject: guidance`
+gaps above are unchanged. One narrow use is worth allowing, **local only**: a
+cheap trigger check (did the skill fire?) using `claude plugin eval` with a
+`tool_used: Skill` grader and `--no-publish`. It is run by hand on a durable
+machine, never in CI, and its output is not written to `results/` or
+`persistent/eval-results`. Part of #232.
 
 ## Model roster (2026-09-04, #67; redesigned 2026-09-13, #147)
 
@@ -558,7 +593,9 @@ usage there is no usage-qualified tier at all, and a roster must not be
 empty — so wherever the enter window carries no usable evidence (any of
 `_census_verdict`'s eight verdicts, or a fresh census whose enter window
 alone fails one of the ranked-usage floors) rule 2 reverts to newest per tier
-across every tier, with the existing degradation reasons. A usable census
+across every tier. When the census itself is unusable, each fallback reason
+names its degradation. A usable census whose enter window alone fails a
+ranked-usage floor gets the bare newest-per-tier reason. A usable census
 that simply names no model at the entry bar is a different thing: that is
 evidence, and it says no tier qualifies, so the only seats are previous arms
 held over the exit bar — and with none, `main()` refuses to publish a roster
