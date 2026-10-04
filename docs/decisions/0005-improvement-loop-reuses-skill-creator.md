@@ -45,11 +45,14 @@ this harness or it is not measured the way every other number here is.
 `scripts/propose_skill_edit.py <skill>` composes the two:
 
 1. **Trigger half — skill-creator, unmodified.** The script runs
-   `python -m scripts.run_loop` from the installed plugin (found through
+   `scripts/run_loop.py` from the installed plugin (found through
    `~/.claude/plugins/installed_plugins.json`, or `--skill-creator` /
-   `$SKILL_CREATOR_DIR`), with its documented arguments
-   (`--max-iterations 5 --runs-per-query 3 --holdout 0.4`, browser report
-   off). It keeps skill-creator's split, its held-out selection and its
+   `$SKILL_CREATOR_DIR`) with its `scripts` package on `PYTHONPATH`, the
+   same module its documented `python -m scripts.run_loop` runs. It is
+   reached through a link planted in the scratch project so the script path
+   is a literal the suite's fork scan can classify. It gets its documented
+   arguments (`--max-iterations 5 --runs-per-query 3 --holdout 0.4`, browser
+   report off). It keeps skill-creator's split, its held-out selection and its
    proposer; nothing of it is copied into this repo. Its working directory is
    a scratch project holding an empty `.claude/`, so the command files it
    plants never land in a real checkout. The query set is
