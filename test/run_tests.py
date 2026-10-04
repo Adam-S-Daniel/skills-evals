@@ -5451,9 +5451,10 @@ class CanaryTests(unittest.TestCase):
         self.assertIn("PASS bridge", proc.stdout)
         self.assertIn("PASS no-bridge", proc.stdout)
         self.assertIn("PASS fence", proc.stdout)
+        self.assertIn("PASS agents-only", proc.stdout)
         report, summary = self._summary(results_dir)
         self.assertIn("fake-claude 0.0.0 (hermetic test stub)", report)
-        self.assertEqual(len(summary["legs"]), 3)
+        self.assertEqual(len(summary["legs"]), 4)
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))
 
     def test_canary_blind(self):
@@ -5464,6 +5465,13 @@ class CanaryTests(unittest.TestCase):
         self.assertIn("visible", proc.stdout)
         self.assertIn("PASS no-bridge", proc.stdout)
         self.assertIn("PASS fence", proc.stdout)
+        # agents-only expects `visible`, so a loader that injects nothing
+        # fails it too.
+        self.assertIn("FAIL agents-only", proc.stdout)
+        agents_only = next(line for line in proc.stdout.splitlines()
+                           if line.startswith("FAIL agents-only"))
+        self.assertIn("2.1.277", agents_only)
+        self.assertIn("claude --version", agents_only)
 
     def test_canary_forager(self):
         proc, results_dir = self._run("canary_forager")
@@ -5471,6 +5479,13 @@ class CanaryTests(unittest.TestCase):
         self.assertIn("FAIL no-bridge", proc.stdout)
         self.assertIn("FAIL fence", proc.stdout)
         self.assertIn("PASS bridge", proc.stdout)
+        self.assertIn("PASS agents-only", proc.stdout)
+        # The hint must not blame native AGENTS.md support for a leg that
+        # keeps a CLAUDE.md: that support applies only without one (#191).
+        no_bridge = next(line for line in proc.stdout.splitlines()
+                         if line.startswith("FAIL no-bridge"))
+        self.assertNotIn("native AGENTS.md support shipped", no_bridge)
+        self.assertIn("has a CLAUDE.md", no_bridge)
 
     def test_runner_level_error(self):
         proc, results_dir = self._run("error")
@@ -5481,7 +5496,7 @@ class CanaryTests(unittest.TestCase):
         proc, results_dir = self._run("canary_loader", extra_args=["--subagent"])
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         _, summary = self._summary(results_dir)
-        self.assertEqual(len(summary["legs"]), 4)
+        self.assertEqual(len(summary["legs"]), 5)
         names = {leg["name"] for leg in summary["legs"]}
         self.assertIn("bridge-subagent", names)
         self.assertTrue(all(leg["passed"] for leg in summary["legs"]))

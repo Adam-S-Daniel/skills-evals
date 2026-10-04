@@ -41,3 +41,12 @@ layouts:
   - name: fence
     expect: invisible
     token: BANDERSNATCH-5903
+  # No CLAUDE.md at all. Claude Code 2.1.277 reads AGENTS.md natively in that
+  # case (release notes, skills-evals#191), so this leg expects `visible` on a
+  # CLI at or past 2.1.277 and fails on an older one — read the recorded
+  # `claude --version` before calling that a regression. It is the only leg
+  # where native AGENTS.md support can show up; no-bridge and fence keep a
+  # CLAUDE.md, which is why they stay invisible on a new CLI too.
+  - name: agents-only
+    expect: visible
+    token: WHIPPERSNAPPER-3158
