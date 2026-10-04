@@ -6,6 +6,8 @@ The outer runner must use a PID namespace, including targeted pytest runs.
 """
 from __future__ import annotations
 
+import ast
+import copy
 import json
 import os
 from pathlib import Path
@@ -160,8 +162,8 @@ class TestCiWatcherFixture(unittest.TestCase):
 
     def test_poll_bound_mutation_fails_only_poll_bound(self):
         ws = self._good()
-        self._gh(ws, 'run', 'list')
-        self._gh(ws, 'run', 'list')
+        for _ in range(5):
+            self._gh(ws, 'run', 'list')
         self._fails_only(ws, 'poll-bound')
 
     def test_reply_token_mutation_fails_only_final_conclusion(self):
@@ -214,6 +216,83 @@ class TestCiWatcherFixture(unittest.TestCase):
         self._gh(ws, 'run', 'list')
         self.assertTrue(all(self._score(ws).values()))
 
+    def test_unsupported_script_constructs_do_not_invalidate_split_captures(self):
+        for construct in ['[[ -n preview ]]', 'n=0; n=$((n+1))',
+                          'case preview in preview) : ;; esac',
+                          'for ((n=0;n<1;n++)); do :; done',
+                          'declare -a previews=(one two)']:
+            with self.subTest(construct=construct):
+                ws = self._good()
+                (ws / 'watch-preview.sh').write_text(construct + '\n' + GOOD_SCRIPT)
+                self.assertTrue(all(self._score(ws).values()))
+
+    def test_skill_discovery_status_and_separate_conclusion_pattern(self):
+        ws = self._ws()
+        self._gh(ws, 'workflow', 'run', 'deploy-preview', '--repo', self.env['GH_REPO'])
+        run_id = str(self._gh(ws, 'run', 'list')[0]['databaseId'])
+        for _ in range(3):
+            self._gh(ws, 'run', 'view', run_id, '--json', 'status')
+        final = self._gh(ws, 'run', 'view', run_id, '--json', 'conclusion')
+        self.assertEqual(final['conclusion'], 'success')
+        self.assertTrue(all(self._score(ws).values()))
+        # Five reads are the recommended pattern; two spare reads are allowed.
+        for _ in range(2):
+            self._gh(ws, 'run', 'list')
+        self.assertTrue(all(self._score(ws).values()))
+        self._gh(ws, 'run', 'list')
+        self._fails_only(ws, 'poll-bound')
+
+    def test_run_id_can_precede_or_follow_view_flags(self):
+        for arguments in [('run', 'view', ID, '--json', 'status,conclusion'),
+                          ('run', 'view', '--json', 'status,conclusion', ID)]:
+            with self.subTest(arguments=arguments):
+                ws = self._ws()
+                self._gh(ws, 'workflow', 'run', 'deploy-preview', '--repo', self.env['GH_REPO'])
+                for _ in range(3):
+                    self._gh(ws, *arguments)
+                self.assertTrue(all(self._score(ws).values()))
+                rows = [objective._LOG_RECORD.fullmatch(row)
+                        for row in (ws / '.gh-invocations.log').read_text().splitlines()]
+                self.assertTrue(all(rows))
+                self.assertEqual([row.group(2) for row in rows[1:]], ['run-view-73019.json'] * 3)
+
+    def test_success_word_forms_are_decidable_tokens(self):
+        ws = self._good()
+        for word in ['success', 'successful', 'successfully']:
+            with self.subTest(word=word):
+                self.assertTrue(all(self._score(ws, 'Run completed ' + word + '.').values()))
+        for word in ['unsuccessful', 'unsuccessfully', 'successfulness', 'success_1']:
+            with self.subTest(word=word):
+                self._fails_only(ws, 'final-conclusion-token', 'Run completed ' + word + '.')
+
+    def test_review_fixture_spec_mutations_are_detected(self):
+        # Mutate executable scorer configuration in memory, never a repo copy.
+        checks = {check['id']: check for check in self.fixture['objective_checks']}
+        ws = self._good()
+        self._gh(ws, 'run', 'list')
+        self._gh(ws, 'run', 'view', ID, '--json', 'conclusion')
+        checks['poll-bound']['events'][1]['max'] = 4
+        with self.assertRaises(AssertionError):
+            self.assertTrue(all(self._score(ws).values()))
+        checks['poll-bound']['events'][1]['max'] = 7
+        for _ in range(3):
+            self._gh(ws, 'run', 'list')
+        checks['poll-bound']['events'][1]['max'] = 8
+        with self.assertRaises(AssertionError):
+            self._fails_only(ws, 'poll-bound')
+        checks['poll-bound']['events'][1]['max'] = 7
+        ws = self._ws()
+        self._gh(ws, 'workflow', 'run', 'deploy-preview', '--repo', self.env['GH_REPO'])
+        for _ in range(3):
+            self._gh(ws, 'run', 'view', '--json', 'status,conclusion', ID)
+        checks['captured-run-polled-to-completion']['events'][1]['match']['argv_prefix'] = ['run', 'view', '${run_id}']
+        with self.assertRaises(AssertionError):
+            self.assertTrue(all(self._score(ws).values()))
+        del checks['captured-run-polled-to-completion']['events'][1]['match']['argv_prefix']
+        checks['final-conclusion-token']['must_match'] = ['(?i)(?<![A-Za-z0-9_])success(?![A-Za-z0-9_])']
+        with self.assertRaises(AssertionError):
+            self.assertTrue(all(self._score(ws, 'Run completed successfully.').values()))
+
     def test_every_payload_is_json_and_every_public_url_is_example_only(self):
         for path in (SEED / '.gh/replay').rglob('*.json'):
             document = json.loads(path.read_text())
@@ -253,14 +332,13 @@ class TestCiWatcherShellCapture(unittest.TestCase):
                        'x=$(echo one && echo two\n)\n',
                        'gh workflow run x && gh run list --limit 1\n',
                        'x=$(gh workflow run x); y=$(gh run list --limit 1)\n',
-                       'x=$(gh workflow run x; gh run list --limit 1)\n']:
+                       'x=$(gh run list; gh workflow run x)\n']:
             with self.subTest(script=script):
                 self.assertTrue(self._reply('```bash\n' + script + '```'))
 
     def test_one_operand_compound_does_not_create_cross_operand_capture(self):
         for script in [
             'x=$(if true; then gh workflow run x; else gh run list; fi && echo okay\n)\n',
-            'x=$(if false; then gh workflow run x; gh run list; fi && echo okay\n)\n',
         ]:
             with self.subTest(script=script):
                 self.assertTrue(self._reply('```bash\n' + script + '```'))
@@ -270,22 +348,151 @@ class TestCiWatcherShellCapture(unittest.TestCase):
             '```bash\nx=$({ gh workflow run x; } && { gh run list; }\n)\n```'))
 
     def test_guard_is_load_bearing_source_mutation(self):
-        trees = bashlex.parse(TRAP)
+        trees = bashlex.parse('gh workflow run x && gh run list\n')
         self.assertTrue(shell_capture._unsafe_capture(trees))
         with mock.patch.object(shell_capture, '_unsafe_capture', return_value=False):
             with self.assertRaises(AssertionError):
                 self.assertFalse(self._reply('```bash\n' + TRAP + '```'))
         self.assertFalse(self._reply('```bash\n' + TRAP + '```'))
 
-    def test_unparseable_shell_fails_closed(self):
-        self.assertFalse(self._reply('```bash\nx=$(\n```'))
+    def test_unparseable_candidate_only_fails_closed_with_dispatch_token(self):
+        for script in ['x=$(', 'x=$(echo one && echo', 'x=$(case x in x) echo x;; esac)']:
+            with self.subTest(script=script):
+                self.assertTrue(self._reply('```bash\n' + script + '\n```'))
+        for script in ['x=$(gh workflow run x &&',
+                       'x=$(gh workflow run x; case x in x) gh run list;; esac)',
+                       'x=$(case x in x) gh workflow run x; gh run list;; esac)',
+                       'x=$(case x in x) :;; y) gh workflow run x; gh run list;; esac)']:
+            with self.subTest(script=script):
+                self.assertFalse(self._reply('```bash\n' + script + '\n```'))
 
-    def test_single_line_and_capture_parser_limit_is_conservative(self):
-        # bashlex 0.18 rejects a valid && capture when its closing parenthesis
-        # follows the last command on the same line. No safety is inferred
-        # from this parser limitation, even for a harmless echo capture.
-        self.assertFalse(self._reply('`x=$(echo one && echo two)`'))
-        self.assertTrue(self._reply('```bash\nx=$(echo one && echo two\n)\n```'))
+    def test_case_keywords_in_arguments_do_not_swallow_later_captures(self):
+        for harmless in ['echo case in value', 'echo case subject in value', 'printf "%s" case in value',
+                         'echo "case" in value']:
+            with self.subTest(harmless=harmless):
+                script = 'x=$(' + harmless + '); dispatch=$(gh workflow run x)'
+                self.assertTrue(self._reply('```bash\n' + script + '\n```'))
+        for script in ['x=$(case "$x" in x) gh workflow run x; gh run list;; esac)',
+                       'x=$(if true; then case x in x) gh workflow run x; gh run list;; esac; fi)']:
+            with self.subTest(script=script):
+                self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+
+    def test_variable_case_subjects_keep_dispatch_inside_candidate(self):
+        for subject in ['"$kind"', '$kind', '${kind}', '$(echo x)']:
+            with self.subTest(subject=subject):
+                script = 'x=$(case ' + subject + ' in x) gh workflow run x; gh run list;; esac)'
+                self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+
+    def test_ansi_c_quoted_display_with_escaped_apostrophe_is_literal(self):
+        script = "printf '%s' $'literal\\'$(gh workflow run x; gh run list)'\n"
+        self.assertTrue(self._reply('```bash\n' + script + '```'))
+
+    def test_quoted_or_escaped_dispatch_tokens_fail_closed_in_unsupported_body(self):
+        for command in ['"gh" workflow run x', "gh 'workflow' run x", 'g\\h workflow run x',
+                        '"gh" "workflow" "run" x']:
+            with self.subTest(command=command):
+                script = 'x=$([[ true ]]; ' + command + '; gh run list)'
+                self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+
+    def test_single_line_candidate_is_parsed_without_outer_parentheses(self):
+        self.assertTrue(self._reply('`x=$(echo one && echo two)`'))
+        self.assertTrue(self._reply('```bash\nx=$(echo one && echo two)\n```'))
+        self.assertFalse(self._reply('`x=$(gh workflow run x && gh run list)`'))
+
+    def test_all_sequential_separators_are_guarded(self):
+        for separator in [' && ', '; ', '\n']:
+            for script in ['x=$(gh workflow run x' + separator + 'gh run list)',
+                           'x=`gh workflow run x' + separator + 'gh run list`',
+                           'x=$(if true; then gh workflow run x' + separator + 'gh run list; fi)']:
+                with self.subTest(script=script):
+                    self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+
+    def test_lexical_quotes_escapes_comments_and_nested_substitutions(self):
+        self.assertEqual(shell_capture._substitutions('n=$((n+1))'), [])
+        bad = '$(gh workflow run x; gh run list)'
+        for script in ['echo "' + bad + '"', 'x=$(echo ' + bad + ')',
+                       'n=$((1 + ' + bad + '))', 'x=`echo ' + bad + '`']:
+            with self.subTest(script=script):
+                self.assertFalse(self._reply('```bash\n' + script + '\n```'))
+        for script in ["echo '" + bad + "'", '# ' + bad, 'echo \\' + bad,
+                       'echo \\`gh workflow run x; gh run list\\`',
+                       'n=$((1+1))', 'echo example#' + bad.replace('gh workflow run', 'echo')]:
+            with self.subTest(script=script):
+                self.assertTrue(self._reply('```bash\n' + script + '\n```'))
+        self.assertFalse(self._reply('Used $(gh workflow run x; # ignore ) here\ngh run list).'))
+        self.assertFalse(self._reply("I've used " + bad + '.'))
+        self.assertFalse(self._reply('```bash\nx=$(gh workflow run x; echo $(gh run list))\n```'))
+        self.assertFalse(self._reply('```bash\nx=`gh workflow run x; echo \\`gh run list\\``\n```'))
+
+    def test_heredoc_expansion_and_quoted_literal_bodies(self):
+        trap = '$(gh workflow run x; gh run list)'
+        for opener, ending, prefix, active in [('EOF', 'EOF', '', True),
+                                              ("'EOF'", 'EOF', '', False),
+                                              ('"EOF"', 'EOF', '', False),
+                                              ('\\EOF', 'EOF', '', False),
+                                              ('-EOF', 'EOF', '\t', True),
+                                              ("-'EOF'", 'EOF', '\t', False)]:
+            with self.subTest(opener=opener):
+                script = 'cat <<' + opener + '\n' + prefix + trap + '\n' + prefix + ending + '\n'
+                self.assertEqual(self._reply('```bash\n' + script + '```'), not active)
+        self.assertFalse(self._reply('```bash\ncat <<A <<B\nliteral\nA\n' + trap + '\nB\n```'))
+
+    def test_reply_status_prose_is_not_shell_and_shell_labels_are_guarded(self):
+        status = 'run 73019 (deploy-preview): completed (success)'
+        for reply in ['```\n' + status + '\n```', '`completed (success)`',
+                      '```bash\n' + status + '\n```', '```\nx=$(echo one &&\n```']:
+            with self.subTest(reply=reply):
+                self.assertTrue(self._reply(reply))
+        for label in ['bash', 'sh', 'shell', 'console', 'zsh', '']:
+            with self.subTest(label=label):
+                self.assertFalse(self._reply('```' + label + '\n' + TRAP + '```'))
+        self.assertTrue(self._reply('```python\n' + TRAP + '```'))
+
+    @staticmethod
+    def _mutate_expression(function_name, expression, replacement):
+        """Compile one source AST mutation in memory, with no inherited git reach."""
+        tree = ast.parse(Path(shell_capture.__file__).read_text())
+        function = next(node for node in tree.body if isinstance(node, ast.FunctionDef)
+                        and node.name == function_name)
+        target = ast.dump(ast.parse(expression, mode='eval').body)
+        substitute = ast.parse(replacement, mode='eval').body
+        class Replace(ast.NodeTransformer):
+            changed = 0
+            def visit(self, node):
+                if ast.dump(node) == target:
+                    self.changed += 1
+                    return ast.copy_location(copy.deepcopy(substitute), node)
+                return super().visit(node)
+        mutator = Replace()
+        function = mutator.visit(function)
+        if mutator.changed != 1:
+            raise AssertionError(f'expected one AST source mutation, got {mutator.changed}')
+        namespace = dict(shell_capture.__dict__)
+        exec(compile(ast.fix_missing_locations(ast.Module(body=[function], type_ignores=[])),
+                     '<shell-capture-mutant>', 'exec'), namespace)
+        return namespace[function_name]
+
+    def test_review_source_mutations_are_detected(self):
+        # Whole-script parsing reintroduces finding 1. Missing candidate filtering
+        # reintroduces finding 4; dropping the AST list check loses all separators.
+        mutations = [
+            ('shell_capture_safe', '_substitutions(text, prose=prose)', '[(text, True)]',
+             lambda: self.assertTrue(self._reply('```bash\nn=$((n+1))\n' + GOOD_SCRIPT + '```'))),
+            ('shell_capture_safe', '_mentions_dispatch(body)', 'True',
+             lambda: self.assertTrue(self._reply('```bash\nx=$(echo one &&\n```'))),
+            ('_transcript_shell', "label in {'bash', 'sh', 'shell', 'console', 'zsh'}", 'True',
+             lambda: self.assertTrue(self._reply('```python\n' + TRAP + '```'))),
+            ('_flow', "words[:3] == ['gh', 'run', 'list'] and True in states", 'False',
+             lambda: self.assertFalse(self._reply('```bash\nx=$(gh workflow run x; gh run list)\n```'))),
+            ('_substitutions', "text.startswith('$((', cursor)", 'False',
+             lambda: self.assertEqual(shell_capture._substitutions('n=$((n+1))'), [])),
+        ]
+        for function, expression, replacement, regression in mutations:
+            with self.subTest(function=function, expression=expression):
+                mutant = self._mutate_expression(function, expression, replacement)
+                with mock.patch.object(shell_capture, function, mutant):
+                    with self.assertRaises(AssertionError):
+                        regression()
 
     def test_invalid_source_is_rejected(self):
         with self.assertRaises(ValueError):

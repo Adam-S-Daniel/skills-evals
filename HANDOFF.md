@@ -668,9 +668,9 @@ NOT survive; the branches do.
 1. Clone side by side (the suite resolves siblings at `REPO_ROOT/..`):
    `skills-evals`, `_agent-guidance`, `agentskills`. #142 is fixed, so a
    side-by-side layout no longer reds `main`.
-2. Toolchain: `python3 -m pip install --user markdown-it-py==4.2.0`; mikefarah
-   `yq` v4.53.3 FIRST on `PATH` for `_agent-guidance` (the distro `yq` is the
-   wrong tool); `npm ci --ignore-scripts` in `_agent-guidance`. Run every
+2. Toolchain: `python3 -m pip install --user markdown-it-py==4.2.0 bashlex==0.18`;
+   mikefarah `yq` v4.53.3 FIRST on `PATH` for `_agent-guidance` (the distro
+   `yq` is the wrong tool); `npm ci --ignore-scripts` in `_agent-guidance`. Run every
    suite with a throwaway `HOME` and `SKILLS_EVALS_USER_MEMORY`
    (`CLAUDE_CONFIG_DIR` for `_agent-guidance`).
 3. Verifiers: skills-evals `python3 test/run_tests.py` (exit 0; counts above)
@@ -1124,9 +1124,9 @@ over zero statuses" here; the check runs carry the conclusions). Merge with
 `merge_method: merge` and `expectedHeadSha`; confirm the commit is an ancestor
 of `main`.
 
-- skills-evals: `python3 -m pip install --user markdown-it-py==4.2.0`; siblings
-  `../_agent-guidance` and `../agentskills` checked out (without the second one
-  test skips); `python3 test/run_tests.py` (serial per checkout: the suite
+- skills-evals: `python3 -m pip install --user markdown-it-py==4.2.0 bashlex==0.18`;
+  siblings `../_agent-guidance` and `../agentskills` checked out (without
+  the second one test skips); `python3 test/run_tests.py` (serial per checkout: the suite
   plants probe modules in `test/issues/`), `python3 test/test_propagation.py`
   (164, 1 skipped); every skill fixture under `evals/` compared per check
   against `main` under `--arm objective-only` (rule 19).
