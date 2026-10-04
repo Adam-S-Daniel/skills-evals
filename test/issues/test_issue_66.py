@@ -1154,13 +1154,16 @@ class TestIssue66Badge(_HarnessCase):
         # The judge can only demote. A judge block the badge cannot read is
         # "no judge", and the objective comparison stands.
         without = self._trialled([self._single(3, 5, 9.0)] * 2)
+        # -inf and 10**400 are both JSON a file can carry (`-Infinity`, and
+        # an integer with no float): neither is a sum to divide.
         for index, (field, value) in enumerate(
-                (("sum", "high"), ("sum", None), ("n", None), ("n", 0),
-                 ("n", 1.5))):
+                (("sum", "high"), ("sum", None), ("sum", True),
+                 ("sum", float("-inf")), ("sum", 10 ** 400), ("n", None),
+                 ("n", 0), ("n", 1.5))):
             with_arm = self._trialled([self._single(5, 5, 1.0)] * 2)
             with_arm["aggregate"]["judge"]["overall"][field] = value
             ts = f"202607{10 + index}T070000Z"
-            with self.subTest(field=field, value=value):
+            with self.subTest(field=field, value=str(value)[:12]):
                 self._write(ts, with_arm, without)
                 badge = self._badge("--window", "1")
                 self.assertEqual(

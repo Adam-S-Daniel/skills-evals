@@ -150,7 +150,8 @@ def arm_stats(unit_dir: Path, arm: str) -> dict | None:
     trials, the objective checks passed and run summed over them, and the sum
     and count of the trials' numeric judge overalls. Sums rather than means,
     so that averaging several of these is one division over exact integer
-    counts instead of a mean of rounded means.
+    counts, where a mean of per-trial means could turn an exact tie into a
+    difference in the last float digit.
 
     Two summary shapes (harness/run_eval.py, "Trials"):
 
