@@ -81,9 +81,11 @@ recovery nodes fail rather than being credited as valid code.
 ## Alternatives considered
 
 **bashlex 0.18:** pure Python and cheap to install, but its latest PyPI release
-is from 2023 and its documented parser omissions include Bash array syntax.
-Array path passing and heredoc distinctions are required here. Tree-sitter's
-maintained Bash grammar represents those constructs directly.
+is from 2023. Its documented limitations include complex parameter expansions
+that remain literal text without child nodes. This check needs to distinguish
+array references, array counts, and indirect expansions structurally, along
+with command and heredoc boundaries. Tree-sitter's maintained Bash grammar
+represents those constructs directly.
 
 **Regular expressions or token matching:** cannot establish typed mapping
 paths, control-flow dominance, or distinguish executable calls from strings.
