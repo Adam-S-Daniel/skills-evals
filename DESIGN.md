@@ -186,6 +186,15 @@ satisfies `read`, and `read-all` cannot satisfy a write requirement. Check
 arguments must include nonempty path patterns, job ID, suffix, and a nonempty
 scope mapping requiring `read` or `write`. Unknown constraint keys are rejected.
 
+`workflow_step_uses` uses the same suffix boundary. Both checks fail with a
+filename and a fixed duplicate-key detail if any matched workflow authors
+duplicate mapping keys anywhere in its composed YAML tree, including
+unrelated jobs or fields. Equivalent SafeLoader scalar keys and repeated
+merge keys count as duplicates; a single merge with explicit overrides and
+benign anchors/aliases remains supported. This validation happens before
+merge flattening and applies only to these two checks. Other malformed
+workflow files retain the step check's existing skip behavior.
+
 ### Git-state objective check types (`harness/scorers/objective.py`)
 
 Added for fixtures whose target state is one or more real git repositories

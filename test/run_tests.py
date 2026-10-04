@@ -21856,6 +21856,95 @@ class TestIssue90UsesSuffixBoundary(_WorkflowUsesChecks):
                 self._assert_workflow(self._workflow(uses), False)
 
 
+class TestIssue90WorkflowDuplicateKeys(_WorkflowUsesChecks):
+    """Authored duplicates anywhere fail both checks without exposing values."""
+
+    def _assert_duplicate(self, raw: str):
+        ws = self._ws({self.PATH: raw})
+        for kind in ("permissions", "steps"):
+            with self.subTest(kind=kind):
+                passed, detail = self._check(kind, ws)
+                self.assertFalse(passed, detail)
+                self.assertEqual(detail, self.PATH + ": duplicate YAML mapping key")
+
+    def test_root_jobs_job_step_and_permission_duplicates_fail(self):
+        raw = self._workflow()
+        cases = ["name: hidden-value\nname: safe\n" + raw,
+                 "jobs: {}\n" + raw,
+                 raw.replace("  caller:\n", "  caller: {}\n  caller:\n"),
+                 raw.replace("    uses: ", "    uses: hidden-value\n    uses: ", 1),
+                 raw.replace("      - uses: ", "      - uses: hidden-value\n        uses: ", 1),
+                 raw.replace("      contents: read", "      contents: none\n      contents: read")]
+        for index, case in enumerate(cases):
+            with self.subTest(location=index):
+                self._assert_duplicate(case)
+
+    def test_with_env_and_unrelated_nested_mapping_duplicates_fail(self):
+        raw = self._workflow()
+        cases = [raw + "        with: {mode: hidden-value, mode: post}\n",
+                 raw + "        env: {SETTING: hidden-value, SETTING: safe}\n",
+                 raw + "    env: {SETTING: hidden-value, SETTING: safe}\n",
+                 raw + "unrelated:\n  sequence:\n    - nested: {entry: hidden-value, entry: safe}\n",
+                 raw + "unrelated: {!unsupported key: safe, entry: hidden-value, entry: safe}\n",
+                 raw + "? {entry: hidden-value, entry: safe}\n: ignored\n"]
+        for index, case in enumerate(cases):
+            with self.subTest(location=index):
+                self._assert_duplicate(case)
+
+    def test_yaml_equivalent_scalar_keys_and_repeated_merge_keys_fail(self):
+        for mapping in ("{true: hidden-value, yes: safe}", "{1: hidden-value, 01: safe}",
+                        "{1: hidden-value, 1.0: safe}", "{null: hidden-value, ~: safe}",
+                        "{.nan: hidden-value, .NaN: safe}", "{=: hidden-value, '=': safe}",
+                        "{<<: {mode: hidden-value}, <<: {mode: safe}}"):
+            with self.subTest(mapping=mapping):
+                self._assert_duplicate(self._workflow() + "unrelated: " + mapping + "\n")
+
+    def test_duplicate_anchor_mapping_is_checked_once_and_rejected(self):
+        raw = ("defaults: &defaults {entry: hidden-value, entry: safe}\n"
+               "alias: *defaults\n" + self._workflow())
+        self._assert_duplicate(raw)
+        self._assert_duplicate(raw.replace("    permissions:\n", "    permissions:\n      <<: *defaults\n"))
+
+    def test_single_merge_explicit_overrides_and_benign_aliases_pass(self):
+        raw = ("defaults: &defaults {contents: none}\n" + self._workflow()).replace(
+            "    permissions:\n      contents: read",
+            "    permissions:\n      <<: *defaults\n      contents: read")
+        raw += "metadata: &metadata {entry: safe}\nalias: *metadata\n"
+        self._assert_workflow(raw, True)
+        # SafeLoader permits recursive aliases. Walking authored keys must
+        # terminate and preserve the existing scorer behavior for this graph.
+        self._assert_workflow(raw + "recursive: &recursive {cycle: *recursive}\n", True)
+
+    def test_unrelated_matched_file_and_vacuous_step_modes_still_fail(self):
+        ws = self._ws({self.PATH: self._workflow(),
+                       ".github/workflows/other.yml": "env: {SETTING: hidden-value, SETTING: safe}\n"})
+        patterns = [".github/workflows/*.yml"]
+        for kind in ("permissions", "steps"):
+            with self.subTest(kind=kind):
+                passed, detail = self._check(kind, ws, patterns=patterns)
+                self.assertFalse(passed, detail)
+                self.assertEqual(detail, ".github/workflows/other.yml: duplicate YAML mapping key")
+        for constraints in ({"min_matches": 0}, {"unique_with_key": "marker"}, {"uses_suffix": None}):
+            with self.subTest(constraints=constraints):
+                passed, detail = self._check("steps", ws, patterns=patterns, **constraints)
+                self.assertFalse(passed, detail)
+                self.assertEqual(detail, ".github/workflows/other.yml: duplicate YAML mapping key")
+
+    def test_other_malformed_workflows_keep_existing_step_skip_behavior(self):
+        for raw in ("jobs: [", "[]", "", "jobs: null", "unknown: !unsupported scalar",
+                    "unrelated: {!unsupported key: safe}"):
+            with self.subTest(raw=raw):
+                ws = self._ws({self.PATH: self._workflow(), ".github/workflows/other.yml": raw})
+                patterns = [".github/workflows/*.yml"]
+                self.assertTrue(self._check("steps", ws, patterns=patterns)[0])
+                self.assertFalse(self._check("permissions", ws, patterns=patterns)[0])
+
+    def test_duplicate_validation_is_opt_in_for_unrelated_workflow_checks(self):
+        ws = self._ws({self.PATH: "env: {SETTING: hidden-value, SETTING: safe}\n"})
+        self.assertEqual(objective._load_workflows(str(ws), [self.PATH]),
+                         [(self.PATH, {"env": {"SETTING": "safe"}})])
+
+
 class TestIssue90WorkflowPermissions(unittest.TestCase):
     """The reusable caller's effective grant is a parsed YAML fact."""
 
