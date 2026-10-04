@@ -799,9 +799,11 @@ class TestIssue66Trials(_HarnessCase):
 
         report = self._report()
         self.assertIn("| without_skill | 3 | 1 | 1.5/2 | "
-                      "7.0 (6.0 to 8.0, 2 judged) | 0.0400 / 0.0800 |", report)
+                      "7.0 (6.0 to 8.0, 2 judged) | "
+                      "0.0400 / 0.0800; 1 unknown |", report)
         self.assertIn("Errored trials are counted in n and excluded from "
-                      "every mean:", report)
+                      "score means; known costs from all trials are counted:",
+                      report)
         self.assertIn("- without_skill trial 2: nonzero_exit:", report)
 
     def test_when_every_trial_errors_there_are_no_statistics(self):
@@ -814,10 +816,12 @@ class TestIssue66Trials(_HarnessCase):
                          (2, 2, 0))
         self.assertEqual([e["trial"] for e in summary["trial_errors"]], [1, 2])
         self.assertEqual(summary["aggregate"],
-                         {"objective": None, "judge": None, "cost_usd": None})
+                         {"objective": None, "judge": None, "cost_usd": None,
+                          "cost_unknown_trials": 2})
         self.assertIn("no trial was scored", summary["error"]["detail"])
         self.assertEqual(self._calls("judges"), [])
-        self.assertIn("| without_skill | 2 | 2 | - | - | - |", self._report())
+        self.assertIn("| without_skill | 2 | 2 | - | - | -; 2 unknown |",
+                      self._report())
 
     def test_a_failed_judge_call_is_a_judge_error_not_a_trial_error(self):
         self._script(agents=[{}, {}, {}],
@@ -890,7 +894,7 @@ class TestIssue66Trials(_HarnessCase):
         self.assertIn("Runner-level error in arm(s): "
                       "with_skill (2 of 2 trials)\n", proc.stdout)
         report = self._report()
-        self.assertIn("| with_skill | 2 | 2 | - | - | - |", report)
+        self.assertIn("| with_skill | 2 | 2 | - | - | -; 2 unknown |", report)
         self.assertIn("| readme-kept | - | 2/2 |", report)
         self.assertIn("| marker-written | - | 0/2 |", report)
 
@@ -1110,7 +1114,7 @@ class TestIssue66Statistics(unittest.TestCase):
     def test_an_errored_trial_never_leaves_n(self):
         error = {"type": "timeout", "detail": "agent timed out after 600s"}
         # The third errored after its agent call was paid for (the shape an
-        # `invalid_fixture` trial has): still errored, still out of the cost.
+        # `invalid_fixture` trial has): still errored, its cost still counted.
         paid = dict(self._trial(error=error), agent={"cost_usd": 9.0})
         stats = run_eval.aggregate_trials([
             self._trial(error=error), self._trial(overall=4.0, passed=False),
@@ -1118,15 +1122,54 @@ class TestIssue66Statistics(unittest.TestCase):
         self.assertEqual((stats["n"], stats["errors"], stats["scored"]),
                          (3, 2, 1))
         self.assertEqual(stats["aggregate"]["cost_usd"],
-                         {"n": 1, "mean": 0.5, "min": 0.5, "max": 0.5,
-                          "sum": 0.5})
+                         {"n": 2, "mean": 4.75, "min": 0.5, "max": 9.0,
+                          "sum": 9.5})
+        self.assertEqual(stats["aggregate"]["cost_unknown_trials"], 1)
         self.assertEqual([e["trial"] for e in stats["trial_errors"]], [1, 3])
         self.assertEqual(stats["aggregate"]["objective"]["checks"],
                          [{"id": "only", "n": 1, "passed": 0,
                            "pass_rate": 0.0}])
+        self.assertEqual(stats["aggregate"]["objective"]["n"], 1)
+        self.assertEqual(stats["aggregate"]["judge"]["overall"]["n"], 1)
         self.assertEqual(run_eval._trials_error(stats)["detail"],
-                         "2 of 3 trials errored (timeout x2); every mean is "
+                         "2 of 3 trials errored (timeout x2); score means are "
                          "over the 1 that did not")
+
+    def test_known_costs_count_when_every_trial_errors(self):
+        error = {"type": "invalid_fixture", "detail": "unusable check"}
+        trials = [dict(self._trial(error=error), agent={"cost_usd": cost})
+                  for cost in (0.0, 9.0)] + [self._trial(error=error)]
+        stats = run_eval.aggregate_trials(trials)
+        self.assertEqual((stats["n"], stats["errors"], stats["scored"]),
+                         (3, 3, 0))
+        self.assertEqual(stats["aggregate"], {
+            "objective": None, "judge": None,
+            "cost_usd": {"n": 2, "mean": 4.5, "min": 0.0, "max": 9.0,
+                         "sum": 9.0},
+            "cost_unknown_trials": 1})
+
+    def test_unknown_costs_are_counted_across_scored_and_errored_trials(self):
+        invalid_agents = [None, [], "invalid", True, 42, {},
+                          *[{"cost_usd": value} for value in (
+                              None, False, True, "0.5", float("nan"),
+                              float("inf"), float("-inf"), 10 ** 400)]]
+        trials = []
+        for error in (None, {"type": "timeout", "detail": "no result"}):
+            missing = self._trial(overall=4.0)
+            missing["error"] = error
+            del missing["agent"]
+            trials.append(missing)
+            for agent in invalid_agents:
+                trial = self._trial(overall=4.0)
+                trial.update(error=error, agent=agent)
+                trials.append(trial)
+        stats = run_eval.aggregate_trials(trials)
+        self.assertEqual((stats["n"], stats["errors"], stats["scored"]),
+                         (len(trials), len(trials) // 2, len(trials) // 2))
+        self.assertIsNone(stats["aggregate"]["cost_usd"])
+        self.assertEqual(stats["aggregate"]["cost_unknown_trials"], len(trials))
+        self.assertEqual(stats["aggregate"]["objective"]["n"], len(trials) // 2)
+        self.assertEqual(stats["aggregate"]["judge"]["n"], len(trials) // 2)
 
 
 # ---------------------------------------------------------------------------
