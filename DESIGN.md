@@ -111,6 +111,47 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+### YAML front-matter objective check (`harness/scorers/objective.py`)
+
+`front_matter_has` checks existing files at exact workspace-relative `paths`
+(no globs, absolute paths, `..` components, or symlinks escaping the
+workspace). It parses only the YAML between an opening `---` line at the
+start of the file and the next exact `---` line. One initial UTF-8 BOM is
+accepted; LF and CRLF are accepted, and the closing delimiter may end at
+EOF. Delimiter indentation, trailing spaces/comments, and CR-only lines
+are rejected. Body bytes are never parsed or decoded, so even malformed
+YAML or invalid UTF-8 in the body cannot supply evidence.
+
+```yaml
+- id: tool-front-matter
+  type: front_matter_has
+  paths: ["_tools/unit-converter.md"]
+  equals:
+    slug: unit-converter
+    embed_src: /assets/tools/unit-converter/
+  nonempty_strings: [title, description]
+```
+
+The root must be a mapping. `equals` compares both type and value,
+recursively for containers (including mapping keys and YAML sets; a
+boolean never equals an integer). `nonempty_strings` requires each named
+key to contain a string with non-whitespace content. Both constraints
+may be omitted; if supplied, they must respectively be a mapping with
+string keys and a list of strings. Explicit null or a malformed shape
+fails the check. Unknown constraint keys raise at fixture validation,
+as with other check types.
+
+SafeLoader semantics preserve quoted scalars, field ordering, multiline
+strings, extra fields, benign anchors/aliases, and merge defaults with
+explicit overrides. Duplicate keys explicitly authored in the root are
+rejected, including equivalent YAML key spellings and repeated merge
+keys; nested mappings retain SafeLoader behavior. Missing/malformed
+delimiters, invalid YAML, non-mapping roots, missing/wrong values, and
+unreadable files fail with details that contain no file content. Headers
+are capped at 64 KiB, composition and alias-expanded graphs at 4096
+nodes and depth 64; recursive graphs are rejected before construction
+or merge flattening. These bounds apply only to the header.
+
 ### Reusable-workflow permission checks
 
 `workflow_permissions` in [`harness/scorers/objective.py`](harness/scorers/objective.py)
@@ -316,9 +357,13 @@ Not every skill takes the same eval, and some take none. Classify first:
   reasoning quality only. `cms-stuck-pr-triage` graduated out of this list:
   covered by `evals/cms-stuck-pr-triage/` (issue #84), which is also where
   the shared `harness/fakes/gh` every other Class B fixture reuses came
-  from. Candidates: `debug-github-workflows`, `ci-watcher-loops`,
-  `editorial-label-audit`, `skills-doctor`, `consumer-repo-provisioning`
-  (the which-secret-is-missing half).
+  from. [`consumer-repo-provisioning`](https://github.com/Adam-S-Daniel/skills-evals/blob/main/evals/consumer-repo-provisioning/fixture.yaml)
+  now has its first Class B fixture:
+  a consumer startup failure with a required Actions secret missing and the
+  secret listing inaccessible ([issue #91](https://github.com/Adam-S-Daniel/skills-evals/issues/91)).
+  The extra-permission and variable-misconfiguration scenarios remain open.
+  Candidates: `debug-github-workflows`, `ci-watcher-loops`,
+  `editorial-label-audit`, `skills-doctor`.
 - **C. Judgment/style** — the judge carries the load; keep the few decidable
   bits objective (banned buzzwords absent, required sections present), and
   prefer pairwise preference against committed reference samples over

@@ -79,6 +79,9 @@ evals/
     seed/                  # the site checkout: bin/gh is a symlink to
                            # harness/fakes/gh, and .gh/replay/ holds its
                            # recorded responses
+  consumer-repo-provisioning/ # A/B eval, Class B: diagnose missing consumer credentials
+    fixture.yaml           # missing Actions secret diagnosis and PAT permission cells
+    seed/                  # shared fake gh, startup-failure metadata, denied secret listing
   github-actions-repo-settings/  # A/B eval, Class B: diagnose settings drift
     fixture.yaml           # read-only two-repo diagnosis and objective checks
     seed/                  # declared baseline, shared gh, and canned API responses
@@ -222,6 +225,11 @@ mix of the legacy `plugins/<skill>/skills/<skill>/` shape and the bundled
 and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
 code path. It then copies that resolved directory (the one containing
 `SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
+
+For YAML metadata at the start of Markdown files, use `front_matter_has`
+with exact `paths`, an `equals` mapping, and a `nonempty_strings` list.
+It parses front matter and ignores the body; see the
+[scorer contract and example](DESIGN.md#yaml-front-matter-objective-check-harnessscorersobjectivepy).
 
 ### The `judge:` block
 
