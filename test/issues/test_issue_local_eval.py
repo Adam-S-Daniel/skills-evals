@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import importlib.util
 import io
 import json
 import os
@@ -831,13 +832,15 @@ class TestLocalEval(unittest.TestCase):
         baseline = self._baseline_make_badge()
         if baseline is None:
             self.skipTest("origin/main is not available to compare against")
-        old_badge = self.root / "old-badge.json"
-        old = subprocess.run(
-            [sys.executable, str(baseline), SKILL, "--results-dir",
-             str(self.out / "t1"), "--out", str(old_badge)],
-            capture_output=True, text=True, timeout=120)
-        self.assertEqual(old.returncode, 0, old.stderr)
-        self.assertEqual(badge.read_bytes(), old_badge.read_bytes())
+        spec = importlib.util.spec_from_file_location("make_badge_baseline",
+                                                      baseline)
+        old_module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(old_module)
+        old_badge = old_module.build_badge(self.out / "t1", SKILL)
+        # make_badge.py writes json.dumps(badge, indent=2, sort_keys=True)+"\n"
+        self.assertEqual(
+            badge.read_bytes(),
+            (json.dumps(old_badge, indent=2, sort_keys=True) + "\n").encode("utf-8"))
 
     def _unstamp_summaries(self):
         for path in self.out.rglob("summary.json"):
@@ -899,26 +902,29 @@ class TestLocalEval(unittest.TestCase):
         sys.path.insert(0, str(REPO_ROOT / "scripts"))
         self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
         import local_eval
-        seen = []
-        real_run = subprocess.run
-
-        def spy(cmd, *a, **kw):
-            if isinstance(cmd, list) and str(local_eval.RUN_EVAL) in cmd:
-                seen.append((Path(cmd[cmd.index("--results-dir") + 1]) /
-                              "LOCAL_EXHIBIT").is_file())
-            return real_run(cmd, *a, **kw)
-
+        # Stand in for harness/run_eval.py with a script that records whether
+        # the marker already sat in its --results-dir, then hands over to the
+        # real one.
+        seen = self.root / "marker-seen.txt"
+        spy = self.root / "run_eval_spy.py"
+        spy.write_text(
+            "import os, sys\n"
+            "out = sys.argv[sys.argv.index('--results-dir') + 1]\n"
+            f"open({str(seen)!r}, 'a').write(\n"
+            "    str(os.path.isfile(os.path.join(out, 'LOCAL_EXHIBIT'))) + '\\n')\n"
+            f"os.execv(sys.executable, [sys.executable, {str(local_eval.RUN_EVAL)!r},"
+            " *sys.argv[1:]])\n", encoding="utf-8")
         shutil.rmtree(self.out)
         env = self._env(self._dispatcher())
         with mock.patch.dict(os.environ, env, clear=True), \
-                mock.patch.object(local_eval.subprocess, "run", side_effect=spy), \
+                mock.patch.object(local_eval, "RUN_EVAL", spy), \
                 contextlib.redirect_stdout(io.StringIO()), \
                 contextlib.redirect_stderr(io.StringIO()):
             code = local_eval.main(
                 [str(EVAL_DIR), "--results-dir", str(self.out), "--trials", "1",
                  "--no-judge", "--arm", "without_skill"])
         self.assertEqual(code, 0)
-        self.assertEqual(seen, [True])
+        self.assertEqual(seen.read_text(encoding="utf-8").split(), ["True"])
 
     # -- nested fixtures (run_eval's #66 layout) -------------------------
 
