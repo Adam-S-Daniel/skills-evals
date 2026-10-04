@@ -223,6 +223,11 @@ and `.claude/skills/<skill>` (adamdaniel.ai) all resolve through the same
 code path. It then copies that resolved directory (the one containing
 `SKILL.md`) into the workspace's `.claude/skills/<skill>/`.
 
+For YAML metadata at the start of Markdown files, use `front_matter_has`
+with exact `paths`, an `equals` mapping, and a `nonempty_strings` list.
+It parses front matter and ignores the body; see the
+[scorer contract and example](DESIGN.md#yaml-front-matter-objective-check-harnessscorersobjectivepy).
+
 ### The `judge:` block
 
 A fixture's `judge:` block picks the instrument and pins its model:
