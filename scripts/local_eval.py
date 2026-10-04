@@ -24,11 +24,14 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    every other `ANTHROPIC_*` name re-routes, authenticates or re-models the
    CLI; a run under `/login` needs none of them.
 2. Refuses a `--results-dir` that resolves (symlinks followed) inside this
-   checkout, or inside any other git work tree, or that already holds files:
+   checkout, or inside any other git work tree or `.git` directory, or that
+   already holds files:
    `results/` is not gitignored, so summaries written there would ride into a
    pull request.
-3. Refuses a fixture that is not a skill fixture, whose models cannot be
-   selected, or whose registry checkout is missing.
+3. Refuses a fixture that is not a skill fixture, whose `env:` block names a
+   refused variable (run_eval applies that block last, so it would hand the
+   variable back to every arm), whose models cannot be selected, or whose
+   registry checkout is missing.
 4. Records the harness identity in `<out>/manifest.json`: `claude --version`,
    the fixture's pinned models and the models `run_eval.select_models` picks,
    the UTC start time, and the git SHA (plus a dirty flag) of this checkout
@@ -171,12 +174,14 @@ def check_results_dir(out: Path) -> Path:
     while not existing.exists():
         existing = existing.parent
     if existing.is_dir():
-        top = _git(existing, "rev-parse", "--show-toplevel")
-        if top.returncode == 0:
+        # --absolute-git-dir answers inside a work tree, inside a .git
+        # directory and in a bare repository alike; --show-toplevel does not.
+        repo = _git(existing, "rev-parse", "--absolute-git-dir")
+        if repo.returncode == 0:
             raise Refused(
-                f"--results-dir resolves inside the git work tree "
-                f"{top.stdout.strip()}; pick a directory outside every "
-                "repository.")
+                f"--results-dir resolves inside the git work tree or git "
+                f"directory {repo.stdout.strip()}; pick a directory outside "
+                "every repository.")
     if resolved.exists() and (not resolved.is_dir() or any(resolved.iterdir())):
         raise Refused(
             f"--results-dir {resolved} already exists and is not an empty "
@@ -215,6 +220,15 @@ def load_skill_fixture(eval_dir: Path) -> dict:
         run_eval._validate_skill_name(fixture["skill"])
     except ValueError as exc:
         raise Refused(f"invalid fixture: {exc}") from exc
+    # run_eval.agent_env applies the fixture's `env:` block LAST, so a fixture
+    # naming one of the refused variables would hand it back to every arm.
+    env_block = fixture.get("env")
+    named = refused_env_names([str(k) for k in env_block]
+                              if isinstance(env_block, dict) else [])
+    if named:
+        raise Refused(f"{eval_dir / 'fixture.yaml'}: `env:` names "
+                      f"{', '.join(named)}, which this wrapper refuses to put "
+                      "in an arm's environment")
     return fixture
 
 

@@ -17,6 +17,7 @@ Discovered and run by test/run_tests.py; also runnable on its own with
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import re
@@ -26,6 +27,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import yaml
 
@@ -58,7 +60,10 @@ path = os.path.join(STATE, role)
 n = int(open(path).read()) + 1 if os.path.exists(path) else 1
 with open(path, "w") as f:
     f.write(str(n))
-record = {{"role": role, "n": n, "argv": argv, "cwd": os.getcwd()}}
+record = {{"role": role, "n": n, "argv": argv, "cwd": os.getcwd(),
+          "secret_env": sorted(k for k in os.environ
+                               if k.startswith("ANTHROPIC_")
+                               or k == "CLAUDE_CODE_OAUTH_TOKEN")}}
 if role == "probe":
     record["cwd_entries"] = sorted(os.listdir("."))
     record["env"] = {{k: os.environ[k] for k in ("ANTHROPIC_BASE_URL", "HOME")
@@ -79,6 +84,18 @@ if role == "judge":
     sys.exit(0)
 target = {fake_init!r} if role == "probe" else {fake!r}
 os.execv(sys.executable, [sys.executable, target, *argv])
+'''
+
+
+SHIM = '''#!{python}
+import json, os, sys
+with open({log!r}, "a") as f:
+    f.write(json.dumps({{"tool": {tool!r}, "argv": sys.argv[1:]}}) + "\\n")
+real = {real!r}
+if real:
+    os.execv(real, [real, *sys.argv[1:]])
+sys.stderr.write("shim: {tool} is not available in this test\\n")
+sys.exit(97)
 '''
 
 
@@ -184,14 +201,53 @@ class TestLocalEval(unittest.TestCase):
                     self.assertIn(name, proc.stderr)
                     self.assertFalse(self.out.exists())
 
+    def test_refuses_a_fixture_whose_env_block_names_a_refused_variable(self):
+        # run_eval.agent_env applies a fixture's `env:` block LAST, over its
+        # allowlist, so this is the one way a refused name could still reach
+        # an arm after the caller's own environment passed the check.
+        registry = self._registry()
+        for name in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+            with self.subTest(name=name):
+                eval_dir = self.root / f"fixture-{name}"
+                shutil.copytree(EVAL_DIR, eval_dir)
+                fixture_path = eval_dir / "fixture.yaml"
+                fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
+                fixture["env"] = {name: "example-value"}
+                fixture_path.write_text(yaml.safe_dump(fixture), encoding="utf-8")
+                proc = self._run(str(eval_dir), "--trials", "1",
+                                 "--registry", f"adam-agentskills={registry}")
+                self._assert_nothing_ran(proc)
+                self.assertIn(name, proc.stderr)
+                self.assertIn("env:", proc.stderr)
+                self.assertFalse(self.out.exists())
+
+    def test_no_child_process_receives_a_refused_variable(self):
+        # The only ANTHROPIC_ name any child may see is the probe's own
+        # black-holed endpoint; the version call, every arm and every judge
+        # call see none, and nothing ever sees the OAuth token name.
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            with self.subTest(role=call["role"], n=call["n"]):
+                expected = (["ANTHROPIC_BASE_URL"] if call["role"] == "probe"
+                            else [])
+                self.assertEqual(call["secret_env"], expected)
+
     # -- 1. preflight: where results go ----------------------------------
 
     def test_refuses_a_results_dir_inside_this_checkout(self):
         name = f"local-eval-refusal-{self.root.name}"
         link = self.root / "link"
         link.symlink_to(REPO_ROOT, target_is_directory=True)
+        dangling = self.root / "dangling"
+        dangling.symlink_to(REPO_ROOT / name)
         for out in (REPO_ROOT / name, REPO_ROOT / "results" / name,
-                    link / name, self.root / "link" / "evals" / ".." / name):
+                    link / name, self.root / "link" / "evals" / ".." / name,
+                    dangling):
             with self.subTest(out=str(out)):
                 self.assertFalse((REPO_ROOT / name).exists())
                 proc = self._run(str(EVAL_DIR), "--trials", "1", results_dir=out)
@@ -209,6 +265,37 @@ class TestLocalEval(unittest.TestCase):
         self._assert_nothing_ran(proc)
         self.assertIn("git work tree", proc.stderr)
         self.assertFalse((other / "nested").exists())
+
+    def test_refuses_a_results_dir_inside_a_git_directory(self):
+        other = self.root / "other-repo"
+        other.mkdir()
+        _git(other, "init", "-q")
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         results_dir=other / ".git" / "nested" / "out")
+        self._assert_nothing_ran(proc)
+        self.assertIn("git", proc.stderr)
+        self.assertFalse((other / ".git" / "nested").exists())
+
+    def test_the_checkout_guard_stands_without_a_git_work_tree(self):
+        # In a checkout with no .git (an archive export) the work-tree probe
+        # cannot fire, so the path comparison alone must refuse. Patch
+        # REPO_ROOT to a non-repository and call the guard in-process.
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        fake_root = self.root / "archive-export"
+        (fake_root / "results").mkdir(parents=True)
+        link = self.root / "into-archive"
+        link.symlink_to(fake_root, target_is_directory=True)
+        with mock.patch.object(local_eval, "REPO_ROOT", fake_root):
+            for out in (fake_root / "results" / "x", link / "results" / "x",
+                        fake_root / "evals" / ".." / "x"):
+                with self.subTest(out=str(out)):
+                    with self.assertRaises(local_eval.Refused) as ctx:
+                        local_eval.check_results_dir(out)
+                    self.assertIn("inside this checkout", str(ctx.exception))
+            outside = self.root / "elsewhere" / "x"
+            self.assertEqual(local_eval.check_results_dir(outside), outside)
 
     def test_refuses_a_results_dir_that_already_holds_files(self):
         self.out.mkdir()
@@ -288,6 +375,7 @@ class TestLocalEval(unittest.TestCase):
         # root), while run_eval itself runs from the repository root.
         proc = self._run(str(EVAL_DIR), "--registry", "adam-agentskills=registry")
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        self.assertIn(EXHIBIT, proc.stdout, "the console summary is labeled too")
 
         calls = self._calls()
         roles = [c["role"] for c in calls]
@@ -420,6 +508,103 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(manifest["invocation"]["arm"], "without_skill")
         self.assertIs(manifest["invocation"]["no_judge"], True)
         self.assertIsNone(manifest["models"]["selected"]["judge"])
+
+    # -- 3, 5: never publishes; argv lists; no shell ---------------------
+
+    def _shim_dir(self) -> tuple[Path, Path]:
+        """A directory of `gh` and `git` shims that log each call (to the
+        returned log) and then run the real git, or fail for gh."""
+        shims = self.root / "shims"
+        shims.mkdir()
+        log = self.root / "shim-calls.jsonl"
+        for tool, real in (("gh", None), ("git", shutil.which("git"))):
+            shim = shims / tool
+            shim.write_text(SHIM.format(python=sys.executable, log=str(log),
+                                        tool=tool, real=real), encoding="utf-8")
+            shim.chmod(0o755)
+        return shims, log
+
+    @staticmethod
+    def _tree_snapshot() -> dict:
+        """{path: mtime_ns} for every file in this checkout outside .git and
+        bytecode caches, so a created OR rewritten file shows."""
+        snapshot = {}
+        for root, dirs, files in os.walk(REPO_ROOT):
+            dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
+            for name in files:
+                path = os.path.join(root, name)
+                snapshot[path] = os.lstat(path).st_mtime_ns
+        return snapshot
+
+    @staticmethod
+    def _git_subcommand(argv: list) -> str | None:
+        args, i = list(argv), 0
+        while i < len(args):
+            if args[i] in ("-C", "-c"):
+                i += 2
+            elif args[i].startswith("-"):
+                i += 1
+            else:
+                return args[i]
+        return None
+
+    def test_a_run_never_calls_gh_or_pushes_and_writes_only_to_the_results_dir(self):
+        shims, log = self._shim_dir()
+        path = os.pathsep.join([str(shims), self._env(self._dispatcher())["PATH"]])
+        before = self._tree_snapshot()
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={self._registry()}",
+                         env_extra={"PATH": path})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = [json.loads(line) for line in
+                 log.read_text(encoding="utf-8").splitlines()]
+        self.assertTrue(any(c["tool"] == "git" for c in calls),
+                        "the shim must be on the path the run really used")
+        self.assertEqual([c for c in calls if c["tool"] == "gh"], [])
+        subcommands = {self._git_subcommand(c["argv"]) for c in calls
+                       if c["tool"] == "git"}
+        self.assertEqual(subcommands & {"push", "fetch", "pull", "remote",
+                                        "send-pack", "checkout", "switch"},
+                         set())
+        self.assertEqual(self._tree_snapshot(), before,
+                         "the repository must be untouched by a run")
+
+    def test_the_wrapper_builds_every_subprocess_as_an_argv_list(self):
+        # A shape check, so it parses the module (an AST, not a regex).
+        source = (REPO_ROOT / "scripts" / "local_eval.py").read_text(encoding="utf-8")
+        tree = ast.parse(source)
+        list_names = {t.id for node in ast.walk(tree)
+                      if isinstance(node, ast.Assign)
+                      and isinstance(node.value, ast.List)
+                      for t in node.targets if isinstance(t, ast.Name)}
+        spawned = 0
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = ast.unparse(node.func)
+            self.assertNotIn(func, ("os.system", "os.popen", "os.spawnl",
+                                    "os.execl"), func)
+            if func.split(".")[0] != "subprocess":
+                continue
+            spawned += 1
+            first = node.args[0] if node.args else None
+            self.assertTrue(
+                isinstance(first, ast.List)
+                or (isinstance(first, ast.Name) and first.id in list_names),
+                f"line {node.lineno}: {func} must take an argv list")
+            for kw in node.keywords:
+                if kw.arg == "shell":
+                    self.fail(f"line {node.lineno}: {func} passes shell=")
+        self.assertGreaterEqual(spawned, 2)
+        # Nothing here may name a publishing command, in an argv or anywhere
+        # else a string can be built (docstrings excluded).
+        docstrings = {id(n.value) for n in ast.walk(tree)
+                      if isinstance(n, ast.Expr)
+                      and isinstance(n.value, ast.Constant)}
+        words = {n.value for n in ast.walk(tree)
+                 if isinstance(n, ast.Constant) and isinstance(n.value, str)
+                 and id(n) not in docstrings}
+        self.assertEqual(words & {"gh", "push", "workflow", "dispatch"}, set())
 
 
 if __name__ == "__main__":
