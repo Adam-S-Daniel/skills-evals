@@ -548,7 +548,9 @@ usage there is no usage-qualified tier at all, and a roster must not be
 empty — so wherever the enter window carries no usable evidence (any of
 `_census_verdict`'s eight verdicts, or a fresh census whose enter window
 alone fails one of the ranked-usage floors) rule 2 reverts to newest per tier
-across every tier, with the existing degradation reasons. A usable census
+across every tier. When the census itself is unusable, each fallback reason
+names its degradation. A usable census whose enter window alone fails a
+ranked-usage floor gets the bare newest-per-tier reason. A usable census
 that simply names no model at the entry bar is a different thing: that is
 evidence, and it says no tier qualifies, so the only seats are previous arms
 held over the exit bar — and with none, `main()` refuses to publish a roster
