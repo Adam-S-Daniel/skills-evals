@@ -217,9 +217,10 @@ class ProbePrimitiveTests(unittest.TestCase):
 
 
 class ChannelAttributionTests(unittest.TestCase):
-    def _facts(self, skills, commands=None):
+    def _facts(self, skills, commands=None, plugins=None):
         return init_probe.ProbeFacts(
-            init={"skills": skills}, commands=commands or {},
+            init={"skills": skills, "plugins": plugins or []},
+            commands=commands or {},
             commands_seen=bool(commands))
 
     def test_namespace_means_plugin(self):
@@ -261,10 +262,34 @@ class ChannelAttributionTests(unittest.TestCase):
         self.assertEqual(channels["fixture-builtin-a"], "local")
 
     def test_the_account_namespace_alone_means_account(self):
-        # No `commands_changed` (a surface with no account emits none): the
-        # name is the only signal there is.
+        # Without `commands_changed` or plugin evidence, the namespace is the
+        # only available signal and follows the account naming convention.
         facts = self._facts(["anthropic-skills:y"])
         self.assertFalse(facts.commands_seen)
+        self.assertEqual(init_probe.attribute(facts)["anthropic-skills:y"],
+                         "account")
+
+    def test_observed_anthropic_skills_plugin_wins_without_account_suffix(self):
+        facts = self._facts(
+            ["anthropic-skills:y"],
+            plugins=[{"name": "anthropic-skills", "path": "/plugins/anthropic-skills"}])
+        self.assertFalse(facts.commands_seen)
+        self.assertEqual(init_probe.attribute(facts)["anthropic-skills:y"],
+                         "plugin")
+
+    def test_account_suffix_wins_beside_observed_same_named_plugin(self):
+        facts = self._facts(
+            ["anthropic-skills:y"],
+            {"anthropic-skills:y": "desc (claude.ai sync)"},
+            plugins=[{"name": "anthropic-skills", "path": "/plugins/anthropic-skills"}])
+        self.assertEqual(init_probe.attribute(facts)["anthropic-skills:y"],
+                         "account")
+
+    def test_malformed_plugin_records_do_not_override_account_fallback(self):
+        facts = self._facts(
+            ["anthropic-skills:y"],
+            plugins=[None, {"name": ["anthropic-skills"], "path": "/plugins/bad"},
+                     {"name": {"unexpected": "value"}}])
         self.assertEqual(init_probe.attribute(facts)["anthropic-skills:y"],
                          "account")
 
