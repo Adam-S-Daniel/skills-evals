@@ -21772,6 +21772,241 @@ class TestVendorReleaseImpactPublishTimesCheck(unittest.TestCase):
         self.assertFalse(result["passed"], result["detail"])
 
 
+class TestIssue90WorkflowPermissions(unittest.TestCase):
+    """The reusable caller's effective grant is a parsed YAML fact."""
+
+    PATH = ".github/workflows/editorial-label-audit.yml"
+    JOB = "editorial-label-audit"
+    SUFFIX = ".github/workflows/editorial-label-audit.yml"
+    USES = "Adam-S-Daniel/cms-platform/" + SUFFIX + "@v0.1.106"
+    REQUIRED = {"contents": "read", "pull-requests": "write"}
+
+    def _ws(self, files: dict[str, str]) -> Path:
+        ws = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, ws, ignore_errors=True)
+        for rel, body in files.items():
+            path = ws / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(body, encoding="utf-8")
+        return ws
+
+    def _doc(self) -> dict:
+        return {"jobs": {self.JOB: {"uses": self.USES,
+                                     "permissions": dict(self.REQUIRED)}}}
+
+    def _check(self, ws: Path, **kwargs) -> tuple[bool, str]:
+        args = {"job": self.JOB, "uses_suffix": self.SUFFIX,
+                "permissions_include": dict(self.REQUIRED)}
+        args.update(kwargs)
+        patterns = args.pop("patterns", [self.PATH])
+        return objective.workflow_permissions(str(ws), patterns, **args)
+
+    def _assert_doc(self, doc: dict, expected: bool, **kwargs):
+        ws = self._ws({self.PATH: yaml.safe_dump(doc)})
+        passed, detail = self._check(ws, **kwargs)
+        self.assertEqual(passed, expected, detail)
+
+    def test_job_grant_passes_and_write_satisfies_read(self):
+        doc = self._doc()
+        doc["jobs"][self.JOB]["permissions"]["contents"] = "write"
+        self._assert_doc(doc, True)
+
+    def test_workflow_grant_is_inherited_when_job_block_is_absent(self):
+        doc = self._doc()
+        doc["permissions"] = doc["jobs"][self.JOB].pop("permissions")
+        self._assert_doc(doc, True)
+
+    def test_valid_job_grant_replaces_malformed_workflow_block(self):
+        for perms in (None, [], "invalid", {"contents": []}):
+            with self.subTest(perms=perms):
+                doc = self._doc()
+                doc["permissions"] = perms
+                self._assert_doc(doc, True)
+
+    def test_job_read_overrides_workflow_write(self):
+        doc = self._doc()
+        doc["permissions"] = "write-all"
+        doc["jobs"][self.JOB]["permissions"]["pull-requests"] = "read"
+        self._assert_doc(doc, False)
+
+    def test_partial_or_empty_job_block_does_not_merge_workflow_grant(self):
+        for perms in ({"contents": "read"}, {}):
+            with self.subTest(perms=perms):
+                doc = self._doc()
+                doc["permissions"] = dict(self.REQUIRED)
+                doc["jobs"][self.JOB]["permissions"] = perms
+                self._assert_doc(doc, False)
+
+    def test_unrelated_job_grant_does_not_qualify(self):
+        doc = self._doc()
+        doc["jobs"]["other"] = copy.deepcopy(doc["jobs"][self.JOB])
+        doc["jobs"][self.JOB]["permissions"] = {"contents": "read"}
+        self._assert_doc(doc, False)
+
+    def test_job_name_cannot_replace_exact_job_id(self):
+        doc = self._doc()
+        doc["jobs"]["other"] = doc["jobs"].pop(self.JOB)
+        doc["jobs"]["other"]["name"] = self.JOB
+        self._assert_doc(doc, False)
+
+    def test_read_all_passes_all_read_requirements_but_fails_write(self):
+        for inherited in (False, True):
+            with self.subTest(inherited=inherited):
+                doc = self._doc()
+                doc["jobs"][self.JOB]["permissions"] = "read-all"
+                if inherited:
+                    doc["permissions"] = doc["jobs"][self.JOB].pop("permissions")
+                self._assert_doc(doc, False)
+                self._assert_doc(doc, True, permissions_include={"contents": "read", "pull-requests": "read"})
+
+    def test_write_all_passes_at_job_and_workflow_levels(self):
+        for inherited in (False, True):
+            with self.subTest(inherited=inherited):
+                doc = self._doc()
+                doc["jobs"][self.JOB]["permissions"] = "write-all"
+                if inherited:
+                    doc["permissions"] = doc["jobs"][self.JOB].pop("permissions")
+                self._assert_doc(doc, True)
+
+    def test_none_and_omitted_scopes_fail(self):
+        for perms in ({"contents": "read", "pull-requests": "none"},
+                      {"pull-requests": "write"}, {"contents": "read"}):
+            with self.subTest(perms=perms):
+                doc = self._doc()
+                doc["jobs"][self.JOB]["permissions"] = perms
+                self._assert_doc(doc, False)
+
+    def test_no_permissions_and_commented_grant_fail(self):
+        doc = self._doc()
+        del doc["jobs"][self.JOB]["permissions"]
+        raw = yaml.safe_dump(doc) + "# permissions: {contents: read, pull-requests: write}\n"
+        ws = self._ws({self.PATH: raw})
+        passed, detail = self._check(ws)
+        self.assertFalse(passed, detail)
+
+    def test_missing_file_job_and_call_fail(self):
+        ws = self._ws({})
+        self.assertFalse(self._check(ws)[0])
+        self._assert_doc({"jobs": {}}, False)
+        doc = self._doc()
+        del doc["jobs"][self.JOB]["uses"]
+        self._assert_doc(doc, False)
+
+    def test_step_level_call_cannot_qualify(self):
+        doc = self._doc()
+        body = doc["jobs"][self.JOB]
+        body["steps"] = [{"uses": body.pop("uses")}]
+        self._assert_doc(doc, False)
+
+    def test_wrong_suffix_and_trailing_text_fail(self):
+        for uses in ("Adam-S-Daniel/cms-platform/.github/workflows/other.yml@v0.1.106",
+                     "Adam-S-Daniel/cms-platform/" + self.SUFFIX + "-legacy@v0.1.106"):
+            with self.subTest(uses=uses):
+                doc = self._doc()
+                doc["jobs"][self.JOB]["uses"] = uses
+                self._assert_doc(doc, False)
+
+    def test_non_string_uses_fail(self):
+        for uses in (None, [], {}, True, 7):
+            with self.subTest(uses=uses):
+                doc = self._doc()
+                doc["jobs"][self.JOB]["uses"] = uses
+                self._assert_doc(doc, False)
+
+    def test_malformed_yaml_and_workflow_structures_fail(self):
+        raws = ["jobs: [", "", "[]", "null", "workflow", "jobs: []",
+                "jobs: null", "jobs: workflow", "jobs: 7", "{}"]
+        for body in (None, [], "workflow", 7):
+            raws.append(yaml.safe_dump({"jobs": {self.JOB: body}}))
+        for raw in raws:
+            with self.subTest(raw=raw):
+                ws = self._ws({self.PATH: raw})
+                passed, detail = self._check(ws)
+                self.assertFalse(passed, detail)
+        ws = self._ws({self.PATH: ""})
+        (ws / self.PATH).write_bytes(b"\xff")
+        self.assertFalse(self._check(ws)[0])
+        (ws / self.PATH).unlink()
+        (ws / self.PATH).mkdir()
+        self.assertFalse(self._check(ws)[0])
+
+    def test_explicit_null_and_invalid_effective_blocks_fail(self):
+        invalid = [None, {}, [], True, 7, "read", "invalid",
+                   {"contents": []}, {"contents": None}, {"contents": True},
+                   {"contents": "invalid"}, {7: "write"}, {"": "write"},
+                   {" ": "write"}, {**self.REQUIRED, "other": []}]
+        for inherited, perms in itertools.product((False, True), invalid):
+            with self.subTest(inherited=inherited, perms=perms):
+                doc = self._doc()
+                if inherited:
+                    del doc["jobs"][self.JOB]["permissions"]
+                    doc["permissions"] = perms
+                else:
+                    doc["permissions"] = "write-all"
+                    doc["jobs"][self.JOB]["permissions"] = perms
+                self._assert_doc(doc, False)
+
+    def test_every_match_must_qualify(self):
+        good = yaml.safe_dump(self._doc())
+        bad_doc = self._doc()
+        bad_doc["jobs"][self.JOB]["permissions"] = {"contents": "read"}
+        for bad in ("jobs: [", yaml.safe_dump(bad_doc)):
+            with self.subTest(bad=bad):
+                ws = self._ws({self.PATH: good, ".github/workflows/other.yml": bad})
+                self.assertFalse(self._check(ws, patterns=[".github/workflows/*.yml"])[0])
+
+    def test_every_pattern_must_match(self):
+        ws = self._ws({self.PATH: yaml.safe_dump(self._doc())})
+        passed, detail = self._check(ws, patterns=[self.PATH, ".github/workflows/missing*.yml"])
+        self.assertFalse(passed, detail)
+
+    def test_multiple_qualifying_workflows_pass(self):
+        good = yaml.safe_dump(self._doc())
+        ws = self._ws({self.PATH: good, ".github/workflows/other.yml": good})
+        passed, detail = self._check(ws, patterns=[".github/workflows/*.yml"])
+        self.assertTrue(passed, detail)
+
+    def test_invalid_arguments_fail_without_exception(self):
+        ws = self._ws({self.PATH: yaml.safe_dump(self._doc())})
+        cases = [{"patterns": value} for value in (None, [], "*.yml", [None], [7], [""], [" "])]
+        for key in ("job", "uses_suffix"):
+            cases.extend({key: value} for value in (None, "", " ", [], {}, True))
+        cases.extend({"permissions_include": value} for value in (
+            None, {}, [], "write-all", {"contents": "none"}, {"contents": "invalid"},
+            {"contents": []}, {"contents": True}, {7: "write"}, {"": "write"},
+            {" ": "write"}))
+        for args in cases:
+            with self.subTest(args=args):
+                passed, detail = self._check(ws, **args)
+                self.assertFalse(passed, detail)
+
+    def test_registered_and_routed_through_run_checks(self):
+        self.assertIs(objective.CHECKS["workflow_permissions"], objective.workflow_permissions)
+        ws = self._ws({self.PATH: yaml.safe_dump(self._doc())})
+        check = {"id": "caller-grant", "type": "workflow_permissions", "paths": [self.PATH],
+                 "job": self.JOB, "uses_suffix": self.SUFFIX, "permissions_include": self.REQUIRED}
+        results = objective.run_checks({"objective_checks": [check]}, str(ws), str(ws))
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["id"], "caller-grant")
+        self.assertTrue(results[0]["passed"], results[0]["detail"])
+        check["permissions_include"] = {"issues": "write"}
+        results = objective.run_checks({"objective_checks": [check]}, str(ws), str(ws))
+        self.assertFalse(results[0]["passed"], results[0]["detail"])
+
+    def test_run_checks_rejects_unknown_keys_and_missing_constraints_fail(self):
+        ws = self._ws({self.PATH: yaml.safe_dump(self._doc())})
+        check = {"id": "caller-grant", "type": "workflow_permissions", "paths": [self.PATH],
+                 "job": self.JOB, "uses_suffix": self.SUFFIX, "permissions_include": self.REQUIRED}
+        with self.assertRaises(ValueError):
+            objective.run_checks({"objective_checks": [{**check, "permissions_includes": self.REQUIRED}]},
+                                 str(ws), str(ws))
+        for missing in ("job", "uses_suffix", "permissions_include", "paths"):
+            with self.subTest(missing=missing):
+                incomplete = {key: value for key, value in check.items() if key != missing}
+                result = objective.run_checks({"objective_checks": [incomplete]}, str(ws), str(ws))[0]
+                self.assertFalse(result["passed"], result["detail"])
+
+
 class TestIssue86(unittest.TestCase):
     """Issue #86: the post-failure-comment eval fixture, and the two new
     structural objective-check types it needed in

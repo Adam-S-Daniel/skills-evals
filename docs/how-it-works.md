@@ -22,6 +22,10 @@ Then two scores are produced:
 - **Objective checks** are scripted assertions on the finished workspace
   (files exist, YAML parses, a workflow would trigger on the right paths, a
   ruleset was not touched). They pass or fail and cannot be argued with.
+  The [`workflow_permissions` check](../DESIGN.md#reusable-workflow-permission-checks)
+  also verifies a named reusable-workflow caller's effective permission grant:
+  job permissions replace workflow permissions, and missing or malformed
+  evidence fails the check.
 - **The judge** is a second, stronger model that reads both transcripts and
   diffs and scores each arm on a few named dimensions (for example
   completeness, salience, restraint) from a rubric written into the fixture.
