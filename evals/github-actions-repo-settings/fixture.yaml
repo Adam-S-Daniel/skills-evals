@@ -5,7 +5,9 @@
 # five fields on one physical line. The grammar accepts a finite vocabulary of
 # factual phrases, common ruleset-ID aliases, and indentation, quote, list,
 # and Markdown-table formatting. Common action verbs are recognized, but verbs
-# cannot be fully enumerated; arbitrary prose is not parsed.
+# cannot be fully enumerated; arbitrary prose is not parsed. The SHA
+# recommendation cell must start with an affirmative action after optional
+# Markdown and a supported lead-in; later mentions do not count.
 skill: github-actions-repo-settings
 registry: https://github.com/Adam-S-Daniel/adam-agentskills
 model: claude-sonnet-5
@@ -42,13 +44,13 @@ objective_checks:
     description: Alpha's SHA setting is observed false, desired true, and should be enabled
     type: transcript_matches
     must_match:
-      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|[ \t]*[^|\n]*(?i:(?:enable|require)[ \t]+(?:(?:full[- ]length|commit)[ \t]+)?SHA(?:[- ]pinning|[ \t]+pinning)|set[ \t]+sha_pinning_required[ \t]*(?:=|to)[ \t]*true)[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|[ \t]*(?:(?:\*\*|`)[ \t]*|[-*+][ \t]+)*(?i:(?:run[ \t]+\S*repo_settings\.py[ \t]+apply[ \t]+to[ \t]+|please[ \t]+|should[ \t]+|must[ \t]+)?(?:enable|require|set|turn[ \t]+on)\b)[ \t]+(?i:(?:(?:(?:full[- ]length|commit)[ \t]+)?SHA(?:[- ]pinning|[ \t]+pinning)|sha_pinning_required[ \t]*(?:=|to)[ \t]*true))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:drift|mismatch|one[ \t]+declared[ \t]+setting[ \t]+drifts;[ \t]+one[ \t]+extra[ \t]+ruleset)[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
     must_not_match:
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*(?!(?:[ \t]*false[ \t]*\|[ \t]*true[ \t]*\|))[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-beta[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*false[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
       - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*overall[ \t]*\|[ \t]*(?i:no[ \t]+drift|no[ \t]+mismatches|all[ \t]+settings[ \t]+match)[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?:[ \t]*\|)?[ \t]*$'
-      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:do[ \t]+not[ \t]+enable|never[ \t]+enable|no[ \t]+need[ \t]+(?:to[ \t]+)?enable|don[\x27’]t[ \t]+enable|you[ \t]+should[ \t]+not[ \t]+enable|you[ \t]+shouldn[\x27’]t[ \t]+enable|should[ \t]+not[ \t]+enable|shouldn[\x27’]t[ \t]+enable|not[ \t]+(?:to[ \t]+)?enable|disable[ \t]+SHA[ -]pinning|leave[ \t]+(?:it[ \t]+)?(?:off|false))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
+      - '^[ \t]*(?:>[ \t]*)*(?:[-*+][ \t]*)?(?:\|[ \t]*)?example-org/service-alpha[ \t]*\|[ \t]*actions\.sha_pinning_required[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*[ \t]*\|[ \t]*[^|\n]*(?i:do[ \t]+not[ \t]+enable\b|never[ \t]+enable\b|no[ \t]+need[ \t]+(?:to[ \t]+)?enable\b|don[\x27’]t[ \t]+enable\b|you[ \t]+should[ \t]+not[ \t]+enable\b|you[ \t]+shouldn[\x27’]t[ \t]+enable\b|should[ \t]+not[ \t]+enable\b|shouldn[\x27’]t[ \t]+enable\b|not[ \t]+(?:to[ \t]+)?enable\b|disable\b[ \t]+SHA[ -]pinning|leave\b[ \t]+(?:it[ \t]+)?(?:off|false))[^|\n]*(?:[ \t]*\|)?[ \t]*$'
 
   - id: alpha-unmanaged-ruleset-facts
     description: Alpha's additional ruleset has its own ID and no bypass actors

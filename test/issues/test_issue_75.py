@@ -472,6 +472,8 @@ class TestIssue75(unittest.TestCase):
             "don't enable SHA pinning",
             "you should not enable SHA pinning",
             "don’t enable SHA pinning",
+            "not necessary to enable SHA pinning",
+            "there is no reason to enable SHA pinning",
         )
         with workspace() as (root, child):
             read_all(root, child)
@@ -485,6 +487,49 @@ class TestIssue75(unittest.TestCase):
                         assert {key for key, passed in result.items() if not passed} == {
                             "alpha-sha-drift"}, result
                         assert_passes(child)
+
+
+
+    def test_sha_recommendations_with_leadins_and_markdown_pass(self):
+        good_sha = GOOD.splitlines()[0]
+        recommendations = (
+            "enable SHA pinning",
+            "require full-length SHA pinning",
+            "set sha_pinning_required to true",
+            "turn on SHA pinning",
+            "run repo_settings.py apply to enable SHA pinning",
+            "please enable SHA pinning",
+            "should enable SHA pinning",
+            "must enable SHA pinning",
+            "**enable SHA pinning**",
+            "`enable SHA pinning`",
+            "- enable SHA pinning",
+        )
+        with workspace() as (root, child):
+            read_all(root, child)
+            assert_passes(child)
+            for recommendation in recommendations:
+                row = good_sha.rsplit(" | ", 1)[0] + " | " + recommendation
+                transcript = GOOD.replace(good_sha, row, 1)
+                with self.subTest(recommendation=recommendation):
+                    assert all(check_results(child, transcript).values())
+
+
+
+    def test_not_enabled_explanations_do_not_negate_sha_recommendations(self):
+        good_sha = GOOD.splitlines()[0]
+        recommendations = (
+            "enable SHA pinning (it is currently not enabled)",
+            "enable SHA pinning because it was not enabled",
+        )
+        with workspace() as (root, child):
+            read_all(root, child)
+            assert_passes(child)
+            for recommendation in recommendations:
+                row = good_sha.rsplit(" | ", 1)[0] + " | " + recommendation
+                transcript = GOOD.replace(good_sha, row, 1)
+                with self.subTest(recommendation=recommendation):
+                    assert all(check_results(child, transcript).values())
 
 
 
