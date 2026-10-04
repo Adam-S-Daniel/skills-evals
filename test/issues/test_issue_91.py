@@ -135,9 +135,9 @@ def _check_pristine_fails_every_behavior_and_passes_every_restraint(case):
 def _check_pristine_public_cli_agrees_with_scorer(case):
     root, ws, _, env = case
     child_env = dict(env, PYTHONPATH=os.pathsep.join(sys.path))
-    proc = subprocess.run([sys.executable, str(ROOT / "harness/run_eval.py"),
+    proc = subprocess.run([sys.executable, "harness/run_eval.py",
                            str(FIXTURE_DIR), "--arm", "objective-only", "--workspace", str(ws),
-                           "--results-dir", str(root / "results")], env=child_env,
+                           "--results-dir", str(root / "results")], cwd=str(ROOT), env=child_env,
                           capture_output=True, text=True)
     assert proc.returncode == 1
     payload = json.loads(proc.stdout)
