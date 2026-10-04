@@ -2941,6 +2941,61 @@ def _log_file_reachable(log_file, download_paths: list[str]) -> bool:
     return False
 
 
+def workflow_permissions(workspace: str, patterns: list[str], *,
+                         job: str | None = None,
+                         uses_suffix: str | None = None,
+                         permissions_include: dict | None = None) -> tuple[bool, str]:
+    """Every matched workflow's exact job ID calls the reusable workflow
+    and grants the required effective permissions. Job permissions replace
+    workflow permissions; malformed blocks and missing matches fail closed.
+    """
+    if (not isinstance(patterns, list) or not patterns
+            or any(not isinstance(p, str) or not p.strip() for p in patterns)):
+        return (False, "paths must be a nonempty list of nonempty strings")
+    if not isinstance(job, str) or not job.strip():
+        return (False, "job must be a nonempty job ID")
+    if not isinstance(uses_suffix, str) or not uses_suffix.strip():
+        return (False, "uses_suffix must be a nonempty string")
+    if (not isinstance(permissions_include, dict) or not permissions_include
+            or any(not isinstance(scope, str) or not scope.strip()
+                   or not isinstance(level, str) or level not in ("read", "write")
+                   for scope, level in permissions_include.items())):
+        return (False, "permissions_include must map nonempty scopes to read/write")
+
+    checked = 0
+    for pattern in patterns:
+        workflows = _load_workflows(workspace, [pattern])
+        if not workflows:
+            return (False, f"no workflow matches {pattern!r}")
+        for rel, doc in workflows:
+            if doc is None:
+                return (False, f"{rel}: workflow could not be parsed as a mapping")
+            jobs = doc.get("jobs")
+            if not isinstance(jobs, dict) or not isinstance(jobs.get(job), dict):
+                return (False, f"{rel}: missing or malformed job {job!r}")
+            job_body = jobs[job]
+            uses = job_body.get("uses")
+            if not isinstance(uses, str) or not uses.split("@", 1)[0].endswith(uses_suffix):
+                return (False, f"{rel}: job {job!r} does not call {uses_suffix!r}")
+            # Presence matters: an explicit null job block must not use the
+            # helper's None fallback to a more generous workflow block.
+            perms = job_body["permissions"] if "permissions" in job_body else doc.get("permissions")
+            if isinstance(perms, dict):
+                valid = bool(perms) and all(
+                    isinstance(scope, str) and bool(scope.strip())
+                    and isinstance(level, str) and level in ("read", "write", "none")
+                    for scope, level in perms.items())
+            else:
+                valid = isinstance(perms, str) and perms in ("read-all", "write-all")
+            if not valid:
+                return (False, f"{rel}: job {job!r} has missing or malformed effective permissions")
+            for scope, required in permissions_include.items():
+                if not _permission_satisfies(_job_permission_level(job_body, doc, scope), required):
+                    return (False, f"{rel}: job {job!r} lacks {scope}: {required}")
+            checked += 1
+    return (True, f"{checked} workflow(s) call {uses_suffix!r} with required permissions")
+
+
 def workflow_step_uses(workspace: str, patterns: list[str], *,
                        uses_suffix: str | None = None,
                        job: str | None = None,
@@ -3287,6 +3342,7 @@ CHECKS = {
     "pins_match_reference": pins_match_reference,
     "platform_refs_on_tag": platform_refs_on_tag,
     "workflow_step_uses": workflow_step_uses,
+    "workflow_permissions": workflow_permissions,
     "no_event_interpolation_in_run": no_event_interpolation_in_run,
     "post_failure_comment_reference_valid": post_failure_comment_reference_valid,
     "dir_listing_matches": dir_listing_matches,
@@ -3331,6 +3387,7 @@ _CHECK_ALLOWED_KEYS: dict[str, set[str]] = {
     "file_matches_excluding_comments": {"must_match", "must_not_match"},
     "transcript_matches": {"must_match", "must_not_match", "strip_seed"},
     "workflow_step_uses": _WORKFLOW_STEP_USES_KEYS,
+    "workflow_permissions": {"job", "uses_suffix", "permissions_include"},
     "post_failure_comment_reference_valid": {"uses_suffix"},
     "files_unchanged": {"by"},
     "dir_listing_matches": {"expected", "expected_file", "ignore"},

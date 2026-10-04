@@ -111,6 +111,36 @@ shows (`skill`, `registry`, `model`, `judge`, `prompt`, `arms`,
   assumed the setup had already put its files in place — and the agent is
   never invoked.
 
+### Reusable-workflow permission checks
+
+`workflow_permissions` in [`harness/scorers/objective.py`](harness/scorers/objective.py)
+parses workflow YAML and checks an exact job ID's job-level `uses:` call,
+whose reference before `@` must end with `uses_suffix`. For example:
+
+```yaml
+objective_checks:
+  - id: caller-grant
+    type: workflow_permissions
+    paths: [.github/workflows/editorial-label-audit.yml]
+    job: editorial-label-audit
+    uses_suffix: .github/workflows/editorial-label-audit.yml
+    permissions_include:
+      contents: read
+      pull-requests: write
+```
+
+Every path pattern must match at least one file, and every matched file must
+qualify. Missing files, malformed YAML or job structures, a different job ID
+(even with a matching display name), and step-level calls fail. Job-level
+permissions replace the entire workflow-level block when present; otherwise
+the job inherits the workflow block. Explicit null, empty, or malformed
+effective blocks fail rather than falling back to a broader grant. Supported
+blocks are scope mappings with `read`, `write`, or `none` levels, or the
+`read-all`/`write-all` shorthands. An omitted scope grants nothing; `write`
+satisfies `read`, and `read-all` cannot satisfy a write requirement. Check
+arguments must include nonempty path patterns, job ID, suffix, and a nonempty
+scope mapping requiring `read` or `write`. Unknown constraint keys are rejected.
+
 ### Git-state objective check types (`harness/scorers/objective.py`)
 
 Added for fixtures whose target state is one or more real git repositories
