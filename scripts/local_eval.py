@@ -12,25 +12,48 @@ Usage:
 
     python3 scripts/local_eval.py evals/<skill> --results-dir ~/evals-local/<name>
         [--trials 3] [--arm both|with_skill|without_skill] [--no-judge]
-        [--registry NAME=PATH ...]
+        [--fixture NAME] [--registry NAME=PATH ...]
+
+`evals/<skill>` is a flat fixture (`fixture.yaml` inside), a nested fixture
+named by its own directory (`evals/<skill>/<name>`), or a skill directory of
+nested fixtures (all of them run, or the one `--fixture NAME` selects).
 
 What it does, in order, and what it refuses (exit 2, nothing run):
 
-1. Refuses when `CLAUDE_CODE_OAUTH_TOKEN` or any variable whose name begins
-   `ANTHROPIC_` is SET in the environment (empty counts). `ANTHROPIC_API_KEY`
-   and `ANTHROPIC_AUTH_TOKEN` bill API dollars, `CLAUDE_CODE_OAUTH_TOKEN` is a
-   `setup-token` credential that must never sit in an arm's environment
-   (`run_eval.agent_env` forwards every `ANTHROPIC_*`/`CLAUDE_*` name), and
-   every other `ANTHROPIC_*` name re-routes, authenticates or re-models the
-   CLI; a run under `/login` needs none of them.
+1. Refuses when the environment carries ANY provider-selection or credential
+   variable, by this rule (case-insensitive, `refused_env_names`): a name that
+   begins `ANTHROPIC_`, `CLAUDE_CODE_USE_`, `AWS_`, `GOOGLE_`, `GCLOUD_`,
+   `CLOUDSDK_` or `AZURE_`; is `CLAUDE_CODE_OAUTH_TOKEN` or
+   `CLAUDE_CONFIG_DIR`; or contains `API_KEY`, `AUTH_TOKEN`, `ACCESS_KEY`,
+   `SECRET` or `BEARER`. Empty counts. The message names the variable, never
+   its value; `env -u NAME` clears it. A run under `/login` needs none of them,
+   and each one either bills a dollar or cloud account, re-routes the CLI to
+   another provider, or puts a credential in reach of an arm.
+   Whatever passes is then NOT inherited wholesale: main() replaces the
+   process environment with an allow-list (`child_environment`: PATH, HOME,
+   LANG, LANGUAGE, LC_*, TERM, TMPDIR, TZ, XDG_*, CLAUDE_BIN and the two
+   registry locators) before anything is launched, so the version call, the
+   probe, every arm and the judge (which `harness/scorers/judge.py` starts
+   with no `env=`) see only that.
+1b. Reads the settings files the CLI loads for the unisolated judge, which
+   runs from this checkout with no `--setting-sources`: `~/.claude/settings
+   .json` and `settings.local.json`, this checkout's `.claude/settings.json`
+   and `settings.local.json`, and the managed settings (`/etc/claude-code/
+   managed-settings.json` and `managed-settings.d/*.json`, plus the macOS and
+   Windows locations). Refuses when one carries `apiKeyHelper`,
+   `awsAuthRefresh` or `awsCredentialExport`, or an `env` object naming a
+   variable rule 1 refuses, or when one cannot be parsed as JSON. It names the
+   file and the key, never a value.
 2. Refuses a `--results-dir` that resolves (symlinks followed) inside this
    checkout, or inside any other git work tree or `.git` directory, or that
-   already holds files:
+   already holds files; a git that cannot answer (dubious ownership,
+   `safe.bareRepository`) is a refusal, not "no repository", and so is a
+   `.git` entry in any parent directory:
    `results/` is not gitignored, so summaries written there would ride into a
    pull request.
 3. Refuses a fixture that is not a skill fixture, whose `env:` block names a
-   refused variable (run_eval applies that block last, so it would hand the
-   variable back to every arm), whose models cannot be selected, or whose
+   variable rule 1 refuses (run_eval applies that block last, so it would hand
+   the variable back to every arm), whose models cannot be selected, or whose
    registry checkout is missing.
 4. Records the harness identity in `<out>/manifest.json`: `claude --version`,
    the fixture's pinned models and the models `run_eval.select_models` picks,
@@ -52,11 +75,16 @@ What it does, in order, and what it refuses (exit 2, nothing run):
    `--no-judge` when given; its output is kept in `<out>/t<k>/run_eval.log`.
    A trial that exits non-zero (2 is run_eval's runner error) is recorded in
    the manifest and counted in the aggregate's `errors`; it is never dropped.
-7. Writes `<out>/aggregate.json`: per arm, `n` (trials), `errors`, per-check
-   pass counts and `pass_rate`, the objective total's mean/min/max, the
-   judge's `overall` and per-dimension mean/min/max when judged, and the
-   agent cost's mean and sum. Errored arm-trials are excluded from every
-   statistic and counted in `errors`.
+   Right after each trial every `summary.json` under `<out>/t<k>/` is stamped
+   `"local_exhibit": true`, and `scripts/make_badge.py` refuses a summary so
+   stamped: a trial tree is never badge input.
+7. Writes `<out>/aggregate.json`: per fixture (`fixtures.<name>.arms`, and
+   `arms` at top level when one fixture ran; a flat fixture is named
+   `(flat)`), per arm: `n` (trials), `errors`, per-check pass counts and
+   `pass_rate`, the objective total's mean/min/max, the judge's `overall` and
+   per-dimension mean/min/max when judged, and the agent cost's mean and sum.
+   Errored arm-trials are excluded from every statistic and counted in
+   `errors`.
 
 Exit codes: 0 every trial ran clean; 1 at least one trial or arm errored (the
 aggregate and manifest are still written); 2 refused before any trial ran.
@@ -80,6 +108,12 @@ Limits a reader must know:
   fixture's seed.
 - On a workstation a `bypassPermissions` arm inherits the real `HOME`, where
   the account's own credentials live (ADR 0002, decision 4).
+- Nothing here was verified against a real CLI: no real run was made. What
+  the refusals and the settings pre-flight cannot see, and so stays
+  unverified, is every other way a CLI release could take a credential (a
+  keychain entry, `~/.claude.json`, a new setting or variable). The
+  interactive login is the only credential the judge is left able to use,
+  if those checks and the CLI's documented precedence hold.
 """
 
 from __future__ import annotations
@@ -109,8 +143,29 @@ EXHIBIT = "local — not badge input"
 #: `ANTHROPIC_` family (the CLI's credential, endpoint, header and model
 #: overrides all live there, and new members arrive with CLI releases), and
 #: the one `CLAUDE_` name that is a credential.
-REFUSED_ENV_PREFIXES = ("ANTHROPIC_",)
-REFUSED_ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN",)
+REFUSED_ENV_PREFIXES = ("ANTHROPIC_", "CLAUDE_CODE_USE_", "AWS_", "GOOGLE_",
+                        "GCLOUD_", "CLOUDSDK_", "AZURE_")
+REFUSED_ENV_NAMES = ("CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR")
+REFUSED_ENV_SUBSTRINGS = ("API_KEY", "AUTH_TOKEN", "ACCESS_KEY", "SECRET",
+                          "BEARER")
+
+#: What every child may inherit; nothing else survives `child_environment`.
+CHILD_ENV_NAMES = ("PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
+                   "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR")
+CHILD_ENV_PREFIXES = ("LC_", "XDG_")
+
+#: Settings keys that name a credential source. A settings `env` object is held
+#: to the environment rule above.
+REFUSED_SETTINGS_KEYS = ("apiKeyHelper", "awsAuthRefresh", "awsCredentialExport")
+#: Where a managed policy lives (the CLI's documented locations).
+MANAGED_SETTINGS_FILES = (
+    Path("/etc/claude-code/managed-settings.json"),
+    Path("/Library/Application Support/ClaudeCode/managed-settings.json"),
+    Path("C:/Program Files/ClaudeCode/managed-settings.json"))
+MANAGED_SETTINGS_DROPINS = (Path("/etc/claude-code/managed-settings.d"),)
+
+#: aggregate.json's name for a flat fixture.
+FLAT_NAME = "(flat)"
 
 ARMS = ("both", "with_skill", "without_skill")
 MAX_TRIALS = 20
@@ -134,16 +189,74 @@ def _utc_now() -> str:
 
 
 def refused_env_names(environ) -> list[str]:
-    """Every name in `environ` this wrapper refuses to run under."""
-    return sorted(name for name in environ
-                  if name in REFUSED_ENV_NAMES
-                  or name.startswith(REFUSED_ENV_PREFIXES))
+    """Every name in `environ` this wrapper refuses to run under (the rule in
+    the module docstring, rule 1). Names only: a value is never read."""
+    refused = []
+    for name in environ:
+        upper = str(name).upper()
+        if (upper in REFUSED_ENV_NAMES or upper.startswith(REFUSED_ENV_PREFIXES)
+                or any(part in upper for part in REFUSED_ENV_SUBSTRINGS)):
+            refused.append(str(name))
+    return sorted(refused)
+
+
+def child_environment(environ) -> dict:
+    """The allow-listed environment every child runs under."""
+    return {name: value for name, value in environ.items()
+            if name in CHILD_ENV_NAMES or name.startswith(CHILD_ENV_PREFIXES)}
+
+
+def settings_files(home: Path) -> list[Path]:
+    """Every settings file the unisolated judge's CLI would load."""
+    files = [home / ".claude" / "settings.json",
+             home / ".claude" / "settings.local.json",
+             REPO_ROOT / ".claude" / "settings.json",
+             REPO_ROOT / ".claude" / "settings.local.json",
+             *MANAGED_SETTINGS_FILES]
+    for directory in MANAGED_SETTINGS_DROPINS:
+        if directory.is_dir():
+            files += sorted(directory.glob("*.json"))
+    return files
+
+
+def check_user_settings(home: Path) -> None:
+    """Raise Refused when a settings file the judge would load names a
+    credential source. Reports the file and the key, never a value."""
+    for path in settings_files(home):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError) as exc:
+            raise Refused(f"cannot read settings file {path} "
+                          f"({type(exc).__name__}); cannot show it names no "
+                          "credential") from exc
+        try:
+            settings = json.loads(text)
+        except ValueError as exc:
+            raise Refused(f"settings file {path} is not valid JSON; cannot "
+                          "show it names no credential") from exc
+        if not isinstance(settings, dict):
+            raise Refused(f"settings file {path} is not a JSON object; cannot "
+                          "show it names no credential")
+        keys = [k for k in REFUSED_SETTINGS_KEYS if k in settings]
+        env_block = settings.get("env")
+        if isinstance(env_block, dict):
+            keys += [f"env.{name}" for name in refused_env_names(env_block)]
+        if keys:
+            raise Refused(f"settings file {path} sets {', '.join(keys)}: the "
+                          "judge loads it, and it names a credential source "
+                          "or provider. Remove the key (or run elsewhere); "
+                          "a local exhibit runs under the interactive login.")
 
 
 def _git_env() -> dict:
     """The caller's environment without GIT_* overrides, so `git -C <dir>`
-    answers about <dir> and not about a GIT_DIR the caller exported."""
-    return {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    answers about <dir> and not about a GIT_DIR the caller exported, and with
+    messages in a fixed language (check_results_dir reads one)."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env["LC_ALL"] = "C"
+    return env
 
 
 def _git(path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -176,17 +289,58 @@ def check_results_dir(out: Path) -> Path:
     if existing.is_dir():
         # --absolute-git-dir answers inside a work tree, inside a .git
         # directory and in a bare repository alike; --show-toplevel does not.
-        repo = _git(existing, "rev-parse", "--absolute-git-dir")
+        try:
+            repo = _git(existing, "rev-parse", "--absolute-git-dir")
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise Refused(f"could not ask git whether {existing} is inside a "
+                          f"repository ({type(exc).__name__}); refusing") from exc
         if repo.returncode == 0:
             raise Refused(
                 f"--results-dir resolves inside the git work tree or git "
                 f"directory {repo.stdout.strip()}; pick a directory outside "
                 "every repository.")
+        if "not a git repository" not in repo.stderr:
+            # Any other failure (dubious ownership, safe.bareRepository, a
+            # corrupt repository) is a repository git will not open, not
+            # proof that there is none.
+            detail = (repo.stderr.strip().splitlines() or ["no message"])[0]
+            raise Refused(f"git refused to say whether {existing} is inside a "
+                          f"repository ({detail}); refusing, since that is "
+                          "not the same as there being none.")
+        # A second check that does not ask git: a `.git` entry in this
+        # directory or any parent.
+        for parent in (existing, *existing.parents):
+            if (parent / ".git").exists():
+                raise Refused(f"--results-dir resolves inside {parent}, which "
+                              "holds a git repository (a .git entry); pick a "
+                              "directory outside every repository.")
     if resolved.exists() and (not resolved.is_dir() or any(resolved.iterdir())):
         raise Refused(
             f"--results-dir {resolved} already exists and is not an empty "
             "directory; trials from two runs must not mix.")
     return resolved
+
+
+def discover_fixtures(eval_dir: Path, selected: str | None) -> list[dict]:
+    """The fixtures one invocation runs, each `{"dir", "fixture", "name"}`
+    (`name` is the nested fixture's name, None for a flat one), selected the
+    way run_eval selects them. All must be of one skill."""
+    try:
+        dirs = run_eval.resolve_fixture_dirs(eval_dir, selected)
+    except guidance.GuidanceError as exc:
+        raise Refused(f"fixture layout: {exc}") from exc
+    found = []
+    for directory in dirs:
+        fixture = load_skill_fixture(directory)
+        try:
+            name = run_eval.nested_fixture_name(directory, fixture["skill"])
+        except guidance.GuidanceError as exc:
+            raise Refused(f"fixture layout: {exc}") from exc
+        found.append({"dir": directory, "fixture": fixture, "name": name})
+    skills = sorted({f["fixture"]["skill"] for f in found})
+    if len(skills) != 1:
+        raise Refused(f"the fixtures name more than one skill ({', '.join(skills)})")
+    return found
 
 
 def _absolute_registry_flags(values: list[str] | None) -> list[str]:
@@ -318,9 +472,13 @@ def _number(value) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def read_arm_summary(trial_dir: Path, skill: str, arm: str):
-    """(summary, None) or (None, problem) for one arm of one trial."""
-    paths = sorted(trial_dir.glob(f"{skill}/*/{arm}/summary.json"))
+def read_arm_summary(trial_dir: Path, skill: str, arm: str,
+                     name: str | None = None):
+    """(summary, None) or (None, problem) for one arm of one fixture of one
+    trial. A flat fixture's arm is `<skill>/<ts>/<arm>/`, a nested one's
+    `<skill>/<ts>/<name>/<arm>/` (run_eval's #66 layout)."""
+    middle = f"*/{name}" if name else "*"
+    paths = sorted(trial_dir.glob(f"{skill}/{middle}/{arm}/summary.json"))
     if len(paths) != 1:
         return None, f"expected one {arm}/summary.json, found {len(paths)}"
     try:
@@ -408,15 +566,37 @@ def arm_names(arm: str) -> list[str]:
     return ["with_skill", "without_skill"] if arm == "both" else [arm]
 
 
-def build_aggregate(out: Path, skill: str, arms: list[str], trials: int) -> dict:
-    per_arm = {}
-    for arm in arms:
-        records = []
-        for k in range(1, trials + 1):
-            summary, problem = read_arm_summary(out / f"t{k}", skill, arm)
-            records.append((k, summary, problem))
-        per_arm[arm] = aggregate_arm(records)
-    return {"exhibit": EXHIBIT, "skill": skill, "trials": trials, "arms": per_arm}
+def build_aggregate(out: Path, skill: str, names: list, arms: list[str],
+                    trials: int) -> dict:
+    """`names`: the fixtures' nested names (None for a flat one)."""
+    fixtures = {}
+    for name in names:
+        per_arm = {}
+        for arm in arms:
+            records = []
+            for k in range(1, trials + 1):
+                summary, problem = read_arm_summary(out / f"t{k}", skill, arm, name)
+                records.append((k, summary, problem))
+            per_arm[arm] = aggregate_arm(records)
+        fixtures[name or FLAT_NAME] = {"arms": per_arm}
+    aggregate = {"exhibit": EXHIBIT, "skill": skill, "trials": trials,
+                 "fixtures": fixtures}
+    if len(fixtures) == 1:
+        aggregate["arms"] = next(iter(fixtures.values()))["arms"]
+    return aggregate
+
+
+def stamp_local_exhibit(trial_dir: Path) -> None:
+    """Mark every summary.json run_eval wrote under `trial_dir` as a local
+    exhibit; scripts/make_badge.py refuses a summary so marked."""
+    for path in sorted(trial_dir.rglob("summary.json")):
+        try:
+            summary = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if isinstance(summary, dict):
+            summary["local_exhibit"] = True
+            _write_json(path, summary)
 
 
 def transcript_files(out: Path) -> list[str]:
@@ -440,7 +620,9 @@ def parse_args(argv=None) -> argparse.Namespace:
         description=__doc__.split("\n\n", 1)[0],
         epilog=__doc__.split("\n\n", 1)[1],
         formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("eval_dir", type=Path, help="a skill fixture, evals/<skill>")
+    parser.add_argument("eval_dir", type=Path,
+                        help="evals/<skill> (flat fixture, or a skill directory "
+                             "of nested ones) or evals/<skill>/<name>")
     parser.add_argument("--results-dir", type=Path, required=True,
                         help="where trials, aggregate.json and manifest.json "
                              "go; outside every repository, empty or absent")
@@ -450,12 +632,29 @@ def parse_args(argv=None) -> argparse.Namespace:
                         help="passed to run_eval.py (default both)")
     parser.add_argument("--no-judge", action="store_true",
                         help="passed to run_eval.py")
+    parser.add_argument("--fixture", default=None, metavar="NAME",
+                        help="passed to run_eval.py: with a skill directory of "
+                             "nested fixtures, run only this one")
     parser.add_argument("--registry", action="append", default=None,
                         help="passed to run_eval.py, repeatable: NAME=PATH")
     args = parser.parse_args(argv)
     if not 1 <= args.trials <= MAX_TRIALS:
         parser.error(f"--trials must be 1..{MAX_TRIALS}, got {args.trials}")
     return args
+
+
+def _manifest_fixture(item: dict) -> dict:
+    fixture, registry = item["fixture"], item["registry"]
+    judge_cfg = fixture.get("judge") if isinstance(fixture.get("judge"), dict) else {}
+    return {
+        "name": item["name"] or FLAT_NAME,
+        "models": {"fixture_pins": {"model": fixture.get("model"),
+                                    "judge_model": (judge_cfg or {}).get("model")},
+                   "selected": item["models"]},
+        "registry": None if registry is None else {
+            "name": registry["name"], "source": registry["source"],
+            **git_identity(registry["path"])},
+    }
 
 
 def main(argv=None) -> int:
@@ -465,23 +664,31 @@ def main(argv=None) -> int:
         if refused:
             raise Refused(
                 "refusing to run with " + ", ".join(refused) + " set: a local "
-                "exhibit runs under your own /login, and these bill API "
-                "dollars, re-route the CLI, or put a credential in reach of "
-                "the arms. Unset them (e.g. `env -u NAME ...`) and re-run.")
+                "exhibit runs under your own /login, and each of these can "
+                "bill a dollar or cloud account, re-route the CLI to another "
+                "provider, or put a credential in reach of the arms. Unset "
+                "them (e.g. `env -u NAME ...`) and re-run.")
+        check_user_settings(Path(os.environ.get("HOME") or Path.home()))
+        # From here every child (the version call, the probe, run_eval and
+        # through it the arms, and the judge) inherits only the allow-list.
+        allowed = child_environment(os.environ)
+        os.environ.clear()
+        os.environ.update(allowed)
         out = check_results_dir(args.results_dir)
-        eval_dir = args.eval_dir.expanduser().resolve()
-        fixture = load_skill_fixture(eval_dir)
+        eval_dir = Path(os.path.abspath(args.eval_dir.expanduser()))
+        fixtures = discover_fixtures(eval_dir, args.fixture)
         registry_flags = _absolute_registry_flags(args.registry)
         arms = arm_names(args.arm)
-        registry = resolve_fixture_registry(fixture, registry_flags,
-                                            needed="with_skill" in arms)
-        models = select_models(fixture, args.no_judge)
+        for item in fixtures:
+            item["registry"] = resolve_fixture_registry(
+                item["fixture"], registry_flags, needed="with_skill" in arms)
+            item["models"] = select_models(item["fixture"], args.no_judge)
     except Refused as exc:
         print(f"local_eval: {exc}", file=sys.stderr)
         return EXIT_REFUSED
 
+    fixture = fixtures[0]["fixture"]
     skill = fixture["skill"]
-    judge_cfg = fixture.get("judge") if isinstance(fixture.get("judge"), dict) else {}
     manifest = {
         "exhibit": EXHIBIT,
         "status": "running",
@@ -490,16 +697,11 @@ def main(argv=None) -> int:
                     if REPO_ROOT in eval_dir.parents else str(eval_dir)),
         "skill": skill,
         "invocation": {"trials": args.trials, "arm": args.arm,
-                       "no_judge": args.no_judge,
+                       "no_judge": args.no_judge, "fixture": args.fixture,
                        "registries": [f.split("=", 1)[0] for f in registry_flags]},
         "harness": {"claude_version": run_eval.claude_version()},
-        "models": {"fixture_pins": {"model": fixture.get("model"),
-                                    "judge_model": (judge_cfg or {}).get("model")},
-                   "selected": models},
+        "fixtures": [_manifest_fixture(item) for item in fixtures],
         "skills_evals": git_identity(REPO_ROOT),
-        "registry": None if registry is None else {
-            "name": registry["name"], "source": registry["source"],
-            **git_identity(registry["path"])},
         "contamination_probe": None,
         "trials": [],
         "transcripts": {"local_only": True, "note": TRANSCRIPTS_NOTE, "files": []},
@@ -538,6 +740,8 @@ def main(argv=None) -> int:
         trial_dir.mkdir()
         cmd = [sys.executable, str(RUN_EVAL), str(eval_dir), "--arm", args.arm,
                "--results-dir", str(trial_dir)]
+        if args.fixture is not None:
+            cmd += ["--fixture", args.fixture]
         for flag in registry_flags:
             cmd += ["--registry", flag]
         if args.no_judge:
@@ -545,6 +749,7 @@ def main(argv=None) -> int:
         print(f"local_eval: trial {k}/{args.trials}", flush=True)
         proc = subprocess.run(cmd, cwd=str(REPO_ROOT), capture_output=True,
                               text=True)
+        stamp_local_exhibit(trial_dir)
         (trial_dir / "run_eval.log").write_text(
             (proc.stdout or "") + (proc.stderr or ""), encoding="utf-8")
         sys.stdout.write(proc.stdout or "")
@@ -555,21 +760,25 @@ def main(argv=None) -> int:
             else f"run_eval.py exited {proc.returncode}; see t{k}/run_eval.log"})
         _write_json(manifest_path, manifest)
 
-    aggregate = build_aggregate(out, skill, arms, args.trials)
+    aggregate = build_aggregate(out, skill, [f["name"] for f in fixtures], arms,
+                                args.trials)
     _write_json(out / "aggregate.json", aggregate)
 
     errored = (any(t["exit_code"] != 0 for t in manifest["trials"])
-               or any(a["errors"] for a in aggregate["arms"].values()))
+               or any(a["errors"] for f in aggregate["fixtures"].values()
+                      for a in f["arms"].values()))
     manifest["status"] = "completed with errors" if errored else "completed"
     manifest["finished_at"] = _utc_now()
     manifest["transcripts"]["files"] = transcript_files(out)
     _write_json(manifest_path, manifest)
-    for arm, stats in aggregate["arms"].items():
-        total = stats["objective"]["total"]
-        judge_overall = (stats["judge"] or {}).get("overall")
-        print(f"local_eval: {arm}: n={stats['n']} errors={stats['errors']} "
-              f"objective mean={total['mean'] if total else '-'} "
-              f"judge mean={judge_overall['mean'] if judge_overall else '-'}")
+    for name, entry in aggregate["fixtures"].items():
+        for arm, stats in entry["arms"].items():
+            total = stats["objective"]["total"]
+            judge_overall = (stats["judge"] or {}).get("overall")
+            print(f"local_eval: {name} {arm}: n={stats['n']} "
+                  f"errors={stats['errors']} "
+                  f"objective mean={total['mean'] if total else '-'} "
+                  f"judge mean={judge_overall['mean'] if judge_overall else '-'}")
     print(f"local_eval: wrote {out / 'aggregate.json'} and {manifest_path} "
           f"({EXHIBIT})")
     return EXIT_TRIAL_ERROR if errored else EXIT_OK

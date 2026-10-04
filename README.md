@@ -161,13 +161,22 @@ env -u ANTHROPIC_API_KEY python3 scripts/local_eval.py evals/workflow-path-audit
   --results-dir ~/evals-local/workflow-path-audit --trials 3
 ```
 
-`scripts/local_eval.py` refuses (exit 2, nothing run) when any `ANTHROPIC_*` or
-`CLAUDE_CODE_OAUTH_TOKEN` variable is set, when `--results-dir` resolves inside
-any git repository or is not empty, and when the skill under test is already
-visible to an empty workspace (a user-level copy would contaminate the
-`without_skill` arm). It writes `aggregate.json` and `manifest.json`, both
-stamped "local — not badge input", never pushes and never calls `gh`. Its
-module docstring lists the flags and the limits.
+`scripts/local_eval.py` takes a flat fixture, a nested one (`evals/<skill>/<name>`)
+or a skill directory of nested ones (`--fixture NAME` picks one). It refuses
+(exit 2, nothing run) when the environment carries any provider-selection or
+credential variable (`ANTHROPIC_*`, `CLAUDE_CODE_USE_*`, `CLAUDE_CONFIG_DIR`,
+`AWS_*`, `GOOGLE_*`, `GCLOUD_*`, `CLOUDSDK_*`, `AZURE_*`, `CLAUDE_CODE_OAUTH_TOKEN`,
+or a name containing `API_KEY`, `AUTH_TOKEN`, `ACCESS_KEY`, `SECRET` or
+`BEARER`), when a settings file the judge would load names `apiKeyHelper`,
+`awsAuthRefresh`, `awsCredentialExport` or such an `env` variable, when
+`--results-dir` resolves inside any git repository or is not empty, and when
+the skill under test is already visible to an empty workspace (a user-level
+copy would contaminate the `without_skill` arm). Every child it starts sees
+only an allow-listed environment. It writes `aggregate.json` and
+`manifest.json`, stamped "local — not badge input", marks every kept
+`summary.json` `"local_exhibit": true` (`scripts/make_badge.py` refuses those),
+never pushes and never calls `gh`. Its module docstring lists the flags and the
+limits.
 
 A fixture's `registry:` field names which registry its skill lives in (by
 URL); [`harness/registries.yml`](harness/registries.yml) maps each registry

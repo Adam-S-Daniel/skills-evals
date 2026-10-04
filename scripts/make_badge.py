@@ -175,6 +175,12 @@ def arm_stats(unit_dir: Path, arm: str) -> dict | None:
         summary = json.loads(summary_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+    if isinstance(summary, dict) and summary.get("local_exhibit"):
+        # scripts/local_eval.py stamps every per-trial summary it keeps. That
+        # run was a local exhibit under the owner's own login: never badge
+        # input, so refuse loudly rather than read it as missing data.
+        raise SystemExit(f"{summary_path}: a local exhibit "
+                         "(local_exhibit: true), not badge input")
     if not isinstance(summary, dict) or summary.get("error"):
         return None
     n = _count(summary.get("n", 1))

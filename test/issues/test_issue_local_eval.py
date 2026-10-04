@@ -61,6 +61,7 @@ n = int(open(path).read()) + 1 if os.path.exists(path) else 1
 with open(path, "w") as f:
     f.write(str(n))
 record = {{"role": role, "n": n, "argv": argv, "cwd": os.getcwd(),
+          "env_names": sorted(os.environ),
           "secret_env": sorted(k for k in os.environ
                                if k.startswith("ANTHROPIC_")
                                or k == "CLAUDE_CODE_OAUTH_TOKEN")}}
@@ -117,7 +118,8 @@ def _plant_skill(skills_dir: Path, name: str) -> None:
 class TestLocalEval(unittest.TestCase):
 
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="local-eval-test-")).resolve()
+        self.root = Path(tempfile.mkdtemp(
+            prefix="local-eval-test-", dir=self._temp_base())).resolve()
         self.addCleanup(shutil.rmtree, self.root, ignore_errors=True)
         self.home = self.root / "home"
         self.home.mkdir()
@@ -126,6 +128,18 @@ class TestLocalEval(unittest.TestCase):
         self.state.mkdir()
         self.log = self.root / "calls.jsonl"
         self.out = self.root / "out"
+
+    @staticmethod
+    def _temp_base():
+        """A temp parent with no `.git` entry in it or above it: the runner
+        refuses a results dir under one, and a shared or dotfile-managed temp
+        dir can have one (an empty `.git` in /tmp is enough)."""
+        for base in (tempfile.gettempdir(), "/dev/shm"):
+            path = Path(base).resolve()
+            if path.is_dir() and not any((p / ".git").exists()
+                                         for p in (path, *path.parents)):
+                return str(path)
+        raise unittest.SkipTest("no temp directory outside a git repository")
 
     # -- helpers ---------------------------------------------------------
 
@@ -138,9 +152,9 @@ class TestLocalEval(unittest.TestCase):
         path.chmod(0o755)
         return path
 
-    def _registry(self) -> Path:
+    def _registry(self, skill: str = SKILL) -> Path:
         registry = self.root / "registry"
-        _plant_skill(registry / "plugins" / "a-bundle" / "skills", SKILL)
+        _plant_skill(registry / "plugins" / "a-bundle" / "skills", skill)
         _git(registry, "init", "-q")
         _git(registry, "add", "-A")
         _git(registry, "commit", "-q", "-m", "registry")
@@ -206,19 +220,22 @@ class TestLocalEval(unittest.TestCase):
         # allowlist, so this is the one way a refused name could still reach
         # an arm after the caller's own environment passed the check.
         registry = self._registry()
-        for name in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN"):
+        for name in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN",
+                     "CLAUDE_CODE_USE_BEDROCK", "AWS_BEARER_TOKEN_BEDROCK",
+                     "GOOGLE_APPLICATION_CREDENTIALS", "CLAUDE_CONFIG_DIR"):
             with self.subTest(name=name):
                 eval_dir = self.root / f"fixture-{name}"
                 shutil.copytree(EVAL_DIR, eval_dir)
                 fixture_path = eval_dir / "fixture.yaml"
                 fixture = yaml.safe_load(fixture_path.read_text(encoding="utf-8"))
-                fixture["env"] = {name: "example-value"}
+                fixture["env"] = {name: "example-value", "HARMLESS": "1"}
                 fixture_path.write_text(yaml.safe_dump(fixture), encoding="utf-8")
                 proc = self._run(str(eval_dir), "--trials", "1",
                                  "--registry", f"adam-agentskills={registry}")
                 self._assert_nothing_ran(proc)
                 self.assertIn(name, proc.stderr)
                 self.assertIn("env:", proc.stderr)
+                self.assertNotIn("example-value", proc.stderr)
                 self.assertFalse(self.out.exists())
 
     def test_no_child_process_receives_a_refused_variable(self):
@@ -402,14 +419,14 @@ class TestLocalEval(unittest.TestCase):
         self.assertEqual(manifest["harness"]["claude_version"],
                          version.splitlines()[0].strip())
         fixture = yaml.safe_load((EVAL_DIR / "fixture.yaml").read_text(encoding="utf-8"))
-        self.assertEqual(manifest["models"]["fixture_pins"],
+        self.assertEqual(manifest["fixtures"][0]["models"]["fixture_pins"],
                          {"model": fixture["model"],
                           "judge_model": fixture["judge"]["model"]})
-        self.assertEqual(manifest["models"]["selected"],
+        self.assertEqual(manifest["fixtures"][0]["models"]["selected"],
                          {"agent": fixture["model"],
                           "judge": fixture["judge"]["model"]})
         head = _git(registry, "rev-parse", "HEAD").stdout.strip()
-        self.assertEqual(manifest["registry"],
+        self.assertEqual(manifest["fixtures"][0]["registry"],
                          {"name": "adam-agentskills", "source": "--registry flag",
                           "sha": head, "dirty": False})
         own = subprocess.run(["git", "-C", str(REPO_ROOT), "rev-parse", "HEAD"],
@@ -507,7 +524,7 @@ class TestLocalEval(unittest.TestCase):
         manifest = self._json("manifest.json")
         self.assertEqual(manifest["invocation"]["arm"], "without_skill")
         self.assertIs(manifest["invocation"]["no_judge"], True)
-        self.assertIsNone(manifest["models"]["selected"]["judge"])
+        self.assertIsNone(manifest["fixtures"][0]["models"]["selected"]["judge"])
 
     # -- 3, 5: never publishes; argv lists; no shell ---------------------
 
@@ -605,6 +622,251 @@ class TestLocalEval(unittest.TestCase):
                  if isinstance(n, ast.Constant) and isinstance(n.value, str)
                  and id(n) not in docstrings}
         self.assertEqual(words & {"gh", "push", "workflow", "dispatch"}, set())
+
+    # -- 1: provider selection and credentials, by rule ------------------
+
+    def test_refuses_any_provider_selection_or_credential_variable(self):
+        names = ("CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
+                 "CLAUDE_CODE_USE_FOUNDRY", "AWS_BEARER_TOKEN_BEDROCK",
+                 "AWS_ACCESS_KEY_ID", "AWS_PROFILE",
+                 "GOOGLE_APPLICATION_CREDENTIALS", "GCLOUD_PROJECT",
+                 "CLOUDSDK_CORE_PROJECT", "AZURE_CLIENT_ID",
+                 "CLAUDE_CONFIG_DIR", "ACME_API_KEY", "acme_auth_token",
+                 "ACME_ACCESS_KEY", "ACME_SECRET", "ACME_BEARER")
+        for name in names:
+            with self.subTest(name=name):
+                proc = self._run(str(EVAL_DIR), "--trials", "1",
+                                 env_extra={name: "sentinel-value-1234"})
+                self._assert_nothing_ran(proc)
+                self.assertIn(name, proc.stderr)
+                self.assertNotIn("sentinel-value-1234", proc.stderr)
+                self.assertFalse(self.out.exists())
+
+    def test_an_unlisted_variable_never_reaches_any_child(self):
+        # The refusal list cannot name every variable; the children's
+        # environment is an allow-list built here, so this one (on no refusal
+        # list) must not appear for the version call, the probe, an arm or
+        # the judge.
+        allowed = {"PATH", "HOME", "LANG", "LANGUAGE", "TERM", "TMPDIR", "TZ",
+                   "CLAUDE_BIN", "SKILLS_EVALS_REGISTRIES", "AGENTSKILLS_DIR"}
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         "--registry", f"adam-agentskills={self._registry()}",
+                         env_extra={"SOME_UNLISTED_VAR": "1",
+                                    "CLAUDECODE": "1", "LC_ALL": "C.UTF-8"})
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        calls = self._calls()
+        self.assertEqual({c["role"] for c in calls},
+                         {"version", "probe", "agent", "judge"})
+        for call in calls:
+            with self.subTest(role=call["role"], n=call["n"]):
+                for name in ("SOME_UNLISTED_VAR", "CLAUDECODE"):
+                    self.assertNotIn(name, call["env_names"])
+                if call["role"] in ("version", "judge"):
+                    # these inherit the wrapper's whole environment
+                    extra = {n for n in call["env_names"]
+                             if n not in allowed and not n.startswith("LC_")}
+                    self.assertEqual(extra, set())
+
+    # -- 1b: settings files the judge loads ------------------------------
+
+    def _settings(self, content, name="settings.json", home=None):
+        directory = (home or self.home) / ".claude"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / name).write_text(
+            content if isinstance(content, str) else json.dumps(content),
+            encoding="utf-8")
+
+    def test_refuses_a_settings_file_naming_a_credential_source(self):
+        cases = (
+            ("settings.json", {"apiKeyHelper": "sentinel-helper"}, "apiKeyHelper"),
+            ("settings.json", {"awsAuthRefresh": "sentinel-helper"}, "awsAuthRefresh"),
+            ("settings.local.json", {"awsCredentialExport": "sentinel-helper"},
+             "awsCredentialExport"),
+            ("settings.json", {"env": {"ANTHROPIC_API_KEY": "sentinel-helper"}},
+             "env.ANTHROPIC_API_KEY"),
+            ("settings.json", {"env": {"AWS_ACCESS_KEY_ID": "sentinel-helper"}},
+             "env.AWS_ACCESS_KEY_ID"),
+            ("settings.json", {"env": {"CLAUDE_CODE_USE_VERTEX": "sentinel-helper"}},
+             "env.CLAUDE_CODE_USE_VERTEX"),
+            ("settings.json", "{not json sentinel-helper", "not valid JSON"),
+            ("settings.json", ["sentinel-helper"], "not a JSON object"))
+        for name, content, expected in cases:
+            with self.subTest(name=name, expected=expected):
+                self._settings(content, name)
+                proc = self._run(str(EVAL_DIR), "--trials", "1")
+                self._assert_nothing_ran(proc)
+                self.assertIn(str(self.home / ".claude" / name), proc.stderr)
+                self.assertIn(expected, proc.stderr)
+                self.assertNotIn("sentinel-helper", proc.stderr)
+                self.assertFalse(self.out.exists())
+                (self.home / ".claude" / name).unlink()
+
+    def test_a_settings_file_without_a_credential_source_does_not_stop_the_run(self):
+        self._settings({"theme": "dark", "env": {"EXAMPLE_FLAG": "1"},
+                        "permissions": {"allow": ["Bash(ls:*)"]}})
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+
+    def test_the_settings_check_covers_this_checkout_and_managed_policy(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        fake_repo, managed = self.root / "fake-repo", self.root / "managed"
+        (fake_repo / ".claude").mkdir(parents=True)
+        (managed / "dropins").mkdir(parents=True)
+        home = self.root / "settings-home"
+        home.mkdir()
+        cases = (
+            (fake_repo / ".claude" / "settings.json", {"apiKeyHelper": "x"}),
+            (fake_repo / ".claude" / "settings.local.json", {"awsAuthRefresh": "x"}),
+            (managed / "managed-settings.json", {"apiKeyHelper": "x"}),
+            (managed / "dropins" / "10-extra.json",
+             {"env": {"AZURE_CLIENT_SECRET": "x"}}))
+        with mock.patch.object(local_eval, "REPO_ROOT", fake_repo), \
+                mock.patch.object(local_eval, "MANAGED_SETTINGS_FILES",
+                                  (managed / "managed-settings.json",)), \
+                mock.patch.object(local_eval, "MANAGED_SETTINGS_DROPINS",
+                                  (managed / "dropins",)):
+            local_eval.check_user_settings(home)  # nothing there: passes
+            for path, content in cases:
+                with self.subTest(path=str(path)):
+                    path.write_text(json.dumps(content), encoding="utf-8")
+                    with self.assertRaises(local_eval.Refused) as ctx:
+                        local_eval.check_user_settings(home)
+                    self.assertIn(str(path), str(ctx.exception))
+                    path.unlink()
+
+    # -- 2: git cannot answer, or a .git sits above ----------------------
+
+    def test_a_git_that_cannot_answer_is_a_refusal_not_no_repository(self):
+        sys.path.insert(0, str(REPO_ROOT / "scripts"))
+        self.addCleanup(sys.path.remove, str(REPO_ROOT / "scripts"))
+        import local_eval
+        probe = self.root / "plain"
+        probe.mkdir()
+        for stderr in ("fatal: detected dubious ownership in repository at '/x'\n",
+                       "fatal: cannot use bare repository '/x' "
+                       "(safe.bareRepository is 'explicit')\n"):
+            with self.subTest(stderr=stderr):
+                failed = subprocess.CompletedProcess([], 128, "", stderr)
+                with mock.patch.object(local_eval, "_git", return_value=failed):
+                    with self.assertRaises(local_eval.Refused) as ctx:
+                        local_eval.check_results_dir(probe / "out")
+                self.assertIn("refused to say", str(ctx.exception))
+        with mock.patch.object(local_eval, "_git", side_effect=OSError("no git")):
+            with self.assertRaises(local_eval.Refused):
+                local_eval.check_results_dir(probe / "out")
+        # and the genuine "not a repository" answer still lets it through
+        self.assertEqual(local_eval.check_results_dir(probe / "out"),
+                         probe / "out")
+
+    def test_a_git_entry_in_a_parent_refuses_without_asking_git(self):
+        # An empty .git directory is not a repository to git ("not a git
+        # repository"), so only the git-independent parent walk can refuse.
+        tree = self.root / "looks-like-a-repo"
+        (tree / ".git").mkdir(parents=True)
+        proc = self._run(str(EVAL_DIR), "--trials", "1",
+                         results_dir=tree / "deeper" / "out")
+        self._assert_nothing_ran(proc)
+        self.assertIn("holds a git repository", proc.stderr)
+        self.assertFalse((tree / "deeper").exists())
+
+    # -- N1: a local trial tree is not badge input -----------------------
+
+    def _make_badge(self, name, results_dir):
+        badge = self.root / "badge.json"
+        proc = subprocess.run(
+            [sys.executable, str(REPO_ROOT / "scripts" / "make_badge.py"), name,
+             "--results-dir", str(results_dir), "--out", str(badge)],
+            capture_output=True, text=True, env=self._env(self._dispatcher()),
+            cwd=str(self.root), timeout=120)
+        return proc, badge
+
+    def test_local_trial_summaries_are_stamped_and_refused_as_badge_input(self):
+        for eval_dir, skill in ((EVAL_DIR, SKILL),
+                                (REPO_ROOT / "evals" / "writing-adrs" / "bootstrap",
+                                 "writing-adrs")):
+            with self.subTest(skill=skill):
+                if self.out.exists():
+                    shutil.rmtree(self.out)
+                shutil.rmtree(self.root / "registry", ignore_errors=True)
+                registry = self._registry(skill)
+                proc = self._run(str(eval_dir), "--trials", "1", "--no-judge",
+                                 "--registry", f"adam-agentskills={registry}")
+                self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+                summaries = sorted(self.out.rglob("summary.json"))
+                self.assertEqual(len(summaries), 2)
+                for path in summaries:
+                    self.assertIs(json.loads(path.read_text(
+                        encoding="utf-8"))["local_exhibit"], True, str(path))
+                badge_proc, badge = self._make_badge(skill, self.out / "t1")
+                self.assertNotEqual(badge_proc.returncode, 0)
+                self.assertIn("local exhibit", badge_proc.stderr)
+                self.assertFalse(badge.exists())
+
+    def test_an_unstamped_summary_is_still_badge_input(self):
+        registry = self._registry()
+        proc = self._run(str(EVAL_DIR), "--trials", "1", "--no-judge",
+                         "--registry", f"adam-agentskills={registry}")
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        for path in self.out.rglob("summary.json"):
+            summary = json.loads(path.read_text(encoding="utf-8"))
+            del summary["local_exhibit"]  # what a published summary looks like
+            path.write_text(json.dumps(summary), encoding="utf-8")
+        badge_proc, badge = self._make_badge(SKILL, self.out / "t1")
+        self.assertEqual(badge_proc.returncode, 0, badge_proc.stderr)
+        self.assertTrue(badge.is_file())
+        self.assertIn(f"skill eval: {SKILL}",
+                      json.loads(badge.read_text(encoding="utf-8"))["label"])
+
+    # -- nested fixtures (run_eval's #66 layout) -------------------------
+
+    def _assert_clean(self, proc, trials, fixtures):
+        self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
+        aggregate = self._json("aggregate.json")
+        self.assertEqual(sorted(aggregate["fixtures"]), sorted(fixtures))
+        for name, entry in aggregate["fixtures"].items():
+            for arm, got in entry["arms"].items():
+                with self.subTest(fixture=name, arm=arm):
+                    self.assertEqual((got["n"], got["errors"], got["scored"]),
+                                     (trials, 0, trials))
+        return aggregate
+
+    def test_a_flat_fixture_runs_clean_under_the_fixtures_key(self):
+        proc = self._run(str(EVAL_DIR), "--trials", "2", "--no-judge",
+                         "--registry", f"adam-agentskills={self._registry()}")
+        aggregate = self._assert_clean(proc, 2, ["(flat)"])
+        self.assertEqual(aggregate["arms"], aggregate["fixtures"]["(flat)"]["arms"])
+
+    def test_a_nested_fixture_named_by_its_own_directory_runs_clean(self):
+        nested = REPO_ROOT / "evals" / "writing-adrs" / "bootstrap"
+        proc = self._run(str(nested), "--trials", "2", "--no-judge",
+                         "--registry",
+                         f"adam-agentskills={self._registry('writing-adrs')}")
+        aggregate = self._assert_clean(proc, 2, ["bootstrap"])
+        self.assertEqual(sorted(aggregate["arms"]), ["with_skill", "without_skill"])
+        self.assertEqual(
+            len(list(self.out.glob("t*/writing-adrs/*/bootstrap/*/summary.json"))), 4)
+
+    def test_a_skill_directory_of_nested_fixtures_runs_all_of_them(self):
+        skill_dir = REPO_ROOT / "evals" / "writing-adrs"
+        registry = self._registry("writing-adrs")
+        proc = self._run(str(skill_dir), "--trials", "2", "--no-judge",
+                         "--registry", f"adam-agentskills={registry}")
+        aggregate = self._assert_clean(
+            proc, 2, ["bootstrap", "existing-convention", "supersede"])
+        self.assertNotIn("arms", aggregate, "several fixtures: no single `arms`")
+        self.assertEqual(
+            [f["name"] for f in self._json("manifest.json")["fixtures"]],
+            ["bootstrap", "existing-convention", "supersede"])
+
+    def test_fixture_selects_one_nested_fixture_of_a_skill_directory(self):
+        skill_dir = REPO_ROOT / "evals" / "writing-adrs"
+        proc = self._run(str(skill_dir), "--fixture", "supersede", "--trials", "1",
+                         "--no-judge", "--registry",
+                         f"adam-agentskills={self._registry('writing-adrs')}")
+        self._assert_clean(proc, 1, ["supersede"])
 
 
 if __name__ == "__main__":
