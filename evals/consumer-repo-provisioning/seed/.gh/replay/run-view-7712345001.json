@@ -1,0 +1,14 @@
+{
+  "databaseId": 7712345001,
+  "workflowName": "cms-automerge-nudge",
+  "conclusion": "startup_failure",
+  "status": "completed",
+  "event": "schedule",
+  "jobs": [],
+  "annotations": [
+    {
+      "annotationLevel": "failure",
+      "message": "Secret CMS_E2E_PAT is required, but not provided while calling."
+    }
+  ]
+}
