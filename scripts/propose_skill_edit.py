@@ -61,6 +61,7 @@ errored before a decision could be taken.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 import difflib
 import io
 import json
@@ -114,6 +115,40 @@ class InvalidProposal(Exception):
     """The proposal broke a constraint; it is recorded and never measured."""
 
 
+def check_launch_environment() -> None:
+    """Refuse credential and provider settings before any model subprocess starts."""
+    refused = local_eval.refused_env_names(os.environ)
+    if refused:
+        raise Refusal("refusing to run with " + ", ".join(refused) +
+                      " set; unset them and use the interactive login")
+    proxies = local_eval.proxy_userinfo_names(os.environ)
+    if proxies:
+        raise Refusal("refusing proxy URLs that embed credentials: " +
+                      ", ".join(proxies))
+
+
+@contextmanager
+def guarded_environment():
+    """A private launcher guards explicit and PATH-based CLI calls alike."""
+    check_launch_environment()
+    env = local_eval.child_environment(os.environ)
+    with tempfile.TemporaryDirectory(prefix="skill-edit-guard-") as directory:
+        guard_dir = Path(directory)
+        try:
+            local_eval.install_guard_launcher(guard_dir, environ=env)
+        except local_eval.Refused as exc:
+            raise Refusal(str(exc)) from exc
+        try:
+            yield env
+        finally:
+            # skill-creator can swallow an unsuccessful CLI launch and emit
+            # valid JSON. The launcher's record takes precedence over it.
+            refusals = local_eval.guard_refusals(guard_dir)
+            if refusals:
+                raise Refusal("launch-time settings guard refused: " +
+                              str(refusals[0].get("message")))
+
+
 # ---------------------------------------------------------------------------
 # The runner: every step that can spend model budget, and nothing else.
 # ---------------------------------------------------------------------------
@@ -132,9 +167,6 @@ class Runner:
         `cwd` (its `find_project_root` writes a command file under the
         nearest `.claude/`, so `cwd` must be a scratch project), and its JSON
         stdout parsed. A `skill-creator` link to the plugin is planted in `cwd`."""
-        env = dict(os.environ)
-        env["PYTHONPATH"] = os.pathsep.join(
-            p for p in (str(skill_creator), env.get("PYTHONPATH", "")) if p)
         # Run through a link to the plugin planted in the scratch project, so
         # the script path is a literal: the test suite's fork scan
         # (test_every_suite_forking_test_in_this_repo_stands_down_in_a_child)
@@ -142,12 +174,18 @@ class Runner:
         # it cannot for `-m` or a computed path. PYTHONPATH carries
         # skill-creator's `scripts` package, so its imports resolve as under
         # its documented `python -m scripts.run_loop`.
-        link = Path(cwd) / "skill-creator"
-        if not link.exists():
-            link.symlink_to(skill_creator, target_is_directory=True)
-        proc = subprocess.run([sys.executable, "skill-creator/scripts/run_loop.py", *argv],
-                              cwd=cwd, env=env, capture_output=True, text=True,
-                              check=False)
+        with guarded_environment() as env:
+            # Only this trusted plugin's import directory is carried.
+            env["PYTHONPATH"] = str(skill_creator)
+            link = Path(cwd) / "skill-creator"
+            if not link.exists():
+                link.symlink_to(skill_creator, target_is_directory=True)
+            try:
+                proc = subprocess.run([sys.executable, "skill-creator/scripts/run_loop.py", *argv],
+                                      cwd=cwd, env=env, capture_output=True, text=True,
+                                      check=False)
+            except OSError as exc:
+                raise Refusal(f"skill-creator run_loop could not run: {type(exc).__name__}") from exc
         if proc.returncode != 0:
             raise Refusal(f"skill-creator run_loop exited {proc.returncode}")
         try:
@@ -157,13 +195,12 @@ class Runner:
 
     def propose(self, prompt: str, model: str) -> str:
         """One headless call, no tools, prompt on stdin; the reply text."""
-        cmd = [os.environ.get("CLAUDE_BIN", "claude"), "-p",
-               "--output-format", "json", "--permission-mode", "default",
-               "--tools", "", "--model", model]
-        env = {k: v for k, v in os.environ.items() if k != "CLAUDECODE"}
         try:
-            proc = subprocess.run(cmd, input=prompt, capture_output=True,
-                                  text=True, env=env, timeout=600, check=False)
+            with guarded_environment() as env:
+                cmd = [env["CLAUDE_BIN"], "-p", "--output-format", "json",
+                       "--permission-mode", "default", "--tools", "", "--model", model]
+                proc = subprocess.run(cmd, input=prompt, capture_output=True,
+                                      text=True, env=env, timeout=600, check=False)
         except (OSError, subprocess.TimeoutExpired) as exc:
             raise Refusal(f"proposal call could not run: {type(exc).__name__}") from exc
         if proc.returncode != 0:
@@ -962,6 +999,11 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         if p["holdout"]:
             record["split"]["holdout"] = p["holdout"]
 
+        try:
+            check_launch_environment()
+        except Refusal as exc:
+            return record_refusal(stem, record, "preflight", exc)
+
         rc = runner.run_eval(run_eval_argv(skill, registry["name"], base_root,
                                            run_paths(results, "baseline", skill, ts),
                                            ts, args.trials, args.no_judge))
@@ -986,9 +1028,12 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         (project / ".claude" / "settings.json").write_text(json.dumps({
             "enabledPlugins": {name: False for name in disabled_plugins}}, indent=2),
             encoding="utf-8")
-        loop = runner.run_description_loop(
-            description_loop_argv(eval_set_path, base_skill, p["arm_model"], trigger_dir),
-            cwd=project, skill_creator=p["skill_creator"])
+        try:
+            loop = runner.run_description_loop(
+                description_loop_argv(eval_set_path, base_skill, p["arm_model"], trigger_dir),
+                cwd=project, skill_creator=p["skill_creator"])
+        except Refusal as exc:
+            return record_refusal(stem, record, "trigger", exc)
         (trigger_dir / "loop.json").write_text(json.dumps(loop, indent=2), encoding="utf-8")
         original_description = frontmatter_data(original).get("description", "")
         raw_best = str(loop.get("best_description") or "")
@@ -1034,6 +1079,8 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
             write_record(stem, record)
             print(f"rejected before measurement: {exc}")
             return EXIT_REJECTED
+        except Refusal as exc:
+            return record_refusal(stem, record, "proposal", exc)
 
         if candidate_text == original:
             record.update(status="no-candidate",
@@ -1080,6 +1127,15 @@ def improve(args: argparse.Namespace, runner: Runner, now: datetime) -> int:
         return EXIT_ACCEPTED if accepted else EXIT_REJECTED
     finally:
         shutil.rmtree(scratch, ignore_errors=True)
+
+
+def record_refusal(stem: Path, record: dict, phase: str, exc: Refusal) -> int:
+    record.update(status="refused", phase=phase, exit_code=EXIT_REFUSED,
+                  reasons=[str(exc)])
+    write_record(stem, record)
+    print(f"refused during {phase}: {exc}; record: {stem.with_suffix('.json')}",
+          file=sys.stderr)
+    return EXIT_REFUSED
 
 
 def write_record(stem: Path, record: dict) -> None:

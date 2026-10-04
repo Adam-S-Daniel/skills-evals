@@ -146,8 +146,8 @@ this harness or it is not measured the way every other number here is.
   contamination probe and `LOCAL_EXHIBIT` marking apply to these eval runs.
   Exit 2 records the phase and refusal once, without retry or a later phase.
   An errored or missing trial remains inconclusive rather than being averaged
-  away. The separate skill-creator trigger loop and body proposal call still
-  use their own `Runner` methods and do not inherit local_eval's guards.
+  away. The skill-creator trigger loop and body proposal use the same
+  environment policy and guard launcher directly (see Review round 1 below).
 - Not done here, from #71: the registry pull request itself, the
   `docs/skill-impact.md` entry, `improve.yml`, the idempotency check on an
   open `eval-improve/<skill>` branch, the budget refusal, and publishing
@@ -228,3 +228,27 @@ an empty directory, so a later improvement run can reuse the root without
 mixing trials. A wrapper refusal records its phase and exit code and stops;
 every requested trial must have a readable summary for a scored decision.
 This was tested with fake CLI responses only; no paid evaluation was run.
+
+### Review round 1: guard the trigger and proposal launches
+
+Both remaining launch paths now build their child environment with
+`local_eval.child_environment` and install `local_eval.install_guard_launcher`
+in a private temporary directory. That directory leads the child's `PATH`,
+and `CLAUDE_BIN` names its launcher. This covers skill-creator's literal
+`claude` calls as well as the body proposal. Only skill-creator's selected
+directory is added to `PYTHONPATH`; inherited Python and XDG configuration
+variables, GitHub credentials and other unlisted variables are excluded.
+The caller's environment remains unchanged, and the launcher directory is
+removed on success or refusal.
+
+The loop explicitly refuses credential or provider environment variables
+before its first model launch, with exit 2 and a refusal record. Each Runner
+launch also checks the original environment before filtering it. The launcher
+checks user, harness and managed settings plus the actual launch directory
+and its parent chain at every call, so a scratch project's `apiKeyHelper`
+cannot depend on an earlier baseline check for refusal. A recorded guard
+refusal ends the phase even if the external loop returns successful JSON.
+Trigger and proposal refusals write their phase and stop without retry or a
+candidate measurement. Offline stand-ins exercise both launch paths; mutation
+checks prove the environment policy, launcher routing, settings preflight and
+refusal records are enforced. No real evaluation was run.

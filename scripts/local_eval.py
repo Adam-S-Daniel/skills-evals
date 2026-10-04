@@ -678,13 +678,16 @@ def _manifest_fixture(item: dict) -> dict:
     }
 
 
-def install_guard_launcher(guard_dir: Path) -> str:
+def install_guard_launcher(guard_dir: Path, environ=None) -> str:
     """Write the launch-time guard launcher as `<guard_dir>/claude` (mode
     0700) and put it in front of every child: CLAUDE_BIN names it, and
     `guard_dir` heads PATH, so a child that looks `claude` up reaches it too.
-    Returns the real CLI's absolute path, which the launcher execs."""
-    wanted = os.environ.get("CLAUDE_BIN") or "claude"
-    real = shutil.which(wanted)
+    Returns the real CLI's absolute path, which the launcher execs. With
+    `environ`, only that child mapping is changed; the default preserves the
+    local evaluator's process-wide launcher installation."""
+    env = os.environ if environ is None else environ
+    wanted = env.get("CLAUDE_BIN") or "claude"
+    real = shutil.which(wanted, path=env.get("PATH", os.defpath))
     if real is None:
         raise Refused(f"cannot find the claude CLI ({wanted!r} is not "
                       "executable or on PATH); set CLAUDE_BIN")
@@ -697,8 +700,8 @@ def install_guard_launcher(guard_dir: Path) -> str:
         managed_files=MANAGED_SETTINGS_FILES,
         managed_dropins=MANAGED_SETTINGS_DROPINS), encoding="utf-8")
     launcher.chmod(0o700)
-    os.environ["CLAUDE_BIN"] = str(launcher)
-    os.environ["PATH"] = str(guard_dir) + os.pathsep + os.environ.get("PATH", "")
+    env["CLAUDE_BIN"] = str(launcher)
+    env["PATH"] = str(guard_dir) + os.pathsep + env.get("PATH", "")
     return real
 
 
