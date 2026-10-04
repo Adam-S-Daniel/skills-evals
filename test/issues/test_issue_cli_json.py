@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -77,6 +78,10 @@ class CliJsonConsumersTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.workspace = Path(self.temp.name)
+        home = self.workspace / "home"
+        home.mkdir()
+        self.env = {"PATH": os.environ["PATH"], "HOME": str(home),
+                    "TMPDIR": str(self.workspace), "LANG": "C.UTF-8"}
 
     def _agent(self, payload: object) -> dict:
         with mock.patch("subprocess.run", return_value=cli_reply(payload)):
@@ -95,7 +100,8 @@ class CliJsonConsumersTests(unittest.TestCase):
         return text, models
 
     def _proposal(self, payload: object) -> str:
-        with mock.patch("subprocess.run", return_value=cli_reply(payload)):
+        with mock.patch.dict(os.environ, self.env, clear=True), \
+                mock.patch("subprocess.run", return_value=cli_reply(payload)):
             return propose_skill_edit.Runner().propose("prompt", "fake-default-model")
 
     def test_agent_dict_unchanged_and_array_result_last_or_earlier(self):
@@ -145,6 +151,12 @@ class CliJsonConsumersTests(unittest.TestCase):
         with self.assertRaises(propose_skill_edit.Refusal) as caught:
             self._proposal(["private payload", RESULT])
         self.assertNotIn("private payload", str(caught.exception))
+
+    def test_proposal_ignores_parent_cloud_environment(self):
+        parent_env = {"AZURE_EXTENSION_DIR": "/x", "GOOGLE_FOO": "y"}
+        with mock.patch.dict(os.environ, parent_env):
+            self.assertEqual(self._proposal([MESSAGE, RESULT]), "done")
+            self.assertEqual({name: os.environ[name] for name in parent_env}, parent_env)
 
     def test_raw_transcript_file_contains_only_normalized_result(self):
         raw = self._agent([MESSAGE, RESULT])["raw"]
